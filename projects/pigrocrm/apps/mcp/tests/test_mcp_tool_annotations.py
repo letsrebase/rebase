@@ -61,13 +61,16 @@ SURFACES: dict[str, dict[str, Any]] = {
 # `changes` schema; `create_organization` takes only `roles`, and the rest is said once in
 # `INSTRUCTIONS`. The full-access list also carries `share_organization` on
 # `confirm_invoice_import` (measured at 113,377 bytes).
-DEFAULT_BUDGET_BYTES = 99_400
+# REB-972: 100.2 KB, up from 99.4 KB, for `propose_inbox_item` and the `classified` filter of
+# `list_inbox_items` (an agent's way to propose what a PDF in the inbox says), measured at 100,168.
+DEFAULT_BUDGET_BYTES = 100_200
 # REB-957: 111.9 KB, up from 111.6 KB, for `skip_space_onboarding` (a full-access
 # administrator's), measured at 111,786 bytes; `describe_space`'s `onboarding` fits the default.
 # REB-977: 116.2 KB, up from 113.4 KB, for `create_staff_member`, `update_staff_member`,
 # `get_staff_member` and `list_staff` (a full-access administrator's, 2.8 KB): pay has a dozen
 # fields, and `update_staff_member` lists them by name and type, which is how an agent learns them.
-FULL_ACCESS_BUDGET_BYTES = 116_200
+# REB-972: 117.0 KB, up from 116.2 KB, the same tool, measured at 116,956 bytes.
+FULL_ACCESS_BUDGET_BYTES = 117_000
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

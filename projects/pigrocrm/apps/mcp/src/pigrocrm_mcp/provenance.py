@@ -74,6 +74,7 @@ FREE_TEXT_TOOLS: frozenset[str] = frozenset(
         # The inbox: file names written by whoever sent the file.
         "list_inbox_items",
         "get_inbox_item",
+        "propose_inbox_item",
         # Documents and invoices (a customer's name, a reason line, a note).
         "list_documents",
         "get_document",

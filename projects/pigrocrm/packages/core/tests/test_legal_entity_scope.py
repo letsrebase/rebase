@@ -1388,3 +1388,68 @@ def test_a_scoped_member_reads_the_inbox_items_of_their_legal_entities_and_their
         assert _count(session, "inbox_items") == 1
     with session_factory(world.app)() as session:  # nothing bound: nothing
         assert _count(session, "inbox_items") == 0
+
+
+def test_a_scoped_member_makes_and_reads_the_proposals_of_the_items_they_may_see(
+    world: World,
+) -> None:
+    """REB-972: a proposal read from an inbox item has no document or contract, so its
+    visibility is its item's (migration 0080): an operator limited to a legal entity creates and
+    reads the proposal of the unclassified item they uploaded and of a classified item of theirs,
+    and cannot make one for an item they do not see, nor read the proposal of one."""
+    from decimal import Decimal as D
+
+    from pigrocrm.core.proposals.models import Proposal
+
+    factory = session_factory(world.engine)
+    with factory() as session:
+        items = {
+            item.original_name: item.id
+            for item in session.execute(
+                select(InboxItem).where(InboxItem.original_name.like(f"{_PREFIX} %"))
+            ).scalars()
+        }
+    mine, nobodys, foreign = (
+        items[f"{_PREFIX} mio.pdf"],
+        items[f"{_PREFIX} di nessuno.pdf"],
+        items[f"{_PREFIX} estero.pdf"],
+    )
+
+    def proposal(item_id: UUID, tag: str) -> Proposal:
+        return Proposal(
+            inbox_item_id=item_id,
+            target_type="receipt",
+            proposed_fields={},
+            excerpt=f"{_PREFIX} {tag}",
+            confidence=D("0.80"),
+        )
+
+    try:
+        with factory() as session:  # the superuser plants one on an item nobody uploaded
+            session.add(proposal(nobodys, "di nessuno"))
+            session.commit()
+        with _scoped(world, world.studio) as session:
+            session.add(proposal(mine, "mio"))  # the item they uploaded: theirs whatever the scope
+            session.commit()
+            seen = session.execute(
+                text(f"SELECT excerpt FROM proposals WHERE excerpt LIKE '{_PREFIX} %'")
+            ).scalars()
+            assert sorted(seen) == [f"{_PREFIX} mio"]
+        with _scoped(world, world.studio) as session:
+            session.add(proposal(foreign, "estero"))  # another legal entity's item: refused
+            with pytest.raises(DBAPIError) as refused:
+                session.commit()
+            assert is_policy_refusal(refused.value)
+        with _scoped(world, world.foreign) as session:
+            seen = session.execute(
+                text(f"SELECT excerpt FROM proposals WHERE excerpt LIKE '{_PREFIX} %'")
+            ).scalars()
+            assert sorted(seen) == [
+                f"{_PREFIX} mio"
+            ]  # the operator uploaded it, whatever the scope
+        with session_factory(world.app)() as session:  # nothing bound: nothing
+            assert _count(session, "proposals") == 0
+    finally:
+        with factory() as session:
+            session.execute(delete(Proposal).where(Proposal.excerpt.like(f"{_PREFIX} %")))
+            session.commit()

@@ -2,6 +2,7 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { Check, FileText, Inbox, X } from 'lucide-react'
 import { useState } from 'react'
 import { PageHeader } from '@/components/PageHeader'
+import { DownloadButton } from '@/components/DownloadButton'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
 import {
@@ -19,7 +20,7 @@ import { Textarea } from '@rebase/ui/textarea'
 import { toProblem } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
 import { Confidence, ProposalStatusPill, ProposalSubject } from './ProposalBits'
-import { decisionLine, describeProposal, type Proposal } from './fields'
+import { INBOX_TARGET_TYPES, decisionLine, describeProposal, type Proposal } from './fields'
 import { useAcceptProposal, useProposal, useProposalTimeline, useRejectProposal } from './queries'
 
 /**
@@ -58,6 +59,14 @@ export function ProposalDetail({ proposalId }: { proposalId: string }) {
   return <Loaded proposal={proposal.data} />
 }
 
+const PROPOSAL_KINDS: Record<string, string> = {
+  contract: 'Proposta di nuovo contratto',
+  work_unit: 'Proposta di giornata lavorata',
+  supplier_invoice: 'Fattura di acquisto letta da un file in arrivo',
+  receipt: 'Ricevuta letta da un file in arrivo',
+  bank_statement: 'Estratto conto letto da un file in arrivo',
+}
+
 function Loaded({ proposal }: { proposal: Proposal }) {
   const description = describeProposal(proposal)
   const canWrite = useCanWrite()
@@ -67,6 +76,9 @@ function Loaded({ proposal }: { proposal: Proposal }) {
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason] = useState('')
   const pending = proposal.status === 'pending'
+  // A document read from an «In arrivo» item is filed by a module that does not exist yet: there
+  // is nothing to accept, only to refuse (and have it read again).
+  const nothingFilesIt = INBOX_TARGET_TYPES.includes(proposal.target_type)
 
   const backToQueue = () => void navigate({ to: '/app/proposals', search: { status: 'pending' } })
 
@@ -78,7 +90,9 @@ function Loaded({ proposal }: { proposal: Proposal }) {
           toast.success(
             proposal.target_type === 'contract'
               ? 'Proposta accettata: il contratto è stato creato'
-              : 'Proposta accettata: la giornata è registrata',
+              : proposal.target_type === 'work_unit'
+                ? 'Proposta accettata: la giornata è registrata'
+                : 'Proposta accettata',
           )
           backToQueue()
         },
@@ -108,11 +122,7 @@ function Loaded({ proposal }: { proposal: Proposal }) {
       <PageHeader
         icon={Inbox}
         title={description.title}
-        description={
-          proposal.target_type === 'contract'
-            ? 'Proposta di nuovo contratto'
-            : 'Proposta di giornata lavorata'
-        }
+        description={PROPOSAL_KINDS[proposal.target_type] ?? 'Proposta'}
         actions={
           pending && canWrite ? (
             <>
@@ -127,10 +137,12 @@ function Loaded({ proposal }: { proposal: Proposal }) {
                 <X className="mr-2 size-4" aria-hidden />
                 Rifiuta
               </Button>
-              <Button disabled={accept.isPending || reject.isPending} onClick={onAccept}>
-                {accept.isPending ? <Loader className="mr-2 size-4" /> : <Check className="mr-2 size-4" aria-hidden />}
-                Accetta
-              </Button>
+              {nothingFilesIt ? null : (
+                <Button disabled={accept.isPending || reject.isPending} onClick={onAccept}>
+                  {accept.isPending ? <Loader className="mr-2 size-4" /> : <Check className="mr-2 size-4" aria-hidden />}
+                  Accetta
+                </Button>
+              )}
             </>
           ) : undefined
         }
@@ -152,6 +164,13 @@ function Loaded({ proposal }: { proposal: Proposal }) {
 
         {pending ? null : <Outcome proposal={proposal} customerId={description.customerId} />}
 
+        {pending && nothingFilesIt ? (
+          <p role="note" className="border bg-paper px-4 py-3 text-sm">
+            Non c’è ancora un modulo che archivi questo documento, quindi non si può accettare. Resta in «In arrivo» con i
+            campi letti; se la lettura è sbagliata, rifiutala e il file torna da leggere.
+          </p>
+        ) : null}
+
         <section aria-labelledby="proposal-origin" className="space-y-3">
           <h2 id="proposal-origin" className="font-semibold">
             Da dove arriva
@@ -167,12 +186,20 @@ function Loaded({ proposal }: { proposal: Proposal }) {
           <p className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
             <Confidence proposal={proposal} showReason />
           </p>
-          <Button asChild variant="outline" size="sm">
-            <Link to="/app/documents/$documentId" params={{ documentId: proposal.document_id }}>
+          {proposal.document_id !== null ? (
+            <Button asChild variant="outline" size="sm">
+              <Link to="/app/documents/$documentId" params={{ documentId: proposal.document_id }}>
+                <FileText className="mr-2 size-4" aria-hidden />
+                Apri il documento
+              </Link>
+            </Button>
+          ) : proposal.inbox_item_id !== null ? (
+            // Read out of an «In arrivo» item: its file is the item's own, downloaded from there.
+            <DownloadButton variant="outline" size="sm" path={`/api/inbox/items/${proposal.inbox_item_id}/file`}>
               <FileText className="mr-2 size-4" aria-hidden />
-              Apri il documento
-            </Link>
-          </Button>
+              Scarica il file
+            </DownloadButton>
+          ) : null}
         </section>
 
         <section aria-labelledby="proposal-fields" className="space-y-6">
@@ -278,7 +305,9 @@ function Outcome({ proposal, customerId }: { proposal: Proposal; customerId: str
         <p className="text-muted-foreground">
           {proposal.target_type === 'contract'
             ? 'Ha creato il contratto, con la sua prima scheda tariffaria.'
-            : 'Ha registrato la giornata come approvata.'}{' '}
+            : proposal.target_type === 'work_unit'
+              ? 'Ha registrato la giornata come approvata.'
+              : 'È stata accettata.'}{' '}
           {customerId !== null ? (
             <Link
               to="/app/organizations/$organizationId"

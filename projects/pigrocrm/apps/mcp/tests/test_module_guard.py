@@ -80,6 +80,7 @@ CORE_TOOLS = frozenset(
         "list_proposals",
         "get_inbox_item",
         "list_inbox_items",
+        "propose_inbox_item",
         "get_timeline",
         "search_everything",
         "describe_automations",

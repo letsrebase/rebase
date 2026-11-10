@@ -2,10 +2,11 @@ from collections.abc import Collection, Sequence
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
+from pigrocrm.core.proposals.models import Proposal
 
 
 class ActivityRepository:
@@ -31,6 +32,7 @@ class ActivityRepository:
         limit: int = 50,
         entity_types: Collection[str] | None = None,
         excluded_types: Collection[str] = (),
+        visible_proposals: ColumnElement[bool] | None = None,
     ) -> list[Activity]:
         """The global activity feed of §6.1: newest first, across every entity.
 
@@ -53,6 +55,15 @@ class ActivityRepository:
             statement = statement.where(Activity.entity_type.in_(entity_types))
         if excluded_types:
             statement = statement.where(Activity.entity_type.not_in(excluded_types))
+        if visible_proposals is not None:
+            # A proposal's timeline is its source's (REB-972): the row of one the caller may not
+            # see (another user's unclassified item, a proposal with an owner) is not in the feed.
+            statement = statement.where(
+                or_(
+                    Activity.entity_type != "proposal",
+                    Activity.entity_id.in_(select(Proposal.id).where(visible_proposals)),
+                )
+            )
         return list(
             self.session.execute(
                 statement.order_by(Activity.occurred_at.desc(), Activity.id.desc()).limit(limit)

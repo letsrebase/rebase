@@ -29,6 +29,7 @@ from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.gmail.models import GoogleAccount
 from pigrocrm.core.gmail.schemas import SCOPE_READONLY, SCOPE_SEND
+from pigrocrm.core.inbox.models import InboxItem
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.organizations.models import Organization
@@ -542,6 +543,46 @@ def test_a_proposal_waits_a_warning_at_3_days_a_serious_at_7_and_a_critical_at_1
         reminder = next(r for r in space.evaluate().reminders if r.type == "proposal_pending")
         assert reminder.entity == "proposal" and reminder.entity_id == proposal.id
         assert reminder.measure == float(age)
+
+
+def _inbox_proposal(space: Space, *, age_days: int, owner: User | None = None) -> Proposal:
+    item = InboxItem(
+        original_name="scontrino.pdf",
+        file_type="pdf",
+        size_bytes=1,
+        sha256="a" * 64,
+        content_sha256="a" * 64,
+        state="proposed",
+    )
+    space.session.add(item)
+    space.session.flush()
+    proposal = Proposal(
+        inbox_item_id=item.id,
+        owner_user_id=owner.id if owner is not None else None,
+        target_type="receipt",
+        proposed_fields={},
+        excerpt="Totale 48,00",
+        confidence=Decimal("0.90"),
+        created_at=NOON - timedelta(days=age_days),
+    )
+    space.session.add(proposal)
+    space.session.flush()
+    return proposal
+
+
+def test_a_proposal_read_from_the_inbox_is_told_to_the_admins_who_see_its_item(
+    space: Space,
+) -> None:
+    _inbox_proposal(space, age_days=8)
+    assert space.told("proposal_pending") == {
+        space.owner.id: "serious",
+        space.other_admin.id: "serious",
+    }
+
+
+def test_a_proposal_with_an_owner_is_told_to_the_owner_and_to_nobody_else(space: Space) -> None:
+    _inbox_proposal(space, age_days=8, owner=space.member)
+    assert space.told("proposal_pending") == {space.member.id: "serious"}
 
 
 def test_only_proposals_still_waiting_count_and_each_is_its_own_reminder(space: Space) -> None:

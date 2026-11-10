@@ -21,7 +21,10 @@ import type { components } from '@/lib/api-types'
 
 export type Proposal = components['schemas']['ProposalRead']
 export type ProposalStatus = 'pending' | 'accepted' | 'rejected'
-export type ProposalTargetType = 'contract' | 'work_unit'
+export type ProposalTargetType = 'contract' | 'work_unit' | 'supplier_invoice' | 'receipt' | 'bank_statement'
+
+/** The three kinds read out of an «In arrivo» item: they have no contract and no archived document. */
+export const INBOX_TARGET_TYPES: readonly string[] = ['supplier_invoice', 'receipt', 'bank_statement']
 
 export const Statuses: readonly { id: ProposalStatus; label: string }[] = [
   { id: 'pending', label: 'In attesa' },
@@ -38,6 +41,9 @@ export const StatusLabels: Record<string, string> = {
 export const TARGET_LABELS: Record<string, string> = {
   contract: 'Contratto',
   work_unit: 'Giornata',
+  supplier_invoice: 'Fattura di acquisto',
+  receipt: 'Ricevuta',
+  bank_statement: 'Estratto conto',
 }
 
 const RENEWAL_LABELS: Record<string, string> = {
@@ -342,6 +348,69 @@ function dayGroups(fields: Record<string, unknown>): { title: string; groups: Fi
   }
 }
 
+function vatLine(line: unknown, currency: unknown): string | null {
+  if (!isRecord(line)) return null
+  const rate = decimal(line.rate)
+  return [
+    rate === null ? null : `IVA ${formatQuantity(rate)}%`,
+    formatAmount(line.taxable_amount, currency),
+    formatAmount(line.vat_amount, currency) === null ? null : `imposta ${formatAmount(line.vat_amount, currency)}`,
+  ]
+    .filter((part) => part !== null)
+    .join(' · ')
+}
+
+/** A supplier invoice, a receipt or a statement read out of an inbox item (`ReadDocumentFields`). */
+function readDocumentGroups(
+  targetType: string,
+  fields: Record<string, unknown>,
+): { title: string; groups: FieldGroup[] } {
+  const currency = fields.currency
+  const issuer = text(fields.issuer_name)
+  const total = formatAmount(fields.total, currency)
+  const periodStart = isoDate(fields.period_start)
+  const periodEnd = isoDate(fields.period_end)
+  const vat = Array.isArray(fields.vat_lines)
+    ? fields.vat_lines.map((line) => vatLine(line, currency)).filter((line) => line !== null)
+    : []
+  const statement = targetType === 'bank_statement'
+  return {
+    title: [
+      TARGET_LABELS[targetType] ?? targetType,
+      statement && periodStart !== null && periodEnd !== null ? `${periodStart} - ${periodEnd}` : issuer,
+      statement ? null : total,
+    ]
+      .filter((part) => part !== null)
+      .join(' · '),
+    groups: [
+      {
+        title: statement ? 'Estratto conto' : 'Documento',
+        rows: rows(
+          row('Emittente', issuer),
+          row('Partita IVA o codice fiscale', text(fields.issuer_tax_id)),
+          row('Numero', text(fields.number)),
+          row('Data', isoDate(fields.issue_date)),
+          row('Scadenza', isoDate(fields.due_date)),
+          row('Descrizione', text(fields.description)),
+          row('IBAN', text(fields.iban)),
+          row('Periodo', periodStart !== null && periodEnd !== null ? `dal ${periodStart} al ${periodEnd}` : null),
+          row('Saldo iniziale', formatAmount(fields.opening_balance, currency)),
+          row('Saldo finale', formatAmount(fields.closing_balance, currency)),
+        ),
+      },
+      {
+        title: 'Importi',
+        rows: rows(
+          row('Imponibile', formatAmount(fields.taxable_amount, currency)),
+          row('IVA', formatAmount(fields.vat_amount, currency)),
+          row('Totale', total),
+          ...vat.map((line, index) => row(`Aliquota ${index + 1}`, line)),
+        ),
+      },
+    ],
+  }
+}
+
 /**
  * The proposal's fields, grouped and worded for a reader: what was proposed while it
  * waits and when it was refused, and what was **accepted** once it was, since that is what
@@ -356,6 +425,10 @@ export function describeProposal(
   if (proposal.target_type === 'contract') {
     const { title, groups, customerId } = contractGroups(fields)
     return { title, groups: groups.filter((group) => group.rows.length > 0), customerId, contractId: null }
+  }
+  if (INBOX_TARGET_TYPES.includes(proposal.target_type)) {
+    const { title, groups } = readDocumentGroups(proposal.target_type, fields)
+    return { title, groups: groups.filter((group) => group.rows.length > 0), customerId: null, contractId: null }
   }
   const { title, groups, contractId } = dayGroups(fields)
   return { title, groups: groups.filter((group) => group.rows.length > 0), customerId: null, contractId }

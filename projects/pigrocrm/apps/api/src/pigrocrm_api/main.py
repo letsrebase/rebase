@@ -15,6 +15,7 @@ from pigrocrm_api.errors import (
 )
 from pigrocrm_api.routers import (
     activities,
+    ai_model,
     analytics,
     approval_requests,
     approvals,
@@ -175,6 +176,8 @@ def create_app() -> FastAPI:
         due_items,
         # REB-977: employees and directors with their pay, behind the `staff` module.
         staff,
+        # REB-972: the model PigroCRM reads documents with: settings, key, cap, «Prova».
+        ai_model,
     ):
         app.include_router(module.router)
 

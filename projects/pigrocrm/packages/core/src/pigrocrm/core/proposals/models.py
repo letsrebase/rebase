@@ -24,7 +24,19 @@ from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
 
 # mastro's `proposalTargetType` (`proposal.ts:64`), trimmed to the two this project
 # needs -- see the module docstring for the two it leaves out and why.
-PROPOSAL_TARGET_TYPES: tuple[str, ...] = ("contract", "work_unit")
+PROPOSAL_TARGET_TYPES: tuple[str, ...] = (
+    "contract",
+    "work_unit",
+    "supplier_invoice",
+    "receipt",
+    "bank_statement",
+)
+# What a proposal of each target type reads from (design 2026-11-09, incoming documents inbox,
+# § 3.5): a contract or a day from an archived document, which `accept` re-points at the row it
+# creates; a document read out of the inbox from the inbox item, which has no customer, deal
+# or contract to own a `Document` and so is no `Document` until the module that files it exists.
+DOCUMENT_TARGET_TYPES: tuple[str, ...] = ("contract", "work_unit")
+INBOX_TARGET_TYPES: tuple[str, ...] = ("supplier_invoice", "receipt", "bank_statement")
 # mastro's `excerptKind` (`proposal.ts:21-43`): `quoted` is a span the application
 # located in the document's own text; `transcribed` exists only for a scanned page with
 # no text layer, and is never rendered as a quotation for the same reason mastro's own
@@ -48,15 +60,26 @@ class Proposal(Base, PrimaryKeyMixin, TimestampMixin):
 
     __tablename__ = "proposals"
 
-    # The archived original the extraction read -- never optional, mastro invariant 4.
-    # No explicit `ondelete`: RESTRICT is the schema-wide default, and a document a
-    # proposal still points at cannot be deleted out from under it, the same reasoning
-    # `Approval.document_id` (REB-359) already carries.
-    document_id: Mapped[UUID] = mapped_column(
-        ForeignKey("documents.id"), nullable=False, index=True
+    # The archived original the extraction read (mastro invariant 4): required for a contract or
+    # a day, and absent for a proposal read out of the inbox, which points at its item instead
+    # (`ck_proposals_source`). No explicit `ondelete`: RESTRICT is the schema-wide default, and
+    # a document a proposal still points at cannot be deleted out from under it, the same
+    # reasoning `Approval.document_id` (REB-359) already carries.
+    document_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("documents.id"), default=None, index=True
     )
-    # Required by the CHECK below unless target_type = 'contratto' (first intake has
-    # no contract row to point at yet, mirroring `proposal.ts:167-172`'s own CHECK).
+    # The inbox item a supplier invoice, a receipt or a statement was read from (REB-972).
+    inbox_item_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("inbox_items.id"), default=None, index=True
+    )
+    # Whose alone the proposal is, when it is one person's (a task read from a personal
+    # mailbox, design § 3.5 and § 4): not even an administrator sees it. `NULL` for the rest,
+    # whose visibility is their source's (`proposals/access.py`).
+    owner_user_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("users.id"), default=None, index=True
+    )
+    # Required by the CHECK below for a day (a contract's first intake has no contract row to
+    # point at yet, mirroring `proposal.ts:167-172`'s own CHECK).
     contract_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("contracts.id"), default=None, index=True
     )
@@ -103,10 +126,26 @@ class Proposal(Base, PrimaryKeyMixin, TimestampMixin):
         ),
         CheckConstraint(f"status IN {PROPOSAL_STATUSES!r}", name="ck_proposals_status"),
         CheckConstraint(
-            "target_type = 'contract' OR contract_id IS NOT NULL",
-            name="ck_proposals_contract_id_required_unless_contract",
+            "target_type <> 'work_unit' OR contract_id IS NOT NULL",
+            name="ck_proposals_contract_id_required_for_work_unit",
+        ),
+        # Exactly one source, the one the target type reads from.
+        CheckConstraint(
+            f"(target_type IN {DOCUMENT_TARGET_TYPES!r} AND document_id IS NOT NULL "
+            "AND inbox_item_id IS NULL) "
+            f"OR (target_type IN {INBOX_TARGET_TYPES!r} AND inbox_item_id IS NOT NULL "
+            "AND document_id IS NULL)",
+            name="ck_proposals_source",
         ),
         # The review queue's own access path: "every pending proposal, oldest first" --
         # see `ProposalRepository.list`.
         Index("ix_proposals_status_created_at", "status", "created_at"),
+        # One proposal waits for a person per inbox item: a second would ask the same question
+        # twice, and the item's «proposed» state would point at two answers.
+        Index(
+            "uq_proposals_pending_inbox_item",
+            "inbox_item_id",
+            unique=True,
+            postgresql_where=text("status = 'pending' AND inbox_item_id IS NOT NULL"),
+        ),
     )

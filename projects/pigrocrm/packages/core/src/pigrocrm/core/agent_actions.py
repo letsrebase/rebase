@@ -201,6 +201,9 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         # MCP (design 2026-11-09, § 6), so no tool runs it. A token with `full_access` reaches
         # it over REST, for a script that feeds the inbox; a default token does not.
         "upload_inbox_file",
+        # Reading an inbox item (REB-972): it spends the space's model, money the owner capped
+        # (a default token proposes with `propose_inbox_item` and reads nothing itself).
+        "classify_inbox_item",
         # Due items: money going out marked paid or unmarked, and every item whose source is
         # a tax, IVA, withholding or payroll (the fiscal position, C3 and C6), whatever the
         # direction. An administrator's token with `full_access`, nothing less.
@@ -247,6 +250,11 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         "connect_gmail",
         "disconnect_gmail",
         "update_gmail_settings",
+        # The model PigroCRM reads documents with, its key and its spend cap (REB-972, design
+        # 2026-11-09 § 3.2): an administrator's act, like every credential.
+        "read_ai_model_settings",
+        "update_ai_model_settings",
+        "test_ai_model",
         "sync_gmail",
         "backfill_gmail",
         "send_email",
@@ -314,6 +322,10 @@ ACTION_LABELS: dict[str, str] = {
     "set_space_profile": "cambiare il profilo dello spazio",
     "set_space_modules": "accendere o spegnere i moduli dello spazio",
     "upload_inbox_file": "caricare un documento in arrivo",
+    "classify_inbox_item": "leggere un documento in arrivo",
+    "read_ai_model_settings": "leggere le impostazioni del modello",
+    "update_ai_model_settings": "cambiare le impostazioni del modello",
+    "test_ai_model": "provare il modello",
     "settle_outgoing_due_item": "segnare come pagata una scadenza in uscita o fiscale",
     "reverse_outgoing_settlement": "annullare il pagamento di una scadenza in uscita o fiscale",
     "read_fiscal_due_items": "leggere le scadenze di imposte, IVA, ritenute e stipendi",

@@ -65,6 +65,7 @@ from pigrocrm.core.db import current_week, today_local, window_from
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.documents.repository import DocumentRepository
 from pigrocrm.core.invoices.repository import InvoiceRepository
+from pigrocrm.core.proposals.access import visible_to as proposals_visible_to
 from pigrocrm.core.timetracking.repository import TimeEntryRepository
 
 # The property §7.1 requires, named so the tests can assert on the same constant the code
@@ -331,9 +332,12 @@ class DashboardService:
             if modules is not None
             else frozenset()
         )
+        visible = proposals_visible_to(actor)
         if actor.type == "user" and actor.can_administer:
-            return self._activities.recent(_RECENT_ACTIVITIES, None, off)
-        return self._activities.recent(_RECENT_ACTIVITIES_FILTERED, _BUSINESS_ENTITIES, off)
+            return self._activities.recent(_RECENT_ACTIVITIES, None, off, visible)
+        return self._activities.recent(
+            _RECENT_ACTIVITIES_FILTERED, _BUSINESS_ENTITIES, off, visible
+        )
 
     def get_operational_dashboard(
         self,

@@ -12,6 +12,8 @@ export function proposal(overrides: Partial<Proposal> = {}): Proposal {
   return {
     id: 'p1',
     document_id: 'd1',
+    inbox_item_id: null,
+    owner_user_id: null,
     contract_id: CONTRACT_ID,
     target_type: 'work_unit',
     proposed_fields: {

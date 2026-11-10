@@ -20,7 +20,9 @@ from pigrocrm.core.storage import LocalFileStorage
 os.environ.setdefault("PIGROCRM_JWT_SECRET", "test-secret-for-the-api-test-suite-only")
 get_settings.cache_clear()  # an import above may have read the settings already
 
-from pigrocrm_api.deps import get_session, get_storage  # noqa: E402
+from scripted_model import ScriptedModel  # noqa: E402
+
+from pigrocrm_api.deps import get_model_call, get_session, get_storage  # noqa: E402
 from pigrocrm_api.main import create_app  # noqa: E402
 from pigrocrm_api.ratelimit import reset_rate_limit  # noqa: E402
 
@@ -118,8 +120,14 @@ def _fresh_rate_limit() -> None:
 
 
 @pytest.fixture
-def client(api_session: Session, tmp_path: Path) -> Iterator[TestClient]:
+def model_call() -> ScriptedModel:
+    return ScriptedModel()
+
+
+@pytest.fixture
+def client(api_session: Session, tmp_path: Path, model_call: ScriptedModel) -> Iterator[TestClient]:
     app = create_app()
+    app.dependency_overrides[get_model_call] = lambda: model_call
     app.dependency_overrides[get_session] = lambda: api_session
     # Documents/templates tests upload and download real bytes; without this override
     # `get_storage` falls through to `storage_from_settings(get_settings())`, which

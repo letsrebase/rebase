@@ -31,7 +31,10 @@ from pigrocrm.core.work_units.schemas import (
     ApprovalChannel,
 )
 
-ProposalTargetType = Literal["contract", "work_unit"]
+ProposalTargetType = Literal[
+    "contract", "work_unit", "supplier_invoice", "receipt", "bank_statement"
+]
+InboxProposalTargetType = Literal["supplier_invoice", "receipt", "bank_statement"]
 ProposalExcerptType = Literal["quoted", "transcribed"]
 ProposalStatus = Literal["pending", "accepted", "rejected"]
 ProposalOrder = Literal["arrival", "decision"]
@@ -86,6 +89,60 @@ class ContractProposalFields(BaseModel):
     rate_card: RateCardCreate
 
 
+AMOUNT_MAX_DIGITS = 16
+AMOUNT_DECIMAL_PLACES = 4
+
+
+class ReadVatLine(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rate: Decimal | None = Field(default=None, ge=0, le=100, max_digits=7, decimal_places=4)
+    taxable_amount: Decimal | None = Field(
+        default=None, max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DECIMAL_PLACES
+    )
+    vat_amount: Decimal | None = Field(
+        default=None, max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DECIMAL_PLACES
+    )
+
+
+class ReadDocumentFields(BaseModel):
+    """`proposed_fields`'s shape for the three kinds read out of an inbox item
+    (`supplier_invoice`, `receipt`, `bank_statement`; design § 3.2): what the producer read, with
+    every field optional here because a receipt has no number and a statement no issuer. What
+    each kind needs to be worth a person's decision is `ProposalService._check_read_fields`,
+    which also keeps a model's guess about an amount from arriving as a string a person has to
+    decode: an amount is a decimal or it is absent, never a sentence."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    issuer_name: SafeStr | None = None
+    issuer_tax_id: SafeStr | None = None
+    number: SafeStr | None = None
+    issue_date: dt.date | None = None
+    due_date: dt.date | None = None
+    currency: SafeStr = Field(default="EUR", min_length=3, max_length=3)
+    total: Decimal | None = Field(
+        default=None, max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DECIMAL_PLACES
+    )
+    taxable_amount: Decimal | None = Field(
+        default=None, max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DECIMAL_PLACES
+    )
+    vat_amount: Decimal | None = Field(
+        default=None, max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DECIMAL_PLACES
+    )
+    vat_lines: list[ReadVatLine] = Field(default_factory=list, max_length=20)
+    iban: SafeStr | None = None
+    description: SafeStr | None = None
+    period_start: dt.date | None = None
+    period_end: dt.date | None = None
+    opening_balance: Decimal | None = Field(
+        default=None, max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DECIMAL_PLACES
+    )
+    closing_balance: Decimal | None = Field(
+        default=None, max_digits=AMOUNT_MAX_DIGITS, decimal_places=AMOUNT_DECIMAL_PLACES
+    )
+
+
 class ProposalCreate(BaseModel):
     """`proposed_fields` stays a bare `dict` here -- the caller-facing schema takes
     whatever JSON the producer read out of the document, and
@@ -95,8 +152,11 @@ class ProposalCreate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    document_id: UUID
-    # Required by a CHECK unless target_type = 'contratto' -- see `models.py`'s own
+    # Exactly one of the two, the one the target type reads from: a document for a contract
+    # or a day, an inbox item for the three kinds read out of the inbox (`ck_proposals_source`).
+    document_id: UUID | None = None
+    inbox_item_id: UUID | None = None
+    # Required by a CHECK for a day -- see `models.py`'s own
     # constraint. Left settable here (rather than always `None`) because the CHECK
     # itself only forbids it being *missing* for `'work_unit'`, never forbids it being
     # *present* for `'contract'` -- `ProposalService.create` is where the tighter,
@@ -117,7 +177,9 @@ class ProposalRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    document_id: UUID
+    document_id: UUID | None
+    inbox_item_id: UUID | None
+    owner_user_id: UUID | None
     contract_id: UUID | None
     target_type: str
     proposed_fields: dict[str, Any]
@@ -145,6 +207,7 @@ class ProposalListQuery(BaseModel):
     status: ProposalStatus | None = None
     target_type: ProposalTargetType | None = None
     document_id: UUID | None = None
+    inbox_item_id: UUID | None = None
     contract_id: UUID | None = None
     # `arrival` is the review queue's own order (oldest first); `decision` is the decided
     # lists' (most recently decided first, the ones nobody has decided last), so a list

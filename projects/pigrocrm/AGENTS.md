@@ -231,6 +231,22 @@ unless the route has its own `location` with `client_max_body_size 105m` in all 
 files are applied by hand); `src/test/upload-body-size.test.ts` holds the documents and the
 inbox routes to it, so a fourth upload route adds its location and its case there.
 
+**What arrives is read once by `InboxClassifier`, and nothing it reads writes a record (REB-972).**
+`core/inbox/classifier.py` runs after an upload's transaction: a FatturaPA is routed (a sales invoice
+waits in the issued review, `inbox/issued.py`; a purchase is held with its parsed fields), a PDF or a
+photo is read by PigroCRM's own model into a `supplier_invoice`, `receipt` or `bank_statement`
+**proposal** and nothing else, or, with the model off, left unclassified for the user's agent
+(`propose_inbox_item`). The model is `core/ai/`: off by default, `ModelGateway` is the only caller of
+`ai/transport.py` (built on `http.HttpCall`, so a test passes a fake and never a key), reserves the
+estimated cost before the network (a file at what it weighs, a call of unknown outcome kept as
+spent) and refuses past the daily cap. A paid reading is claimed first (`inbox_items.read_started_at`,
+`read_attempts`: two runs never pay for one file, and an automatic run stops after three tries), the
+classify routes have their own long-read nginx locations in all three conf files, and a proposal
+read from the inbox is visible through its item in the row-level policy too (migration 0080). The API tests' `client` fixture
+overrides `get_model_call` with `scripted_model.ScriptedModel`, which fails a test that reaches it
+with no answer queued. A proposal's visibility is its source's (`proposals/access.py`); accepting
+one of the three new kinds is refused until the module that files it exists.
+
 **`pg_trgm` is created by the migrations at API start-up.** On a managed Postgres
 where the user cannot create extensions, the deploy fails at boot with
 `permission denied to create extension "pg_trgm"`. That is the wanted behaviour: the

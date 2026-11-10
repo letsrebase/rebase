@@ -137,6 +137,7 @@ export const SETTINGS_PATHS = {
   gmail: '/app/settings/gmail',
   drive: '/app/settings/drive',
   slack: '/app/settings/slack',
+  'ai-model': '/app/settings/ai-model',
   reminders: '/app/settings/reminders',
   automations: '/app/settings/automations',
   jobs: '/app/settings/jobs',

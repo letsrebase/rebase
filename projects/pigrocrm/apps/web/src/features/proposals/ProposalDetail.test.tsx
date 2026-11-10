@@ -70,6 +70,31 @@ describe('a proposal waiting for a decision', () => {
     expect(screen.getByRole('button', { name: 'Rifiuta' })).toBeEnabled()
   })
 
+  it('shows a receipt read from an inbox item with the file to download and no contract', async () => {
+    serving(
+      proposal({
+        document_id: null,
+        inbox_item_id: 'i1',
+        contract_id: null,
+        target_type: 'receipt',
+        proposed_fields: { issuer_name: 'Trattoria Da Mario', issue_date: '2026-11-03', total: '48.00' },
+        excerpt: 'Totale 48,00',
+      }),
+    )
+    renderWithQuery(<ProposalDetail proposalId="p1" />)
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Ricevuta · Trattoria Da Mario · 48,00\u00a0€' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Ricevuta letta da un file in arrivo')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Scarica il file/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Apri il documento/ })).not.toBeInTheDocument()
+    // Nothing files a receipt yet: there is nothing to accept, and the page says so.
+    expect(screen.queryByRole('button', { name: 'Accetta' })).not.toBeInTheDocument()
+    expect(screen.getByRole('note')).toHaveTextContent(/Non c’è ancora un modulo che archivi/)
+    expect(screen.getByRole('button', { name: 'Rifiuta' })).toBeEnabled()
+  })
+
   it('does not call a transcription a quotation', async () => {
     serving(proposal({ excerpt_type: 'transcribed' }))
     renderWithQuery(<ProposalDetail proposalId="p1" />)

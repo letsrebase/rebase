@@ -159,6 +159,7 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
       'Gmail',
       'Google Drive',
       'Slack',
+      'Modello AI',
     ])
   })
 

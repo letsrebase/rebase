@@ -209,6 +209,9 @@ REST_ONLY_FORBIDDEN = frozenset(
         # there is no tool; a token with `full_access` reaches it over REST for a script that
         # feeds the inbox, and a default token does not.
         "upload_inbox_file",
+        # REB-972: reading an item spends the space's model; an agent proposes with
+        # `propose_inbox_item` and reads nothing itself, and a full-access token may over REST.
+        "classify_inbox_item",
     }
 )
 

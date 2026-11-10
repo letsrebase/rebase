@@ -591,6 +591,11 @@ ROWS: list[Row] = [
     Row("POST", "/api/invoices/import/upload/confirm", admin_only=True, multipart=True),
     # --- the inbox's upload (REB-971): `require_write`; an agent needs `full_access` ------
     Row("POST", "/api/inbox/upload", multipart=True),
+    # --- reading what arrived (REB-972): it spends the model, so a token needs `full_access` ---
+    Row("POST", "/api/inbox/classify"),
+    Row("POST", "/api/inbox/items/{item_id}/classify"),
+    # --- a sales invoice of the inbox written on the register: the import's own gate ---
+    Row("POST", "/api/inbox/items/{item_id}/issued-import", admin_only=True, body={}),
     Row(
         "POST",
         "/api/invoices/register/{year}/gaps",
@@ -623,6 +628,10 @@ ROWS: list[Row] = [
     # --- space settings: admin on read *and* write (space_settings/service.py:78,:84) -
     Row("PUT", "/api/settings/space", admin_only=True, body={}),
     Row("GET", "/api/settings/space", admin_only=True),
+    # --- the model PigroCRM reads documents with, its key and its cap (REB-972): an admin's ---
+    Row("PUT", "/api/settings/ai-model", admin_only=True, body={}),
+    Row("GET", "/api/settings/ai-model", admin_only=True),
+    Row("POST", "/api/settings/ai-model/test", admin_only=True),
     # --- the space's profile and modules (spec 2026-11-09, B1): an admin's act ----------
     Row("PUT", "/api/settings/modules", admin_only=True, body={}),
     Row("PUT", "/api/settings/modules/profile", admin_only=True, body={"profile": "solo"}),
