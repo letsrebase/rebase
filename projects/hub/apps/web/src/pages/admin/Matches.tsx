@@ -19,7 +19,7 @@ import {
 } from '@/lib/format'
 import { formatMoney } from '@rebase/ui/format'
 import { keys } from '@/lib/query-keys'
-import { Empty, FilterField, Header, LoadMore, StateFilter } from './list-kit'
+import { Empty, FilterField, Header, LoadingState, LoadMore, StateFilter } from './list-kit'
 
 // The server's own default page size (`LIST_LIMIT_DEFAULT`, `rebase_core.matches`):
 // the same mechanism «Talenti» and «Aziende» paginate with, a page at a time through
@@ -268,7 +268,7 @@ export function AdminMatches() {
       {list.isError ? (
         <Empty>Non riesco a leggere la lista.</Empty>
       ) : list.isPending ? (
-        <Empty>Caricamento…</Empty>
+        <LoadingState />
       ) : items.length === 0 ? (
         <Empty>{activeFilters ? 'Nessun risultato per questi filtri.' : 'Nessun match qui.'}</Empty>
       ) : (

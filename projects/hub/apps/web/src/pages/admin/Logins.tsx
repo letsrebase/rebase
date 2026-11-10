@@ -1,12 +1,11 @@
 import { useState } from 'react'
 import { Input } from '@rebase/ui/input'
-import { Loader } from '@rebase/ui/loader'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { SEARCH_DEBOUNCE_MS, useCursorList, useDebounce } from '@/lib/adminList'
 import { admin, type LoginStats } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
-import { Empty, Figure, Header, LoadMore } from './list-kit'
+import { Empty, Figure, Header, LoadingState, LoadMore } from './list-kit'
 
 /** A login's own rows, `recent`, are what the page pages through. */
 const recentLogins = (page: LoginStats) => page.recent
@@ -49,12 +48,7 @@ export function AdminLogins() {
       {stats.isError ? (
         <Empty>Non riesco a leggere gli accessi.</Empty>
       ) : stats.isPending || !totals ? (
-        <Empty>
-          <span className="inline-flex items-center gap-2">
-            <Loader className="size-4" />
-            Caricamento…
-          </span>
-        </Empty>
+        <LoadingState />
       ) : (
         <>
           <dl className="grid gap-4 border-b px-6 py-5 sm:grid-cols-3">

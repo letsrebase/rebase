@@ -21,7 +21,7 @@ import { formatMoney } from '@rebase/ui/format'
 import { keys } from '@/lib/query-keys'
 import { AuditTrail } from '../AuditTrail'
 import { DuplicateOf } from '../DuplicateMarks'
-import { Empty, Header, IncompletePill, Row, StatePill, StatusEditor, VettedPill } from '../list-kit'
+import { Empty, Header, IncompletePill, LoadingState, Row, StatePill, StatusEditor, VettedPill } from '../list-kit'
 import { Notes } from '../Notes'
 import { FreelancerOverrideDialog, RecordLifecycle } from '../Override'
 import { AnonymousCard } from '../AnonymousCard'
@@ -107,7 +107,7 @@ export function AdminFreelancerDetail() {
   // leaves the CV rows out.
   const cvCard = useFreelancerCard(id).data
   if (row.isError) return <Empty>Scheda non trovata.</Empty>
-  if (row.isPending) return <Empty>Caricamento…</Empty>
+  if (row.isPending) return <LoadingState />
   const f = row.data
   const person = cvCard?.person ?? null
   const overrideFailure = failureMessage(override.error, 'Non riesco a salvare la scheda.')

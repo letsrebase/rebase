@@ -27,7 +27,7 @@ import {
 } from '@/lib/format'
 import { formatMoney } from '@rebase/ui/format'
 import { keys } from '@/lib/query-keys'
-import { Empty, Header, Row } from './list-kit'
+import { Empty, Header, LoadingState, Row } from './list-kit'
 
 /** Core's `SUMMARY_MAX_LENGTH` and `PROJECT_MAX_LENGTH` (the note's ceiling). */
 const SummaryMax = 1500
@@ -104,7 +104,7 @@ export function AdminTeamRequest() {
       </Empty>
     )
   }
-  if (row.isPending) return <Empty>Caricamento…</Empty>
+  if (row.isPending) return <LoadingState />
   return <RequestPage request={row.data} />
 }
 

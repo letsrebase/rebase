@@ -860,6 +860,7 @@ describe('«Match e contratti» as cards (REB-477)', () => {
       router.navigate({ to: '/admin/freelance/$id/contracts', params: { id: 'f1' }, state: { notice: sentence } }),
     )
 
+    await waitFor(() => expect(screen.queryByRole('status', { name: 'Caricamento…' })).not.toBeInTheDocument())
     expect(await screen.findByRole('status')).toHaveTextContent(sentence)
     // Taken off the history entry once shown, so a reload does not say it again.
     await waitFor(() => expect(router.state.location.state.notice).toBeUndefined())

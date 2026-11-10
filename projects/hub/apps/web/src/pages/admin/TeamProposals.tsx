@@ -8,7 +8,7 @@ import { admin, type TeamProposalListItem, type TeamProposalListMember, type Tea
 import { isFilterActive, pageItems, useCursorList } from '@/lib/adminList'
 import { TEAM_ORIGIN_LABELS, formatDateTime } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
-import { Empty, Header, LoadMore } from './list-kit'
+import { Empty, Header, LoadingState, LoadMore } from './list-kit'
 
 /** The two outcomes the API filters by (`LIST_OUTCOMES` in core's `team_builder.py`),
  *  and the words the pills say. */
@@ -173,7 +173,7 @@ export function AdminTeamProposals() {
       {list.isError ? (
         <Empty>Non riesco a leggere la lista.</Empty>
       ) : list.isPending ? (
-        <Empty>Caricamento…</Empty>
+        <LoadingState />
       ) : items.length === 0 ? (
         <Empty>{isFilterActive(search) ? 'Nessun risultato per questi filtri.' : 'Ancora nessuna proposta chiesta.'}</Empty>
       ) : (

@@ -23,7 +23,7 @@ import {
 import { formatDate } from '@/lib/format'
 import { DUPLICATES_KEY, mergeResultLine, pairCount, useDuplicates } from '@/lib/duplicates'
 import { keys } from '@/lib/query-keys'
-import { Empty, Header } from './list-kit'
+import { Empty, Header, LoadingState } from './list-kit'
 
 const SIGNAL_LABELS: Record<DuplicateSignal, string> = {
   linkedin: 'Stesso profilo LinkedIn',
@@ -67,7 +67,7 @@ export function AdminDuplicates() {
       {duplicates.isError ? (
         <Empty>Non riesco a leggere i duplicati.</Empty>
       ) : !list ? (
-        <Empty>Caricamento…</Empty>
+        <LoadingState />
       ) : pairCount(list) === 0 ? (
         <Empty>Nessun duplicato.</Empty>
       ) : (

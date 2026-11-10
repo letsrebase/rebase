@@ -10,7 +10,7 @@ import { SEARCH_DEBOUNCE_MS, failureMessage, pageItems, useCursorList, useDeboun
 import { ApiError, admin, type Admin } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
-import { Empty, Header, LoadMore } from './list-kit'
+import { Empty, Header, LoadingState, LoadMore } from './list-kit'
 
 interface Draft {
   email: string
@@ -173,7 +173,7 @@ export function AdminAdmins() {
       {list.isError ? (
         <Empty>Non riesco a leggere la lista.</Empty>
       ) : list.isPending ? (
-        <Empty>Caricamento…</Empty>
+        <LoadingState />
       ) : items.length === 0 ? (
         <Empty>{debouncedQuery ? 'Nessun risultato per questa ricerca.' : 'Nessun amministratore ancora.'}</Empty>
       ) : (

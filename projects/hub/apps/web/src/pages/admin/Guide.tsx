@@ -4,7 +4,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { admin } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
-import { Empty, Figure, Header } from './list-kit'
+import { Empty, Figure, Header, LoadingState } from './list-kit'
 
 /**
  * How the guide is doing (ORB-156): every download the members' route wrote down, the
@@ -20,7 +20,7 @@ export function AdminGuide() {
       {stats.isError ? (
         <Empty>Non riesco a leggere i download.</Empty>
       ) : stats.isPending ? (
-        <Empty>Caricamento…</Empty>
+        <LoadingState />
       ) : (
         <>
           <dl className="grid gap-4 border-b px-6 py-5 sm:grid-cols-3">

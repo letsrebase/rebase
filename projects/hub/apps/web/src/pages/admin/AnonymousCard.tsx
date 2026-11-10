@@ -13,6 +13,7 @@ import {
   type FreelancerCard,
   type Card,
 } from '@/lib/api'
+import { LoadingState } from './list-kit'
 import { useFreelancerCard } from '@/hooks/use-freelancer-card'
 import { bandLabel } from '@/lib/bands'
 import { REMOTE_LABELS, SENIORITY_LABELS, formatDateTime, formatExperience } from '@/lib/format'
@@ -327,7 +328,7 @@ export function AnonymousCard({ freelancerId, hasCv }: { freelancerId: string; h
   })
   let body: ReactNode
   if (read.isError) body = <p className="text-sm text-muted-foreground">Non riesco a leggere la scheda anonima.</p>
-  else if (read.isPending) body = <p className="text-sm text-muted-foreground">Caricamento…</p>
+  else if (read.isPending) body = <LoadingState label="Caricamento…" className="justify-start p-0" />
   else if (read.data.card) {
     body = (
       <div className="space-y-4">

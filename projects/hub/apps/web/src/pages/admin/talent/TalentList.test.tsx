@@ -6,6 +6,15 @@ import { CARD_TALENT, LEAD_TALENT, LINKED_PAIR, NAME_PAIR, answer, cellUnder, mo
 afterEach(resetMocks)
 
 describe('the Talenti list (REB-282/283)', () => {
+  it('shows the brand loader, not a bare «Caricamento…» line, while the list loads (REB-982)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise(() => {}))
+    mount('/admin/talent')
+
+    const status = await screen.findByRole('status', { name: 'Caricamento…' })
+    expect(status.querySelector('[data-slot="loader"]')).not.toBeNull()
+    expect(screen.queryByRole('table')).toBeNull()
+  })
+
   it('lists a card and a lead together, each with its own state and origin, and links to the right page', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(200, { total: 2, items: [CARD_TALENT, LEAD_TALENT], by_status: { new: 1, lead: 1 } }),

@@ -22,7 +22,7 @@ import { formatDateTime, formatSmallEuro } from '@/lib/format'
 import { formatMoney } from '@rebase/ui/format'
 import { noteSourceLabel, regenerationReason, STOP_REASON_LABELS } from '@/lib/notes'
 import { keys } from '@/lib/query-keys'
-import { Empty, Header } from './list-kit'
+import { Empty, Header, LoadingState } from './list-kit'
 
 const PROVIDER_LABELS: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', google: 'Google' }
 const TASK_LABELS: Record<string, string> = {
@@ -238,7 +238,7 @@ function StaleCards({ onStarted }: { onStarted: () => void }) {
       </p>
     )
   }
-  if (!stale.data) return <p className="px-6 py-4 text-sm text-muted-foreground">Caricamento…</p>
+  if (!stale.data) return <LoadingState className="justify-start py-4" />
   const data: AiStaleCards = stale.data
   // A start while a run or an unapplied batch is on is a 409: the API's sentence is shown by
   // the form's own error line below, so only a success is told here.
@@ -706,7 +706,7 @@ function Register({ watch }: { watch: StartWatch | null }) {
       </p>
     )
   }
-  if (!trail.data) return <p className="px-6 py-4 text-sm text-muted-foreground">Caricamento…</p>
+  if (!trail.data) return <LoadingState className="justify-start py-4" />
   if (trail.data.length === 0) return <Empty>Nessuna modifica registrata.</Empty>
   return (
     <ol className="divide-y border-t text-sm">

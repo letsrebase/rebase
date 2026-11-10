@@ -18,7 +18,7 @@ import { amountFilter } from '@/lib/amount'
 import { FREELANCER_LIST_STATES, REMOTE_LABELS, SENIORITY_LABELS } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
 import { DuplicatesLink } from '../DuplicateMarks'
-import { AmountFilter, Empty, FilterField, Header, LoadMore, StateFilter } from '../list-kit'
+import { AmountFilter, Empty, FilterField, Header, LoadingState, LoadMore, StateFilter } from '../list-kit'
 import { TalentRow } from './TalentRow'
 
 /** What `sort` can be, in the words the screen shows (the keys are the service's own). */
@@ -304,7 +304,7 @@ export function AdminTalents() {
       {list.isError ? (
         <Empty>Non riesco a leggere la lista.</Empty>
       ) : list.isPending ? (
-        <Empty>Caricamento…</Empty>
+        <LoadingState />
       ) : items.length === 0 ? (
         <Empty>{activeFilters ? 'Nessun risultato per questi filtri.' : 'Nessun profilo qui.'}</Empty>
       ) : (

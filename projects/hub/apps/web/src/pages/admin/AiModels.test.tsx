@@ -300,6 +300,7 @@ describe('the Modelli AI page (REB-833)', () => {
         }),
     })
     const section = within(await screen.findByRole('region', { name: 'Schede da aggiornare' }))
+    await waitFor(() => expect(section.queryByRole('status', { name: 'Caricamento…' })).not.toBeInTheDocument())
     const status = await section.findByRole('status')
     expect(status).toHaveTextContent(/Rigenerazione in corso col Batch API: 14 schede inviate il/)
     expect(status).toHaveTextContent(/3 applicate/)
@@ -334,6 +335,7 @@ describe('the Modelli AI page (REB-833)', () => {
         answer(200, { ...STALE, batch: { status: 'submitting', count: 1, done: 0, submitted_at: null } }),
     })
     const section = within(await screen.findByRole('region', { name: 'Schede da aggiornare' }))
+    await waitFor(() => expect(section.queryByRole('status', { name: 'Caricamento…' })).not.toBeInTheDocument())
     expect(await section.findByRole('status')).toHaveTextContent('1 scheda in invio, 0 applicate.')
   })
 

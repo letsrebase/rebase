@@ -11,7 +11,7 @@ import { admin, ApiError, type FreelancerDraft, type Remote } from '@/lib/api'
 import { AMOUNT_PROBLEM, acceptedAmount, sentAmount } from '@/lib/amount'
 import { REMOTE_LABELS, formatDate } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
-import { Empty, Header, Row, StatePill } from '../list-kit'
+import { Empty, Header, LoadingState, Row, StatePill } from '../list-kit'
 
 interface LeadDraft {
   first_name: string
@@ -96,7 +96,7 @@ export function AdminTalentLead() {
 
   if (read.error instanceof ApiError && read.error.status === 404) return <Empty>Lead non trovato.</Empty>
   if (read.isError) return <Empty>Non riesco a leggere questo lead.</Empty>
-  if (!lead) return <Empty>Caricamento…</Empty>
+  if (!lead) return <LoadingState />
   return (
     <>
       <Header title={[lead.first_name, lead.last_name].filter(Boolean).join(' ') || lead.email}>

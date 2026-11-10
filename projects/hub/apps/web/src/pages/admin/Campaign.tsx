@@ -17,7 +17,7 @@ import {
 } from '@/lib/campaigns'
 import { formatDateTime } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
-import { Empty, Figure, Header } from './list-kit'
+import { Empty, Figure, Header, LoadingState } from './list-kit'
 
 /** An action behind an inline second click, in place of a browser `confirm()`: the
  *  first click swaps the button for the question, the second one runs it. «Annulla»,
@@ -211,7 +211,7 @@ export function AdminCampaign() {
   })
 
   if (detail.isError) return <Empty>Campagna non trovata.</Empty>
-  if (detail.isPending) return <Empty>Caricamento…</Empty>
+  if (detail.isPending) return <LoadingState />
 
   const { campaign, counts, recipients } = detail.data
   const stall = stallLine(campaign)

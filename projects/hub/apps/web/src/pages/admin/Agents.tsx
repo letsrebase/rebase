@@ -13,7 +13,7 @@ import { admin, type AdminToken, type CreatedToken } from '@/lib/api'
 import { TOKEN_PLACEHOLDER, claudeCodeCommand, mcpEndpoint, mcpServersJson } from '@/lib/connect'
 import { formatDate } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
-import { Empty, Header, LoadMore } from './list-kit'
+import { Empty, Header, LoadingState, LoadMore } from './list-kit'
 
 const DEFAULT_NAME = 'Claude Code'
 
@@ -165,7 +165,7 @@ export function AdminAgents() {
           {list.isError ? (
             <Empty>Non riesco a leggere la lista.</Empty>
           ) : list.isPending ? (
-            <Empty>Caricamento…</Empty>
+            <LoadingState />
           ) : items.length === 0 ? (
             <Empty>{debouncedQuery ? 'Nessun risultato per questa ricerca.' : 'Nessun token ancora.'}</Empty>
           ) : (

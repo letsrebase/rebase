@@ -26,7 +26,7 @@ import {
 } from '@/lib/report'
 import { keys } from '@/lib/query-keys'
 import { isHttpUrl } from '@/lib/url'
-import { Header } from './list-kit'
+import { Header, LoadingState } from './list-kit'
 
 const ROUTE = '/signedIn/admin/matches/$id/report'
 const ALL_LABEL = "Tutto l'incarico"
@@ -249,7 +249,7 @@ export function AdminMatchReport() {
         {report.isError ? (
           <p className="text-sm text-muted-foreground">{failure(report.error)}</p>
         ) : report.isPending ? (
-          <p className="text-sm text-muted-foreground">Caricamento…</p>
+          <LoadingState label="Caricamento…" className="justify-start p-0" />
         ) : (
           <Report
             report={report.data}

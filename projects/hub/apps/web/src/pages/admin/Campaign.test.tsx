@@ -164,6 +164,7 @@ describe('a stopped send (REB-524)', () => {
     }
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(stopped))
     mount()
+    await screen.findByRole('heading', { name: 'Manca il CV' })
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Invio fermo: Resend rifiuta l’invio: controlla la chiave e il dominio del mittente, dal 26 settembre 2026 alle 09:31 (ora di Roma). Si riprova ogni minuto e riparte da solo appena è risolto.',
     )

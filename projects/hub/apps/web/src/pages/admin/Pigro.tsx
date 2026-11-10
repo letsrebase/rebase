@@ -9,7 +9,7 @@ import { ApiError, admin } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
 import { isHttpUrl } from '@/lib/url'
-import { Empty, Header, LoadMore } from './list-kit'
+import { Empty, Header, LoadingState, LoadMore } from './list-kit'
 
 /**
  * Which spaces of PigroCRM exist and whose they are (ORB-142). The list is the CRM's
@@ -50,7 +50,7 @@ export function AdminPigro() {
         // A 503 or a 502 arrives with its own sentence; anything else gets the generic one.
         <Empty>{failure && failure.status >= 500 ? failure.message : 'Non riesco a leggere il registro.'}</Empty>
       ) : list.isPending ? (
-        <Empty>Caricamento…</Empty>
+        <LoadingState />
       ) : items.length === 0 ? (
         <Empty>{debouncedQuery ? 'Nessun risultato per questa ricerca.' : 'Nessuna istanza ancora.'}</Empty>
       ) : (

@@ -9,7 +9,7 @@ import { amountFilter } from '@/lib/amount'
 import { COMPANY_STATES, TEAM_BUILDER_ORIGIN, formatDate } from '@/lib/format'
 import { formatMoney } from '@rebase/ui/format'
 import { keys } from '@/lib/query-keys'
-import { AmountFilter, Empty, FilterField, Header, LoadMore, StatePill, StateFilter, TeamBuilderPill } from '../list-kit'
+import { AmountFilter, Empty, FilterField, Header, LoadingState, LoadMore, StateFilter, StatePill, TeamBuilderPill } from '../list-kit'
 
 /** «Aziende»: every company request as a list. REB-286 adds the search box, the
  *  filter row and infinite scroll, all three carried in the URL through
@@ -121,7 +121,7 @@ export function AdminCompanies() {
       {list.isError ? (
         <Empty>Non riesco a leggere la lista.</Empty>
       ) : list.isPending ? (
-        <Empty>Caricamento…</Empty>
+        <LoadingState />
       ) : items.length === 0 ? (
         <Empty>{activeFilters ? 'Nessun risultato per questi filtri.' : 'Nessuna richiesta qui.'}</Empty>
       ) : (
