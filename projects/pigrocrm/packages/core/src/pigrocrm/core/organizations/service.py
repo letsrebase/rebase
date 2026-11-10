@@ -26,6 +26,8 @@ from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.organizations.repository import OrganizationRepository
 from pigrocrm.core.organizations.roles import (
     CUSTOMER_KINDS,
+    FREELANCER_KINDS,
+    HUB_FREELANCER_UNIQUE_INDEX,
     ORGANIZATION_ROLES,
     SUPPLIER_AREAS,
     SUPPLIER_KINDS,
@@ -205,6 +207,35 @@ def _check_roles_and_kinds(data: dict[str, Any], current: Organization | None) -
             "area e tipo di fornitura valgono solo per un fornitore estero",
             expected="foreign",
         )
+    if "freelancer" in after("roles") and after("supplier_kind") not in (None, *FREELANCER_KINDS):
+        raise ValidationFailed(
+            ENTITY,
+            "supplier_kind",
+            "un freelance e' un professionista, un forfettario o una prestazione occasionale",
+            expected=" | ".join(FREELANCER_KINDS),
+        )
+    hub_id = after("hub_freelancer_id")
+    if hub_id is not None:
+        if "freelancer" not in after("roles"):
+            raise ValidationFailed(
+                ENTITY,
+                "hub_freelancer_id",
+                "l'id dell'hub vale solo per chi ha il ruolo di freelance",
+                expected="freelancer",
+            )
+        stored = current.hub_freelancer_id if current is not None else None
+        if stored is not None and stored != hub_id:
+            raise ValidationFailed(
+                ENTITY,
+                "hub_freelancer_id",
+                "l'id dell'hub di un freelance non cambia: e' la sua identita'",
+            )
+    elif current is not None and current.hub_freelancer_id is not None:
+        raise ValidationFailed(
+            ENTITY,
+            "hub_freelancer_id",
+            "l'id dell'hub di un freelance non si toglie: e' la sua identita'",
+        )
 
 
 def _vat_key(country: str, vat_number: str | None) -> tuple[str, str] | None:
@@ -310,6 +341,8 @@ class OrganizationService:
             payload, payload.get("country") or "IT", customer_kind=payload.get("customer_kind")
         )
         _check_roles_and_kinds(payload, None)
+        if payload.get("hub_freelancer_id") is not None:
+            actor.require_admin("set_organization_hub_freelancer")
         self._check_vat_free(payload.get("country") or "IT", payload.get("vat_number"), None)
         payload["custom_fields"] = validate_custom_fields(
             ENTITY, self.fields.specs_for(ENTITY), payload.get("custom_fields") or {}
@@ -355,6 +388,12 @@ class OrganizationService:
         """What a database refusal of a write becomes: the sentence for the VAT number when
         it is the unique index that refused, the original error otherwise. `country` and
         `vat_number` are the ones the write attempted, and `excluding` the row it was for."""
+        if HUB_FREELANCER_UNIQUE_INDEX in str(exc.orig):
+            return Conflict(
+                ENTITY,
+                "esiste gia' un'anagrafica con questo id dell'hub: e' lo stesso freelance",
+                field="hub_freelancer_id",
+            )
         if VAT_UNIQUE_INDEX not in str(exc.orig) or not vat_number:
             return exc
         found = self.repo.find_by_vat(country, vat_number, excluding=excluding)
@@ -567,6 +606,8 @@ class OrganizationService:
             if key in changes:
                 changes[key] = fiscal[key]
         _check_roles_and_kinds(changes, customer)
+        if changes.get("hub_freelancer_id") not in (None, customer.hub_freelancer_id):
+            actor.require_admin("set_organization_hub_freelancer")
         # Only when the key the row is found by changes. A form resends the number and the
         # country it loaded, and a row of a legacy pair (two rows, one number) must stay
         # editable until a person resolves the pair.

@@ -85,6 +85,7 @@ POLICIED = {
     "due_item_settlements",
     "staff_members",
     "payroll_settings",
+    "engagements",
     "contracts",
     "documents",
     "invoices",
@@ -1277,6 +1278,7 @@ FAST_PATH = {
     "due_item_settlements",
     "staff_members",
     "payroll_settings",
+    "engagements",
     "time_entries",
     "time_timers",
     "invoice_lines",
@@ -1506,4 +1508,76 @@ def test_a_scoped_member_makes_and_reads_the_proposals_of_the_items_they_may_see
     finally:
         with factory() as session:
             session.execute(delete(Proposal).where(Proposal.excerpt.like(f"{_PREFIX} %")))
+            session.commit()
+
+
+def test_an_admin_scoped_away_from_the_client_reads_an_engagement_without_what_is_the_clients(
+    world: World,
+) -> None:
+    """REB-976: a freelancer shared across the legal entities, an engagement whose client sits
+    under the other one. As the application role, scoped to the studio alone, the days and the
+    state are readable and the role, fee and client links are not; with both in scope nothing
+    is left out."""
+    import datetime as dt
+    from decimal import Decimal
+
+    from pigrocrm.core.collaborators.models import Engagement
+    from pigrocrm.core.collaborators.service import EngagementService
+
+    with session_factory(world.engine)() as session:
+        shared = Organization(
+            legal_name=f"{_PREFIX} freelance",
+            country="IT",
+            custom_fields={},
+            legal_entity_id=None,
+            roles=["freelancer"],
+        )
+        client = Organization(
+            legal_name=f"{_PREFIX} cliente estero",
+            country="GB",
+            custom_fields={},
+            legal_entity_id=world.foreign,
+        )
+        session.add_all([shared, client])
+        session.flush()
+        engagement = Engagement(
+            freelancer_id=shared.id,
+            client_organization_id=client.id,
+            role="Backend developer",
+            starts_on=dt.date(2026, 11, 2),
+            days_per_week=Decimal("3"),
+            fee=Decimal("450.00"),
+            fee_unit="day",
+            payment_rule="fixed_term",
+            payment_days=30,
+            state="active",
+        )
+        session.add(engagement)
+        session.commit()
+        ids = (engagement.id, shared.id, client.id)
+
+    try:
+        for legal_entities, hidden in (
+            ((world.studio,), True),
+            ((world.studio, world.foreign), False),
+        ):
+            session = _scoped(world, *legal_entities)
+            try:
+                admin = Actor(
+                    id=world.user_id, type="user", role="admin", legal_entities=legal_entities
+                )
+                read = EngagementService(session).get(ids[0], admin)
+                assert read.redacted is hidden
+                assert (read.role is None, read.fee is None) == (hidden, hidden)
+                assert (read.client_organization_id is None) == hidden
+                assert read.days_per_week == Decimal("3") and read.state == "active"
+            finally:
+                session.rollback()
+                session.close()
+    finally:
+        with session_factory(world.engine)() as session:
+            session.execute(text("DELETE FROM engagements WHERE id = :i"), {"i": ids[0]})
+            session.execute(
+                text("DELETE FROM organizations WHERE id IN (:a, :b)"), {"a": ids[1], "b": ids[2]}
+            )
             session.commit()

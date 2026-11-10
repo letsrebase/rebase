@@ -168,7 +168,9 @@ CORE_TOOLS = frozenset(
 async def test_every_registered_tool_is_in_a_module_or_declared_core(
     mcp_session: Session, tmp_path: Path
 ) -> None:
-    names = await _names(_server(mcp_session, tmp_path, _settings(**OPEN), full_access=True))
+    # `collaborators` is off until a space switches it on, and its tools only exist while it is.
+    settings = _settings(**OPEN, module_collaborators=True)
+    names = await _names(_server(mcp_session, tmp_path, settings, full_access=True))
 
     unclassified = names - set(TOOL_MODULES) - CORE_TOOLS
     assert not unclassified, (
@@ -355,7 +357,8 @@ async def test_skip_space_onboarding_marks_it_skipped_and_is_a_no_op_once_there_
 
     assert before["onboarding"] == "pending"
     assert skipped["onboarding"] == "skipped" and skipped["profile"] is None
-    assert all(m["enabled"] for m in skipped["modules"])
+    # Every module but the one whose default is an onboarding answer: that one reads as off.
+    assert {m["key"] for m in skipped["modules"] if not m["enabled"]} == {"collaborators"}
     assert after["onboarding"] == "done" and after["profile"] == "company"
 
 

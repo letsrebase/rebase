@@ -21,8 +21,19 @@ def _settings(**values: object) -> Settings:
     return Settings(_env_file=None, **values)  # type: ignore[call-arg]
 
 
-def test_with_no_profile_and_no_row_every_module_is_on() -> None:
-    assert enabled_modules(_settings()) == set(MODULE_KEYS)
+def test_with_no_profile_and_no_row_every_module_is_on_but_the_ones_the_onboarding_asks() -> None:
+    assert enabled_modules(_settings()) == set(MODULE_KEYS) - {"collaborators"}
+
+
+def test_collaborators_is_off_by_default_and_on_only_by_its_own_row() -> None:
+    """REB-976: a module whose default is an onboarding answer reads as off when the answer is
+    not given, whether there is no profile at all or a profile that never asked."""
+    for profile in (None, "solo", "company"):
+        assert "collaborators" not in enabled_modules(_settings(space_profile=profile))
+        assert "collaborators" in enabled_modules(
+            _settings(space_profile=profile, module_collaborators=True)
+        )
+    assert "collaborators" not in enabled_modules(_settings(module_collaborators=False))
 
 
 @pytest.mark.parametrize(

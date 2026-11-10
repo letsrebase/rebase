@@ -88,6 +88,7 @@ NOT_FORWARDED: dict[str, str] = {
     "module_costs": "decided per space by `set_space_modules`, never by the environment",
     "module_taxes": "decided per space by `set_space_modules`, never by the environment",
     "module_staff": "decided per space by `set_space_modules`, never by the environment",
+    "module_collaborators": "decided per space by `set_space_modules`, never by the environment",
     # Computed per space by `space_base_settings` while the root lends its Google client
     # (REB-394), empty for the root: never an installation's choice.
     "google_callback_base_url": "calcolato da space_base_settings, mai dall'ambiente",

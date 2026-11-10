@@ -49,6 +49,7 @@ const BASE_CUSTOMER: Organization = {
   supplier_supplies: null,
   customer_kind: null,
   is_withholding_agent: false,
+  hub_freelancer_id: null,
   custom_fields: {},
   created_at: '2026-08-06T00:00:00Z',
   updated_at: '2026-08-06T00:00:00Z',

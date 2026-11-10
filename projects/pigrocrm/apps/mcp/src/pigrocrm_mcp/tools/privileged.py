@@ -92,8 +92,16 @@ from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.provenance import marked_items
+from pigrocrm_mcp.tools import collaborators
 from pigrocrm_mcp.tools.changes import refuse_empty, refuse_nothing_given, report
-from pigrocrm_mcp.tools.params import BoundedLimit, StaffFields, parse_legal_entity_id
+from pigrocrm_mcp.tools.params import (
+    BoundedLimit,
+    DaysPerWeekArg,
+    IsoDateStr,
+    MoneyArg,
+    StaffFields,
+    parse_legal_entity_id,
+)
 
 
 def _day(value: str | None) -> date | None:
@@ -631,6 +639,96 @@ def register(
         return (
             StaffService(context.session).list_staff(query, context.actor).model_dump(mode="json")
         )
+
+    # ---- engagements with freelancers (REB-976) -------------------------------------
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def create_engagement(
+        freelancer_id: str,
+        role: str,
+        starts_on: str,
+        fee: MoneyArg,
+        fee_unit: str,
+        payment_rule: str,
+        days_per_week: DaysPerWeekArg,
+        ends_on: IsoDateStr = None,
+        hub_match_id: str | None = None,
+        client_organization_id: str | None = None,
+        deal_id: str | None = None,
+        contract_id: str | None = None,
+        expected_days: MoneyArg | None = None,
+        letter_type: str | None = None,
+        payment_days: int | None = None,
+        payment_end_of_month: bool = False,
+        collection_days: int | None = None,
+    ) -> dict[str, Any]:
+        """Create a draft engagement of a freelancer (an organization with the role `freelancer`).
+        `fee_unit` `day`, `hour` or `flat`. `payment_rule` `fixed_term`: `payment_days` from the
+        invoice, 1 to 60 (30 with `payment_end_of_month`); `on_collection`: `collection_days`
+        after the client pays, 1 to 60, and no `payment_days`. `warnings` says when it overlaps
+        another engagement of the freelancer. Needs a full-access admin token.
+        """
+        return collaborators.create(
+            context,
+            freelancer_id=freelancer_id,
+            role=role,
+            starts_on=starts_on,
+            fee=fee,
+            fee_unit=fee_unit,
+            payment_rule=payment_rule,
+            days_per_week=days_per_week,
+            ends_on=ends_on,
+            hub_match_id=hub_match_id,
+            client_organization_id=client_organization_id,
+            deal_id=deal_id,
+            contract_id=contract_id,
+            expected_days=expected_days,
+            letter_type=letter_type,
+            payment_days=payment_days,
+            payment_end_of_month=payment_end_of_month,
+            collection_days=collection_days,
+        )
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def cancel_engagement(engagement_id: str) -> dict[str, Any]:
+        """Cancel a draft or an engagement out for signature. Needs a full-access admin token."""
+        return collaborators.cancel(context, engagement_id)
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def close_engagement(engagement_id: str, ended_on: IsoDateStr = None) -> dict[str, Any]:
+        """Conclude an active engagement; it ends on `ended_on` (today if omitted) when it would
+        run past it. Needs a full-access admin token.
+        """
+        return collaborators.close(context, engagement_id, ended_on)
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def set_freelancer_tax_data(
+        freelancer_id: str,
+        tax_code: str | None = None,
+        vat_number: str | None = None,
+        domicile: str | None = None,
+        certified_email: str | None = None,
+        fiscal_kind: str | None = None,
+    ) -> dict[str, Any]:
+        """Set the tax data the letters print on a freelancer; omitted fields stay. `fiscal_kind`:
+        professional, flat_rate or occasional. Needs a full-access admin token.
+        """
+        data = {
+            key: value
+            for key, value in {
+                "tax_code": tax_code,
+                "vat_number": vat_number,
+                "domicile": domicile,
+                "certified_email": certified_email,
+                "fiscal_kind": fiscal_kind,
+            }.items()
+            if value is not None
+        }
+        return collaborators.set_tax_data(context, freelancer_id, data)
 
     # ---- Gmail ---------------------------------------------------------------------
 

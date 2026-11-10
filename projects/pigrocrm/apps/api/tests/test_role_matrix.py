@@ -548,6 +548,32 @@ ROWS: list[Row] = [
         body={"amount": "10.00", "settled_on": "2026-01-05"},
     ),
     Row("POST", "/api/due-items/settlements/{settlement_id}/reverse", body={}),
+    # --- engagements with freelancers (REB-976): every one is `require_admin` ------------------
+    Row(
+        "POST",
+        "/api/engagements",
+        admin_only=True,
+        body={
+            "freelancer_id": "__FAKE__",
+            "role": "matrice",
+            "starts_on": "2026-01-05",
+            "days_per_week": "1",
+            "fee": "1",
+            "fee_unit": "day",
+            "payment_rule": "fixed_term",
+            "payment_days": 30,
+        },
+    ),
+    Row("PATCH", "/api/engagements/{engagement_id}", admin_only=True, body={"role": "matrice"}),
+    Row(
+        "POST",
+        "/api/engagements/{engagement_id}/state",
+        admin_only=True,
+        body={"state": "cancelled"},
+    ),
+    Row(
+        "PUT", "/api/freelancers/{freelancer_id}/tax-data", admin_only=True, body={"tax_code": "X"}
+    ),
     # --- invoices, fiscal half: `require_admin` -- every one of these consumes or
     # rewrites the gap-free register (spec 2026-08-20 slice 3 §4; the AGENT_FORBIDDEN
     # list in core/actor.py names the same five for agents).
@@ -888,7 +914,8 @@ class Matrix:
             self.app.dependency_overrides[get_settings] = lambda: BASE_SETTINGS
 
 
-BASE_SETTINGS = Settings(_env_file=None)  # type: ignore[call-arg]
+# `collaborators` is off until a space switches it on; its routes answer 404 before any role gate.
+BASE_SETTINGS = Settings(_env_file=None, module_collaborators=True)  # type: ignore[call-arg]
 # The same shape `test_gmail_router._configured` uses -- a copy of the base, never a
 # fresh `Settings(...)`, because `jwt_secret` is what the login cookies were signed
 # with. The Google fields are what `gmail_configured` asks for (config.py:273).
@@ -1114,6 +1141,9 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
         ("PUT", "/api/legal-entities/{legal_entity_id}/fiscal-profile"),
         ("PUT", "/api/contracts/{contract_id}/renewal-assumption"),
         ("PUT", "/api/invoices/{invoice_id}/lines"),
+        # REB-976: updating a draft engagement is the administrator's token's; the other three
+        # engagement writes need `full_access`.
+        ("PATCH", "/api/engagements/{engagement_id}"),
     }
 )
 

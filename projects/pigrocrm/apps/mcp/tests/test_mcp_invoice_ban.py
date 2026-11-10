@@ -148,6 +148,14 @@ FORBIDDEN = (
     "list_drive_files",
     "read_drive_file",
     "import_drive_file",
+    # REB-976: engagements with freelancers (collaborators design § 6). Creating one draws a
+    # letter number a cancellation never gives back, cancelling or closing one ends a legal
+    # document, and the tax data is personal data printed on contracts. They also need the
+    # `collaborators` module on, which `TOOL_MODULES` prunes.
+    "create_engagement",
+    "cancel_engagement",
+    "close_engagement",
+    "set_freelancer_tax_data",
 )
 
 # The other half of `FULL_ACCESS_ACTIONS`: operations that are banned to an agent
@@ -183,6 +191,10 @@ FORBIDDEN = (
 # ban that silently stopped matching.
 REST_ONLY_FORBIDDEN = frozenset(
     {
+        # REB-976: sending an engagement for signature. Its tool arrives with the signature card
+        # (design § 6, `send_engagement_for_signature`), which moves the name to `FORBIDDEN`; until
+        # then only the REST route reaches it, and a token without `full_access` is refused there.
+        "send_engagement_for_signature",
         "set_drive_roots",
         "set_drive_storage_folder",
         "connect_drive",
@@ -233,6 +245,9 @@ FULL_ACCESS_BY_THE_RECORD: dict[str, tuple[str, ...]] = {
     # the legal entities, which shows a company to people who could not see it: an
     # administrator's token with `full_access`, nothing less, as in the invoice import.
     "share_organization": ("update_organization",),
+    # REB-976: the hub's id of a freelancer is their identity, set through the same tool by an
+    # administrator's token with `full_access`.
+    "set_organization_hub_freelancer": ("update_organization",),
 }
 
 # The tools above that exist only on an installation where Google is configured as well:
@@ -788,7 +803,12 @@ async def test_they_are_registered_exactly_when_the_installation_opted_in(
             lambda: mcp_session,
             lambda: actor,
             LocalFileStorage(str(tmp_path)),
-            Settings(_env_file=None, mcp_full_access=full_access, **google),  # type: ignore[call-arg]
+            Settings(  # type: ignore[call-arg]
+                _env_file=None,
+                mcp_full_access=full_access,
+                module_collaborators=True,
+                **google,
+            ),
         )
         return {tool.name for tool in await server.list_tools()}
 

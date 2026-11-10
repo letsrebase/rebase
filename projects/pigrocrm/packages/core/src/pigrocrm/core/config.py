@@ -200,6 +200,7 @@ class Settings(BaseSettings):
     module_costs: bool | None = None
     module_taxes: bool | None = None
     module_staff: bool | None = None
+    module_collaborators: bool | None = None
 
     # The emitter's timezone, and the only one. Every `Date` column in the product is a
     # calendar day in *this* zone: `invoices.issue_date` (slice 3 §6.2),

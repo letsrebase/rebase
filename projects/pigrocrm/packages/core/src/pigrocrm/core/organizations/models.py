@@ -10,6 +10,7 @@ from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMi
 from pigrocrm.core.legal_entities.models import default_legal_entity_id
 from pigrocrm.core.organizations.roles import (
     CUSTOMER_KINDS,
+    HUB_FREELANCER_UNIQUE_INDEX,
     ORGANIZATION_ROLES,
     SUPPLIER_AREAS,
     SUPPLIER_KINDS,
@@ -106,6 +107,15 @@ class Organization(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             unique=True,
             postgresql_where=text(VAT_INDEX_PREDICATE),
         ),
+        # The hub's freelancer id is the freelancer's identity (collaborators design § 1): one
+        # organization per id, whatever the email or the name says. Not partial: a row that
+        # was archived still owns its id, so the hub's door restores it and never mints a
+        # second one.
+        Index(HUB_FREELANCER_UNIQUE_INDEX, "hub_freelancer_id", unique=True),
+        CheckConstraint(
+            "hub_freelancer_id IS NULL OR 'freelancer' = ANY(roles)",
+            name="ck_organizations_hub_freelancer_role",
+        ),
         CheckConstraint(
             "cardinality(roles) >= 1 AND roles <@ ARRAY["
             + ", ".join(repr(role) for role in ORGANIZATION_ROLES)
@@ -162,6 +172,10 @@ class Organization(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         default=lambda: ["customer"],
         server_default=text("ARRAY['customer']::varchar[]"),
     )
+    # The id of this person's card in the hub, set once by an admin (or by the hub's door) on an
+    # organization that has the `freelancer` role. `None` for every other organization and for a
+    # freelancer who was never in the hub.
+    hub_freelancer_id: Mapped[UUID | None] = mapped_column(default=None)
     # Wide enough for a foreign number (`NL123456789B01`); the eleven digits of an Italian
     # one are checked by the service, not by the column.
     vat_number: Mapped[str | None] = mapped_column(

@@ -109,6 +109,13 @@ _READS: dict[Method, str] = {
     ("AnalyticsService", "economic_overview"): "a figure; nothing is written for the person",
     ("AnalyticsService", "get_fiscal_estimate"): "a figure computed from the profile",
     ("AutomationConfigService", "describe_automations"): "reads the rules",
+    ("EngagementService", "get"): "reads an engagement; an administrator's read",
+    ("EngagementService", "list"): "reads engagements; an administrator's read",
+    ("FreelancerService", "availability"): "a computed answer; nothing is written",
+    (
+        "FreelancerService",
+        "set_tax_data",
+    ): "writes through `OrganizationService.update`, which records",
     ("DueItemService", "get"): "reads an item; the role check only gates the fiscal kinds",
     ("DueItemService", "list"): "reads items; the role check only gates the fiscal kinds",
     ("GmailAttachmentService", "attachment_text"): "reads an attachment and stores nothing",

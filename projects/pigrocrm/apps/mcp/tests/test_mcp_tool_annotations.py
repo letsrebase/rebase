@@ -66,7 +66,9 @@ SURFACES: dict[str, dict[str, Any]] = {
 # REB-984: 101.7 KB, up from 100.2 KB, for `set_inbox_item_kind`, `discard_inbox_item` and
 # `mark_inbox_item_duplicate` (every token's, 1.4 KB): the three acts design § 6 classifies as a
 # collaborator's an agent may do, measured at 101,612 bytes. The kinds are listed once.
-DEFAULT_BUDGET_BYTES = 101_700
+# REB-976: 101.75 KB, up from 101.7 KB: `hub_freelancer_id` in `update_organization`'s `changes`
+# schema, +82 bytes. The `collaborators` tools are in neither list: the module starts off.
+DEFAULT_BUDGET_BYTES = 101_750
 # REB-957: 111.9 KB, up from 111.6 KB, for `skip_space_onboarding` (a full-access
 # administrator's), measured at 111,786 bytes; `describe_space`'s `onboarding` fits the default.
 # REB-977: 116.2 KB, up from 113.4 KB, for `create_staff_member`, `update_staff_member`,
@@ -74,7 +76,8 @@ DEFAULT_BUDGET_BYTES = 101_700
 # fields, and `update_staff_member` lists them by name and type, which is how an agent learns them.
 # REB-972: 117.0 KB, up from 116.2 KB, the same tool, measured at 116,956 bytes.
 # REB-984: 118.5 KB, up from 117.0 KB, the same three tools, measured at 118,400 bytes.
-FULL_ACCESS_BUDGET_BYTES = 118_500
+# REB-976: 118.6 KB, up from 118.5 KB, the same field.
+FULL_ACCESS_BUDGET_BYTES = 118_600
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

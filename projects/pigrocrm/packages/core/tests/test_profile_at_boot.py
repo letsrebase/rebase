@@ -28,8 +28,9 @@ from pigrocrm.core.tenants.database import tenant_database_name, tenant_database
 from pigrocrm.core.tenants.service import migrate_to_head
 
 ALL_ON = {f"module_{key}": "true" for key in ("deals", "contracts", "time", "costs", "taxes")}
-# `staff` is on «when the onboarding says so» and nothing asks yet, so a profile reads it as off.
-STAFF_OFF = {"module_staff": "false"}
+# `staff` and `collaborators` are on «when the onboarding says so» and nothing asks yet, so a
+# profile reads them as off.
+STAFF_OFF = {"module_staff": "false", "module_collaborators": "false"}
 SOLO = {
     **STAFF_OFF,
     "space_profile": "solo",

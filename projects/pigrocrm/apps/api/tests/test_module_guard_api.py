@@ -77,8 +77,11 @@ def test_a_space_with_no_profile_has_every_module_on(logged_in: TestClient) -> N
         "costs",
         "taxes",
         "staff",
+        "collaborators",
     ]
-    assert all(m["enabled"] and m["stored"] is None for m in body["modules"])
+    assert all(m["stored"] is None for m in body["modules"])
+    # `collaborators` answers an onboarding question: it reads as off until somebody says so.
+    assert {m["key"] for m in body["modules"] if not m["enabled"]} == {"collaborators"}
 
 
 def test_every_member_reads_the_modules(
@@ -331,7 +334,8 @@ def test_the_profile_answers_the_diff_and_applies_nothing_without_confirmation(
     assert next(c for c in body["changes"] if c["module"] == "deals")["records"] == 1
     after = logged_in.get("/api/settings/modules").json()
     assert after["profile"] is None
-    assert all(m["enabled"] and m["stored"] is None for m in after["modules"])
+    assert all(m["enabled"] for m in after["modules"] if m["key"] != "collaborators")
+    assert all(m["stored"] is None for m in after["modules"])
 
 
 def test_confirming_a_profile_writes_a_row_for_every_module_and_touches_no_record(
@@ -353,6 +357,7 @@ def test_confirming_a_profile_writes_a_row_for_every_module_and_touches_no_recor
         "costs": True,
         "taxes": True,
         "staff": False,
+        "collaborators": False,
     }
     assert {k: m["enabled"] for k, m in modules.items()} == {
         "deals": False,
@@ -361,6 +366,7 @@ def test_confirming_a_profile_writes_a_row_for_every_module_and_touches_no_recor
         "costs": True,
         "taxes": True,
         "staff": False,
+        "collaborators": False,
     }
     # Switched on again by the admin, the deal is exactly as it was.
     assert _switch(logged_in, on=["deals"]).status_code == 200
@@ -422,7 +428,8 @@ def test_the_onboarding_is_pending_until_skipped_and_done_once_a_profile_is_chos
     body = skipped.json()
     assert body["onboarding"] == "skipped" and body["profile"] is None
     # Skipping chooses nothing: every module stays on and no switch is written.
-    assert all(m["enabled"] and m["stored"] is None for m in body["modules"])
+    assert all(m["enabled"] for m in body["modules"] if m["key"] != "collaborators")
+    assert all(m["stored"] is None for m in body["modules"])
     assert logged_in.get("/api/settings/modules").json()["onboarding"] == "skipped"
 
     chosen = logged_in.put(

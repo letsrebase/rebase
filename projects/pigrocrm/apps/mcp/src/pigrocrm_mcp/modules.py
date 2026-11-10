@@ -110,6 +110,15 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "update_staff_member": ("staff",),
     "get_staff_member": ("staff",),
     "list_staff": ("staff",),
+    # collaborators: engagements with freelancers and their availability.
+    "create_engagement": ("collaborators",),
+    "update_engagement": ("collaborators",),
+    "get_engagement": ("collaborators",),
+    "list_engagements": ("collaborators",),
+    "cancel_engagement": ("collaborators",),
+    "close_engagement": ("collaborators",),
+    "get_freelancer_availability": ("collaborators",),
+    "set_freelancer_tax_data": ("collaborators",),
     # Across modules: all of them, or the tool is not there.
     "convert_deal_to_contract": ("deals", "contracts"),
     "preview_deal_contract": ("deals", "contracts"),

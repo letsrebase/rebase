@@ -24,6 +24,7 @@ from uuid import UUID
 
 from pydantic import WithJsonSchema
 
+from pigrocrm.core.collaborators.schemas import EngagementUpdate
 from pigrocrm.core.contract_expenses.schemas import ContractExpenseUpdate
 from pigrocrm.core.contracts.schemas import ClauseNoteUpdate, ContractUpdate, RateCardUpdate
 from pigrocrm.core.deals.schemas import DealUpdate, DealValueLineIn
@@ -119,6 +120,13 @@ ContractExpenseChanges = Annotated[
 TimeEntryChanges = Annotated[dict[str, Any], WithJsonSchema(TimeEntryUpdate.model_json_schema())]
 CostChanges = Annotated[dict[str, Any], WithJsonSchema(CostUpdate.model_json_schema())]
 TaskChanges = Annotated[dict[str, Any], WithJsonSchema(TaskUpdate.model_json_schema())]
+EngagementChanges = Annotated[
+    dict[str, Any], WithJsonSchema(self_contained(EngagementUpdate.model_json_schema()))
+]
+# From half a day to five a week, in steps of half a day.
+DaysPerWeekArg = Annotated[
+    float | str, WithJsonSchema({"type": "number", "minimum": 0.5, "maximum": 5, "multipleOf": 0.5})
+]
 
 
 def _compact(node: Any) -> Any:

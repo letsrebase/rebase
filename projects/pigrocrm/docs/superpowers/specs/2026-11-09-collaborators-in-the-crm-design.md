@@ -76,6 +76,8 @@ An engagement is the CRM's name for the hub's match. It holds:
 - the letter type, the **payment rule** with its fields `payment_rule` and `collection_days`
   (§ 4), and the state (`draft`, `awaiting_signature`, `active`, `concluded`, `cancelled`, the
   hub's own names).
+  An `active` engagement can still be cancelled while its start date has not come (a signed
+  letter for work that never began); from the first day it is closed, never cancelled.
 
 **Identity across the move.** An imported engagement keeps the hub match UUID as its id, and an
 imported document keeps its hub document id. The match id is already the registry's

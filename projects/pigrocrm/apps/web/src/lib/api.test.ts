@@ -553,6 +553,7 @@ describe('the typed client', () => {
       payment_end_of_month: false,
       supplier_payment_end_of_month: false,
       is_withholding_agent: false,
+      hub_freelancer_id: null,
       custom_fields: {},
     }
     await unwrap(api.POST('/api/organizations', { baseUrl: BASE, body }))

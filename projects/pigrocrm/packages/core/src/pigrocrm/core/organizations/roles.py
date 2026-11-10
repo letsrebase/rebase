@@ -28,6 +28,14 @@ SUPPLIER_AREAS: tuple[str, ...] = get_args(SupplierArea)
 SupplierSupplies = Literal["goods", "services"]
 SUPPLIER_SUPPLIES: tuple[str, ...] = get_args(SupplierSupplies)
 
+# The fiscal kinds a freelancer can have (collaborators design § 1): the same words as the
+# supplier kinds, minus the two that are not a person working for us (`company`, `foreign`).
+# The kind decides the letter type, the withholding and the net, so an organization with the
+# role says one of these or nothing yet (an imported freelancer is classified by an admin).
+FREELANCER_KINDS: tuple[str, ...] = ("professional", "flat_rate", "occasional")
+
+HUB_FREELANCER_UNIQUE_INDEX = "uq_organizations_hub_freelancer_id"
+
 CustomerKind = Literal["business", "consumer", "public_body"]
 CUSTOMER_KINDS: tuple[str, ...] = get_args(CustomerKind)
 
