@@ -23,7 +23,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "posthog-js": "1.438.24"
+    "posthog-js": "1.444.4"
   },
   "devDependencies": {
     "@eslint/js": "catalog:",
