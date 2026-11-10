@@ -121,6 +121,12 @@ class PassReport:
     payroll_failed: int = 0
     # The class name of each failure, never a message: a message can quote a figure.
     payroll_failures: tuple[str, ...] = ()
+    # The IVA settlements (REB-1021): legal entities settled, the periods left as they were
+    # because a payment froze their due item, and the class name of each entity that failed.
+    iva_settled: int = 0
+    iva_frozen: tuple[str, ...] = ()
+    iva_failed: int = 0
+    iva_failures: tuple[str, ...] = ()
 
     @property
     def open(self) -> int:
@@ -184,12 +190,55 @@ class AutomationPass:
         failed: tuple[str, ...] = ()
         if "staff" in modules_on:
             refreshed, failed = self._roll_payroll(dry_run=dry_run)
+        iva_settled = 0
+        iva_frozen: tuple[str, ...] = ()
+        iva_failed: tuple[str, ...] = ()
+        if "purchases" in modules_on:
+            iva_settled, iva_frozen, iva_failed = self._settle_iva(day, dry_run=dry_run)
         return PassReport(
             rules=rules,
             payroll_refreshed=refreshed,
             payroll_failed=len(failed),
             payroll_failures=failed,
+            iva_settled=iva_settled,
+            iva_frozen=iva_frozen,
+            iva_failed=len(iva_failed),
+            iva_failures=iva_failed,
         )
+
+    def _settle_iva(
+        self, day: date, *, dry_run: bool
+    ) -> tuple[int, tuple[str, ...], tuple[str, ...]]:
+        """Settles the elapsed IVA periods of every legal entity whose pack has a periodic IVA
+        (REB-1021): the current year's, and the previous year's until the annual return's date.
+        Idempotent, so a second pass the same day changes nothing. Each legal entity is its own
+        savepoint and its own commit, so one that fails is counted by class name and the rest
+        go on; a period whose due item already has a payment is reported, not raised."""
+        from pigrocrm.core.fiscal.iva_settlement import IvaSettlementService
+        from pigrocrm.core.fiscal.models import FiscalProfile
+        from pigrocrm.core.fiscal.pack import resolve_pack
+
+        entities = [
+            profile.legal_entity_id
+            for profile in self.session.scalars(select(FiscalProfile))
+            if resolve_pack(profile.pack_id, profile.pack_version).has_periodic_iva
+        ]
+        settled = 0
+        frozen: list[str] = []
+        failed: list[str] = []
+        for entity in entities:
+            service = IvaSettlementService(self.session)
+            try:
+                with self.session.begin_nested():
+                    done, left = service.settle_elapsed_periods(entity, day)
+            except Exception as exc:  # noqa: BLE001 - counted and reported, the pass goes on
+                failed.append(type(exc).__name__)
+                continue
+            settled += int(done)
+            frozen.extend(left)
+            if not dry_run:
+                self.session.commit()
+        return settled, tuple(frozen), tuple(failed)
 
     def _roll_payroll(self, *, dry_run: bool) -> tuple[int, tuple[str, ...]]:
         """Rolls the payroll forecast window of every legal entity that has staff (REB-1008):

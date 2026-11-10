@@ -7,7 +7,7 @@ without the row it came from still existing in its original shape.
 """
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal, get_args
 from uuid import UUID
@@ -28,8 +28,9 @@ from pigrocrm.core.validation import SafeStr
 # the schema instead of reaching `resolve_pack`'s `KeyError` at the first emission.
 PackId = Literal["it-flat-rate", "it-standard", "it-company", "non-it"]
 InpsCategory = Literal["gestione_separata", "artigiani_commercianti"]
+IvaFrequency = Literal["monthly", "quarterly"]
 # The profile keys a save that does not name them leaves as they are (`stored_fields`).
-KEPT_WHEN_OMITTED = ("inps_category", "isa")
+KEPT_WHEN_OMITTED = ("inps_category", "isa", "iva_frequency")
 assert set(get_args(PackId)) == {  # noqa: S101
     PACK_IT_FLAT_RATE,
     PACK_IT_STANDARD,
@@ -269,6 +270,9 @@ class FiscalProfileUpsert(BaseModel):
     # 50/50 or 40/60 income tax advances (A5, verified).
     inps_category: InpsCategory | None = None
     isa: bool | None = None
+    # REB-1021: how often the entity settles its IVA. Kept as it is when a save leaves it out,
+    # like the two above; only a pack with a periodic IVA may say `quarterly`.
+    iva_frequency: IvaFrequency = "monthly"
     # The version check of REB-622 (spec 2026-10-03 §11): the `updated_at` read off
     # `FiscalProfileRead`, never a column the service assigns. A save whose value is
     # not the row's is refused with `StaleRow` (409). Sent as `null` it is the version
@@ -323,6 +327,7 @@ class FiscalProfileRead(BaseModel):
     pack_version: str
     inps_category: str | None
     isa: bool | None
+    iva_frequency: str
     created_at: datetime
     updated_at: datetime
 
@@ -422,7 +427,51 @@ class TaxReadings(BaseModel):
     totals: TaxReadingTotals
 
 
+IvaOutcome = Literal["due", "carried", "credit", "nil"]
+
+
+class IvaPeriod(BaseModel):
+    """One IVA period: a month (1 to 12) or a quarter (1 to 4) of a calendar year, in the
+    frequency the legal entity settles in."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    year: int = Field(ge=2000, le=2100)
+    number: int = Field(ge=1, le=12)
+
+
+class IvaSettlementRead(BaseModel):
+    """A period's settlement as stored (REB-1021). Positive `result` is owed, negative is a
+    credit carried forward; `due_item_id` is the item written for an `outcome` of `due`."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    legal_entity_id: UUID
+    frequency: IvaFrequency
+    year: int
+    period_number: int
+    period_start: date
+    period_end: date
+    pack_id: str
+    pack_version: str
+    sales_vat: Decimal
+    reverse_charge_vat: Decimal
+    purchase_vat: Decimal
+    credit_in: Decimal
+    debit_in: Decimal
+    surcharge: Decimal
+    result: Decimal
+    outcome: IvaOutcome
+    payment_due_on: date
+    due_item_id: UUID | None = None
+
+
 __all__ = [
+    "IvaFrequency",
+    "IvaOutcome",
+    "IvaPeriod",
+    "IvaSettlementRead",
     "REGIME_CODE_ORDINARY",
     "REGIME_CODE_RE",
     "PackId",

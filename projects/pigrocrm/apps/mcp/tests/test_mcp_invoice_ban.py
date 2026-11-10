@@ -101,6 +101,7 @@ FORBIDDEN = (
     "bind_time_to_invoice",
     "get_fiscal_estimate",
     "get_tax_calendar",
+    "list_iva_settlements",
     # The accountant's declared tax figures (REB-1006): an administrator's token with
     # `full_access` and no other.
     "set_declared_tax_figure",
@@ -232,6 +233,9 @@ REST_ONLY_FORBIDDEN = frozenset(
         # there is no tool; a token with `full_access` reaches it over REST for a script that
         # feeds the inbox, and a default token does not.
         "upload_inbox_file",
+        # REB-1021: the IVA settlement of a period and the due item it writes; the tool arrives
+        # with the IVA page's card, and until then only a service call reaches it.
+        "settle_iva_period",
         # REB-972: reading an item spends the space's model; an agent proposes with
         # `propose_inbox_item` and reads nothing itself, and a full-access token may over REST.
         "classify_inbox_item",
@@ -301,6 +305,7 @@ FORBIDDEN_SERVICE_CALLS = (
     "bind_to_invoice",
     "get_fiscal_estimate",
     "get_tax_calendar",
+    "list_iva_settlements",
     # `DeclaredTaxFigureService.set_declared_tax_figure` (REB-1006), behind the tool of the
     # same name.
     "set_declared_tax_figure",

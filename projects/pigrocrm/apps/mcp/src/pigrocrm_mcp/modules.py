@@ -99,6 +99,7 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "update_cost_category": ("purchases",),
     "archive_cost_category": ("purchases",),
     "unarchive_cost_category": ("purchases",),
+    "list_iva_settlements": ("purchases",),
     # taxes: the estimate, the ceilings and the year.
     "get_ceiling_headroom": ("taxes",),
     "get_year_overview": ("taxes",),

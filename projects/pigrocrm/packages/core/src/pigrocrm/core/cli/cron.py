@@ -341,6 +341,21 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
                 file=sys.stderr,
             )
             failed = True
+        if report.iva_failed:
+            print(
+                f"{target.label}: IVA settlements failed {report.iva_failed} "
+                f"({', '.join(sorted(set(report.iva_failures)))})",
+                file=sys.stderr,
+            )
+            failed = True
+        if report.iva_frozen:
+            # A reminder and not a failure: the item was paid, so the figures it would take
+            # are a person's decision.
+            print(
+                f"{target.label}: IVA periods not recomputed, their due item has a payment: "
+                f"{', '.join(report.iva_frozen)}",
+                file=sys.stderr,
+            )
         if retention is not None:
             failed = _print_export_retention(target.label, retention, dry_run=dry_run) or failed
         if roll is not None:
@@ -389,6 +404,8 @@ def _print_automation_report(
             )
     if report.payroll_refreshed:
         print(f"{slug}: payroll forecasts refreshed {report.payroll_refreshed}{suffix}")
+    if report.iva_settled:
+        print(f"{slug}: IVA settled for {report.iva_settled} legal entities{suffix}")
     print(
         f"{slug}: forecasts created {forecasts.created}, revised {forecasts.revised}, "
         f"dropped {forecasts.dropped}{suffix}"

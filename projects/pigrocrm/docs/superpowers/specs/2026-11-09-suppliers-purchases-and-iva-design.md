@@ -297,7 +297,9 @@ For every legal entity on the ordinary pack (`it-standard`):
 - **Which period.** Each document is placed in a period by a date stored on it as
   **`iva_period`**. Which date decides is to verify per type: for sales, the issue or the
   operation date; for purchases, the receipt and registration date, a person choosing within
-  the legal window (A5).
+  the legal window (A5). REB-1021: the law keeps the sales register by the month of the
+  operation (A5, verified) and an invoice stores no operation date, so the settlement places a
+  sale by its issue date, and says so.
 - **The IVA period lock.** A new table `iva_period_locks (legal_entity_id, kind
   monthly|quarterly, period)`. Closing blocks any write that changes a register: issuing,
   annulling, registering, cancelling, changing VAT lines, for a document whose `iva_period`

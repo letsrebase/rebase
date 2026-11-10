@@ -2545,6 +2545,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/iva-settlements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Iva Settlements
+         * @description The settlements stored for `year`, in period order, each with the due item it wrote.
+         */
+        get: operations["list_iva_settlements_api_iva_settlements_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/legal-entities": {
         parameters: {
             query?: never;
@@ -10044,6 +10064,8 @@ export interface components {
             inps_category: string | null;
             /** Isa */
             isa: boolean | null;
+            /** Iva Frequency */
+            iva_frequency: string;
             /**
              * Created At
              * Format: date-time
@@ -10143,6 +10165,12 @@ export interface components {
             inps_category?: ("gestione_separata" | "artigiani_commercianti") | null;
             /** Isa */
             isa?: boolean | null;
+            /**
+             * Iva Frequency
+             * @default monthly
+             * @enum {string}
+             */
+            iva_frequency: "monthly" | "quarterly";
             /**
              * Updated At
              * @description The `updated_at` read on the profile this change starts from, `null` for a profile not yet saved: if someone else saved in the meantime, the request is rejected with 409 `stale_row`. Omitted, no check.
@@ -11375,6 +11403,72 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * IvaSettlementRead
+         * @description A period's settlement as stored (REB-1021). Positive `result` is owed, negative is a
+         *     credit carried forward; `due_item_id` is the item written for an `outcome` of `due`.
+         */
+        IvaSettlementRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /**
+             * Frequency
+             * @enum {string}
+             */
+            frequency: "monthly" | "quarterly";
+            /** Year */
+            year: number;
+            /** Period Number */
+            period_number: number;
+            /**
+             * Period Start
+             * Format: date
+             */
+            period_start: string;
+            /**
+             * Period End
+             * Format: date
+             */
+            period_end: string;
+            /** Pack Id */
+            pack_id: string;
+            /** Pack Version */
+            pack_version: string;
+            /** Sales Vat */
+            sales_vat: string;
+            /** Reverse Charge Vat */
+            reverse_charge_vat: string;
+            /** Purchase Vat */
+            purchase_vat: string;
+            /** Credit In */
+            credit_in: string;
+            /** Debit In */
+            debit_in: string;
+            /** Surcharge */
+            surcharge: string;
+            /** Result */
+            result: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "due" | "carried" | "credit" | "nil";
+            /**
+             * Payment Due On
+             * Format: date
+             */
+            payment_due_on: string;
+            /** Due Item Id */
+            due_item_id?: string | null;
         };
         /**
          * LeadContactPerson
@@ -36602,6 +36696,127 @@ export interface operations {
                 };
                 content: {
                     "text/csv": unknown;
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_iva_settlements_api_iva_settlements_get: {
+        parameters: {
+            query: {
+                year: number;
+                /** @description The legal entity to read: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one. */
+                legal_entity_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IvaSettlementRead"][];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
