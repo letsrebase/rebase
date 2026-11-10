@@ -260,6 +260,7 @@ ENTITY_NOUN: dict[str, tuple[str, str]] = {
     "rate_card": ("scheda tariffaria", "a"),
     "renewal_assumption": ("assunzione di rinnovo", "a"),
     "staff_member": ("persona dell'azienda", "a"),
+    "staff_payslip": ("cedolino", "o"),
     "task": ("attività", "a"),
     "template": ("template", "o"),
     "tenant": ("spazio", "o"),

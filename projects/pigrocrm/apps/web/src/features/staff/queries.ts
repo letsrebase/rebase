@@ -13,6 +13,7 @@ export type EmployeeBody = components['schemas']['EmployeeCreate']
 export type DirectorBody = components['schemas']['DirectorCreate']
 export type StaffUpdateBody = components['schemas']['StaffMemberUpdate']
 export type PayslipBody = components['schemas']['PayslipFigures']
+export type PayslipCorrectionBody = components['schemas']['PayslipCorrection']
 
 /** A screen reads fifty people at a time (the brief: «Mostra altri»). */
 export const STAFF_PAGE_SIZE = 50
@@ -115,6 +116,21 @@ export function useRecordPayslip(id: string) {
       unwrap(
         api.POST('/api/staff/{staff_member_id}/payslips', {
           params: { path: { staff_member_id: id } },
+          body,
+        }),
+      ),
+    onSuccess: refresh,
+  })
+}
+
+/** Corrects a recorded payslip: the month and the forecasts it feeds are read again. */
+export function useCorrectPayslip(id: string, payslipId: string) {
+  const refresh = useRefresh()
+  return useMutation({
+    mutationFn: (body: PayslipCorrectionBody) =>
+      unwrap(
+        api.PATCH('/api/staff/{staff_member_id}/payslips/{payslip_id}', {
+          params: { path: { staff_member_id: id, payslip_id: payslipId } },
           body,
         }),
       ),

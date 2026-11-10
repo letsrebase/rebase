@@ -13,6 +13,7 @@ from pigrocrm.core.staff.schemas import (
     PayDayRead,
     PayDayWrite,
     PayrollMonthRead,
+    PayslipCorrection,
     PayslipFigures,
     PayslipRead,
     StaffListQuery,
@@ -99,6 +100,22 @@ def record_staff_payslip(
     stops being an estimate and the person's other months are estimated from its ratios. A
     person's act: no agent credential."""
     return StaffService(session).record_staff_payslip(staff_member_id, data, actor)
+
+
+@router.patch("/{staff_member_id}/payslips/{payslip_id}", response_model=PayslipRead)
+def correct_staff_payslip(
+    staff_member_id: UUID,
+    payslip_id: UUID,
+    data: PayslipCorrection,
+    session: SessionDep,
+    actor: ActorDep,
+) -> PayslipRead:
+    """Corrects the figures of a recorded payslip (gross, net, income tax withheld, all three):
+    the month's estimate, the net pay and withholding items it wrote and the forecasts they
+    feed follow, and the timeline records who did it. A person's act: no agent credential. An
+    item with a payment recorded that the figures would move is a 409: the payment is reversed
+    first."""
+    return StaffService(session).correct_staff_payslip(staff_member_id, payslip_id, data, actor)
 
 
 @router.get("/{staff_member_id}/hourly-cost", response_model=HourlyCostProposalRead)

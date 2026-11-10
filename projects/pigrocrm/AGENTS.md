@@ -367,8 +367,13 @@ finds the privileged tools by name). Eligibility reads the fiscal pack of the le
 entity carries yet, so a director is refused until the taxes design ships it. The kind decides the columns and the
 table's CHECKs say so; a rate left out is «not stated», never a default, because the payroll consultant verifies it.
 The legal entity's pay day is REST only and person-only (`set_payroll_pay_day`); a member's own override is a field
-of `update_staff_member`. Nothing is deleted: `end_date` is how someone leaves. The estimate, the payslips and the
-screens are later cards.
+of `update_staff_member`. Nothing is deleted: `end_date` is how someone leaves. The estimate (`staff/payroll.py`) and the
+staff page are REB-1008 and REB-1027. A recorded payslip is corrected by `StaffService.correct_staff_payslip` (REB-1030:
+REST `PATCH /api/staff/{id}/payslips/{payslip_id}`, «Correggi il cedolino» in the staff panel), person-only like
+`record_staff_payslip`: no token reaches it. The payslip is rewritten in place (a month has one), the net pay and
+withholding due items it wrote follow (`restate_payslip_items`; a payment already recorded on one that would move is a
+409 and nothing is written, an item an administrator dropped stays dropped), the forecasts are refreshed and the
+timeline entry `staff_payslip_corrected` says who and which month, never the figures.
 **A declared tax figure is typed, never computed, and it outranks the estimate (REB-1006).**
 `declared_tax_figures` holds, per legal entity, tax (`DeclaredTax`: `irpef`, `substitute_tax`, `ires`, `irap`, `inps`)
 and year, what the accountant's return says: tax due, balance (signed) and advances, any of which may be left out

@@ -126,6 +126,7 @@ const KIND_LABELS: Record<string, string> = {
   staff_member_updated: "Persona dell'azienda modificata",
   payroll_pay_day_set: 'Giorno di paga impostato',
   staff_payslip_recorded: 'Cedolino registrato',
+  staff_payslip_corrected: 'Cedolino corretto',
   declared_tax_figure_set: 'Cifre della dichiarazione registrate',
   accountant_export_built: 'Esportazione per il commercialista preparata',
   accountant_export_deleted: 'Esportazione per il commercialista eliminata',

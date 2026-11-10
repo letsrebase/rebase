@@ -22,7 +22,7 @@ from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.due_items.models import DueItem
-from pigrocrm.core.due_items.schemas import DueItemListQuery, PayrollTotalsQuery
+from pigrocrm.core.due_items.schemas import DueItemListQuery, PayrollTotalsQuery, SettlementCreate
 from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.errors import (
     AgentForbidden,
@@ -35,13 +35,14 @@ from pigrocrm.core.errors import (
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.staff.estimate import add_months, first_of
-from pigrocrm.core.staff.models import StaffMember
+from pigrocrm.core.staff.models import StaffMember, StaffPayslip
 from pigrocrm.core.staff.payroll import PayrollService
 from pigrocrm.core.staff.schemas import (
     DirectorCreate,
     EmployeeCreate,
     HourlyCostAdopt,
     PayDayWrite,
+    PayslipCorrection,
     PayslipFigures,
     StaffMemberUpdate,
 )
@@ -645,3 +646,194 @@ def test_an_unknown_member_and_a_scoped_administrator_get_nothing(db_session: Se
         service.propose_staff_hourly_cost(member, scoped)
     with pytest.raises(ScopedAdmin):
         service.adopt_staff_hourly_cost(member, HourlyCostAdopt(hourly_cost=Decimal("1")), scoped)
+
+
+# --- correcting a recorded payslip (REB-1030) -----------------------------------------------
+
+
+def _correction(**overrides: object) -> PayslipCorrection:
+    values: dict[str, object] = {
+        "gross": Decimal("2400.00"),
+        "net": Decimal("1700.00"),
+        "withholding": Decimal("360.00"),
+    }
+    values.update(overrides)
+    return PayslipCorrection(**values)  # type: ignore[arg-type]
+
+
+def _next_net_forecast(session: Session) -> DueItem:
+    return next(
+        item
+        for item in _payroll_items(session, state="forecast")
+        if (item.source_rule or "").startswith(f"payroll_net_pay:{NEXT_MONTH:%Y-%m}:")
+    )
+
+
+def test_correcting_a_payslips_gross_moves_the_months_estimate_and_its_items_and_forecasts(
+    db_session: Session,
+) -> None:
+    entity, member = _world(db_session)
+    service = StaffService(db_session)
+    recorded = service.record_staff_payslip(member, _payslip(), ADMIN)
+    before_forecast = _next_net_forecast(db_session)
+    before = PayrollService(db_session).get_payroll_month(entity, LAST_MONTH, ADMIN).members[0]
+    assert before.cost is not None and before.cost.gross == Decimal("2142.86")
+    assert before.payslip is not None and before.payslip.id == recorded.id
+
+    corrected = service.correct_staff_payslip(member, recorded.id, _correction(), ADMIN)
+    assert (corrected.id, corrected.period) == (recorded.id, recorded.period)
+    assert (corrected.gross, corrected.net, corrected.withholding) == (
+        Decimal("2400.00"),
+        Decimal("1700.00"),
+        Decimal("360.00"),
+    )
+
+    # That month's estimate is the corrected payslip's.
+    after = PayrollService(db_session).get_payroll_month(entity, LAST_MONTH, ADMIN).members[0]
+    assert after.source == "payslip"
+    assert after.cost is not None and after.cost.gross == Decimal("2400.00")
+    assert {item.kind: item.amount for item in after.cash if item.kind != "inps_contributions"} == {
+        "net_pay": Decimal("1700.00"),
+        "withholding": Decimal("360.00"),
+    }
+    # The due items the payslip wrote owe the corrected figures, the same rows and dates.
+    items = {
+        item.tax or "net_pay": item for item in _payroll_items(db_session, source_id=recorded.id)
+    }
+    assert items["net_pay"].amount == Decimal("1700.00")
+    assert items["payroll_withholding"].amount == Decimal("360.00")
+    assert items["net_pay"].due_date == LAST_MONTH.replace(day=27)
+    assert {item.state for item in items.values()} == {"expected"}
+    # The forecasts the new ratios feed are rewritten from them, never left stale.
+    assert _next_net_forecast(db_session).id != before_forecast.id
+    assert _next_net_forecast(db_session).amount < before_forecast.amount
+
+
+def test_a_correction_leaves_a_timeline_entry_with_the_month_and_never_the_figures(
+    db_session: Session,
+) -> None:
+    from pigrocrm.core.activities.models import Activity
+
+    _, member = _world(db_session)
+    service = StaffService(db_session)
+    recorded = service.record_staff_payslip(member, _payslip(), ADMIN)
+    service.correct_staff_payslip(member, recorded.id, _correction(), ADMIN)
+    own = (
+        db_session.query(Activity)
+        .filter(Activity.entity_type == "staff_member", Activity.entity_id == member)
+        .order_by(Activity.occurred_at, Activity.id)
+        .all()
+    )
+    assert [row.kind for row in own] == [
+        "staff_member_created",
+        "staff_payslip_recorded",
+        "staff_payslip_corrected",
+    ]
+    assert own[-1].payload == {"period": LAST_MONTH.isoformat()}
+    assert own[-1].actor_id == ADMIN.id
+
+    # The same figures again write nothing, not even a timeline entry.
+    service.correct_staff_payslip(member, recorded.id, _correction(), ADMIN)
+    assert (
+        db_session.query(Activity).filter(Activity.kind == "staff_payslip_corrected").count() == 1
+    )
+
+
+def test_a_correction_to_zero_drops_the_item_and_one_owed_again_is_written(
+    db_session: Session,
+) -> None:
+    _, member = _world(db_session)
+    service = StaffService(db_session)
+    recorded = service.record_staff_payslip(member, _payslip(), ADMIN)
+    service.correct_staff_payslip(member, recorded.id, _correction(withholding=Decimal("0")), ADMIN)
+    items = {
+        item.tax or "net_pay": item for item in _payroll_items(db_session, source_id=recorded.id)
+    }
+    assert items["payroll_withholding"].state == "dropped"
+    assert items["net_pay"].state == "expected"
+
+    service.correct_staff_payslip(member, recorded.id, _correction(), ADMIN)
+    live = [i for i in _payroll_items(db_session, source_id=recorded.id) if i.state == "expected"]
+    assert {i.tax or "net_pay": i.amount for i in live} == {
+        "net_pay": Decimal("1700.00"),
+        "payroll_withholding": Decimal("360.00"),
+    }
+
+
+def test_a_correction_never_reopens_an_item_an_administrator_dropped(db_session: Session) -> None:
+    _, member = _world(db_session)
+    service = StaffService(db_session)
+    recorded = service.record_staff_payslip(member, _payslip(), ADMIN)
+    net = next(i for i in _payroll_items(db_session, source_id=recorded.id) if i.tax is None)
+    DueItemService(db_session).drop(net.id, "pagato fuori dal sistema")
+    service.correct_staff_payslip(member, recorded.id, _correction(), ADMIN)
+    assert db_session.get(DueItem, net.id).state == "dropped"  # type: ignore[union-attr]
+    assert len(_payroll_items(db_session, source_id=recorded.id)) == 2
+
+
+def test_an_item_with_a_payment_refuses_the_correction_and_nothing_is_written(
+    db_session: Session,
+) -> None:
+    _, member = _world(db_session)
+    service = StaffService(db_session)
+    recorded = service.record_staff_payslip(member, _payslip(), ADMIN)
+    net = next(i for i in _payroll_items(db_session, source_id=recorded.id) if i.tax is None)
+    DueItemService(db_session).settle(
+        net.id, SettlementCreate(amount=Decimal("1607.15"), settled_on=LAST_MONTH), ADMIN
+    )
+    with pytest.raises(Conflict):
+        service.correct_staff_payslip(member, recorded.id, _correction(), ADMIN)
+    again = db_session.get(StaffPayslip, recorded.id)
+    assert again is not None and again.gross == Decimal("2142.86")
+    assert db_session.get(DueItem, net.id).amount == Decimal("1607.15")  # type: ignore[union-attr]
+    # Whichever item was restated before the paid one refused, the savepoint took it back.
+    withholding = next(i for i in _payroll_items(db_session, source_id=recorded.id) if i.tax)
+    assert withholding.amount == Decimal("321.43") and withholding.state == "expected"
+
+
+def test_a_paid_item_the_correction_would_drop_refuses_it_too(db_session: Session) -> None:
+    _, member = _world(db_session)
+    service = StaffService(db_session)
+    recorded = service.record_staff_payslip(member, _payslip(), ADMIN)
+    withholding = next(i for i in _payroll_items(db_session, source_id=recorded.id) if i.tax)
+    DueItemService(db_session).settle(
+        withholding.id, SettlementCreate(amount=Decimal("321.43"), settled_on=TODAY), ADMIN
+    )
+    with pytest.raises(Conflict):
+        service.correct_staff_payslip(
+            member, recorded.id, _correction(withholding=Decimal("0")), ADMIN
+        )
+    assert db_session.get(DueItem, withholding.id).state == "settled"  # type: ignore[union-attr]
+    assert db_session.get(StaffPayslip, recorded.id).withholding == Decimal("321.43")  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize("actor", [COLLABORATOR, READONLY], ids=["collaborator", "readonly"])
+def test_a_collaborator_a_readonly_member_and_every_token_are_refused_the_correction(
+    db_session: Session, actor: Actor
+) -> None:
+    _, member = _world(db_session)
+    service = StaffService(db_session)
+    recorded = service.record_staff_payslip(member, _payslip(), ADMIN)
+    with pytest.raises(PermissionDenied):
+        service.correct_staff_payslip(member, recorded.id, _correction(), actor)
+    for token in (AGENT_ADMIN, AGENT_ADMIN_FULL):
+        with pytest.raises(AgentForbidden):
+            service.correct_staff_payslip(member, recorded.id, _correction(), token)
+    again = db_session.get(StaffPayslip, recorded.id)
+    assert again is not None and again.gross == Decimal("2142.86")
+
+
+def test_a_payslip_of_another_person_or_an_unknown_one_is_not_found(db_session: Session) -> None:
+    entity, member = _world(db_session)
+    service = StaffService(db_session)
+    other = service.create_staff_member(_employee(entity, name="Luca Verdi"), ADMIN).id
+    recorded = service.record_staff_payslip(member, _payslip(), ADMIN)
+    with pytest.raises(NotFound):
+        service.correct_staff_payslip(other, recorded.id, _correction(), ADMIN)
+    with pytest.raises(NotFound):
+        service.correct_staff_payslip(member, uuid4(), _correction(), ADMIN)
+
+
+def test_a_correction_whose_parts_exceed_the_gross_is_refused_by_the_schema() -> None:
+    with pytest.raises(ValueError):
+        _correction(gross=Decimal("100.00"), net=Decimal("90.00"), withholding=Decimal("20.00"))

@@ -174,6 +174,12 @@ ROWS: list[Row] = [
         },
     ),
     Row(
+        "PATCH",
+        "/api/staff/{staff_member_id}/payslips/{payslip_id}",
+        admin_only=True,
+        body={"gross": "2000.00", "net": "1500.00", "withholding": "300.00"},
+    ),
+    Row(
         "POST",
         "/api/staff/{staff_member_id}/hourly-cost",
         admin_only=True,

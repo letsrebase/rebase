@@ -69,6 +69,11 @@ def _every_route(entity: str, member: str) -> list[tuple[str, str, dict[str, Any
             f"/api/staff/{member}/payslips",
             {"period": "2026-03-01", "gross": "2000.00", "net": "1500.00", "withholding": "300.00"},
         ),
+        (
+            "PATCH",
+            f"/api/staff/{member}/payslips/{uuid4()}",
+            {"gross": "2000.00", "net": "1500.00", "withholding": "300.00"},
+        ),
     ]
 
 
@@ -314,6 +319,90 @@ def test_an_administrator_records_a_payslip_and_reads_the_months_estimate(
     assert cash["net_pay"]["due_date"] == "2026-03-27"
     assert cash["withholding"]["due_date"] == "2026-04-16"
     assert after["members"][0]["not_estimated"] == []
+
+
+def test_an_administrator_corrects_a_payslip_and_the_month_follows(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    """REB-1030 over HTTP: the gross changes that month's estimate, the timeline says so, and
+    the figures must still add up."""
+    entity = _entity(api_session, "it-standard", "std")
+    member = logged_in.post(
+        "/api/staff",
+        json=_employee(
+            entity,
+            part_time_percent="100",
+            employer_inps_rate="30.00",
+            employee_inps_rate="9.19",
+            employer_inail_rate="1.00",
+        ),
+    ).json()["id"]
+    assert (
+        logged_in.put(
+            f"/api/staff/pay-days/{entity}", json={"pay_day": 27, "pay_month_offset": 0}
+        ).status_code
+        == 200
+    )
+    recorded = logged_in.post(
+        f"/api/staff/{member}/payslips",
+        json={
+            "period": "2026-01-01",
+            "gross": "2142.86",
+            "net": "1607.15",
+            "withholding": "321.43",
+        },
+    ).json()
+    month = {"month": "2026-01-01"}
+    before = logged_in.get(f"/api/staff/payroll/{entity}", params=month).json()["members"][0]
+    assert before["cost"]["gross"] == "2142.86"
+    assert before["payslip"]["id"] == recorded["id"]
+
+    path = f"/api/staff/{member}/payslips/{recorded['id']}"
+    corrected = logged_in.patch(
+        path, json={"gross": "2400.00", "net": "1700.00", "withholding": "360.00"}
+    )
+    assert corrected.status_code == 200, corrected.text
+    assert corrected.json()["id"] == recorded["id"] and corrected.json()["gross"] == "2400.00"
+    after = logged_in.get(f"/api/staff/payroll/{entity}", params=month).json()["members"][0]
+    assert after["cost"]["gross"] == "2400.00"
+    assert {i["kind"]: i["amount"] for i in after["cash"]}["net_pay"] == "1700.00"
+
+    bad = logged_in.patch(path, json={"gross": "100.00", "net": "90.00", "withholding": "20.00"})
+    assert bad.status_code == 422, bad.text
+    partial = logged_in.patch(path, json={"gross": "2500.00"})
+    assert partial.status_code == 422, partial.text
+    assert (
+        logged_in.patch(
+            f"/api/staff/{member}/payslips/{uuid4()}",
+            json={"gross": "2400.00", "net": "1700.00", "withholding": "360.00"},
+        ).status_code
+        == 404
+    )
+
+
+def test_a_token_never_corrects_a_payslip_whatever_it_carries(
+    open_space: TestClient, api_session: Session
+) -> None:
+    entity = _entity(api_session, "it-standard", "std")
+    member = open_space.post("/api/staff", json=_employee(entity)).json()["id"]
+    recorded = open_space.post(
+        f"/api/staff/{member}/payslips",
+        json={
+            "period": "2026-01-01",
+            "gross": "2142.86",
+            "net": "1607.15",
+            "withholding": "321.43",
+        },
+    ).json()
+    body = {"gross": "2400.00", "net": "1700.00", "withholding": "360.00"}
+    path = f"/api/staff/{member}/payslips/{recorded['id']}"
+    for agent in (_bearer(open_space), _bearer(open_space, full_access=True)):
+        refused = agent.patch(path, json=body)
+        assert refused.status_code == 403, refused.text
+        assert refused.json()["code"] == "agent_forbidden"
+    month = open_space.get(f"/api/staff/payroll/{entity}", params={"month": "2026-01-01"}).json()
+    assert month["members"][0]["cost"]["gross"] == "2142.86"
+    assert month["members"][0]["payslip"]["gross"] == "2142.86"
 
 
 def test_an_administrator_reads_the_hourly_cost_and_adopts_the_figure_they_saw(

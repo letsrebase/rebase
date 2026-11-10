@@ -843,7 +843,9 @@ def register(
         return (
             PayrollService(context.session)
             .get_payroll_month(entity, required_iso_date(month, "month"), context.actor)
-            .model_dump(mode="json")
+            # The payslip's own figures and id are the staff page's (a person corrects it from
+            # there): a token reads the cost and the cash lines, as before.
+            .model_dump(mode="json", exclude={"members": {"__all__": {"payslip"}}})
         )
 
     @mcp.tool(annotations=READ_ONLY)

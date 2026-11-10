@@ -118,6 +118,7 @@ export const MIN_ROLE = {
   set_payroll_pay_day: 'admin',
   get_payroll_month: 'admin',
   record_staff_payslip: 'admin',
+  correct_staff_payslip: 'admin',
   propose_staff_hourly_cost: 'admin',
   adopt_staff_hourly_cost: 'admin',
   // Engagements with freelancers (REB-976): every read and write is an administrator's, as the

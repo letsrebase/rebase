@@ -142,6 +142,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   cancel_reason: "Motivo dell'annullamento",
   by: 'Annullato da',
   released: 'Rilasciata dal contratto quadro',
+  period: 'Mese',
   period_from: 'Dal',
   period_to: 'Al',
   period_start: 'Inizio del periodo',

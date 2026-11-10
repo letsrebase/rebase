@@ -89,7 +89,7 @@ This file is the single mapping from the Italian word to the English identifier.
 | persone dell'azienda | staff | Employees and directors of a legal entity (`staff_members`, module `staff`); their pay is admin-only |
 | retribuzione annua lorda (RAL) | gross_annual_pay | An employee's gross pay for a full year, before the part-time share |
 | giorno di paga | pay_day | The day of the month net pay leaves, with `pay_month_offset` 0 (month worked) or 1 (the month after); one per legal entity, overridden per staff member |
-| cedolino | payslip | The figures of an accepted payslip of one staff member and month: gross, net, income tax withheld (`staff_payslips`); the estimate reads two ratios from the latest |
+| cedolino | payslip | The figures of an accepted payslip of one staff member and month: gross, net, income tax withheld (`staff_payslips`); the estimate reads two ratios from the latest. A recorded one is corrected in place by a person (`correct_staff_payslip`, «Correggi il cedolino») |
 | Stipendi | payroll aggregate | The one line a reader who may not see pay gets in place of the payroll due items: one amount per due date, no person (`list_payroll_totals`) |
 | mensilità aggiuntiva | extra payment | The 13th or 14th payment, in the month typed on the staff member (`thirteenth_month`, `fourteenth_month`) |
 | quota INPS del lavoratore | employee_inps_rate | The employee's own share of the INPS contribution, in percent, typed per staff member |
