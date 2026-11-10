@@ -31,11 +31,17 @@ export function useReminders() {
  * The unread count of the sidebar: the reminders still `open` for the caller. Snoozed and
  * acknowledged ones do not count, and neither does a list that failed to load: a badge
  * that cannot be trusted is no badge, so the count is `undefined` and the entry draws none.
+ *
+ * `select` must never throw: since @tanstack/react-query 5.105.2 an error thrown by `select`
+ * makes `useQuery`'s snapshot a new object on every read, and the sidebar, mounted on every
+ * page, re-renders without end ("Maximum update depth exceeded", REB-992). A body that is
+ * not a list counts as no reminders.
  */
 export function useUnreadCount(): number | undefined {
   return useQuery({
     ...remindersOptions,
-    select: (reminders: Reminder[]) => reminders.filter(isOpen).length,
+    select: (reminders: Reminder[]) =>
+      Array.isArray(reminders) ? reminders.filter(isOpen).length : 0,
   }).data
 }
 

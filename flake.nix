@@ -216,7 +216,7 @@
                 )
               );
             };
-            hash = "sha256-kmnIFF2kFoCdKSc7sBoqET6q5hgMAwoXSZOGmL6mKP8=";
+            hash = "sha256-wmy+/tHDO+vJf3+6Onoi6ZEn+YHv6mhtqr4MOUP09U4=";
           };
 
           # A Vite deployable: the `dist/` of one workspace package, built the way its
