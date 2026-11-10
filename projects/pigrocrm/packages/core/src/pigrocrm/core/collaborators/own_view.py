@@ -33,7 +33,6 @@ def own_view(session: Session, engagement: Engagement, today: dt.date) -> OwnEng
     return OwnEngagementRead(
         letter_number=engagement.letter_number,
         state=engagement.state,
-        role=engagement.role,
         starts_on=engagement.starts_on,
         ends_on=engagement.ends_on,
         fee=engagement.fee,

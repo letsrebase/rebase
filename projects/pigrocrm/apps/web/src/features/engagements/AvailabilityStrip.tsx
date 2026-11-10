@@ -19,7 +19,7 @@ function shortMonday(iso: string): string {
  * What a week's cell says for a screen reader: its Monday in full, the word for its status and the
  * days committed. The word is what makes a week readable without its colour or its hatching.
  */
-export function weekDescription(week: AvailabilityWeek): string {
+function weekDescription(week: AvailabilityWeek): string {
   const label = AVAILABILITY_LABELS[week.status]
   const days =
     week.status === 'unknown'
@@ -49,15 +49,10 @@ export function AvailabilityStrip({
         className="grid grid-cols-6 gap-1 sm:grid-cols-12"
       >
         {weeks.map((week) => (
-          <li
-            key={week.week}
-            data-status={week.status}
-            aria-label={weekDescription(week)}
-            title={weekDescription(week)}
-            className="min-w-0"
-          >
+          <li key={week.week} data-status={week.status} title={weekDescription(week)} className="min-w-0">
             <div
-              aria-hidden="true"
+              role="img"
+              aria-label={weekDescription(week)}
               className={cn(
                 'flex h-10 items-center justify-center border text-sm font-medium tabular-nums',
                 week.status === 'committed' && 'bg-foreground text-background',

@@ -357,19 +357,23 @@ OWNER = "owner@studio-rebase.it"
 FREELANCER = "ada@studio.it"
 
 
-def _two_spaces(door: "door_tests.Door") -> tuple[UUID, Settings]:
+def _two_spaces(door: "door_tests.Door") -> tuple[UUID, Settings, str, str]:
     """rebase's own space (the leads space) holding an engagement with two months reported, and
     the freelancer's space with the contract the door wrote for it. Returns the contract and the
-    settings that name the leads space."""
-    door_tests._provision(door, "studio-rebase", OWNER)
-    ada = door_tests._provision(door, "ada", FREELANCER)
+    settings that name the leads space, and the two slugs (unique per call: a space is a database,
+    and one left by another run must never be mistaken for this one)."""
+    leads, slug = f"leads-{uuid4().hex[:8]}", f"ada-{uuid4().hex[:8]}"
+    door_tests._provision(door, leads, OWNER)
+    ada = door_tests._provision(door, slug, FREELANCER)
     match_id, contract_id = uuid4(), uuid4()
-    settings = door.settings.model_copy(
-        update={"leads_space": "studio-rebase", "root_slug": "rebase"}
-    )
-    with door_tests._space(door, "studio-rebase") as space:
+    settings = door.settings.model_copy(update={"leads_space": leads, "root_slug": "rebase"})
+    with door_tests._space(door, leads) as space:
         who = make_customer(
-            space, roles=["freelancer"], hub_freelancer_id=uuid4(), legal_name="Ada Lovelace"
+            space,
+            roles=["freelancer"],
+            hub_freelancer_id=uuid4(),
+            legal_name="Ada Lovelace",
+            email=FREELANCER,
         )
         client = make_customer(space, legal_name="Cliente Segreto S.r.l.")
         service = EngagementService(space)
@@ -390,7 +394,7 @@ def _two_spaces(door: "door_tests.Door") -> tuple[UUID, Settings]:
         )
         service.transition(made.id, "awaiting_signature", ADMIN)
         service.transition(made.id, "active", ADMIN)
-        reports = MonthlyReportService(space, settings, space_slug="studio-rebase")
+        reports = MonthlyReportService(space, settings, space_slug=leads)
         reports.request(
             made.id, MonthlyReportRequest(month="2026-09", received_on=D(2026, 11, 3)), ADMIN
         )
@@ -409,22 +413,17 @@ def _two_spaces(door: "door_tests.Door") -> tuple[UUID, Settings]:
     with session_factory(door.registry)() as registry:
         registry.add(RebaseEngagement(match_id=match_id, tenant_id=ada, contract_id=contract_id))
         registry.commit()
-    return contract_id, settings
+    return contract_id, settings, leads, slug
 
 
 def test_a_freelancer_reads_their_own_engagement_and_nothing_of_the_client(
     door: "door_tests.Door",
 ) -> None:
-    contract_id, settings = _two_spaces(door)
+    contract_id, settings, leads, slug = _two_spaces(door)
 
-    card = OwnEngagementService(door.registry, settings).for_contract("ada", contract_id)
+    card = OwnEngagementService(door.registry, settings).for_contract(slug, contract_id)
 
-    assert (card.role, card.fee, card.fee_unit, card.state) == (
-        "Backend developer",
-        Decimal("400.00"),
-        "day",
-        "active",
-    )
+    assert (card.fee, card.fee_unit, card.state) == (Decimal("400.00"), "day", "active")
     assert (card.payment_rule, card.collection_days) == ("on_collection", 15)
     months = {month.label: month for month in card.months}
     assert months["2026-09"].state == "approved"
@@ -441,25 +440,38 @@ def test_a_freelancer_reads_their_own_engagement_and_nothing_of_the_client(
 
 
 def test_a_space_reads_only_the_engagement_of_its_own_contract(door: "door_tests.Door") -> None:
-    contract_id, settings = _two_spaces(door)
+    contract_id, settings, leads, slug = _two_spaces(door)
     service = OwnEngagementService(door.registry, settings)
 
     with pytest.raises(NotFound):
-        service.for_contract("studio-rebase", contract_id)  # another space, the same contract id
+        service.for_contract(leads, contract_id)  # another space, the same contract id
     with pytest.raises(NotFound):
-        service.for_contract("ada", uuid4())  # a contract the door did not write
+        service.for_contract(slug, uuid4())  # a contract the door did not write
     with pytest.raises(NotFound):
         service.for_contract(None, contract_id)  # the root installation, no space
     no_leads = settings.model_copy(update={"leads_space": ""})
     with pytest.raises(NotFound):
-        OwnEngagementService(door.registry, no_leads).for_contract("ada", contract_id)
+        OwnEngagementService(door.registry, no_leads).for_contract(slug, contract_id)
 
 
 def test_a_cancelled_engagement_has_no_card(door: "door_tests.Door") -> None:
-    contract_id, settings = _two_spaces(door)
-    with door_tests._space(door, "studio-rebase") as space:
+    contract_id, settings, leads, slug = _two_spaces(door)
+    with door_tests._space(door, leads) as space:
         space.execute(text("UPDATE engagements SET state = 'cancelled'"))
         space.commit()
 
     with pytest.raises(NotFound):
-        OwnEngagementService(door.registry, settings).for_contract("ada", contract_id)
+        OwnEngagementService(door.registry, settings).for_contract(slug, contract_id)
+
+
+def test_a_match_that_belongs_to_another_freelancer_is_not_read(door: "door_tests.Door") -> None:
+    contract_id, settings, leads, slug = _two_spaces(door)
+    with door_tests._space(door, leads) as space:
+        other = make_customer(
+            space, roles=["freelancer"], hub_freelancer_id=uuid4(), email="grace@studio.it"
+        )
+        space.execute(text("UPDATE engagements SET freelancer_id = :id"), {"id": other.id})
+        space.commit()
+
+    with pytest.raises(NotFound):
+        OwnEngagementService(door.registry, settings).for_contract(slug, contract_id)

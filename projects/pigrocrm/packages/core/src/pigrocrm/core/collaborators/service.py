@@ -407,6 +407,8 @@ class EngagementService:
                 read.redacted = True
                 read.role = read.fee = None
                 read.client_organization_id = read.deal_id = read.contract_id = None
+                # The letter prints the client and the fee: it is as hidden as they are.
+                read.letter_document_id = None
             elif client is not None:
                 read.client_name = names[client]
             if with_warnings and engagement.state in LIVE_STATES:

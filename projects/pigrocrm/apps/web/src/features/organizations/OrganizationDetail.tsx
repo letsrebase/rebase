@@ -35,11 +35,12 @@ import { InvoicesTab } from '@/features/invoices/InvoicesTab'
 import { NewProformaButton } from '@/features/invoices/NewProformaDialog'
 import { NotesSection } from '@/features/notes/NotesSection'
 import { toProblem, type ProblemDetail } from '@/lib/api'
-import { useCanWrite } from '@/lib/auth'
+import { useCanWrite, useIsAdmin } from '@/lib/auth'
 import { useModules } from '@/lib/modules'
 import { RowActions } from '@/components/RowActions'
 import { RoleChips } from '@/features/organizations/RoleChips'
 import { SupplierPurchases } from '@/features/organizations/SupplierPurchases'
+import { FreelancerEngagements } from '@/features/organizations/FreelancerEngagements'
 import {
   ROLE_LABELS,
   SUPPLIER_AREA_LABELS,
@@ -131,6 +132,8 @@ export function OrganizationDetail() {
   const owners = useOrganizationOwners()
   const addRole = useAddOrganizationRole()
   const purchasesOn = modules.on('purchases')
+  const collaboratorsOn = modules.on('collaborators')
+  const isAdmin = useIsAdmin()
 
   if (isLoading) return <LoadingState className="m-8" />
   // A failed fetch and a genuine 404 both leave `customer` undefined once loading
@@ -192,6 +195,8 @@ export function OrganizationDetail() {
   // The supplier's tab and facts exist for a supplier while `purchases` is on.
   const roles = customer.roles
   const suppliersOn = roles.includes('supplier') && purchasesOn
+  // «Incarichi» and «Disponibilità» exist for a freelancer, for an administrator, while `collaborators` is on.
+  const freelancersOn = roles.includes('freelancer') && collaboratorsOn && isAdmin
 
   function addRoleTo(role: 'customer' | 'supplier') {
     addRole.mutate(
@@ -221,6 +226,7 @@ export function OrganizationDetail() {
         }
         contracts={contractsOn ? <ContractsTab customerId={customerId} /> : undefined}
         purchases={suppliersOn ? <SupplierPurchases supplierId={customerId} /> : undefined}
+        engagements={freelancersOn ? <FreelancerEngagements freelancerId={customerId} /> : undefined}
         economics={<EconomicsTab customerId={customerId} />}
         tasks={<EntityTask link={{ kind: 'organization', id: customerId }} />}
         emails={

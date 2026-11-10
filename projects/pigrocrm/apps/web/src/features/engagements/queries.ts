@@ -106,7 +106,9 @@ export function useEngagementReport(id: string, enabled = true) {
   return useQuery({
     enabled: admin && enabled,
     queryKey: queryKeys.engagementReport(id),
-    retry: retryUnlessMissing,
+    // A 409 is the server's answer (the report is the leads space's alone): asking again says the same.
+    retry: (count: number, error: unknown) =>
+      (error as { status?: number }).status !== 409 && retryUnlessMissing(count, error),
     queryFn: () =>
       unwrap(
         api.GET('/api/engagements/{engagement_id}/report', {
@@ -277,7 +279,11 @@ export function useApproveMonthlyReport(id: string) {
  * an engagement, so the page draws no card; any other failure is the card's own error banner.
  */
 export function useOwnEngagement(contractId: string) {
+  // The route is an administrator's (the freelancer is the administrator of their own space): any
+  // other role would be refused, so it is not asked.
+  const admin = useIsAdmin()
   return useQuery({
+    enabled: admin,
     queryKey: queryKeys.ownEngagement(contractId),
     retry: retryUnlessMissing,
     queryFn: () =>

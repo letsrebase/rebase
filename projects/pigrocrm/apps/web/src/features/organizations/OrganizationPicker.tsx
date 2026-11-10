@@ -13,18 +13,30 @@ const MATCHES = 8
 export type PickedOrganization = Pick<Organization, 'id' | 'legal_name'>
 
 /** The role the matches are drawn from, and the words the list says it with. Customers when
- *  none is asked for, which is every caller but the purchase form's supplier. */
-type PickerRole = 'customer' | 'supplier'
-const ROLE_WORDS: Record<PickerRole, { list: string; none: string; more: string }> = {
+ *  none is asked for, which is every caller but the purchase form's supplier and the
+ *  engagement form's freelancer. */
+type PickerRole = 'customer' | 'supplier' | 'freelancer'
+const ROLE_WORDS: Record<
+  PickerRole,
+  { list: string; none: string; more: string; remove: string }
+> = {
   customer: {
     list: 'Clienti',
     none: 'Nessun cliente.',
     more: 'Ci sono altri clienti: scrivi per restringere l’elenco.',
+    remove: 'Rimuovi il cliente',
   },
   supplier: {
     list: 'Fornitori',
     none: 'Nessun fornitore.',
     more: 'Ci sono altri fornitori: scrivi per restringere l’elenco.',
+    remove: 'Rimuovi il cliente',
+  },
+  freelancer: {
+    list: 'Freelance',
+    none: 'Nessun freelance.',
+    more: 'Ci sono altri freelance: scrivi per restringere l’elenco.',
+    remove: 'Rimuovi il freelance',
   },
 }
 
@@ -94,7 +106,7 @@ export function OrganizationPicker({
           type="button"
           variant="ghost"
           size="icon-sm"
-          aria-label="Rimuovi il cliente"
+          aria-label={ROLE_WORDS[role ?? 'customer'].remove}
           disabled={disabled}
           onClick={() => {
             setTerm('')

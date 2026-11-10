@@ -26,6 +26,7 @@ import {
   stateLabel,
   stateTone,
 } from '@/features/contracts/labels'
+import { OwnEngagementCard } from '@/features/contracts/OwnEngagementCard'
 import { RateCardsSection } from '@/features/contracts/RateCardsSection'
 import { RegisterSection } from '@/features/contracts/RegisterSection'
 import { RenewalSection } from '@/features/contracts/RenewalSection'
@@ -108,6 +109,9 @@ export function ContractDetail() {
         }
         overview={
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div className="lg:col-span-2 empty:hidden">
+              <OwnEngagementCard contractId={row.id} />
+            </div>
             <Card>
               <CardContent className="pt-6">
                 <h2 className="mb-3 font-semibold">Termini</h2>
