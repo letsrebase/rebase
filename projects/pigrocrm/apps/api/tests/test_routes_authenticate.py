@@ -21,6 +21,9 @@ OPEN_PREFIXES = (
     "/api/tenants",
     "/api/rebase/",
     "/api/documenso/",
+    # The door of an export's share link (REB-1047): its token in the body is the credential;
+    # `test_accountant_export_share_api.py` walks it.
+    "/api/accountant-export/shared/",
     "/health",
     "/openapi.json",
     "/docs",

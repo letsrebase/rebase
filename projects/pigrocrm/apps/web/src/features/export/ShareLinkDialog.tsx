@@ -88,7 +88,7 @@ function LinkForm({
     >
       <div className="space-y-2">
         <Label htmlFor="share-link-days">Scade tra</Label>
-        <Select value={String(days)} onValueChange={(next) => setDays(Number(next))}>
+        <Select value={String(days)} onValueChange={(next) => setDays(EXPIRY_DAYS.find((candidate) => String(candidate) === next) ?? DEFAULT_EXPIRY_DAYS)}>
           <SelectTrigger id="share-link-days" className="w-full sm:w-48">
             <SelectValue />
           </SelectTrigger>
