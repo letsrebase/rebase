@@ -101,12 +101,12 @@ def account_balances(
             assert row.opening_balance_date is not None  # ck_bank_accounts_opening_pair
             anchors[row.id] = (row.opening_balance, row.opening_balance_date)
 
-    moved: dict[UUID, tuple[Decimal, dt.date]] = {}
+    moved: dict[UUID, tuple[Decimal, dt.date | None]] = {}
     if anchors:
         anchor_dates = values(
             column("account_id", Uuid), column("anchor_date", Date), name="anchor_dates"
         ).data([(account_id, anchor[1]) for account_id, anchor in anchors.items()])
-        for row in session.execute(
+        for account_id, total_moved, last_moved in session.execute(
             select(
                 BankMovement.bank_account_id,
                 func.coalesce(
@@ -126,7 +126,7 @@ def account_balances(
             .join(anchor_dates, anchor_dates.c.account_id == BankMovement.bank_account_id)
             .group_by(BankMovement.bank_account_id)
         ).all():
-            moved[row[0]] = (Decimal(row[1]).quantize(_ZERO), row[2])
+            moved[account_id] = (Decimal(total_moved).quantize(_ZERO), last_moved)
 
     result: dict[UUID, AccountBalance] = {}
     for row in accounts:
@@ -135,8 +135,8 @@ def account_balances(
             result[row.id] = NO_BALANCE
             continue
         amount, anchor_date = anchor
-        total, last_booking = moved.get(row.id, (_ZERO, anchor_date))
-        as_of = max(anchor_date, last_booking)
+        total, last_booking = moved.get(row.id, (_ZERO, None))
+        as_of = max(anchor_date, last_booking or anchor_date)
         stale_days = (day - as_of).days
         result[row.id] = AccountBalance(
             amount=amount + total,

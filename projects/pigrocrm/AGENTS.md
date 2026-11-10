@@ -143,7 +143,7 @@ reads is a label in `ACTION_LABELS`. `apps/api/tests/test_role_matrix.py` walks 
 route with an administrator's token and lists the ones it reaches (`AGENT_REACHABLE`).
 
 **A module that is off is guarded once per surface, never by an `if` in a handler (REB-953).**
-`core/modules/registry.py` decides whether `deals`, `contracts`, `time`, `purchases` or `taxes` is on
+`core/modules/registry.py` decides whether `deals`, `contracts`, `time`, `purchases`, `taxes` or `cash` is on
 (a stored `module_*` row over the profile's default, then the dependency `time` -> `deals`);
 each surface asks it in one place. REST: `module_guard(...)` from `pigrocrm_api.deps`, listed
 after `get_actor` on a router or on one route (a route across modules lists all of them), which
@@ -202,7 +202,23 @@ nothing of accounts or dedup, and `import_statement` does the rest and never com
 `dedup_key` (`dedup.py`) is the bank's reference when it has one, otherwise date, amount, description
 hash and the occurrence index within the file, unique per account, so the same movement in two
 statements is one row and two identical same-day payments are two. The covered period is the file's
-or the one a person sets; it is never guessed. `bank/__init__.py` registers the readers: `banco_bpm_xlsx` (`banco_bpm_xlsx.py`, YouWeb's «Saldo e movimenti» export: no account, period, balance or reference, so the key is the reference-less one; a `-da contab` card payment is left out until booked; the SEPA `END TO END ID` of a description is kept in `bank_movements.end_to_end_id`, never as a dedup key since payers reuse it). And `camt053` (`camt053.py`, `.001.02` and `.001.08`, one `Stmt` per file: `AcctSvcrRef` is the bank reference, `EndToEndId` goes to `end_to_end_id`, `NOTPROVIDED` is none). The tables are the `cash` module's data and no tool or
+or the one a person sets; it is never guessed. `bank/__init__.py` registers the readers: `banco_bpm_xlsx` (`banco_bpm_xlsx.py`, YouWeb's «Saldo e movimenti» export: no account, period, balance or reference, so the key is the reference-less one; a `-da contab` card payment is left out until booked; the SEPA `END TO END ID` of a description is kept in `bank_movements.end_to_end_id`, never as a dedup key since payers reuse it). And `camt053` (`camt053.py`, `.001.02` and `.001.08`, one `Stmt` per file: `AcctSvcrRef` is the bank reference, `EndToEndId` goes to `end_to_end_id`, `NOTPROVIDED` is none). The tables are the `cash` module's data (REB-1025). `cash` (key `cash`, «Cassa»,
+default on for both profiles, `requires=()`) guards `/api/bank-accounts*` and `/api/bank-statements/*` and the six bank
+tools; the schedule and the payables are core and answer without balances while it is off. Every method is an administrator's
+(`require_admin`) and, for a token, `full_access`'s: `BankAccountService` (create, update, archive, read; an account is
+never deleted, an archived one leaves the list and every balance, and its IBAN, currency and legal entity freeze with its
+first statement), `BankStatementReadService` (statements and movements, keyset-paged on `period_to` and `booking_date`)
+and `StatementImportService` (`import_file`, `revert_statement`: the file is read by its content, `STATEMENT_SIZE_MAX`
+bounds it, the route checks the role before it reads the body and keeps one byte past the cap, and a statement
+upload needs its own nginx `location` in the three conf files). **Every figure is the server's**: `balances.py` is the
+balance (the latest imported closing balance, else the opening one, plus the movements booked after it; archived accounts and
+accounts with no anchor have none) and `is_stale`, `coverage.py` is the twelve months an account shows (`covered`,
+`missing` after `STATEMENT_GRACE_DAYS`, `pending`) and `missing_periods`, which the schedule's alerts read, and
+`StatementCheck` is the stated balance against the movements a statement carries (`balance`) and its opening against the
+previous statement's closing (`gap`). A revert drops the movements only that statement carries and refuses (409) while one of
+them is no longer `unmatched`. The tools are registered in `tools/privileged.py` (full access only) with one action key each;
+the upload, the revert and the coverage are REST only, and a movement's description and counterparty are the bank's free text.
+Matching a movement to a due item, PDF statements and the proposal to confirm one are later cards. Nothing here is scheduled.
 
 **The engagements door writes a contract beside the deal (REB-1001).** When a match turns active, the freelancer's space gets rebase as a customer, the letter's deal (the hub still reads the deal and its hours; its `PUT` answer needs `deal_id`) and an `active` contract titled like the deal with one rate card from the letter's `fee_unit` (`day` is `daily`, `hour` is `hourly`, `flat` is `one_off`, valid for the letter's dates; the forecast `expected_quantity` is the expected days, or hours at `HOURS_PER_DAY`, with `delivery_period` `one_off`). `rebase_engagements.contract_id` records it with `deal_id`; a row with a deal and no contract is a space set up before this, and keeps its deal and hours alone. The registry has no migrations: `ensure_tenants_database` adds the column itself at boot (`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, before the missing-column refusal), and a later column on a registry table goes in the same list (`REGISTRY_COLUMN_UPGRADES`). Dropping the deal for new matches waits for the hub to read days from work units. **A retry is answered the row's ids, never what the deal points at now** (`test_second_call_answers_the_same_ids_and_creates_nothing` re-points the deal by hand and pins it), so `EngagementService._recorded` must not read the customer from the deal: a fact in the registry that a change in a space makes stale is written by that change (a merge of the customer points `customer_id` at the survivor, REB-1031, below).
 
@@ -287,6 +303,21 @@ the supplier's rules in its own transaction on create, update, cancel, archive a
 `refresh_forecasts` (so `pigrocrm automations`) rereads every active rule and every rule that still has a
 forecast, isolated per rule. Until the purchases cards write a due item for a purchase, the purchase is
 what replaces the forecast and no item stands in for it on the schedule.
+**The cash schedule, the payables mirror and the phone's figures are one read, `CashScheduleService` (REB-1025).**
+`due_items/schedule.py` answers `GET /api/cash/schedule`, `/payables` and `/summary` and the tool `get_cash_schedule`; they
+are core (no `module_guard`, `get_cash_schedule` is in `CORE_TOOLS`), and the module `cash` only adds the balances. Every
+figure is the **remaining** amount of an open EUR item (`schedule_queries.py`; another currency is in no figure and only
+keeps `has_open_items` true). Weeks start on Monday and the current one is whole: today and the days after count in it,
+earlier days and every item due before today are **late** (`expected` only: a forecast whose date passed is nobody's
+money any more and is in no figure), and an undated item is in no week and not late. Late money is never in the projected
+balance (`balance_end` = the EUR accounts' total plus each week's in less out, forecasts in). The balance part (accounts,
+`total_balance`, `balance_end`, the alerts about them) needs `cash` on and `read_bank_accounts` (an administrator; for a
+token `full_access`), and the kinds of `RESTRICTED_SOURCE_KINDS` need `read_fiscal_due_items`, both asked once in
+`schedule.py` and never in a route. A solo space has no outgoing figure and no balance by week, lists its own taxes
+(`TAX_SOURCE_KINDS`) in a table no balance subtracts, and gets zeros from `/payables`. The six payable bands are the
+receivables' (`BAND_LABELS`, same bounds), pinned by `test_cash_payables.py`, and `receivable.total` of the summary is
+`InvoiceRepository.sum_unpaid` to the cent (`test_cash_summary.py`). The schedule is read in the request's own session
+(no `REPEATABLE READ` snapshot, unlike the dashboards).
 **Staff and directors are written by `StaffService`, and pay is an administrator's before anything else
 (REB-977).** `staff_members` and `payroll_settings` belong to the module `staff` (default off for both
 profiles, on for a space with no profile): REST `/api/staff` carries `module_guard("staff")` and the
@@ -303,21 +334,6 @@ The legal entity's pay day is REST only and person-only (`set_payroll_pay_day`);
 of `update_staff_member`. Nothing is deleted: `end_date` is how someone leaves. The estimate, the payslips and the
 screens are later cards.
 **A declared tax figure is typed, never computed, and it outranks the estimate (REB-1006).**
-**The cash schedule, the payables mirror and the phone's figures are one read, `CashScheduleService` (REB-1025).**
-`due_items/schedule.py` answers `GET /api/cash/schedule`, `/payables` and `/summary` and the tool `get_cash_schedule`; they
-are core (no `module_guard`, `get_cash_schedule` is in `CORE_TOOLS`), and the module `cash` only adds the balances. Every
-figure is the **remaining** amount of an open EUR item (`schedule_queries.py`; another currency is in no figure and only
-keeps `has_open_items` true). Weeks start on Monday and the current one is whole: today and the days after count in it,
-earlier days and every item due before today are **late** (`expected` only: a forecast whose date passed is nobody's
-money any more and is in no figure), and an undated item is in no week and not late. Late money is never in the projected
-balance (`balance_end` = the EUR accounts' total plus each week's in less out, forecasts in). The balance part (accounts,
-`total_balance`, `balance_end`, the alerts about them) needs `cash` on and `read_bank_accounts` (an administrator; for a
-token `full_access`), and the kinds of `RESTRICTED_SOURCE_KINDS` need `read_fiscal_due_items`, both asked once in
-`schedule.py` and never in a route. A solo space has no outgoing figure and no balance by week, lists its own taxes
-(`TAX_SOURCE_KINDS`) in a table no balance subtracts, and gets zeros from `/payables`. The six payable bands are the
-receivables' (`BAND_LABELS`, same bounds), pinned by `test_cash_payables.py`, and `receivable.total` of the summary is
-`InvoiceRepository.sum_unpaid` to the cent (`test_cash_summary.py`). The schedule is read in the request's own session
-(no `REPEATABLE READ` snapshot, unlike the dashboards).
 `declared_tax_figures` holds, per legal entity, tax (`DeclaredTax`: `irpef`, `substitute_tax`, `ires`, `irap`, `inps`)
 and year, what the accountant's return says: tax due, balance (signed) and advances, any of which may be left out
 (never read as zero). `DeclaredTaxFigureService.set_declared_tax_figure` is the only writer: an administrator, or a

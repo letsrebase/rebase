@@ -78,6 +78,7 @@ def test_a_space_with_no_profile_has_every_module_on(logged_in: TestClient) -> N
         "taxes",
         "staff",
         "collaborators",
+        "cash",
     ]
     assert all(m["stored"] is None for m in body["modules"])
     # `collaborators` answers an onboarding question: it reads as off until somebody says so.
@@ -374,6 +375,7 @@ def test_confirming_a_profile_writes_a_row_for_every_module_and_touches_no_recor
         "taxes": True,
         "staff": False,
         "collaborators": False,
+        "cash": True,
     }
     assert {k: m["enabled"] for k, m in modules.items()} == {
         "deals": False,
@@ -383,6 +385,7 @@ def test_confirming_a_profile_writes_a_row_for_every_module_and_touches_no_recor
         "taxes": True,
         "staff": False,
         "collaborators": False,
+        "cash": True,
     }
     # Switched on again by the admin, the deal is exactly as it was.
     assert _switch(logged_in, on=["deals"]).status_code == 200

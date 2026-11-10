@@ -39,8 +39,8 @@ def test_collaborators_is_off_by_default_and_on_only_by_its_own_row() -> None:
 @pytest.mark.parametrize(
     ("profile", "expected"),
     [
-        ("solo", {"contracts", "purchases", "taxes"}),
-        ("company", {"deals", "contracts", "time", "purchases", "taxes"}),
+        ("solo", {"contracts", "purchases", "taxes", "cash"}),
+        ("company", {"deals", "contracts", "time", "purchases", "taxes", "cash"}),
     ],
 )
 def test_a_profile_switches_on_its_defaults(profile: str, expected: set[str]) -> None:

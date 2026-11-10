@@ -159,6 +159,15 @@ _FORBIDDEN: dict[Method, str] = {
     ("StaffService", "get_staff_member"): "REB-977: same as `create_staff_member`",
     ("StaffService", "list_staff"): "REB-977: same as `create_staff_member`",
     ("PayrollService", "get_payroll_month"): "REB-1008: same as `create_staff_member`",
+    ("BankAccountService", "list_bank_accounts"): (
+        "REB-1025: the company's accounts and balances (cash design § 2); the tool exists only "
+        "on an administrator's `full_access` token"
+    ),
+    ("BankAccountService", "create_bank_account"): "REB-1025: same as `list_bank_accounts`",
+    ("BankAccountService", "update_bank_account"): "REB-1025: same as `list_bank_accounts`",
+    ("BankAccountService", "archive_bank_account"): "REB-1025: same as `list_bank_accounts`",
+    ("BankStatementReadService", "list_statements"): "REB-1025: same as `list_bank_accounts`",
+    ("BankStatementReadService", "list_movements"): "REB-1025: same as `list_bank_accounts`",
     ("DocumentService", "import_bytes"): (
         "archivia byte che il CRM non ha prodotto, presi dal Drive del titolare a "
         "carico della sua quota e del suo consenso (slice 9 §4.2: `import_drive_file`); "
@@ -393,6 +402,7 @@ _INTERNE: dict[Method, str] = {
     # and import statements and match movements come with the cards that add them, with their own
     # authorisation (spec 2026-11-09, § 5).
     ("BankStatementService", "import_statement"): "the seam a statement reader plugs into",
+    ("BankStatementService", "revert_statement"): "the writer's half of the revert, REST only",
     ("OrganizationIbanService", "add"): "the writer's half: supplier XML and movements add IBANs",
     ("OrganizationIbanService", "accept"): "a person accepts a proposed IBAN, from the app",
     ("OrganizationIbanService", "list_for"): "read through the organisation, once surfaced",
@@ -854,6 +864,12 @@ _BYTE: dict[Method, str] = {
     ("InvoiceService", "review_upload"): "l'MCP non porta mai byte: parte da un documento",
     ("InvoiceService", "confirm_upload"): "l'MCP non porta mai byte: parte da un documento",
     ("TimeReportService", "render_pdf"): "l'MCP restituisce URL, mai byte",
+    # REB-1025: a statement file is read from bytes, over REST only (bytes never cross MCP), and
+    # so is the undoing of that import. A `full_access` token reaches both over REST.
+    ("StatementImportService", "import_file"): "l'MCP non porta mai byte: il file arriva dal web",
+    ("StatementImportService", "revert_statement"): (
+        "annulla un'importazione che l'MCP non puo' fare: solo il web e REST"
+    ),
 }
 
 
@@ -900,6 +916,14 @@ _BYTE: dict[Method, str] = {
 #    survive being asked why, and the only way to keep that true is to delete the ones
 #    that do not the moment the tool is written.
 _COVERED_OR_HUMAN: dict[Method, str] = {
+    ("BankAccountService", "get_bank_account"): (
+        "REB-1025: one account is read through `list_bank_accounts`; `update_bank_account` reads "
+        "it to report what changed"
+    ),
+    ("BankAccountService", "get_coverage"): (
+        "REB-1025: the account page's twelve months; an agent reads the same facts as the "
+        "`check` of each `list_statements` row and the periods it holds"
+    ),
     ("AccountantExportService", "list_exports"): (
         "REB-1012: the export page lists the stored exports; an agent gets the id of the one it "
         "needs from `build_accountant_export`, and the download path from "
@@ -1195,6 +1219,16 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "work_unit; a standalone tool would let an agent manufacture approval "
         "evidence with no day and no human review attached"
     ),
+    # REB-1025: the payables mirror and the phone's figures are screens over what the tools
+    # already return.
+    ("CashScheduleService", "get_payables"): (
+        "the payables card; an agent lists the same rows with `list_due_items` (`direction` "
+        "`out`) and reads the late payable figure in `get_cash_schedule`"
+    ),
+    ("CashScheduleService", "get_summary"): (
+        "the phone Home's figures, all of them in `get_cash_schedule` (balance, late figures, "
+        "alert) and `get_receivables_dashboard`"
+    ),
 }
 
 
@@ -1219,16 +1253,6 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
 # that tool, so the method is now reachable and the row disappeared together with
 # its category -- the same deletion, not an update, that A11 applied to
 # `_IN_ATTESA_DI_DECISIONE`.
-    # REB-1025: the payables mirror and the phone's figures are screens over what the tools
-    # already return.
-    ("CashScheduleService", "get_payables"): (
-        "the payables card; an agent lists the same rows with `list_due_items` (`direction` "
-        "`out`) and reads the late payable figure in `get_cash_schedule`"
-    ),
-    ("CashScheduleService", "get_summary"): (
-        "the phone Home's figures, all of them in `get_cash_schedule` (balance, late figures, "
-        "alert) and `get_receivables_dashboard`"
-    ),
 # ha applicato a `_IN_ATTESA_DI_DECISIONE`.
 # Provisional, like `_IN_ATTESA_DI_DECISIONE`/`_IN_ATTESA_DI_DRIVE_T7` before it, REB-359
 # left one: `_IN_ATTESA_DI_REB_362`, seven entries on `WorkUnitService`/`ApprovalService`,

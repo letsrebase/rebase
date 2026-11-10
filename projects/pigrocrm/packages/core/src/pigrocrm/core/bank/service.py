@@ -10,7 +10,7 @@ import datetime as dt
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, exists, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -37,6 +37,12 @@ class ImportResult:
     statement: BankStatement
     added: int
     duplicates: int
+
+
+@dataclass(frozen=True)
+class RevertResult:
+    statement: BankStatement
+    removed: int
 
 
 class BankStatementService:
@@ -169,6 +175,55 @@ class BankStatementService:
             )
         self.session.flush()
         return ImportResult(statement, added=stored, duplicates=len(keys) - stored)
+
+    def revert_statement(self, statement_id: UUID) -> RevertResult:
+        """Undoes an import: the statement becomes `reverted`, its links to movements go, and
+        so do the movements no other statement carries. A movement that is no longer
+        `unmatched` (matched, a transfer, ignored) and that only this statement carries blocks
+        the revert: removing it would undo a person's decision. A movement another statement
+        also carries stays, as it is. The account is locked, so a revert and an import into
+        the same account queue. Flushes, does not commit."""
+        statement = self.session.get(BankStatement, statement_id, with_for_update=True)
+        if statement is None:
+            raise NotFound(STATEMENT, statement_id)
+        self.session.get(BankAccount, statement.bank_account_id, with_for_update=True)
+        if statement.state != "imported":
+            raise Conflict(
+                STATEMENT, "l'estratto conto non e' importato: non c'e' nulla da annullare"
+            )
+        other_carrier = (
+            select(StatementMovement.movement_id)
+            .where(
+                StatementMovement.movement_id == BankMovement.id,
+                StatementMovement.statement_id != statement.id,
+            )
+            .correlate(BankMovement)
+        )
+        carried_here = select(StatementMovement.movement_id).where(
+            StatementMovement.statement_id == statement.id
+        )
+        only_here = (BankMovement.id.in_(carried_here), ~exists(other_carrier))
+        decided = self.session.scalar(
+            select(exists().where(*only_here, BankMovement.state != "unmatched"))
+        )
+        if decided:
+            raise Conflict(
+                STATEMENT,
+                "un movimento di questo estratto conto e' gia' stato abbinato o trattato: "
+                "annulla prima quell'abbinamento",
+            )
+        removed = len(
+            self.session.execute(
+                delete(BankMovement).where(*only_here).returning(BankMovement.id)
+            ).all()
+        )
+        self.session.execute(
+            delete(StatementMovement).where(StatementMovement.statement_id == statement.id)
+        )
+        statement.state = "reverted"
+        statement.reverted_at = dt.datetime.now(dt.UTC)
+        self.session.flush()
+        return RevertResult(statement, removed)
 
 
 class OrganizationIbanService:

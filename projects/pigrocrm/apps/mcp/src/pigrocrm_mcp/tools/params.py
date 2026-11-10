@@ -19,11 +19,13 @@ an unset value for an argument the core refuses to build without.
 """
 
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any, Literal, get_args
 from uuid import UUID
 
 from pydantic import WithJsonSchema
 
+from pigrocrm.core.bank.schemas import BankAccountUpdate
 from pigrocrm.core.collaborators.schemas import EngagementUpdate
 from pigrocrm.core.contract_expenses.schemas import ContractExpenseUpdate
 from pigrocrm.core.contracts.schemas import ClauseNoteUpdate, ContractUpdate, RateCardUpdate
@@ -196,6 +198,11 @@ StaffFields = Annotated[
     dict[str, Any], WithJsonSchema(_compact(StaffMemberUpdate.model_json_schema()))
 ]
 
+# A bank account's own fields, compacted for the same reason.
+BankAccountFields = Annotated[
+    dict[str, Any], WithJsonSchema(_compact(BankAccountUpdate.model_json_schema()))
+]
+
 # A date: a `str | None` at runtime, `format: date` in the listing.
 IsoDateStr = Annotated[
     str | None,
@@ -359,6 +366,21 @@ HoursArg = Annotated[
     float | str, WithJsonSchema({"type": "number", "exclusiveMinimum": 0, "maximum": 24})
 ]
 MoneyArg = Annotated[float | str, WithJsonSchema({"type": "number"})]
+
+
+def optional_money(value: float | str | None, field: str) -> Decimal | None:
+    """A `MoneyArg` as the `Decimal` a core schema takes, `None` when it was left out. Called
+    inside the guarded body: a value that is not an amount is a sentence, not an SDK dump."""
+    if value is None:
+        return None
+    try:
+        return Decimal(str(value))
+    except InvalidOperation as exc:
+        raise ValidationFailed(
+            "input", field, "is not an amount", expected="a number with two decimals"
+        ) from exc
+
+
 OptionalFactor = Annotated[
     float | str | None,
     WithJsonSchema(

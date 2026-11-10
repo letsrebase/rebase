@@ -20,8 +20,11 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from pigrocrm.core.errors import ValidationFailed
 
 
-def single_file_body(description: str) -> dict[str, Any]:
-    """`openapi_extra` for a route whose body is one multipart part called `file`."""
+def single_file_body(
+    description: str, fields: dict[str, dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    """`openapi_extra` for a route whose body is one multipart part called `file`, and the
+    optional text parts `fields` names (each a JSON schema), when it takes any."""
     return {
         "requestBody": {
             "required": True,
@@ -35,7 +38,8 @@ def single_file_body(description: str) -> dict[str, Any]:
                                 "type": "string",
                                 "format": "binary",
                                 "description": description,
-                            }
+                            },
+                            **(fields or {}),
                         },
                     }
                 }
@@ -55,3 +59,16 @@ async def read_upload(request: Request, limit: int) -> tuple[bytes, str | None]:
                 "upload", "file", "manca il file", expected="un file nel campo `file`"
             )
         return await part.read(limit + 1), part.content_type
+
+
+async def read_upload_fields(request: Request, limit: int) -> tuple[bytes, dict[str, str]]:
+    """The `file` part as `read_upload` reads it, and the text parts of the form beside it
+    (a part that is a file is not one of them)."""
+    async with request.form() as form:
+        part = form.get("file")
+        if not isinstance(part, StarletteUploadFile):
+            raise ValidationFailed(
+                "upload", "file", "manca il file", expected="un file nel campo `file`"
+            )
+        fields = {key: value for key, value in form.items() if isinstance(value, str)}
+        return await part.read(limit + 1), fields

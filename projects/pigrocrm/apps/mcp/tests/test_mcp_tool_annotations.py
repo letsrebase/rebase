@@ -105,7 +105,11 @@ DEFAULT_BUDGET_BYTES = 107_200
 # REB-1021: 127.0 KB, up from 126.4 KB, for `list_iva_settlements` (a full-access
 # administrator's, a year and a company) and the profile's `iva_frequency`, measured at 126,947.
 # REB-1022: 128.5 KB, up from 127.0 KB, the same three tools, measured at 128,444.
-FULL_ACCESS_BUDGET_BYTES = 128_500
+# REB-1025: 132.55 KB, up from 128.5 KB, for the six bank tools (a full-access administrator's,
+# 3.6 KB: an account has an IBAN, a currency, an opening balance, an arrival and a cadence, and
+# `update_bank_account` lists them by name and type) and `get_cash_schedule` (every token's, 453
+# bytes), measured at 132,491.
+FULL_ACCESS_BUDGET_BYTES = 132_550
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

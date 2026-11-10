@@ -417,12 +417,18 @@ async def test_set_space_modules_refuses_a_module_with_data_the_call_does_not_na
 
 
 def test_the_resolver_reads_a_stored_switch_over_the_profile_and_a_dependency_over_both() -> None:
-    assert enabled_modules(_settings(space_profile="solo")) == {"contracts", "purchases", "taxes"}
+    assert enabled_modules(_settings(space_profile="solo")) == {
+        "contracts",
+        "purchases",
+        "taxes",
+        "cash",
+    }
     assert enabled_modules(_settings(space_profile="solo", module_deals=True)) == {
         "deals",
         "contracts",
         "purchases",
         "taxes",
+        "cash",
     }
     # A hand-written row cannot make `time` live without `deals`.
     assert "time" not in enabled_modules(_settings(module_deals=False, module_time=True))

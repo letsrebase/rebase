@@ -217,6 +217,7 @@ ACTIVITY_KIND: dict[str, str] = {
 ENTITY_NOUN: dict[str, tuple[str, str]] = {
     "approval": ("approvazione", "a"),
     "bank_account": ("conto bancario", "o"),
+    "bank_statement": ("estratto conto", "o"),
     "clause_note": ("nota su una clausola", "a"),
     "contract": ("contratto", "o"),
     "contract_email_template": ("modello di email del contratto", "o"),
