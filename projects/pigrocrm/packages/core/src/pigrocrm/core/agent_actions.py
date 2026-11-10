@@ -143,6 +143,8 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         # What a letter or framework agreement would say now: a read, with the free text of the
         # texts and of the engagement in it.
         "preview_engagement",
+        # The live report of an engagement's days and what is payable: a read.
+        "read_engagement_report",
     }
 )
 
@@ -295,6 +297,11 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         # `full_access` (a later card). Previews are reads and sit in the allowed set above.
         "create_engagement_letter",
         "create_framework_agreement",
+        # A month's «Rendiconto» is recorded as received and approved by a person: the client's
+        # agreement relayed, or its objection, and the tacit date passing, never an agent's act
+        # (collaborators design § 4, frame A4). Approval is what makes a day payable.
+        "record_monthly_report",
+        "approve_monthly_report",
         # Connections to third parties, and mail that leaves in the owner's name.
         "connect_gmail",
         "disconnect_gmail",
@@ -395,6 +402,9 @@ ACTION_LABELS: dict[str, str] = {
     "close_engagement": "chiudere un incarico con un freelance",
     "send_engagement_for_signature": "mandare un incarico in firma",
     "activate_engagement": "registrare la firma di un incarico",
+    "read_engagement_report": "leggere i giorni di un incarico e quali si pagano",
+    "record_monthly_report": "registrare l'arrivo del rendiconto mensile di un incarico",
+    "approve_monthly_report": "approvare il rendiconto mensile di un incarico",
     "set_freelancer_tax_data": "salvare i dati fiscali di un freelance",
     "set_organization_hub_freelancer": "collegare un'anagrafica a un freelance dell'hub",
     "skip_space_onboarding": "rimandare le domande su come lavora lo spazio",

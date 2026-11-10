@@ -23,6 +23,7 @@ from pigrocrm.core.collaborators.models import (
     PAYMENT_RULES,
 )
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.fiscal.calendar import is_non_working_day
 
 ENTITY: Final = "engagement"
 CENT = Decimal("0.01")
@@ -295,3 +296,73 @@ def peak_commitment(
         total, _, _ = committed_in(week_start, week_end, touching)
         peak = max(peak, total + days_per_week)
     return peak, ids
+
+
+# ---- the monthly «Rendiconto» (design § 4, framework agreement 6.1 to 6.2) -----------------------
+
+# rebase tells the freelancer the outcome within seven working days of receiving the report; with
+# no reasoned objection in that time the report counts as approved.
+TACIT_WORKING_DAYS: Final = 7
+# The states of a work unit in the freelancer's ledger that are work done. A proposed day is not
+# yet, a disputed one is held by the ledger itself, and a revoked, rejected or non-billable one
+# never counted.
+COUNTING_STATUSES: Final = frozenset(
+    {"approved", "worked", "worked_without_approval", "invoiced", "paid"}
+)
+
+
+def add_working_days(day: dt.date, count: int) -> dt.date:
+    """`count` working days after `day`: Saturdays, Sundays and the national holidays of legge
+    260/1949 as amended (`fiscal.calendar`, A5 verified) are skipped. The framework agreement
+    does not define «giorno lavorativo»; this is the calendar the CRM already uses for deadlines,
+    and it is left for the contracts' legal review."""
+    current = day
+    remaining = count
+    while remaining > 0:
+        current += dt.timedelta(days=1)
+        if not is_non_working_day(current):
+            remaining -= 1
+    return current
+
+
+def tacit_date(received_on: dt.date) -> dt.date:
+    """The last day an objection counts: the seventh working day after the report arrived."""
+    return add_working_days(received_on, TACIT_WORKING_DAYS)
+
+
+def month_start(day: dt.date) -> dt.date:
+    return day.replace(day=1)
+
+
+def next_month(day: dt.date) -> dt.date:
+    return (day.replace(day=1) + dt.timedelta(days=32)).replace(day=1)
+
+
+def parse_month(label: str) -> dt.date:
+    """`2026-10` as the first day of the month."""
+    try:
+        year, month = label.split("-")
+        return dt.date(int(year), int(month), 1)
+    except ValueError as exc:
+        raise ValidationFailed(
+            ENTITY,
+            "month",
+            "il mese si scrive anno e mese, per esempio 2026-10",
+            expected="YYYY-MM",
+        ) from exc
+
+
+def month_label(month: dt.date) -> str:
+    return f"{month.year:04d}-{month.month:02d}"
+
+
+def effective_state(state: str, tacit_on: dt.date, today: dt.date) -> str:
+    """`requested` becomes `tacit` the day after `tacit_on`: nobody objected in time. A decided
+    row stays `approved`."""
+    if state == "approved":
+        return "approved"
+    return "tacit" if today > tacit_on else "requested"
+
+
+def counts_as_approved(effective: str) -> bool:
+    return effective in ("approved", "tacit")

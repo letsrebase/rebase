@@ -118,6 +118,7 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "create_engagement": ("collaborators",),
     "update_engagement": ("collaborators",),
     "get_engagement": ("collaborators",),
+    "get_engagement_report": ("collaborators",),
     "list_engagements": ("collaborators",),
     "preview_engagement": ("collaborators",),
     "preview_framework_agreement": ("collaborators",),

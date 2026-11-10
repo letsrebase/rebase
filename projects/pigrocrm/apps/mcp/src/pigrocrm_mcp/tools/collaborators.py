@@ -9,6 +9,7 @@ from typing import Any
 from uuid import UUID
 
 from pigrocrm.core.collaborators.letter_service import LetterService
+from pigrocrm.core.collaborators.days_report import DaysReportService
 from pigrocrm.core.collaborators.schemas import (
     EngagementCreate,
     EngagementListQuery,
@@ -121,6 +122,21 @@ def update(context: McpContext, engagement_id: str, data: dict[str, Any]) -> dic
 def get(context: McpContext, engagement_id: str) -> dict[str, Any]:
     found = EngagementService(context.session).get(
         _required_uuid("engagement_id", engagement_id), context.actor
+    )
+    return found.model_dump(mode="json")
+
+
+def engagement_report(
+    context: McpContext, engagement_id: str, date_from: str | None, date_to: str | None
+) -> dict[str, Any]:
+    settings = context.settings
+    if settings is None:
+        raise ValidationFailed("input", "settings", "the server has no settings to read with")
+    found = DaysReportService(context.session, settings, space_slug=context.space).report(
+        _required_uuid("engagement_id", engagement_id),
+        context.actor,
+        iso_date(date_from, "date_from"),
+        iso_date(date_to, "date_to"),
     )
     return found.model_dump(mode="json")
 

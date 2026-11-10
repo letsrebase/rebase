@@ -9,13 +9,17 @@ import datetime as dt
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
 from pydantic import BaseModel, Field
+from sqlalchemy import Engine
 
 from pigrocrm.core.collaborators.letter_service import LetterService
+from pigrocrm.core.collaborators.days_report import DaysReportService
+from pigrocrm.core.collaborators.monthly_reports import MonthlyReportService
 from pigrocrm.core.collaborators.schemas import (
     AVAILABILITY_MAX_WEEKS,
     EngagementCreate,
+    EngagementDaysReport,
     EngagementListQuery,
     EngagementPage,
     EngagementRead,
@@ -27,6 +31,10 @@ from pigrocrm.core.collaborators.schemas import (
     LetterPreview,
     LetterRead,
     LetterRequest,
+    MonthlyReportApproval,
+    MonthlyReportPage,
+    MonthlyReportRead,
+    MonthlyReportRequest,
 )
 from pigrocrm.core.collaborators.service import EngagementService, FreelancerService
 from pigrocrm.core.organizations.schemas import OrganizationRead
@@ -36,11 +44,13 @@ from pigrocrm_api.deps import (
     SessionDep,
     SettingsDep,
     StorageDep,
+    TenantsRegistryDep,
     get_actor,
     module_guard,
 )
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import KeysetParams
+from pigrocrm_api.tenancy import tenant_slug
 
 router = APIRouter(
     prefix="/api",
@@ -116,6 +126,72 @@ def change_engagement_state(
     return EngagementService(session).transition(
         engagement_id, data.state, actor, ended_on=data.ended_on
     )
+
+
+class ReportParams(BaseModel):
+    date_from: dt.date | None = Field(default=None, description="Default: the engagement's start")
+    date_to: dt.date | None = Field(
+        default=None, description="Default: the engagement's end, or today"
+    )
+
+
+@router.get("/engagements/{engagement_id}/report", response_model=EngagementDaysReport)
+def engagement_report(
+    engagement_id: UUID,
+    request: Request,
+    session: SessionDep,
+    actor: ActorDep,
+    settings: SettingsDep,
+    registry: TenantsRegistryDep,
+    params: Annotated[ReportParams, Query()],
+) -> EngagementDaysReport:
+    """The days of the engagement, read live from the freelancer's space, with each month's
+    «Rendiconto» and what is payable: a day counts only in a month approved by a person or by
+    the tacit date passing, and not held. Only from the space that holds the engagements."""
+    bind = registry.get_bind()
+    return DaysReportService(
+        session,
+        settings,
+        space_slug=tenant_slug(request),
+        registry_engine=bind if isinstance(bind, Engine) else None,
+    ).report(engagement_id, actor, params.date_from, params.date_to)
+
+
+@router.get("/engagements/{engagement_id}/monthly-reports", response_model=MonthlyReportPage)
+def list_monthly_reports(
+    engagement_id: UUID, session: SessionDep, actor: ActorDep
+) -> MonthlyReportPage:
+    """The monthly reports recorded for the engagement, oldest month first."""
+    return MonthlyReportService(session).for_engagement(engagement_id, actor)
+
+
+@router.post(
+    "/engagements/{engagement_id}/monthly-reports",
+    response_model=MonthlyReportRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def request_monthly_report(
+    engagement_id: UUID, data: MonthlyReportRequest, session: SessionDep, actor: ActorDep
+) -> MonthlyReportRead:
+    """Records that the freelancer's report of a finished month reached rebase. With no reasoned
+    objection within seven working days it counts as approved. A person's act, never an agent's."""
+    return MonthlyReportService(session).request(engagement_id, data, actor)
+
+
+@router.post(
+    "/engagements/{engagement_id}/monthly-reports/{month}/approval",
+    response_model=MonthlyReportRead,
+)
+def approve_monthly_report(
+    engagement_id: UUID,
+    month: Annotated[str, Path(description="The month the report covers, 2026-10")],
+    data: MonthlyReportApproval,
+    session: SessionDep,
+    actor: ActorDep,
+) -> MonthlyReportRead:
+    """Approves the month: its days read payable, except the `held_dates` the client contested
+    (with the reason in `objection`). A person's act, never an agent's, whatever the token."""
+    return MonthlyReportService(session).approve(engagement_id, month, data, actor)
 
 
 @router.get("/freelancers/availability", response_model=FreelancerAvailability)

@@ -139,6 +139,18 @@ class ReportDeal(BaseModel):
     status: str
 
 
+class ReportWorkUnit(BaseModel):
+    """One day of the letter's contract in the freelancer's space (`quantity` is days or
+    hours as the rate card's unit says), with the state the freelancer's ledger holds it in.
+    `billed` is whether it sits on an invoice line."""
+
+    date: dt.date
+    quantity: Decimal
+    status: str
+    description: str
+    billed: bool
+
+
 class EngagementReport(BaseModel):
     """The answer of `GET /api/rebase/engagements/{match_id}/report`. `billed_hours` is
     the CRM's own billed (`billed_entry_ids`: on a line of an issued `invoice`), so it
@@ -153,6 +165,9 @@ class EngagementReport(BaseModel):
     billed_hours: Decimal
     unbilled_hours: Decimal
     invoices: list[ReportInvoice]
+    # The days recorded as work units on the letter's contract (REB-1002), empty for a space
+    # set up before contracts, whose hours are `days`.
+    work_units: list[ReportWorkUnit] = []
 
 
 # The bounds below are the CRM's own: `organizations.legal_name` 255, `people` 120/40/255,

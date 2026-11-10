@@ -9,10 +9,12 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
+import pytest
 from mcp import Client
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.collaborators.schemas import EngagementCreate
 from pigrocrm.core.collaborators.service import EngagementService
 from pigrocrm.core.config import Settings
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
@@ -24,6 +26,7 @@ TOOLS = {
     "create_engagement",
     "update_engagement",
     "get_engagement",
+    "get_engagement_report",
     "list_engagements",
     "cancel_engagement",
     "close_engagement",
@@ -281,3 +284,45 @@ async def test_a_fee_too_long_for_its_column_comes_back_as_guidance(
 
     assert refused.is_error
     assert "errors.pydantic.dev" not in refused.content[0].text  # type: ignore[union-attr]
+
+
+async def test_the_report_is_a_read_and_no_tool_records_or_approves_a_monthly_report(
+    mcp_session: Session, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """REB-1002: an agent reads the days and what is payable; approving a month is a person's
+    act, so no tool, with or without `full_access`, names it."""
+    import pigrocrm.core.collaborators.days_report as days_report
+    from pigrocrm.core.errors import NotFound
+
+    class NotSetUp:
+        def __init__(self, *_: Any) -> None: ...
+
+        def report(self, *_: Any) -> None:
+            raise NotFound("engagement", "x")
+
+    monkeypatch.setattr(days_report, "EngagementService", NotSetUp)
+    who = _freelancer(mcp_session)
+    made = EngagementService(mcp_session).create(
+        EngagementCreate.model_validate(_args(who)), PERSON
+    )
+    _activate(mcp_session, str(made.id))
+    elsewhere = _server(mcp_session, tmp_path, module_collaborators=True)
+    leads = _server(
+        mcp_session,
+        tmp_path,
+        full_access=True,
+        module_collaborators=True,
+        leads_space="rebase",
+        root_slug="rebase",
+    )
+    async with Client(elsewhere) as client:
+        refused = await client.call_tool("get_engagement_report", {"engagement_id": str(made.id)})
+    async with Client(leads) as client:
+        report = _payload(
+            await client.call_tool("get_engagement_report", {"engagement_id": str(made.id)})
+        )
+        names = {tool.name for tool in await client.list_tools()}
+
+    assert refused.is_error and "PIGROCRM_LEADS_SPACE" in refused.content[0].text  # type: ignore[union-attr]
+    assert report["available"] is False and report["days"] == [] and "provenance" in report
+    assert not {name for name in names if "monthly_report" in name or "approve" in name}

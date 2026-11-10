@@ -318,3 +318,62 @@ def test_a_fee_too_long_for_its_column_is_a_422_and_not_a_500(
     for overrides in ({"fee": "1" + "0" * 12}, {"fee": "1E+20"}, {"expected_days": "1" + "0" * 8}):
         response = logged_in.post("/api/engagements", json=_body(who, **overrides))
         assert response.status_code == 422, (overrides, response.text)
+
+
+def test_an_admin_records_and_approves_a_months_monthly_report_and_no_agent_token_can(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    """REB-1002: a month's report is recorded and approved by a person; an agent token, with or
+    without `full_access`, reads the list and is refused both writes."""
+    _module(api_session)
+    who = _freelancer(api_session)
+    made = _create(logged_in, who, starts_on="2026-10-01", ends_on="2026-10-30")
+    _activate(logged_in, made["id"])
+    base = f"/api/engagements/{made['id']}/monthly-reports"
+    assert logged_in.put("/api/settings/space", json={"mcp_full_access": True}).status_code == 200
+
+    def token(*, full_access: bool) -> TestClient:
+        issued = logged_in.post("/api/tokens", json={"name": "agente", "full_access": full_access})
+        assert issued.status_code == 201, issued.text
+        agent = TestClient(logged_in.app, base_url="https://testserver")
+        agent.headers["Authorization"] = f"Bearer {issued.json()['token']}"
+        return agent
+
+    for agent in (token(full_access=False), token(full_access=True)):
+        refused = agent.post(base, json={"month": "2026-10"})
+        assert refused.status_code == 403 and refused.json()["code"] == "agent_forbidden"
+        assert agent.get(base).status_code == 200
+
+    recorded = logged_in.post(base, json={"month": "2026-10", "received_on": "2026-11-03"})
+    assert recorded.status_code == 201, recorded.text
+    assert (recorded.json()["label"], recorded.json()["tacit_on"]) == ("2026-10", "2026-11-12")
+    assert logged_in.post(base, json={"month": "2026-10"}).status_code == 409
+    assert logged_in.post(base, json={"month": "2026-9"}).status_code == 422
+
+    for agent in (token(full_access=False), token(full_access=True)):
+        refused = agent.post(f"{base}/2026-10/approval", json={})
+        assert refused.status_code == 403 and refused.json()["code"] == "agent_forbidden"
+
+    approved = logged_in.post(
+        f"{base}/2026-10/approval",
+        json={"held_dates": ["2026-10-06"], "objection": "Il cliente non li riconosce"},
+    )
+    # Received on 3 November, the tacit date (12 November) is past: nothing can be held now.
+    assert approved.status_code == 409, approved.text
+    approved = logged_in.post(f"{base}/2026-10/approval", json={})
+    assert approved.status_code == 200, approved.text
+    assert (approved.json()["state"], approved.json()["held_dates"]) == ("approved", [])
+    assert logged_in.post(f"{base}/2026-09/approval", json={}).status_code == 404
+    listed = logged_in.get(base).json()
+    assert [item["label"] for item in listed["items"]] == ["2026-10"]
+
+
+def test_the_days_report_is_read_only_from_the_space_that_holds_the_engagements(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    _module(api_session)
+    made = _create(logged_in, _freelancer(api_session))
+    response = logged_in.get(f"/api/engagements/{made['id']}/report")
+    assert response.status_code == 409, response.text
+    assert "PIGROCRM_LEADS_SPACE" in response.json()["detail"]
+    assert logged_in.get(f"/api/engagements/{uuid4()}/report").status_code in (404, 409)

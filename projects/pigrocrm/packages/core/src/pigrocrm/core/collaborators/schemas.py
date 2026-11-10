@@ -13,7 +13,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from pigrocrm.core.collaborators.models import ROLE_MAX_LENGTH
+from pigrocrm.core.collaborators.models import OBJECTION_MAX_LENGTH, ROLE_MAX_LENGTH
 from pigrocrm.core.documents.schemas import DocumentRead
 from pigrocrm.core.validation import SafeStr
 
@@ -265,3 +265,108 @@ class FrameworkAgreementRequest(BaseModel):
     letter_type: SafeStr | None = Field(
         default=None, max_length=KIND_MAX_LENGTH, description="ordinary | occasional"
     )
+
+
+# ---- the live report and the monthly «Rendiconto» (design § 3 and § 4) -------------------------
+
+MONTH_PATTERN = r"^\d{4}-(0[1-9]|1[0-2])$"
+# `requested`: received, nobody decided and the tacit date has not passed. `approved`: a person
+# decided it. `tacit`: no decision and the tacit date passed with no objection, which counts as
+# approved (framework 6.2) without any row having been written.
+MonthlyReportState = Literal["requested", "approved", "tacit"]
+ReportDaySource = Literal["work_unit", "time_entry"]
+ReportUnit = Literal["day", "hour"]
+
+
+class MonthlyReportRequest(BaseModel):
+    """Records that rebase received the freelancer's report of `month`. `received_on` is the day
+    it arrived (default today): the tacit date counts seven working days from it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    month: str = Field(pattern=MONTH_PATTERN, description="The month the report covers, 2026-10")
+    received_on: dt.date | None = None
+
+
+class MonthlyReportApproval(BaseModel):
+    """A person's decision on a month. `held_dates` are the days the client contested: they
+    are held and the rest is payable. Holding a day needs the reason in `objection`, and is not
+    possible once the tacit date has passed with no objection."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    held_dates: list[dt.date] = Field(default_factory=list, max_length=31)
+    objection: SafeStr | None = Field(default=None, max_length=OBJECTION_MAX_LENGTH)
+
+
+class MonthlyReportRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    engagement_id: UUID
+    month: dt.date
+    label: str = Field(description="The month, 2026-10")
+    state: str = Field(description="requested | approved, as stored")
+    effective_state: MonthlyReportState
+    counts_as_approved: bool
+    received_on: dt.date
+    tacit_on: dt.date
+    decided_on: dt.date | None
+    objection: str | None
+    held_dates: list[dt.date]
+    created_at: datetime
+    updated_at: datetime
+
+
+class MonthlyReportPage(BaseModel):
+    items: list[MonthlyReportRead]
+
+
+class ReportDay(BaseModel):
+    """One day (or one entry of hours) of the freelancer's report. `quantity` is in the report's
+    unit. `counts` says the freelancer's ledger holds it as work done (a proposed or disputed day
+    does not), `in_term` that it falls within the engagement's dates; `payable` is both, in a
+    month whose «Rendiconto» counts as approved, and not held."""
+
+    date: dt.date
+    quantity: Decimal
+    source: ReportDaySource
+    status: str | None
+    description: str
+    counts: bool
+    in_term: bool
+    held: bool
+    payable: bool
+
+
+class ReportMonth(BaseModel):
+    month: dt.date
+    label: str
+    monthly_report: MonthlyReportRead | None
+    quantity: Decimal = Field(description="Everything that counts and is in term, in `unit`")
+    held_quantity: Decimal
+    payable_quantity: Decimal
+    payable_amount: Decimal | None = Field(
+        description="`payable_quantity` times the fee; none for a flat fee"
+    )
+
+
+class EngagementDaysReport(BaseModel):
+    """The engagement's days read live from the freelancer's space, with what is payable.
+    `unit` is `hour` for an hourly letter, which pays approved hours, and `day` otherwise (a
+    time entry's hours are days at 8 a day). `available` is false until the freelancer's space
+    has been set up for the engagement; `note` then says why."""
+
+    engagement_id: UUID
+    unit: ReportUnit
+    fee_unit: str
+    date_from: dt.date
+    date_to: dt.date
+    available: bool
+    note: str | None
+    days: list[ReportDay]
+    months: list[ReportMonth]
+    total_quantity: Decimal
+    payable_quantity: Decimal
+    held_quantity: Decimal
+    payable_amount: Decimal | None

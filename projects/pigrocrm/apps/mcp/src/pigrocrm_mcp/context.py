@@ -7,6 +7,7 @@ from typing import cast
 from sqlalchemy.orm import Session, sessionmaker
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.config import Settings
 from pigrocrm.core.storage import DocumentStorage
 
 SessionProvider = Callable[[], Session]
@@ -33,6 +34,11 @@ class McpContext:
     # settings change): what a core tool that reads across modules leaves out. `None`:
     # every module, the way a context built without settings (a test's) reads.
     modules: frozenset[str] | None = None
+    # The settings the server was built with and the slug of the space it serves (`None` for the
+    # root without a prefix): what a tool that reads across spaces (the engagement report, which
+    # is only for the space `PIGROCRM_LEADS_SPACE` names) needs.
+    settings: Settings | None = None
+    space: str | None = None
 
     @property
     def session(self) -> Session:

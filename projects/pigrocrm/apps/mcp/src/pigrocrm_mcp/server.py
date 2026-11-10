@@ -295,6 +295,8 @@ def build_server(
             resolved_settings, session_factory=getattr(session_provider, "new_session", None)
         ),
         modules=enabled_modules(resolved_settings),
+        settings=resolved_settings,
+        space=space,
     )
     mcp = GuidedMCPServer(
         "PigroCRM", instructions=INSTRUCTIONS, middleware=middleware, actor_provider=actor_provider
