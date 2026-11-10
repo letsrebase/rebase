@@ -147,6 +147,10 @@ _READS: dict[Method, str] = {
     ("StaffService", "get_staff_member"): "reads a member; the role check only keeps pay private",
     ("StaffService", "list_staff"): "reads the members; the role check only keeps pay private",
     ("StaffService", "get_payroll_pay_day"): "reads the pay day; the role check only gates it",
+    ("StaffService", "propose_staff_hourly_cost"): "offers a figure and writes nothing (REB-1009)",
+    ("StaffService", "adopt_staff_hourly_cost"): (
+        "writes through `TimeEntryService.update_user_rates`, which records the timeline entry"
+    ),
     ("PayrollService", "get_payroll_month"): "reads a month's estimate; the role check gates it",
     ("UserService", "list"): "reads the members",
 }

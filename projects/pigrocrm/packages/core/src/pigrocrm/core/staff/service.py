@@ -28,9 +28,11 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.auth.models import User
 from pigrocrm.core.db import today_local
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.money import round_money
 from pigrocrm.core.schemas import supplied_changes
 from pigrocrm.core.staff.estimate import first_of
 from pigrocrm.core.staff.models import (
@@ -46,6 +48,8 @@ from pigrocrm.core.staff.schemas import (
     DirectorCreate,
     EffectivePayDay,
     EmployeeCreate,
+    HourlyCostAdopt,
+    HourlyCostProposalRead,
     PayDayRead,
     PayDayWrite,
     PayslipFigures,
@@ -55,6 +59,8 @@ from pigrocrm.core.staff.schemas import (
     StaffMemberUpdate,
     StaffPage,
 )
+from pigrocrm.core.timetracking.schemas import UserRatesUpdate
+from pigrocrm.core.timetracking.service import TimeEntryService
 
 ENTITY = "staff_member"
 PAY_DAY_ENTITY = "payroll_settings"
@@ -233,6 +239,76 @@ class StaffService:
         self.session.commit()
         self.session.refresh(payslip)
         return PayslipRead.model_validate(payslip)
+
+    def propose_staff_hourly_cost(
+        self, staff_member_id: UUID, actor: Actor
+    ) -> HourlyCostProposalRead:
+        """What an hour of this person costs: a month's cost
+        (`PayrollService.reference_monthly_cost`) over their working hours a month, for the
+        linked user's `default_hourly_cost` (design § 5). Offered on request to an
+        administrator and written nowhere; there is no agent tool, and a credential is
+        refused (`agent_actions.py`)."""
+        actor.require_person("propose_staff_hourly_cost")
+        actor.require_unscoped_admin("propose_staff_hourly_cost")
+        member = self._require(staff_member_id)
+        if member.user_id is None:
+            raise ValidationFailed(
+                ENTITY,
+                "user_id",
+                "la persona non e' collegata a un utente: senza, il costo orario non ha dove "
+                "andare",
+                expected="una persona collegata a un utente",
+            )
+        if member.hours_per_month is None:
+            raise ValidationFailed(
+                ENTITY,
+                "hours_per_month",
+                "mancano le ore di lavoro al mese: il costo mensile si divide per quelle",
+                expected="le ore di lavoro al mese",
+            )
+        reference = self.payroll.reference_monthly_cost(member, today_local())
+        if reference is None:
+            raise ValidationFailed(
+                ENTITY,
+                "gross_annual_pay" if member.kind == "employee" else "annual_fee",
+                "non c'e' un mese intero di servizio con un costo da cui partire",
+                expected="la retribuzione e un mese intero in servizio",
+            )
+        month, monthly = reference
+        user = self.session.get(User, member.user_id)
+        if user is None:
+            raise NotFound("user", member.user_id)
+        return HourlyCostProposalRead(
+            staff_member_id=member.id,
+            user_id=member.user_id,
+            month=month,
+            monthly_cost=monthly,
+            hours_per_month=member.hours_per_month,
+            hourly_cost=round_money(monthly / member.hours_per_month),
+            current_hourly_cost=user.default_hourly_cost,
+        )
+
+    def adopt_staff_hourly_cost(
+        self, staff_member_id: UUID, data: HourlyCostAdopt, actor: Actor
+    ) -> HourlyCostProposalRead:
+        """A person confirms the figure they were shown and it becomes the linked user's
+        `default_hourly_cost`, from now on (hours already logged keep theirs). Refused when the
+        cost no longer gives that figure, so what was adopted is what was seen. The write is
+        `TimeEntryService.update_user_rates`, with its own timeline entry."""
+        actor.require_person("adopt_staff_hourly_cost")
+        actor.require_unscoped_admin("adopt_staff_hourly_cost")
+        proposal = self.propose_staff_hourly_cost(staff_member_id, actor)
+        if proposal.hourly_cost != data.hourly_cost:
+            raise Conflict(
+                ENTITY,
+                "il costo orario non e' piu' quello proposto: va riletto prima di adottarlo",
+                staff_member_id=str(staff_member_id),
+                proposed=str(proposal.hourly_cost),
+            )
+        TimeEntryService(self.session).update_user_rates(
+            proposal.user_id, UserRatesUpdate(default_hourly_cost=data.hourly_cost), actor
+        )
+        return self.propose_staff_hourly_cost(staff_member_id, actor)
 
     # `list_staff` stays the last method in this class -- the unconditional project rule.
     def list_staff(self, query: StaffListQuery, actor: Actor) -> StaffPage:

@@ -136,6 +136,28 @@ class PayrollService:
             cash_total=sum((i.amount for r in rows for i in r.cash), ZERO_MONEY),
         )
 
+    def reference_monthly_cost(
+        self, member: StaffMember, today: dt.date
+    ) -> tuple[dt.date, Decimal] | None:
+        """The month's cost an hourly cost is taken from: the accrual of the current month,
+        moved to the nearest month the person was in service for the whole of it (a part
+        month's cost is prorated and would understate the hour). The accrual, never a
+        payslip's gross: a payslip prints one payment, with no share of the 13th and 14th,
+        so the hour would move with whether one was typed in and not with what the person
+        costs. `None` when the pay inputs give no cost there, or no whole month was served."""
+        first = first_of(member.start_date)
+        low = first if member.start_date == first else add_months(first, 1)
+        month = max(first_of(today), low)
+        if member.end_date is not None:
+            end_first = first_of(member.end_date)
+            ends_on_last = add_months(end_first, 1) - dt.timedelta(days=1) == member.end_date
+            high = end_first if ends_on_last else add_months(end_first, -1)
+            month = min(month, high)
+        if month < low:
+            return None
+        cost = estimate_month(member, month, pay_day=None, law=None, ratios=None, payslip=None).cost
+        return None if cost is None else (month, cost.total)
+
     def personnel_cost_in_range(
         self, legal_entity_id: UUID | None, date_from: dt.date, date_to: dt.date
     ) -> Decimal:

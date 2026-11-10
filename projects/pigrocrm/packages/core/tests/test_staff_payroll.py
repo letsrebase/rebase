@@ -19,11 +19,19 @@ from tax_period import FIRST_OF_MONTH, TODAY
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.schemas import PeriodPnlQuery
 from pigrocrm.core.analytics.service import AnalyticsService
+from pigrocrm.core.auth.models import User
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.due_items.models import DueItem
 from pigrocrm.core.due_items.schemas import DueItemListQuery, PayrollTotalsQuery
 from pigrocrm.core.due_items.service import DueItemService
-from pigrocrm.core.errors import AgentForbidden, Conflict, PermissionDenied, ValidationFailed
+from pigrocrm.core.errors import (
+    AgentForbidden,
+    Conflict,
+    NotFound,
+    PermissionDenied,
+    ScopedAdmin,
+    ValidationFailed,
+)
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.staff.estimate import add_months, first_of
@@ -32,6 +40,7 @@ from pigrocrm.core.staff.payroll import PayrollService
 from pigrocrm.core.staff.schemas import (
     DirectorCreate,
     EmployeeCreate,
+    HourlyCostAdopt,
     PayDayWrite,
     PayslipFigures,
     StaffMemberUpdate,
@@ -504,3 +513,135 @@ def test_the_daily_pass_rolls_the_payroll_window_and_a_failing_entity_does_not_s
     monkeypatch.setattr(PayrollService, "refresh_payroll_forecasts", flaky)
     again = AutomationPass(db_session).run()
     assert again.payroll_failed == 1 and again.payroll_refreshed >= 1
+
+
+def _linked_user(session: Session, member: UUID, **rates: object) -> User:
+    user = User(
+        email=f"{uuid4()}@example.test", password_hash="x", name="Giulia", role="collaborator"
+    )
+    for name, value in rates.items():
+        setattr(user, name, value)
+    session.add(user)
+    session.flush()
+    StaffService(session).update_staff_member(member, StaffMemberUpdate(user_id=user.id), ADMIN)
+    return user
+
+
+def test_the_hourly_cost_is_a_months_cost_over_the_working_hours_and_is_written_nowhere(
+    db_session: Session,
+) -> None:
+    _, member = _world(db_session, hours_per_month=Decimal("160"))
+    user = _linked_user(db_session, member, default_hourly_cost=Decimal("11.00"))
+    proposal = StaffService(db_session).propose_staff_hourly_cost(member, ADMIN)
+    assert proposal.monthly_cost == Decimal("3275.00")  # 2500 gross, 750 INPS, 25 INAIL
+    assert proposal.hourly_cost == Decimal("20.47")
+    assert proposal.month == THIS_MONTH
+    assert proposal.user_id == user.id and proposal.current_hourly_cost == Decimal("11.00")
+    db_session.refresh(user)
+    assert user.default_hourly_cost == Decimal("11.00")
+
+
+def test_an_accepted_payslip_does_not_move_the_hour(db_session: Session) -> None:
+    _, member = _world(db_session, hours_per_month=Decimal("100"))
+    _linked_user(db_session, member)
+    service = StaffService(db_session)
+    before = service.propose_staff_hourly_cost(member, ADMIN)
+    # A payslip prints one payment, without the 13th and 14th: the hour is the accrual's.
+    service.record_staff_payslip(member, _payslip(THIS_MONTH, gross=Decimal("2000.00")), ADMIN)
+    assert service.propose_staff_hourly_cost(member, ADMIN) == before
+
+
+def test_a_part_month_is_not_the_months_cost_an_hour_is_taken_from(db_session: Session) -> None:
+    start = THIS_MONTH.replace(day=2)
+    _, member = _world(db_session, start_date=start, hours_per_month=Decimal("160"))
+    _linked_user(db_session, member)
+    proposal = StaffService(db_session).propose_staff_hourly_cost(member, ADMIN)
+    assert proposal.month == NEXT_MONTH and proposal.monthly_cost == Decimal("3275.00")
+
+
+def test_without_a_user_hours_or_a_whole_month_there_is_nothing_to_propose(
+    db_session: Session,
+) -> None:
+    _, member = _world(db_session)
+    service = StaffService(db_session)
+    with pytest.raises(ValidationFailed, match="utente"):
+        service.propose_staff_hourly_cost(member, ADMIN)
+    _linked_user(db_session, member)
+    with pytest.raises(ValidationFailed, match="ore di lavoro"):
+        service.propose_staff_hourly_cost(member, ADMIN)
+    service.update_staff_member(
+        member,
+        StaffMemberUpdate(hours_per_month=Decimal("160"), end_date=THIS_MONTH.replace(day=2)),
+        ADMIN,
+    )
+    # Started in the past and ending on the 2nd of this month: last month is the last whole one.
+    assert service.propose_staff_hourly_cost(member, ADMIN).month == LAST_MONTH
+
+
+def test_adopting_writes_the_confirmed_figure_and_refuses_a_stale_one(
+    db_session: Session,
+) -> None:
+    _, member = _world(db_session, hours_per_month=Decimal("160"))
+    user = _linked_user(db_session, member)
+    service = StaffService(db_session)
+    with pytest.raises(Conflict):
+        service.adopt_staff_hourly_cost(
+            member, HourlyCostAdopt(hourly_cost=Decimal("20.00")), ADMIN
+        )
+    db_session.refresh(user)
+    assert user.default_hourly_cost is None
+    adopted = service.adopt_staff_hourly_cost(
+        member, HourlyCostAdopt(hourly_cost=Decimal("20.47")), ADMIN
+    )
+    assert adopted.current_hourly_cost == Decimal("20.47")
+    db_session.refresh(user)
+    assert user.default_hourly_cost == Decimal("20.47")
+
+
+@pytest.mark.parametrize("actor", [COLLABORATOR, READONLY], ids=["collaborator", "readonly"])
+def test_the_hourly_cost_is_a_persons_and_an_administrators_never_a_token_or_a_collaborators(
+    db_session: Session, actor: Actor
+) -> None:
+    _, member = _world(db_session, hours_per_month=Decimal("160"))
+    _linked_user(db_session, member)
+    service = StaffService(db_session)
+    adopt = HourlyCostAdopt(hourly_cost=Decimal("20.47"))
+    for token in (AGENT_ADMIN, AGENT_ADMIN_FULL):
+        with pytest.raises(AgentForbidden):
+            service.propose_staff_hourly_cost(member, token)
+        with pytest.raises(AgentForbidden):
+            service.adopt_staff_hourly_cost(member, adopt, token)
+    with pytest.raises(PermissionDenied):
+        service.propose_staff_hourly_cost(member, actor)
+    with pytest.raises(PermissionDenied):
+        service.adopt_staff_hourly_cost(member, adopt, actor)
+
+
+def test_the_month_is_clamped_to_whole_months_of_service(db_session: Session) -> None:
+    _, member = _world(db_session, hours_per_month=Decimal("160"))
+    _linked_user(db_session, member)
+    service = StaffService(db_session)
+    last_of_last = THIS_MONTH - dt.timedelta(days=1)
+    service.update_staff_member(member, StaffMemberUpdate(end_date=last_of_last), ADMIN)
+    assert service.propose_staff_hourly_cost(member, ADMIN).month == LAST_MONTH
+    # Started and ended inside one month: no whole month was served.
+    service.update_staff_member(
+        member,
+        StaffMemberUpdate(start_date=THIS_MONTH.replace(day=2), end_date=THIS_MONTH.replace(day=9)),
+        ADMIN,
+    )
+    with pytest.raises(ValidationFailed, match="mese intero"):
+        service.propose_staff_hourly_cost(member, ADMIN)
+
+
+def test_an_unknown_member_and_a_scoped_administrator_get_nothing(db_session: Session) -> None:
+    _, member = _world(db_session, hours_per_month=Decimal("160"))
+    _linked_user(db_session, member)
+    service = StaffService(db_session)
+    with pytest.raises(NotFound):
+        service.propose_staff_hourly_cost(uuid4(), ADMIN)
+    scoped = Actor(id=uuid4(), type="user", role="admin", legal_entities=(uuid4(),))
+    with pytest.raises(ScopedAdmin):
+        service.propose_staff_hourly_cost(member, scoped)
+    with pytest.raises(ScopedAdmin):
+        service.adopt_staff_hourly_cost(member, HourlyCostAdopt(hourly_cost=Decimal("1")), scoped)

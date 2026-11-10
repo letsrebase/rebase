@@ -173,6 +173,12 @@ ROWS: list[Row] = [
             "withholding": "300.00",
         },
     ),
+    Row(
+        "POST",
+        "/api/staff/{staff_member_id}/hourly-cost",
+        admin_only=True,
+        body={"hourly_cost": "20.47"},
+    ),
     # --- declared tax figures (REB-1006): admin, before any lookup -------------------------
     Row(
         "PUT",

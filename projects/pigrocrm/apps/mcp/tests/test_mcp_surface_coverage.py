@@ -370,6 +370,9 @@ _INTERNE: dict[Method, str] = {
     ("DueItemService", "reschedule"): "the writer's half: the owner of an outgoing item moves it",
     # REB-1008: the payroll source's writer's half and the P&L's read of the personnel line,
     # neither takes an actor: `StaffService` and `AnalyticsService` authorise first.
+    ("PayrollService", "reference_monthly_cost"): (
+        "REB-1009: the month an hourly cost is taken from; no actor, `StaffService` authorises"
+    ),
     ("PayrollService", "refresh_payroll_forecasts"): (
         "the writer's half: the staff service refreshes the payroll items it just changed"
     ),
@@ -697,6 +700,14 @@ _CONFIGURATION: dict[Method, str] = {
     ("StaffService", "record_staff_payslip"): (
         "REB-1008: accepting a payslip is a person's act (frame A4): a person types the figures "
         "on the staff page, and the inbox's proposal, later, is accepted by a person too"
+    ),
+    ("StaffService", "propose_staff_hourly_cost"): (
+        "REB-1009, staff design § 5: the hourly cost a person's pay gives is offered to an "
+        "administrator by the staff page's button; it is no agent's read"
+    ),
+    ("StaffService", "adopt_staff_hourly_cost"): (
+        "REB-1009: adopting it changes every future entry's value, so a person confirms the "
+        "figure; `update_user_rates` is the full-access tool for a rate typed by hand"
     ),
     ("StaffService", "get_payroll_pay_day"): (
         "REB-977: the legal entity's pay day is read with the staff page; the effective one is "

@@ -263,6 +263,29 @@ CashKindName = Literal["net_pay", "extra_pay", "withholding", "inps_contribution
 EstimateSource = Literal["estimate", "payslip"]
 
 
+class HourlyCostProposalRead(BaseModel):
+    """What a staff member's hour costs, from what they cost (design § 5), and the hourly cost
+    the linked user has today. Read-only: nothing here has been written."""
+
+    staff_member_id: UUID
+    user_id: UUID
+    # The month the cost accrual was taken from.
+    month: dt.date
+    monthly_cost: Decimal
+    hours_per_month: Decimal
+    hourly_cost: Decimal
+    current_hourly_cost: Decimal | None
+
+
+class HourlyCostAdopt(BaseModel):
+    """The figure the person saw and confirms: adopted only if it is still what the cost
+    gives, so a change of pay between the screen and the click is never adopted unseen."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    hourly_cost: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+
+
 class PayrollCostRead(BaseModel):
     """A month's cost: the gross pay and the employer's contributions that could be estimated
     (`None` where the rate is not stated), and their total."""
