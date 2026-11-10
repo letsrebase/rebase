@@ -130,6 +130,11 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "preview_framework_agreement": ("collaborators",),
     "cancel_engagement": ("collaborators",),
     "close_engagement": ("collaborators",),
+    "send_engagement_for_signature": ("collaborators",),
+    "resend_signing_mail": ("collaborators",),
+    "refresh_document_signature": ("collaborators",),
+    "cancel_framework_agreement": ("collaborators",),
+    "record_framework_notice": ("collaborators",),
     "get_freelancer_availability": ("collaborators",),
     "set_freelancer_tax_data": ("collaborators",),
     # Across modules: all of them, or the tool is not there.

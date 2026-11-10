@@ -119,6 +119,14 @@ x-api-environment: &api-environment
   PIGROCRM_ENGAGEMENTS_TOKEN: ${PIGROCRM_ENGAGEMENTS_TOKEN:-}
   # The one space the leads route files company requests into (REB-866). Empty: 503.
   PIGROCRM_LEADS_SPACE: ${PIGROCRM_LEADS_SPACE:-}
+  # Signing through Documenso (REB-1019): the URL as this stack reaches it, the API token of the
+  # Documenso user and team the installation signs through, and the secret typed into Documenso's
+  # webhook (sent as X-Documenso-Secret to POST /api/documenso/webhook on the root). URL and token
+  # together switch signing on; empty, a letter is signed by hand and its PDF uploaded. The hub keeps
+  # signing until the cutover: set these only then.
+  PIGROCRM_DOCUMENSO_URL: ${PIGROCRM_DOCUMENSO_URL:-}
+  PIGROCRM_DOCUMENSO_API_TOKEN: ${PIGROCRM_DOCUMENSO_API_TOKEN:-}
+  PIGROCRM_DOCUMENSO_WEBHOOK_SECRET: ${PIGROCRM_DOCUMENSO_WEBHOOK_SECRET:-}
   # Resend sends the login link and the welcome mail (spec 2026-09-12 §6.1). Empty
   # key: no mail, the endpoints answer 503, the password login still works.
   PIGROCRM_RESEND_API_KEY: ${PIGROCRM_RESEND_API_KEY:-}

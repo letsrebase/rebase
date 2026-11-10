@@ -115,6 +115,15 @@ class DocumentService:
         restore, so nothing here calls it."""
         actor.require_write("delete_document")
         document = self._context.require(document_id)
+        if document.signature_state in ("pending", "sent", "signed", "notice_served"):
+            # A letter that left, waits for its agreement or was signed is not deleted from under
+            # its envelope: the webhook would no longer find it and the link would stay live. It
+            # is cancelled (`cancel_framework_agreement`, or cancelling its engagement).
+            raise Conflict(
+                ENTITY,
+                "un documento partito per la firma, in attesa o firmato non si elimina: si annulla",
+                signature_state=document.signature_state,
+            )
         document.deleted_at = datetime.now(UTC)
         self._context.activities.record(ENTITY, document.id, "deleted", actor)
         self.session.commit()

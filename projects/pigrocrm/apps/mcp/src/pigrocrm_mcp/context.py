@@ -3,6 +3,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import cast
+from uuid import UUID
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -44,6 +45,10 @@ class McpContext:
     # engagements door's customer at the survivor, REB-1031). The HTTP transport gives every
     # space's server one; stdio serves the root installation, which has no such rows.
     registry_session: Callable[[], Session] | None = None
+    # This space's id in the registry, `None` for the root installation and for a server whose
+    # signing is off: what the engagement signing tools write into a new envelope's `externalId`
+    # so the webhook finds the space again.
+    tenant_id: UUID | None = None
 
     @property
     def session(self) -> Session:

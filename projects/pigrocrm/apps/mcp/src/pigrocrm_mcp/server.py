@@ -276,6 +276,7 @@ def build_server(
     middleware: Sequence[ServerMiddleware[Any]] | None = None,
     space: str | None = None,
     registry_session: SessionProvider | None = None,
+    tenant_id: UUID | None = None,
 ) -> MCPServer:
     """The server of one installation (stdio) or one space (HTTP).
 
@@ -288,6 +289,8 @@ def build_server(
     `space` names the PostHog group and the space the registry rows of a tool are read for,
     and `registry_session` opens a session on the tenants registry, which a server of a space
     needs for the one tool that writes there (`merge_organizations`).
+    `space` names the PostHog group; `tenant_id` is that space's registry id, what a new
+    signing envelope's `externalId` carries (`None` for the root, and when signing is off).
     """
     resolved_settings = settings or get_settings()
     context = McpContext(
@@ -301,6 +304,7 @@ def build_server(
         settings=resolved_settings,
         space=space,
         registry_session=registry_session,
+        tenant_id=tenant_id,
     )
     mcp = GuidedMCPServer(
         "PigroCRM", instructions=INSTRUCTIONS, middleware=middleware, actor_provider=actor_provider

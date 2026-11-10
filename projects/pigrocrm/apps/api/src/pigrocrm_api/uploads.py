@@ -20,8 +20,11 @@ from starlette.datastructures import UploadFile as StarletteUploadFile
 from pigrocrm.core.errors import ValidationFailed
 
 
-def single_file_body(description: str) -> dict[str, Any]:
-    """`openapi_extra` for a route whose body is one multipart part called `file`."""
+def single_file_body(
+    description: str, text_fields: dict[str, dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    """`openapi_extra` for a route whose body is one multipart part called `file`, and optionally
+    some text parts beside it (`text_fields`: the part's name and its JSON schema)."""
     return {
         "requestBody": {
             "required": True,
@@ -35,7 +38,8 @@ def single_file_body(description: str) -> dict[str, Any]:
                                 "type": "string",
                                 "format": "binary",
                                 "description": description,
-                            }
+                            },
+                            **(text_fields or {}),
                         },
                     }
                 }
@@ -44,14 +48,24 @@ def single_file_body(description: str) -> dict[str, Any]:
     }
 
 
-async def read_upload(request: Request, limit: int) -> tuple[bytes, str | None]:
-    """The `file` part of the request as `(bytes, client-supplied content type)`, at most
-    `limit + 1` bytes of it: the service refuses an oversize body with its own sentence, so
-    one byte over is all it has to see."""
+async def read_upload_with_fields(
+    request: Request, limit: int, *names: str
+) -> tuple[bytes, str | None, dict[str, str]]:
+    """As `read_upload`, and the text parts called `names` that came beside the file (the ones
+    that were sent, as strings)."""
     async with request.form() as form:
         part = form.get("file")
         if not isinstance(part, StarletteUploadFile):
             raise ValidationFailed(
                 "upload", "file", "manca il file", expected="un file nel campo `file`"
             )
-        return await part.read(limit + 1), part.content_type
+        fields = {name: value for name in names if isinstance(value := form.get(name), str)}
+        return await part.read(limit + 1), part.content_type, fields
+
+
+async def read_upload(request: Request, limit: int) -> tuple[bytes, str | None]:
+    """The `file` part of the request as `(bytes, client-supplied content type)`, at most
+    `limit + 1` bytes of it: the service refuses an oversize body with its own sentence, so
+    one byte over is all it has to see."""
+    data, content_type, _ = await read_upload_with_fields(request, limit)
+    return data, content_type

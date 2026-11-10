@@ -104,6 +104,7 @@ _GATES = frozenset({"require_write", "require_admin", "require_unscoped_admin"})
 _READS: dict[Method, str] = {
     ("LetterService", "preview_letter"): "renders a letter and stores nothing",
     ("LetterService", "preview_framework_agreement"): "renders an agreement and stores nothing",
+    ("SigningService", "get"): "reads where a document stands: its state, dates and reason",
     ("AccountantExportService", "get_export_download_url"): "reads where a stored export is",
     ("AccountantExportService", "download_part"): "reads one stored ZIP",
     ("AccountantExportService", "list_exports"): "reads the stored exports",

@@ -105,6 +105,19 @@ class Settings(BaseSettings):
     # token, unreachable hub, anything but a 200: the answer is «not a member» and the
     # signup goes on. The community is the fast lane, never a gate.
     hub_url: str = "https://letsrebase.com"
+    # --- Signing: Documenso (REB-1019, collaborators design § 2). One Documenso serves the
+    # whole installation, configured here and never from a screen: the URL as this process
+    # reaches it, the API token of the Documenso user and team the installation signs through
+    # (a token reads and cancels every envelope of its user's teams), and the secret typed into
+    # Documenso's webhook, which Documenso sends verbatim as `X-Documenso-Secret`. The URL and
+    # the token together switch signing on; without them a letter is downloaded, signed by hand
+    # and its signed PDF uploaded, and nothing in this installation calls a Documenso. The
+    # secret alone switches the webhook route on: empty, it answers 503. Every one is empty by
+    # default and the compose file forwards them empty, so an installation that does not sign
+    # boots exactly as before. The token and the secret are credentials, so `repr=False`.
+    documenso_url: str = ""
+    documenso_api_token: str = Field(default="", repr=False)
+    documenso_webhook_secret: str = Field(default="", repr=False)
     # The HS256 signing key of every token. Public until an operator sets it: the default
     # builds a `Settings` for the CLI and the tests, and `require_production_secrets` is what
     # refuses to serve with it. Compose requires the variable (`:?`).
@@ -440,7 +453,7 @@ class Settings(BaseSettings):
             )
         return value
 
-    @field_validator("registry_token", "engagements_token")
+    @field_validator("registry_token", "engagements_token", "documenso_webhook_secret")
     @classmethod
     def _service_token_must_be_long_enough(cls, value: str, info: ValidationInfo) -> str:
         # Empty is legal and means the door does not exist; a token that is set is a shared
@@ -450,6 +463,19 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"{info.field_name} must be at least {MIN_SERVICE_TOKEN_LENGTH} characters "
                 "long when it is set, or empty to switch the route off"
+            )
+        return value
+
+    @field_validator("documenso_url")
+    @classmethod
+    def _documenso_url_must_be_a_web_address(cls, value: str) -> str:
+        # Empty is legal and means signing is off. One that is set is a base URL the API token
+        # is sent to: anything but http(s) fails the boot rather than the first send.
+        value = value.strip()
+        if value and not value.startswith(("http://", "https://")):
+            raise ValueError(
+                "documenso_url must start with http:// or https://, or be empty to switch "
+                "signing off"
             )
         return value
 

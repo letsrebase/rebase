@@ -12,6 +12,7 @@ does not work, and never freed onto one that still does (REB-230).
 import logging
 import threading
 from pathlib import Path
+from uuid import UUID
 
 from alembic import command
 from alembic.config import Config
@@ -132,6 +133,11 @@ class TenantService:
         if tenant is None:
             raise NotFound("tenant", slug)
         return tenant
+
+    def get_by_id(self, tenant_id: UUID) -> Tenant | None:
+        """The space with this registry id, or `None`: the envelope's `externalId` names a space
+        by it, and a space that no longer exists is not an error the webhook should raise."""
+        return self.session.scalar(select(Tenant).where(Tenant.id == tenant_id))
 
     def _reason(self, slug: str) -> str | None:
         """`validate_slug`, plus the one name only this installation knows is taken: the

@@ -216,6 +216,7 @@ Persisted values get English values. The most common ones:
 | nuovo / contattato / in_corso / chiuso | new / contacted / in_progress / closed | hub company status |
 | bozza / in_firma / attivo / concluso / annullato | draft / awaiting_signature / active / concluded / cancelled | hub match status |
 | generato / in_attesa / inviato / firmato / annullato / disdetto | generated / pending / sent / signed / cancelled / notice_served | hub contract document status |
+| stato della firma / busta / copia firmata a mano | `signature_state` / `envelope_id` / `upload_signed_copy` | REB-1019: the hub's contract document status, now columns of `documents` for a framework agreement or an engagement letter; `signed_by_hand` says the signed PDF was uploaded and not sealed by Documenso. |
 | da_collegare / collegato / errore / rifiutato | to_link / linked / error / rejected | hub CRM and Pigro link status |
 | bozza / programmata / in_invio / inviata / annullata | draft / scheduled / sending / sent / cancelled | hub campaign status |
 | in_coda / inviata / saltata / fallita | queued / sent / skipped / failed | campaign recipient status |

@@ -18,6 +18,7 @@ products do not import each other (root `AGENTS.md`), and eighty lines are cheap
 a dependency between two release trains.
 """
 
+import base64
 import json
 import logging
 import urllib.error
@@ -67,11 +68,20 @@ def urllib_call(method: str, url: str, headers: dict[str, str], body: bytes) -> 
 
 
 @dataclass(frozen=True)
+class Attachment:
+    """A file that travels with a mail: Resend takes it base64-encoded under `content`."""
+
+    filename: str
+    content: bytes
+
+
+@dataclass(frozen=True)
 class Mail:
     to: str
     subject: str
     text: str
     html: str | None = None
+    attachments: tuple[Attachment, ...] = ()
 
 
 # What a provider says became of a mail it accepted, in this product's words. `sent` and
@@ -174,6 +184,11 @@ class ResendSender:
         }
         if mail.html is not None:
             body["html"] = mail.html
+        if mail.attachments:
+            body["attachments"] = [
+                {"filename": item.filename, "content": base64.b64encode(item.content).decode()}
+                for item in mail.attachments
+            ]
         payload = json.dumps(body).encode()
         try:
             status, raw = self.http("POST", RESEND_URL, self._headers(), payload)

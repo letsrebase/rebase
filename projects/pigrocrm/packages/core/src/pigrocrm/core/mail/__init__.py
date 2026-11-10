@@ -2,10 +2,16 @@
 
 `transport` is the seam (`Mail`, the senders, Resend behind them), `frame` the branded HTML
 box every mail sits in, `formatting` the Italian dates and amounts, and each mail has its
-own module: `digest`, `reminder`, `invitation`, `magic_link`, `welcome`. The rest of the
-repository imports from this package, never from a submodule.
+own module: `digest`, `reminder`, `invitation`, `magic_link`, `welcome`, `contracts`. The rest of
+the repository imports from this package, never from a submodule.
 """
 
+from pigrocrm.core.mail.contracts import (
+    document_name,
+    signed_copy_mail,
+    signing_cancelled_mail,
+    signing_request_mail,
+)
 from pigrocrm.core.mail.digest import digest_mail, digest_subject
 from pigrocrm.core.mail.formatting import day_short, euro
 from pigrocrm.core.mail.invitation import invitation_mail
@@ -15,6 +21,7 @@ from pigrocrm.core.mail.transport import (
     OPEN_MAIL_STATES,
     RESEND_URL,
     USER_AGENT,
+    Attachment,
     EmailSender,
     Mail,
     MailState,
@@ -31,6 +38,7 @@ __all__ = [
     "OPEN_MAIL_STATES",
     "RESEND_URL",
     "USER_AGENT",
+    "Attachment",
     "EmailSender",
     "Mail",
     "MailState",
@@ -41,12 +49,16 @@ __all__ = [
     "TrackedSender",
     "digest_mail",
     "digest_subject",
+    "document_name",
     "euro",
     "day_short",
     "invitation_mail",
     "magic_link_mail",
     "reminder_mail",
     "sender_from_settings",
+    "signed_copy_mail",
+    "signing_cancelled_mail",
+    "signing_request_mail",
     "urllib_call",
     "welcome_mail",
 ]
