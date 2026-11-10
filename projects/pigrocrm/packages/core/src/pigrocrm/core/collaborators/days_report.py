@@ -22,7 +22,7 @@ from contextlib import contextmanager
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -39,11 +39,13 @@ from pigrocrm.core.collaborators.schemas import (
     ReportUnit,
 )
 from pigrocrm.core.config import Settings
-from pigrocrm.core.db import today_local
+from pigrocrm.core.db import session_factory, today_local
+from pigrocrm.core.engagements.models import RebaseEngagement
 from pigrocrm.core.engagements.schemas import HOURS_PER_DAY, REPORT_MAX_DAYS, EngagementReport
 from pigrocrm.core.engagements.service import EngagementService, SpaceUnreachable
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.tenants.database import tenants_database_url
+from pigrocrm.core.tenants.models import Tenant
 
 NOT_SET_UP = (
     "Lo spazio del freelance non e' ancora pronto: si prepara quando l'incarico diventa attivo."
@@ -134,6 +136,7 @@ class DaysReportService:
         windows: list[EngagementReport] = []
         try:
             with self._engine() as engine:
+                self._check_owner(engine, engagement, match_id)
                 service = EngagementService(engine, self.settings)
                 for start, end in report_windows(first, last):
                     windows.append(service.report(match_id, start, end))
@@ -161,6 +164,30 @@ class DaysReportService:
             ),
             None,
         )
+
+    def _check_owner(self, engine: Engine, engagement: Engagement, match_id: UUID) -> None:
+        """The match's space must be the freelancer's: its owner's address is one of the
+        freelancer's own emails. A `hub_match_id` typed for somebody else's match reads nothing."""
+        with session_factory(engine)() as registry:
+            row = registry.scalar(
+                select(RebaseEngagement).where(RebaseEngagement.match_id == match_id)
+            )
+            tenant = registry.get(Tenant, row.tenant_id) if row is not None else None
+        if tenant is None:
+            return
+        freelancer = self.repo.visible_organization(engagement.freelancer_id)
+        emails = {
+            point.value.strip().lower()
+            for point in (freelancer.contact_points if freelancer is not None else [])
+            if point.kind == "email"
+        }
+        if tenant.owner_email.strip().lower() not in emails:
+            raise Conflict(
+                ENTITY,
+                "il match indicato non e' di questo freelance: l'indirizzo dello spazio non e' "
+                "uno dei suoi",
+                field="hub_match_id",
+            )
 
     @contextmanager
     def _engine(self) -> Iterator[Engine]:

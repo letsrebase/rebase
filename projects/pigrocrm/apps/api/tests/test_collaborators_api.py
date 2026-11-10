@@ -385,3 +385,64 @@ def test_the_days_report_is_read_only_from_the_space_that_holds_the_engagements(
     assert response.status_code == 409, response.text
     assert "PIGROCRM_LEADS_SPACE" in response.json()["detail"]
     assert logged_in.get(f"/api/engagements/{uuid4()}/report").status_code in (404, 409)
+
+
+def test_the_days_report_answers_with_the_days_and_what_is_payable(
+    logged_in: TestClient, api_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The route's 200: the door and the leads-space check are stood in for, the rest (the
+    engagement, the month's report, the payable marks) is the real service."""
+    from datetime import date
+    from decimal import Decimal
+
+    import pigrocrm.core.collaborators.days_report as days_report
+    from pigrocrm.core.engagements.schemas import EngagementReport, ReportDeal, ReportWorkUnit
+
+    class Door:
+        def __init__(self, *_: Any) -> None: ...
+
+        def report(self, *_: Any) -> EngagementReport:
+            return EngagementReport(
+                slug="ada",
+                deal_url="https://pigro.test/ada/deals/x",
+                deal=ReportDeal(
+                    id=uuid4(), name="L", hourly_rate=None, budgeted_hours=None, status="ok"
+                ),
+                days=[],
+                total_hours=Decimal(0),
+                billed_hours=Decimal(0),
+                unbilled_hours=Decimal(0),
+                invoices=[],
+                work_units=[
+                    ReportWorkUnit(
+                        date=date(2026, 8, 5),
+                        quantity=Decimal("1"),
+                        status="worked",
+                        description="lavoro",
+                        billed=False,
+                    )
+                ],
+            )
+
+    monkeypatch.setattr(days_report, "EngagementService", Door)
+    monkeypatch.setattr(days_report, "is_leads_space", lambda *_: True)
+    monkeypatch.setattr(days_report.DaysReportService, "_check_owner", lambda *_: None)
+    _module(api_session)
+    made = _create(
+        logged_in, _freelancer(api_session), starts_on="2026-08-01", ends_on="2026-08-30"
+    )
+    _activate(logged_in, made["id"])
+    base = f"/api/engagements/{made['id']}"
+    before = logged_in.get(f"{base}/report")
+    assert before.status_code == 200, before.text
+    assert [(d["date"], d["payable"]) for d in before.json()["days"]] == [("2026-08-05", False)]
+
+    assert (
+        logged_in.post(
+            f"{base}/monthly-reports", json={"month": "2026-08", "received_on": "2026-09-01"}
+        ).status_code
+        == 201
+    )
+    after = logged_in.get(f"{base}/report").json()
+    assert after["days"][0]["payable"] is True
+    assert (after["payable_quantity"], after["payable_amount"]) == ("1", "450.00")

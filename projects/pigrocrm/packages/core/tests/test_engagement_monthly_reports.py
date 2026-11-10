@@ -65,9 +65,19 @@ def _settings(engine: Engine | None = None, **overrides: Any) -> Settings:
 
 
 def _engagement(
-    session: Session, *, fee_unit: str = "day", state: str = "active", **overrides: Any
+    session: Session,
+    *,
+    fee_unit: str = "day",
+    state: str = "active",
+    email: str | None = None,
+    **overrides: Any,
 ) -> EngagementRead:
-    who = make_customer(session, roles=["freelancer"], hub_freelancer_id=uuid4())
+    who = make_customer(
+        session,
+        roles=["freelancer"],
+        hub_freelancer_id=uuid4(),
+        **({"email": email} if email else {}),
+    )
     values: dict[str, Any] = {
         "freelancer_id": who.id,
         "role": "Backend developer",
@@ -337,6 +347,8 @@ def fake_door(monkeypatch: pytest.MonkeyPatch) -> type[FakeDoor]:
     FakeDoor.calls = []
     FakeDoor.answer = _answer()
     monkeypatch.setattr(days_report, "EngagementService", FakeDoor)
+    # The registry is not there: the owner check has its own test with the real door.
+    monkeypatch.setattr(DaysReportService, "_check_owner", lambda *_: None)
     return FakeDoor
 
 
@@ -575,7 +587,7 @@ def test_the_door_reads_the_work_units_of_the_contract_and_the_report_makes_them
     db_session: Session, door: Door, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     match_id = uuid4()
-    engagement = _engagement(db_session, hub_match_id=match_id)
+    engagement = _engagement(db_session, hub_match_id=match_id, email="Ada@studio.it")
     answer = door.service().ensure(match_id, _upsert())
     assert answer.contract_id is not None
 
@@ -621,3 +633,14 @@ def test_the_door_reads_the_work_units_of_the_contract_and_the_report_makes_them
     # Two worked days and eight hours (a day) of the old deal; the proposed day waits.
     assert (paid.payable_quantity, paid.payable_amount) == (Decimal("3.00"), Decimal("1200.00"))
     assert [day.payable for day in paid.days] == [True, True, False, True]
+
+
+def test_a_match_that_is_not_the_freelancers_reads_nothing(db_session: Session, door: Door) -> None:
+    match_id = uuid4()
+    door.service().ensure(match_id, _upsert())
+    stranger = _engagement(db_session, hub_match_id=match_id, email="someone@else.it")
+    settings = door.settings.model_copy(update={"leads_space": "rebase", "root_slug": "rebase"})
+    with pytest.raises(Conflict, match="non e' di questo freelance"):
+        DaysReportService(db_session, settings, registry_engine=door.registry).report(
+            stranger.id, ADMIN
+        )
