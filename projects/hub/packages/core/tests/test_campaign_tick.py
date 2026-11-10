@@ -847,6 +847,6 @@ def test_the_unasked_mail_budgets_must_leave_room_for_the_test_mails() -> None:
             {
                 **SETTINGS.model_dump(),
                 "public_mail_daily_budget": 10,
-                "confirmation_mail_daily_budget": 6,
+                "confirmation_mail_daily_budget": SETTINGS.campaign_daily_reserve - 10 - 5 + 1,
             }
         )
