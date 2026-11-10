@@ -102,6 +102,8 @@ FREE_TEXT_TOOLS: frozenset[str] = frozenset(
         "get_due_item",
         "settle_due_item",
         "reverse_settlement",
+        # The cash schedule: an account's name and bank, and a tax row's description.
+        "get_cash_schedule",
         # Recurring expenses: the description is typed by whoever wrote the rule.
         "list_recurring_expenses",
         "create_recurring_expense",
@@ -112,6 +114,13 @@ FREE_TEXT_TOOLS: frozenset[str] = frozenset(
         "get_staff_member",
         "list_staff",
         "get_payroll_month",
+        # Bank accounts (a name typed by the owner) and what the bank wrote on a movement.
+        "list_bank_accounts",
+        "create_bank_account",
+        "update_bank_account",
+        "archive_bank_account",
+        "list_statements",
+        "list_bank_movements",
         # Engagements with freelancers: the role is typed by whoever created the engagement,
         # and the freelancer's organization name comes with the tax data.
         "create_engagement",

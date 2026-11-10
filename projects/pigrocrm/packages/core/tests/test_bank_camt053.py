@@ -143,3 +143,10 @@ def test_two_payments_reusing_one_end_to_end_id_are_kept_apart(db_session: Sessi
     assert (result.added, result.duplicates) == (4, 0)
     stored = db_session.scalars(select(BankMovement.end_to_end_id)).all()
     assert stored.count("REUSED") == 3
+
+
+def test_a_malformed_date_inside_the_file_is_a_file_refusal_not_a_period_one() -> None:
+    content = (FIXTURES / VERSIONS[0]).read_bytes().replace(b"2026-10-31T23", b"2026-13-45T23")
+    with pytest.raises(ValidationFailed) as refused:
+        read_camt053(content)
+    assert refused.value.details["field"] == "file"

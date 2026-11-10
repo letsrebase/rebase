@@ -138,6 +138,10 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "get_due_item",
         "settle_due_item",
         "reverse_settlement",
+        # The cash schedule, the payables mirror and the phone's money figures (REB-1025): the
+        # ordinary kinds are any member's; what the schedule discloses of the fiscal kinds and
+        # of the bank accounts is gated by the two keys in the full-access set below.
+        "read_cash_schedule",
         # Engagements with freelancers (collaborators design § 6): the administrator's token reads
         # them, updates a draft and asks when a freelancer is free. Creating one, ending one and
         # the tax data are in the full-access set below.
@@ -259,6 +263,9 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "settle_outgoing_due_item",
         "reverse_outgoing_settlement",
         "read_fiscal_due_items",
+        # The bank accounts' balances: the schedule leaves them out of its answer for a token
+        # that lacks `full_access`, and the account reads need the same.
+        "read_bank_accounts",
         # Staff and directors with their pay (spec 2026-11-09, staff, payroll and expenses,
         # § 4): the most personal data the product holds. Reading it and writing it are an
         # administrator's act and, for an agent, a `full_access` token's, nothing less; the
@@ -284,6 +291,19 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "record_framework_notice",
         "set_freelancer_tax_data",
         "set_organization_hub_freelancer",
+        # Bank accounts, their statements and movements (REB-1025, cash design): the company's
+        # position. An administrator's token with `full_access`, nothing less. A statement file
+        # and its revert travel over REST only (bytes never cross MCP): a token with `full_access`
+        # reaches them for a script that feeds the account.
+        "list_bank_accounts",
+        "create_bank_account",
+        "update_bank_account",
+        "archive_bank_account",
+        "list_statements",
+        "list_bank_movements",
+        "get_bank_account_coverage",
+        "import_statement",
+        "revert_statement",
     }
 )
 
@@ -434,6 +454,8 @@ ACTION_LABELS: dict[str, str] = {
     "settle_outgoing_due_item": "segnare come pagata una scadenza in uscita o fiscale",
     "reverse_outgoing_settlement": "annullare il pagamento di una scadenza in uscita o fiscale",
     "read_fiscal_due_items": "leggere le scadenze di imposte, IVA, ritenute e stipendi",
+    "read_cash_schedule": "leggere lo scadenziario di cassa",
+    "read_bank_accounts": "leggere i conti bancari e i loro saldi",
     "share_organization": "condividere un'anagrafica fra le aziende",
     "merge_organizations": "unire due anagrafiche della stessa azienda",
     "list_duplicate_organizations": "elencare le anagrafiche con la stessa partita IVA",
@@ -475,6 +497,15 @@ ACTION_LABELS: dict[str, str] = {
     "propose_staff_hourly_cost": "proporre il costo orario di una persona",
     "adopt_staff_hourly_cost": "adottare il costo orario di una persona",
     "get_payroll_month": "leggere la stima del mese per le persone dell'azienda",
+    "list_bank_accounts": "leggere i conti bancari",
+    "get_bank_account_coverage": "leggere gli estratti conto che mancano a un conto",
+    "list_statements": "leggere gli estratti conto di un conto",
+    "list_bank_movements": "leggere i movimenti di un conto",
+    "create_bank_account": "aggiungere un conto bancario",
+    "update_bank_account": "modificare un conto bancario",
+    "archive_bank_account": "archiviare un conto bancario",
+    "import_statement": "caricare un estratto conto",
+    "revert_statement": "annullare l'importazione di un estratto conto",
     "bill_contract_fee": "fatturare il canone di un contratto",
 }
 

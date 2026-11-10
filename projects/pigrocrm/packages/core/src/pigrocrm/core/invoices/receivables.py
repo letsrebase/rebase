@@ -85,6 +85,17 @@ BANDS_RECEIVABLES: tuple[str, ...] = (
     "without_due_date",
 )
 
+# Each bucket's label, once: the code is the contract, the label is copy, and the receivables
+# page and the payables mirror (`due_items/payables.py`) print the one they are sent.
+BAND_LABELS: dict[str, str] = {
+    "expired": "Scaduto",
+    "entro_30": "Entro 30 giorni",
+    "da_31_a_60": "Da 31 a 60 giorni",
+    "da_61_a_90": "Da 61 a 90 giorni",
+    "oltre_90": "Oltre 90 giorni",
+    "without_due_date": "Senza scadenza",
+}
+
 
 class BandRow(NamedTuple):
     code: str

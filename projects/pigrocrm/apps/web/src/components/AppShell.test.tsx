@@ -243,6 +243,7 @@ describe('AppShell', () => {
       'Giornate',
       'Incarichi',
       'Tasse',
+      'Cassa',
       "Persone dell'azienda",
       'Esporta per il commercialista',
       'Agenti',
@@ -272,6 +273,7 @@ describe('AppShell', () => {
       'Giornate',
       'Incarichi',
       'Tasse',
+      'Cassa',
       "Persone dell'azienda",
       'Esporta per il commercialista',
     ])
@@ -805,6 +807,7 @@ describe('AppShell', () => {
       'Ore',
       'Giornate',
       'Tasse',
+      'Cassa',
       'Agenti',
     ]) {
       expect(nav.getByRole('link', { name: label })).toBeInTheDocument()

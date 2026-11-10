@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.bank.models import BankAccount
 from pigrocrm.core.collaborators.letter_templates import seed_collaborator_templates
 from pigrocrm.core.collaborators.models import Engagement
 from pigrocrm.core.config import Settings
@@ -55,7 +56,8 @@ SKIP_ONBOARDING = "skip_space_onboarding"
 # What each module holds that a person would miss: the live rows of its own tables. `taxes`
 # keeps nothing of its own (the estimate is computed from invoices, and the fiscal profile
 # stays in the core), so it never asks for a confirmation. `staff` counts every person
-# recorded, an ended one included: nothing there is deleted.
+# recorded, an ended one included: nothing there is deleted. `cash` counts its bank accounts, an
+# archived one included: they are archived, never deleted.
 _RECORDS: dict[
     str,
     type[Deal]
@@ -63,7 +65,8 @@ _RECORDS: dict[
     | type[TimeEntry]
     | type[Purchase]
     | type[StaffMember]
-    | type[Engagement],
+    | type[Engagement]
+    | type[BankAccount],
 ] = {
     "deals": Deal,
     "contracts": Contract,
@@ -71,6 +74,7 @@ _RECORDS: dict[
     "purchases": Purchase,
     "staff": StaffMember,
     "collaborators": Engagement,
+    "cash": BankAccount,
 }
 
 
@@ -80,7 +84,8 @@ def _live(
     | type[TimeEntry]
     | type[Purchase]
     | type[StaffMember]
-    | type[Engagement],
+    | type[Engagement]
+    | type[BankAccount],
 ) -> ColumnElement[bool]:
     """The rows a person would miss: the ones not deleted, and every row of a table that
     deletes nothing."""

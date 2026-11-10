@@ -251,7 +251,7 @@ export function useFiscalProfile(legalEntityId: string) {
   })
 }
 
-function useInvoiceInvalidation() {
+export function useInvoiceInvalidation() {
   const queryClient = useQueryClient()
   return (invoiceId?: string) => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.invoices() })

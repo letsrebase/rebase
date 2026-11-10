@@ -187,6 +187,17 @@ ROWS: list[Row] = [
         body={"tax": "irpef", "year": 2025, "balance": "100.00"},
     ),
     # --- cost categories: admin on every method (timetracking/categories.py) --------
+    # --- bank accounts (REB-1025): `require_admin` (bank/accounts.py, bank/statements.py) ---
+    Row(
+        "POST",
+        "/api/bank-accounts",
+        admin_only=True,
+        body={"name": "matrice-conto", "bank": "Banca", "iban": "IT60X0542811101000000123456"},
+    ),
+    Row("PATCH", "/api/bank-accounts/{account_id}", admin_only=True, body={"name": "matrice"}),
+    Row("POST", "/api/bank-accounts/{account_id}/archive", admin_only=True),
+    Row("POST", "/api/bank-accounts/{account_id}/statements", admin_only=True, multipart=True),
+    Row("POST", "/api/bank-statements/{statement_id}/revert", admin_only=True),
     Row("POST", "/api/cost-categories", admin_only=True, body={"name": "matrice-cat"}),
     Row("POST", "/api/cost-categories/seed", admin_only=True),
     Row("PATCH", "/api/cost-categories/{category_id}", admin_only=True, body={}),

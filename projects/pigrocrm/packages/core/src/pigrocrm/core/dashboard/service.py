@@ -64,6 +64,7 @@ from pigrocrm.core.dashboard.schemas import (
 from pigrocrm.core.db import current_week, today_local, window_from
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.documents.repository import DocumentRepository
+from pigrocrm.core.invoices.receivables import BAND_LABELS
 from pigrocrm.core.invoices.repository import InvoiceRepository
 from pigrocrm.core.proposals.access import visible_to as proposals_visible_to
 from pigrocrm.core.timetracking.repository import TimeEntryRepository
@@ -102,16 +103,9 @@ _BUSINESS_ENTITIES: frozenset[str] = frozenset(
         "purchase",
     }
 )
-# Slice 8 §2.1's six buckets, labelled once here: the code is the contract, the label is
-# copy, and the page prints the label it is sent rather than keeping a second table.
-_BAND_LABELS: dict[str, str] = {
-    "expired": "Scaduto",
-    "entro_30": "Entro 30 giorni",
-    "da_31_a_60": "Da 31 a 60 giorni",
-    "da_61_a_90": "Da 61 a 90 giorni",
-    "oltre_90": "Oltre 90 giorni",
-    "without_due_date": "Senza scadenza",
-}
+# Slice 8 §2.1's six buckets are labelled once, in `invoices/receivables.py`: the code is the
+# contract, the label is copy, and the page prints the label it is sent.
+_BAND_LABELS = BAND_LABELS
 # The overdue bucket's drill-through: `?overdue=true` on the invoice list is
 # `_overdue_predicate`, the predicate the bucket is summed with (criterion 2).
 _EXPIRED_LINK = "/app/invoices?overdue=true"
@@ -139,6 +133,7 @@ _MODULE_ENTITIES: dict[str, frozenset[str]] = {
     "taxes": frozenset({"declared_tax_figure"}),
     "staff": frozenset({"staff_member", "payroll_settings"}),
     "collaborators": frozenset({"engagement"}),
+    "cash": frozenset({"bank_account", "bank_statement"}),
 }
 
 

@@ -34,6 +34,7 @@ import { useModules } from '@/lib/modules'
 import { ConsentOutcome } from '@/components/ConsentOutcome'
 import { consentOutcome } from '@/features/consent/outcome'
 import type { DashboardSearch, HomeSearch } from '@/features/dashboard/search'
+import { PhoneCashFigures } from '@/features/cash/home/PhoneCashFigures'
 import { RecordDayShortcut } from '@/features/days/RecordDayShortcut'
 import { PendingProposalsNotice } from '@/features/proposals/PendingProposalsNotice'
 import { useFirstSteps, type FirstStepsState } from './firstSteps'
@@ -74,8 +75,22 @@ export function HomePage({
   // other space (`company`, not chosen yet, or a read that failed) the five tabs it always
   // had. Not drawn before the profile is known, so a solo space never flashes the tabs.
   if (modules.loading) return null
-  if (modules.profile === 'solo') return <SoloHome notice={notice} />
-  return <DashboardPage search={search} onSearchChange={onSearchChange} notice={notice} />
+  // The phone's money figures lead (REB-1025); from 640 px they draw nothing. Under the
+  // title on the company Home, at the head of the body on the solo one.
+  const figures = <PhoneCashFigures />
+  if (modules.profile === 'solo') {
+    return (
+      <SoloHome
+        notice={
+          <>
+            {figures}
+            {notice}
+          </>
+        }
+      />
+    )
+  }
+  return <DashboardPage search={search} onSearchChange={onSearchChange} notice={notice} lead={figures} />
 }
 
 /**

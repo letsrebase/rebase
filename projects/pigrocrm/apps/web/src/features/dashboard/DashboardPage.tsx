@@ -31,12 +31,16 @@ export function DashboardPage({
   search,
   onSearchChange,
   notice,
+  lead,
 }: {
   search: DashboardSearch
   onSearchChange: (next: Partial<DashboardSearch>) => void
   /** Drawn above the tab's content, under the header: the Home's «Completa lo spazio»
    *  card (REB-222), which belongs to the page and not to any one tab. */
   notice?: ReactNode
+  /** Drawn right under the title, before the day's tasks and the tabs: the phone's money
+   *  figures (REB-1025), which lead the Home there. */
+  lead?: ReactNode
 }) {
   const { from, to, base } = search
   // The tabs of a module the space has switched off are not drawn, and a URL naming one
@@ -68,6 +72,7 @@ export function DashboardPage({
         // The next two tax dates sit under it (REB-1026), on every tab.
         aboveTabs={
           <>
+            {lead && <div className="px-8 pb-2">{lead}</div>}
             <DaFareBand />
             <HomeTaxDates variant="band" />
           </>

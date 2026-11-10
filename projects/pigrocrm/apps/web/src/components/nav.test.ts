@@ -29,6 +29,7 @@ describe('visibleSections (REB-953)', () => {
       'Giornate',
       'Incarichi',
       'Tasse',
+      'Cassa',
       "Persone dell'azienda",
       'Esporta per il commercialista',
     ]
@@ -86,6 +87,7 @@ describe('visibleSections (REB-953)', () => {
       'Giornate',
       'Incarichi',
       'Tasse',
+      'Cassa',
       "Persone dell'azienda",
       'Esporta per il commercialista',
     ])
@@ -116,6 +118,14 @@ describe('visibleSections (REB-953)', () => {
     expect(shown).toContain('Fatture')
   })
 
+  it('drops «Cassa» with cash off and nothing else (REB-1025)', () => {
+    expect(labels([])).toContain('Cassa')
+    const shown = labels(['cash'])
+    expect(shown).not.toContain('Cassa')
+    expect(shown).toContain('Tasse')
+    expect(shown).toContain('Fatture')
+  })
+
   it("draws «Persone dell'azienda» to an administrator only, and not with staff off (REB-1027)", () => {
     const access = moduleAccess(undefined)
     const names = (role: 'admin' | 'collaborator' | 'readonly' | undefined) =>
@@ -142,12 +152,12 @@ describe('visibleSections (REB-953)', () => {
       'Incarichi',
       'Esporta per il commercialista',
     ]
-    expect(labels(['deals', 'contracts', 'time', 'purchases', 'taxes', 'staff'])).toEqual(core)
+    expect(labels(['deals', 'contracts', 'time', 'purchases', 'taxes', 'staff', 'cash'])).toEqual(core)
   })
 
   it('drops a section left with no entry', () => {
     // Vendite keeps its organizations and people, so it stays; it is Amministrazione that
-    // loses two of its four, and keeps «Fatture», «Tasse» and the export.
+    // loses two of its four, and keeps «Fatture», «Tasse», «Cassa» and the export.
     const sections = visibleSections(moduleAccess(spaceModules(['deals', 'contracts'])), 'admin')
     expect(sections.map((section) => section.id)).toEqual(['da-fare', 'vendite', 'amministrazione'])
     expect(sections[2]?.items.map((item) => item.label)).toEqual([
@@ -156,6 +166,7 @@ describe('visibleSections (REB-953)', () => {
       'Acquisti',
       'Incarichi',
       'Tasse',
+      'Cassa',
       "Persone dell'azienda",
       'Esporta per il commercialista',
     ])
@@ -195,6 +206,7 @@ describe('the phone bar (REB-959)', () => {
       'Ore',
       'Incarichi',
       'Tasse',
+      'Cassa',
       "Persone dell'azienda",
       'Esporta per il commercialista',
     ])
@@ -210,6 +222,7 @@ describe('the phone bar (REB-959)', () => {
       'Acquisti',
       'Incarichi',
       'Tasse',
+      'Cassa',
       "Persone dell'azienda",
       'Esporta per il commercialista',
     ])

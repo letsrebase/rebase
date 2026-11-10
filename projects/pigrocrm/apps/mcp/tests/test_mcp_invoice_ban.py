@@ -173,6 +173,15 @@ FORBIDDEN = (
     "cancel_engagement",
     "close_engagement",
     "set_freelancer_tax_data",
+    # REB-1025: the bank accounts of the space, their statements and movements (cash design):
+    # the company's position, an administrator's token with `full_access` and no other. The
+    # `cash` module has to be on as well, which `TOOL_MODULES` prunes.
+    "list_bank_accounts",
+    "create_bank_account",
+    "update_bank_account",
+    "archive_bank_account",
+    "list_statements",
+    "list_bank_movements",
     # REB-1019: sending a document for signature mails the freelancer a link to a legal document,
     # and the other three act on one already sent: resending its mail, cancelling a framework
     # agreement (its envelope too) and recording a notice that ends it. Their tools live in
@@ -249,6 +258,12 @@ REST_ONLY_FORBIDDEN = frozenset(
         # REB-972: reading an item spends the space's model; an agent proposes with
         # `propose_inbox_item` and reads nothing itself, and a full-access token may over REST.
         "classify_inbox_item",
+        # REB-1025: a statement file and the undoing of its import, and the coverage of an
+        # account's months. Bytes never travel over MCP, so there is no tool for the first two;
+        # a token with `full_access` reaches all three over REST, a default token none.
+        "import_statement",
+        "revert_statement",
+        "get_bank_account_coverage",
     }
 )
 
@@ -265,7 +280,10 @@ REST_ONLY_FORBIDDEN = frozenset(
 FULL_ACCESS_BY_THE_RECORD: dict[str, tuple[str, ...]] = {
     "settle_outgoing_due_item": ("settle_due_item",),
     "reverse_outgoing_settlement": ("reverse_settlement",),
-    "read_fiscal_due_items": ("list_due_items", "get_due_item"),
+    "read_fiscal_due_items": ("list_due_items", "get_due_item", "get_cash_schedule"),
+    # REB-1025: the schedule is every token's; its balances, accounts and alerts are a
+    # `full_access` administrator's, which the service decides.
+    "read_bank_accounts": ("get_cash_schedule",),
     # REB-970: `update_organization` with a null `legal_entity_id` shares the organization across
     # the legal entities, which shows a company to people who could not see it: an
     # administrator's token with `full_access`, nothing less, as in the invoice import.
@@ -326,6 +344,14 @@ FORBIDDEN_SERVICE_CALLS = (
     "get_staff_member",
     "list_staff",
     "get_payroll_month",
+    # `BankAccountService`'s four and the two reads of `BankStatementReadService`, named uniquely
+    # for this scan (REB-1025).
+    "list_bank_accounts",
+    "create_bank_account",
+    "update_bank_account",
+    "archive_bank_account",
+    "list_statements",
+    "list_movements",
     "discover",
     # `GmailSyncService.suggest_organizations`, behind `suggest_organizations_from_gmail`
     # (REB-223): the same family as `discover`.

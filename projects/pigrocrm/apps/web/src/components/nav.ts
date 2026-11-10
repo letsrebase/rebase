@@ -19,6 +19,7 @@ import {
   Settings,
   ShoppingCart,
   Users,
+  Wallet,
   type LucideIcon,
 } from 'lucide-react'
 import { SETTINGS_GROUPS, type SettingsTabValue } from '@/features/settings/tabs'
@@ -100,6 +101,9 @@ export const SECTIONS = [
         icon: BriefcaseBusiness,
       },
       { to: '/app/taxes', label: 'Tasse', icon: Landmark },
+      // The cash schedule and the bank accounts (the approved brief, 2026-11-10): the last place
+      // the money reaches, after the register, the hours, the days and the taxes.
+      { to: '/app/cash', label: 'Cassa', icon: Wallet },
       // The people the company pays (the approved brief of 2026-11-10, REB-1027): pay is an
       // administrator's, so the entry is theirs alone, as the service is.
       { to: '/app/staff', action: 'list_staff', label: "Persone dell'azienda", icon: IdCard },

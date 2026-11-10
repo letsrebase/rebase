@@ -55,6 +55,14 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
+    def get_cash_schedule(weeks: int = 13, legal_entity_id: str | None = None) -> dict[str, Any]:
+        """Cash schedule from this week: per week money in and out (expected and forecast), late
+        figures, and with a full-access admin token the balance, its projection and alerts.
+        `weeks` is 4, 13 or 26."""
+        return due_items.cash_schedule(context, weeks, legal_entity_id)
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
     def get_due_item(due_item_id: str) -> dict[str, Any]:
         """One due item with every settlement, reversed ones included."""
         return due_items.get(context, due_item_id)

@@ -139,6 +139,14 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "record_framework_notice": ("collaborators",),
     "get_freelancer_availability": ("collaborators",),
     "set_freelancer_tax_data": ("collaborators",),
+    # cash: bank accounts, their statements and movements. The schedule is the core's, with
+    # the balances left out when the module is off.
+    "list_bank_accounts": ("cash",),
+    "create_bank_account": ("cash",),
+    "update_bank_account": ("cash",),
+    "archive_bank_account": ("cash",),
+    "list_statements": ("cash",),
+    "list_bank_movements": ("cash",),
     # Across modules: all of them, or the tool is not there.
     "convert_deal_to_contract": ("deals", "contracts"),
     "preview_deal_contract": ("deals", "contracts"),

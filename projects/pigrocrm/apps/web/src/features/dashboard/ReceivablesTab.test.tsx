@@ -1,21 +1,26 @@
 /**
- * Slice 8 part A's tab (REB-329). What a snapshot would not reach: every amount is the
- * string the API sent, the six buckets are drawn in the server's order with the server's
- * labels, the overdue bucket alone carries a link to the filtered invoice list, a
- * reminder count reads as sent letters, and a failed request renders an error rather than
- * an empty scadenziario.
+ * The tab «Scadenziario» is the cash schedule under the Home's header (REB-1025): its states are
+ * tested with the schedule (`features/cash/schedule/CashSchedule.test.tsx`). Here only what the
+ * tab itself promises: the same body «Cassa» mounts, reading the schedule and the owed sections,
+ * with the sidebar's azienda as the one parameter.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
+import { LegalEntityContext, type LegalEntityValue } from '@/lib/legalEntity'
 import { ReceivablesTab } from './ReceivablesTab'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
   return { ...actual, api: { GET: vi.fn(), POST: vi.fn(), PUT: vi.fn(), DELETE: vi.fn() } }
 })
+
+vi.mock('@/lib/auth', () => ({
+  useAuth: () => ({ user: { id: 'u-1', role: 'admin' } }),
+  useCan: () => true,
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ to, children }: { to: string; children: ReactNode }) => <a href={to}>{children}</a>,
@@ -25,140 +30,42 @@ function ok(data: unknown) {
   return { data, response: new Response(null, { status: 200 }) } as never
 }
 
-function failed(error: unknown, status: number) {
-  return { error, response: new Response(null, { status }) } as never
-}
-
-const band = (code: string, label: string, amount: string, number: number) => ({
-  code,
-  label,
-  from: null,
-  to: null,
-  amount,
-  number,
-  share: 0.5,
-  link: code === 'expired' ? '/app/invoices?overdue=true' : null,
-})
-
-const RESPONSE = {
-  calculated_at: '2026-09-22T10:00:00Z',
-  today: '2026-09-22',
-  total: '2100.00',
-  bands: [
-    band('expired', 'Scaduto', '100.00', 1),
-    band('entro_30', 'Entro 30 giorni', '200.00', 1),
-    band('da_31_a_60', 'Da 31 a 60 giorni', '300.00', 1),
-    band('da_61_a_90', 'Da 61 a 90 giorni', '400.00', 1),
-    band('oltre_90', 'Oltre 90 giorni', '500.00', 1),
-    band('without_due_date', 'Senza scadenza', '600.00', 1),
-  ],
-  by_month: [{ month: '2026-10-01', amount: '900.00', number: 2, share: 1 }],
-  by_customer: [
-    {
-      customer_id: 'c-beta',
-      legal_name: 'Beta S.r.l.',
-      amount: '1300.00',
-      number: 3,
-      expired: '0.00',
-      share: 1,
-    },
-  ],
-  overdue: [
-    {
-      invoice_id: 'f-1',
-      number: '2026/1',
-      customer_id: 'c-acme',
-      customer: 'Acme S.r.l.',
-      due_date: '2026-08-13',
-      days_of_delay: 40,
-      amount: '100.00',
-      sent_payment_reminders: 1,
-      last_payment_reminder_at: '2026-09-15',
-    },
-  ],
-  total_overdue: 1,
-}
-
-function renderTab() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
-    <QueryClientProvider client={client}>
-      <ReceivablesTab />
-    </QueryClientProvider>,
-  )
+const SCHEDULE = {
+  calculated_at: '2026-11-10T11:42:00Z',
+  today: '2026-11-10',
+  legal_entity_id: 'a-2',
+  horizon_weeks: 13,
+  horizon_options: [4, 13, 26],
+  profile: 'company',
+  cash_enabled: false,
+  currency: 'EUR',
+  show_outgoing: true,
+  show_balance: false,
+  accounts: null,
+  total_balance: null,
+  late_receivable: { count: 0, total: '0.00', oldest_days: null },
+  late_payable: { count: 0, total: '0.00', oldest_days: null },
+  weeks: [],
+  taxes: null,
+  alerts: [],
+  has_open_items: false,
 }
 
 beforeEach(() => {
   vi.mocked(api.GET).mockReset()
+  vi.mocked(api.GET).mockResolvedValue(ok(SCHEDULE))
 })
 
 describe('ReceivablesTab', () => {
-  it('draws the six buckets in the server’s order, each amount as sent', async () => {
-    vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
-    renderTab()
-    const chart = await screen.findByRole('table', { name: 'Scadenziario per fascia' })
-    const labels = within(chart)
-      .getAllByRole('rowheader')
-      .map((cell) => cell.textContent)
-    expect(labels).toEqual([
-      'Scaduto (1)',
-      'Entro 30 giorni (1)',
-      'Da 31 a 60 giorni (1)',
-      'Da 61 a 90 giorni (1)',
-      'Oltre 90 giorni (1)',
-      'Senza scadenza (1)',
-    ])
-    expect(within(chart).getByText(/600,00/)).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Da incassare' })).toHaveTextContent(/2\.100,00/)
-    expect(screen.getByRole('group', { name: 'Di cui scaduto' })).toHaveTextContent(/100,00/)
-  })
-
-  it('links the overdue bucket to the filtered invoice list, and nothing else', async () => {
-    vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
-    renderTab()
-    const link = await screen.findByRole('link', { name: 'Vedi le fatture scadute' })
-    expect(link).toHaveAttribute('href', '/app/invoices')
-  })
-
-  it('names the month the money is due in, and who owes it', async () => {
-    vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
-    renderTab()
-    expect(await screen.findByText('ottobre 2026 (2)')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Beta S.r.l.' })).toBeInTheDocument()
-    // `Intl` separates the amount and the sign with a no-break space: matched loosely.
-    expect(screen.getByRole('cell', { name: /1\.300,00/ })).toBeInTheDocument()
-  })
-
-  it('reads a reminder count as letters that left, with the last date', async () => {
-    vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
-    renderTab()
-    expect(await screen.findByRole('link', { name: '2026/1' })).toBeInTheDocument()
-    expect(screen.getByText('1 sollecito, ultimo il 15/09/2026')).toBeInTheDocument()
-    expect(screen.getByText('40 gg')).toBeInTheDocument()
-  })
-
-  it('renders an error, not an empty scadenziario, when the request fails', async () => {
-    vi.mocked(api.GET).mockResolvedValue(
-      failed({ type: 'about:blank', title: 'Errore', status: 500, detail: 'boom' }, 500),
-    )
-    renderTab()
-    expect(await screen.findByRole('alert')).toHaveTextContent(/boom/)
-    expect(screen.queryByText(/scadenziario per fascia/i)).not.toBeInTheDocument()
-  })
-})
-
-// -- the sidebar's azienda (REB-632) ---------------------------------------------------------
-
-import { LegalEntityContext, type LegalEntityValue } from '@/lib/legalEntity'
-
-describe('ReceivablesTab, with an azienda selected', () => {
-  it('sends the selection as the one parameter the page takes', async () => {
-    vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
+  it('is the cash schedule, with the sidebar’s azienda as its one parameter', async () => {
     const value: LegalEntityValue = {
       legal_entities: [],
       selected: 'a-2',
       select: vi.fn(),
-      several: true, scoped: false, pinned: false, loaded: true,
+      several: true,
+      scoped: false,
+      pinned: false,
+      loaded: true,
       byId: () => undefined,
     }
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -169,9 +76,12 @@ describe('ReceivablesTab, with an azienda selected', () => {
         </LegalEntityContext>
       </QueryClientProvider>,
     )
-    await waitFor(() => expect(api.GET).toHaveBeenCalled())
-    expect(api.GET).toHaveBeenCalledWith('/api/dashboard/receivables', {
-      params: { query: { legal_entity_id: 'a-2' } },
-    })
+    expect(await screen.findByText('Niente da incassare né da pagare nelle prossime 13 settimane.')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(api.GET).toHaveBeenCalledWith('/api/cash/schedule', { params: { query: { legal_entity_id: 'a-2' } } }),
+    )
+    // The old tab's own pictures are gone: no month bars, no exposure by customer.
+    expect(screen.queryByText('Incassi attesi per mese di scadenza')).not.toBeInTheDocument()
+    expect(screen.queryByText('Esposizione per cliente')).not.toBeInTheDocument()
   })
 })

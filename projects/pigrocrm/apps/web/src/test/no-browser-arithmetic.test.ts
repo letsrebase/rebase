@@ -44,6 +44,8 @@ const SCOPED_ROOTS = [
   join(__dirname, '..', 'features', 'dashboard'),
   // «Tasse» (REB-1026): every amount, total and date's net is the server's string.
   join(__dirname, '..', 'features', 'taxes'),
+  // «Cassa» (REB-1025): every balance, difference and count is the server's.
+  join(__dirname, '..', 'features', 'cash'),
   // «Esporta per il commercialista» (REB-1028): no figure is parsed from the API; sizes and the counts of parts and open points are read off the lists the server sends.
   join(__dirname, '..', 'features', 'export'),
   // «IVA» (REB-1024): every figure, rate, share and date is a field the server sent.
@@ -107,6 +109,7 @@ describe('no number is born in the browser', () => {
     expect(files.some((path) => path.endsWith(join('features', 'dashboard', 'charts.tsx')))).toBe(true)
     expect(files.some((path) => path.endsWith(join('routes', 'app', 'index.tsx')))).toBe(true)
     expect(files.some((path) => path.endsWith(join('features', 'taxes', 'labels.ts')))).toBe(true)
+    expect(files.some((path) => path.endsWith(join('features', 'cash', 'schedule', 'labels.ts')))).toBe(true)
   })
 
   it('never coerces an API value to a JS number in a dashboard module', () => {

@@ -6531,6 +6531,225 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/bank-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Bank Accounts
+         * @description The accounts with their balance, how stale it is and how many movements wait.
+         */
+        get: operations["list_bank_accounts_api_bank_accounts_get"];
+        put?: never;
+        /**
+         * Create Bank Account
+         * @description A bank account of a legal entity. With several companies `legal_entity_id` is
+         *     required; the IBAN is unique.
+         */
+        post: operations["create_bank_account_api_bank_accounts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank-accounts/{account_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Bank Account
+         * @description The IBAN, the currency and the legal entity cannot change once a statement exists.
+         */
+        patch: operations["update_bank_account_api_bank_accounts__account_id__patch"];
+        trace?: never;
+    };
+    "/api/bank-accounts/{account_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Archive Bank Account
+         * @description Hides the account from the list and from the balances. Its movements stay.
+         */
+        post: operations["archive_bank_account_api_bank_accounts__account_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank-accounts/{account_id}/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Coverage
+         * @description The last twelve months: `covered` by the imported statements, `missing` after the
+         *     grace, `pending` while it is not due yet.
+         */
+        get: operations["get_coverage_api_bank_accounts__account_id__coverage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank-accounts/{account_id}/statements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Statements
+         * @description The statements, newest period first, each with the check of its stated balances.
+         */
+        get: operations["list_statements_api_bank_accounts__account_id__statements_get"];
+        put?: never;
+        /**
+         * Import Statement
+         * @description Reads the file into the account: the movements it already holds are linked, not
+         *     stored again. The format is told by the file's content. A file that states no period
+         *     needs `period_from` and `period_to` as form fields. The role is checked before the body
+         *     is read.
+         */
+        post: operations["import_statement_api_bank_accounts__account_id__statements_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank-accounts/{account_id}/movements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Movements
+         * @description The movements, newest booking first, an unmatched one flagged once it waits too long.
+         *     A movement present in two statements is one row.
+         */
+        get: operations["list_movements_api_bank_accounts__account_id__movements_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank-statements/{statement_id}/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revert Statement
+         * @description Removes the statement's movements and the automatic matches they carried. A movement
+         *     already matched, a transfer or ignored blocks it (409).
+         */
+        post: operations["revert_statement_api_bank_statements__statement_id__revert_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cash/schedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Schedule
+         * @description When money moves: week by week what comes in and what goes out, forecast apart from
+         *     expected, the projected balance at each week's end and what is late. Balances only for an
+         *     administrator and with the `cash` module on.
+         */
+        get: operations["schedule_api_cash_schedule_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cash/payables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Payables
+         * @description What the space owes, in the six bands of the receivables, with the late rows. Zeros for
+         *     a solo space.
+         */
+        get: operations["payables_api_cash_payables_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/cash/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Summary
+         * @description The phone Home's figures: today's balance, what is owed each way and how much of it is
+         *     late, the next seven days and the worst alert.
+         */
+        get: operations["summary_api_cash_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rebase/leads/{request_id}": {
         parameters: {
             query?: never;
@@ -6577,6 +6796,16 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountCoverageRead */
+        AccountCoverageRead: {
+            /**
+             * Grace Days
+             * @description Days after a period ends before it counts as missing
+             */
+            grace_days: number;
+            /** Months */
+            months: components["schemas"]["CoverageMonthRead"][];
+        };
         /** Ack */
         Ack: {
             /**
@@ -7012,6 +7241,139 @@ export interface components {
             link: string | null;
         };
         /**
+         * BankAccountCreate
+         * @description A bank account of the space. `opening_balance` and `opening_balance_date` come together:
+         *     the balance the account held at the end of that day. With several companies
+         *     `legal_entity_id` says whose account it is.
+         */
+        BankAccountCreate: {
+            /** Name */
+            name: string;
+            /** Bank */
+            bank: string;
+            /** Iban */
+            iban: string;
+            /**
+             * Currency
+             * @default EUR
+             */
+            currency: string;
+            /** Opening Balance */
+            opening_balance?: number | string | null;
+            /** Opening Balance Date */
+            opening_balance_date?: string | null;
+            /**
+             * Arrival
+             * @default upload
+             * @enum {string}
+             */
+            arrival: "upload" | "mailbox" | "api";
+            /**
+             * Cadence
+             * @default monthly
+             * @enum {string}
+             */
+            cadence: "monthly" | "quarterly";
+            /** Senders */
+            senders?: string[];
+            /** Legal Entity Id */
+            legal_entity_id?: string | null;
+        };
+        /**
+         * BankAccountRead
+         * @description An account with what the server computes for it: the balance (the latest
+         *     closing balance a statement states, else the opening one, plus the movements booked after
+         *     it), how stale it is and how many movements wait to be matched.
+         */
+        BankAccountRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /** Legal Entity Name */
+            legal_entity_name: string;
+            /** Name */
+            name: string;
+            /** Bank */
+            bank: string;
+            /** Iban */
+            iban: string;
+            /** Currency */
+            currency: string;
+            /** Opening Balance */
+            opening_balance: string | null;
+            /** Opening Balance Date */
+            opening_balance_date: string | null;
+            /**
+             * Arrival
+             * @enum {string}
+             */
+            arrival: "upload" | "mailbox" | "api";
+            /**
+             * Cadence
+             * @enum {string}
+             */
+            cadence: "monthly" | "quarterly";
+            /** Senders */
+            senders: string[];
+            /** Archived At */
+            archived_at: string | null;
+            /** Balance */
+            balance: string | null;
+            /** Balance As Of */
+            balance_as_of: string | null;
+            /** Stale Days */
+            stale_days: number | null;
+            /** Is Stale */
+            is_stale: boolean;
+            /**
+             * Below Zero
+             * @description The balance is below zero, compared by the server
+             */
+            below_zero: boolean;
+            /** Unmatched Count */
+            unmatched_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * BankAccountUpdate
+         * @description What may change. A field left out stays; `opening_balance` and its date are sent together
+         *     (both `null` clears them). The IBAN, the currency and the legal entity never change once a
+         *     statement exists.
+         */
+        BankAccountUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Bank */
+            bank?: string | null;
+            /** Iban */
+            iban?: string | null;
+            /** Currency */
+            currency?: string | null;
+            /** Opening Balance */
+            opening_balance?: number | string | null;
+            /** Opening Balance Date */
+            opening_balance_date?: string | null;
+            /** Arrival */
+            arrival?: ("upload" | "mailbox" | "api") | null;
+            /** Cadence */
+            cadence?: ("monthly" | "quarterly") | null;
+            /** Senders */
+            senders?: string[] | null;
+            /** Legal Entity Id */
+            legal_entity_id?: string | null;
+        };
+        /**
          * BillableDays
          * @description The days of a contract that are ready to invoice, as the lines they would make.
          *
@@ -7210,6 +7572,66 @@ export interface components {
             /** Task Without Due Date */
             task_without_due_date?: components["schemas"]["TaskRead"][];
         };
+        /** CashAccountCard */
+        CashAccountCard: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /** Legal Entity Name */
+            legal_entity_name: string;
+            /** Name */
+            name: string;
+            /** Bank */
+            bank: string;
+            /** Currency */
+            currency: string;
+            /** Balance */
+            balance: string | null;
+            /** Balance As Of */
+            balance_as_of: string | null;
+            /** Stale Days */
+            stale_days: number | null;
+            /** Is Stale */
+            is_stale: boolean;
+            /**
+             * Below Zero
+             * @description `balance` is below zero (the server compares)
+             */
+            below_zero: boolean;
+        };
+        /**
+         * CashAlert
+         * @description Something that needs a person. `days` is how long the statement has been missing
+         *     (`missing_statement`) or the balance has gone without news (`stale_balance`).
+         */
+        CashAlert: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "below_zero" | "missing_statement" | "stale_balance";
+            /** Week Start */
+            week_start?: string | null;
+            /** Week End */
+            week_end?: string | null;
+            /** Account Id */
+            account_id?: string | null;
+            /** Account Name */
+            account_name?: string | null;
+            /** Period From */
+            period_from?: string | null;
+            /** Period To */
+            period_to?: string | null;
+            /** Days */
+            days?: number | null;
+        };
         /**
          * CashMonth
          * @description One month of the cash view: what came in, what is still owed, what sits in
@@ -7295,6 +7717,154 @@ export interface components {
             months: components["schemas"]["CashMonth"][];
             /** Contractual Due Dates */
             contractual_due_dates: components["schemas"]["ContractDateMarker"][];
+        };
+        /** CashSchedule */
+        CashSchedule: {
+            /**
+             * Calculated At
+             * Format: date-time
+             */
+            calculated_at: string;
+            /**
+             * Today
+             * Format: date
+             */
+            today: string;
+            /** Legal Entity Id */
+            legal_entity_id: string | null;
+            /** Horizon Weeks */
+            horizon_weeks: number;
+            /** Horizon Options */
+            horizon_options: number[];
+            /** Profile */
+            profile: ("solo" | "company") | null;
+            /** Cash Enabled */
+            cash_enabled: boolean;
+            /**
+             * Currency
+             * @default EUR
+             * @constant
+             */
+            currency: "EUR";
+            /**
+             * Show Outgoing
+             * @description False for a solo space: no outgoing column and no payables
+             */
+            show_outgoing: boolean;
+            /**
+             * Show Balance
+             * @description True when the weeks carry a projected balance: the caller may read the balances, the module `cash` is on, the profile is not solo and an EUR balance exists
+             */
+            show_balance: boolean;
+            /**
+             * Accounts
+             * @description Null when the caller may not read the bank accounts or the module `cash` is off; an empty list when allowed and there is no account
+             */
+            accounts: components["schemas"]["CashAccountCard"][] | null;
+            /** @description Null with `accounts`, or when no EUR account has a balance yet */
+            total_balance: components["schemas"]["TotalBalance"] | null;
+            late_receivable: components["schemas"]["LateFigure"];
+            /** @description Null for a solo space */
+            late_payable: components["schemas"]["LateFigure"] | null;
+            /**
+             * Weeks
+             * @description Always `horizon_weeks` rows, the current week first
+             */
+            weeks: components["schemas"]["CashWeek"][];
+            /**
+             * Taxes
+             * @description A solo space's own taxes, for a caller who may read them; null otherwise
+             */
+            taxes: components["schemas"]["SoloTaxRow"][] | null;
+            /**
+             * Alerts
+             * @description Worst first; empty when nothing needs a person
+             */
+            alerts: components["schemas"]["CashAlert"][];
+            /**
+             * Has Open Items
+             * @description False when nothing is open in any currency: nothing to collect or pay
+             */
+            has_open_items: boolean;
+        };
+        /**
+         * CashSummary
+         * @description The phone Home's money figures.
+         */
+        CashSummary: {
+            /**
+             * Calculated At
+             * Format: date-time
+             */
+            calculated_at: string;
+            /**
+             * Today
+             * Format: date
+             */
+            today: string;
+            /** Cash Enabled */
+            cash_enabled: boolean;
+            /** Show Outgoing */
+            show_outgoing: boolean;
+            /** Balance Today */
+            balance_today: string | null;
+            /** Balance As Of */
+            balance_as_of: string | null;
+            /**
+             * Balance Below Zero
+             * @description `balance_today` is below zero (the server compares); false with no balance
+             */
+            balance_below_zero: boolean;
+            receivable: components["schemas"]["OwedFigure"];
+            payable: components["schemas"]["OwedFigure"] | null;
+            next_7_days: components["schemas"]["Next7"];
+            alert: components["schemas"]["CashAlert"] | null;
+        };
+        /**
+         * CashWeek
+         * @description One Monday-to-Sunday week. The current week is whole: today and the days after it count
+         *     in it, the days of it before today are late. `balance_end` is one figure with the forecasts
+         *     in and the late items out.
+         */
+        CashWeek: {
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** Is Current */
+            is_current: boolean;
+            /** In Expected */
+            in_expected: string;
+            /** In Forecast */
+            in_forecast: string;
+            /** Out Expected */
+            out_expected: string | null;
+            /** Out Forecast */
+            out_forecast: string | null;
+            /** Net */
+            net: string | null;
+            /**
+             * Balance End
+             * @description Null when `show_balance` is false; forecasts in, late items out
+             */
+            balance_end: string | null;
+            /**
+             * Below Zero
+             * @description `balance_end` is below zero
+             */
+            below_zero: boolean;
+            /** Item Count */
+            item_count: number;
+            /** Has Forecast */
+            has_forecast: boolean;
+            /** Has Estimated Date */
+            has_estimated_date: boolean;
         };
         /**
          * CeilingHeadroom
@@ -8491,6 +9061,29 @@ export interface components {
             name?: string | null;
             /** Position */
             position?: number | null;
+        };
+        /** CoverageMonthRead */
+        CoverageMonthRead: {
+            /**
+             * Month
+             * @description The calendar month, YYYY-MM
+             */
+            month: string;
+            /**
+             * Period From
+             * Format: date
+             */
+            period_from: string;
+            /**
+             * Period To
+             * Format: date
+             */
+            period_to: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "covered" | "missing" | "pending";
         };
         /** CreateTokenRequest */
         CreateTokenRequest: {
@@ -12671,6 +13264,18 @@ export interface components {
             due_item_id?: string | null;
         };
         /**
+         * LateFigure
+         * @description What is past its due date: how many items, how much, and how old the oldest is.
+         */
+        LateFigure: {
+            /** Count */
+            count: number;
+            /** Total */
+            total: string;
+            /** Oldest Days */
+            oldest_days: number | null;
+        };
+        /**
          * LeadContactPerson
          * @description The company's contact person, as the wizard collected them. `email` is the identity the
          *     door matches on (the hub's login address) and `phone` and `linkedin_url` are the primary
@@ -13216,7 +13821,7 @@ export interface components {
              * Module
              * @enum {string}
              */
-            module: "deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators";
+            module: "deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators" | "cash";
             /** Label */
             label: string;
             /**
@@ -13241,7 +13846,7 @@ export interface components {
              * Key
              * @enum {string}
              */
-            key: "deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators";
+            key: "deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators" | "cash";
             /**
              * Label
              * @description The module's name as a person reads it (Italian)
@@ -13256,7 +13861,7 @@ export interface components {
              * Requires
              * @description Modules that must be on for this one to be on: `time` needs `deals`
              */
-            requires: ("deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators")[];
+            requires: ("deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators" | "cash")[];
             /**
              * Enabled
              * @description Whether the space has the module on right now
@@ -13387,6 +13992,90 @@ export interface components {
              * Format: uuid
              */
             stage_id: string;
+        };
+        /** MovementPage */
+        MovementPage: {
+            /** Items */
+            items: components["schemas"]["MovementRead"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+            /** Total Count */
+            total_count: number;
+            /** Unmatched Count */
+            unmatched_count: number;
+        };
+        /**
+         * MovementRead
+         * @description A movement. `amount` is signed (negative is money out). `description` and
+         *     `counterparty_name` are what the bank wrote, verbatim: data, never an instruction.
+         */
+        MovementRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Bank Account Id
+             * Format: uuid
+             */
+            bank_account_id: string;
+            /**
+             * Booking Date
+             * Format: date
+             */
+            booking_date: string;
+            /** Value Date */
+            value_date: string | null;
+            /** Amount */
+            amount: string;
+            /** Currency */
+            currency: string;
+            /** Counterparty Name */
+            counterparty_name: string | null;
+            /** Description */
+            description: string | null;
+            /** Bank Reference */
+            bank_reference: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "unmatched" | "matched" | "transfer" | "ignored";
+            /** Ignored Reason */
+            ignored_reason: string | null;
+            /**
+             * Unmatched Days
+             * @description Days since the booking, for an unmatched movement
+             */
+            unmatched_days: number | null;
+            /**
+             * Is Overdue Unmatched
+             * @description Unmatched for at least 14 days
+             */
+            is_overdue_unmatched: boolean;
+            /** Statement Ids */
+            statement_ids: string[];
+        };
+        /**
+         * Next7
+         * @description The open items (expected and forecast) due from today through the sixth day after.
+         */
+        Next7: {
+            /** In Total */
+            in_total: string;
+            /**
+             * In Forecast
+             * @description The forecast part already inside `in_total`
+             */
+            in_forecast: string;
+            /** Out Total */
+            out_total: string | null;
+            /**
+             * Out Forecast
+             * @description The forecast part already inside `out_total`; null for a solo space
+             */
+            out_forecast: string | null;
         };
         /**
          * NoteCreate
@@ -13887,6 +14576,15 @@ export interface components {
             /** Last Payment Reminder At */
             last_payment_reminder_at: string | null;
         };
+        /** OwedFigure */
+        OwedFigure: {
+            /** Total */
+            total: string;
+            /** Late Total */
+            late_total: string;
+            /** Late Count */
+            late_count: number;
+        };
         /**
          * OwnEngagementMonth
          * @description One month as the freelancer sees it. `in_progress`: rebase has not received the report
@@ -14245,6 +14943,58 @@ export interface components {
             pay_day: number;
             /** Pay Month Offset */
             pay_month_offset: number;
+        };
+        /**
+         * PayableRow
+         * @description One overdue payable. `counterparty` is the supplier, or the tax; none for a staff
+         *     member, whose name is not on this card.
+         */
+        PayableRow: {
+            /**
+             * Due Item Id
+             * Format: uuid
+             */
+            due_item_id: string;
+            /** Counterparty */
+            counterparty: string | null;
+            /** Description */
+            description: string | null;
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /** Days Of Delay */
+            days_of_delay: number;
+            /** Amount */
+            amount: string;
+        };
+        /**
+         * PayablesDashboard
+         * @description The mirror of `ReceivablesDashboard` for money going out: the open `expected` items (a
+         *     forecast is not owed yet), in the same six bands. The bands add up to `total`.
+         */
+        PayablesDashboard: {
+            /**
+             * Calculated At
+             * Format: date-time
+             */
+            calculated_at: string;
+            /**
+             * Today
+             * Format: date
+             */
+            today: string;
+            /** Legal Entity Id */
+            legal_entity_id?: string | null;
+            /** Total */
+            total: string;
+            /** Bands */
+            bands: components["schemas"]["BandDueDate"][];
+            /** Overdue */
+            overdue: components["schemas"]["PayableRow"][];
+            /** Total Overdue */
+            total_overdue: number;
         };
         /**
          * PaymentReminderCandidate
@@ -16590,6 +17340,30 @@ export interface components {
              */
             until: "tomorrow" | "next_monday" | "in_a_week" | "in_a_month";
         };
+        /**
+         * SoloTaxRow
+         * @description One of a solo space's own taxes. Listed apart and never taken out of any balance.
+         */
+        SoloTaxRow: {
+            /**
+             * Due Item Id
+             * Format: uuid
+             */
+            due_item_id: string;
+            /** Tax */
+            tax: string | null;
+            /** Description */
+            description: string | null;
+            /** Due Date */
+            due_date: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "forecast" | "expected";
+            /** Amount */
+            amount: string;
+        };
         /** SpaceModulesRead */
         SpaceModulesRead: {
             /**
@@ -16612,17 +17386,17 @@ export interface components {
              * On
              * @description Modules to switch on
              */
-            on?: ("deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators")[];
+            on?: ("deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators" | "cash")[];
             /**
              * Off
              * @description Modules to switch off
              */
-            off?: ("deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators")[];
+            off?: ("deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators" | "cash")[];
             /**
              * Confirm Off
              * @description The modules in `off` that hold records and that the caller agrees to switch off: one that holds data and is not named here is refused. Their data stays
              */
-            confirm_off?: ("deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators")[];
+            confirm_off?: ("deals" | "contracts" | "time" | "purchases" | "taxes" | "staff" | "collaborators" | "cash")[];
         };
         /** SpaceProfileProposal */
         SpaceProfileProposal: {
@@ -16881,6 +17655,80 @@ export interface components {
             items: components["schemas"]["StaffMemberRead"][];
             /** Next Cursor */
             next_cursor: string | null;
+        };
+        /**
+         * StatementCheck
+         * @description What the stated balances say about a statement. `ok` is false when something is wrong:
+         *     `balance`, the stated closing is not the stated opening plus the movements the statement
+         *     carries (`difference` is the stated closing minus that), or `gap`, the stated opening is not
+         *     the closing the previous statement states (`difference` is the opening minus it).
+         */
+        StatementCheck: {
+            /** Ok */
+            ok: boolean;
+            /** Difference */
+            difference: string | null;
+            /** Kind */
+            kind: ("balance" | "gap") | null;
+        };
+        /** StatementImportResult */
+        StatementImportResult: {
+            statement: components["schemas"]["StatementRead"];
+            /** Added */
+            added: number;
+            /** Duplicates */
+            duplicates: number;
+        };
+        /** StatementPage */
+        StatementPage: {
+            /** Items */
+            items: components["schemas"]["StatementRead"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+            /** Total Count */
+            total_count: number;
+        };
+        /** StatementRead */
+        StatementRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Bank Account Id
+             * Format: uuid
+             */
+            bank_account_id: string;
+            /**
+             * Period From
+             * Format: date
+             */
+            period_from: string;
+            /**
+             * Period To
+             * Format: date
+             */
+            period_to: string;
+            /** Format */
+            format: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "proposed" | "imported" | "reverted";
+            /** Opening Balance */
+            opening_balance: string | null;
+            /** Closing Balance */
+            closing_balance: string | null;
+            /** Movement Count */
+            movement_count: number;
+            check: components["schemas"]["StatementCheck"] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /**
          * SuggestedOrganization
@@ -17659,6 +18507,32 @@ export interface components {
         TokenOptions: {
             /** Full Access Available */
             full_access_available: boolean;
+        };
+        /**
+         * TotalBalance
+         * @description The EUR accounts added up, true as of the oldest of their balances. An account in
+         *     another currency is not converted: it is named in `excluded_currencies`.
+         */
+        TotalBalance: {
+            /** Amount */
+            amount: string;
+            /**
+             * Currency
+             * @default EUR
+             * @constant
+             */
+            currency: "EUR";
+            /** As Of */
+            as_of: string | null;
+            /** Excluded Currencies */
+            excluded_currencies: string[];
+            /** Accounts Without Balance */
+            accounts_without_balance: number;
+            /**
+             * Below Zero
+             * @description `amount` is below zero (the server compares)
+             */
+            below_zero: boolean;
         };
         /**
          * UnbilledBacklog
@@ -65851,6 +66725,1474 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecurringExpenseRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_bank_accounts_api_bank_accounts_get: {
+        parameters: {
+            query?: {
+                /** @description Also the accounts that were archived */
+                include_archived?: boolean;
+                /** @description Only this legal entity's rows; omitted, all of them */
+                legal_entity_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankAccountRead"][];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_bank_account_api_bank_accounts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankAccountCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankAccountRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_bank_account_api_bank_accounts__account_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BankAccountUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankAccountRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_bank_account_api_bank_accounts__account_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankAccountRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_coverage_api_bank_accounts__account_id__coverage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountCoverageRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_statements_api_bank_accounts__account_id__statements_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description `next_cursor` of the previous page */
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementPage"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_statement_api_bank_accounts__account_id__statements_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description The statement: a CAMT.053 XML or the Banco BPM «Saldo e movimenti» XLSX, at most 10485760 bytes. `period_from` and `period_to` (form fields, both or none) say the period a file that does not state one covers.
+                     */
+                    file: string;
+                    /** Format: date */
+                    period_from?: string;
+                    /** Format: date */
+                    period_to?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementImportResult"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_movements_api_bank_accounts__account_id__movements_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description `next_cursor` of the previous page */
+                cursor?: string | null;
+                /** @description `unmatched` only the movements that wait to be matched */
+                state?: "unmatched" | "all";
+                /** @description Only this statement's movements */
+                statement_id?: string | null;
+            };
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MovementPage"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revert_statement_api_bank_statements__statement_id__revert_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                statement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    schedule_api_cash_schedule_get: {
+        parameters: {
+            query?: {
+                /** @description How many weeks ahead, from the Monday of the current one: one of `horizon_options` of the answer (4, 13 or 26) */
+                weeks?: number;
+                /** @description Only this legal entity's rows; omitted, all of them */
+                legal_entity_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashSchedule"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    payables_api_cash_payables_get: {
+        parameters: {
+            query?: {
+                /** @description Only this legal entity's rows; omitted, all of them */
+                legal_entity_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayablesDashboard"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    summary_api_cash_summary_get: {
+        parameters: {
+            query?: {
+                /** @description Only this legal entity's rows; omitted, all of them */
+                legal_entity_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CashSummary"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

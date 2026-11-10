@@ -205,7 +205,7 @@ export const queryKeys = {
   /** Every dashboard read, whatever the period: for a write that cannot know which is on screen. */
   dashboardAll: ['dashboard'] as const,
   dashboard: (
-    kind: 'commercial' | 'economic' | 'panoramica' | 'receivables' | 'work_units',
+    kind: 'cash' | 'commercial' | 'economic' | 'panoramica' | 'receivables' | 'work_units',
     params: Record<string, string>,
   ) =>
     ['dashboard', kind, params] as const,
