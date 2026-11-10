@@ -383,7 +383,7 @@ export function PurchasesPage() {
                 />
               </div>
             </div>
-            <Button onClick={() => setFiltersOpen(false)}>Mostra {list.totalCount ?? ''} acquisti</Button>
+            <Button onClick={() => setFiltersOpen(false)}>{list.totalCount === undefined ? 'Mostra gli acquisti' : `Mostra ${list.totalCount} acquisti`}</Button>
           </SheetContent>
         </Sheet>
       )}

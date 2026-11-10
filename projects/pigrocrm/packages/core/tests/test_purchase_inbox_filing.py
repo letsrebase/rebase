@@ -13,11 +13,13 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.errors import Conflict
+from pigrocrm.core.errors import Conflict, NotFound
+from pigrocrm.core.inbox.access import visible_item
 from pigrocrm.core.inbox.models import InboxItem
 from pigrocrm.core.inbox.schemas import InboxDiscard
 from pigrocrm.core.inbox.service import InboxService
 from pigrocrm.core.inbox.uploads import InboxUploads
+from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.proposals.models import Proposal
 from pigrocrm.core.purchases.schemas import PurchaseCreate, PurchaseUpdate
 from pigrocrm.core.purchases.service import PurchaseService
@@ -299,3 +301,75 @@ def test_an_item_that_is_not_a_duplicate_is_linked_as_it_is(
 ) -> None:
     item_id = _photo(uploads, person)
     assert _register_any(db_session, seeded_category_id, item_id, person) == item_id
+
+
+def _default_entity(db_session: Session) -> UUID:
+    return db_session.execute(
+        select(LegalEntity.id).where(LegalEntity.is_default.is_(True))
+    ).scalar_one()
+
+
+def test_a_cycle_of_duplicates_keeps_the_id_it_was_given(
+    db_session: Session, uploads: InboxUploads, person: Actor, seeded_category_id: UUID
+) -> None:
+    first = _photo(uploads, person, "uno.jpg")
+    second = _photo(uploads, person, "due.jpg")
+    one = _item(db_session, first)
+    one.state, one.duplicate_of_id, one.reason = "duplicate", second, "ciclo"
+    db_session.flush()
+
+    assert _register_any(db_session, seeded_category_id, second, person) == second
+
+
+def test_a_duplicate_resolving_to_the_linked_item_is_no_change_on_update(
+    db_session: Session, uploads: InboxUploads, person: Actor, seeded_category_id: UUID
+) -> None:
+    original = _photo(uploads, person, "uno.jpg")
+    copy = _photo(uploads, person, "copia.jpg")
+    purchase_id = _register(db_session, seeded_category_id, original, person)
+
+    PurchaseService(db_session).update(purchase_id, PurchaseUpdate(inbox_item_id=copy), person)
+
+    updated = [
+        a
+        for a in db_session.execute(
+            select(Activity).where(Activity.entity_id == purchase_id, Activity.kind == "updated")
+        ).scalars()
+    ]
+    assert all("inbox_item_id" not in a.payload["changed"] for a in updated)
+    assert len([a for a in _timeline(db_session, original) if a.kind == "filed"]) == 1
+
+
+def test_the_item_takes_the_purchase_legal_entity_so_others_open_its_file(
+    db_session: Session, uploads: InboxUploads, person: Actor, seeded_category_id: UUID
+) -> None:
+    entity = _default_entity(db_session)
+    item_id = _photo(uploads, person)
+    colleague = Actor(id=UUID(int=7), type="user", role="collaborator")
+    with pytest.raises(NotFound):
+        visible_item(db_session, item_id, colleague)
+
+    PurchaseService(db_session).create(
+        PurchaseCreate(
+            category_id=seeded_category_id,
+            date=date(2026, 11, 10),
+            amount=Decimal("12.50"),
+            description="Bar Roma",
+            inbox_item_id=item_id,
+            legal_entity_id=entity,
+        ),
+        person,
+    )
+
+    assert _item(db_session, item_id).legal_entity_id == entity
+    assert visible_item(db_session, item_id, colleague).id == item_id
+
+
+def test_a_purchase_with_no_legal_entity_leaves_the_item_unclassified(
+    db_session: Session, uploads: InboxUploads, person: Actor, seeded_category_id: UUID
+) -> None:
+    item_id = _photo(uploads, person)
+
+    _register(db_session, seeded_category_id, item_id, person)
+
+    assert _item(db_session, item_id).legal_entity_id is None

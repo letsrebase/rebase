@@ -85,7 +85,8 @@ describe('«Spesa» sheet', () => {
     const file = screen.getByLabelText('Foto (facoltativa)')
     expect(file).toHaveAttribute('type', 'file')
     expect(file).toHaveAttribute('accept', 'image/*')
-    expect(file).toHaveAttribute('capture')
+    // No camera-first step: the person may take a photo or skip it.
+    expect(file).not.toHaveAttribute('capture')
     // A purchase has no due item yet: nothing to choose.
     expect(screen.queryByText(/già pagata/i)).not.toBeInTheDocument()
     expect(screen.queryByText(/da pagare/i)).not.toBeInTheDocument()
@@ -209,7 +210,9 @@ describe('«Spesa» sheet', () => {
     await userEvent.upload(screen.getByLabelText('Foto (facoltativa)'), photo())
     await register()
 
-    expect(await screen.findByText('Il periodo è chiuso.')).toBeInTheDocument()
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Il periodo è chiuso. La foto è già in In arrivo.',
+    )
     expect(onOpenChange).not.toHaveBeenCalled()
     expect(toast.success).not.toHaveBeenCalled()
 
@@ -238,6 +241,19 @@ describe('«Spesa» sheet', () => {
     expect(await screen.findByText('importo nullo')).toBeInTheDocument()
     expect(screen.getByLabelText('Importo (€)')).toHaveAttribute('aria-invalid', 'true')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('says the photo is already in «In arrivo» when a field refusal follows its upload', async () => {
+    upload.mockImplementation(async () => stored())
+    POST.mockImplementationOnce(() =>
+      refusal(422, problem('x', { status: 422, code: 'validation_failed', field: 'amount', reason: 'importo nullo' })),
+    )
+    open()
+    await fill('0', 'Bar')
+    await userEvent.upload(screen.getByLabelText('Foto (facoltativa)'), photo())
+    await register()
+    expect(await screen.findByText('importo nullo')).toBeInTheDocument()
+    expect(screen.getByText('La foto è già in In arrivo.')).toBeInTheDocument()
   })
 
   it('lets the person drop the photo and register without it', async () => {

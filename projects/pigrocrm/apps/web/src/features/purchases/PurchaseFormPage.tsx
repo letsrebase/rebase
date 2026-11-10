@@ -10,6 +10,7 @@ import { useMediaQuery } from '@rebase/ui/use-media-query'
 import { useCan } from '@/lib/auth'
 import { useEntitySchema } from '@/lib/schema'
 import type { NewPurchaseSearch } from './formSearch'
+import { useInboxItem } from '@/features/inbox/queries'
 import { PurchaseFile } from './PurchaseFile'
 import { PurchaseForm } from './PurchaseForm'
 import { useCostCategories, usePurchase } from './queries'
@@ -50,6 +51,10 @@ export function PurchaseFormPage({
   const [fileOpen, setFileOpen] = useState(false)
 
   const inboxItemId = editing ? purchase.data?.inbox_item_id : defaults?.inbox_item_id
+  // The file is drawn, and the layout made of two columns for it, only when the item really has
+  // one. An item that could not be read keeps the pane, so its error and «Riprova» are seen.
+  const item = useInboxItem(inboxItemId ?? null)
+  const hasFile = inboxItemId != null && (item.isError || item.data?.has_file === true)
   const title = editing
     ? 'Modifica acquisto'
     : defaults?.inbox_item_id !== undefined
@@ -81,7 +86,7 @@ export function PurchaseFormPage({
     <PageHeader icon={ShoppingCart} title={title} description={description}>
       <div className="flex flex-wrap items-center gap-2 px-8 pb-4">
         {back}
-        {inboxItemId != null && !beside ? (
+        {hasFile && !beside ? (
           <Button type="button" variant="outline" size="sm" onClick={() => setFileOpen(true)}>
             <FileText className="mr-2 size-4" />
             Vedi il file
@@ -173,7 +178,7 @@ export function PurchaseFormPage({
     <>
       {header}
       <div className="px-8 pb-8">
-        {inboxItemId != null && beside ? (
+        {hasFile && beside ? (
           // Two columns: the form scrolls with the page, the file stays in view with a scroll of
           // its own, so a long form is checked against the original without losing it.
           <div className="grid grid-cols-2 items-start gap-8">
@@ -190,7 +195,7 @@ export function PurchaseFormPage({
         )}
       </div>
 
-      {inboxItemId != null && !beside ? (
+      {hasFile && !beside ? (
         <Sheet open={fileOpen} onOpenChange={setFileOpen}>
           <SheetContent
             side="right"

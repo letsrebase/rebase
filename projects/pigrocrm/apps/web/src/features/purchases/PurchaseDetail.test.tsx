@@ -2,6 +2,7 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
+import { formatIsoDateItalian, toIsoDate } from '@/lib/dates'
 import { ok, refused, renderWithQuery } from '@/features/inbox/testing'
 import { PurchaseDetail } from './PurchaseDetail'
 
@@ -191,9 +192,13 @@ describe('the page of a purchase', () => {
   })
 
   it('names where a registered purchase came from and shows its file under «Documenti»', async () => {
-    answering(ok({ ...PURCHASE, inbox_item_id: 'i1' }))
+    // Late evening UTC: the day shown is the local one, never the first ten characters.
+    const created = '2026-11-03T23:30:00Z'
+    answering(ok({ ...PURCHASE, inbox_item_id: 'i1', created_at: created }))
     renderWithQuery(<PurchaseDetail />)
-    expect(await screen.findByText('Registrata da In arrivo il 03/11/2026')).toBeInTheDocument()
+    expect(
+      await screen.findByText(`Registrata da In arrivo il ${formatIsoDateItalian(toIsoDate(new Date(created)))}`),
+    ).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Apri In arrivo' })).toHaveAttribute('href', '/app/inbox')
     await userEvent.click(screen.getByRole('tab', { name: 'Documenti' }))
     expect(await screen.findByText('File di i1')).toBeInTheDocument()

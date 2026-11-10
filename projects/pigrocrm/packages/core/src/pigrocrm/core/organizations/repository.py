@@ -150,10 +150,17 @@ class OrganizationRepository:
             # states explicitly which character escape_like used, rather than relying
             # on ILIKE's default.
             like = f"%{escape_like(query.search.lower())}%"
+            # A VAT number is also found by its comparison form (upper case, letters and digits
+            # only): `NL123456789B01` finds a stored `NL 1234.56.789 B01` and the reverse, the
+            # way the unique index reads them.
+            compact = normalise_vat(query.search)
+            vat_matches = [Organization.vat_number.ilike(like, escape="\\")]
+            if len(compact) >= 5:
+                vat_matches.append(vat_key(Organization.vat_number).like(f"%{compact}%"))
             stmt = stmt.where(
                 or_(
                     Organization.legal_name.ilike(like, escape="\\"),
-                    Organization.vat_number.ilike(like, escape="\\"),
+                    *vat_matches,
                     Organization.id.in_(owners_matching(ContactPoint.customer_id, query.search)),
                     Organization.tax_code.ilike(like, escape="\\"),
                 )

@@ -141,7 +141,11 @@ function Frame({
       onValueChange={(next) =>
         void navigate({
           to: '/app/organizations',
-          search: { role: next === 'customer' ? undefined : (next as RegistryRole) },
+          // The rest of the URL stays: only the view changes.
+          search: (previous: Record<string, unknown>) => ({
+            ...previous,
+            role: next === 'customer' ? undefined : (next as RegistryRole),
+          }),
         })
       }
     >
@@ -156,7 +160,11 @@ function Frame({
               <TabsTrigger key={view} value={view}>
                 {VIEWS[view].tab}
                 {counts[view] !== undefined ? (
-                  <span className="ml-2 tabular-nums text-muted-foreground">{counts[view]}</span>
+                  <>
+                    {/* Said apart from the name: «Clienti, 12», not «Clienti12». */}
+                    <span className="sr-only">{', '}</span>
+                    <span className="ml-2 tabular-nums text-muted-foreground">{counts[view]}</span>
+                  </>
                 ) : null}
               </TabsTrigger>
             ))}
@@ -292,9 +300,13 @@ function RegistryList({
           {empty ? (
             <div className="border border-dashed px-6 py-12 text-center">
               <p className="mx-auto max-w-md text-sm text-muted-foreground">
-                {settled === '' ? view.empty : `Nessun risultato per «${settled}».`}
+                {!narrowed
+                  ? view.empty
+                  : supplierKind !== undefined && settled === ''
+                    ? 'Nessun fornitore con questo tipo fiscale.'
+                    : `Nessun risultato per «${settled}».`}
               </p>
-              {canWrite && settled === '' ? <div className="mt-4">{createButton}</div> : null}
+              {canWrite && !narrowed ? <div className="mt-4">{createButton}</div> : null}
             </div>
           ) : wide ? (
             <DataTable

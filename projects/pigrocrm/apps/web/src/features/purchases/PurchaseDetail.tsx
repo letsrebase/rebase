@@ -16,7 +16,7 @@ import { useInboxItem } from '@/features/inbox/queries'
 import { useOrganization } from '@/features/organizations/queries'
 import { formatMoneyValue } from '@/features/time/columns'
 import { useCan } from '@/lib/auth'
-import { formatIsoDateItalian } from '@/lib/dates'
+import { formatIsoDateItalian, toIsoDate } from '@/lib/dates'
 import { formatItalianQuantity } from '@/lib/decimal'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { KIND_LABELS } from './formValues'
@@ -191,7 +191,7 @@ function Origin({ registeredAt, inboxItemId }: { registeredAt: string; inboxItem
   return (
     <aside aria-label="Origine" className="space-y-2 border bg-card p-4 text-sm">
       <h2 className="font-medium">Origine</h2>
-      <p>Registrata da In arrivo il {formatIsoDateItalian(registeredAt.slice(0, 10))}</p>
+      <p>Registrata da In arrivo il {formatIsoDateItalian(toIsoDate(new Date(registeredAt)))}</p>
       <Link to="/app/inbox" search={{ tab: 'filed', item: inboxItemId }} className="underline">
         Apri In arrivo
       </Link>

@@ -305,6 +305,16 @@ describe('«Acquisti» on a phone', () => {
     expect(within(cards[1]!).getByText('Nota di credito', { selector: '[data-variant="outline"]' })).toBeInTheDocument()
   })
 
+  it('says «Mostra gli acquisti» in the sheet until the total is known', async () => {
+    vi.mocked(api.GET).mockImplementation(((path: string) =>
+      path === '/api/purchases'
+        ? new Promise(() => {})
+        : Promise.resolve(path === '/api/cost-categories' ? ok([]) : ok(SCHEMA))) as never)
+    renderWithQuery(<PurchasesPage />)
+    await userEvent.click(await screen.findByRole('button', { name: /Filtri/ }))
+    expect(await screen.findByRole('button', { name: 'Mostra gli acquisti' })).toBeInTheDocument()
+  })
+
   it('opens the filters in a sheet with supplier, category, type and period', async () => {
     answering(page([purchase()]))
     renderWithQuery(<PurchasesPage />)
@@ -315,5 +325,6 @@ describe('«Acquisti» on a phone', () => {
     expect(within(sheet).getByRole('combobox', { name: 'Tipo' })).toBeInTheDocument()
     expect(within(sheet).getByLabelText('Dal')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('Registrati nel periodo')).toBeInTheDocument())
+    expect(within(sheet).getByRole('button', { name: 'Mostra 1 acquisti' })).toBeInTheDocument()
   })
 })

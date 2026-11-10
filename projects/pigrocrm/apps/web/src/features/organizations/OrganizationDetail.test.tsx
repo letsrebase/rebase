@@ -485,7 +485,8 @@ describe('OrganizationDetail and the roles', () => {
       expect(mockGet).toHaveBeenCalledWith(
         '/api/purchases',
         expect.objectContaining({
-          params: { query: expect.objectContaining({ supplier_id: 'c1' }) },
+          // The registered ones, not the cancelled, a page at a time.
+          params: { query: expect.objectContaining({ supplier_id: 'c1', status: 'registered', limit: 50 }) },
         }),
       )
       await userEvent.click(await screen.findByText('2026/0418'))
@@ -512,6 +513,28 @@ describe('OrganizationDetail and the roles', () => {
       await userEvent.click(await screen.findByRole('tab', { name: 'Acquisti' }))
       await screen.findByText('2026/0418')
       expect(screen.queryByRole('button', { name: 'Nuovo acquisto' })).toBeNull()
+    })
+
+    it('pages with «Carica altri» and says how many there are in all', async () => {
+      mockGet.mockImplementation(
+        ((path: string, init?: { params?: { query?: { cursor?: string } } }) =>
+          path === '/api/organizations/{organization_id}'
+            ? ok(SUPPLIER)
+            : path === NOTES_PATH
+              ? ok([])
+              : path === '/api/purchases'
+                ? init?.params?.query?.cursor
+                  ? ok({ items: [{ ...PURCHASE, id: 'p2', number: '2026/0500' }], next_cursor: null, total_count: 2 })
+                  : ok({ items: [PURCHASE], next_cursor: 'n', total_count: 2 })
+                : path === '/api/cost-categories'
+                  ? ok([])
+                  : ok({ items: [] })) as never,
+      )
+      renderWithClient(<OrganizationDetail />)
+      await userEvent.click(await screen.findByRole('tab', { name: 'Acquisti' }))
+      expect(await screen.findByText('Mostrati 1 acquisti su 2.')).toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: 'Carica altri' }))
+      expect(await screen.findByText('2026/0500')).toBeInTheDocument()
     })
 
     it('says so when the supplier has none', async () => {

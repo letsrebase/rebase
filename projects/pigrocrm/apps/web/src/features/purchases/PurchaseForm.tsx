@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { Button } from '@rebase/ui/button'
 import {
   Select,
@@ -10,6 +10,7 @@ import {
 } from '@rebase/ui/select'
 import { toast } from '@rebase/ui/sonner'
 import { useDeal } from '@/features/deals/queries'
+import { useAfterUpload } from '@/features/inbox/queries'
 import { OrganizationPicker } from '@/features/organizations/OrganizationPicker'
 import { useOrganization } from '@/features/organizations/queries'
 import { formatMoneyValue } from '@/features/time/columns'
@@ -17,6 +18,7 @@ import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { useModules } from '@/lib/modules'
+import { PHONE_BAR_HEIGHT } from '@/components/PhoneBar'
 import type { FieldDefinition } from '@/lib/schema'
 import type { NewPurchaseSearch } from './formSearch'
 import { usePurchaseCapabilities } from './capabilities'
@@ -147,6 +149,9 @@ export function PurchaseForm({
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const create = useCreatePurchase()
   const update = useUpdatePurchase(purchase?.id ?? '')
+  // Registering a file of «In arrivo» moves that item (and the badge that counts it): the inbox's
+  // own refresh, the one an upload runs.
+  const refreshInbox = useAfterUpload()
   const modules = useModules()
   const legal_entity = useLegalEntity()
 
@@ -267,6 +272,7 @@ export function PurchaseForm({
         },
         {
           onSuccess: (saved) => {
+            if (defaults?.inbox_item_id !== undefined) refreshInbox()
             toast.success('Acquisto registrato')
             onSaved(saved)
           },
@@ -326,9 +332,12 @@ export function PurchaseForm({
                 {supplierId === null && (
                   <p className="text-sm text-muted-foreground">
                     Non lo trovi? Aggiungilo tra i fornitori, poi torna qui:{' '}
+                    {/* A new tab: this page holds a half-filled form. */}
                     <Link
                       to="/app/organizations"
                       search={{ role: 'supplier' }}
+                      target="_blank"
+                      rel="noreferrer"
                       className="underline underline-offset-2"
                     >
                       Anagrafiche, Fornitori
@@ -462,13 +471,19 @@ export function PurchaseForm({
 
       {/* The action bar, bottom right; sticky so «Annulla» and «Registra» stay in reach on a
           phone, where the form is long. */}
-      <div className="sticky bottom-0 z-10 space-y-2 border-t bg-background py-3">
+      {/* Below `sm` the phone's navigation is fixed over the bottom of the page, so the bar
+          sticks above it (its height and the home indicator's inset) and «Registra» is never
+          covered. */}
+      <div
+        style={{ '--phone-bar': `calc(${PHONE_BAR_HEIGHT} + env(safe-area-inset-bottom))` } as CSSProperties}
+        className="sticky bottom-(--phone-bar) z-10 space-y-2 border-t bg-background py-3 sm:bottom-0"
+      >
         {problem !== null && !onOwnControl && !onDynamicField && (
           <p
             role="alert"
             className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           >
-            {fieldError === null ? problem.detail : `${fieldError.field}: ${fieldError.message}`}
+            {fieldError === null ? problem.detail : fieldError.message}
           </p>
         )}
         <div className="flex justify-end gap-2">

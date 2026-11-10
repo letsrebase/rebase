@@ -1,9 +1,10 @@
 import { useNavigate } from '@tanstack/react-router'
 import { Plus } from 'lucide-react'
 import { DataTable } from '@/components/DataTable'
+import { LoadMore } from '@/components/LoadMore'
 import { Button } from '@rebase/ui/button'
 import { buildPurchaseColumns } from '@/features/purchases/columns'
-import { useCostCategories, usePurchases } from '@/features/purchases/queries'
+import { useCostCategories, usePurchaseList } from '@/features/purchases/queries'
 import { useCanWrite } from '@/lib/auth'
 import { useEntitySchema } from '@/lib/schema'
 
@@ -15,7 +16,8 @@ import { useEntitySchema } from '@/lib/schema'
 export function SupplierPurchases({ supplierId }: { supplierId: string }) {
   const navigate = useNavigate()
   const canWrite = useCanWrite()
-  const purchases = usePurchases({ supplier_id: supplierId })
+  // The registered ones, a page at a time: a cancelled purchase is not what the supplier sold us.
+  const purchases = usePurchaseList({ supplier_id: supplierId, status: 'registered' })
   // Archived categories included: a row filed under one before it was archived still names it.
   const categories = useCostCategories(true)
   const schema = useEntitySchema('purchase')
@@ -38,17 +40,31 @@ export function SupplierPurchases({ supplierId }: { supplierId: string }) {
       <DataTable
         label="Acquisti del fornitore"
         columns={buildPurchaseColumns(categories.data ?? [], schema.data?.custom_fields ?? [])}
-        data={purchases.data?.items ?? []}
+        data={purchases.items}
         isLoading={purchases.isLoading}
         loadingLabel="Leggo gli acquisti…"
         isError={purchases.isError}
         error={purchases.error}
-        onRetry={() => void purchases.refetch()}
+        onRetry={purchases.retry}
         onRowClick={(row) =>
           void navigate({ to: '/app/purchases/$purchaseId', params: { purchaseId: row.id } })
         }
         emptyMessage="Nessun acquisto da questo fornitore."
       />
+      {purchases.hasMore && (
+        <LoadMore
+          label="Carica altri"
+          message={
+            purchases.totalCount !== undefined
+              ? `Mostrati ${purchases.items.length} acquisti su ${purchases.totalCount}.`
+              : `Mostrati ${purchases.items.length} acquisti, ce ne sono altri.`
+          }
+          isFetchingMore={purchases.isFetchingMore}
+          hasError={purchases.isError}
+          error={purchases.error}
+          onLoadMore={purchases.loadMore}
+        />
+      )}
     </div>
   )
 }

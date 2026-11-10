@@ -196,7 +196,7 @@ describe('the page', () => {
   it('draws the three views as tabs, the active one following `role`', async () => {
     renderPage('supplier')
     const tabs = within(await screen.findByRole('tablist'))
-    expect(tabs.getAllByRole('tab').map((tab) => tab.textContent?.replace(/\d+$/, ''))).toEqual([
+    expect(tabs.getAllByRole('tab').map((tab) => tab.textContent?.replace(/,?\s*\d+$/, '').trim())).toEqual([
       'Tutte',
       'Clienti',
       'Fornitori',
@@ -208,9 +208,9 @@ describe('the page', () => {
   it('draws the count of each role beside its tab, from one one-row request per role', async () => {
     answering({ totals: { any: 212, customer: 180, supplier: 32 } })
     renderPage('customer')
-    expect(await screen.findByRole('tab', { name: /^Tutte\s*212$/ })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /^Clienti\s*180$/ })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /^Fornitori\s*32$/ })).toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: /^Tutte,?\s*212$/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /^Clienti,?\s*180$/ })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /^Fornitori,?\s*32$/ })).toBeInTheDocument()
     expect(countRequests().map(([, init]) => (init as { params: { query: Query } }).params.query.role).sort()).toEqual([
       'any',
       'customer',
@@ -226,30 +226,46 @@ describe('the page', () => {
           : { items: CUSTOMERS, next_cursor: null, total: 2 },
     })
     renderPage('customer')
-    expect(await screen.findByRole('tab', { name: /^Clienti\s*2$/ })).toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: /^Clienti,?\s*2$/ })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Fornitori' })).toBeInTheDocument()
   })
 
   it('does not count suppliers with the purchases module off', async () => {
     renderPage('customer', ['purchases'])
-    await screen.findByRole('tab', { name: /^Clienti\s*2$/ })
+    await screen.findByRole('tab', { name: /^Clienti,?\s*2$/ })
     expect(organizationRequests().some(([, init]) => (init as { params: { query: Query } }).params.query.role === 'supplier')).toBe(false)
   })
 
-  it('changes the view through the URL, «Clienti» being the page with no role', async () => {
+  it('changes the view through the URL, keeping the rest of it, «Clienti» being the page with no role', async () => {
+    const user = userEvent.setup()
+    renderPage('supplier')
+    const searchOf = () =>
+      (nav.navigate.mock.lastCall![0] as { search: (previous: Record<string, unknown>) => unknown }).search({
+        search: 'zanetti',
+      })
+    await user.click(await screen.findByRole('tab', { name: /^Tutte/ }))
+    expect(nav.navigate).toHaveBeenLastCalledWith(expect.objectContaining({ to: '/app/organizations' }))
+    expect(searchOf()).toEqual({ search: 'zanetti', role: 'any' })
+    await user.click(screen.getByRole('tab', { name: /^Clienti/ }))
+    expect(searchOf()).toEqual({ search: 'zanetti', role: undefined })
+  })
+
+  it('goes to «Fornitori» with its role named', async () => {
     const user = userEvent.setup()
     renderPage('customer')
     await user.click(await screen.findByRole('tab', { name: /^Fornitori/ }))
-    expect(nav.navigate).toHaveBeenLastCalledWith({ to: '/app/organizations', search: { role: 'supplier' } })
-    await user.click(screen.getByRole('tab', { name: /^Tutte/ }))
-    expect(nav.navigate).toHaveBeenLastCalledWith({ to: '/app/organizations', search: { role: 'any' } })
+    const { search } = nav.navigate.mock.lastCall![0] as { search: (previous: object) => unknown }
+    expect(search({})).toEqual({ role: 'supplier' })
   })
 
-  it('goes back to «Clienti» with no role in the URL', async () => {
-    const user = userEvent.setup()
-    renderPage('supplier')
-    await user.click(await screen.findByRole('tab', { name: /^Clienti/ }))
-    expect(nav.navigate).toHaveBeenLastCalledWith({ to: '/app/organizations', search: { role: undefined } })
+  it('reads the count apart from the name, so a screen reader hears «Clienti, 12»', async () => {
+    answering({ totals: { customer: 12 } })
+    renderPage('customer')
+    await screen.findByText('12')
+    const tab = screen.getByRole('tab', { name: /^Clienti/ })
+    // The separator is for a screen reader only; the eye has the margin.
+    expect(tab.querySelector('.sr-only')).toHaveTextContent(',')
+    expect(tab.textContent).toBe('Clienti, 12')
   })
 
   it('asks the server for the role of the view, each view keeping its own list', async () => {
@@ -453,6 +469,19 @@ describe('the states', () => {
     expect(screen.queryByRole('button', { name: 'Nuovo fornitore' })).toBeNull()
   })
 
+  it('says no supplier has that fiscal kind, not the module\'s empty sentence', async () => {
+    const user = userEvent.setup()
+    answering({
+      organizations: () => ({ items: [], next_cursor: null, total: 0 }),
+    })
+    renderPage('supplier')
+    await user.click(await screen.findByRole('combobox', { name: 'Tipo fiscale' }))
+    await user.click(await screen.findByRole('option', { name: 'Forfettario' }))
+    expect(await screen.findByText('Nessun fornitore con questo tipo fiscale.')).toBeInTheDocument()
+    expect(screen.queryByText(/Compaiono quando registri/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Nuovo fornitore', hidden: false })).toBeInTheDocument()
+  })
+
   it('says a search found nothing, and does not tell the person to create one', async () => {
     answering({ organizations: (_role, search) => ({ items: search ? [] : CUSTOMERS, next_cursor: null }) })
     const user = userEvent.setup()
@@ -524,7 +553,7 @@ describe('with the purchases module off', () => {
   it('draws no «Fornitori» tab', async () => {
     renderPage('customer', ['purchases'])
     await screen.findByText('Rossi Costruzioni')
-    expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.replace(/\d+$/, ''))).toEqual(['Tutte', 'Clienti'])
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.replace(/,?\s*\d+$/, '').trim())).toEqual(['Tutte', 'Clienti'])
   })
 
   it('answers a stale link to the supplier view with the sentence, and reads no list', async () => {

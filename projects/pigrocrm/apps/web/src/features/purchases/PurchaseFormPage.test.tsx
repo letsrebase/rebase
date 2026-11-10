@@ -160,8 +160,10 @@ function viewport(width: number) {
   }) as never
 }
 
+let client: QueryClient
+
 function renderPage(props: Parameters<typeof PurchaseFormPage>[0] = {}, legal_entity?: LegalEntityValue) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const page = <PurchaseFormPage {...props} />
   return render(
     <QueryClientProvider client={client}>
@@ -270,6 +272,14 @@ describe('«Nuovo acquisto»', () => {
     expect(toast.success).toHaveBeenCalledWith('Acquisto registrato')
   })
 
+  it('keeps the action bar above the phone navigation below sm', async () => {
+    serve()
+    renderPage()
+    const bar = (await screen.findByRole('button', { name: 'Registra' })).parentElement?.parentElement
+    expect(bar).toHaveClass('bottom-(--phone-bar)', 'sm:bottom-0')
+    expect(bar?.style.getPropertyValue('--phone-bar')).toBe('calc(4rem + env(safe-area-inset-bottom))')
+  })
+
   it('«Annulla» goes back to the list without writing', async () => {
     serve()
     renderPage()
@@ -336,6 +346,9 @@ describe('«Nuovo acquisto»', () => {
       '/app/organizations',
     )
     expect(screen.queryByRole('button', { name: /nuovo fornitore/i })).not.toBeInTheDocument()
+    // A new tab: the page holds a half-filled form.
+    expect(screen.getByRole('link', { name: /anagrafiche, fornitori/i })).toHaveAttribute('target', '_blank')
+    expect(screen.getByRole('link', { name: /anagrafiche, fornitori/i })).toHaveAttribute('rel', 'noreferrer')
   })
 
   it('asks the organizations list for suppliers only', async () => {
@@ -553,6 +566,46 @@ describe('«Registra come acquisto»: the file of «In arrivo» beside the form'
     await waitFor(() => expect(api.GET).toHaveBeenCalledWith('/api/inbox/items/{item_id}', expect.anything()))
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Apri il file' })).not.toBeInTheDocument()
+    // No file, no second column: the form is alone.
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument()
+  })
+
+  it('offers no «Vedi il file» below lg for an item that has no file', async () => {
+    serveFile(inboxItem({ has_file: false }))
+    renderPage({ defaults: { inbox_item_id: ITEM } })
+    await screen.findByRole('button', { name: 'Registra' })
+    await waitFor(() => expect(api.GET).toHaveBeenCalledWith('/api/inbox/items/{item_id}', expect.anything()))
+    expect(screen.queryByRole('button', { name: 'Vedi il file' })).not.toBeInTheDocument()
+  })
+
+  it('refreshes the inbox, so the item and its badge move, once the purchase is registered', async () => {
+    serveFile()
+    serveBytes()
+    vi.mocked(api.POST).mockImplementation((() => ok(purchase({ id: 'p9' }))) as never)
+    renderPage({ defaults: { inbox_item_id: ITEM, supplier_id: SUPPLIER_ID } })
+    const invalidate = vi.spyOn(client, 'invalidateQueries')
+
+    await screen.findByText('Studio Rossi')
+    await fillCommon()
+    await userEvent.type(screen.getByLabelText(/importo \(€\)/i), '122')
+    await userEvent.type(screen.getByLabelText('Imponibile, riga 1'), '100.00')
+    await userEvent.type(screen.getByLabelText('IVA, riga 1'), '22.00')
+    await userEvent.click(screen.getByRole('button', { name: 'Registra' }))
+
+    await waitFor(() => expect(navigate).toHaveBeenCalled())
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['inbox'] })
+  })
+
+  it('leaves the inbox alone for a purchase that came from nowhere', async () => {
+    serve()
+    vi.mocked(api.POST).mockImplementation((() => ok(purchase())) as never)
+    renderPage()
+    const invalidate = vi.spyOn(client, 'invalidateQueries')
+    await fillCommon()
+    await userEvent.type(screen.getByLabelText(/importo \(€\)/i), '5')
+    await userEvent.click(screen.getByRole('button', { name: 'Registra' }))
+    await waitFor(() => expect(navigate).toHaveBeenCalled())
+    expect(invalidate).not.toHaveBeenCalledWith({ queryKey: ['inbox'] })
   })
 
   it('says why when the file cannot be read, and offers «Riprova», with the form still there', async () => {
@@ -574,8 +627,9 @@ describe('«Registra come acquisto»: the file of «In arrivo» beside the form'
     expect(screen.getByRole('button', { name: 'Registra' })).toBeInTheDocument()
   })
 
-  it('waits for the file with a status', async () => {
-    serve({ '/api/inbox/items/{item_id}': () => new Promise<never>(() => {}) })
+  it('waits for the bytes of the file with a status', async () => {
+    serve({ '/api/inbox/items/{item_id}': () => ok(inboxItem()) })
+    vi.mocked(fetchWithRefresh).mockImplementation(() => new Promise<never>(() => {}))
     viewport(1280)
     renderPage({ defaults: { inbox_item_id: ITEM } })
     const aside = await screen.findByRole('complementary')
@@ -794,6 +848,30 @@ describe('when the server refuses', () => {
     expect(alerts[0]).toHaveTextContent('Il periodo IVA è chiuso: non si può modificare.')
     expect(screen.getByLabelText(/descrizione/i)).toHaveValue('Hosting')
     expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('shows a refusal on a field the form does not draw as its message alone, never the key', async () => {
+    serve()
+    vi.mocked(api.POST).mockImplementation((() =>
+      failed(
+        {
+          type: 'x',
+          title: 'x',
+          status: 422,
+          code: 'validation_failed',
+          field: 'deal_id',
+          detail: 'x',
+          reason: 'il deal non è di questa azienda',
+        },
+        422,
+      )) as never)
+    renderPage()
+    await fillCommon()
+    await userEvent.type(screen.getByLabelText(/importo \(€\)/i), '5')
+    await userEvent.click(screen.getByRole('button', { name: 'Registra' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('il deal non è di questa azienda')
+    expect(alert).not.toHaveTextContent('deal_id')
   })
 
   it('shows a refusal on a control of its own once, on that control', async () => {

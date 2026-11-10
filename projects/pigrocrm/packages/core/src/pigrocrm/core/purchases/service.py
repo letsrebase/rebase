@@ -511,7 +511,13 @@ class PurchaseService:
             },
         )
         if purchase.inbox_item_id is not None:
-            file_as_purchase(self.session, purchase.inbox_item_id, purchase.id, actor)
+            file_as_purchase(
+                self.session,
+                purchase.inbox_item_id,
+                purchase.id,
+                actor,
+                purchase.legal_entity_id,
+            )
         self.session.commit()
         return PurchaseRead.model_validate(purchase)
 
@@ -595,6 +601,12 @@ class PurchaseService:
             changes["custom_fields"] = merge_custom(
                 ENTITY, self.fields.specs_for(ENTITY), purchase.custom_fields, data.custom_fields
             )
+        # The id the item resolves to, before the diff: a duplicate that resolves to the item
+        # already linked is no change, and the timeline must not say it was.
+        linked: UUID | None = changes.get("inbox_item_id")
+        if linked is not None:
+            linked = resolve_original(self.session, linked, actor)
+            changes["inbox_item_id"] = linked
         changed = changed_keys(purchase, changes)
         if data.vat_lines is not None:
             current = [
@@ -603,15 +615,13 @@ class PurchaseService:
             if current != data.vat_lines:
                 changed.append("vat_lines")
                 purchase.vat_lines = self._rows(data.vat_lines)
-        linked: UUID | None = changes.get("inbox_item_id")
-        if linked is not None:
-            linked = resolve_original(self.session, linked, actor)
-            changes["inbox_item_id"] = linked
         newly_linked = linked if linked != purchase.inbox_item_id else None
         for key, value in changes.items():
             setattr(purchase, key, value)
         if newly_linked is not None:
-            file_as_purchase(self.session, newly_linked, purchase.id, actor)
+            file_as_purchase(
+                self.session, newly_linked, purchase.id, actor, purchase.legal_entity_id
+            )
         self.activities.record(
             ENTITY,
             purchase.id,

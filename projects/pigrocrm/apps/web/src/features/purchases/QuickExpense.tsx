@@ -80,6 +80,8 @@ function ExpenseForm({ onDone }: { onDone: () => void }) {
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const [local, setLocal] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
+  /** The photo is already in the inbox while the purchase was refused: said, so the item is explained. */
+  const [orphan, setOrphan] = useState(false)
   const photoInput = useRef<HTMLInputElement>(null)
   /** The item the photo became, kept with the file so a retry does not upload it again. */
   const stored = useRef<{ file: File; itemId: string } | null>(null)
@@ -109,6 +111,7 @@ function ExpenseForm({ onDone }: { onDone: () => void }) {
     if (date === '') missing.date = 'Scegli la data.'
     setLocal(missing)
     setProblem(null)
+    setOrphan(false)
     if (Object.keys(missing).length > 0 || normalised === null) return
 
     setBusy(true)
@@ -143,6 +146,7 @@ function ExpenseForm({ onDone }: { onDone: () => void }) {
         })
       } catch (error) {
         setProblem(toProblem(error))
+        setOrphan(itemId !== undefined)
         return
       }
       if (itemId !== undefined) afterUpload()
@@ -237,9 +241,11 @@ function ExpenseForm({ onDone }: { onDone: () => void }) {
           id="quick-expense-photo"
           type="file"
           accept="image/*"
-          capture="environment"
           onChange={(event) => setPhoto(event.target.files?.[0] ?? null)}
         />
+        {orphan && elsewhere === null && (
+          <p className="text-sm text-muted-foreground">La foto è già in In arrivo.</p>
+        )}
         {photo !== null && (
           <Button
             type="button"
@@ -260,7 +266,7 @@ function ExpenseForm({ onDone }: { onDone: () => void }) {
           role="alert"
           className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
-          {elsewhere}
+          {orphan ? `${elsewhere} La foto è già in In arrivo.` : elsewhere}
         </p>
       )}
 

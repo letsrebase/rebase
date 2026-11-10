@@ -37,3 +37,17 @@ def test_a_supplier_list_filters_by_fiscal_kind(logged_in: TestClient) -> None:
     ).json()
     assert [item["legal_name"] for item in professionals["items"]] == ["Studio"]
     assert professionals["total"] == 1
+
+
+def test_a_vat_number_is_found_whatever_its_punctuation(logged_in: TestClient) -> None:
+    _create(
+        logged_in,
+        legal_name="Olandese",
+        country="NL",
+        vat_number="NL 1234.56.789 B01",
+        roles=["supplier"],
+    )
+
+    for term in ("NL123456789B01", "nl1234.56789b01", "NL 1234.56.789 B01"):
+        found = logged_in.get("/api/organizations", params={"role": "any", "search": term}).json()
+        assert [item["legal_name"] for item in found["items"]] == ["Olandese"], term

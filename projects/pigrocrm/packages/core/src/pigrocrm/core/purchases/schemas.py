@@ -219,7 +219,9 @@ class PurchasePage(BaseModel):
     next_cursor: UUID | None
     # What the filters select as a whole, whatever page was asked for: the count, and the sum
     # of the document totals in euro (signed, so a credit note subtracts). Summed here because
-    # no screen adds money up itself.
+    # no screen adds money up itself. `status` unset means every status: the totals then count
+    # the cancelled purchases too (intended; a soft-deleted one is never counted). The page sends
+    # `status=registered` for the figure a person reads.
     total_count: int
     total_amount: Decimal
 

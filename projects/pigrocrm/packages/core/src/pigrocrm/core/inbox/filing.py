@@ -67,7 +67,7 @@ def resolve_original(session: Session, inbox_item_id: UUID, actor: Actor) -> UUI
     chain does not end, the id given is kept, so nothing about an item they cannot open is
     revealed. An item that is not a duplicate is answered as it is."""
     current = session.get(InboxItem, inbox_item_id)
-    for _ in range(_MAX_CHAIN):
+    for _ in range(_MAX_CHAIN + 1):
         if current is None or current.state != "duplicate" or current.duplicate_of_id is None:
             break
         stmt = select(InboxItem).where(InboxItem.id == current.duplicate_of_id)
@@ -83,19 +83,25 @@ def resolve_original(session: Session, inbox_item_id: UUID, actor: Actor) -> UUI
 
 
 def file_as_purchase(
-    session: Session, inbox_item_id: UUID, purchase_id: UUID, actor: Actor
+    session: Session,
+    inbox_item_id: UUID,
+    purchase_id: UUID,
+    actor: Actor,
+    legal_entity_id: UUID | None = None,
 ) -> bool:
-    """A person registered a purchase with this item as its justification: the item is `filed`,
-    a proposal waiting on it is withdrawn and the item's timeline says which purchase it became.
-    Answers whether it did.
+    """A purchase was registered with this item as its justification. Answers whether the item
+    was filed by it.
+
+    The item an unclassified file is (no legal entity) takes the purchase's legal entity, so the
+    other members of that entity can open the purchase's file: an unclassified item is visible
+    only to its uploader and an unscoped administrator (`inbox.access`). A purchase with no
+    legal entity leaves the item as it is. This holds for whoever links, an agent included.
 
     Only a person's act files an item: an agent linking one only links it (accepting is never
     an agent's act, `Actor.require_person`). An item that is not waiting (already `filed`, a
     `duplicate`, `discarded`) or that the person does not see (`inbox.access`) is only linked.
     The bytes stay where they are: they are the purchase's file."""
-    if actor.type == "mcp":
-        return False
-    stmt = select(InboxItem).where(InboxItem.id == inbox_item_id, InboxItem.state.in_(WAITING))
+    stmt = select(InboxItem).where(InboxItem.id == inbox_item_id)
     clause = visible_to(actor)
     if clause is not None:
         stmt = stmt.where(clause)
@@ -105,6 +111,10 @@ def file_as_purchase(
         .first()
     )
     if item is None:
+        return False
+    if item.legal_entity_id is None and legal_entity_id is not None:
+        item.legal_entity_id = legal_entity_id
+    if actor.type == "mcp" or item.state not in WAITING:
         return False
     withdraw_proposals(session, item, actor)
     item.state = "filed"
