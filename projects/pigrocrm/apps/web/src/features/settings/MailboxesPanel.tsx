@@ -130,10 +130,10 @@ function MailboxRow({ mailbox }: { mailbox: Mailbox }) {
 
   return (
     <li className="space-y-2 px-3 py-3" data-mailbox={mailbox.id}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <p className="truncate font-medium">{name}</p>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground sm:truncate">
             {isGmail ? 'Gmail' : `${mailbox.host}:${mailbox.port}`}
             {' · '}
             {mailbox.space_owned ? 'dello spazio' : 'personale'}
@@ -141,7 +141,7 @@ function MailboxRow({ mailbox }: { mailbox: Mailbox }) {
             {mailbox.purposes.map((purpose) => PURPOSE_LABEL[purpose]).join(', ')}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap sm:shrink-0 sm:flex-nowrap items-center gap-2">
           <StatusPill tone={HEALTH_TONE[mailbox.health]}>{HEALTH_LABEL[mailbox.health]}</StatusPill>
           {isGmail ? (
             <Button asChild variant="outline" size="sm">
