@@ -28,6 +28,7 @@ import { NavGroup, SubItem } from './NavGroup'
 import { NavLeaf } from './NavLeaf'
 import { ProfileMenu } from './ProfileMenu'
 import { FOCUS } from './sidebarStyles'
+import { useRegistryView } from './useRegistryView'
 
 // `metaKey` on Apple platforms, `ctrlKey` elsewhere. Read once at module scope from the
 // platform hint rather than sniffing the user agent string: this only decides which glyph
@@ -56,7 +57,7 @@ export function Sidebar({
   const { user } = useAuth()
   const { location } = useRouterState()
   // The registry's view, which is what tells «Clienti» from «Fornitori» (both open one page).
-  const registryRole = (location.search as { role?: string } | undefined)?.role
+  const registryRole = useRegistryView()
   // The sidebar's unread count (REB-734): the reminders still open for this person. The
   // Avvisi page reads the same query, so a snooze there moves this number at once.
   const unread = useUnreadCount()

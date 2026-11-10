@@ -406,6 +406,55 @@ describe('AppShell', () => {
     expect(sidebar().getByRole('link', { name: 'Clienti' })).not.toHaveAttribute('aria-current')
   })
 
+  it('marks «Fornitori», not «Clienti», on a supplier\'s own page, by the organization\'s roles', async () => {
+    mockRoute.pathname = '/app/organizations/org-1'
+    GET.mockImplementation((path: string) =>
+      path === '/api/organizations/{organization_id}'
+        ? Promise.resolve({ data: { id: 'org-1', roles: ['supplier'] }, response: { status: 200 } })
+        : Promise.resolve({ data: [], response: { status: 200 } }),
+    )
+    renderShell()
+    await waitFor(() =>
+      expect(sidebar().getByRole('link', { name: 'Fornitori' })).toHaveAttribute('aria-current', 'page'),
+    )
+    expect(sidebar().getByRole('link', { name: 'Clienti' })).not.toHaveAttribute('aria-current')
+  })
+
+  it.each([
+    ['a customer', ['customer']],
+    ['a company that is both a customer and a supplier', ['customer', 'supplier']],
+  ])('keeps «Clienti» on the own page of %s', async (_name, roles) => {
+    mockRoute.pathname = '/app/organizations/org-2'
+    GET.mockImplementation((path: string) =>
+      path === '/api/organizations/{organization_id}'
+        ? Promise.resolve({ data: { id: 'org-2', roles }, response: { status: 200 } })
+        : Promise.resolve({ data: [], response: { status: 200 } }),
+    )
+    renderShell()
+    await waitFor(() => expect(GET).toHaveBeenCalledWith('/api/organizations/{organization_id}', expect.anything()))
+    // Let the row land: «Clienti» is also what the sidebar shows while it is on its way.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(sidebar().getByRole('link', { name: 'Clienti' })).toHaveAttribute('aria-current', 'page')
+    expect(sidebar().getByRole('link', { name: 'Fornitori' })).not.toHaveAttribute('aria-current')
+  })
+
+  it('keeps «Clienti» on a supplier\'s own page with purchases off', async () => {
+    mockRoute.pathname = '/app/organizations/org-1'
+    GET.mockImplementation((path: string) =>
+      path === '/api/organizations/{organization_id}'
+        ? Promise.resolve({ data: { id: 'org-1', roles: ['supplier'] }, response: { status: 200 } })
+        : Promise.resolve({ data: [], response: { status: 200 } }),
+    )
+    renderShell(<div />, undefined, ['purchases'])
+    await waitFor(() => expect(GET).toHaveBeenCalledWith('/api/organizations/{organization_id}', expect.anything()))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    })
+    expect(sidebar().getByRole('link', { name: 'Clienti' })).toHaveAttribute('aria-current', 'page')
+  })
+
   it('draws no «Fornitori» and no «Acquisti» with purchases off', () => {
     renderShell(<div />, undefined, ['purchases'])
     const links = sidebar().getAllByRole('link').map((link) => link.textContent)
@@ -1269,6 +1318,20 @@ describe('AppShell on a phone', () => {
       .map((link) => link.textContent)
     expect(links).toContain('Ore')
     expect(links).not.toContain('Giornate')
+  })
+
+  it('marks «Fornitori» and not «Clienti» in «Altro» on a supplier\'s own page', async () => {
+    mockRoute.pathname = '/app/organizations/org-1'
+    GET.mockImplementation((path: string) =>
+      path === '/api/organizations/{organization_id}'
+        ? Promise.resolve({ data: { id: 'org-1', roles: ['supplier'] }, response: { status: 200 } })
+        : Promise.resolve({ data: [], response: { status: 200 } }),
+    )
+    renderShell(<div />, undefined, [], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Altro' }))
+    const sheet = within(await screen.findByRole('dialog', { name: 'Altro' }))
+    await waitFor(() => expect(sheet.getByRole('link', { name: 'Fornitori' })).toHaveAttribute('aria-current', 'page'))
+    expect(sheet.getByRole('link', { name: 'Clienti' })).not.toHaveAttribute('aria-current')
   })
 
   it('does not name «deal» in the note entry with deals off', async () => {
