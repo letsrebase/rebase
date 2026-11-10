@@ -32,6 +32,8 @@ const FAILURES: Record<string, string> = {
   ScopeMissing: 'manca un’autorizzazione di Google: la casella va ri-autorizzata da Impostazioni → Gmail',
   GmailUnavailable: 'Gmail non ha risposto correttamente: riprova più tardi',
   GoogleCallFailed: 'Gmail non ha risposto correttamente: riprova più tardi',
+  MailboxAuthFailed: 'una casella IMAP o PEC non accetta più la password: va inserita di nuovo da Impostazioni → Caselle',
+  MailboxFailing: 'una casella IMAP o PEC non risponde: PigroCRM riprova al prossimo ciclo',
   Conflict: 'la casella non può essere sincronizzata: il motivo è nel log del server',
 }
 

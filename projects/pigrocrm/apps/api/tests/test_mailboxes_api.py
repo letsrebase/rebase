@@ -176,3 +176,30 @@ def test_a_refused_body_does_not_echo_the_password(
 
     assert response.status_code == 422
     assert PASSWORD not in response.text
+
+
+def test_the_app_boots_without_the_mailbox_key_and_connecting_says_why(
+    logged_in: TestClient, imap: FakeImap, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Compose passes `PIGROCRM_MAILBOX_TOKEN_KEY` as an empty string when it is unset. Nothing
+    reads the key at boot (the boot validator and `create_app` never decode it), so every
+    container starts; a connection is refused in words, before it reaches any server."""
+    from pigrocrm.core.config import require_production_secrets
+
+    monkeypatch.setenv("PIGROCRM_MAILBOX_TOKEN_KEY", "")
+    require_production_secrets(
+        Settings(_env_file=None, jwt_secret="j" * 40, mailbox_token_key="")  # type: ignore[call-arg]
+    )
+    settings = Settings(_env_file=None, mailbox_token_key="")  # type: ignore[call-arg]
+    logged_in.app.dependency_overrides[get_settings] = lambda: settings
+    logged_in.app.dependency_overrides[imap_options] = lambda: ImapOptions(
+        resolve=loopback, context=imap.client_context()
+    )
+    try:
+        refused = logged_in.post("/api/mailboxes/imap", json=_body(imap))
+    finally:
+        logged_in.app.dependency_overrides.pop(get_settings, None)
+        logged_in.app.dependency_overrides.pop(imap_options, None)
+    assert refused.status_code == 409
+    assert "PIGROCRM_MAILBOX_TOKEN_KEY" in refused.json()["detail"]
+    assert imap.state.logins == 0
