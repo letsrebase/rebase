@@ -458,11 +458,11 @@ Frame A8 classification, tool by tool:
 **As built (REB-984, the page and the acts on an item).** `/app/inbox` (`features/inbox/`) is the brief's
 page: a table with the open item in a 330 px panel from `lg`, cards and a full-screen sheet below, three
 tabs (the states each lists are `TABS` in `labels.ts`), filters for the kind, the origin and the company, and
-50 rows at a time. The count beside «In arrivo» (the sidebar and the phone's «Altro») is the new and proposed
-items one request of 200 reads for each state, so it is the reader's own and says «99+» past that. The API gives
-no total, so «Mostra altri» says how many are shown. The amount column is read from the pending proposals
-(`GET /api/proposals`), since `InboxItemRead` carries none: an item with no proposal has none to show, and the
-panel states what a FatturaPA says. «Leggi i documenti in attesa» is drawn for an unscoped administrator with the
+50 rows at a time. The count beside «In arrivo» (the sidebar and the phone's «Altro») and the numbers on the tabs are `total` of a one-item
+page per state (REB-991: `GET /api/inbox/items` answers the number of items the filter matches, cursor and limit left
+out), so they are exact and the reader's own; «Mostra altri» says how many there are in all. Each item carries its
+`amount` and `currency` when known: the total a waiting proposal read, or the sum of a FatturaPA's invoices (the page's
+amount column; an item with neither has none). «Leggi i documenti in attesa» is drawn for an unscoped administrator with the
 model on, the only reader of `GET /api/settings/ai-model`; nobody else can know the model is on, so nobody else
 is offered it (an item's own «Leggi con il modello» follows the same rule). Upload is one request per file, so a
 refusal belongs to a file: a refused file stays as a red row until dismissed, a file over 100 MiB never leaves the

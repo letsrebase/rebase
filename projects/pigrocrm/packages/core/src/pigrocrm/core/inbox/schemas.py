@@ -2,6 +2,7 @@
 through `InboxService.download` only, and never over MCP (design § 6)."""
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal, Self
 from uuid import UUID
 
@@ -67,6 +68,14 @@ class InboxItemRead(BaseModel):
     proposal_id: UUID | None = Field(
         default=None, description="The proposal waiting for a person, for an item in `proposed`"
     )
+    amount: Decimal | None = Field(
+        default=None,
+        description=(
+            "The total the item states when it is known: the figure a waiting proposal read, "
+            "or the sum of a FatturaPA's invoices; null otherwise"
+        ),
+    )
+    currency: str | None = Field(default=None, description="The currency of `amount`")
     created_at: datetime
     updated_at: datetime
 
@@ -104,6 +113,9 @@ class InboxListQuery(BaseModel):
 class InboxItemPage(BaseModel):
     items: list[InboxItemRead]
     next_cursor: UUID | None
+    total: int = Field(
+        description="How many items the filter matches in all, cursor and limit left out"
+    )
 
 
 class InboxDiscard(BaseModel):

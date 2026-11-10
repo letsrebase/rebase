@@ -212,7 +212,9 @@ class InboxClassifier:
             assert item is not None
             self.session.refresh(item)
             reads.append(InboxItemRead.model_validate(item))
-        return InboxItemPage(items=attach_proposals(self.session, reads), next_cursor=None)
+        return InboxItemPage(
+            items=attach_proposals(self.session, reads), next_cursor=None, total=len(reads)
+        )
 
     def classify_many(self, item_ids: Sequence[UUID], actor: Actor, *, model_budget: int) -> None:
         """What an upload runs after its transaction: every certain item is classified, and at

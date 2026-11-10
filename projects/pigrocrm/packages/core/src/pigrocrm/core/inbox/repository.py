@@ -1,6 +1,7 @@
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, case, select, text
+from sqlalchemy import ColumnElement, Select, case, func, select, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.inbox.models import InboxItem
@@ -59,11 +60,7 @@ class InboxRepository:
         ).limit(1)
         return self.session.execute(stmt).scalars().first()
 
-    # `list` stays the last method in this class: a later `def list(...)` would rebind
-    # `list` in the class namespace, and Python 3.13 evaluates annotations eagerly.
-    def list(self, query: InboxListQuery, visible: ColumnElement[bool] | None) -> list[InboxItem]:
-        """Newest first, by id (UUIDv7 is time-ordered), one row over `limit` so the caller can
-        tell «there is more» from «that was everything»."""
+    def _filtered(self, query: InboxListQuery, visible: ColumnElement[bool] | None) -> Select[Any]:
         stmt = select(InboxItem)
         if visible is not None:
             stmt = stmt.where(visible)
@@ -80,6 +77,19 @@ class InboxRepository:
             )
         if query.parent_id is not None:
             stmt = stmt.where(InboxItem.parent_id == query.parent_id)
+        return stmt
+
+    def count(self, query: InboxListQuery, visible: ColumnElement[bool] | None) -> int:
+        """How many items the filter matches, whatever the cursor and the limit say."""
+        stmt = select(func.count()).select_from(self._filtered(query, visible).subquery())
+        return int(self.session.execute(stmt).scalar_one())
+
+    # `list` stays the last method in this class: a later `def list(...)` would rebind
+    # `list` in the class namespace, and Python 3.13 evaluates annotations eagerly.
+    def list(self, query: InboxListQuery, visible: ColumnElement[bool] | None) -> list[InboxItem]:
+        """Newest first, by id (UUIDv7 is time-ordered), one row over `limit` so the caller can
+        tell «there is more» from «that was everything»."""
+        stmt = self._filtered(query, visible)
         if query.cursor is not None:
             stmt = stmt.where(InboxItem.id < query.cursor)
         return list(

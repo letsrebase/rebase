@@ -9747,6 +9747,16 @@ export interface components {
              */
             proposal_id?: string | null;
             /**
+             * Amount
+             * @description The total the item states when it is known: the figure a waiting proposal read, or the sum of a FatturaPA's invoices; null otherwise
+             */
+            amount?: string | null;
+            /**
+             * Currency
+             * @description The currency of `amount`
+             */
+            currency?: string | null;
+            /**
              * Created At
              * Format: date-time
              */
@@ -9775,6 +9785,11 @@ export interface components {
             items: components["schemas"]["InboxItemRead"][];
             /** Next Cursor */
             next_cursor: string | null;
+            /**
+             * Total
+             * @description How many items the filter matches in all, cursor and limit left out
+             */
+            total: number;
         };
         /** InboxItemRead */
         InboxItemRead: {
@@ -9836,6 +9851,16 @@ export interface components {
              * @description The proposal waiting for a person, for an item in `proposed`
              */
             proposal_id?: string | null;
+            /**
+             * Amount
+             * @description The total the item states when it is known: the figure a waiting proposal read, or the sum of a FatturaPA's invoices; null otherwise
+             */
+            amount?: string | null;
+            /**
+             * Currency
+             * @description The currency of `amount`
+             */
+            currency?: string | null;
             /**
              * Created At
              * Format: date-time

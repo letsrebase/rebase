@@ -20,10 +20,10 @@ function wrapper({ children }: { children: ReactNode }) {
 beforeEach(() => vi.mocked(api.GET).mockReset())
 
 describe('the count beside «In arrivo»', () => {
-  it('is what waits for a person: the new items and the proposed ones, nothing else', async () => {
+  it('is what waits for a person: the totals of the new items and the proposed ones, nothing else', async () => {
     vi.mocked(api.GET).mockImplementation(((_path: string, init?: { params?: { query?: { state?: string } } }) =>
       Promise.resolve(
-        ok({ items: init?.params?.query?.state === 'new' ? [item(), item()] : [item()], next_cursor: null }),
+        ok({ items: [item()], next_cursor: null, total: init?.params?.query?.state === 'new' ? 2 : 1 }),
       )) as never)
     const { result } = renderHook(() => useWaitingCount(), { wrapper })
     await waitFor(() => expect(result.current).toBe(3))
@@ -31,7 +31,7 @@ describe('the count beside «In arrivo»', () => {
       const [, init] = call as unknown as [string, { params: { query: { state: string } } }]
       return init.params.query.state
     })
-    expect(states.sort()).toEqual(['new', 'proposed'])
+    expect(states.sort()).toEqual(['discarded', 'duplicate', 'filed', 'new', 'proposed'])
   })
 
   it('is zero, and draws nothing, while it is not known or when the read failed', async () => {
