@@ -101,6 +101,8 @@ FORBIDDEN = (
     "set_space_profile",
     "set_space_modules",
     "skip_space_onboarding",
+    # Folding two organizations into one (REB-995): an administrator's token with `full_access`.
+    "merge_organizations",
     # Staff and directors with their pay (spec 2026-11-09, staff, payroll and expenses, § 4):
     # the most personal data the product holds, an administrator's token with `full_access`
     # and no other. The pay day of a legal entity has no tool and is person-only.

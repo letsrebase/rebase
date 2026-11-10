@@ -2,9 +2,9 @@
 
 Design `2026-11-09-suppliers-purchases-and-iva-design.md` § 1: one record per company. Before
 the unique index on `(country, normalised VAT number)` could be built, the rows that already
-share one are listed and a person resolves them, by archiving one or by correcting a number.
-Nothing here merges or deletes a row: the merge, which rewrites every foreign key and the
-polymorphic rows, is its own card.
+share one are listed and a person resolves them, by merging one into the other
+(`OrganizationService.merge`, `merge.py`) or by correcting a number. Nothing in this module
+writes a row.
 
 The same report is read three ways: `pigrocrm duplicate-organizations` for an operator before a
 deploy, `GET /api/organizations/duplicates` and the `list_duplicate_organizations` tool for the

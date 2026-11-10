@@ -65,3 +65,11 @@ def restore(context: McpContext, organization_id: str) -> dict[str, Any]:
 def duplicates(context: McpContext) -> dict[str, Any]:
     groups = OrganizationService(context.session).duplicates(context.actor)
     return {"groups": [group.model_dump(mode="json") for group in groups]}
+
+
+def merge(context: McpContext, survivor_id: str, loser_id: str, *, dry_run: bool) -> dict[str, Any]:
+    return (
+        OrganizationService(context.session)
+        .merge(UUID(survivor_id), UUID(loser_id), context.actor, dry_run=dry_run)
+        .model_dump(mode="json")
+    )

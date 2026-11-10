@@ -282,6 +282,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/organizations/{organization_id}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge
+         * @description Folds the organization named by `loser_id` into the one in the path: every deal, contract,
+         *     invoice, person, contact point, document, task, note, timeline entry, Gmail link, draft, due
+         *     item and engagement that pointed at the loser points at the survivor, the roles are joined
+         *     and the loser is archived with a trace on both timelines. An administrator of the whole
+         *     space only. `dry_run` is true unless sent as false and answers what would move without
+         *     writing anything. Pairs to merge come from `GET /api/organizations/duplicates`.
+         */
+        post: operations["merge_api_organizations__organization_id__merge_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/organizations/{organization_id}/timeline": {
         parameters: {
             query?: never;
@@ -11504,6 +11529,91 @@ export interface components {
             /** People */
             people?: components["schemas"]["PersonFromSuggestion"][];
         };
+        /**
+         * OrganizationMerge
+         * @description What `POST /api/organizations/{survivor_id}/merge` takes: the organization to fold into
+         *     the one in the path. `dry_run` is true unless the caller says otherwise, so a call that
+         *     forgets it writes nothing.
+         */
+        OrganizationMerge: {
+            /**
+             * Loser Id
+             * Format: uuid
+             * @description The organization that is archived after everything it holds moves to the survivor.
+             */
+            loser_id: string;
+            /**
+             * Dry Run
+             * @description True (the default) answers what would move and writes nothing; false does the merge.
+             * @default true
+             */
+            dry_run: boolean;
+        };
+        /**
+         * OrganizationMergeRead
+         * @description What a merge moved, or with `dry_run` what it would move.
+         */
+        OrganizationMergeRead: {
+            /** Dry Run */
+            dry_run: boolean;
+            /**
+             * Survivor Id
+             * Format: uuid
+             */
+            survivor_id: string;
+            /** Survivor Name */
+            survivor_name: string;
+            /**
+             * Loser Id
+             * Format: uuid
+             */
+            loser_id: string;
+            /** Loser Name */
+            loser_name: string;
+            /**
+             * Moved
+             * @description Rows that now point at the survivor, by reference. Only references with at least one row are listed.
+             */
+            moved: {
+                [key: string]: number;
+            };
+            /** Total Moved */
+            total_moved: number;
+            /**
+             * Dropped
+             * @description Rows the survivor already had an equal of, which are not carried over: the same contact point, the same Gmail message link, an open automation task of the same rule (archived).
+             */
+            dropped: {
+                [key: string]: number;
+            };
+            /**
+             * Roles
+             * @description The survivor's roles after the merge: both sets.
+             */
+            roles: string[];
+            /**
+             * Filled Fields
+             * @description Fields the survivor had empty and takes from the loser.
+             */
+            filled_fields: string[];
+            /**
+             * Custom Fields Added
+             * @description Custom field keys the survivor did not have and takes from the loser.
+             */
+            custom_fields_added: string[];
+            /**
+             * Shares Survivor
+             * @description True when the two sit under different legal entities, so the survivor becomes shared across them.
+             */
+            shares_survivor: boolean;
+            /**
+             * Moves Hub Freelancer Id
+             * @description True when the loser's hub freelancer id passes to the survivor.
+             */
+            moves_hub_freelancer_id: boolean;
+            /** @description The survivor after the merge; absent on a dry run. */
+            survivor?: components["schemas"]["OrganizationRead"] | null;
+        };
         /** OrganizationPage */
         OrganizationPage: {
             /** Items */
@@ -17655,6 +17765,129 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OrganizationRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    merge_api_organizations__organization_id__merge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                organization_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganizationMerge"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationMergeRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

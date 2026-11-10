@@ -77,7 +77,10 @@ DEFAULT_BUDGET_BYTES = 101_750
 # REB-972: 117.0 KB, up from 116.2 KB, the same tool, measured at 116,956 bytes.
 # REB-984: 118.5 KB, up from 117.0 KB, the same three tools, measured at 118,400 bytes.
 # REB-976: 118.6 KB, up from 118.5 KB, the same field.
-FULL_ACCESS_BUDGET_BYTES = 118_600
+# REB-995: 119.7 KB, up from 118.6 KB, for `merge_organizations` (a full-access administrator's,
+# 1.0 KB): the survivor, the loser and the preview switch, and a docstring that says what it
+# rewrites, which is the only warning an agent reads.
+FULL_ACCESS_BUDGET_BYTES = 119_700
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

@@ -151,6 +151,7 @@ CORE_TOOLS = frozenset(
         "set_space_profile",
         "set_space_modules",
         "skip_space_onboarding",
+        "merge_organizations",
         "issue_invoice",
         "annul_invoice",
         "mark_invoice_transmitted",

@@ -92,7 +92,7 @@ from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.provenance import marked_items
-from pigrocrm_mcp.tools import collaborators
+from pigrocrm_mcp.tools import collaborators, organizations
 from pigrocrm_mcp.tools.changes import refuse_empty, refuse_nothing_given, report
 from pigrocrm_mcp.tools.params import (
     BoundedLimit,
@@ -195,6 +195,24 @@ def register(
             .skip_onboarding(context.actor)
             .model_dump(mode="json")
         )
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def merge_organizations(
+        survivor_id: str, loser_id: str, dry_run: bool = True
+    ) -> dict[str, Any]:
+        """Folds two rows of one company into one: every deal, contract, invoice, person, contact
+        point, document, task, note, timeline entry, Gmail link, draft, due item and engagement of
+        `loser_id` moves to `survivor_id`, the roles are joined, empty fields are filled from the
+        loser and the loser is archived with a trace on both timelines. **It rewrites what
+        issued invoices and every record point at and cannot be split again.** Needs an
+        administrator of the whole space.
+
+        `dry_run` is `true` unless you pass `false`: it answers what would move (`moved`,
+        `dropped`, `roles`, `shares_survivor`) and writes nothing. Always run it first and show
+        the person which row survives; pairs come from `list_duplicate_organizations`.
+        """
+        return organizations.merge(context, survivor_id, loser_id, dry_run=dry_run)
 
     # ---- fiscal acts ---------------------------------------------------------------
 
