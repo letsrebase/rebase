@@ -448,14 +448,14 @@ id is a uuid5 of the legal entity, the frequency, the year and the number, so th
 checks are `assert_writable` calls, in the service that owns each write: `PurchaseService` (an invoice or credit note,
 by its `iva_period`, the old and the new one: create, update, cancel, delete and restore; a receipt or an expense is in
 no register) and `InvoiceEmission.issue` and `annul` and `IssuedInvoiceImporter.import_issued` (by the issue date, which
-is how the sales register places a sale). The refusal is a 409 whose sentence names the period («il periodo IVA 1°
+is how the sales register places a sale; the FatturaPA confirmation checks it too and reports the sentence as the invoice's note). The refusal is a 409 whose sentence names the period («il periodo IVA 1°
 trimestre 2026 è chiuso: riaprilo...»), the same over REST and MCP. A payment, `mark_transmitted_externally`, a draft
-or a proforma and the settlement itself are not refused, since none changes a register. A write holds a shared advisory
+or a proforma, a declared register gap (it changes a listing, not a figure) and the settlement itself are not refused, since none changes a register. The routes and tools sit under the `purchases` module while the sales checks do not: a closed period stays closed if the module is switched off, and is reopened by switching it back on. A write holds a shared advisory
 lock on its legal entity's year of locks and a close or a reopen an exclusive one (a period with no row has nothing to
 `FOR SHARE`, as `PeriodLockRepository.lock_month` says), so a close never commits between a write's check and the write.
 It is separate from the monthly `period_locks` of `timetracking/locks.py`, which stays the hours' and the cost side of
 purchases', and neither implies the other. The page's «Chiudi il periodo» and «Riapri» are an unscoped administrator's
-(`lockMode` in `features/iva/PeriodLock.tsx`; a scoped one is told why), each behind its question, and the period in the
+(`lockMode` in `features/iva/lock.ts`; a scoped one is told why), each behind its question, and the period in the
 URL is `?period=` **with** `?frequency=`: a number is a period only with its frequency, so the sidebar's legal entity
 cannot turn a quarterly `3` into March.
 

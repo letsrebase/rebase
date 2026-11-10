@@ -142,7 +142,7 @@ export function PeriodLockButton({
       <ConfirmDialog
         open={open}
         onOpenChange={change}
-        title={mode === 'close' ? `Chiudere il ${period.label}?` : `Riaprire il ${period.label}?`}
+        title={mode === 'close' ? 'Chiudere il periodo?' : 'Riaprire il periodo?'}
         description={
           mode === 'close'
             ? `Chiudere il ${period.label} per ${entityName}? Dopo, nessuna registrazione di questo periodo si modifica. Un amministratore può riaprirlo.`

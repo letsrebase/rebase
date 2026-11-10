@@ -37,7 +37,7 @@ def close_iva_period(
 def reopen_iva_period(
     session: SessionDep,
     actor: ActorDep,
-    year: Annotated[int, Path(ge=2000, le=2200)],
+    year: Annotated[int, Path(ge=2000, le=2100)],
     number: Annotated[int, Path(ge=1, le=12, description="The month or the quarter")],
     legal_entity_id: Annotated[
         UUID | None,

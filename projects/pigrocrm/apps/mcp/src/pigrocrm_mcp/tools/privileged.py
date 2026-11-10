@@ -677,7 +677,8 @@ def register(
         """The IVA periods of a company's year (months or quarters, by its frequency), each with its
         ladder: sales VAT, deductible purchase VAT, the credit carried in and the result (positive
         is owed, negative a credit), the state (`open` runs until its last day, its figures are
-        running) and the payment date. With several companies pass `legal_entity_id`.
+        running), whether it is `closed`, and the payment date. With several companies pass
+        `legal_entity_id`.
         """
 
         periods = IvaRegisterService(context.session).list_periods(

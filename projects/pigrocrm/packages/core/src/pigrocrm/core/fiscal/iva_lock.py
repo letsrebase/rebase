@@ -179,9 +179,13 @@ class IvaPeriodLockService:
                 "l'azienda non liquida l'IVA per periodo in quest'anno: non ha periodi da chiudere",
                 expected="un anno in cui l'azienda liquida l'IVA per periodo",
             )
-        overlapping = self._covering(legal_entity.id, settlement.period_start) or self._covering(
-            legal_entity.id, settlement.period_end
-        )
+        overlapping = self.session.scalars(
+            select(IvaPeriodLock).where(
+                IvaPeriodLock.legal_entity_id == legal_entity.id,
+                IvaPeriodLock.period_start <= settlement.period_end,
+                IvaPeriodLock.period_end >= settlement.period_start,
+            )
+        ).first()
         if overlapping is not None:
             other = label(overlapping.frequency, overlapping.year, overlapping.period_number)
             raise Conflict(
