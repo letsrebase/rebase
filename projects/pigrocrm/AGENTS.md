@@ -328,6 +328,15 @@ kinds' writers: `purchase`, `recurring_expense`, `integration_vat`, `iva_settlem
 neither place. The server also compares against zero (`below_zero` on each account card and on `total_balance`,
 `balance_below_zero` on the summary, never the browser), and `next_7_days` carries the forecast part of each total
 (`in_forecast`, `out_forecast`), already inside it, so the Home can draw it lighter.
+**The web draws the schedule once, in `features/cash/schedule/CashSchedule.tsx`, and mounts it twice (REB-1025).** `CashPage`
+(`/app/cash`, the sidebar's «Cassa», module `cash`) and the Home tab «Scadenziario» (`ReceivablesTab`, tab id `receivables`)
+render the same component; `features/cash/account/` is the account page (`/app/cash/accounts/$accountId`, an administrator's,
+with the upload and account dialogs the schedule's buttons open) and `features/cash/home/` the phone Home's four figures
+and the one-line band both use (`CashBand`). Every figure is the server's string: `features/cash` is in
+`no-browser-arithmetic.test.ts`'s roots, so a `Number()` on an amount fails the suite. The browser keeps no constant the
+server owns: the horizon options, `stale_days`, `unmatched_days`, `is_overdue_unmatched`, the grace and `oldest_days` are read
+from the response. A balance the viewer may not read is `null` in the response and absent on screen, never «0,00 €».
+The matching of a movement to a due item is not built (its card comes next): movements are a read-only queue.
 **Staff and directors are written by `StaffService`, and pay is an administrator's before anything else
 (REB-977).** `staff_members` and `payroll_settings` belong to the module `staff` (default off for both
 profiles, on for a space with no profile): REST `/api/staff` carries `module_guard("staff")` and the
