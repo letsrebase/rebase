@@ -24,6 +24,22 @@ describe('availableTabs (REB-953)', () => {
   })
 })
 
+describe('the tabs of a company space (REB-1054)', () => {
+  const company = moduleAccess(spaceModules([], 'company'))
+
+  it('draws «Giornate» last and opens on «Economica», as a solo space does', () => {
+    const tabs = availableTabs(company).map((tab) => tab.id)
+    expect(tabs.at(-1)).toBe('work_units')
+    expect(tabs[0]).toBe('economic')
+    expect(tabs).toEqual(availableTabs(moduleAccess(spaceModules([], 'solo'))).map((tab) => tab.id))
+  })
+
+  it('never falls back to «Giornate» when the URL names a tab that is not shown', () => {
+    expect(resolveTab('year', moduleAccess(spaceModules(['taxes'], 'company')))).toBe('economic')
+    expect(resolveTab('work_units', moduleAccess(spaceModules(['contracts'], 'company')))).toBe('economic')
+  })
+})
+
 describe('resolveTab', () => {
   it('keeps the tab the URL names when the space shows it', () => {
     expect(resolveTab('year', access([]))).toBe('year')
