@@ -42,6 +42,9 @@ _KEY_INFO = b"pigrocrm/google-token-key/v1/space:"
 # Google key and a Slack key derived for one space are two different keys even from the
 # same root key.
 _SLACK_KEY_INFO = b"pigrocrm/slack-token-key/v1/space:"
+# And for the IMAP mailbox passwords (REB-1015): its own `info`, so no two of the three keys a
+# space holds are one key.
+_MAILBOX_KEY_INFO = b"pigrocrm/mailbox-token-key/v1/space:"
 # What `gmail/oauth.py` mints: base64url, 32 characters today. Checked so that a state
 # with anything else after the slug is not relayed at all.
 _JTI = re.compile(r"[A-Za-z0-9_-]{1,128}")
@@ -86,6 +89,13 @@ def space_slack_token_key(root_key: str, slug: str) -> str:
     `PIGROCRM_SLACK_TOKEN_KEY` and the slug, so a bot token copied into another space's
     database does not open there, and empty when the root's key is not a valid one."""
     return _derive(root_key, _SLACK_KEY_INFO + slug.encode("ascii"))
+
+
+def space_mailbox_token_key(root_key: str, slug: str) -> str:
+    """`space_token_key`'s twin for the IMAP mailbox passwords: derived from
+    `PIGROCRM_MAILBOX_TOKEN_KEY` and the slug, so a sealed password copied into another space's
+    database does not open there, and empty when the root's key is not a valid one."""
+    return _derive(root_key, _MAILBOX_KEY_INFO + slug.encode("ascii"))
 
 
 def _derive(root_key: str, info: bytes) -> str:

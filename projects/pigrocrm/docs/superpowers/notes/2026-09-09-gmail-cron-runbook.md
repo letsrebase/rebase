@@ -37,6 +37,18 @@ sostituire `gmail-sync` con `mail-sync` nella riga; il file di log
 caselle IMAP non legge più «non configurato» e il comando non esce con 1 solo perché non
 c'è una casella Google.
 
+**Le caselle IMAP e PEC (REB-1015).** Lo stesso comando legge anche le caselle IMAP e PEC dello
+spazio: una riga per casella, `mail-sync <spazio> <id della casella>: active, N messages read`
+su stdout, oppure `failing` o `auth_failed` su stderr con uscita 1. `failing` è un guasto che si
+riprova da solo al ciclo dopo (server che non risponde, certificato non valido); `auth_failed` è
+una password rifiutata, e da quel momento la casella **non viene più provata** finché una persona
+non scrive la nuova password (provare ancora una password rifiutata è il modo per far bloccare
+l'account). La password è cifrata con `PIGROCRM_MAILBOX_TOKEN_KEY` (`openssl rand -base64 32`),
+una chiave propria, derivata per ogni spazio; senza la chiave nessuna casella IMAP si collega, e
+se la chiave cambia ogni casella chiede di nuovo la password. Il server deve risolversi a un
+indirizzo pubblico e parlare TLS (993) o STARTTLS (143). Il lettore chiede solo intestazioni e
+BODYSTRUCTURE, apre INBOX in sola lettura e non cancella né marca nulla.
+
 Quattro dettagli della riga non sono decorativi:
 
 - **`cd $DEPLOY_PATH/projects/pigrocrm`**: `docker compose` legge `docker-compose.yml`

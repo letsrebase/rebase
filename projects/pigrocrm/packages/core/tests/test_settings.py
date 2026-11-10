@@ -35,6 +35,7 @@ def _settings(**overrides: object) -> Settings:
         ("google_token_key", "google-token-key-value"),
         ("slack_client_secret", "slack-client-secret-value"),
         ("slack_token_key", "slack-token-key-value"),
+        ("mailbox_token_key", "mailbox-token-key-value"),
         ("resend_api_key", "re_resend-api-key-value"),
         ("vapid_private_key", "vapid-private-key-value"),
     ],

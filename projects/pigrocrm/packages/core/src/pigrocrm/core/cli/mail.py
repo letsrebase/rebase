@@ -23,6 +23,7 @@ from pigrocrm.core.gmail.sync import GmailSyncService
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm.core.labels import USER_ROLE, label
+from pigrocrm.core.mailboxes.imap_sync import ImapSyncService
 from pigrocrm.core.mailboxes.repository import MailboxRepository
 from pigrocrm.core.reminders.jobs import MAIL_SYNC_JOB
 from pigrocrm.core.tenants import SpaceRegistry
@@ -59,8 +60,10 @@ def mail_sync(settings: Settings, email: str | None) -> int:
     client caches access tokens by account id alone, so one shared across spaces could hand
     a row copied from another space's database a live token.
 
-    **Every connected mailbox, not one.** Each mailbox gets its cycle, in a session of its
-    own. `--email` narrows the run to the mailboxes with that address, wherever they are. A
+    **Every connected mailbox, not one.** Gmail through Google, and IMAP or PEC through
+    `ImapSyncService` (REB-1015): a space with IMAP mailboxes only is configured and is read.
+    Each mailbox gets its cycle, in a session of
+    its own. `--email` narrows the run to the mailboxes with that address, wherever they are. A
     space with no connected mailbox prints nothing: most spaces never connect one. A run
     that read every installation and found no mailbox says so once; a run that could not
     read the registry or a space does not, since the mailbox may be in the part it did not
@@ -92,7 +95,6 @@ def mail_sync(settings: Settings, email: str | None) -> int:
     settings_of = SpaceRegistry(settings)
     connected: list[str] = []
     attempted = 0
-    others = 0
     for target in walk.targets:
         label = target.label
         with space_engine(target.url) as engine:
@@ -107,7 +109,10 @@ def mail_sync(settings: Settings, email: str | None) -> int:
                         for account in GmailRepository(session).all_accounts()
                         if account.status != "disconnected"
                     ]
-                    others += MailboxRepository(session).count_connected_without_account()
+                    imap_mailboxes = [
+                        (mailbox.id, mailbox.address or "")
+                        for mailbox in MailboxRepository(session).imap_mailboxes()
+                    ]
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
                 print(
                     f"{_now()} mail-sync {label}: skipped ({type(exc).__name__})", file=sys.stderr
@@ -120,13 +125,19 @@ def mail_sync(settings: Settings, email: str | None) -> int:
                     record_job(engine, MAIL_SYNC_JOB, label, type(exc).__name__, quiet=True)
                 continue
             connected.extend(address for _, address in mailboxes)
+            connected.extend(address for _, address in imap_mailboxes)
             if email is not None:
                 mailboxes = [
                     (account_id, address)
                     for account_id, address in mailboxes
                     if address.casefold() == email.casefold()
                 ]
-            if not mailboxes:
+                imap_mailboxes = [
+                    (mailbox_id, address)
+                    for mailbox_id, address in imap_mailboxes
+                    if address.casefold() == email.casefold()
+                ]
+            if not mailboxes and not imap_mailboxes:
                 continue
             transport = GmailTransport()
             tokens = GoogleTokenClient(
@@ -149,6 +160,14 @@ def mail_sync(settings: Settings, email: str | None) -> int:
                 elif outcome is not None:
                     failed = True
                     refusals.append(outcome)
+            for mailbox_id, _ in imap_mailboxes:
+                attempted += 1
+                outcome = _sync_imap(factory, space_settings, f"{label} {mailbox_id}", mailbox_id)
+                if outcome == _CYCLE_RUNNING:
+                    skipped = True
+                elif outcome is not None:
+                    failed = True
+                    refusals.append(outcome)
             # A run narrowed to one address by `--email` is not the space's sync: it would
             # clear a failure of a mailbox it did not visit. A mailbox whose cycle another
             # run still holds did not complete one either, so a space with one of those and
@@ -161,8 +180,8 @@ def mail_sync(settings: Settings, email: str | None) -> int:
             ):
                 failed = True
 
-    if not attempted and not (email is None and others):
-        reason = _nothing_to_sync(email, len(connected) + others, unread=unread)
+    if not attempted:
+        reason = _nothing_to_sync(email, len(connected), unread=unread)
         if reason is not None:
             print(f"{_now()} mail-sync: {reason}", file=sys.stderr)
         failed = True
@@ -187,6 +206,39 @@ def _nothing_to_sync(email: str | None, connected: int, *, unread: bool) -> str 
     if connected:
         return f"{email} is not a connected mailbox ({connected} connected)"
     return "no mailbox connected"
+
+
+def _sync_imap(
+    factory: sessionmaker[Session], settings: Settings, label: str, mailbox_id: UUID
+) -> str | None:
+    """One IMAP mailbox's cycle and its line, with `_sync_mailbox`'s answer: `None` when it ran,
+    `_CYCLE_RUNNING` when another run held it, otherwise the name a refusal goes by. A mailbox
+    that could not be read is a refusal whatever the reason, and the line says which state it is
+    in; a password the server refused stays one line a cycle until a person types a new one.
+
+    No sink is registered yet (the `billing` read is REB-1016), so the cycle logs in, opens the
+    inbox read-only and updates the mailbox's health, which is what a person sees."""
+    try:
+        with factory() as session:
+            report = ImapSyncService(session, settings=settings).sync(mailbox_id)
+    except DomainError as exc:
+        print(f"{_now()} mail-sync {label}: {_reason(exc)}", file=sys.stderr)
+        return type(exc).__name__
+    except Exception as exc:  # noqa: BLE001 - one mailbox must not stop the others
+        print(f"{_now()} mail-sync {label}: skipped ({type(exc).__name__})", file=sys.stderr)
+        traceback.print_tb(exc.__traceback__, file=sys.stderr)
+        return type(exc).__name__
+    if report.already_running:
+        print(f"{_now()} mail-sync {label}: already running", flush=True)
+        return _CYCLE_RUNNING
+    if report.health in ("failing", "auth_failed"):
+        print(f"{_now()} mail-sync {label}: {report.health}", file=sys.stderr)
+        return "MailboxAuthFailed" if report.health == "auth_failed" else "MailboxFailing"
+    print(
+        f"{_now()} mail-sync {label}: {report.health}, {report.heads_read} messages read",
+        flush=True,
+    )
+    return None
 
 
 def _sync_mailbox(

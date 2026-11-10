@@ -325,6 +325,11 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         "connect_slack",
         "disconnect_slack",
         "manage_slack",
+        # An IMAP or PEC mailbox and its password (REB-1015): a credential to a third-party
+        # account, typed by a person.
+        "connect_mailbox",
+        "change_mailbox_password",
+        "disconnect_mailbox",
         # What the CRM looks like: the shape of the pipeline, the custom fields, the
         # templates, the automations, the emitters' assets and defaults.
         "create_pipeline_stage",
@@ -381,6 +386,9 @@ ACTION_LABELS: dict[str, str] = {
     "connect_slack": "collegare Slack",
     "disconnect_slack": "scollegare Slack",
     "manage_slack": "gestire Slack",
+    "connect_mailbox": "collegare una casella email",
+    "change_mailbox_password": "cambiare la password di una casella email",
+    "disconnect_mailbox": "scollegare una casella email",
     "convert_deal_to_contract": "trasformare un deal in contratto",
     "set_space_profile": "cambiare il profilo dello spazio",
     "set_space_modules": "accendere o spegnere i moduli dello spazio",

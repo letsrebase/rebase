@@ -43,6 +43,7 @@ from pigrocrm_api.routers import (
     invoices,
     iva_settlements,
     legal_entities,
+    mailboxes,
     notes,
     organizations,
     payment_reminders,
@@ -176,6 +177,8 @@ def create_app() -> FastAPI:
         # REB-971: the inbox of incoming documents, filled by upload. Before `notes`, which stays
         # last: the web tests type their mock of `api.GET` against the last path of the API.
         inbox,
+        # REB-1015: IMAP and PEC mailboxes, their sealed password and their health.
+        mailboxes,
         # REB-879: the signed, dated notes thread of a deal, a customer and a person.
         notes,
         # REB-967: the amounts that fall due and what settles them, core in every space.

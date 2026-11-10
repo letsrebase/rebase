@@ -304,6 +304,14 @@ class Settings(BaseSettings):
     # Google must still be able to hold one. A space is sealed with a key derived from this
     # one and its slug (`tenants/google.py::space_slack_token_key`).
     slack_token_key: str = Field(default="", repr=False)
+
+    # --- Mailboxes (REB-1015; spec 2026-11-09 § 2.2). 32 raw bytes, base64: seals the password of
+    # an IMAP or PEC mailbox at rest (AES-256-GCM). Its own variable: never `jwt_secret`, whose
+    # rotation would make sealed settings unreadable, and not the Google key, since a space with
+    # no Google must still be able to connect a mailbox. A registry space is sealed with a key
+    # derived from this one and its slug (`tenants/google.py::space_mailbox_token_key`); the root
+    # installation uses it undivided.
+    mailbox_token_key: str = Field(default="", repr=False)
     # Slack's own origin. Never changed in production; a setting because the capture and
     # the tests point it at a fake, and because GovSlack answers on `slack-gov.com`. The
     # authorize page is `{slack_url}/oauth/v2/authorize`, the Web API `{slack_url}/api/`.
@@ -517,6 +525,17 @@ def decode_google_token_key(settings: Settings) -> bytes:
     because the empty default has to stay legal for every install that has no Gmail.
     """
     return decode_aes256_key(settings.google_token_key, "PIGROCRM_GOOGLE_TOKEN_KEY")
+
+
+def mailbox_connect_configured(settings: Settings) -> bool:
+    """Whether this installation can seal the password of an IMAP mailbox."""
+    return bool(settings.mailbox_token_key)
+
+
+def decode_mailbox_token_key(settings: Settings) -> bytes:
+    """The AES-256-GCM key of the mailbox passwords. Raises `ValueError` naming the variable
+    and never quoting the value, as `decode_google_token_key` does and for the same reasons."""
+    return decode_aes256_key(settings.mailbox_token_key, "PIGROCRM_MAILBOX_TOKEN_KEY")
 
 
 def slack_configured(settings: Settings) -> bool:

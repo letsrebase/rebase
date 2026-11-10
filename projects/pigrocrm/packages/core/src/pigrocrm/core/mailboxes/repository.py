@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.errors import ValidationFailed
@@ -94,6 +94,36 @@ class MailboxRepository:
         )
         return gmail_health(status) if status is not None else "disconnected"
 
+    def imap_address_taken(self, owner_user_id: UUID | None, address: str) -> bool:
+        """Whether this owner (a person, or the space for `None`) already has an IMAP mailbox
+        at `address`, in any state: a disconnected one is connected again, not duplicated."""
+        owner = (
+            Mailbox.owner_user_id.is_(None)
+            if owner_user_id is None
+            else Mailbox.owner_user_id == owner_user_id
+        )
+        return (
+            self.session.scalar(
+                select(Mailbox.id).where(
+                    Mailbox.provider == "imap",
+                    owner,
+                    func.lower(Mailbox.address) == address.strip().lower(),
+                )
+            )
+            is not None
+        )
+
+    def imap_mailboxes(self) -> list[Mailbox]:
+        """The IMAP mailboxes `mail-sync` walks, oldest first. Every state is here: whether one
+        is read is the sync's decision, so a stopped one can still be reported."""
+        return list(
+            self.session.scalars(
+                select(Mailbox)
+                .where(Mailbox.provider == "imap", Mailbox.status != "disconnected")
+                .order_by(Mailbox.created_at, Mailbox.id)
+            )
+        )
+
     def any_connected(self) -> bool:
         """Whether this space has a mailbox somebody has not disconnected, of any provider: what
         the sync job needs to read «configured». A space with IMAP mailboxes only is configured."""
@@ -110,17 +140,6 @@ class MailboxRepository:
                 .limit(1)
             )
             is not None
-        )
-
-    def count_connected_without_account(self) -> int:
-        """The mailboxes that are not Gmail and not disconnected: the ones `mail-sync` does not
-        read through Google, which still make a space «configured»."""
-        return len(
-            self.session.scalars(
-                select(Mailbox.id).where(
-                    Mailbox.google_account_id.is_(None), Mailbox.status != "disconnected"
-                )
-            ).all()
         )
 
     def inbox_sources(self) -> list[Mailbox]:

@@ -247,6 +247,19 @@ def test_a_space_with_only_a_mailbox_that_is_not_gmail_has_the_sync_configured(
 ) -> None:
     """REB-1014: the sync reads «not configured» for a space with no mailbox of any kind, and an
     IMAP-only space has one."""
-    db_session.add(Mailbox(owner_user_id=None, provider="imap", status="active"))
+    db_session.add(
+        Mailbox(
+            owner_user_id=None,
+            provider="imap",
+            status="active",
+            address="fatture@studio.test",
+            imap_host="imap.studio.test",
+            imap_port=993,
+            imap_security="tls",
+            imap_username="fatture",
+            password_ciphertext=b"sealed",
+            password_nonce=b"nonce",
+        )
+    )
 
     assert _read(db_session)[MAIL_SYNC_JOB].state == "never_run"

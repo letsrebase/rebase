@@ -276,6 +276,41 @@ stay when the mailbox is disconnected.
   that found only those exits 0. Reading anything but Gmail is REB-1015 and the `billing` read is
   REB-1016: this change creates no IMAP mailbox and reads none.
 
+**As built (REB-1015, the IMAP and PEC connector).** Choices the design left to the builder:
+
+- **Where it lives.** `mailboxes/imap_client.py` is the only module that knows an IMAP socket exists
+  (`imaplib`, the BODYSTRUCTURE parser, the TLS and address rules); `imap_service.py` connects,
+  re-keys and disconnects; `imap_sync.py` is one cycle of one mailbox and what it does to its health;
+  `credential.py` seals and opens the password. A PEC is an IMAP mailbox: nothing in the connector
+  tells them apart, and reading the SdI envelope is REB-1016's.
+- **The columns.** The `mailboxes` row of an IMAP mailbox holds its address, host, port, security,
+  user name, the sealed password (ciphertext and nonce) and, as health, `status`, `last_error`
+  (Italian, never a server line), `last_error_at`, `failing_since` and `disconnected_at`; checks say an
+  IMAP row holds its connection (and a password unless disconnected) and a Gmail row none of it, and one
+  address is one mailbox per owner (`uq_mailboxes_imap_address`).
+- **Key.** `PIGROCRM_MAILBOX_TOKEN_KEY`, derived per registry space with its own HKDF `info`
+  (`space_mailbox_token_key`), the root installation undivided. Without it nothing is connected.
+- **Security.** `security` is `tls` (implicit TLS) or `starttls`; there is no plaintext value. 143
+  needs `starttls` and 993 needs `tls`; a server that does not offer STARTTLS is not logged into. The
+  certificate and its name are always checked. The host is resolved once (`resolve_public`), every
+  address must be global, and the socket goes to the addresses that were checked.
+- **What is asked.** `UID SEARCH SINCE`, then `BODY.PEEK[HEADER.FIELDS (...)]` and BODYSTRUCTURE on a
+  mailbox opened read-only. The reader hands `MessageHead`s (headers and the parts the structure
+  names) to a sink per purpose; a purpose with no sink is not read and keeps its watermark, so the
+  `billing` sink of REB-1016 starts from the mailbox's first day. The watermark is the newest
+  INTERNALDATE handed over, the read is `>=` it, and a sink is idempotent.
+- **Health.** A read that works is `active`; a transient failure is `failing` (`failing_since` is when
+  the run began) and is retried; a refused password is `auth_failed` and is **not tried again** until
+  a person types a new one (`change_password`, which tries it first). Disconnecting forgets the
+  password and keeps the row and its purposes.
+- **Who.** Connecting, re-keying and disconnecting are `require_person` (a token is refused whatever it
+  carries; `PERSON_ONLY_ACTIONS`), then an unscoped administrator's for the space's mailbox and a
+  writer's for their own. Someone else's personal mailbox is `NotFound`. REST: `GET /api/mailboxes`,
+  `POST /api/mailboxes/imap`, `PUT /api/mailboxes/{id}/password`, `DELETE /api/mailboxes/{id}`. There
+  is no MCP tool.
+- **The job.** `mail-sync` reads IMAP mailboxes beside Gmail ones: a space with IMAP only is
+  «configured» and is read. An `auth_failed` mailbox is a refusal line each cycle.
+
 ### 2.3 Intermediaries, the «Cassetto fiscale» and the SdI
 
 - **An intermediary** that holds the SdI recipient code (Fiscozen, Aruba, Fatture in Cloud

@@ -325,6 +325,18 @@ raised. `GET /api/iva-settlements?year=` and the MCP tool `list_iva_settlements`
 `settle_iva_period` stays a service call. Not here: the December advance, the IVA period lock, cash-basis IVA, the
 page, the srl's IVA dates (the `it-company` pack has no calendar yet).
 
+**An IMAP or PEC mailbox is `mailboxes/imap_*` and its password is sealed with its own key (REB-1015).**
+`ImapReader` (`imap_client.py`) is the only code that opens an IMAP socket: TLS or STARTTLS only, the host
+resolved once and every address global (`resolve_public`), the certificate checked, headers and BODYSTRUCTURE
+fetched with `PEEK` on a read-only INBOX, never a body, a flag or a delete. Its failures are `auth` or
+`transient` and become the mailbox's health (`active`, `failing`, `auth_failed`, `disconnected`); an
+`auth_failed` mailbox is not tried again until a person types a new password. The password is sealed with
+`PIGROCRM_MAILBOX_TOKEN_KEY` derived per space (`space_mailbox_token_key`), never the JWT secret. Connecting
+is `require_person`, so a token is refused whatever it carries. Tests use `tests/fakes/fake_imap.py`, a
+fake server on the loopback with a real TLS handshake: pass `resolve=loopback` and `fake.client_context()`,
+never a flag in production code. `mail-sync` reads IMAP beside Gmail; a sink per purpose (`MessageSink`) is
+how REB-1016 plugs in.
+
 **A router authenticates with `dependencies=[Depends(get_actor)]`, not per handler.** A
 handler that never names the actor is still behind it, and `test_routes_authenticate.py`
 asks every route of the OpenAPI document once with no credential. The open routes are the
