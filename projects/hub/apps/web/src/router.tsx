@@ -81,6 +81,60 @@ export function strParam(value: unknown): string | undefined {
   return undefined
 }
 
+/** The search schema of `/admin/talent` (REB-286): every filter and the search box live in the
+ *  URL, so a reload or a shared link reproduces the exact list -- `q` included even though the
+ *  debounce that settles it lives in `AdminTalents` itself. Exported so the admin list tests'
+ *  router (`list-test-kit.tsx`) reads the route's own schema instead of keeping a copy that
+ *  every new filter would have to join (REB-983). */
+export function validateTalentsSearch(search: Record<string, unknown>): TalentsFilters {
+  return {
+    status: strParam(search.status),
+    q: strParam(search.q),
+    job_title: strParam(search.job_title),
+    remote:
+      search.remote === 'remote' || search.remote === 'hybrid' || search.remote === 'on_site'
+        ? (search.remote as Remote)
+        : undefined,
+    min_rate: strParam(search.min_rate),
+    max_rate: strParam(search.max_rate),
+    origin_page: strParam(search.origin_page),
+    utm_source: strParam(search.utm_source),
+    has_cv: search.has_cv === true || search.has_cv === 'true' ? true : search.has_cv === false || search.has_cv === 'false' ? false : undefined,
+    with_logins:
+      search.with_logins === true || search.with_logins === 'true'
+        ? true
+        : search.with_logins === false || search.with_logins === 'false'
+          ? false
+          : undefined,
+    created_from: strParam(search.created_from),
+    created_to: strParam(search.created_to),
+    skills: strParam(search.skills),
+    location: strParam(search.location),
+    seniority: strParam(search.seniority),
+    min_years: strParam(search.min_years),
+    max_years: strParam(search.max_years),
+    industries: strParam(search.industries),
+    languages: strParam(search.languages),
+    card: strParam(search.card),
+    sort: strParam(search.sort),
+  }
+}
+
+/** The search schema of `/admin/companies` (REB-286), exported for the same reason as
+ *  `validateTalentsSearch`. */
+export function validateCompaniesSearch(search: Record<string, unknown>): CompaniesFilters {
+  return {
+    status: strParam(search.status),
+    q: strParam(search.q),
+    budget_min: strParam(search.budget_min),
+    budget_max: strParam(search.budget_max),
+    period_from: strParam(search.period_from),
+    origin: strParam(search.origin),
+    created_from: strParam(search.created_from),
+    created_to: strParam(search.created_to),
+  }
+}
+
 /**
  * The route tree, in code: this many screens is not enough to want a file-based router and
  * a generated tree beside it. The public pages sit in the `Shell`, the chooser alone in
@@ -333,37 +387,7 @@ const adminTalent = createRoute({
   // REB-286: every filter and the search box live here too, so a reload or a shared
   // link reproduces the exact list -- `q` included even though the debounce that
   // settles it lives in `AdminTalents` itself, not here.
-  validateSearch: (search: Record<string, unknown>): TalentsFilters => ({
-    status: strParam(search.status),
-    q: strParam(search.q),
-    job_title: strParam(search.job_title),
-    remote:
-      search.remote === 'remote' || search.remote === 'hybrid' || search.remote === 'on_site'
-        ? (search.remote as Remote)
-        : undefined,
-    min_rate: strParam(search.min_rate),
-    max_rate: strParam(search.max_rate),
-    origin_page: strParam(search.origin_page),
-    utm_source: strParam(search.utm_source),
-    has_cv: search.has_cv === true || search.has_cv === 'true' ? true : search.has_cv === false || search.has_cv === 'false' ? false : undefined,
-    with_logins:
-      search.with_logins === true || search.with_logins === 'true'
-        ? true
-        : search.with_logins === false || search.with_logins === 'false'
-          ? false
-          : undefined,
-    created_from: strParam(search.created_from),
-    created_to: strParam(search.created_to),
-    skills: strParam(search.skills),
-    location: strParam(search.location),
-    seniority: strParam(search.seniority),
-    min_years: strParam(search.min_years),
-    max_years: strParam(search.max_years),
-    industries: strParam(search.industries),
-    languages: strParam(search.languages),
-    card: strParam(search.card),
-    sort: strParam(search.sort),
-  }),
+  validateSearch: validateTalentsSearch,
 })
 // Every filter on the old list has to survive the redirect too, or a saved/shared
 // filtered view at `/admin/talent?...` would silently reset once it lands.
@@ -487,16 +511,7 @@ const adminCompanies = createRoute({
   getParentRoute: () => adminArea,
   path: '/companies',
   component: AdminCompanies,
-  validateSearch: (search: Record<string, unknown>): CompaniesFilters => ({
-    status: strParam(search.status),
-    q: strParam(search.q),
-    budget_min: strParam(search.budget_min),
-    budget_max: strParam(search.budget_max),
-    period_from: strParam(search.period_from),
-    origin: strParam(search.origin),
-    created_from: strParam(search.created_from),
-    created_to: strParam(search.created_to),
-  }),
+  validateSearch: validateCompaniesSearch,
 })
 const adminCompaniesRedirect = createRoute({
   getParentRoute: () => adminArea,

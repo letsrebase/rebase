@@ -9,9 +9,8 @@ import {
 } from '@tanstack/react-router'
 import { render, screen, within } from '@testing-library/react'
 import { expect, vi } from 'vitest'
-import type { CompaniesFilters, Remote, TalentsFilters } from '@/lib/api'
 import { parseSearch } from '@/lib/search'
-import { strParam } from '@/router'
+import { validateCompaniesSearch, validateTalentsSearch } from '@/router'
 import { AdminCompanies } from './companies/CompanyList'
 import { AdminCompanyDetail } from './companies/CompanyDetail'
 import { AdminFreelancerDetail } from './freelancer/FreelancerDetail'
@@ -208,9 +207,8 @@ export const NO_DUPLICATES = { mergeable: [], to_review: [], signups: 0 }
  *  read `useParams` and render `Link`s, so a router has to be there. The pathless
  *  `signedIn` id mirrors the real tree (REB-279's `SignedInLayout`), since
  *  `AdminFreelancerDetail`'s and `AdminTalentLead`'s own `useParams({ from })` name
- *  that full route id. `talent`/`companies` carry the same `validateSearch` shape
- *  `router.tsx` gives them (REB-286), duplicated rather than imported the same way
- *  `Thanks.test.tsx` duplicates `thanks`'s own. Returns the router so a test can read
+ *  that full route id. `talent`/`companies` take their `validateSearch` from `router.tsx`
+ *  itself (REB-286, REB-983), so a new filter needs no change here. Returns the router so a test can read
  *  `router.state.location.search` back out after an interaction. */
 export function mount(path: string, duplicates: Record<string, unknown> | (() => Response) = NO_DUPLICATES) {
   // REB-800: Talenti and a card's page read the duplicate pairs too, beside what the
@@ -230,37 +228,7 @@ export function mount(path: string, duplicates: Record<string, unknown> | (() =>
     getParentRoute: () => signedIn,
     path: '/admin/talent',
     component: AdminTalents,
-    validateSearch: (search: Record<string, unknown>): TalentsFilters => ({
-      status: strParam(search.status),
-      q: strParam(search.q),
-      job_title: strParam(search.job_title),
-      remote:
-        search.remote === 'remote' || search.remote === 'hybrid' || search.remote === 'on_site'
-          ? (search.remote as Remote)
-          : undefined,
-      min_rate: strParam(search.min_rate),
-      max_rate: strParam(search.max_rate),
-      origin_page: strParam(search.origin_page),
-      utm_source: strParam(search.utm_source),
-      has_cv: search.has_cv === true || search.has_cv === 'true' ? true : search.has_cv === false || search.has_cv === 'false' ? false : undefined,
-      with_logins:
-        search.with_logins === true || search.with_logins === 'true'
-          ? true
-          : search.with_logins === false || search.with_logins === 'false'
-            ? false
-            : undefined,
-      created_from: strParam(search.created_from),
-      created_to: strParam(search.created_to),
-      skills: strParam(search.skills),
-      location: strParam(search.location),
-      seniority: strParam(search.seniority),
-      min_years: strParam(search.min_years),
-      max_years: strParam(search.max_years),
-      industries: strParam(search.industries),
-      languages: strParam(search.languages),
-      card: strParam(search.card),
-      sort: strParam(search.sort),
-    }),
+    validateSearch: validateTalentsSearch,
   })
   const talentLead = createRoute({
     getParentRoute: () => signedIn,
@@ -286,16 +254,7 @@ export function mount(path: string, duplicates: Record<string, unknown> | (() =>
     getParentRoute: () => signedIn,
     path: '/admin/companies',
     component: AdminCompanies,
-    validateSearch: (search: Record<string, unknown>): CompaniesFilters => ({
-      status: strParam(search.status),
-      q: strParam(search.q),
-      budget_min: strParam(search.budget_min),
-      budget_max: strParam(search.budget_max),
-      period_from: strParam(search.period_from),
-      origin: strParam(search.origin),
-      created_from: strParam(search.created_from),
-      created_to: strParam(search.created_to),
-    }),
+    validateSearch: validateCompaniesSearch,
   })
   const companiesDetail = createRoute({
     getParentRoute: () => signedIn,
