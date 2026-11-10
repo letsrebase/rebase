@@ -367,6 +367,7 @@ _INTERNE: dict[Method, str] = {
     ("PeriodLockService", "assert_writable"): "guardia invocata dagli altri servizi",
     ("PeriodLockService", "is_closed"): "guardia invocata dagli altri servizi",
     ("IvaPeriodLockService", "assert_writable"): "guardia invocata dagli altri servizi",
+    ("IvaPeriodLockService", "is_closed"): "lettura per le pagine, invocata dagli altri servizi",
     ("PipelineService", "default_stage"): "risolve lo stage iniziale di un nuovo deal",
     ("TemplateService", "declared_variables"): "parsing interno usato da describe",
     ("EmailDraftService", "repo_draft"): "restituisce la riga ORM al percorso di invio "
