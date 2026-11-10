@@ -240,13 +240,7 @@ def test_the_preview_says_what_moves_and_writes_nothing(db_session: Session) -> 
     }
     assert preview.total_moved == 14
     assert preview.roles == ["customer", "supplier"]
-    assert preview.filled_fields == [
-        "tax_code",
-        "website",
-        "supplier_kind",
-        "supplier_area",
-        "supplier_supplies",
-    ]
+    assert preview.filled_fields == ["tax_code", "website", "supplier_kind"]
     assert preview.custom_fields_added == ["sector"]
     for model, column in ((Deal, "customer_id"), (Invoice, "customer_id")):
         assert _count(db_session, model, column, pair.loser.id) == 1
@@ -507,3 +501,41 @@ def test_every_foreign_key_to_organizations_is_covered_by_the_merge() -> None:
             if any(fk.column.table.name == "organizations" for fk in column.foreign_keys):
                 found.add(f"{table.name}.{column.name}")
     assert found == COVERED_COLUMNS
+
+
+def test_a_field_the_survivor_has_is_never_overwritten_or_emptied(db_session: Session) -> None:
+    survivor = make_customer(
+        db_session,
+        city="Milano",
+        postal_code="20100",
+        supplier_area="eu",
+        payment_days=60,
+    )
+    loser = make_customer(
+        db_session,
+        vat_number="01234567897",
+        address="Via X 1",
+        supplier_kind="foreign",
+        supplier_supplies="services",
+        payment_days=30,
+        payment_end_of_month=True,
+        supplier_payment_days=45,
+        supplier_payment_end_of_month=True,
+        customer_kind="public_body",
+        sdi_code="ABC123",
+    )
+
+    done = OrganizationService(db_session).merge(survivor.id, loser.id, ADMIN, dry_run=False)
+
+    row = db_session.get_one(Organization, survivor.id)
+    assert (row.city, row.postal_code, row.address) == ("Milano", "20100", "Via X 1")
+    assert (row.supplier_kind, row.supplier_area, row.supplier_supplies) == (
+        "foreign",
+        "eu",
+        "services",
+    )
+    assert (row.payment_days, row.payment_end_of_month) == (60, False), "its own terms stay"
+    assert (row.supplier_payment_days, row.supplier_payment_end_of_month) == (45, True)
+    assert row.vat_number == "01234567897", "the loser's number is not lost with the loser"
+    assert (row.customer_kind, row.sdi_code) == ("public_body", "ABC123")
+    assert "payment_days" not in done.filled_fields

@@ -87,23 +87,28 @@ COVERED_COLUMNS: frozenset[str] = frozenset(
     }
 )
 
-# Fields copied from the loser when the survivor's are empty, each group together because its
-# members only mean something side by side.
+# Fields copied from the loser when the survivor's are empty, one by one: a field the survivor
+# has is never overwritten, and one the loser leaves empty never empties the survivor's. A group
+# is a set of fields that read together (the address, the payment terms) and is listed together.
 FILL_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("vat_number",),
     ("tax_code",),
     ("certified_email",),
     ("website",),
     ("status",),
     ("address", "postal_code", "city", "province"),
-    ("payment_days", "payment_end_of_month"),
-    ("supplier_payment_days", "supplier_payment_end_of_month"),
+    ("payment_days",),
+    ("supplier_payment_days",),
     ("supplier_kind", "supplier_area", "supplier_supplies"),
     ("customer_kind", "sdi_code"),
     ("owner_id",),
 )
-# A group is filled when its first field is empty on the survivor and set on the loser, except
-# the customer pair, whose first field (`customer_kind`) says what the second means: both must
-# be empty on the survivor, so a public body's six-character code never lands beside a business.
+_TERMS_SWITCHES = (
+    ("payment_days", "payment_end_of_month"),
+    ("supplier_payment_days", "supplier_payment_end_of_month"),
+)
+# The customer pair is the exception: `customer_kind` says what `sdi_code` means, so both must
+# be empty on the survivor, and a public body's six-character code never lands beside a business.
 _PAIR_NEEDS_BOTH_EMPTY = ("customer_kind", "sdi_code")
 
 
@@ -364,11 +369,21 @@ class OrganizationMerge:
         )
         for group in FILL_GROUPS:
             if group == _PAIR_NEEDS_BOTH_EMPTY:
-                empty = all(getattr(survivor, name) is None for name in group)
+                # `customer_kind` says what `sdi_code` means, so they travel together.
+                if all(getattr(survivor, name) is None for name in group):
+                    outcome.filled_fields.extend(
+                        name for name in group if getattr(loser, name) is not None
+                    )
             else:
-                empty = getattr(survivor, group[0]) is None
-            if empty and getattr(loser, group[0]) is not None:
-                outcome.filled_fields.extend(group)
+                outcome.filled_fields.extend(
+                    name
+                    for name in group
+                    if getattr(survivor, name) is None and getattr(loser, name) is not None
+                )
+        # The switch is never null, so it follows the days it qualifies.
+        for days, end_of_month in _TERMS_SWITCHES:
+            if days in outcome.filled_fields:
+                outcome.filled_fields.append(end_of_month)
         if not apply:
             return
         for name in outcome.filled_fields:
