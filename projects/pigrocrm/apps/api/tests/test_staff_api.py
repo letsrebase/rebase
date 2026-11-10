@@ -343,10 +343,8 @@ def test_an_administrator_reads_the_hourly_cost_and_adopts_the_figure_they_saw(
     assert stale.status_code == 409, stale.text
     adopted = logged_in.post(f"/api/staff/{member}/hourly-cost", json={"hourly_cost": "20.47"})
     assert adopted.status_code == 200, adopted.text
-    assert adopted.json()["current_hourly_cost"] == "20.47"
-    assert logged_in.get(f"/api/staff/{member}/hourly-cost").json()["current_hourly_cost"] == (
-        "20.47"
-    )
+    for answer in (adopted, logged_in.get(f"/api/staff/{member}/hourly-cost")):
+        assert Decimal(answer.json()["current_hourly_cost"]) == Decimal("20.47")
 
 
 def test_a_collaborator_is_refused_the_hourly_cost(

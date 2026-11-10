@@ -269,9 +269,8 @@ class HourlyCostProposalRead(BaseModel):
 
     staff_member_id: UUID
     user_id: UUID
-    # The month the cost was taken from, and whether it is an estimate or an accepted payslip.
+    # The month the cost accrual was taken from.
     month: dt.date
-    source: EstimateSource
     monthly_cost: Decimal
     hours_per_month: Decimal
     hourly_cost: Decimal

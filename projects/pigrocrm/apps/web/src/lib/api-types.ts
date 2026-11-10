@@ -10674,11 +10674,6 @@ export interface components {
              * Format: date
              */
             month: string;
-            /**
-             * Source
-             * @enum {string}
-             */
-            source: "estimate" | "payslip";
             /** Monthly Cost */
             monthly_cost: string;
             /** Hours Per Month */

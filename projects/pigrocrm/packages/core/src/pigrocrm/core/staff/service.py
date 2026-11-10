@@ -274,7 +274,7 @@ class StaffService:
                 "non c'e' un mese intero di servizio con un costo da cui partire",
                 expected="la retribuzione e un mese intero in servizio",
             )
-        month, source, monthly = reference
+        month, monthly = reference
         user = self.session.get(User, member.user_id)
         if user is None:
             raise NotFound("user", member.user_id)
@@ -282,13 +282,10 @@ class StaffService:
             staff_member_id=member.id,
             user_id=member.user_id,
             month=month,
-            source=source,
             monthly_cost=monthly,
             hours_per_month=member.hours_per_month,
             hourly_cost=round_money(monthly / member.hours_per_month),
-            current_hourly_cost=(
-                None if user.default_hourly_cost is None else round_money(user.default_hourly_cost)
-            ),
+            current_hourly_cost=user.default_hourly_cost,
         )
 
     def adopt_staff_hourly_cost(
@@ -311,7 +308,7 @@ class StaffService:
         TimeEntryService(self.session).update_user_rates(
             proposal.user_id, UserRatesUpdate(default_hourly_cost=data.hourly_cost), actor
         )
-        return proposal.model_copy(update={"current_hourly_cost": data.hourly_cost})
+        return self.propose_staff_hourly_cost(staff_member_id, actor)
 
     # `list_staff` stays the last method in this class -- the unconditional project rule.
     def list_staff(self, query: StaffListQuery, actor: Actor) -> StaffPage:

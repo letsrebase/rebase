@@ -70,7 +70,7 @@ they fall in different months.
 
 **As built (REB-1009).** `GET /api/staff/{id}/hourly-cost` answers the proposal and writes
 nothing; `POST` on the same path adopts the figure the person was shown. The hour is a month's
-cost (`PayrollService.reference_monthly_cost`: the estimate's cost, or an accepted payslip's gross)
+cost (`PayrollService.reference_monthly_cost`: the estimate's accrual, never a payslip's gross, which prints one payment without the 13th and 14th and would move the hour with whether one was typed)
 over the member's `hours_per_month`, rounded to the cent. The month is the current one, moved to
 the nearest month served whole, since a part month's cost is prorated and would understate the
 hour. It needs a linked user and the hours; a missing one is a 422 that names it. Adoption is
