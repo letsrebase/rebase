@@ -63,6 +63,7 @@ from pigrocrm.core.slack.models import (  # noqa: F401
     SlackWorkspace,
 )
 from pigrocrm.core.space_settings.models import SpaceSetting  # noqa: F401
+from pigrocrm.core.staff.models import PayrollSettings, StaffMember  # noqa: F401
 from pigrocrm.core.tasks.models import Task  # noqa: F401
 from pigrocrm.core.templates.models import Template  # noqa: F401
 from pigrocrm.core.timetracking.models import (  # noqa: F401

@@ -28,7 +28,10 @@ from pigrocrm.core.tenants.database import tenant_database_name, tenant_database
 from pigrocrm.core.tenants.service import migrate_to_head
 
 ALL_ON = {f"module_{key}": "true" for key in ("deals", "contracts", "time", "costs", "taxes")}
+# `staff` is on «when the onboarding says so» and nothing asks yet, so a profile reads it as off.
+STAFF_OFF = {"module_staff": "false"}
 SOLO = {
+    **STAFF_OFF,
     "space_profile": "solo",
     "module_deals": "true",
     "module_contracts": "true",
@@ -108,7 +111,7 @@ def test_rebases_own_space_reads_company_with_every_module_on(
 ) -> None:
     _open(db_engine, registry, spaces, "prova-rebase")
     _boot(_settings(db_engine, leads_space="prova-rebase"), monkeypatch)
-    assert _stored(db_engine, "prova-rebase") == {"space_profile": "company", **ALL_ON}
+    assert _stored(db_engine, "prova-rebase") == {"space_profile": "company", **ALL_ON, **STAFF_OFF}
     assert "prova-rebase: profile company inferred (rebase's own space)" in capsys.readouterr().out
 
 
@@ -259,6 +262,7 @@ def test_the_root_that_is_rebases_own_space_reads_company(
                 assert {r.key: r.value for r in connection.execute(SHAPE_SQL)} == {
                     "space_profile": "company",
                     **ALL_ON,
+                    **STAFF_OFF,
                 }
         finally:
             engine.dispose()
@@ -301,7 +305,7 @@ def test_a_space_that_cannot_be_written_is_one_line_and_the_boot_goes_on(
 def test_ensure_profile_on_a_session_writes_once(db_session: Session) -> None:
     service = SpaceModulesService(db_session, Settings(_env_file=None))  # type: ignore[call-arg]
     first = service.ensure_profile("solo", Actor.rebase(), keep_on=("deals",))
-    assert first == sorted(["space_profile", *ALL_ON])
+    assert first == sorted(["space_profile", *ALL_ON, *STAFF_OFF])
     assert service.ensure_profile("company", Actor.rebase()) == []
     assert service.describe().profile == "solo"
 

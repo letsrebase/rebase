@@ -371,7 +371,7 @@ async def test_set_space_profile_answers_the_diff_and_applies_nothing_without_co
         after = (await client.call_tool("describe_space", {})).structured_content or {}
 
     assert proposal["applied"] is False
-    assert {c["module"] for c in proposal["changes"]} == {"deals", "time"}
+    assert {c["module"] for c in proposal["changes"]} == {"deals", "time", "staff"}
     assert unchanged["profile"] is None
     assert applied["applied"] is True
     assert after["profile"] == "solo"

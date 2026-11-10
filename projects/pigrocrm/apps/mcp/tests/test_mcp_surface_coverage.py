@@ -137,6 +137,13 @@ _FORBIDDEN: dict[Method, str] = {
         "della quota e del consenso del titolare, e ne restituisce il testo senza "
         "archiviare niente; l'installazione puo' aprirla con `mcp_full_access`"
     ),
+    ("StaffService", "create_staff_member"): (
+        "REB-977: pay is the most personal data the product holds (staff design § 4); the tool "
+        "exists only on an administrator's `full_access` token"
+    ),
+    ("StaffService", "update_staff_member"): "REB-977: same as `create_staff_member`",
+    ("StaffService", "get_staff_member"): "REB-977: same as `create_staff_member`",
+    ("StaffService", "list_staff"): "REB-977: same as `create_staff_member`",
     ("DocumentService", "import_bytes"): (
         "archivia byte che il CRM non ha prodotto, presi dal Drive del titolare a "
         "carico della sua quota e del suo consenso (slice 9 §4.2: `import_drive_file`); "
@@ -611,6 +618,14 @@ _CREDENZIALI: dict[Method, str] = {
 #    the configuration is. Exposing them would also mean an agent could rewrite the field
 #    definitions its own `describe_schema` output is derived from.
 _CONFIGURATION: dict[Method, str] = {
+    ("StaffService", "set_payroll_pay_day"): (
+        "REB-977, staff design § 4: the day net pay leaves for a whole legal entity is set from "
+        "the staff page by a person; `update_staff_member`'s own override is the agent's"
+    ),
+    ("StaffService", "get_payroll_pay_day"): (
+        "REB-977: the legal entity's pay day is read with the staff page; the effective one is "
+        "on every staff member `get_staff_member` and `list_staff` answer"
+    ),
     ("SlackService", "rematch"): (
         "Impostazioni > Slack (REB-739): asks Slack, with the space's bot token, who each user "
         "is. Who receives a message in a third party's workspace is a person's decision made "

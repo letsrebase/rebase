@@ -101,6 +101,13 @@ FORBIDDEN = (
     "set_space_profile",
     "set_space_modules",
     "skip_space_onboarding",
+    # Staff and directors with their pay (spec 2026-11-09, staff, payroll and expenses, § 4):
+    # the most personal data the product holds, an administrator's token with `full_access`
+    # and no other. The pay day of a legal entity has no tool and is person-only.
+    "create_staff_member",
+    "update_staff_member",
+    "get_staff_member",
+    "list_staff",
     # The first that is not fiscal: asking Gmail who at a customer's
     # domain the owner has corresponded with. Not irreversible -- it stores nothing --
     # but it spends the owner's Gmail quota under the owner's OAuth consent, which is
@@ -261,6 +268,12 @@ FORBIDDEN_SERVICE_CALLS = (
     "reopen_period",
     "bind_to_invoice",
     "get_fiscal_estimate",
+    # `StaffService`'s four, named uniquely for this scan: a bare `get` or `list` would match
+    # every other service.
+    "create_staff_member",
+    "update_staff_member",
+    "get_staff_member",
+    "list_staff",
     "discover",
     # `GmailSyncService.suggest_organizations`, behind `suggest_organizations_from_gmail`
     # (REB-223): the same family as `discover`.

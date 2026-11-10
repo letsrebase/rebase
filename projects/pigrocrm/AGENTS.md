@@ -194,6 +194,21 @@ annulled it after the item existed), idempotently. The old API keeps serving whi
 `pigrocrm reconcile-due-items` runs the same step again as the api container starts (compose `command`),
 after the old one is gone, and may run from cron; it answers 1 when a space failed, while the boot step
 follows the boot's convention (a line on stderr, exit 0).
+**Staff and directors are written by `StaffService`, and pay is an administrator's before anything else
+(REB-977).** `staff_members` and `payroll_settings` belong to the module `staff` (default off for both
+profiles, on for a space with no profile): REST `/api/staff` carries `module_guard("staff")` and the
+four tools (`create_staff_member`, `update_staff_member`, `get_staff_member`, `list_staff`) are in
+`TOOL_MODULES` and registered in `tools/privileged.py`, so a token without `full_access` does not list
+them. Every service method calls `require_admin` first, before it looks a row up, so a collaborator
+or a readonly member learns neither pay nor whether a member exists; which legal entities an administrator
+reaches is the plain `legal_entity_scope` policy. The method names are unique on purpose (`FORBIDDEN_SERVICE_CALLS`
+finds the privileged tools by name). Eligibility reads the fiscal pack of the legal entity (`EMPLOYEE_PACKS`,
+`DIRECTOR_PACKS` in `staff/models.py`): never `non-it`, directors only on `it-company`, a pack no legal
+entity carries yet, so a director is refused until the taxes design ships it. The kind decides the columns and the
+table's CHECKs say so; a rate left out is «not stated», never a default, because the payroll consultant verifies it.
+The legal entity's pay day is REST only and person-only (`set_payroll_pay_day`); a member's own override is a field
+of `update_staff_member`. Nothing is deleted: `end_date` is how someone leaves. The estimate, the payslips and the
+screens are later cards.
 
 **A router authenticates with `dependencies=[Depends(get_actor)]`, not per handler.** A
 handler that never names the actor is still behind it, and `test_routes_authenticate.py`

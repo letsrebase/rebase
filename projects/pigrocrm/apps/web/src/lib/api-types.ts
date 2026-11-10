@@ -5157,6 +5157,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/staff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Staff */
+        get: operations["list_staff_api_staff_get"];
+        put?: never;
+        /**
+         * Create Staff Member
+         * @description An employee or a director of a legal entity, told apart by `kind`. Directors only on
+         *     a company; none on a legal entity abroad.
+         */
+        post: operations["create_staff_member_api_staff_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/staff/pay-days/{legal_entity_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pay Day
+         * @description The legal entity's own pay day; both fields are null until one is set.
+         */
+        get: operations["get_pay_day_api_staff_pay_days__legal_entity_id__get"];
+        /**
+         * Set Pay Day
+         * @description Sets the day net pay leaves for every staff member of the legal entity without an
+         *     override of their own. A person's act: no agent credential.
+         */
+        put: operations["set_pay_day_api_staff_pay_days__legal_entity_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/staff/{staff_member_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Staff Member */
+        get: operations["get_staff_member_api_staff__staff_member_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Staff Member
+         * @description Changes what is named. The kind and the legal entity never change; a field of the
+         *     other kind is refused.
+         */
+        patch: operations["update_staff_member_api_staff__staff_member_id__patch"];
+        trace?: never;
+    };
     "/api/rebase/leads/{request_id}": {
         parameters: {
             query?: never;
@@ -7673,6 +7742,57 @@ export interface components {
             position: number;
         };
         /**
+         * DirectorCreate
+         * @description A director: the annual fee, how it is paid, the TFM accrued a year (set exactly when
+         *     `accrues_tfm`) and the share of the INPS «gestione separata» the company bears.
+         */
+        DirectorCreate: {
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /** End Date */
+            end_date?: string | null;
+            /** Hours Per Month */
+            hours_per_month?: number | string | null;
+            /** User Id */
+            user_id?: string | null;
+            /** Pay Day */
+            pay_day?: number | null;
+            /** Pay Month Offset */
+            pay_month_offset?: number | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "director";
+            /** Annual Fee */
+            annual_fee: number | string;
+            /**
+             * Fee Payment
+             * @default monthly
+             * @enum {string}
+             */
+            fee_payment: "monthly" | "other";
+            /**
+             * Accrues Tfm
+             * @default false
+             */
+            accrues_tfm: boolean;
+            /** Tfm Annual Amount */
+            tfm_annual_amount?: number | string | null;
+            /** Inps Company Share */
+            inps_company_share?: number | string | null;
+        };
+        /**
          * DiscoveredCorrespondent
          * @description One address at the customer's domain that the connected mailbox has actually
          *     exchanged mail with. A suggestion, not a record: nothing is written until a person
@@ -8296,6 +8416,22 @@ export interface components {
             summary_hour: number;
         };
         /**
+         * EffectivePayDay
+         * @description The pay day that applies to a staff member and where it comes from: the member's own
+         *     override, or the legal entity's.
+         */
+        EffectivePayDay: {
+            /** Pay Day */
+            pay_day: number;
+            /** Pay Month Offset */
+            pay_month_offset: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "staff_member" | "legal_entity";
+        };
+        /**
          * EffectiveReminderSettings
          * @description What applies to the person asking, after the override, the space's default and the
          *     built-in default, in that order. `email_mode` is `null` while the default rule stands:
@@ -8484,6 +8620,60 @@ export interface components {
             body_markdown?: string | null;
             /** Attachment Version Ids */
             attachment_version_ids?: string[] | null;
+        };
+        /**
+         * EmployeeCreate
+         * @description An employee: the contract inputs. `part_time_percent` is the share of a full-time
+         *     contract; the two employer rates are typed per person.
+         */
+        EmployeeCreate: {
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /** End Date */
+            end_date?: string | null;
+            /** Hours Per Month */
+            hours_per_month?: number | string | null;
+            /** User Id */
+            user_id?: string | null;
+            /** Pay Day */
+            pay_day?: number | null;
+            /** Pay Month Offset */
+            pay_month_offset?: number | null;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "employee";
+            /** Collective Agreement */
+            collective_agreement?: string | null;
+            /** Contract Level */
+            contract_level?: string | null;
+            /** Gross Annual Pay */
+            gross_annual_pay: number | string;
+            /**
+             * Monthly Payments
+             * @enum {integer}
+             */
+            monthly_payments: 13 | 14;
+            /**
+             * Part Time Percent
+             * @default 100
+             */
+            part_time_percent: number | string;
+            /** Employer Inps Rate */
+            employer_inps_rate?: number | string | null;
+            /** Employer Inail Rate */
+            employer_inail_rate?: number | string | null;
         };
         /** EngagementFreelancer */
         EngagementFreelancer: {
@@ -10297,7 +10487,7 @@ export interface components {
              * Module
              * @enum {string}
              */
-            module: "deals" | "contracts" | "time" | "costs" | "taxes";
+            module: "deals" | "contracts" | "time" | "costs" | "taxes" | "staff";
             /** Label */
             label: string;
             /**
@@ -10322,7 +10512,7 @@ export interface components {
              * Key
              * @enum {string}
              */
-            key: "deals" | "contracts" | "time" | "costs" | "taxes";
+            key: "deals" | "contracts" | "time" | "costs" | "taxes" | "staff";
             /**
              * Label
              * @description The module's name as a person reads it (Italian)
@@ -10337,7 +10527,7 @@ export interface components {
              * Requires
              * @description Modules that must be on for this one to be on: `time` needs `deals`
              */
-            requires: ("deals" | "contracts" | "time" | "costs" | "taxes")[];
+            requires: ("deals" | "contracts" | "time" | "costs" | "taxes" | "staff")[];
             /**
              * Enabled
              * @description Whether the space has the module on right now
@@ -11012,6 +11202,32 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * PayDayRead
+         * @description A legal entity's pay day; both fields are `None` until one is set.
+         */
+        PayDayRead: {
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /** Pay Day */
+            pay_day: number | null;
+            /** Pay Month Offset */
+            pay_month_offset: number | null;
+        };
+        /**
+         * PayDayWrite
+         * @description The pay day of a legal entity: the day of the month (1 to 28) and whether it falls in
+         *     the month worked (0) or the month after (1).
+         */
+        PayDayWrite: {
+            /** Pay Day */
+            pay_day: number;
+            /** Pay Month Offset */
+            pay_month_offset: number;
         };
         /**
          * PaymentReminderCandidate
@@ -12727,17 +12943,17 @@ export interface components {
              * On
              * @description Modules to switch on
              */
-            on?: ("deals" | "contracts" | "time" | "costs" | "taxes")[];
+            on?: ("deals" | "contracts" | "time" | "costs" | "taxes" | "staff")[];
             /**
              * Off
              * @description Modules to switch off
              */
-            off?: ("deals" | "contracts" | "time" | "costs" | "taxes")[];
+            off?: ("deals" | "contracts" | "time" | "costs" | "taxes" | "staff")[];
             /**
              * Confirm Off
              * @description The modules in `off` that hold records and that the caller agrees to switch off: one that holds data and is not named here is refused. Their data stays
              */
-            confirm_off?: ("deals" | "contracts" | "time" | "costs" | "taxes")[];
+            confirm_off?: ("deals" | "contracts" | "time" | "costs" | "taxes" | "staff")[];
         };
         /** SpaceProfileProposal */
         SpaceProfileProposal: {
@@ -12858,6 +13074,132 @@ export interface components {
              * @description The `updated_at` read on the settings this change starts from (`null` included): if someone else saved in the meantime, the request is rejected with 409 `stale_row`. Omitted, no check.
              */
             updated_at?: string | null;
+        };
+        /**
+         * StaffMemberRead
+         * @description Every field of both kinds; the ones of the other kind are `None`. `effective_pay_day`
+         *     is `None` until the member or the legal entity has a pay day.
+         */
+        StaffMemberRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "employee" | "director";
+            /** Name */
+            name: string;
+            /** User Id */
+            user_id: string | null;
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /** End Date */
+            end_date: string | null;
+            /** Hours Per Month */
+            hours_per_month: string | null;
+            /** Pay Day */
+            pay_day: number | null;
+            /** Pay Month Offset */
+            pay_month_offset: number | null;
+            effective_pay_day?: components["schemas"]["EffectivePayDay"] | null;
+            /** Collective Agreement */
+            collective_agreement: string | null;
+            /** Contract Level */
+            contract_level: string | null;
+            /** Gross Annual Pay */
+            gross_annual_pay: string | null;
+            /** Monthly Payments */
+            monthly_payments: number | null;
+            /** Part Time Percent */
+            part_time_percent: string | null;
+            /** Employer Inps Rate */
+            employer_inps_rate: string | null;
+            /** Employer Inail Rate */
+            employer_inail_rate: string | null;
+            /** Annual Fee */
+            annual_fee: string | null;
+            /** Fee Payment */
+            fee_payment: string | null;
+            /** Accrues Tfm */
+            accrues_tfm: boolean;
+            /** Tfm Annual Amount */
+            tfm_annual_amount: string | null;
+            /** Inps Company Share */
+            inps_company_share: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * StaffMemberUpdate
+         * @description What changes. A field of the other kind is refused by the service, and `null` empties
+         *     only the fields that may be empty (the optional ones).
+         */
+        StaffMemberUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Start Date */
+            start_date?: string | null;
+            /** End Date */
+            end_date?: string | null;
+            /** Hours Per Month */
+            hours_per_month?: number | string | null;
+            /** User Id */
+            user_id?: string | null;
+            /** Pay Day */
+            pay_day?: number | null;
+            /** Pay Month Offset */
+            pay_month_offset?: number | null;
+            /** Collective Agreement */
+            collective_agreement?: string | null;
+            /** Contract Level */
+            contract_level?: string | null;
+            /** Gross Annual Pay */
+            gross_annual_pay?: number | string | null;
+            /** Monthly Payments */
+            monthly_payments?: (13 | 14) | null;
+            /** Part Time Percent */
+            part_time_percent?: number | string | null;
+            /** Employer Inps Rate */
+            employer_inps_rate?: number | string | null;
+            /** Employer Inail Rate */
+            employer_inail_rate?: number | string | null;
+            /** Annual Fee */
+            annual_fee?: number | string | null;
+            /** Fee Payment */
+            fee_payment?: ("monthly" | "other") | null;
+            /** Accrues Tfm */
+            accrues_tfm?: boolean | null;
+            /** Tfm Annual Amount */
+            tfm_annual_amount?: number | string | null;
+            /** Inps Company Share */
+            inps_company_share?: number | string | null;
+        };
+        /** StaffPage */
+        StaffPage: {
+            /** Items */
+            items: components["schemas"]["StaffMemberRead"][];
+            /** Next Cursor */
+            next_cursor: string | null;
         };
         /**
          * SuggestedOrganization
@@ -52551,6 +52893,736 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DueItemDetail"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_staff_api_staff_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string | null;
+                /** @description Only this legal entity's rows; omitted, all of them */
+                legal_entity_id?: string | null;
+                kind?: ("employee" | "director") | null;
+                /** @description Also the staff whose end date is past; omitted, who is in service */
+                include_ended?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffPage"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_staff_member_api_staff_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmployeeCreate"] | components["schemas"]["DirectorCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffMemberRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_pay_day_api_staff_pay_days__legal_entity_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                legal_entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayDayRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_pay_day_api_staff_pay_days__legal_entity_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                legal_entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayDayWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayDayRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_staff_member_api_staff__staff_member_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                staff_member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffMemberRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_staff_member_api_staff__staff_member_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                staff_member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StaffMemberUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StaffMemberRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

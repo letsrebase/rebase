@@ -141,6 +141,27 @@ ROWS: list[Row] = [
     Row("PATCH", "/api/auth/me", expect="open", body={"weekly_digest": False}),
     # --- automation config: admin (config_service.py:103) ---------------------------
     Row("PUT", "/api/automation-config", admin_only=True, body={}),
+    # --- staff and directors with their pay (REB-977): admin, before any lookup -----------
+    Row(
+        "POST",
+        "/api/staff",
+        admin_only=True,
+        body={
+            "kind": "employee",
+            "legal_entity_id": "__FAKE__",
+            "name": "matrice-staff",
+            "start_date": "2026-01-01",
+            "gross_annual_pay": "20000.00",
+            "monthly_payments": 13,
+        },
+    ),
+    Row("PATCH", "/api/staff/{staff_member_id}", admin_only=True, body={"name": "matrice-staff"}),
+    Row(
+        "PUT",
+        "/api/staff/pay-days/{legal_entity_id}",
+        admin_only=True,
+        body={"pay_day": 27, "pay_month_offset": 0},
+    ),
     # --- cost categories: admin on every method (timetracking/categories.py) --------
     Row("POST", "/api/cost-categories", admin_only=True, body={"name": "matrice-cat"}),
     Row("POST", "/api/cost-categories/seed", admin_only=True),

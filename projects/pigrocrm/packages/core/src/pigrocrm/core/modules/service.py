@@ -9,15 +9,16 @@ change what the whole team sees. Neither touches a record: off hides, it never d
 
 from collections.abc import Collection
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select, true
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
 from pigrocrm.core.contracts.models import Contract
+from pigrocrm.core.db import SoftDeleteMixin
 from pigrocrm.core.deals.models import Deal
-from pigrocrm.core.errors import Conflict, ValidationFailed
+from pigrocrm.core.errors import AgentForbidden, Conflict, PermissionDenied, ValidationFailed
 from pigrocrm.core.modules.registry import (
     MODULE_KEYS,
     MODULES,
@@ -41,6 +42,7 @@ from pigrocrm.core.modules.schemas import (
     SpaceProfileSet,
 )
 from pigrocrm.core.space_settings.service import ENTITY, SETTINGS_ID, SpaceSettingsService
+from pigrocrm.core.staff.models import StaffMember
 from pigrocrm.core.timetracking.models import Cost, TimeEntry
 
 SET_PROFILE = "set_space_profile"
@@ -49,13 +51,38 @@ SKIP_ONBOARDING = "skip_space_onboarding"
 
 # What each module holds that a person would miss: the live rows of its own tables. `taxes`
 # keeps nothing of its own (the estimate is computed from invoices, and the fiscal profile
-# stays in the core), so it never asks for a confirmation.
-_RECORDS: dict[str, type[Deal] | type[Contract] | type[TimeEntry] | type[Cost]] = {
+# stays in the core), so it never asks for a confirmation. `staff` counts every person
+# recorded, an ended one included: nothing there is deleted.
+_RECORDS: dict[
+    str, type[Deal] | type[Contract] | type[TimeEntry] | type[Cost] | type[StaffMember]
+] = {
     "deals": Deal,
     "contracts": Contract,
     "time": TimeEntry,
     "costs": Cost,
+    "staff": StaffMember,
 }
+
+
+def _live(
+    model: type[Deal] | type[Contract] | type[TimeEntry] | type[Cost] | type[StaffMember],
+) -> ColumnElement[bool]:
+    """The rows a person would miss: the ones not deleted, and every row of a table that
+    deletes nothing."""
+    if issubclass(model, SoftDeleteMixin):
+        return model.deleted_at.is_(None)
+    return true()
+
+
+def _may_count_staff(actor: Actor | None) -> bool:
+    """Who may learn how many staff members there are: whoever may list them."""
+    if actor is None:
+        return False
+    try:
+        actor.require_admin("list_staff")
+    except (PermissionDenied, AgentForbidden):
+        return False
+    return True
 
 
 def _bit(value: bool) -> str:
@@ -75,11 +102,7 @@ class SpaceModulesService:
         shell's read of the modules, which every page asks, so it is one round trip and
         not one per table."""
         columns = [
-            select(func.count())
-            .select_from(model)
-            .where(model.deleted_at.is_(None))
-            .scalar_subquery()
-            .label(key)
+            select(func.count()).select_from(model).where(_live(model)).scalar_subquery().label(key)
             for key, model in _RECORDS.items()
         ]
         row = self.session.execute(select(*columns)).one()
@@ -93,12 +116,17 @@ class SpaceModulesService:
             self.activities.record(ENTITY, SETTINGS_ID, "updated", actor, {"keys": changed})
         self.session.commit()
 
-    def describe(self) -> SpaceModulesRead:
+    def describe(self, actor: Actor | None = None) -> SpaceModulesRead:
         """Open to every member and every agent: it says what the space can do, and the
-        tools that are listed already say as much."""
+        tools that are listed already say as much. The one exception is how many staff
+        members there are, which is pay's own privacy (staff design § 4): `staff` reads
+        `records=0` unless `actor` is an administrator, and for an agent one with
+        `full_access`. No actor reads as nobody."""
         effective = self.settings.effective()
         on = enabled_modules(effective)
         counts = self._counts()
+        if not _may_count_staff(actor):
+            counts["staff"] = 0
         modules = []
         for module in MODULES:
             records = counts.get(module.key, 0)
@@ -159,7 +187,7 @@ class SpaceModulesService:
             previous_profile=effective.space_profile,
             applied=data.confirm,
             changes=changes,
-            state=self.describe(),
+            state=self.describe(actor),
         )
 
     def ensure_profile(
@@ -203,7 +231,7 @@ class SpaceModulesService:
         self.settings.lock()
         if self.settings.effective().space_profile is None:
             self._write({ONBOARDING_SKIPPED_KEY: _bit(True)}, actor)
-        return self.describe()
+        return self.describe(actor)
 
     def set_modules(self, data: SpaceModulesSet, actor: Actor) -> SpaceModulesRead:
         """Switches the named modules. A module that holds records is switched off only when
@@ -269,7 +297,7 @@ class SpaceModulesService:
         values.update({setting_key(key): _bit(True) for key in data.on})
         values.update({setting_key(key): _bit(False) for key in data.off})
         self._write(values, actor)
-        return self.describe()
+        return self.describe(actor)
 
 
 def _check_dependencies(state: dict[ModuleKey, bool]) -> None:
