@@ -330,6 +330,7 @@ async def test_an_agent_says_what_an_item_is_discards_one_and_marks_a_copy(
             "mark_inbox_item_duplicate", {"item_id": copy["id"], "original_id": pdf["id"]}
         )
     assert _payload(kind)["kind"] == "bank_statement"
+    assert _payload(kind)["reason"] == "Tipo indicato dal tuo agente"
     assert (_payload(discarded)["state"], _payload(discarded)["reason"]) == (
         "discarded",
         "Estratto di un altro conto",

@@ -347,6 +347,15 @@ class ProposalService:
         return user.name or user.email if user is not None else actor.type
 
     def reject(self, proposal_id: UUID, data: ProposalReject, actor: Actor) -> ProposalRead:
+        read = self.reject_without_commit(proposal_id, data, actor)
+        self.session.commit()
+        return read
+
+    def reject_without_commit(
+        self, proposal_id: UUID, data: ProposalReject, actor: Actor
+    ) -> ProposalRead:
+        """`reject` for a caller that goes on to write in the same transaction (the inbox acts
+        that make a waiting proposal moot): it flushes and never commits."""
         actor.require_person("reject_proposal")
         actor.require_write("reject_proposal")
         proposal = self._require_pending(proposal_id, actor)
@@ -370,7 +379,7 @@ class ProposalService:
             actor,
             {"decided_by": decider, "reason": data.reason},
         )
-        self.session.commit()
+        self.session.flush()
         return ProposalRead.model_validate(proposal)
 
     def accept(self, proposal_id: UUID, data: ProposalAccept, actor: Actor) -> ProposalRead:

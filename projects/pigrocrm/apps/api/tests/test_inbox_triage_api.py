@@ -266,3 +266,25 @@ def test_changing_the_kind_of_a_proposed_item_rejects_its_proposal(
     assert response.status_code == 200, response.text
     assert (response.json()["kind"], response.json()["state"]) == ("supplier_invoice", "new")
     assert logged_in.get(f"/api/proposals/{item['proposal_id']}").json()["status"] == "rejected"
+
+
+def test_a_statement_file_is_certain_by_its_type_and_does_not_change_kind(
+    logged_in: TestClient,
+) -> None:
+    item = _upload(logged_in, ("estratto.csv", b"data;importo\n2026-10-01;10,00\n"))[0]
+    assert item["kind"] == "bank_statement"
+    assert _kind(logged_in, item["id"], "receipt").status_code == 409
+
+
+def test_a_legal_entity_that_is_not_active_cannot_be_chosen(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    entity = LegalEntity(
+        legal_name="Chiusa Srl", vat_number="22222222226", country="IT", active=False
+    )
+    api_session.add(entity)
+    api_session.flush()
+    item = _upload(logged_in, ("a.pdf", PDF))[0]
+    assert (
+        _kind(logged_in, item["id"], "receipt", legal_entity_id=str(entity.id)).status_code == 422
+    )

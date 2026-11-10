@@ -33,6 +33,7 @@ DUPLICATE_ACTION = "mark_inbox_item_duplicate"
 KIND_ACTION = "set_inbox_item_kind"
 
 _WAITING = ("new", "proposed")
+_STATEMENT_FILES = ("csv", "xls", "xlsx", "camt053")
 _CERTAIN_KIND = "il tipo l'ha letto il file stesso, con dati certi: non si cambia"
 _WITHDRAWN = "Il documento e' stato rivisto da una persona"
 
@@ -44,6 +45,10 @@ _STATE_WORDS = {
     "duplicate": "un doppione",
     "discarded": "scartato",
 }
+
+
+def _by(actor: Actor) -> str:
+    return "dal tuo agente" if actor.type == "mcp" else "da una persona"
 
 
 def _text(value: UUID | None) -> str | None:
@@ -122,7 +127,7 @@ class InboxService:
                 item_id=str(item.id),
             )
         for proposal_id in pending:
-            ProposalService(self.session).reject(
+            ProposalService(self.session).reject_without_commit(
                 proposal_id, ProposalReject(reason=_WITHDRAWN), actor
             )
         self.session.refresh(item)
@@ -145,7 +150,6 @@ class InboxService:
             return self._reads(item)
         self._require_waiting(item, "non si scarta")
         self._withdraw_proposals(item, actor)
-        item = self._locked(item_id, actor)
         item.state = "discarded"
         item.reason = data.reason
         item.read_started_at = None
@@ -159,6 +163,9 @@ class InboxService:
         """Says an item that waits is a copy of another one the caller sees. The copies the
         item itself had now point at the original. Idempotent for the same original."""
         actor.require_write(DUPLICATE_ACTION)
+        # The writers of originals queue on one lock (uploads too), so two copies marked at
+        # once cannot point at each other and an upload never finds a copy as its original.
+        self.repo.lock_for_dedup()
         item = self._locked(item_id, actor)
         if item.state == "duplicate" and item.duplicate_of_id == data.original_id:
             return self._reads(item)
@@ -183,10 +190,9 @@ class InboxService:
             )
         self._require_waiting(item, "non si segna come doppione")
         self._withdraw_proposals(item, actor)
-        item = self._locked(item_id, actor)
         item.state = "duplicate"
         item.duplicate_of_id = original.id
-        item.reason = f"Doppione di {original.original_name}, indicato da una persona"
+        item.reason = f"Doppione di {original.original_name}, indicato {_by(actor)}"
         item.read_started_at = None
         self.session.execute(
             update(InboxItem)
@@ -215,23 +221,24 @@ class InboxService:
             )
         legal_entity_id = item.legal_entity_id
         if data.legal_entity_id is not None:
-            if LegalEntityRepository(self.session).get(data.legal_entity_id) is None:
+            entity = LegalEntityRepository(self.session).get(data.legal_entity_id)
+            if entity is None or not entity.active:
                 raise ValidationFailed(
                     ENTITY, "legal_entity_id", "l'azienda non esiste o non e' tra le tue"
                 )
             legal_entity_id = data.legal_entity_id
         kind_changes = data.kind is not None and item.kind != data.kind
-        if kind_changes and item.kind is not None and item.parsed_fields is not None:
+        certain = item.parsed_fields is not None or item.file_type in _STATEMENT_FILES
+        if kind_changes and item.kind is not None and certain:
             raise Conflict(ENTITY, _CERTAIN_KIND, item_id=str(item.id), kind=item.kind)
         if not kind_changes and legal_entity_id == item.legal_entity_id:
             return self._reads(item)
         previous = {"kind": item.kind, "legal_entity_id": _text(item.legal_entity_id)}
         if kind_changes:
             self._withdraw_proposals(item, actor)
-            item = self._locked(item_id, actor)
             item.kind = data.kind
             item.state = "new"
-            item.reason = "Tipo indicato da una persona"
+            item.reason = f"Tipo indicato {_by(actor)}"
         item.legal_entity_id = legal_entity_id
         ActivityService(self.session).record(
             ENTITY,
