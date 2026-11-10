@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 import pigrocrm.core.engagements.service as engagements_service
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
+from pigrocrm.core.auth.tokens import issue_access_token
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.sidecar import drop_database
@@ -37,7 +38,7 @@ from pigrocrm.core.tenants import ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm.core.timetracking.schemas import TimeEntryCreate
 from pigrocrm.core.timetracking.service import TimeEntryService
-from pigrocrm_api.deps import reset_session_factories
+from pigrocrm_api.deps import ACCESS_COOKIE, reset_session_factories
 from pigrocrm_api.main import create_app
 from pigrocrm_api.ratelimit import reset_rate_limit
 
@@ -339,6 +340,55 @@ def test_put_of_deleted_deal_is_409(door_client: TestClient, container_settings:
     )
     _gone_problem(refused)
     assert refused.json()["match_id"] == str(match_id)
+
+
+def test_a_merge_over_http_points_the_registry_at_the_survivor(
+    door_client: TestClient, container_settings: Settings
+) -> None:
+    """REB-1031 through the route a person takes: folding the customer the door made into
+    another row of the same company, inside the freelancer's space, leaves the hub's retry
+    answering the survivor instead of the archived row. A preview writes nothing."""
+    match_id = uuid4()
+    created = door_client.put(
+        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
+    )
+    assert created.status_code == 201, created.text
+    linked = created.json()
+    slug = linked["slug"]
+    with _space(container_settings, slug) as space:
+        admin = UserRepository(space).get_by_email(FREELANCER_EMAIL)
+        assert admin is not None
+        token = issue_access_token(admin.id, "admin", container_settings, space=slug)
+    member = {"Cookie": f"{ACCESS_COOKIE}={token}"}
+    made = door_client.post(
+        f"/{slug}/api/organizations", json={"legal_name": "rebase srl"}, headers=member
+    )
+    assert made.status_code == 201, made.text
+    survivor = made.json()["id"]
+    merge = f"/{slug}/api/organizations/{survivor}/merge"
+
+    preview = door_client.post(merge, json={"loser_id": linked["customer_id"]}, headers=member)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["moved"]["rebase_engagements"] == 1
+    unchanged = door_client.put(
+        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
+    )
+    assert unchanged.json()["customer_id"] == linked["customer_id"]
+
+    done = door_client.post(
+        merge, json={"loser_id": linked["customer_id"], "dry_run": False}, headers=member
+    )
+    assert done.status_code == 200, done.text
+    assert done.json()["moved"]["rebase_engagements"] == 1
+
+    retry = door_client.put(
+        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
+    )
+    assert retry.status_code == 200, retry.text
+    body = retry.json()
+    assert body["created"] is False
+    assert body["customer_id"] == survivor
+    assert body["deal_id"] == linked["deal_id"]
 
 
 def test_report_of_deleted_deal_is_409(

@@ -25,6 +25,9 @@ class RebaseEngagement(TenantsBase, PrimaryKeyMixin):
 
     match_id: Mapped[UUID] = mapped_column(unique=True, nullable=False)
     tenant_id: Mapped[UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
+    # The customer «rebase» in the space, which the door answers to every retry of the call. It
+    # is outside the space's database, so a merge of that customer points it at the survivor
+    # through `EngagementRegistry` (REB-1031) and nothing else writes it after step 6.
     customer_id: Mapped[UUID | None] = mapped_column(default=None)
     deal_id: Mapped[UUID | None] = mapped_column(default=None)
     # The contract the letter became in the freelancer's space (REB-1001), written with

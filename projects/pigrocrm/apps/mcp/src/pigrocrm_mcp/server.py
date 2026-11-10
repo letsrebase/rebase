@@ -275,6 +275,7 @@ def build_server(
     *,
     middleware: Sequence[ServerMiddleware[Any]] | None = None,
     space: str | None = None,
+    registry_session: SessionProvider | None = None,
 ) -> MCPServer:
     """The server of one installation (stdio) or one space (HTTP).
 
@@ -284,7 +285,9 @@ def build_server(
     decides which tools exist: Gmail and Drive without a Google client, Slack without an app,
     the privileged ones without `mcp_full_access` are not registered at all. `middleware` is
     the SDK's context-tier hook (the HTTP transport binds the request's actor with it);
-    `space` names the PostHog group.
+    `space` names the PostHog group and the space the registry rows of a tool are read for,
+    and `registry_session` opens a session on the tenants registry, which a server of a space
+    needs for the one tool that writes there (`merge_organizations`).
     """
     resolved_settings = settings or get_settings()
     context = McpContext(
@@ -297,6 +300,7 @@ def build_server(
         modules=enabled_modules(resolved_settings),
         settings=resolved_settings,
         space=space,
+        registry_session=registry_session,
     )
     mcp = GuidedMCPServer(
         "PigroCRM", instructions=INSTRUCTIONS, middleware=middleware, actor_provider=actor_provider

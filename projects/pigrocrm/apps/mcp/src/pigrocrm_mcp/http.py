@@ -287,6 +287,9 @@ class McpHttpApp:
             auth.settings,
             middleware=[ActorFromRequest()],
             space=slug,
+            # Resolved per call, like the space's own factory: the registry may dispose and
+            # rebuild its engine between two calls.
+            registry_session=lambda: self._registry.registry_factory()(),
         )
         starlette = server.streamable_http_app(
             streamable_http_path=MCP_PATH,

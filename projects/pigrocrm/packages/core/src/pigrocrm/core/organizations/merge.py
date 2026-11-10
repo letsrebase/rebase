@@ -10,8 +10,12 @@ and pending proposals. `test_organization_merge.py` walks the metadata and fails
 gains a foreign key to `organizations` that none of them covers, which is how a later table (a
 purchase's `supplier_id`) is made to join the list the day it appears.
 
+One row lives outside the space's database: the registry's `rebase_engagements.customer_id`,
+which the engagements door answers to the hub. With a registry (`EngagementRegistry`) the walk
+points it at the survivor too, through the registry's own session (REB-1031).
+
 This module takes no actor and commits nothing: `OrganizationService.merge` authorises, locks the
-two rows and owns the transaction.
+two rows and owns both transactions.
 """
 
 import json
@@ -44,6 +48,7 @@ from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.due_items.models import DueItem
+from pigrocrm.core.engagements.registry import EngagementRegistry
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessageLink
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.notes.models import Note
@@ -97,6 +102,7 @@ TASKS = "tasks"
 GMAIL_LINKS = "gmail_message_links"
 IBANS = "organization_ibans"
 PROPOSALS = "proposals"
+REGISTRY_ENGAGEMENTS = "rebase_engagements"
 
 # Foreign keys to `organizations.id` that the steps above and below cover, by `table.column`.
 COVERED_COLUMNS: frozenset[str] = frozenset(
@@ -163,8 +169,9 @@ def _note(outcome: MergeOutcome, bucket: str, label: str, count: int) -> None:
 
 
 class OrganizationMerge:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, registry: EngagementRegistry | None = None) -> None:
         self.session = session
+        self.registry = registry
 
     def run(self, survivor: Organization, loser: Organization, *, apply: bool) -> MergeOutcome:
         outcome = MergeOutcome()
@@ -182,6 +189,7 @@ class OrganizationMerge:
         for label, model in LINKED:
             self._move_linked(outcome, label, model, loser_id, survivor_id, apply)
         self._proposals(outcome, loser_id, survivor_id, apply)
+        self._registry_rows(outcome, loser_id, survivor_id, apply)
         self._fields(outcome, survivor, loser, apply)
         return outcome
 
@@ -436,6 +444,23 @@ class OrganizationMerge:
                 ).scalar_one()
             )
         _note(outcome, "moved", PROPOSALS, count)
+
+    # -- outside the space's database ------------------------------------------------------
+
+    def _registry_rows(
+        self, outcome: MergeOutcome, loser_id: UUID, survivor_id: UUID, apply: bool
+    ) -> None:
+        """The registry's rows that name the loser as the space's customer of a hub match
+        (REB-1031): written on the registry's session, which `OrganizationService.merge`
+        commits before the space's own, so a failure in between leaves the registry naming a
+        live organization of the same company and the merge still runnable."""
+        if self.registry is None:
+            return
+        if apply:
+            moved = self.registry.repoint(loser_id, survivor_id)
+        else:
+            moved = self.registry.count(loser_id)
+        _note(outcome, "moved", REGISTRY_ENGAGEMENTS, moved)
 
     # -- the row itself --------------------------------------------------------------------
 

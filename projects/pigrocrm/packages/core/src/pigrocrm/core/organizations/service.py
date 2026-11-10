@@ -13,6 +13,7 @@ from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.contact_points.schemas import ContactPointIn
 from pigrocrm.core.contact_points.service import company_email_addresses, prepare, write_points
 from pigrocrm.core.db import encode_cursor
+from pigrocrm.core.engagements.registry import EngagementRegistry
 from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
 from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.fields.schemas import EntityType
@@ -761,7 +762,13 @@ class OrganizationService:
         ]
 
     def merge(
-        self, survivor_id: UUID, loser_id: UUID, actor: Actor, *, dry_run: bool = True
+        self,
+        survivor_id: UUID,
+        loser_id: UUID,
+        actor: Actor,
+        *,
+        dry_run: bool = True,
+        registry: EngagementRegistry | None = None,
     ) -> OrganizationMergeRead:
         """Folds `loser_id` into `survivor_id` (REB-995, design § 1): every deal, contract,
         invoice, person, contact point, document, task, note, timeline entry, Gmail link, draft,
@@ -772,7 +779,16 @@ class OrganizationService:
         otherwise stay behind. With `dry_run` it answers what would move and writes nothing.
 
         Two rows under different legal entities are one company used by two of them, so the
-        survivor becomes shared (`legal_entity_id` null), as `share` does by hand."""
+        survivor becomes shared (`legal_entity_id` null), as `share` does by hand.
+
+        `registry` is the tenants registry's own session for the space this one serves
+        (REB-1031), for the engagements door's `rebase_engagements.customer_id`, which lives
+        outside the space's database and would stay on the archived loser. Two databases, two
+        commits: the registry's first, after the space's writes were flushed, so a constraint
+        the merge breaks is found before anything is committed there, and a space that then
+        fails to commit is left with a registry naming the survivor, a live organization of the
+        same company, and a merge that can be run again. A caller with no space to serve (the
+        root installation, a test) passes none."""
         actor.require_unscoped_admin("merge_organizations")
         if survivor_id == loser_id:
             raise ValidationFailed(
@@ -812,27 +828,45 @@ class OrganizationService:
         survivor_name, loser_name = survivor.legal_name, loser.legal_name
 
         try:
-            outcome = OrganizationMerge(self.session).run(survivor, loser, apply=not dry_run)
+            outcome = OrganizationMerge(self.session, registry).run(
+                survivor, loser, apply=not dry_run
+            )
             if dry_run:
-                # Nothing was written; this only lets go of the two row locks.
+                # Nothing was written; this only lets go of the row locks, the registry's
+                # read transaction included.
                 self.session.commit()
+                if registry is not None:
+                    registry.rollback()
                 return self._merge_read(
                     survivor_id, loser_id, survivor_name, loser_name, outcome, dry_run
                 )
             self._record_merge(survivor, loser, outcome, actor)
+            self.session.flush()
+            if registry is not None:
+                registry.commit()
             self.session.commit()
         except IntegrityError as exc:
-            self.session.rollback()
+            self._abandon_merge(registry)
             raise Conflict(
                 ENTITY,
                 "l'unione non e' riuscita: un'altra modifica ha toccato le due anagrafiche",
                 organization_id=str(survivor_id),
             ) from exc
+        except Exception:
+            self._abandon_merge(registry)
+            raise
         read = self._merge_read(survivor_id, loser_id, survivor_name, loser_name, outcome, dry_run)
         read.survivor = OrganizationRead.model_validate(
             self.session.get_one(Organization, survivor_id)
         )
         return read
+
+    def _abandon_merge(self, registry: EngagementRegistry | None) -> None:
+        """Lets go of both transactions after a merge that did not finish: the space's writes
+        and, when the registry had not committed yet, its own."""
+        self.session.rollback()
+        if registry is not None:
+            registry.rollback()
 
     def _record_merge(
         self, survivor: Organization, loser: Organization, outcome: MergeOutcome, actor: Actor

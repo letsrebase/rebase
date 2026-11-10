@@ -1,6 +1,9 @@
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 from uuid import UUID
 
+from pigrocrm.core.engagements.registry import EngagementRegistry
 from pigrocrm.core.organizations.schemas import (
     OrganizationCreate,
     OrganizationListQuery,
@@ -67,9 +70,26 @@ def duplicates(context: McpContext) -> dict[str, Any]:
     return {"groups": [group.model_dump(mode="json") for group in groups]}
 
 
+@contextmanager
+def _registry_of_space(context: McpContext) -> Iterator[EngagementRegistry | None]:
+    """The registry's rows of the space this server serves, on a session of the registry's own
+    (REB-1031). None for the root installation, which has none. A server built for a space
+    without a way to the registry is a wiring bug, refused rather than left to point nothing."""
+    if context.space is None:
+        yield None
+        return
+    if context.registry_session is None:
+        raise RuntimeError("the MCP server of a space was built without a registry session")
+    with context.registry_session() as registry:
+        yield EngagementRegistry(registry, context.space)
+
+
 def merge(context: McpContext, survivor_id: str, loser_id: str, *, dry_run: bool) -> dict[str, Any]:
-    return (
-        OrganizationService(context.session)
-        .merge(UUID(survivor_id), UUID(loser_id), context.actor, dry_run=dry_run)
-        .model_dump(mode="json")
-    )
+    with _registry_of_space(context) as registry:
+        return (
+            OrganizationService(context.session)
+            .merge(
+                UUID(survivor_id), UUID(loser_id), context.actor, dry_run=dry_run, registry=registry
+            )
+            .model_dump(mode="json")
+        )

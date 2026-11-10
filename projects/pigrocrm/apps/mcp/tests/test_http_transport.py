@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import anyio
 import httpx2
@@ -33,12 +33,13 @@ from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import drop_database
+from pigrocrm.core.engagements.models import RebaseEngagement
 from pigrocrm.core.errors import Conflict
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.space_settings import SpaceSettingsService, SpaceSettingsUpdate
-from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
+from pigrocrm.core.tenants import Tenant, TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm_mcp.http import McpHttpApp, create_app
 
@@ -634,6 +635,78 @@ async def test_two_tokens_of_one_admin_on_an_open_space_list_different_tools(
     finally:
         engine.dispose()
     assert "issue_invoice" not in await _tool_names(app, url, open_token)
+
+
+@pytest.mark.asyncio
+async def test_a_merge_through_a_spaces_server_points_the_registry_at_the_survivor(
+    served: tuple[McpHttpApp, httpx2.AsyncClient],
+    spaces: dict[str, tuple[str, UUID]],
+    http_settings: Settings,
+) -> None:
+    """REB-1031 over the wire: the space's server hands the tool a session on the registry,
+    so the row the engagements door answers from names the survivor once the two customers are
+    one, and a preview leaves it alone."""
+    app, _ = served
+    _, user_id = spaces["spazio-uno"]
+    url = "http://prova/spazio-uno/mcp"
+    opened = http_settings.model_copy(update={"mcp_full_access": True})
+    admin = Actor(id=user_id, type="user", role="admin")
+    engine = create_engine(
+        tenant_database_url(http_settings, tenant_database_name("spazio-uno")), future=True
+    )
+    try:
+        with session_factory(engine)() as session:
+            SpaceSettingsService(session, http_settings).update(
+                SpaceSettingsUpdate(mcp_full_access=True), admin, space="spazio-uno"
+            )
+            _, token = PatService(session, settings=opened).create(
+                "fatturazione", admin, full_access=True
+            )
+            session.commit()
+    finally:
+        engine.dispose()
+
+    ids = []
+    for name in ("Acme Srl", "ACME s.r.l."):
+        created = await _call_tool(app, url, token, "create_organization", {"legal_name": name})
+        ids.append(created["id"])
+    survivor, loser = ids
+    registry = ensure_tenants_database(http_settings)
+    match_id = uuid4()
+    with session_factory(registry)() as session:
+        tenant_id = session.scalars(select(Tenant.id).where(Tenant.slug == "spazio-uno")).one()
+        session.add(
+            RebaseEngagement(match_id=match_id, tenant_id=tenant_id, customer_id=UUID(loser))
+        )
+        session.commit()
+
+    def recorded() -> UUID | None:
+        with session_factory(registry)() as session:
+            return session.scalars(
+                select(RebaseEngagement.customer_id).where(RebaseEngagement.match_id == match_id)
+            ).one()
+
+    try:
+        preview = await _call_tool(
+            app, url, token, "merge_organizations", {"survivor_id": survivor, "loser_id": loser}
+        )
+        assert preview["dry_run"] is True and preview["moved"]["rebase_engagements"] == 1
+        assert recorded() == UUID(loser)
+
+        done = await _call_tool(
+            app,
+            url,
+            token,
+            "merge_organizations",
+            {"survivor_id": survivor, "loser_id": loser, "dry_run": False},
+        )
+        assert done["moved"]["rebase_engagements"] == 1
+        assert recorded() == UUID(survivor)
+    finally:
+        with session_factory(registry)() as session:
+            session.execute(delete(RebaseEngagement).where(RebaseEngagement.match_id == match_id))
+            session.commit()
+        registry.dispose()
 
 
 # --- REB-295: the credential answers with the owner's CURRENT state -----------------
