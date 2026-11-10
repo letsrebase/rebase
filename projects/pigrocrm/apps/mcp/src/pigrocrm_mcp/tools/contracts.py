@@ -4,6 +4,7 @@ from uuid import UUID
 
 from pigrocrm.core.contract_emails.service import ContractEmailService
 from pigrocrm.core.contracts.clause_note_service import ClauseNoteService
+from pigrocrm.core.contracts.fee_billing import FeeBillingService
 from pigrocrm.core.contracts.projection_service import ContractProjectionService
 from pigrocrm.core.contracts.rate_card_service import RateCardService
 from pigrocrm.core.contracts.renewal_assumption_service import RenewalAssumptionService
@@ -149,6 +150,16 @@ def update_rate_card(
 def list_rate_cards(context: McpContext, contract_id: str) -> list[dict[str, Any]]:
     cards = RateCardService(context.session).list_for_contract(UUID(contract_id), context.actor)
     return [card.model_dump(mode="json") for card in cards]
+
+
+def fee_occurrences(
+    context: McpContext, contract_id: str, date_from: date | None, date_to: date | None
+) -> dict[str, Any]:
+    return (
+        FeeBillingService(context.session)
+        .occurrences(UUID(contract_id), date_from=date_from, date_to=date_to)
+        .model_dump(mode="json")
+    )
 
 
 def set_renewal_assumption(

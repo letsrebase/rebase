@@ -56,6 +56,8 @@ from pigrocrm.core.analytics.schemas import BindTimeRequest
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings, gmail_configured
+from pigrocrm.core.contracts.fee_billing import FeeBillingService
+from pigrocrm.core.contracts.fee_schemas import FeeBillRequest
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
 from pigrocrm.core.fiscal.iva_register import IvaRegisterService
@@ -568,6 +570,35 @@ def register(
                 BindTimeRequest(
                     entry_ids=[UUID(entry_id) for entry_id in entry_ids],
                     group_by_month=group_by_month,
+                ),
+                context.actor,
+            )
+            .model_dump(mode="json")
+        )
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def bill_contract_fee(contract_id: str, rate_card_id: str, period_start: str) -> dict[str, Any]:
+        """Creates the **draft** invoice that bills one occurrence of a contract's recurring fee:
+        one line with the rate card's fee, the card and the occurrence date on it, under the
+        contract's customer. It issues nothing and consumes no numbers: read the draft with
+        `get_invoice` and, if right, pass it to `issue_invoice`; issuing it replaces that
+        occurrence's forecast.
+
+        `period_start` (`YYYY-MM-DD`) must be a date the rate card's schedule produces, as
+        `list_fee_occurrences` lists them.
+        A second call for the same occurrence changes nothing and answers the draft or proforma
+        that already bills it (`created: false`); one on an issued invoice is refused, naming
+        the invoice. The contract has to be active, expired or terminated, and in euros.
+        """
+        return (
+            # `context.storage`, never the default, for the reason `bind_time_to_invoice` gives.
+            FeeBillingService(context.session, context.storage)
+            .bill(
+                UUID(contract_id),
+                FeeBillRequest(
+                    rate_card_id=UUID(rate_card_id),
+                    period_start=required_iso_date(period_start, "period_start"),
                 ),
                 context.actor,
             )

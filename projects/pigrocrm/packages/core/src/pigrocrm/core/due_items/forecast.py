@@ -304,21 +304,13 @@ class ForecastService:
             return
         billed = self._billed_periods([card.id for card in cards])
         horizon = today + dt.timedelta(days=HORIZON_DAYS)
-        step_of = PERIOD_STEP_MONTHS
         for card in cards:
-            occurrences = generate_recurring_fee_occurrences(contract, [card], through=horizon)
-            for index, occurrence in enumerate(occurrences):
-                key = forecast_key(CONTRACT_OCCURRENCE, card.id, occurrence.date)
-                # The span an occurrence bills runs to the next one; a one-off has no next.
-                following = (
-                    add_months(card.valid_from, (index + 1) * step_of[card.delivery_period])
-                    if card.delivery_period in step_of
-                    else None
-                )
-                if _covered(occurrence.date, following, billed.get(card.id, [])):
+            for occurrence_date, following in occurrence_spans(contract, card, horizon):
+                key = forecast_key(CONTRACT_OCCURRENCE, card.id, occurrence_date)
+                if period_covered(occurrence_date, following, billed.get(card.id, [])):
                     replaced.add(key)
                     continue
-                due = self._due_on(occurrence.date, customer.id, profile)
+                due = self._due_on(occurrence_date, customer.id, profile)
                 if due < today:
                     continue
                 total = self._total(
@@ -327,7 +319,7 @@ class ForecastService:
                             description=contract.title[:200],
                             unit_price=card.amount,
                             rate_card_id=card.id,
-                            period_start=occurrence.date,
+                            period_start=occurrence_date,
                         )
                     ],
                     profile,
@@ -341,7 +333,7 @@ class ForecastService:
                     RULE_RECURRING_FEE,
                     total,
                     due,
-                    f"Canone {contract.title} del {occurrence.date.strftime('%d/%m/%Y')}",
+                    f"Canone {contract.title} del {occurrence_date.strftime('%d/%m/%Y')}",
                     customer.id,
                 )
 
@@ -719,7 +711,26 @@ class ForecastService:
         return True
 
 
-def _covered(occurrence: date, following: date | None, billed: list[date]) -> bool:
+def occurrence_spans(
+    contract: Contract, card: RateCard, through: date
+) -> list[tuple[date, date | None]]:
+    """The occurrences of a recurring fee card up to `through`, each with the day the next one
+    falls on: the span an occurrence bills runs to there, and a one-off has no next. The one
+    place the span is cut, for the forecasts and for the action that bills an occurrence."""
+    return [
+        (
+            occurrence.date,
+            add_months(card.valid_from, (index + 1) * PERIOD_STEP_MONTHS[card.delivery_period])
+            if card.delivery_period in PERIOD_STEP_MONTHS
+            else None,
+        )
+        for index, occurrence in enumerate(
+            generate_recurring_fee_occurrences(contract, [card], through=through)
+        )
+    ]
+
+
+def period_covered(occurrence: date, following: date | None, billed: list[date]) -> bool:
     """An invoice line of the card bills this occurrence when its period starts in the span that
     runs from the occurrence to the next one; a one-off has no next, so any later period."""
     return any(
@@ -751,5 +762,7 @@ __all__ = [
     "ForecastReport",
     "ForecastService",
     "forecast_key",
+    "occurrence_spans",
+    "period_covered",
     "refresh_forecasts",
 ]

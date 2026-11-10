@@ -114,6 +114,9 @@ FORBIDDEN = (
     "skip_space_onboarding",
     # Folding two organizations into one (REB-995): an administrator's token with `full_access`.
     "merge_organizations",
+    # The draft that bills one occurrence of a contract's recurring fee (REB-1032): the bridge from
+    # a contract to an invoice line, as `bind_time_to_invoice`, so a `full_access` token's.
+    "bill_contract_fee",
     # Staff and directors with their pay (spec 2026-11-09, staff, payroll and expenses, § 4):
     # the most personal data the product holds, an administrator's token with `full_access`
     # and no other. The pay day of a legal entity has no tool and is person-only.
@@ -384,6 +387,9 @@ FORBIDDEN_QUALIFIED_CALLS: tuple[tuple[str, str], ...] = (
     ("IvaRegisterService", "list_periods"),
     ("IvaRegisterService", "read_sales_register"),
     ("IvaRegisterService", "read_purchase_register"),
+    # REB-1032: the draft of a contract's recurring fee, a `full_access` token's from
+    # `tools/privileged.py`. `bill` is a name other services may use, which is why it is qualified.
+    ("FeeBillingService", "bill"),
 )
 
 _REASON = (

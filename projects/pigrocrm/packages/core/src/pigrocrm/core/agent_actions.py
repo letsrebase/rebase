@@ -179,9 +179,12 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "close_period",
         "reopen_period",
         # The bridge from hours (and from a contract's days, REB-751) to an invoice line,
-        # and the annual estimate.
+        # and the annual estimate. A contract's recurring fee is the same bridge (REB-1032):
+        # the draft it makes names the rate card and the period, so issuing it replaces the
+        # forecast of that occurrence.
         "bind_time_to_invoice",
         "bill_contract_days",
+        "bill_contract_fee",
         "get_fiscal_estimate",
         # The dates of the taxes a legal entity owes (REB-1004): its tax position, as the estimate.
         "get_tax_calendar",
@@ -467,6 +470,7 @@ ACTION_LABELS: dict[str, str] = {
     "propose_staff_hourly_cost": "proporre il costo orario di una persona",
     "adopt_staff_hourly_cost": "adottare il costo orario di una persona",
     "get_payroll_month": "leggere la stima del mese per le persone dell'azienda",
+    "bill_contract_fee": "fatturare il canone di un contratto",
 }
 
 

@@ -139,6 +139,10 @@ _FORBIDDEN: dict[Method, str] = {
         "read_purchase_register",
     ): "REB-1024: the tax position, as `list_iva_settlements`",
     ("AnalyticsService", "get_tax_calendar"): "REB-1004: tax position, like the estimate",
+    ("FeeBillingService", "bill"): (
+        "REB-1032: `bill_contract_fee`, the draft of a contract's recurring fee: the bridge from "
+        "a contract to an invoice line, as `bind_time_to_invoice`, so a `full_access` token's"
+    ),
     ("GmailSyncService", "discover"): (
         "interroga Gmail sul dominio del cliente a carico della quota e del consenso "
         "del titolare, come `sync` e `backfill`; a differenza loro l'installazione puo' "

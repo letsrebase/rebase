@@ -58,6 +58,8 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "set_renewal_assumption": ("contracts",),
     "get_renewal_assumption": ("contracts",),
     "project_contract_revenue": ("contracts",),
+    "list_fee_occurrences": ("contracts",),
+    "bill_contract_fee": ("contracts",),
     "propose_contract": ("contracts",),
     "propose_day": ("contracts",),
     "get_work_unit": ("contracts",),

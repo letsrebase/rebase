@@ -4454,6 +4454,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/contracts/{contract_id}/fee-occurrences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Fee Occurrences
+         * @description The occurrences of the contract's recurring fee rate cards in the window, each with the
+         *     draft, proforma or issued invoice that bills it (`state` is `to_bill`, `drafted` or
+         *     `issued`). `billable` and `block_reason` say whether this contract can be billed from here at
+         *     all. Read-only.
+         */
+        get: operations["get_fee_occurrences_api_contracts__contract_id__fee_occurrences_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/contracts/{contract_id}/invoice-fee": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Invoice Fee
+         * @description Creates the draft invoice that bills one occurrence of the contract's recurring fee: one
+         *     line with the rate card's fee, the card and the occurrence date (`period_start`) on it, so
+         *     issuing the draft replaces that occurrence's forecast. It issues nothing. A second call for
+         *     the same occurrence answers the draft or proforma that already bills it with status 200; an
+         *     occurrence on an issued invoice is a 409 naming the invoice. Admin only, and an agent needs
+         *     `full_access`: what is on a draft decides what issuing will freeze.
+         */
+        post: operations["invoice_fee_api_contracts__contract_id__invoice_fee_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/contracts/{contract_id}/register": {
         parameters: {
             query?: never;
@@ -10362,6 +10410,121 @@ export interface components {
             expired: string;
             /** Share */
             share: number;
+        };
+        /** FeeBillRequest */
+        FeeBillRequest: {
+            /**
+             * Rate Card Id
+             * Format: uuid
+             * @description The recurring fee rate card of the contract to bill
+             */
+            rate_card_id: string;
+            /**
+             * Period Start
+             * Format: date
+             * @description The occurrence to bill, as the date `GET .../fee-occurrences` lists it
+             */
+            period_start: string;
+        };
+        /** FeeBilled */
+        FeeBilled: {
+            /**
+             * Created
+             * @description True when this call made the draft, false when the occurrence was already on a draft or proforma, which is the one answered
+             */
+            created: boolean;
+            invoice: components["schemas"]["InvoiceRead"];
+        };
+        /** FeeOccurrence */
+        FeeOccurrence: {
+            /**
+             * Rate Card Id
+             * Format: uuid
+             */
+            rate_card_id: string;
+            /**
+             * Period Start
+             * Format: date
+             * @description The day the occurrence falls on
+             */
+            period_start: string;
+            /**
+             * Period End
+             * @description The last day the fee covers: the day before the next occurrence, or the end of the card or the contract when that comes first. Empty for a one-off fee
+             */
+            period_end: string | null;
+            /**
+             * Delivery Period
+             * @description `monthly`, `quarterly`, `annual` or `one_off`
+             */
+            delivery_period: string;
+            /**
+             * Amount
+             * @description The fee of the rate card, before VAT
+             */
+            amount: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "to_bill" | "drafted" | "issued";
+            /** @description The draft, proforma or issued invoice that bills it; empty when `to_bill` */
+            invoice: components["schemas"]["FeeOccurrenceInvoice"] | null;
+        };
+        /**
+         * FeeOccurrenceInvoice
+         * @description The document that bills an occurrence.
+         */
+        FeeOccurrenceInvoice: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Type */
+            type: string;
+            /** Status */
+            status: string;
+            /** Year */
+            year: number | null;
+            /** Number */
+            number: number | null;
+            /** Reference */
+            reference: string | null;
+        };
+        /** FeeOccurrences */
+        FeeOccurrences: {
+            /**
+             * Contract Id
+             * Format: uuid
+             */
+            contract_id: string;
+            /** Contract Status */
+            contract_status: string;
+            /** Currency */
+            currency: string;
+            /**
+             * Billable
+             * @description Whether an occurrence of this contract can be billed from here at all
+             */
+            billable: boolean;
+            /**
+             * Block Reason
+             * @description Why not, when `billable` is false
+             */
+            block_reason: string | null;
+            /**
+             * Date From
+             * Format: date
+             */
+            date_from: string;
+            /**
+             * Date To
+             * Format: date
+             */
+            date_to: string;
+            /** Occurrences */
+            occurrences: components["schemas"]["FeeOccurrence"][];
         };
         /** FieldDefinitionCreate */
         FieldDefinitionCreate: {
@@ -51813,6 +51976,262 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InvoiceRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_fee_occurrences_api_contracts__contract_id__fee_occurrences_get: {
+        parameters: {
+            query?: {
+                /** @description From the day, inclusive. Default: 90 days ago, the occurrences somebody may have forgotten to bill */
+                from?: string | null;
+                /** @description To the day, inclusive. Default: 180 days ahead, as far as the forecasts are drawn. At most 800 days after `from` */
+                to?: string | null;
+            };
+            header?: never;
+            path: {
+                contract_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeeOccurrences"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    invoice_fee_api_contracts__contract_id__invoice_fee_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                contract_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeeBillRequest"];
+            };
+        };
+        responses: {
+            /** @description The occurrence was already on a draft invoice or a proforma: that document is answered and nothing was created (`created` is false) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeeBilled"];
+                };
+            };
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeeBilled"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

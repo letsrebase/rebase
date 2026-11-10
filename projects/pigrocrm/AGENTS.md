@@ -270,8 +270,9 @@ issues or annuls an invoice (`replace_lines` hands it the contracts the old line
 `refresh_forecasts`, run by `pigrocrm automations` after the task rules: it drops a forecast whose date has
 passed, counts a contract or a draft it could not read in `failed` (a line on stderr and exit 1, the others
 go on), and `--dry-run` rolls it back. A change to a customer's terms or to the profile's `due_days` waits
-for the next pass. No code bills a recurring fee yet: a fee invoice replaces its forecast only when its
-line names the card and the period (`InvoiceLineIn`), otherwise the forecast stands until its date passes.
+for the next pass. A fee invoice replaces its forecast only when its line names the card and the
+period (`InvoiceLineIn`), otherwise the forecast stands until its date passes; the action that writes
+such an invoice is `FeeBillingService.bill` (REB-1032, next paragraph).
 The test-only triggers in the root `conftest.py` delete the forecasts of a hand-deleted invoice or contract.
 **Recurring expenses forecast money out from a rule due items owns (REB-1022).** `RecurringExpense`
 (`recurring_expenses`, migration 0098, behind `module_guard("purchases")`) is a supplier, a total
@@ -287,6 +288,20 @@ the supplier's rules in its own transaction on create, update, cancel, archive a
 `refresh_forecasts` (so `pigrocrm automations`) rereads every active rule and every rule that still has a
 forecast, isolated per rule. Until the purchases cards write a due item for a purchase, the purchase is
 what replaces the forecast and no item stands in for it on the schedule.
+
+**«Fattura il canone» bills one occurrence of a recurring fee as a draft (REB-1032).** `contracts/fee_billing.py`:
+`bill` makes the draft invoice with the card's fee on one line, `rate_card_id` and `period_start` (the
+occurrence date) on it and the covered days in its words, under the contract's customer and legal entity, and
+issues nothing; `occurrences` lists a contract's occurrences with the document that bills each (`to_bill`,
+`drafted`, `issued`), by default the last 90 days and the forecasts' horizon ahead. The occurrence span and the
+covering rule are `occurrence_spans` and `period_covered` in `due_items/forecast.py`, the forecasts' own, so the
+two cannot drift. A date that is not one of the card's occurrences is refused naming the ones that are; an
+occurrence a draft invoice or a proforma already bills answers that document (`created` false, status 200 on
+REST), one an issued invoice bills is a 409 naming it, and a deleted draft or an annulled invoice frees it. The
+contract row is locked first, so a double click queues. It is an administrator's act (`bill_contract_fee`, in
+`FULL_ACCESS_ACTIONS` beside `bill_contract_days`): REST `POST /api/contracts/{id}/invoice-fee` and `GET
+.../fee-occurrences`, the MCP tools `bill_contract_fee` (privileged) and `list_fee_occurrences` (every token's), and
+the «Canoni» section of the contract's page. A contract still a draft, or not in euros, is not billed from here.
 **Staff and directors are written by `StaffService`, and pay is an administrator's before anything else
 (REB-977).** `staff_members` and `payroll_settings` belong to the module `staff` (default off for both
 profiles, on for a space with no profile): REST `/api/staff` carries `module_guard("staff")` and the

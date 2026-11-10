@@ -276,6 +276,13 @@ ROWS: list[Row] = [
     # The draft is `require_admin` (the rung `bind_time_to_invoice` sits on); the register's
     # PDF is a document written, so `require_write`. Both before any lookup.
     Row("POST", "/api/contracts/{contract_id}/invoice-days", body={}, admin_only=True),
+    # REB-1032: the recurring fee's draft is the same rung (`bill_contract_fee`).
+    Row(
+        "POST",
+        "/api/contracts/{contract_id}/invoice-fee",
+        body={"rate_card_id": "__FAKE__", "period_start": "2026-10-01"},
+        admin_only=True,
+    ),
     Row(
         "POST",
         "/api/contracts/{contract_id}/register/pdf",

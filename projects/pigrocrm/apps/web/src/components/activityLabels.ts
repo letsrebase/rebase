@@ -40,6 +40,8 @@ const KIND_LABELS: Record<string, string> = {
   clause_note_added: 'Nota su una clausola aggiunta',
   clause_note_updated: 'Nota su una clausola modificata',
   rate_card_updated: 'Tariffa modificata',
+  // A contract's recurring fee billed on a draft invoice (REB-1032).
+  fee_billed: 'Canone fatturato in bozza',
   expense_added: 'Spesa registrata',
   expense_updated: 'Spesa modificata',
   renewal_assumption_set: 'Assunzione di rinnovo salvata',

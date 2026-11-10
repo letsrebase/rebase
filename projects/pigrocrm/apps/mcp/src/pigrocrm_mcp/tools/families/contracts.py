@@ -397,6 +397,24 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
+    def list_fee_occurrences(
+        contract_id: str, date_from: IsoDateStr = None, date_to: IsoDateStr = None
+    ) -> dict[str, Any]:
+        """The occurrences of a contract's recurring fee rate cards (`fixed_recurring`), each with
+        its `rate_card_id`, `period_start` (the date to pass to `bill_contract_fee`), the days it
+        covers, the amount before VAT and its `state`: `to_bill`, `drafted` (a draft invoice or
+        a proforma bills it, in `invoice`) or `issued`. `billable` and `block_reason` say whether
+        the contract can be billed from here at all.
+
+        `date_from` and `date_to` (`YYYY-MM-DD`, both inclusive) default to the last 90 days and
+        the next 180; at most 800 days apart.
+        """
+        return contracts.fee_occurrences(
+            context, contract_id, iso_date(date_from, "date_from"), iso_date(date_to, "date_to")
+        )
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
     def list_contract_email_templates(contract_id: str) -> dict[str, Any]:
         """A contract's email templates: subject, body with `{{nome}}` variables, and attachments
         (invoice, register).

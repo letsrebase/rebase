@@ -15,10 +15,12 @@ import time
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Engine, select, text
+from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.contracts.fee_billing import FeeBillingService
+from pigrocrm.core.contracts.fee_schemas import FeeBilled, FeeBillRequest
 from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.clock import today_local
@@ -246,5 +248,53 @@ def test_the_issue_of_a_draft_waits_for_the_job_and_leaves_one_item_for_the_peri
             assert [(item.source_kind, item.state) for item in period] == [
                 ("sales_invoice", "expected")
             ]
+    finally:
+        _cleanup(factory, customer_id)
+
+
+def test_two_calls_billing_one_occurrence_queue_and_the_second_answers_the_first_draft(
+    db_engine: Engine, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    """A double click (REB-1032): both calls wait for the contract's lock, the first makes the
+    draft and the second finds it, so the occurrence is on one document and the answer says
+    which call made it."""
+    factory = session_factory(db_engine)
+    storage = LocalFileStorage(tmp_path / "documents")
+    customer_id: UUID | None = None
+    try:
+        customer_id, contract_id, card_id, _entity_id = _seed(factory)
+        job = factory()
+        ForecastService(job).refresh_contract(contract_id)  # holds the contract's lock
+        answers: list[FeeBilled] = []
+
+        def bill() -> None:
+            with factory() as own:
+                answers.append(
+                    FeeBillingService(own, storage).bill(
+                        contract_id, FeeBillRequest(rate_card_id=card_id, period_start=TODAY), HUMAN
+                    )
+                )
+
+        threads = [threading.Thread(target=bill) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        time.sleep(1.0)
+        assert answers == [], "a call did not wait for the contract's lock"
+        job.commit()
+        job.close()
+        for thread in threads:
+            thread.join(timeout=30)
+
+        assert sorted(answer.created for answer in answers) == [False, True]
+        assert len({answer.invoice.id for answer in answers}) == 1
+        with factory() as check:
+            assert (
+                check.scalar(
+                    select(func.count())
+                    .select_from(Invoice)
+                    .where(Invoice.customer_id == customer_id)
+                )
+                == 1
+            )
     finally:
         _cleanup(factory, customer_id)
