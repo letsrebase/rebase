@@ -57,8 +57,11 @@ SIGNATURE_LABEL = "signature-blank"
 # text; raw attributes are not read here: nothing in a letter is typeset by hand.
 PANDOC_FROM = "markdown+smart+pipe_tables"
 SENTINEL = "PGBLANK{number:04d}X"
-_PROPOSAL_OPEN = r"\[\["
-_PROPOSAL_CLOSE = r"\]\]"
+# A proposal still to be decided is `[[text]]` in the template's own prose. The markers are turned
+# into tokens of letters before the engine fills in any value, so a value that happens to contain
+# `[[` is escaped text and never one (the tokens survive pandoc like the blank sentinels do).
+_PROPOSAL_OPEN = "PGPROPOSALOPENX"
+_PROPOSAL_CLOSE = "PGPROPOSALCLOSEX"
 
 
 @dataclass(frozen=True)
@@ -146,6 +149,7 @@ def compile_text(body: str, scope: Mapping[str, Any]) -> Compiled:
     The front matter is YAML, where the engine's Markdown escaping would be an error (a backslash
     in a double-quoted string), so its fields are escaped for YAML and the rest of the text for
     Markdown."""
+    body = body.replace("[[", _PROPOSAL_OPEN).replace("]]", _PROPOSAL_CLOSE)
     nodes = parse_template(body)
     filled: dict[str, Any] = {
         key: dict(value) if isinstance(value, Mapping) else value for key, value in scope.items()

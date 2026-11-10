@@ -168,6 +168,7 @@ class OrganizationMerge:
     def run(self, survivor: Organization, loser: Organization, *, apply: bool) -> MergeOutcome:
         outcome = MergeOutcome()
         survivor_id, loser_id = survivor.id, loser.id
+        self._framework_agreements(outcome, loser_id, survivor_id, apply)
 
         for reference in REFERENCES:
             self._move_column(
@@ -184,6 +185,39 @@ class OrganizationMerge:
         return outcome
 
     # -- foreign keys ----------------------------------------------------------------------
+
+    def _framework_agreements(
+        self, outcome: MergeOutcome, loser_id: UUID, survivor_id: UUID, apply: bool
+    ) -> None:
+        """A freelancer holds one live framework agreement per regime
+        (`uq_documents_framework_agreement`): the loser's, when the survivor already has one of
+        the same regime, is archived (it stays readable, and is counted as dropped in the trace of
+        the merge) and then moved with the rest. The survivor's stays the live one."""
+        table = cast(Table, Document.__table__)
+        mine = table.alias("mine")
+        collides = and_(
+            table.c.customer_id == loser_id,
+            table.c.type == "framework_agreement",
+            table.c.deleted_at.is_(None),
+            exists().where(
+                mine.c.customer_id == survivor_id,
+                mine.c.type == "framework_agreement",
+                mine.c.letter_type == table.c.letter_type,
+                mine.c.deleted_at.is_(None),
+            ),
+        )
+        if apply:
+            result = self.session.execute(
+                update(table).where(collides).values(deleted_at=datetime.now(UTC))
+            )
+            dropped = int(result.rowcount)  # type: ignore[attr-defined]
+        else:
+            dropped = int(
+                self.session.execute(
+                    select(func.count()).select_from(table).where(collides)
+                ).scalar_one()
+            )
+        _note(outcome, "dropped", "framework_agreements", dropped)
 
     def _move_column(
         self,

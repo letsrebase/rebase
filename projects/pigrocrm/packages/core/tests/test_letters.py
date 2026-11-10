@@ -269,3 +269,16 @@ def test_a_draft_text_carries_the_watermark_and_a_final_one_refuses_proposals() 
     final_body = draft_body.replace("draft", "final")
     with pytest.raises(ValidationFailed, match="proposte"):
         typeset(compile_text(final_body, {}), "rebase", Settings())
+
+
+@needs_binaries
+def test_a_value_with_double_brackets_is_text_and_never_a_proposal() -> None:
+    body = (
+        '---\ntitle: T\nversion: "1"\ndate: 1 novembre 2026\nstatus: final\n---\n\n'
+        "Attivita: {{attivita}}\n"
+    )
+    rendered = typeset(
+        compile_text(body, {"attivita": "vedi [[nota]] e ]] fine"}), "rebase", Settings()
+    )
+    words = " ".join(_words(rendered.pdf).split())
+    assert "[[nota]]" in words and rendered.draft is False

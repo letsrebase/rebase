@@ -575,3 +575,36 @@ def test_the_loser_s_ibans_move_unless_the_survivor_has_them(db_session: Session
     }
     assert rows == {shared: "accepted", only_loser: "proposed", only_survivor: "accepted"}
     assert _count(db_session, OrganizationIban, "organization_id", loser.id) == 0
+
+
+def test_two_framework_agreements_of_one_regime_keep_the_survivors_live(
+    db_session: Session,
+) -> None:
+    """REB-1018: `uq_documents_framework_agreement` allows one live agreement per freelancer and
+    regime; the loser's is archived with a trace and moved, the other regime's moves live."""
+    pair = Pair(db_session)
+
+    def agreement(owner: Organization, regime: str) -> Document:
+        document = Document(
+            customer_id=owner.id,
+            legal_entity_id=owner.legal_entity_id,
+            type="framework_agreement",
+            title=f"Quadro {regime}",
+            letter_type=regime,
+        )
+        db_session.add(document)
+        db_session.flush()
+        return document
+
+    kept = agreement(pair.survivor, "ordinary")
+    dropped = agreement(pair.loser, "ordinary")
+    moved = agreement(pair.loser, "occasional")
+    preview = _merge(db_session, pair)
+    assert preview.dropped["framework_agreements"] == 1
+    done = _merge(db_session, pair, dry_run=False)
+    assert done.dropped["framework_agreements"] == 1
+    for document in (kept, dropped, moved):
+        db_session.refresh(document)
+        assert document.customer_id == pair.survivor.id
+    assert kept.deleted_at is None and moved.deleted_at is None
+    assert dropped.deleted_at is not None
