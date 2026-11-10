@@ -3837,7 +3837,7 @@ def _letters_shape(url: str) -> tuple[bool, bool, bool, bool]:
     )
 
 
-def test_0099_adds_the_letter_columns_and_downgrade_removes_them(pigrocrm_postgres: Any) -> None:
+def test_0092_adds_the_letter_columns_and_downgrade_removes_them(pigrocrm_postgres: Any) -> None:
     """REB-1018: nothing backfilled; the template check keeps the regime on the two letter types."""
     with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
