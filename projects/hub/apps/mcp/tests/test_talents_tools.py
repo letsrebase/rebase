@@ -4,6 +4,7 @@ list's own fields, the filters and the sort reach the service, and a page of row
 small enough to read."""
 
 import json
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -198,6 +199,21 @@ def test_an_unknown_field_is_refused_with_the_names_that_exist() -> None:
 
 
 # ---- through the tools -----------------------------------------------------------------
+
+
+async def test_the_example_fields_in_the_description_return_rows(
+    clean: sessionmaker[Session],
+) -> None:
+    """REB-909: an agent that copies the `fields` example from the tool's own description
+    gets rows, not «does not exist»."""
+    _card(clean, "ada@studio.it", card=FULL_CARD)
+    async with _server(clean) as client:
+        tool = next(t for t in (await client.list_tools()).tools if t.name == "list_talents")
+        match = re.search(r"`fields`.*?(\[\"[^\]]+\])", tool.description or "", re.S)
+        assert match, "the description has no example of `fields`"
+        example = json.loads(match.group(1))
+        page = _payload(await client.call_tool("list_talents", {"fields": example}))
+    assert page["items"] and set(page["items"][0]) == {"id", *example}
 
 
 async def test_the_default_row_is_short_and_fields_widens_it(clean: sessionmaker[Session]) -> None:
