@@ -98,6 +98,11 @@ class EngagementRepository:
             return None
         return found
 
+    def visible_organization(self, organization_id: UUID) -> Organization | None:
+        """The organization if this session may see it, archived or not: the row policy is the
+        only judge."""
+        return self.session.get(Organization, organization_id)
+
     def organization_by_hub_id(self, hub_freelancer_id: UUID) -> Organization | None:
         return self.session.execute(
             select(Organization).where(

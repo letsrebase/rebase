@@ -17,6 +17,9 @@ from pigrocrm.core.collaborators.models import ROLE_MAX_LENGTH
 from pigrocrm.core.validation import SafeStr
 
 KIND_MAX_LENGTH = 20
+# The columns are Numeric(12, 2) and Numeric(8, 2): a longer number is refused before the database.
+FEE_MAX_DIGITS = 12
+EXPECTED_DAYS_MAX_DIGITS = 8
 
 WarningCode = Literal["overlap", "over_capacity"]
 AvailabilityStatus = Literal["free", "committed", "unknown"]
@@ -44,10 +47,12 @@ class EngagementCreate(BaseModel):
     days_per_week: Decimal | None = Field(
         default=None, description="From 0.5 to 5 days, in steps of 0.5; required"
     )
-    fee: Decimal
+    fee: Decimal = Field(max_digits=FEE_MAX_DIGITS)
     fee_unit: SafeStr = Field(max_length=KIND_MAX_LENGTH, description="day | hour | flat")
     expected_days: Decimal | None = Field(
-        default=None, description="For an hourly fee, the hours divided by 8"
+        default=None,
+        max_digits=EXPECTED_DAYS_MAX_DIGITS,
+        description="For an hourly fee, the hours divided by 8",
     )
     letter_type: SafeStr | None = Field(
         default=None, max_length=KIND_MAX_LENGTH, description="ordinary | occasional"
@@ -75,9 +80,9 @@ class EngagementUpdate(BaseModel):
     starts_on: dt.date | None = None
     ends_on: dt.date | None = None
     days_per_week: Decimal | None = None
-    fee: Decimal | None = None
+    fee: Decimal | None = Field(default=None, max_digits=FEE_MAX_DIGITS)
     fee_unit: SafeStr | None = Field(default=None, max_length=KIND_MAX_LENGTH)
-    expected_days: Decimal | None = None
+    expected_days: Decimal | None = Field(default=None, max_digits=EXPECTED_DAYS_MAX_DIGITS)
     letter_type: SafeStr | None = Field(default=None, max_length=KIND_MAX_LENGTH)
     payment_rule: SafeStr | None = Field(default=None, max_length=KIND_MAX_LENGTH)
     payment_days: int | None = None
@@ -105,11 +110,15 @@ class EngagementRead(BaseModel):
     client_organization_id: UUID | None
     deal_id: UUID | None
     contract_id: UUID | None
-    role: str
+    # `role`, `fee` and the client links are `None` (and `redacted` is true) for an administrator
+    # scoped to legal entities that cannot see the engagement's client: they are the client's
+    # business, and the freelancer is shared.
+    redacted: bool = False
+    role: str | None
     starts_on: dt.date
     ends_on: dt.date | None
     days_per_week: Decimal | None
-    fee: Decimal
+    fee: Decimal | None
     fee_unit: str
     expected_days: Decimal | None
     letter_type: str

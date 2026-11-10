@@ -308,3 +308,13 @@ def test_an_agent_token_reads_and_updates_a_draft_and_needs_full_access_for_the_
     ).status_code == 200
     refused = full.post(f"/api/engagements/{sent['id']}/state", json={"state": "active"})
     assert refused.status_code == 403 and refused.json()["code"] == "agent_forbidden"
+
+
+def test_a_fee_too_long_for_its_column_is_a_422_and_not_a_500(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    _module(api_session)
+    who = _freelancer(api_session)
+    for overrides in ({"fee": "1" + "0" * 12}, {"fee": "1E+20"}, {"expected_days": "1" + "0" * 8}):
+        response = logged_in.post("/api/engagements", json=_body(who, **overrides))
+        assert response.status_code == 422, (overrides, response.text)

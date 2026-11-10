@@ -268,3 +268,16 @@ async def test_a_malformed_argument_comes_back_as_guidance(
     for refused in results:
         assert refused.is_error
         assert "errors.pydantic.dev" not in refused.content[0].text  # type: ignore[union-attr]
+
+
+async def test_a_fee_too_long_for_its_column_comes_back_as_guidance(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    who = _freelancer(mcp_session)
+    async with Client(
+        _server(mcp_session, tmp_path, full_access=True, module_collaborators=True)
+    ) as client:
+        refused = await client.call_tool("create_engagement", _args(who, fee="1" + "0" * 12))
+
+    assert refused.is_error
+    assert "errors.pydantic.dev" not in refused.content[0].text  # type: ignore[union-attr]

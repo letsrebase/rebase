@@ -37,7 +37,8 @@ WEEK_CAPACITY = DAYS_PER_WEEK_MAX
 TRANSITIONS: Final[dict[str, tuple[str, ...]]] = {
     "draft": ("awaiting_signature", "cancelled"),
     "awaiting_signature": ("active", "cancelled"),
-    "active": ("concluded",),
+    # Called off before it starts: once the first day has come it is closed, never cancelled.
+    "active": ("concluded", "cancelled"),
     "concluded": (),
     "cancelled": (),
 }

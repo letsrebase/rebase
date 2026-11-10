@@ -131,7 +131,11 @@ class EngagementService:
                     "cliente. Annulla l'incarico e rifallo per cambiare altro",
                     fields=frozen,
                 )
-        freelancer = self._freelancer(engagement.freelancer_id)
+        # Only what the request touches is re-checked: an archived client or freelancer must not
+        # stop an admin filling in `days_per_week` of an imported engagement.
+        freelancer = self.repo.visible_organization(engagement.freelancer_id)
+        if freelancer is None:
+            raise NotFound("organization", engagement.freelancer_id)
         values = {
             column: changes.get(column, getattr(engagement, column)) for column in _VALUE_COLUMNS
         }
@@ -144,9 +148,10 @@ class EngagementService:
         ):
             values["client_organization_id"] = None
         self._validate(values, freelancer, set(changes))
-        client = self._client(values, freelancer.id)
-        if client != engagement.client_organization_id:
-            changes["client_organization_id"] = client
+        if {"client_organization_id", "deal_id", "contract_id"} & set(changes):
+            client = self._client(values, freelancer.id)
+            if client != engagement.client_organization_id:
+                changes["client_organization_id"] = client
         # A rule restated clears what it does not use, even when the request did not say so.
         if "payment_rule" in changes:
             for column in PAYMENT_FIELDS:
@@ -185,6 +190,13 @@ class EngagementService:
         engagement = self._found(engagement_id, lock=True)
         rules.check_transition(engagement.state, state)
         previous = engagement.state
+        if state == "cancelled" and previous == "active" and engagement.starts_on <= today_local():
+            raise ValidationFailed(
+                ENTITY,
+                "state",
+                "un incarico gia' iniziato si chiude, non si annulla",
+                expected="close_engagement",
+            )
         if state == "concluded":
             last = ended_on or today_local()
             if last < engagement.starts_on:
@@ -309,6 +321,13 @@ class EngagementService:
 
     def _read(self, engagement: Engagement, *, with_warnings: bool = True) -> EngagementRead:
         out = EngagementRead.model_validate(engagement)
+        client = engagement.client_organization_id
+        if client is not None and self.repo.visible_organization(client) is None:
+            # A freelancer shared across legal entities, an engagement for a client this admin's
+            # scope does not show: the days and the state stay, what is the client's goes.
+            out.redacted = True
+            out.role = out.fee = None
+            out.client_organization_id = out.deal_id = out.contract_id = None
         if with_warnings and engagement.state in LIVE_STATES:
             out.warnings = self._warnings(engagement)
         return out
@@ -456,7 +475,12 @@ class FreelancerService:
         commitments = [
             Commitment(e.id, e.starts_on, e.ends_on, e.days_per_week)
             for e in self.repo.of_freelancer(
-                freelancer.id, ("active",), date_from=start, date_to=end
+                freelancer.id,
+                ("active",),
+                date_from=start,
+                # To the Sunday of the last week shown: an engagement that starts on its Thursday
+                # still commits that week.
+                date_to=rules.monday(end) + dt.timedelta(days=6),
             )
         ]
         out: list[AvailabilityWeek] = []

@@ -330,7 +330,7 @@ def test_the_states_follow_the_table_and_nothing_goes_back(
     assert {state: rules.TRANSITIONS[state] for state in rules.TRANSITIONS} == {
         "draft": ("awaiting_signature", "cancelled"),
         "awaiting_signature": ("active", "cancelled"),
-        "active": ("concluded",),
+        "active": ("concluded", "cancelled"),
         "concluded": (),
         "cancelled": (),
     }
@@ -793,3 +793,97 @@ def test_the_tax_data_lands_on_the_organization_and_the_kind_is_checked(
         )
     with pytest.raises(NotFound):
         freelancers.set_tax_data(uuid4(), FreelancerTaxData(tax_code="X"), ADMIN)
+
+
+# ---- review findings ----------------------------------------------------------------------------
+
+
+def test_an_engagement_starting_late_in_the_last_week_still_commits_that_week(
+    db_session: Session, service: EngagementService
+) -> None:
+    who = freelancer(db_session)
+    # Starts on the Friday of the week the answer ends on (date_to is the Wednesday of it).
+    made = make(service, who, starts_on=D(2026, 11, 13), ends_on=None, days_per_week=Decimal("2"))
+    activate(service, made.id)
+
+    answer = FreelancerService(db_session).availability(
+        ADMIN, freelancer_id=who.id, date_from=MONDAY, date_to=D(2026, 11, 11)
+    )
+
+    assert [(w.week, w.status) for w in answer.weeks] == [
+        ("2026-W45", "free"),
+        ("2026-W46", "committed"),
+    ]
+
+
+def test_a_fee_too_long_for_its_column_is_refused_before_the_database() -> None:
+    from pydantic import ValidationError
+
+    for bad in ("1" + "0" * 12, "1E+20"):
+        with pytest.raises(ValidationError):
+            EngagementCreate(
+                freelancer_id=uuid4(),
+                role="x",
+                starts_on=MONDAY,
+                fee=Decimal(bad),
+                fee_unit="day",
+                payment_rule="fixed_term",
+                payment_days=30,
+            )
+    with pytest.raises(ValidationError):
+        EngagementUpdate(expected_days=Decimal("1" + "0" * 8))
+
+
+def test_an_archived_link_does_not_stop_filling_in_the_days(
+    db_session: Session, service: EngagementService
+) -> None:
+    from datetime import UTC, datetime
+
+    who = freelancer(db_session)
+    client = make_customer(db_session)
+    made = make(service, who, client_organization_id=client.id)
+    service.update(made.id, EngagementUpdate(days_per_week=None), ADMIN)
+    activate(service, made.id)
+    client.deleted_at = datetime.now(UTC)
+    who.deleted_at = datetime.now(UTC)
+    db_session.flush()
+
+    filled = service.update(made.id, EngagementUpdate(days_per_week=Decimal("2")), ADMIN)
+
+    assert filled.days_per_week == Decimal("2")
+    # Naming the archived client in a change is still refused.
+    with pytest.raises(NotFound):
+        service.update(made.id, EngagementUpdate(client_organization_id=client.id), ADMIN)
+
+
+def test_an_active_engagement_can_be_called_off_only_before_it_starts(
+    db_session: Session, service: EngagementService
+) -> None:
+    who = freelancer(db_session)
+    future = make(service, who, starts_on=D(2099, 1, 4), ends_on=D(2099, 2, 1))
+    started = make(service, who)
+    for made in (future, started):
+        activate(service, made.id)
+
+    assert service.cancel(future.id, ADMIN).state == "cancelled"
+    with pytest.raises(ValidationFailed, match="si chiude, non si annulla"):
+        service.cancel(started.id, ADMIN)
+
+
+def test_what_is_the_clients_is_left_out_for_an_admin_who_cannot_see_the_client(
+    db_session: Session, service: EngagementService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The row policy answers «not visible» for the client of a scoped admin; the stand-in here
+    is that answer, the policy itself being `test_legal_entity_scope`'s."""
+    who = freelancer(db_session)
+    client = make_customer(db_session)
+    made = make(service, who, client_organization_id=client.id)
+    activate(service, made.id)
+    from pigrocrm.core.collaborators.repository import EngagementRepository
+
+    monkeypatch.setattr(EngagementRepository, "visible_organization", lambda self, i: None)
+    read = service.get(made.id, ADMIN)
+
+    assert read.redacted is True
+    assert (read.role, read.fee, read.client_organization_id) == (None, None, None)
+    assert read.days_per_week == Decimal("3") and read.state == "active"

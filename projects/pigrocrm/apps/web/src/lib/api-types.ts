@@ -15305,8 +15305,13 @@ export interface components {
             deal_id: string | null;
             /** Contract Id */
             contract_id: string | null;
+            /**
+             * Redacted
+             * @default false
+             */
+            redacted: boolean;
             /** Role */
-            role: string;
+            role: string | null;
             /**
              * Starts On
              * Format: date
@@ -15317,7 +15322,7 @@ export interface components {
             /** Days Per Week */
             days_per_week: string | null;
             /** Fee */
-            fee: string;
+            fee: string | null;
             /** Fee Unit */
             fee_unit: string;
             /** Expected Days */
