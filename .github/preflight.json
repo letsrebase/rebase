@@ -468,6 +468,15 @@
       "why": "REB-904. No Italian in an identifier, a file name or a comment (strings are the product's own copy and are not read). Seconds: Python through tokenize and ast, TypeScript through the workspace's `typescript` package, so `pnpm install` once is all it needs. The unit tests plant an Italian name and expect a failure. ci.yml's `english-lint` job runs the same two commands; the vocabulary is docs/glossary.md's and the exceptions are tooling/english-lint/allowlist.py."
     },
     {
+      "id": "infra-dns-names",
+      "run": "python3 -m unittest discover -s tooling/english-lint -p 'test_check_dns_names.py' && python3 tooling/english-lint/check_dns_names.py",
+      "when": [
+        "infra/cloudflare/**",
+        "tooling/english-lint/**"
+      ],
+      "why": "REB-914. No DNS record name carries an Italian word (proper nouns allowed, `firma` and `pigro` until REB-918), read with the English lint's own vocabulary. Stdlib Python, milliseconds; ci.yml's `infra` job runs the same two commands."
+    },
+    {
       "id": "infra-nginx",
       "run": "bash scripts/check-nginx.sh",
       "when": [

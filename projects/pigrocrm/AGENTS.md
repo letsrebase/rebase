@@ -365,7 +365,7 @@ the sudo log, the journal and `ps` on the host, and in the client's own config f
 outside the checkout, so no deploy touches it. The launch names only the path:
 
 ```
-ssh -o BatchMode=yes <host> "cd /opt/pigrocrm/projects/pigrocrm && sudo sh -c 'set -a; . /etc/pigrocrm/mcp-token.env; set +a; exec docker compose --env-file ../../.env exec -T -e PIGROCRM_TOKEN api uv run --no-sync python -m pigrocrm_mcp'"
+ssh -o BatchMode=yes <host> "cd /opt/pigrocrm/projects/pigrocrm && sudo sh -c 'set -a; . /etc/pigrocrm/mcp-token.env; set +a; exec docker compose -p pigrocrm --env-file ../../.env exec -T -e PIGROCRM_TOKEN api uv run --no-sync python -m pigrocrm_mcp'"
 ```
 
 `-e PIGROCRM_TOKEN` with no value makes compose copy the variable from its own

@@ -7,10 +7,16 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Path, Query, status
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.activities.schemas import ActivityRead
+from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.config import Settings
 from pigrocrm.core.modules import enabled_modules
 from pigrocrm.core.reminders.detectors import off_types
-from pigrocrm.core.reminders.preferences import ReminderPreferenceService
+from pigrocrm.core.reminders.preferences import (
+    SPACE_DEFAULTS_ENTITY,
+    SPACE_DEFAULTS_ID,
+    ReminderPreferenceService,
+)
 from pigrocrm.core.reminders.schemas import (
     AcknowledgeRequest,
     ReminderPreferenceRead,
@@ -25,7 +31,7 @@ from pigrocrm.core.reminders.service import ReminderService
 from pigrocrm.core.reminders.state import ReminderStateService
 from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
-from pigrocrm_api.query_params import PAGE_LIMIT_MAX
+from pigrocrm_api.query_params import PAGE_LIMIT_DEFAULT, PAGE_LIMIT_MAX
 
 router = APIRouter(
     prefix="/api/reminders",
@@ -101,6 +107,19 @@ def reset_preference(
     """The way back to the default value: deletes your choice (or the space's),
     so that a later change of the default still reaches you."""
     ReminderPreferenceService(session).reset(actor, scope, type_key)
+
+
+@router.get("/defaults/timeline", response_model=list[ActivityRead])
+def defaults_timeline(
+    session: SessionDep,
+    actor: ActorDep,
+    limit: Annotated[int, Query(ge=1, le=PAGE_LIMIT_MAX)] = PAGE_LIMIT_DEFAULT,
+) -> list[ActivityRead]:
+    """Who changed or reset the space's reminder defaults, and when, newest first. For the
+    administrators who can change them (REB-828); a person's own preferences are not
+    recorded."""
+    actor.require_unscoped_admin("read_reminder_defaults_timeline")
+    return ActivityService(session).timeline(SPACE_DEFAULTS_ENTITY, SPACE_DEFAULTS_ID, limit)
 
 
 @router.get("/state", response_model=list[ReminderStateRead])

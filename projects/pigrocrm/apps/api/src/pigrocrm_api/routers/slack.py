@@ -19,13 +19,17 @@ one over its fake (`app.dependency_overrides[slack_client]`) and nothing here re
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import RedirectResponse
 
+from pigrocrm.core.activities.schemas import ActivityRead
+from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.config import Settings
 from pigrocrm.core.errors import DomainError
 from pigrocrm.core.slack.client import SlackClient, slack_client_for
+from pigrocrm.core.slack.errors import SLACK_ENTITY
 from pigrocrm.core.slack.oauth import SlackOAuthService
+from pigrocrm.core.slack.repository import SlackRepository
 from pigrocrm.core.slack.schemas import (
     SlackChannelRead,
     SlackChannelWrite,
@@ -37,6 +41,7 @@ from pigrocrm.core.slack.service import SlackService
 from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.oauth_callback import finish_consent
+from pigrocrm_api.query_params import PAGE_LIMIT_DEFAULT, PAGE_LIMIT_MAX
 
 router = APIRouter(prefix="/api/slack", tags=["slack"], responses=PROBLEM_RESPONSES)
 # The one public route is the OAuth callback: a browser navigation that decides for itself
@@ -73,6 +78,22 @@ def read_account(
     """200 even when Slack is not configured: see the module docstring. Admins only, since
     it lists every user of the space."""
     return _service(session, settings, client).health(actor)
+
+
+@authenticated.get("/timeline", response_model=list[ActivityRead])
+def read_timeline(
+    session: SessionDep,
+    actor: ActorDep,
+    limit: Annotated[int, Query(ge=1, le=PAGE_LIMIT_MAX)] = PAGE_LIMIT_DEFAULT,
+) -> list[ActivityRead]:
+    """Who connected, disconnected or changed the Slack settings, and when, newest first,
+    for the administrators who can make those changes (REB-828). Empty while the space has
+    never had a workspace."""
+    actor.require_unscoped_admin("read_slack_timeline")
+    workspace = SlackRepository(session).workspace()
+    if workspace is None:
+        return []
+    return ActivityService(session).timeline(SLACK_ENTITY, workspace.id, limit)
 
 
 @authenticated.get("/me", response_model=SlackMine)

@@ -14,6 +14,10 @@ from pigrocrm.core.validation import SafeStr
 SLUG_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])")
 SLUG_MIN = 3
 SLUG_MAX = 32
+# One half of a person's name, the people's and the hub's own bound; the two together are
+# cut to `UserCreate.name`'s 200 in `TenantSignup.founder_name`.
+FOUNDER_NAME_PART_MAX = 120
+FOUNDER_NAME_MAX = 200
 
 # Already paths of the site (deploy/nginx/spa.conf, the landing, the SPA), so a space
 # with one of these names would shadow them or be shadowed by them. `root` is not a path:
@@ -73,8 +77,23 @@ class TenantSignup(BaseModel):
     # What the wizard learned from the hub about this address: decides whether the
     # welcome mail tells the person about rebase. Never trusted for anything else.
     member: bool = False
+    # The founder's own name, never the space's (REB-822). Optional on the wire because
+    # the signup route fills them from the hub when the person did not type them;
+    # `TenantService.provision` refuses a signup that still has no first name, so no
+    # space is ever created with a founder named after it.
+    first_name: SafeStr | None = Field(default=None, max_length=FOUNDER_NAME_PART_MAX)
+    last_name: SafeStr | None = Field(default=None, max_length=FOUNDER_NAME_PART_MAX)
 
     model_config = ConfigDict(extra="forbid")
+
+    @property
+    def founder_name(self) -> str:
+        """`Ada Lovelace`: what the founder's account is called, empty when the signup
+        carries no first name."""
+        first = (self.first_name or "").strip()
+        if not first:
+            return ""
+        return f"{first} {(self.last_name or '').strip()}".strip()[:FOUNDER_NAME_MAX]
 
     @field_validator("slug")
     @classmethod

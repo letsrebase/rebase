@@ -18,9 +18,10 @@ stopped being their last caller.
 import logging
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from rebase_api.deps import (
@@ -36,7 +37,7 @@ from rebase_api.deps import (
     SettingsDep,
 )
 from rebase_api.downloads import cv_response, pdf_response
-from rebase_api.params import Cursor, Limit, SearchQ
+from rebase_api.params import Cursor, Limit, SearchQ, TalentTerms
 from rebase_core.admin_schemas import CrmLinkBody, StatusChange, VettedChange
 from rebase_core.admin_tokens import AdminList, AdminRead
 from rebase_core.anonymous_cv.render import CvHead, filename
@@ -83,6 +84,7 @@ from rebase_core.referral_schemas import (
     ReferralSettingsUpdate,
 )
 from rebase_core.referral_settings import ReferralSettingsService
+from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.service import SignupService
 from rebase_core.signup_schemas import SignupList
 from rebase_core.talent_schemas import TalentList, TalentRead
@@ -588,6 +590,15 @@ def list_talents(
     with_logins: bool | None = None,
     created_from: datetime | None = None,
     created_to: datetime | None = None,
+    skills: TalentTerms = None,
+    location: Annotated[str | None, Query(max_length=SEARCH_MAX_LENGTH)] = None,
+    seniority: TalentTerms = None,
+    min_years: Annotated[int | None, Query(ge=0)] = None,
+    max_years: Annotated[int | None, Query(ge=0)] = None,
+    industries: TalentTerms = None,
+    languages: TalentTerms = None,
+    card: Annotated[str | None, Query(max_length=20)] = None,
+    sort: Annotated[str | None, Query(max_length=30)] = None,
 ) -> TalentList:
     """`talents` (REB-282): every freelancer card and every bare sign-up as one list,
     `status` «lead» for the bare ones -- the read model «Developer e CTO» and
@@ -595,7 +606,10 @@ def list_talents(
     changes here. REB-285 adds `q` (first_name/last_name/email/job_title, trigram-ordered),
     `cursor`, and every filter after `status`. `origin` is the channel a row shows
     (`form`, `wizard`, `admin`) and `origin_page` the marketing page the person
-    started from (REB-798; the page filter was `origin` before)."""
+    started from (REB-798; the page filter was `origin` before). REB-823 gives the screen
+    what the MCP tool `list_talents` already took (REB-778, REB-801): `skills`, `location`,
+    `seniority`, `min_years`, `max_years`, `industries`, `languages`, `card` and `sort`,
+    read by the same service, which refuses a value it does not allow."""
     return TalentsService(session).list_recent(
         limit=limit,
         status=status,
@@ -612,6 +626,15 @@ def list_talents(
         with_logins=with_logins,
         created_from=created_from,
         created_to=created_to,
+        skills=skills,
+        location=location,
+        seniority=seniority,
+        min_years=min_years,
+        max_years=max_years,
+        industries=industries,
+        languages=languages,
+        card=card,
+        sort=sort,
     )
 
 

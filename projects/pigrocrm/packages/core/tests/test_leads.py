@@ -110,7 +110,7 @@ def door(db_engine: Engine) -> Iterator[Door]:
     registry = ensure_tenants_database(settings)
     with session_factory(registry)() as session:
         TenantService(session, settings).provision(
-            TenantSignup(slug=SLUG, name="rebase", email="spazio@studio.it")
+            TenantSignup(first_name="Ada", slug=SLUG, name="rebase", email="spazio@studio.it")
         )
     try:
         yield Door(settings, registry)

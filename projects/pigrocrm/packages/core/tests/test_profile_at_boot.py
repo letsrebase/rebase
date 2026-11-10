@@ -73,7 +73,7 @@ def _open(db_engine: Engine, registry: Engine, spaces: list[str], slug: str) -> 
     spaces.append(slug)
     with session_factory(registry)() as session:
         TenantService(session, _settings(db_engine)).provision(
-            TenantSignup(slug=slug, name="Ada", email=f"{slug}@studio.it")
+            TenantSignup(first_name="Ada", slug=slug, name="Ada", email=f"{slug}@studio.it")
         )
 
 

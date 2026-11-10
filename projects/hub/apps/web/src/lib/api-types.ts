@@ -692,7 +692,10 @@ export interface paths {
          *     changes here. REB-285 adds `q` (first_name/last_name/email/job_title, trigram-ordered),
          *     `cursor`, and every filter after `status`. `origin` is the channel a row shows
          *     (`form`, `wizard`, `admin`) and `origin_page` the marketing page the person
-         *     started from (REB-798; the page filter was `origin` before).
+         *     started from (REB-798; the page filter was `origin` before). REB-823 gives the screen
+         *     what the MCP tool `list_talents` already took (REB-778, REB-801): `skills`, `location`,
+         *     `seniority`, `min_years`, `max_years`, `industries`, `languages`, `card` and `sort`,
+         *     read by the same service, which refuses a value it does not allow.
          */
         get: operations["list_talents_api_hub_talent_get"];
         put?: never;
@@ -8014,6 +8017,15 @@ export interface operations {
                 with_logins?: boolean | null;
                 created_from?: string | null;
                 created_to?: string | null;
+                skills?: string[] | null;
+                location?: string | null;
+                seniority?: string[] | null;
+                min_years?: number | null;
+                max_years?: number | null;
+                industries?: string[] | null;
+                languages?: string[] | null;
+                card?: string | null;
+                sort?: string | null;
             };
             header?: never;
             path?: never;

@@ -100,7 +100,7 @@ def test_malformed_and_reserved_slugs_are_refused_with_a_reason(slug: str) -> No
 
 def test_the_signup_schema_refuses_a_reserved_name_before_anything_else() -> None:
     with pytest.raises(ValueError, match="riservato"):
-        TenantSignup(slug="app", name="Ada", email="ada@studio.it")
+        TenantSignup(first_name="Ada", slug="app", name="Ada", email="ada@studio.it")
 
 
 def test_the_database_name_is_an_unquoted_identifier() -> None:
@@ -153,7 +153,7 @@ def test_provisioning_creates_a_migrated_database_with_one_admin(
     slug = "prova-spazio"
     try:
         created = service.provision(
-            TenantSignup(slug=slug, name="Ada Lovelace", email="Ada@Studio.it")
+            TenantSignup(first_name="Ada", slug=slug, name="Ada Lovelace", email="Ada@Studio.it")
         )
         assert created.slug == slug
         assert created.owner_email == "ada@studio.it"
@@ -197,15 +197,69 @@ def test_provisioning_creates_a_migrated_database_with_one_admin(
         registry_session.commit()
 
 
+def test_the_founder_carries_the_persons_name_and_never_the_spaces(
+    settings: Settings, registry_session: Session
+) -> None:
+    service = TenantService(registry_session, settings)
+    slug = "studio-fondatore"
+    try:
+        service.provision(
+            TenantSignup(
+                slug=slug,
+                name="Rossi Studio",
+                email="ada@studio.it",
+                first_name=" Ada ",
+                last_name="Lovelace",
+            )
+        )
+        space = create_engine(
+            tenant_database_url(settings, tenant_database_name(slug)), future=True
+        )
+        try:
+            with space.connect() as connection:
+                assert connection.execute(text("select name from users")).scalars().all() == [
+                    "Ada Lovelace"
+                ]
+                # The space's name is the emitter's, which is the space's business.
+                legal = connection.execute(text("select legal_name from legal_entities"))
+                assert legal.scalars().all() == ["Rossi Studio"]
+        finally:
+            space.dispose()
+    finally:
+        _drop(settings, slug)
+        registry_session.execute(text("delete from tenants where slug = :s"), {"s": slug})
+        registry_session.commit()
+
+
+@pytest.mark.parametrize("names", [{}, {"first_name": "  "}, {"last_name": "Lovelace"}])
+def test_a_signup_without_a_first_name_is_refused_before_any_space_exists(
+    settings: Settings, registry_session: Session, names: dict[str, str]
+) -> None:
+    """REB-822: the space's name is never turned into the founder's."""
+    service = TenantService(registry_session, settings)
+    with pytest.raises(ValidationFailed) as refused:
+        service.provision(
+            TenantSignup(slug="senza-nome", name="Rossi Studio", email="ada@studio.it", **names)
+        )
+    assert refused.value.details["field"] == "first_name"
+    assert (
+        registry_session.scalar(text("select count(*) from tenants where slug='senza-nome'")) == 0
+    )
+
+
 def test_the_same_name_twice_is_a_conflict_and_leaves_the_first_space_alone(
     settings: Settings, registry_session: Session
 ) -> None:
     service = TenantService(registry_session, settings)
     slug = "prova-doppio"
     try:
-        service.provision(TenantSignup(slug=slug, name="Ada", email="ada@studio.it"))
+        service.provision(
+            TenantSignup(first_name="Ada", slug=slug, name="Ada", email="ada@studio.it")
+        )
         with pytest.raises(Conflict):
-            service.provision(TenantSignup(slug=slug, name="Bob", email="bob@studio.it"))
+            service.provision(
+                TenantSignup(first_name="Ada", slug=slug, name="Bob", email="bob@studio.it")
+            )
         space = create_engine(
             tenant_database_url(settings, tenant_database_name(slug)), future=True
         )
@@ -236,7 +290,9 @@ def test_a_refused_admin_provisions_nothing_and_frees_the_name(
     service = TenantService(registry_session, settings)
     slug = "prova-rifiuto"
     with pytest.raises(ValidationFailed):
-        service.provision(TenantSignup(slug=slug, name="Ada", email="ada@studio.it"))
+        service.provision(
+            TenantSignup(first_name="Ada", slug=slug, name="Ada", email="ada@studio.it")
+        )
     assert service.availability(slug).available is True
     assert (
         registry_session.execute(
@@ -255,7 +311,13 @@ def test_the_signup_refuses_a_password_it_no_longer_asks_for() -> None:
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        TenantSignup(slug="prova", name="Ada", email="ada@studio.it", password="lunghissima1")  # type: ignore[call-arg]
+        TenantSignup(
+            first_name="Ada",
+            slug="prova",
+            name="Ada",
+            email="ada@studio.it",
+            password="lunghissima1",
+        )  # type: ignore[call-arg]
 
 
 def test_the_cli_furnishes_an_existing_space_that_has_nothing(
@@ -269,7 +331,9 @@ def test_the_cli_furnishes_an_existing_space_that_has_nothing(
     service = TenantService(registry_session, settings)
     slug = "prova-arredo"
     try:
-        service.provision(TenantSignup(slug=slug, name="Ada", email="ada@studio.it"))
+        service.provision(
+            TenantSignup(first_name="Ada", slug=slug, name="Ada", email="ada@studio.it")
+        )
         space = create_engine(
             tenant_database_url(settings, tenant_database_name(slug)), future=True
         )
@@ -315,7 +379,9 @@ def test_the_cli_skips_a_space_it_cannot_reach_and_still_furnishes_the_others(
     slug = "prova-vicino"
     ghost = "prova-fantasma"
     try:
-        service.provision(TenantSignup(slug=slug, name="Ada", email="ada@studio.it"))
+        service.provision(
+            TenantSignup(first_name="Ada", slug=slug, name="Ada", email="ada@studio.it")
+        )
         # A registry row whose database does not exist: the eight-spaces boot must not
         # stop here, and the failure must not name the URL.
         registry_session.add(
@@ -367,7 +433,9 @@ def test_the_cli_migrates_a_space_left_behind_before_furnishing_it(
     service = TenantService(registry_session, settings)
     slug = "prova-indietro"
     try:
-        service.provision(TenantSignup(slug=slug, name="Ada", email="ada@studio.it"))
+        service.provision(
+            TenantSignup(first_name="Ada", slug=slug, name="Ada", email="ada@studio.it")
+        )
         url = tenant_database_url(settings, tenant_database_name(slug))
         space = create_engine(url, future=True)
         try:
@@ -461,7 +529,9 @@ def test_a_failing_seed_undoes_the_space_and_frees_the_name(
     service = TenantService(registry_session, settings)
     slug = "prova-seme"
     with pytest.raises(RuntimeError):
-        service.provision(TenantSignup(slug=slug, name="Ada", email="ada@studio.it"))
+        service.provision(
+            TenantSignup(first_name="Ada", slug=slug, name="Ada", email="ada@studio.it")
+        )
     assert service.availability(slug).available is True
     with create_engine(settings.database_url, future=True).connect() as connection:
         exists = connection.execute(
@@ -521,7 +591,9 @@ def test_welcome_answers_the_entering_link_and_none_without_a_public_origin(
     service = TenantService(registry_session, settings)
     slug = "prova-welcome"
     try:
-        tenant = service.provision(TenantSignup(slug=slug, name="Ada", email="ada@studio.it"))
+        tenant = service.provision(
+            TenantSignup(first_name="Ada", slug=slug, name="Ada", email="ada@studio.it")
+        )
         space_engine = create_engine(
             tenant_database_url(settings, tenant_database_name(slug)), future=True
         )

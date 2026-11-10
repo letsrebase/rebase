@@ -117,7 +117,9 @@ def shared(api_engine: Engine) -> Iterator[TestClient]:
 
 
 def _sign_up(client: TestClient, slug: str, email: str) -> None:
-    created = client.post("/api/tenants/", json={"slug": slug, "name": "Ada", "email": email})
+    created = client.post(
+        "/api/tenants/", json={"slug": slug, "name": "Ada", "first_name": "Ada", "email": email}
+    )
     assert created.status_code == 201, created.text
 
 

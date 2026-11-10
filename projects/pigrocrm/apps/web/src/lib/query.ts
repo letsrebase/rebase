@@ -17,6 +17,10 @@ export const queryClient = new QueryClient({
   },
 })
 
+/** The id the history of a space-wide setting is read and invalidated under: `slack` and
+ *  `reminder_defaults` have one history each and no row to name (REB-828). */
+export const SETTINGS_TIMELINE_ID = 'space'
+
 export const queryKeys = {
   me: ['me'] as const,
   // The other spaces this identity may reach, and the installation's own root name

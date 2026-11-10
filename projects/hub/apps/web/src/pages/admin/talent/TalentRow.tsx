@@ -4,7 +4,7 @@ import { TableCell, TableRow } from '@rebase/ui/table'
 import { WebLink } from '@/components/WebLink'
 import { admin, type Talent } from '@/lib/api'
 import { failureMessage } from '@/lib/adminList'
-import { REMOTE_LABELS, formatDate } from '@/lib/format'
+import { REMOTE_LABELS, SENIORITY_LABELS, formatDate } from '@/lib/format'
 import { formatMoney } from '@rebase/ui/format'
 import { keys } from '@/lib/query-keys'
 import { isHttpUrl } from '@/lib/url'
@@ -46,6 +46,13 @@ export function TalentRow({ item }: { item: Talent }) {
           <DuplicatePill others={item.duplicate_possible_of} />
         </div>
       </TableCell>
+      <TableCell>
+        <p className="font-medium">{item.role ?? '—'}</p>
+        <p className="text-xs text-muted-foreground">{profileLine(item)}</p>
+      </TableCell>
+      <TableCell className="max-w-64 text-muted-foreground">
+        {item.skills.length > 0 ? item.skills.slice(0, FIRST_SKILLS).join(', ') : '—'}
+      </TableCell>
       <TableCell className="text-right text-muted-foreground">
         {item.daily_rate === null ? '—' : formatMoney(item.daily_rate)}
       </TableCell>
@@ -78,6 +85,18 @@ export function TalentRow({ item }: { item: Talent }) {
       </TableCell>
     </TableRow>
   )
+}
+
+/** The skills a row names: the card lists up to twenty, the first ones are what the
+ *  person leads with. */
+const FIRST_SKILLS = 5
+
+/** «Senior · 9 anni · Milano», what of it the card says; nothing for a row without one. */
+function profileLine(item: Talent): string {
+  const years =
+    item.experience_years === null ? null : item.experience_years === 1 ? '1 anno' : `${item.experience_years} anni`
+  const level = item.seniority ? (SENIORITY_LABELS[item.seniority] ?? item.seniority) : null
+  return [level, years, item.location].filter(Boolean).join(' · ') || '—'
 }
 
 /** `TalentRead.remote` is `str | None`, not narrowed to `Remote` (REB-558 review): the

@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@rebase/ui/skeleton'
 import { toProblem } from '@/lib/api'
 import { formatInstant } from '@/features/gmail/instants'
+import { SettingsHistory } from '@/features/settings/SettingsHistory'
 import {
   SLACK_OAUTH_START,
   useDisconnectSlack,
@@ -78,15 +79,20 @@ export function SlackPanel() {
   const health = query.data
   if (!health.configured) return <NotConfigured />
   const workspace = health.workspace
-  if (workspace === null || workspace.status === 'disconnected') {
-    return <NotConnected workspace={workspace} />
-  }
+  // The history follows both states: a disconnect is the entry an administrator comes to read.
   return (
-    <Connected
-      workspace={workspace}
-      members={health.members ?? []}
-      problem={health.problem ?? null}
-    />
+    <div className="max-w-3xl space-y-8">
+      {workspace === null || workspace.status === 'disconnected' ? (
+        <NotConnected workspace={workspace} />
+      ) : (
+        <Connected
+          workspace={workspace}
+          members={health.members ?? []}
+          problem={health.problem ?? null}
+        />
+      )}
+      <SettingsHistory entityType="slack" />
+    </div>
   )
 }
 

@@ -430,6 +430,7 @@ jobs:
               - 'infra/**'
               - 'projects/*/deploy/**'
               - 'scripts/**'
+              - 'tooling/english-lint/**'
               - '.github/workflows/ci.yml'
             # The English lint (REB-904) reads the name of every tracked file and the
             # identifiers and comments of every source file, so any project's code
@@ -1187,6 +1188,12 @@ jobs:
           imports=$(grep -c '^  to ' rebase-imports.tf)
           echo "resources=${resources} imports=${imports}"
           test "$resources" = "$imports"
+      # REB-914: host names are English, proper nouns allowed (docs/design/DECISIONS.md).
+      # The words are the English lint's Italian vocabulary, so this is stdlib Python.
+      - name: No DNS record name is Italian
+        run: |
+          python3 -m unittest discover -s tooling/english-lint -p 'test_check_dns_names.py'
+          python3 tooling/english-lint/check_dns_names.py
       - name: The scripts
         run: shellcheck scripts/*.sh
       - name: Every nginx file is valid

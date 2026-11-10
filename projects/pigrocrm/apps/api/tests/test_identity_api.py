@@ -40,14 +40,25 @@ from pigrocrm_api.ratelimit import reset_rate_limit
 from pigrocrm_api.sessions import get_sender
 
 SLUG = "identita-prova"
-SIGNUP = {"slug": SLUG, "name": "Ada Lovelace", "email": "ada@identita.it"}
+SIGNUP = {
+    "slug": SLUG,
+    "name": "Ada Lovelace",
+    "first_name": "Ada",
+    "email": "ada@identita.it",
+}
 WIZARD_SIGNUP = {**SIGNUP, "member": False}
 
 # A second tenant, provisioned only by the tests that need to prove the scan reaches
 # more than one space: Grace's own, never Ada's, so a test can invite Ada into it
 # without Ada ever being its creator (design §3's own widening past `Tenant.owner_email`).
 SLUG2 = "identita-prova-2"
-OWNER2 = {"slug": SLUG2, "name": "Grace Hopper", "email": "grace@identita.it", "member": False}
+OWNER2 = {
+    "slug": SLUG2,
+    "name": "Grace Hopper",
+    "first_name": "Grace",
+    "email": "grace@identita.it",
+    "member": False,
+}
 
 
 def _cookie_path(set_cookie_header: str) -> str | None:
@@ -296,6 +307,7 @@ def test_accepting_an_invitation_links_to_an_existing_identity_across_spaces(
     signup_b = {
         "slug": slug_b,
         "name": "Titolare B",
+        "first_name": "Titolare",
         "email": "titolare@identita.it",
         "member": False,
     }
@@ -1090,7 +1102,13 @@ def _second_space(client: TestClient, email: str) -> None:
     """The second signup of the same browser: the name is the only thing that differs."""
     created = client.post(
         "/api/tenants/",
-        json={"slug": SLUG2, "name": "Secondo spazio", "email": email, "member": False},
+        json={
+            "slug": SLUG2,
+            "name": "Secondo spazio",
+            "first_name": "Ada",
+            "email": email,
+            "member": False,
+        },
     )
     assert created.status_code == 201, created.text
 

@@ -19,7 +19,7 @@ from rebase_core.config import Settings, get_settings
 from rebase_core.http import MAX_BODY_BYTES
 from rebase_core.llm import RecordingCall
 from rebase_core.mail import RecordingSender
-from rebase_core.models import Freelancer, Login, Note, User
+from rebase_core.models import Freelancer, FreelancerCard, Login, Note, User
 from rebase_core.perks import PerkService
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
@@ -248,6 +248,75 @@ def test_talents_origin_filters_the_row_channel_and_origin_page_the_page(
     refused = client.get("/api/hub/talent", params={"origin": "home"})
     assert refused.status_code == 422
     assert refused.json()["detail"][0]["loc"][-1] == "origin"
+
+
+def _card_talent(
+    client: TestClient, api_session: Session, email: str, rate: str, card: dict[str, Any]
+) -> None:
+    """A talent whose anonymous card says `card`, applying at `rate` a day."""
+    response = client.post(
+        "/api/hub/freelancers",
+        data={
+            "first_name": email.split("@")[0].title(),
+            "last_name": "Rossi",
+            "email": email,
+            "daily_rate": rate,
+            "job_title": "Developer",
+            "remote": "remote",
+        },
+        files={"cv": ("CV.pdf", PDF, "application/pdf")},
+    )
+    assert response.status_code == 201, response.text
+    row = api_session.scalar(
+        select(Freelancer).join(User, User.id == Freelancer.user_id).where(User.email == email)
+    )
+    assert row is not None
+    api_session.add(FreelancerCard(freelancer_id=row.id, cv_sha256="0" * 64, card=card))
+    api_session.commit()
+
+
+def test_talents_filter_and_sort_by_what_the_anonymous_card_says(
+    client: TestClient, admin: None, sender: RecordingSender, api_session: Session
+) -> None:
+    """REB-823: the senior LLM profiles under 400 a day, cheapest first, from the query
+    the Talenti screen sends; a repeated term must all match, and a value the service
+    does not allow is a 422, not an empty list."""
+    llm = {"role": "AI engineer", "seniority": "senior", "experience_years": 9}
+    _card_talent(client, api_session, "dear@studio.it", "390", {**llm, "skills": ["LLM", "Python"]})
+    _card_talent(client, api_session, "cheap@studio.it", "300", {**llm, "skills": ["LLM"]})
+    _card_talent(client, api_session, "pricey@studio.it", "500", {**llm, "skills": ["LLM"]})
+    _card_talent(
+        client,
+        api_session,
+        "junior@studio.it",
+        "250",
+        {**llm, "seniority": "junior", "skills": ["LLM"]},
+    )
+    _card_talent(client, api_session, "web@studio.it", "320", {**llm, "skills": ["React"]})
+
+    _login(client, sender)
+
+    def emails(**params: Any) -> list[str]:
+        response = client.get("/api/hub/talent", params=params)
+        assert response.status_code == 200, response.text
+        return [item["email"] for item in response.json()["items"]]
+
+    assert emails(skills=["LLM"], seniority=["senior"], max_rate="400", sort="rate_asc") == [
+        "cheap@studio.it",
+        "dear@studio.it",
+    ]
+    assert emails(skills=["LLM", "Python"]) == ["dear@studio.it"]
+    assert emails(min_years=10) == []
+    assert emails(sort="rate_desc")[0] == "pricey@studio.it"
+    row = client.get("/api/hub/talent", params={"sort": "rate_asc"}).json()["items"][0]
+    assert (row["role"], row["seniority"], row["experience_years"], row["skills"]) == (
+        "AI engineer",
+        "junior",
+        9,
+        ["LLM"],
+    )
+    for bad in ({"seniority": ["wizard"]}, {"sort": "random"}, {"card": "maybe"}):
+        assert client.get("/api/hub/talent", params=bad).status_code == 422, bad
 
 
 def test_to_signed_in_member_hitting_talents_is_403_not_401(

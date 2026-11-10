@@ -80,7 +80,7 @@ def _serving(settings: Settings, *, provision: bool = True) -> Iterator[TestClie
     if provision:
         with session_factory(registry)() as session:
             TenantService(session, settings).provision(
-                TenantSignup(slug=SLUG, name="rebase", email="spazio@studio.it")
+                TenantSignup(first_name="Ada", slug=SLUG, name="rebase", email="spazio@studio.it")
             )
     try:
         with TestClient(app, base_url="https://testserver") as client:
