@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -34,6 +35,8 @@ from pigrocrm.core.mailboxes.models import Mailbox
 from pigrocrm.core.mailboxes.repository import MailboxRepository
 from pigrocrm.core.mailboxes.schemas import ImapMailboxCreate, MailboxRead
 from pigrocrm.core.reminders.push import resolve_public
+
+_ALREADY = "questa casella è già collegata: se non legge, aggiorna la password"
 
 
 class ImapMailboxService:
@@ -79,9 +82,7 @@ class ImapMailboxService:
             raise ValidationFailed(MAILBOX_ENTITY, "host", str(exc)) from exc
         owner = None if data.space_owned else actor.id
         if self.repo.imap_address_taken(owner, data.address):
-            raise Conflict(
-                MAILBOX_ENTITY, "questa casella è già collegata: se non legge, aggiorna la password"
-            )
+            raise Conflict(MAILBOX_ENTITY, _ALREADY)
         # The key first: no point reaching a server when the password could not be kept.
         ciphertext, nonce = seal_password(data.password, self.settings)
         self._probe(data.host, data.port, data.security, data.username, data.password)
@@ -99,7 +100,13 @@ class ImapMailboxService:
             password_nonce=nonce,
         )
         self.session.add(mailbox)
-        self.session.flush()
+        try:
+            self.session.flush()
+        except IntegrityError:
+            # Two connects of one address at once: the check above passed for both. Said in
+            # words, and the statement (which holds the sealed password) goes nowhere.
+            self.session.rollback()
+            raise Conflict(MAILBOX_ENTITY, _ALREADY) from None
         for purpose in dict.fromkeys(data.purposes):
             self.repo.add_purpose(mailbox, purpose)
         self.session.commit()
@@ -152,6 +159,9 @@ class ImapMailboxService:
             actor.require_write(action)
 
     def _manageable(self, actor: Actor, mailbox_id: UUID, action: str) -> Mailbox:
+        # The role first, before any lookup: a person who cannot write learns nothing, not even
+        # whether the mailbox exists. Managing a mailbox is writing, whoever owns it.
+        actor.require_write(action)
         mailbox = self.session.get(Mailbox, mailbox_id)
         if mailbox is None or mailbox.provider != "imap":
             raise NotFound(MAILBOX_ENTITY, mailbox_id)
@@ -159,8 +169,6 @@ class ImapMailboxService:
             actor.require_unscoped_admin(action)
         elif mailbox.owner_user_id != actor.id:
             raise NotFound(MAILBOX_ENTITY, mailbox_id)
-        else:
-            actor.require_write(action)
         return mailbox
 
     def _probe(self, host: str, port: int, security: str, username: str, password: str) -> None:

@@ -38,6 +38,11 @@ class Part:
     size: int = 100
     inline: bool = False
     content_id: str | None = None
+    # Sent as an IMAP literal (`{n}` and the bytes) rather than a quoted string, as a server does
+    # for a name with a byte outside ASCII.
+    literal: bool = False
+    # What the structure says it is, when a test wants an attachment that has a Content-ID.
+    disposition: str | None = None
 
 
 @dataclass
@@ -61,17 +66,18 @@ class Msg:
         leaves = []
         for part in self.parts:
             main, sub = part.mime.upper().split("/")
-            params = f'("NAME" "{part.filename}")' if part.filename else "NIL"
+            quoted = _string(part.filename, literal=part.literal) if part.filename else None
+            params = f'("NAME" {quoted})' if quoted else "NIL"
             cid = f'"{part.content_id}"' if part.content_id else "NIL"
-            if part.filename or part.inline:
-                kind = "INLINE" if part.inline else "ATTACHMENT"
-                extra = (
-                    f'("{kind}" ("FILENAME" "{part.filename}"))'
-                    if part.filename
-                    else f'("{kind}" NIL)'
-                )
-            else:
+            kind = part.disposition or ("inline" if part.inline else None)
+            if kind is None and part.filename:
+                kind = "attachment"
+            if kind is None:
                 extra = "NIL"
+            elif quoted:
+                extra = f'("{kind.upper()}" ("FILENAME" {quoted}))'
+            else:
+                extra = f'("{kind.upper()}" NIL)'
             if main == "TEXT":
                 leaves.append(
                     f'("{main}" "{sub}" ("CHARSET" "utf-8") {cid} NIL "7BIT" {part.size} 4 NIL '
@@ -86,12 +92,22 @@ class Msg:
         return "(" + "".join(leaves) + ' "MIXED" ("BOUNDARY" "b") NIL NIL)'
 
 
+def _string(value: str, *, literal: bool) -> str:
+    if literal:
+        return f"{{{len(value.encode())}}}\r\n{value}"
+    return f'"{value}"'
+
+
 @dataclass
 class ServerState:
     mode: str = "tls"
     offer_starttls: bool = True
     password: str = PASSWORD
-    login_reply: str = "OK"  # or `NO [AUTHENTICATIONFAILED]`, `NO [UNAVAILABLE]`, `BYE`
+    username: str = USERNAME
+    # `OK`, or what follows the tag: `NO [AUTHENTICATIONFAILED]`, `NO [LIMIT]`, `BAD`, or `BYE`.
+    login_reply: str = "OK"
+    # When set, the server answers every FETCH with exactly these bytes (a response too large).
+    fetch_raw: bytes | None = None
     messages: list[Msg] = field(default_factory=list)
     commands: list[str] = field(default_factory=list)
     logins: int = 0
@@ -206,13 +222,17 @@ class _Handler(socketserver.StreamRequestHandler):
             return
         if state.login_reply != "OK":
             self._say(f"{tag} {state.login_reply} refused")
-        elif user == USERNAME and password == state.password:
+        elif user == state.username and password == state.password:
             self._say(f"{tag} OK logged in")
         else:
             self._say(f"{tag} NO [AUTHENTICATIONFAILED] refused")
 
     def _fetch(self, tag: str, tail: str) -> None:
         state = self.server.state
+        if state.fetch_raw is not None:
+            self.wfile.write(state.fetch_raw)
+            self.wfile.flush()
+            return
         wanted_set, _, _items = tail.partition(" ")
         wanted = {int(u) for u in wanted_set.split(",")}
         for index, msg in enumerate(state.messages, start=1):

@@ -29,7 +29,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.config import Settings
-from pigrocrm.core.errors import NotFound
+from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.mailboxes.credential import MAILBOX_ENTITY, open_password
 from pigrocrm.core.mailboxes.health import MailboxHealth
 from pigrocrm.core.mailboxes.imap_client import (
@@ -97,7 +97,21 @@ class ImapSyncService:
         ):
             return ImapReport(self._health(mailbox), already_running=True)
 
-        password = open_password(mailbox, self.settings)
+        try:
+            password = open_password(mailbox, self.settings)
+        except Conflict:
+            # A rotated or missing key: the mailbox is not healthy, and only a person typing the
+            # password again, under the key as it is now, brings it back.
+            self._fail(
+                mailbox,
+                ImapFailure(
+                    "auth",
+                    "la password memorizzata non si legge più: inserisci di nuovo la password",
+                ),
+                moment,
+            )
+            self.session.commit()
+            return ImapReport("auth_failed")
         assert mailbox.imap_host and mailbox.imap_port and mailbox.imap_security
         assert mailbox.imap_username
         target = ImapTarget(

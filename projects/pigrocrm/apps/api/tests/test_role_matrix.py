@@ -459,6 +459,26 @@ ROWS: list[Row] = [
     # (`require_unscoped_admin`, slack/oauth.py and slack/service.py), checked before
     # Slack is reached. The install's `oauth/start` GET is configured-first like Drive's and
     # is walked in `test_slack_api.py`.
+    # --- mailboxes: connecting is a writer's for their own and an unscoped admin's for the
+    # space's (`mailboxes/imap_service.py`), the role checked before any lookup. The body asks
+    # for the space's mailbox, so the collaborator half of the first row is admin-gated.
+    Row(
+        "POST",
+        "/api/mailboxes/imap",
+        admin_only=True,
+        body={
+            "address": "fatture@studio.test",
+            "host": "imap.studio.test",
+            "port": 993,
+            "security": "tls",
+            "username": "fatture",
+            "password": "matrice-password",
+            "purposes": ["billing"],
+            "space_owned": True,
+        },
+    ),
+    Row("PUT", "/api/mailboxes/{mailbox_id}/password", body={"password": "matrice-password"}),
+    Row("DELETE", "/api/mailboxes/{mailbox_id}"),
     Row("DELETE", "/api/slack/account", admin_only=True),
     Row("POST", "/api/slack/account/rematch", admin_only=True),
     Row("PUT", "/api/slack/users/{user_id}/link", admin_only=True, body={"email": "a@b.example"}),

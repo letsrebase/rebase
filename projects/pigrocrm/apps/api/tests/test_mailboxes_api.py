@@ -93,7 +93,7 @@ def test_an_admin_connects_lists_re_keys_and_disconnects_a_mailbox(
 
     imap.state.password = "rotated"
     wrong = mailboxes_ready.put(f"/api/mailboxes/{mailbox['id']}/password", json={"password": "x"})
-    assert wrong.status_code == 422 and "x" not in wrong.json()["message"].split()
+    assert wrong.status_code == 422 and "password" in wrong.json()["detail"]
     right = mailboxes_ready.put(
         f"/api/mailboxes/{mailbox['id']}/password", json={"password": "rotated"}
     )
@@ -164,3 +164,15 @@ def test_a_collaborator_connects_their_own_mailbox_and_not_the_spaces(
     finally:
         collaborator_client.app.dependency_overrides.pop(get_settings, None)
         collaborator_client.app.dependency_overrides.pop(imap_options, None)
+
+
+def test_a_refused_body_does_not_echo_the_password(
+    mailboxes_ready: TestClient, imap: FakeImap
+) -> None:
+    body = _body(imap)
+    del body["host"]
+
+    response = mailboxes_ready.post("/api/mailboxes/imap", json=body)
+
+    assert response.status_code == 422
+    assert PASSWORD not in response.text

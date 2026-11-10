@@ -643,3 +643,190 @@ def test_bodystructure_reads_nested_parts_literals_and_a_language_that_is_not_a_
 def test_a_malformed_structure_yields_what_could_be_read_and_never_raises() -> None:
     assert parse_bodystructure(b"") == []
     assert parse_bodystructure(b"(") == []
+
+
+def test_a_reader_learns_nothing_about_a_mailbox_not_even_that_it_exists(
+    db_session: Session, server: FakeImap
+) -> None:
+    service = _service(db_session, server)
+    with pytest.raises(PermissionDenied):
+        service.disconnect(_user(db_session, "readonly"), uuid4())
+    with pytest.raises(PermissionDenied):
+        service.change_password(_user(db_session, "readonly"), uuid4(), "x")
+
+
+# --- what the review of REB-1015 found -------------------------------------------------------
+
+
+def _read_all(server: FakeImap) -> list[MessageHead]:
+    target = ImapTarget(HOST, server.port, "tls", server.state.username, PASSWORD)
+    with ImapReader(target, resolve=loopback, context=server.client_context()) as reader:
+        reader.uidvalidity = reader.select_inbox()
+        return list(reader.heads(reader.uids_since(NOW - dt.timedelta(days=5))))
+
+
+def test_a_name_the_server_sends_as_a_literal_does_not_cost_the_message_its_headers(
+    server: FakeImap,
+) -> None:
+    server.state.messages = [
+        Msg(
+            1,
+            NOW - dt.timedelta(days=1),
+            subject="fattura",
+            parts=(
+                Part("text/plain"),
+                Part("application/pkcs7-mime", "fattura è.p7m", 900, literal=True),
+            ),
+        ),
+        Msg(2, NOW - dt.timedelta(hours=3), subject="seconda"),
+    ]
+
+    heads = _read_all(server)
+
+    assert [(h.uid, h.subject, h.from_address) for h in heads] == [
+        (1, "fattura", "fornitore@acme.test"),
+        (2, "seconda", "fornitore@acme.test"),
+    ]
+    assert heads[0].message_id == "<1@acme.test>"
+    assert [(p.mime_type, p.filename) for p in heads[0].parts] == [
+        ("text/plain", None),
+        ("application/pkcs7-mime", "fattura è.p7m"),
+    ]
+
+
+def test_an_attachment_with_a_content_id_is_not_inline_and_an_inline_image_is() -> None:
+    parts = parse_bodystructure(
+        b'(("APPLICATION" "PDF" ("NAME" "a.pdf") "<id1>" NIL "BASE64" 5 NIL '
+        b'("ATTACHMENT" ("FILENAME" "a.pdf")) NIL)'
+        b'("IMAGE" "PNG" NIL "<id2>" NIL "BASE64" 5 NIL NIL NIL)'
+        b'("IMAGE" "PNG" NIL NIL NIL "BASE64" 5 NIL ("INLINE" NIL) NIL) "MIXED" NIL NIL NIL)'
+    )
+    assert [p.inline for p in parts] == [False, True, True]
+
+
+def test_a_filename_in_rfc_2231_or_2047_is_decoded() -> None:
+    parts = parse_bodystructure(
+        b'(("APPLICATION" "PDF" NIL NIL NIL "BASE64" 5 NIL '
+        b"""("ATTACHMENT" ("FILENAME*" "utf-8''fattura%20%C3%A8.pdf")) NIL)"""
+        b'("APPLICATION" "XML" ("NAME" "=?utf-8?B?ZmF0dHVyYSDDqC54bWw=?=") NIL NIL "BASE64" 5 NIL '
+        b'NIL NIL) "MIXED" NIL NIL NIL)'
+    )
+    assert [p.filename for p in parts] == ["fattura è.pdf", "fattura è.xml"]
+
+
+@pytest.mark.parametrize(
+    ("reply", "kind"),
+    [
+        ("NO [AUTHENTICATIONFAILED]", "auth"),
+        ("NO [AUTHORIZATIONFAILED]", "auth"),
+        ("NO login failed", "auth"),
+        ("NO [LIMIT]", "transient"),
+        ("NO [OVERQUOTA]", "transient"),
+        ("NO [SERVERBUG]", "transient"),
+        ("NO [UNAVAILABLE]", "transient"),
+        ("NO [INUSE]", "transient"),
+        ("BAD syntax", "transient"),
+        ("BYE", "transient"),
+    ],
+)
+def test_only_a_refusal_of_the_credentials_is_auth_and_everything_else_is_retried(
+    server: FakeImap, reply: str, kind: str
+) -> None:
+    server.state.login_reply = reply
+    target = ImapTarget(HOST, server.port, "tls", USERNAME, PASSWORD)
+
+    with pytest.raises(ImapFailure) as failure:
+        ImapReader(target, resolve=loopback, context=server.client_context()).__enter__()
+
+    assert failure.value.kind == kind
+
+
+def test_a_user_name_with_a_backslash_or_a_space_reaches_the_server_as_one_string(
+    server: FakeImap,
+) -> None:
+    server.state.username = "DOMAIN\\fatture amministrazione"
+    target = ImapTarget(HOST, server.port, "tls", "DOMAIN\\fatture amministrazione", PASSWORD)
+    with ImapReader(target, resolve=loopback, context=server.client_context()) as reader:
+        reader.select_inbox()
+    assert server.state.logins == 1
+
+
+@pytest.mark.parametrize("field", ["username", "password"])
+@pytest.mark.parametrize("bad", ["a\r\nb DELETE INBOX", "a\nb", "a\0b"])
+def test_a_line_break_or_a_nul_in_the_user_name_or_the_password_is_refused(
+    field: str, bad: str
+) -> None:
+    body = {
+        "address": "a@b.it",
+        "host": "h.it",
+        "port": 993,
+        "security": "tls",
+        "username": "u",
+        "password": "p",
+        "purposes": ["billing"],
+        "space_owned": True,
+        field: bad,
+    }
+    with pytest.raises(ValueError, match="single line"):
+        ImapMailboxCreate(**body)  # type: ignore[arg-type]
+
+
+def test_a_validation_error_does_not_echo_the_password() -> None:
+    with pytest.raises(ValueError) as refused:
+        ImapMailboxCreate(  # type: ignore[call-arg]
+            address="a@b.it", username="u", password="hunter2-plain", purposes=["billing"]
+        )
+    assert "hunter2-plain" not in str(refused.value)
+
+
+def test_a_response_that_announces_too_much_is_refused_not_buffered(server: FakeImap) -> None:
+    server.state.messages = [Msg(1, NOW - dt.timedelta(hours=1))]
+    server.state.fetch_raw = b"* 1 FETCH (UID 1 BODY[HEADER.FIELDS (FROM)] {99999999}\r\n"
+
+    with pytest.raises(ImapFailure) as failure:
+        _read_all(server)
+
+    assert failure.value.kind == "transient"
+
+
+def test_a_read_that_runs_past_its_time_is_stopped(server: FakeImap) -> None:
+    server.state.messages = [Msg(1, NOW - dt.timedelta(hours=1))]
+    target = ImapTarget(HOST, server.port, "tls", USERNAME, PASSWORD)
+    with ImapReader(target, resolve=loopback, context=server.client_context()) as reader:
+        reader.select_inbox()
+        reader._deadline = 0.0
+        with pytest.raises(ImapFailure, match="lento"):
+            list(reader.heads([1]))
+
+
+def test_a_key_that_no_longer_opens_the_password_makes_the_mailbox_auth_failed(
+    db_session: Session, server: FakeImap
+) -> None:
+    mailbox_id = _service(db_session, server).connect(_user(db_session), _create(server)).id
+    rotated = ImapSyncService(
+        db_session,
+        settings=_settings(mailbox_token_key=base64.b64encode(b"z" * 32).decode()),
+        resolve=loopback,
+        context=server.client_context(),
+    )
+    logins = server.state.logins
+
+    report = rotated.sync(mailbox_id, now=NOW)
+
+    mailbox = db_session.get(Mailbox, mailbox_id)
+    assert mailbox is not None
+    assert report.health == "auth_failed" and mailbox.status == "auth_failed"
+    assert mailbox.last_error is not None and "password" in mailbox.last_error
+    assert server.state.logins == logins
+
+
+def test_two_connects_of_one_address_at_once_are_one_conflict_and_not_a_server_error(
+    db_session: Session, server: FakeImap, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    admin = _user(db_session)
+    service = _service(db_session, server)
+    service.connect(admin, _create(server))
+    monkeypatch.setattr(service.repo, "imap_address_taken", lambda *_: False)
+
+    with pytest.raises(Conflict, match="già collegata"):
+        service.connect(admin, _create(server))

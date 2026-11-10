@@ -24,12 +24,15 @@ import imaplib
 import re
 import socket
 import ssl
+import time
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from email import message_from_bytes, policy
+from email.header import decode_header, make_header
 from email.utils import getaddresses
 from typing import Final, Literal
+from urllib.parse import unquote_to_bytes
 
 from pigrocrm.core.mailboxes.models import IMAP_SECURITY
 from pigrocrm.core.reminders.push import NotPublicAddress, resolve_public
@@ -43,6 +46,16 @@ CONNECT_TIMEOUT_SECONDS: Final = 20
 # line stays small.
 FETCH_GROUP: Final = 50
 HEADER_FIELDS: Final = "FROM TO CC SUBJECT DATE MESSAGE-ID"
+# What one response may weigh, and how long one read of a mailbox may take: a server of somebody's
+# own choosing is reached from the cron, so neither is the server's to decide.
+MAX_LITERAL_BYTES: Final = 16 * 1024 * 1024
+READ_SECONDS: Final = 300
+# The verdicts of a refused LOGIN that mean «the user or the password is wrong». Any other `NO`
+# with a response code (`[LIMIT]`, `[OVERQUOTA]`, `[UNAVAILABLE]`, `[SERVERBUG]`...) is the server's
+# trouble, not a reason to stop trying.
+_AUTH_CODES: Final = frozenset(
+    {"AUTHENTICATIONFAILED", "AUTHORIZATIONFAILED", "EXPIRED", "PRIVACYREQUIRED"}
+)
 
 _MONTHS: Final = (
     "Jan",
@@ -96,7 +109,11 @@ class BodyPart:
 
     @property
     def inline(self) -> bool:
-        return self.disposition == "inline" or self.content_id is not None
+        # A Content-ID alone does not make a part inline: mail clients put one on real
+        # attachments. The disposition decides, and the Content-ID only where there is none.
+        return self.disposition == "inline" or (
+            self.disposition is None and self.content_id is not None
+        )
 
 
 @dataclass(frozen=True)
@@ -130,7 +147,17 @@ def validate_target(host: str, port: int, security: str) -> None:
         raise ValueError("l'indirizzo del server non è valido: scrivi solo il nome, senza https://")
 
 
-class _Tls(imaplib.IMAP4_SSL):
+class _Capped:
+    """Refuses a response that announces more than `MAX_LITERAL_BYTES`: `imaplib` would buffer
+    whatever the server said it was going to send."""
+
+    def read(self, size: int) -> bytes:
+        if size > MAX_LITERAL_BYTES:
+            raise imaplib.IMAP4.abort("a response is too large")
+        return super().read(size)  # type: ignore[misc, no-any-return]
+
+
+class _Tls(_Capped, imaplib.IMAP4_SSL):
     def __init__(
         self, host: str, port: int, *, addresses: Sequence[str], context: ssl.SSLContext
     ) -> None:
@@ -140,13 +167,14 @@ class _Tls(imaplib.IMAP4_SSL):
     def _create_socket(self, timeout: float | None) -> socket.socket:
         raw = _open(self._addresses, self.port, timeout)
         try:
-            return self.ssl_context.wrap_socket(raw, server_hostname=self.host)
+            wrapped: socket.socket = self.ssl_context.wrap_socket(raw, server_hostname=self.host)
         except BaseException:
             raw.close()
             raise
+        return wrapped
 
 
-class _Plain(imaplib.IMAP4):
+class _Plain(_Capped, imaplib.IMAP4):
     """Plain only until `starttls` runs; the caller never logs in before it has."""
 
     def __init__(self, host: str, port: int, *, addresses: Sequence[str]) -> None:
@@ -191,6 +219,7 @@ class ImapReader:
         self._context = context or default_context()
         self._imap: imaplib.IMAP4 | None = None
         self.uidvalidity = 0
+        self._deadline = time.monotonic() + READ_SECONDS
 
     def __enter__(self) -> "ImapReader":
         self._connect()
@@ -252,7 +281,9 @@ class ImapReader:
         username, password = self.target.username, self.target.password
         try:
             if username.isascii() and password.isascii():
-                imap.login(username, password)
+                # `login` quotes the password and not the user name: a name with a space or a
+                # backslash (`DOMAIN\\user`) must reach the server as one string.
+                imap.login(_quote(username), password)
             else:
                 # LOGIN carries ASCII only; PLAIN carries UTF-8.
                 imap.authenticate("PLAIN", lambda _challenge: f"\0{username}\0{password}".encode())
@@ -264,8 +295,7 @@ class ImapReader:
         except imaplib.IMAP4.error as exc:
             _close(imap)
             self._imap = None
-            refusal = str(exc).upper()
-            if any(word in refusal for word in ("UNAVAILABLE", "INUSE", "TEMP", "TRY AGAIN")):
+            if not _is_refusal_of_the_credentials(str(exc)):
                 raise ImapFailure(
                     "transient", "il server non accetta l'accesso in questo momento"
                 ) from exc
@@ -277,6 +307,10 @@ class ImapReader:
             raise ImapFailure("transient", "la connessione si è interrotta") from exc
 
     # --- reading ----------------------------------------------------------------------
+
+    def _check_time(self) -> None:
+        if time.monotonic() > self._deadline:
+            raise ImapFailure("transient", "il server è troppo lento: riprovo al prossimo ciclo")
 
     def select_inbox(self) -> int:
         """Opens INBOX read-only and answers its UIDVALIDITY."""
@@ -309,6 +343,7 @@ class ImapReader:
         named header fields only, and BODYSTRUCTURE is the server's own summary of the parts."""
         imap = self._need()
         for start in range(0, len(uids), FETCH_GROUP):
+            self._check_time()
             group = ",".join(str(uid) for uid in uids[start : start + FETCH_GROUP])
             try:
                 status, data = imap.uid(
@@ -320,21 +355,36 @@ class ImapReader:
                 raise ImapFailure("transient", "la connessione si è interrotta") from exc
             if status != "OK":
                 raise ImapFailure("transient", "il server non restituisce le intestazioni")
-            # A literal splits an answer in two: `(prefix, literal)`, then what follows it, which
-            # may hold fields the server put after the headers.
-            for index, item in enumerate(data):
-                if not isinstance(item, tuple):
-                    continue
-                after = data[index + 1] if index + 1 < len(data) else b""
-                trailer = after if isinstance(after, bytes) else b""
-                head = _head(item[0] + b" " + trailer, item[1], self.uidvalidity)
+            for text, headers in _responses(data):
+                head = _head(text, headers, self.uidvalidity)
                 if head is not None:
                     yield head
+            self._check_time()
 
     def _need(self) -> imaplib.IMAP4:
         if self._imap is None:
             raise ImapFailure("transient", "la connessione è chiusa")
         return self._imap
+
+
+def _quote(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+_CODE = re.compile(r"""^B?['"]?\s*\[([A-Z-]+)[\] ]""")
+
+
+def _is_refusal_of_the_credentials(message: str) -> bool:
+    """Whether a failed LOGIN or AUTHENTICATE said «wrong user or password». `imaplib` raises
+    the server's own text for a `NO` (so the answer is in its response code) and a
+    `command error` sentence for a `BAD`, a command the server did not understand. A `NO` with no
+    response code is the plain refusal, and so are the codes of `_AUTH_CODES`; any other code
+    (`[LIMIT]`, `[OVERQUOTA]`, `[SERVERBUG]`) is the server's own trouble."""
+    text = message.upper()
+    if "COMMAND ERROR:" in text:
+        return False
+    code = _CODE.search(text)
+    return code is None or code.group(1) in _AUTH_CODES
 
 
 def _close(imap: imaplib.IMAP4) -> None:
@@ -348,6 +398,36 @@ def _uidvalidity(imap: imaplib.IMAP4) -> int:
 
 
 # --- parsing what a FETCH answers ---------------------------------------------------------
+
+_MESSAGE_START = re.compile(rb"^\d+ \(")
+_HEADERS_LITERAL = re.compile(rb"HEADER\.FIELDS \([^)]*\)\]\s*\{\d+\}$")
+_LITERAL = re.compile(rb"\{\d+\}$")
+
+
+def _responses(data: Sequence[object]) -> Iterator[tuple[bytes, bytes]]:
+    """One `(text, headers)` per message of a FETCH answer. `imaplib` cuts an answer at every
+    literal, so a name the server sent as one (`"NAME" {8}`) splits the structure; every literal
+    but the headers' is put back in the text, quoted, and the headers' is the one whose marker
+    ends the header-fields item."""
+    text, headers = b"", b""
+    for item in data:
+        first, literal = item if isinstance(item, tuple) else (item, None)
+        if not isinstance(first, bytes):
+            continue
+        if _MESSAGE_START.match(first) and text:
+            yield text, headers
+            text, headers = b"", b""
+        if literal is None:
+            text += first
+        elif _HEADERS_LITERAL.search(first):
+            text += _LITERAL.sub(b"", first)
+            headers = literal
+        else:
+            quoted = literal.replace(b"\\", b"\\\\").replace(b'"', b'\\"')
+            text += _LITERAL.sub(b"", first) + b'"' + quoted + b'"'
+    if text:
+        yield text, headers
+
 
 _UID = re.compile(rb"UID (\d+)")
 _INTERNALDATE = re.compile(rb'INTERNALDATE "\s*([^"]+)"')
@@ -444,13 +524,38 @@ def _text(node: Node) -> str:
 
 
 def _params(node: Node) -> dict[str, str]:
+    """A parameter list as a dict with lower-case names. A name sent as RFC 2231 (`filename*`,
+    `charset'language'%C3%A8`) or as an RFC 2047 encoded word is decoded."""
     if not isinstance(node, list):
         return {}
-    return {
-        _text(node[i]).lower(): _text(node[i + 1])
-        for i in range(0, len(node) - 1, 2)
-        if isinstance(node[i], bytes)
-    }
+    found: dict[str, str] = {}
+    for i in range(0, len(node) - 1, 2):
+        key = node[i]
+        if not isinstance(key, bytes):
+            continue
+        name, value = key.decode("ascii", "replace").lower(), _text(node[i + 1])
+        if name.endswith("*"):
+            name, value = name[:-1], _decode_2231(value)
+        elif value.startswith("=?"):
+            value = _decode_2047(value)
+        found.setdefault(name, value)
+    return found
+
+
+def _decode_2231(value: str) -> str:
+    charset, _, rest = value.partition("'")
+    _, _, encoded = rest.partition("'")
+    try:
+        return unquote_to_bytes(encoded).decode(charset or "utf-8", "replace")
+    except LookupError:
+        return unquote_to_bytes(encoded).decode("utf-8", "replace")
+
+
+def _decode_2047(value: str) -> str:
+    try:
+        return str(make_header(decode_header(value)))
+    except (ValueError, LookupError):
+        return value
 
 
 def parse_bodystructure(raw: bytes) -> list[BodyPart]:
