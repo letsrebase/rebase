@@ -345,6 +345,18 @@ describe('AppShell', () => {
     expect(screen.getByRole('search', { name: 'Ricerca globale' })).toBeInTheDocument()
   })
 
+  it('names the search button by the words it shows, shortcut included (REB-986)', () => {
+    // WCAG 2.5.3, axe `label-content-name-mismatch`: an `aria-label` of «Cerca in tutto il
+    // CRM» did not contain the «Ctrl K» the button also shows, so a voice user saying what
+    // they read had no name to say. The name is the content, and it starts with «Cerca»;
+    // the landmark around it already says «Ricerca globale».
+    renderShell()
+    const button = within(screen.getByRole('search', { name: 'Ricerca globale' })).getByRole('button')
+    expect(button).not.toHaveAttribute('aria-label')
+    expect(button.textContent).toMatch(/^Cerca/)
+    expect(screen.getByRole('button', { name: /^Cerca/ })).toBe(button)
+  })
+
   it('keeps the current page marked while the URL carries search parameters', () => {
     // What the 1440 screenshot of this pass caught: on Home the sidebar's Home entry was
     // not highlighted at all, because the dashboard writes its tab and period into the
