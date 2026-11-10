@@ -1,14 +1,15 @@
 # Brief: «Anagrafiche», «Acquisti» and «IVA» (PigroCRM)
 
-Status: awaiting Lorenzo's answers on the artifact `pigrocrm-suppliers-purchases-iva`; draft
-2026-11-10. Card: REB-996. Design:
+Status: approved by Lorenzo on 2026-11-10, on the artifact `pigrocrm-suppliers-purchases-iva`
+(«possiamo andare con i tuoi consigli per tutto»: every question answered with the
+recommendation, B, B, A, A, B, A). Card: REB-996. Design:
 `projects/pigrocrm/docs/superpowers/specs/2026-11-09-suppliers-purchases-and-iva-design.md`
 §§ 1, 2, 5 to 9 (REB-961); frame:
 `2026-11-09-space-profiles-modules-and-the-money-picture-design.md` § A2 (modules), § A5 (the
 fiscal register), § A7 (every new surface passes this gate), § B4 and § B6 (the sidebar and the
-phone shell). The rules this brief creates will be rows of `docs/design/DECISIONS.md` once
-Lorenzo has answered; until then everything marked «proposed» below is a proposal, and the
-build cards read this file and those rows, never the artifact.
+phone shell). The rule this brief creates is the last row of `docs/design/DECISIONS.md` dated 2026-11-10;
+the build cards read this file and that row, never the artifact, which stays open until the
+answers are recorded and is then closed.
 
 Everything here is drawn on `shared/ui/tokens.css` and the primitives of `@rebase/ui`:
 squared, 1px ink lines, Outfit, Prussian sidebar, Watermelon Deep only on the primary action
@@ -57,17 +58,18 @@ A question already answered is a defect to ask again. Each row names its source.
 
 ## Questions for Lorenzo
 
-Six questions, each with exactly two defensible options. The artifact draws both at the same
-scale, desktop and phone where they differ.
+Six questions, each with exactly two defensible options, all answered by Lorenzo on
+2026-11-10 («Lorenzo, 2026-11-10, approved the recommendations»). The artifact drew both at the
+same scale, desktop and phone where they differed.
 
-| # | Question | A | B | Recommendation |
-|---|---|---|---|---|
-| 1 | Where do «Clienti» and «Fornitori» sit in the sidebar? | One entry «Anagrafiche» in «Vendite», at «Clienti»'s place; Clienti, Fornitori and Tutte are tabs. Optimises the design's wording, one registry behind one door. Costs a supplier under a section about who buys from us. | «Clienti» stays in «Vendite»; «Fornitori» sits in «Amministrazione» beside «Acquisti»; both open the same page, pre-set to a role. Optimises sections by purpose and the learned place of «Clienti». Costs two doors to one page. | B: sections by purpose are decided (2026-11-02) and a learned entry is a decision made. |
-| 2 | How is a purchase read from «Acquisti»? | A table with the open purchase in a 330 px panel (the inbox's shape): «Segna come pagata…» and «Apri la scheda» in the panel. Optimises staying on the list. Costs two readings of one record. | The row opens the purchase's own page, as «Fatture» does. Optimises the mirror of the neighbour entry and a readable record. Costs leaving the list. | B: «Acquisti» mirrors «Fatture», and a purchase's VAT lines, withholding and instalments do not fit 330 px. |
-| 3 | How is a PDF or photo from «In arrivo» registered as a purchase? | A page «Registra come acquisto» with the file beside the form. Optimises checking against the original and one form for filing, editing and «Nuovo acquisto». Costs leaving the queue. | The «In arrivo» panel widens to about 540 px and becomes the form; the file is behind «Vedi il file». Optimises queue throughput. Costs the file is not beside the figures. | A: the reason to capture by hand is to check against the original. |
-| 4 | What does «Spesa» open from the phone «+»? | A sheet with amount, merchant, category, date, «Già pagata», and an optional photo. Optimises speed and needs no camera. Costs the justifying document is often not attached. | The camera first, then three fields to confirm. Optimises keeping the document. Costs a second photo door beside «Carica un documento» (this one registers at once, that one waits to be read). | A: one photo door already exists; a second that behaves differently is the confusion. |
-| 5 | What does «IVA» open on? | The entity's periods, one per row (period, open or closed, sales VAT, purchase VAT, credit, result, payment); a period opens its page. Optimises the year at a glance. Costs a step to the period used most. | The current period's page, with a period selector that names each period with its result. Optimises the common question with no click and the phone's figure-first rule. Costs no list to compare periods. | B: it answers the page's one question without a step and keeps figures before lists. |
-| 6 | What is one row of an IVA register? | One row per document; a document with several rates says «2 aliquote»; a «Riepilogo per aliquota» under the table. Optimises scanning. Costs the groups of a mixed document, with their separate shares, are one step away. | One row per VAT group (rate, nature, deductible share) of a document, the document named on its first row. Optimises reconciling the settlement line by line. Costs a document repeats over rows. | A: the document is what a person recognises; the total of «Detraibile» is the settlement's own line. |
+| # | Question | A | B | Recommendation | Answer (2026-11-10) |
+|---|---|---|---|---|---|
+| 1 | Where do «Clienti» and «Fornitori» sit in the sidebar? | One entry «Anagrafiche» in «Vendite», at «Clienti»'s place; Clienti, Fornitori and Tutte are tabs. Optimises the design's wording, one registry behind one door. Costs a supplier under a section about who buys from us. | «Clienti» stays in «Vendite»; «Fornitori» sits in «Amministrazione» beside «Acquisti»; both open the same page, pre-set to a role. Optimises sections by purpose and the learned place of «Clienti». Costs two doors to one page. | B: sections by purpose are decided (2026-11-02) and a learned entry is a decision made. | B: «Clienti» in «Vendite», «Fornitori» in «Amministrazione». |
+| 2 | How is a purchase read from «Acquisti»? | A table with the open purchase in a 330 px panel (the inbox's shape): «Segna come pagata…» and «Apri la scheda» in the panel. Optimises staying on the list. Costs two readings of one record. | The row opens the purchase's own page, as «Fatture» does. Optimises the mirror of the neighbour entry and a readable record. Costs leaving the list. | B: «Acquisti» mirrors «Fatture», and a purchase's VAT lines, withholding and instalments do not fit 330 px. | B: the row opens the purchase's page. |
+| 3 | How is a PDF or photo from «In arrivo» registered as a purchase? | A page «Registra come acquisto» with the file beside the form. Optimises checking against the original and one form for filing, editing and «Nuovo acquisto». Costs leaving the queue. | The «In arrivo» panel widens to about 540 px and becomes the form; the file is behind «Vedi il file». Optimises queue throughput. Costs the file is not beside the figures. | A: the reason to capture by hand is to check against the original. | A: a page with the file beside the form. |
+| 4 | What does «Spesa» open from the phone «+»? | A sheet with amount, merchant, category, date, «Già pagata», and an optional photo. Optimises speed and needs no camera. Costs the justifying document is often not attached. | The camera first, then three fields to confirm. Optimises keeping the document. Costs a second photo door beside «Carica un documento» (this one registers at once, that one waits to be read). | A: one photo door already exists; a second that behaves differently is the confusion. | A: a sheet, the photo optional. |
+| 5 | What does «IVA» open on? | The entity's periods, one per row (period, open or closed, sales VAT, purchase VAT, credit, result, payment); a period opens its page. Optimises the year at a glance. Costs a step to the period used most. | The current period's page, with a period selector that names each period with its result. Optimises the common question with no click and the phone's figure-first rule. Costs no list to compare periods. | B: it answers the page's one question without a step and keeps figures before lists. | B: the current period's page with a selector. |
+| 6 | What is one row of an IVA register? | One row per document; a document with several rates says «2 aliquote»; a «Riepilogo per aliquota» under the table. Optimises scanning. Costs the groups of a mixed document, with their separate shares, are one step away. | One row per VAT group (rate, nature, deductible share) of a document, the document named on its first row. Optimises reconciling the settlement line by line. Costs a document repeats over rows. | A: the document is what a person recognises; the total of «Detraibile» is the settlement's own line. | A: one row per document with a summary by rate. |
 
 Not asked, because a source answers it or there is nothing to draw: the registry's columns, the
 filters of «Acquisti», the figures strip, who sees what, the shape of the settlement (all under
@@ -104,8 +106,9 @@ Non-goals    The merge of two organisations (its own card; the route exists, `PO
 cui lavori: clienti, fornitori o entrambi.») and the one strong button, which follows the view:
 «Nuovo cliente» on «Clienti», «Nuovo fornitore» on «Fornitori», «Nuova anagrafica» on «Tutte».
 Tabs, as «Proposte» does, with counts: «Tutte», «Clienti», «Fornitori» (the `role` parameter of
-`organizations/queries.ts:29`: `any`, `customer`, `supplier`). Under Question 1 B the sidebar
-entries «Clienti» and «Fornitori» open the same page on those tabs. The filter row keeps the
+`organizations/queries.ts:29`: `any`, `customer`, `supplier`). The sidebar
+entries «Clienti» (in «Vendite») and «Fornitori» (in «Amministrazione», before «Acquisti»)
+open the same page on those tabs. The filter row keeps the
 search box (ragione sociale, P.IVA, codice fiscale, email) and adds «Tipo fiscale» on
 «Fornitori». Columns: «Clienti» keeps today's (ragione sociale, P.IVA, comune, email,
 telefono, custom fields); «Fornitori»: ragione sociale, P.IVA, tipo fiscale (a foreign supplier
@@ -122,8 +125,8 @@ ruolo Fornitore» is in the header menu of a customer, and the reverse.
 **Phone.** One column of cards under a segmented «Tutte / Clienti / Fornitori»; the supplier
 view leads with one figure («Da pagare ai fornitori») and then the cards (name, chips, tipo
 fiscale and terms, «Da pagare» on the right). A card opens the organisation full screen. The
-centre «+» is unchanged. «Altro» lists «Anagrafiche» (Question 1 A) or «Clienti» and
-«Fornitori» (B).
+centre «+» is unchanged. «Altro» lists «Clienti» and
+«Fornitori» as two rows.
 
 | State | What is drawn |
 |---|---|
@@ -174,14 +177,15 @@ document date. Columns: fornitore e documento, categoria, data, scadenza (a purc
 instalments reads «30/11/2026 · rata 2 di 2»), importo (the document total; a foreign one has
 «USD 540,00» in its first cell), pagamento (the pill; a purchase with withholding adds «netto
 1.530,00 €»). «Azienda» only under «Tutte le aziende» from the second entity. The row opens
-the purchase (Question 2). The page of a purchase has `Panoramica` (documento, righe IVA with
+the purchase's own page, as «Fatture» does; there is no side panel, and «Segna come pagata…»
+is on the page and in the row's menu. The page of a purchase has `Panoramica` (documento, righe IVA with
 the deductible share, ritenuta and the net to pay, the costo imputato the server froze), the
 right column with «Scadenze» (each due item and its state) and «Origine» (from «In arrivo»,
 its date, its provenance tag), `Documenti` and `Timeline`. A reverse-charge purchase has an
 «Integrazione» block: its type (TD16 to TD19, chosen by the server), its state («Da produrre»,
 «Prodotta», «Trasmessa») and, for an administrator with full access, «Produci l'XML» and «Segna
 come trasmessa»; the deadline reminder's date is the pack's.
-**Capture** (Question 3): from «In arrivo» the primary «Registra come…» on a supplier invoice or
+**Capture**: from «In arrivo» the primary «Registra come…» on a supplier invoice or
 receipt opens the form on the item. The form, dense two-column: fornitore (matched by VAT
 number or tax code, or «Nuovo fornitore: verrà creato»), azienda (a select only when the
 buyer matches no single entity), tipo, numero, data documento, ricevuta il, periodo IVA (the
@@ -193,7 +197,7 @@ professional or occasional), cassa e bollo, the flags «Scissione dei pagamenti�
 «Inversione contabile» (for a foreign supplier the person decides: «Lo decidi tu: il fornitore
 è estero»), categoria, deal (hidden with `deals` off), scadenze (from the file, else the
 supplier's terms, with the tag «Dalle condizioni del fornitore») and pagamento («Già pagata» or
-«Da pagare»). Each value read carries its provenance tag. The action bar is bottom right,
+«Da pagare»). Each value read carries its provenance tag. The form is a page with the file beside it, not a panel, and is also the page of «Nuovo acquisto» and of editing. The action bar is bottom right,
 «Annulla» and «Registra». A certain XML needs none of this: it is registered with «Registrata
 da In arrivo il 03/11/2026. Annulla» and the item turns «Registrata».
 
@@ -203,7 +207,7 @@ with «di cui scaduti», leads; a card has supplier, amount, «Fattura 14/E · 2
 pill. A card opens the purchase full screen with a sticky «Segna come pagata…» (administrators)
 and «Apri il file». The capture is the same form in one column with «Vedi il file» at the top
 (the file opens over it), «Scarta…» and «Registra» sticky. The centre «+» gains «Spesa»
-(Question 4): a receipt, total only, paid, with amount, esercente, categoria and data, and an
+(a sheet, not a camera-first flow): a receipt, total only, paid, with amount, esercente, categoria and data, and an
 optional photo; «Carica un documento» stays for what must be read.
 
 | State | What is drawn |
@@ -255,8 +259,8 @@ moves: «Fatture», «Acquisti», «IVA»). It is shown to administrators, and o
 legal entity's pack has registers (the pack decides, not the regime's name). The page always
 shows one entity: the sidebar's choice, or, under «Tutte le aziende» with several eligible
 entities, the page's own «Azienda» select (the sentence «L'IVA non si somma tra aziende.»
-sits under the title). Question 5 decides the landing; the period's page is the same either
-way: `PageHeader` «IVA · 4° trimestre 2026» with the entity, the period select and the pill
+sits under the title). «IVA» opens on the current period's page, with no list of periods in front of it:
+`PageHeader` «IVA · 4° trimestre 2026» with the entity, a period select that names each period with its result, and the pill
 «Aperto», and the one strong button «Chiudi il periodo» (an unscoped administrator's act). On
 it: the settlement ladder in a card at the right, and two tabs of registers, «Registro vendite»
 and «Registro acquisti», with their counts. The sales register lists the issued invoices and
@@ -266,7 +270,7 @@ row «Annullata», and a number the space declared it will never carry is a row 
 (the register gaps that exist today). The purchase register lists data di registrazione,
 fornitore and document, aliquota, imponibile, IVA, quota and IVA detraibile; a document's
 integration (TD16 to TD19) appears in both registers, with the chip «Integrazione TD17», and a
-chip filter «Integrazioni» narrows either. Question 6 decides the row. Both registers are
+chip filter «Integrazioni» narrows either. A register row is one document, with «2 aliquote» for a mixed one and a «Riepilogo per aliquota» under the table; the groups and their separate shares are on the purchase's page. Both registers are
 read-only: a row opens the document it comes from. «Chiudi il periodo» asks «Chiudere il 4°
 trimestre 2026 per Lumen Studio S.r.l.? Dopo, nessuna registrazione di questo periodo si
 modifica. Un amministratore può riaprirlo.»; a closed period shows a band «Periodo chiuso il
@@ -274,11 +278,10 @@ modifica. Un amministratore può riaprirlo.»; a closed period shows a band «Pe
 with «dal pacchetto fiscale»; the due item is already in the schedule.
 
 **Phone.** «IVA» is under «Altro» (a second-class destination by the frame's rule). It opens on
-the figure (Question 5 B), «Da versare · 4° trimestre 2026», its deadline and the pill, then the
+the figure, «Da versare · 4° trimestre 2026», its deadline and the pill, then the
 three ladder lines as one card, then a segmented «Acquisti / Vendite» of cards (supplier or
-customer, document, date, the VAT figure; Question 6). The period select is a sheet. «Chiudi il
-periodo» and «Riapri» are sticky and shown to an unscoped administrator only. With Question 5 A
-the first screen is the periods as cards.
+customer, document, date, the VAT figure). The period select is a sheet. «Chiudi il
+periodo» and «Riapri» are sticky and shown to an unscoped administrator only.
 
 | State | What is drawn |
 |---|---|
@@ -291,34 +294,32 @@ the first screen is the periods as cards.
 | Credit | The result is negative: pill «A credito», the figure «-310,00 €», and the next period's ladder carries it as «Credito del periodo precedente». |
 | Below a minimum | When the pack says a result is carried forward instead of paid, the line says «Riportato al periodo successivo» with the pack's reason; nothing on screen computes it. |
 | Flat-rate or `non-it` entity | No «IVA» entry for it; a space with only such entities has no entry at all. A flat-rate buyer's reverse-charge VAT is a due item shown on the purchase, not here. |
-| `purchases` off | The design says both that a space with it off still sees its sales register (§ 8) and that the IVA cycle is part of `purchases` (§ 8): proposed here, the page stays and shows the sales register alone, with the sentence «La liquidazione richiede il modulo Acquisti.» in place of the ladder and the purchase tab. |
+| `purchases` off | The design says both that a space with it off still sees its sales register (§ 8) and that the IVA cycle is part of `purchases` (§ 8): the page stays and shows the sales register alone, with the sentence «La liquidazione richiede il modulo Acquisti.» in place of the ladder and the purchase tab. |
 | Scoped member | A read-only or scoped member does not see the entry; a scoped administrator reads the registers of their entities and is not offered «Chiudi il periodo» («Solo un amministratore senza limiti all'azienda può chiudere il periodo.»). |
 | Permissions | Administrators read; a collaborator and a read-only member do not see the entry, and a link answers «L'IVA è visibile agli amministratori.» |
 | Partial / failed | A register that could not be read says so and shows no total; the ladder is drawn only when both registers answered. |
 
 ## What a component can violate
 
-Proposed; each is checkable. The rows that depend on a question say which, and are written for
-the option marked as recommended.
+Each is checkable. They follow Lorenzo's answers of 2026-11-10.
 
 - «Anagrafiche» is one page on the `organizations` list with a role view (`role` of
-  `organizations/queries.ts:29`); a «Fornitori» view is never a second list component (Q1: both
-  options).
+  `organizations/queries.ts:29`); a «Fornitori» view is never a second list component.
 - The sidebar has «Acquisti» after «Fatture» and «IVA» after «Acquisti» in «Amministrazione»;
-  with Q1 B «Fornitori» sits before «Acquisti»; each entry is gone with its module and the
-  entry «IVA» with the pack (Q1, Q5).
+  «Clienti» stays in «Vendite» and «Fornitori» sits in «Amministrazione» before «Acquisti»; each
+  entry is gone with its module and the entry «IVA» with the pack.
 - The title of the registry page is «Anagrafiche» on every view, and the active view is a tab,
   never a second title.
 - A role chip is an outlined chip, not a `StatusPill`; a payment state is a `StatusPill`
   whose tone comes from a `Record` next to its labels, and never uses `accent`.
 - «Acquisti» is a gridded table whose row opens the purchase's own page; the filters are
-  `FilterChips` and selects in `FilterRow`, and the period is `PeriodPicker` in the URL (Q2 B).
+  `FilterChips` and selects in `FilterRow`, and the period is `PeriodPicker` in the URL; there is no side panel.
 - The payment column, filter and the «Da pagare» and «Scaduti» figures read the due items and are
   absent, not empty, before the due-items milestone ships.
 - Marking a purchase paid and producing or transmitting an integration XML are shown only to a
   role that may do them (`can(role, 'settle_outgoing_due_item')`), never shown and refused.
 - The purchase form is one component for registering from «In arrivo», for «Nuovo acquisto» and
-  for editing; the file opens beside it on desktop and over it on the phone (Q3 A).
+  for editing; the file opens beside it on desktop and over it on the phone; the «In arrivo» panel never holds the form.
 - A value the form shows as read carries its provenance tag; the euro amount, the rate and its
   date are read-only, never typed (design § 4).
 - The form shows the withholding block only when the server says the buyer is a withholding agent
@@ -327,7 +328,7 @@ the option marked as recommended.
 - A reverse-charge decision on a foreign supplier is made by a person, on the form, never
   preselected as final by a model or an agent (design § 7).
 - «Spesa» on the phone writes a `receipt` or `expense` purchase paid at once and never leaves a
-  due item open unless the person chose «Da pagare» (Q4 A).
+  due item open unless the person chose «Da pagare»; it has no camera-first step.
 - «IVA» draws one legal entity at a time and never a sum across entities; a register is a view
   over the documents with a link to each, never an editable table.
 - A figure or a date on the settlement, a deadline, a minimum, a share, is rendered from a field
@@ -335,6 +336,10 @@ the option marked as recommended.
   stays «to verify» in code, not on screen).
 - «Chiudi il periodo» and «Riapri» are shown only to an unscoped administrator, and a closed
   period's documents say the period is closed where they would be edited.
+- «IVA» opens on the current period's page, never on a list of periods; the period select names
+  each period with its result.
+- A register row is one document (a mixed one says «2 aliquote»), with a «Riepilogo per
+  aliquota» under the table; the deductible share per group is read on the purchase's page.
 - Every list and page of the three surfaces has the empty, loading and error states of its table;
   loading is `LoadingState`, never `Skeleton`.
 
@@ -348,14 +353,14 @@ back on any.
   table, which maps a path to modules and cannot say «the sales register is core, the settlement
   needs `purchases`». The registry view is `?role=`, with `any` for «Tutte».
 - **Icons.** «Acquisti» and «IVA» each need an icon that is not `Receipt` (the icon of «Fatture»)
-  or `Building2`; «Fornitori» in Q1 B reuses `Building2`.
+  or `Building2`; «Fornitori» reuses `Building2`.
 - **Registry columns** per view as above, the supplier column «Da pagare» from due items, the
   role chips on «Tutte», the title fixed at «Anagrafiche», and the primary button following the
   view.
 - **Duplicate catch** under the VAT field as the person types, with «Aggiungi il ruolo»: the
   design's unique index and the two-match refusal say what is refused, not how the form says it.
 - **Role removal** is not drawn: the design adds roles and says nothing on taking one away
-  (reported below).
+  (Open points).
 - **«Acquisti» filters**: payment state chips «Da pagare», «Scaduti», «Pagati» (an open
   purchase with a part paid is «Da pagare» with its «Pagata in parte» pill); the period filters
   the document date, not the due date or the IVA period; cancelled purchases hidden by default;
@@ -366,7 +371,7 @@ back on any.
   in parte» gold, «Previsto» muted for a forecast item; a credit note and a cancelled purchase
   show no payment pill.
 - **A receipt or an expense** is registered «Già pagata» by default and an invoice «Da pagare»;
-  the design does not say whether a receipt gets a due item (reported below).
+  the design does not say whether a receipt gets a due item (Open points).
 - **Capture form** fields, the tag «Dalle condizioni del fornitore» for a computed due date, the
   tag «Calcolato» for the rate, the provenance tags reused from the inbox brief, and the lines
   «Registrata da In arrivo il … Annulla» for a certain XML.
@@ -379,8 +384,7 @@ back on any.
   cannot close.
 - **The settlement ladder** shows a line only when the pack gives one; the page reads the
   deadline and the minimum from the same data.
-- **The IVA page with `purchases` off** shows the sales register alone (design § 8, first and
-  last bullets disagree; reported below).
+- **The IVA page with `purchases` off** shows the sales register alone (design § 8, two bullets disagree; Open points 1).
 - **Phone placement**: «IVA» and «Fornitori» or «Anagrafiche» under «Altro», not in the bar;
   «Acquisti» likewise.
 - **Deal page.** The «Costi» tab of a deal and of the hours page becomes the deal's purchases,
@@ -399,24 +403,50 @@ back on any.
   settlement frequency (monthly or quarterly) and cash-basis option: they sit in existing
   sections and carry no new structure.
 
-## Gaps and contradictions found
+## Open points
 
-- Design § 8 says a space with `purchases` off still sees its sales register (the IVA cycle reads
-  core invoices) and, a bullet later, that the IVA cycle is part of `purchases`. Proposed above:
-  the page stays, sales register alone.
-- Design § 5 stores no payment state on a purchase and § 9 asks for the payment-state filter «from
-  C4»; the C3 cards that write due items are blocked by the C4 milestone, so the list ships first
-  without it (States).
-- The design does not say whether a till receipt or an expense gets a due item or is settled at
-  registration; proposed: paid by default, the person may choose «Da pagare».
-- The design adds roles and never removes one (§ 1); who may and what happens to purchases that
-  use it is open.
-- Costs have no sidebar page today: `CostsPanel` without a deal (`only_general`,
-  `features/costs/CostsPanel.tsx:24`) has no caller, so a general expense is unreachable from the
-  UI and «Acquisti» is the first list of general spending.
-- `ROUTE_MODULES` (`lib/modules.ts:50`) maps one path to modules; it cannot express a page whose
-  parts have different owners (IVA).
-- The cash design also adds «Cassa» to «Amministrazione» (§ 6): the section will hold six
-  entries; the order is left to that brief.
-- Design § 8 lists reading purchases as «collaborator» in a table about agents; the web gates only
-  writes, so a read-only member listing purchases is inferred, not stated.
+Gaps, contradictions and unresolved items found while writing this brief. None blocks the
+choices above; each is inherited by the page cards, which decide it with the owner of the
+source, or ask, before building. «The design» is the suppliers design (`projects/pigrocrm/docs/superpowers/specs/2026-11-09-suppliers-purchases-and-iva-design.md`);
+its line numbers are cited as «line N». Other paths are written in full.
+
+1. **IVA with `purchases` off** (contradiction). The design says a space with `purchases` off
+   still sees its sales register (the design, line 357) and, three lines later, that the IVA
+   cycle is part of `purchases` (line 360). This brief proposes that the page stays and shows the
+   sales register alone, with «La liquidazione richiede il modulo Acquisti.»; it is an inference,
+   not an answer. Unresolved: confirm with the design's owner.
+2. **`ROUTE_MODULES` cannot express it** (code). `projects/pigrocrm/apps/web/src/lib/modules.ts:50`
+   maps one path to modules, so a page whose sales register is core and whose settlement needs
+   `purchases` needs a finer guard than the table; the page card designs it.
+3. **Payment state before the due-items milestone** (sequencing). The design stores no payment
+   state on a purchase (line 262 and following) and asks for the filter «from C4» (line 375); the
+   C3 cards that write due items are blocked by the C4 milestone, so «Acquisti» ships without
+   the payment column, chips and the «Da pagare» and «Scaduti» figures (States table).
+4. **A receipt or an expense and its due item** (gap). The design does not say whether a till
+   receipt or an expense gets a due item or is settled at registration (lines 136 to 143 and 270
+   to 283). Proposed: registered «Già pagata» by default, the person may choose «Da pagare».
+5. **Removing a role** (gap). The design adds roles (line 32 and following) and never removes
+   one; who may, and what happens to purchases that use it, is open. The brief draws only
+   «Aggiungi il ruolo».
+6. **Reading purchases by role** (ambiguity). The design lists «reading purchases» as
+   collaborator (line 371) in a table about agent classes; the web gates only writes
+   (`projects/pigrocrm/apps/web/src/lib/permissions.ts`, header comment), so a read-only member
+   listing purchases is inferred.
+7. **Visibility of «IVA»** (inference). The design classes reading the registers and settlements
+   as full access (line 369) and names no web role; the brief mirrors `get_fiscal_estimate`
+   (`permissions.ts:185`, admin).
+8. **General costs are unreachable today** (code). `CostsPanel` without a deal (`only_general`,
+   `projects/pigrocrm/apps/web/src/features/costs/CostsPanel.tsx:24`) has no caller, so a general
+   expense cannot be reached from the UI; «Acquisti» is the first list of general spending. The
+   deal page's «Costi» tab becoming the deal's purchases is inferred and not drawn.
+9. **Six entries in «Amministrazione»** (cross-design). The cash design also puts «Cassa» in the
+   same section (`2026-11-09-due-items-bank-and-cash-schedule-design.md`, line 340); with
+   «Acquisti», «IVA» and, per Question 1, «Fornitori» it holds seven. The order is left to the
+   «Cassa» brief.
+10. **Deadlines and minimums on screen** (data not built). The ladder's payment deadline, the
+    quarterly line and the minimum below which a result is carried forward are «to verify» in the
+    frame's register (`2026-11-09-space-profiles-modules-and-the-money-picture-design.md`, § A5)
+    and are pack data that does not exist yet; the artifact shows a deadline with «dal pacchetto
+    fiscale» as an invented placeholder. The page card renders only what the pack sends.
+11. **Not verified.** I read the artifact's renders at 390 and 1440 px but ran no contrast tool;
+    the sample copy that the design does not name is listed under «Inferred, not asked».
