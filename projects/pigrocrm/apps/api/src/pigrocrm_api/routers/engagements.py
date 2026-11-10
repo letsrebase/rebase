@@ -185,8 +185,8 @@ _UNAVAILABLE_RESPONSE = _plain_response(
         201: {
             "model": EngagementRead,
             "description": (
-                "The space, the «rebase» customer and the letter's deal were created "
-                "now, for the first time with this match."
+                "The space, the «rebase» customer, the letter's deal and its contract with "
+                "a rate card were created now, for the first time with this match."
             ),
         },
         503: _UNAVAILABLE_RESPONSE,
@@ -200,9 +200,9 @@ def upsert_engagement(
     settings: SettingsDep,
     sender: SenderDep,
 ) -> EngagementRead:
-    """Creates or finds the freelancer's space, the «rebase» client and the letter's
-    deal for this hub match, under the bearer of `PIGROCRM_ENGAGEMENTS_TOKEN`
-    that only the hub holds."""
+    """Creates or finds the freelancer's space, the «rebase» client, the letter's deal
+    and its contract with a rate card (`fee_unit` day, hour or flat) for this hub match,
+    under the bearer of `PIGROCRM_ENGAGEMENTS_TOKEN` that only the hub holds."""
     answer = _run(match_id, lambda: _service(registry, settings, sender).ensure(match_id, data))
     response.status_code = status.HTTP_201_CREATED if answer.created else status.HTTP_200_OK
     return answer
