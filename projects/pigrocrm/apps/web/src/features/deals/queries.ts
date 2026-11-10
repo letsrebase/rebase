@@ -4,17 +4,20 @@ import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, toProblem, unwrap } from '@/lib/api'
 import type { StatusTone } from '@/components/StatusPill'
 import type { components } from '@/lib/api-types'
+import { fetchAllPages } from '@/lib/fetchAllPages'
+import { asBody } from '@/lib/formValues'
+import { keepWhileTyping } from '@/lib/keepWhileTyping'
 import { queryKeys } from '@/lib/query'
 
 /**
  * Wire shape of one deal and one pipeline stage, taken directly from the generated
- * OpenAPI schema rather than hand-declared -- the same reasoning as `Customer`/
- * `Person`'s own aliases (features/customers/queries.ts, features/people/
+ * OpenAPI schema rather than hand-declared -- the same reasoning as `Organization`/
+ * `Person`'s own aliases (features/organizations/queries.ts, features/people/
  * queries.ts): the single source of truth is `DealRead`/`PipelineStageRead` in
  * packages/core/src/pigrocrm/core/{deals,pipeline}/schemas.py, and these track it
  * through `pnpm generate:api` automatically.
  *
- * Note `valore_previsto`/`ore_preventivate`/`valore_preventivato` come through as
+ * Note `expected_value`/`budgeted_hours`/`budgeted_value` come through as
  * `string | null`, never `number`: `Decimal` fields serialise to JSON strings
  * (confirmed against the generated type), which is exactly what lets `columns.tsx`
  * parse them digit-by-digit instead of through a binary float -- see that file's
@@ -23,18 +26,22 @@ import { queryKeys } from '@/lib/query'
  */
 export type Deal = components['schemas']['DealRead']
 export type Stage = components['schemas']['PipelineStageRead']
+/** The single-deal read: a `Deal` plus the value lines behind its three figures. */
+export type DealDetailData = components['schemas']['DealDetailRead']
+export type ValuePreview = components['schemas']['ValuePreviewRead']
+type ValueLineBody = components['schemas']['DealValueLineIn']
 
 /**
  * The tone a pipeline stage reads as in a `StatusPill` (design spec §4), keyed on the
- * stage's `tipo` rather than on its name: a tenant renames «Vinto» to whatever it likes
- * and adds as many open stages as it wants, but `tipo` is the closed enum
+ * stage's `type` rather than on its name: a tenant renames «Vinto» to whatever it likes
+ * and adds as many open stages as it wants, but `type` is the closed enum
  * (`open`/`won`/`lost`) the backend guarantees -- so this map stays total and no
  * tenant-defined stage can fall through to a tone nobody chose.
  *
  * Every open stage is `muted`: a deal in the middle of a pipeline is not news, and a
  * board of eight coloured pills would say nothing. Only the two ends are stated.
  */
-export const DEAL_STAGE_TONE: Record<Stage['tipo'], StatusTone> = {
+export const DEAL_STAGE_TONE: Record<Stage['type'], StatusTone> = {
   open: 'muted',
   won: 'ink',
   lost: 'danger',
@@ -44,7 +51,7 @@ type DealCreateBody = components['schemas']['DealCreate']
 type DealUpdateBody = components['schemas']['DealUpdate']
 
 /**
- * `fatturato_non_vinto` and `da_fatturare` are the two operational-dashboard
+ * `invoiced_unwon` and `to_invoice` are the two operational-dashboard
  * drill-throughs (slice 6 §6.2). They are here rather than expressed as a client-side
  * filter over the fetched list because criterion 2 requires the card and the list behind
  * it to be the *same predicate*: `DealRepository.list` and the two counts on the
@@ -56,9 +63,9 @@ export interface DealsListParams {
   search?: string
   customer_id?: string
   stage_id?: string
-  azienda_id?: string
-  fatturato_non_vinto?: boolean
-  da_fatturare?: boolean
+  legal_entity_id?: string
+  invoiced_unwon?: boolean
+  to_invoice?: boolean
 }
 
 /**
@@ -69,21 +76,16 @@ export interface DealsListParams {
  */
 export interface DealsResult {
   items: Deal[]
-  /** True only if `MAX_PAGES` was exhausted while the server still reported more
-   *  (`next_cursor` still non-null) -- see `fetchAllDeals`'s own docstring. Never
-   *  true for any tenant this product is actually sized for; it exists so a
-   *  pathological one is told, not silently shown a partial board. */
+  /** True only if `fetchAllPages`' page cap was exhausted while the server still
+   *  reported more (`next_cursor` still non-null) -- see `fetchAllDeals`'s own
+   *  docstring. Never true for any tenant this product is actually sized for; it
+   *  exists so a pathological one is told, not silently shown a partial board. */
   truncated: boolean
 }
 
 // `DealListQuery.limit` (deals/schemas.py) is bounded `ge=1, le=200`; 200 is
 // therefore the fewest possible requests to drain a real result set.
 const MAX_PAGE_SIZE = 200
-// A hard stop against a runaway loop, not a bound this product's own target user
-// (a solo/small-team Italian freelancer) is expected to ever approach: 100 pages
-// of 200 is 20,000 deals. If a tenant ever does cross it, `truncated: true` says
-// so explicitly instead of either looping indefinitely or silently stopping.
-const MAX_PAGES = 100
 
 /**
  * `GET /api/deals` is cursor-paginated and bounded (`limit` defaults to 50, capped
@@ -91,31 +93,30 @@ const MAX_PAGES = 100
  * pagination on `Deal.id` ascending). A `useDeals` that only ever fetched the
  * first page would silently render a subset of a stage's deals the moment a
  * tenant passes 50 open deals: the Kanban's own per-column count and total
- * (`columns.tsx`'s `sumValorePrevisto`) would then be wrong with nothing on
+ * (`columns.tsx`'s `sumExpectedValue`) would then be wrong with nothing on
  * screen saying so, which is worse than a visible cap.
  *
  * This walks the cursor at the maximum page size until the server reports no
  * `next_cursor`, aggregating every page into one flat list -- "every deal
  * matching the filter" is the actual contract the Kanban and the list view both
- * need, not "the first 50". `MAX_PAGES` is the one safety valve: see its own
- * comment for why crossing it is surfaced rather than silent.
+ * need, not "the first 50". `fetchAllPages`' page cap is the one safety valve: see
+ * its own comment for why crossing it is surfaced rather than silent.
  */
-export async function fetchAllDeals(params: DealsListParams): Promise<DealsResult> {
-  const items: Deal[] = []
-  let cursor: string | undefined
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const data = await unwrap(
+export function fetchAllDeals(params: DealsListParams): Promise<DealsResult> {
+  return fetchAllPages((cursor) =>
+    unwrap(
       api.GET('/api/deals', {
         params: { query: { ...params, limit: MAX_PAGE_SIZE, cursor } },
       }),
-    )
-    items.push(...data.items)
-    if (!data.next_cursor) return { items, truncated: false }
-    cursor = data.next_cursor
-  }
-  return { items, truncated: true }
+    ),
+  )
 }
 
+/**
+ * A new search term is a new key, and without a placeholder the table drops back to its
+ * loading state on every settled keystroke: the previous rows stay up only when the term
+ * is the one thing that changed (`keepWhileTyping`), never across another azienda's params.
+ */
 export function useDeals(params: DealsListParams = {}) {
   // The sidebar's azienda when one is selected and the list has no customer of its own
   // (REB-625): a customer's deals are that customer's whatever the sidebar says.
@@ -123,6 +124,7 @@ export function useDeals(params: DealsListParams = {}) {
   return useQuery({
     queryKey: queryKeys.deals(scoped),
     queryFn: () => fetchAllDeals(scoped),
+    placeholderData: keepWhileTyping(queryKeys.deals(scoped)),
   })
 }
 
@@ -135,7 +137,7 @@ export function useStages() {
 
 export function useDeal(dealId: string, options: { enabled?: boolean } = {}) {
   return useQuery({
-    // See `useCustomer`: the proforma dialog reads the deal's azienda only when it has to.
+    // See `useOrganization`: the proforma dialog reads the deal's azienda only when it has to.
     enabled: (options.enabled ?? true) && dealId !== '',
     queryKey: queryKeys.deal(dealId),
     queryFn: () =>
@@ -144,18 +146,45 @@ export function useDeal(dealId: string, options: { enabled?: boolean } = {}) {
 }
 
 /**
+ * The three figures a list of value lines would give, from the server: the browser adds and
+ * multiplies no money (`POST /api/deals/value-preview` applies the checks a write applies).
+ * `lines` empty means nothing to ask. `session` counts the openings of the form; the previous
+ * answer stays up while the next one loads, so the figures do not flash away on every
+ * keystroke, but never across sessions. The caller debounces `lines`.
+ */
+export function useValuePreview(
+  lines: ValueLineBody[],
+  expectedCloseDate: string | null,
+  enabled: boolean,
+  session: number,
+) {
+  return useQuery({
+    enabled: enabled && lines.length > 0,
+    queryKey: ['deal-value-preview', session, lines, expectedCloseDate] as const,
+    queryFn: () =>
+      unwrap(
+        api.POST('/api/deals/value-preview', {
+          body: { value_lines: lines, expected_close_date: expectedCloseDate },
+        }),
+      ),
+    // The previous figures stay up while the next ones load, but only within one opening of
+    // the form: another deal's figures are never a placeholder for this one's.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[1] === session ? previous : undefined,
+    retry: false,
+  })
+}
+
+/**
  * `body` arrives as the loosely-typed `Record<string, unknown>` that
- * `DealForm.submit` builds -- the same idiom `customers/queries.ts`/`people/
- * queries.ts` use for the identical reason: a dynamic mix of native columns and
- * tenant-defined custom fields no fixed interface can describe. `as unknown as
- * DealCreateBody` says so honestly rather than a bare `as never` that hides the
- * target type entirely.
+ * `DealForm.submit` builds: a dynamic mix of native columns and tenant-defined
+ * custom fields no fixed interface can describe. `asBody` is where that is said, once.
  */
 export function useCreateDeal() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/deals', { body: body as unknown as DealCreateBody })),
+      unwrap(api.POST('/api/deals', { body: asBody<DealCreateBody>(body) })),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.deals() }),
   })
 }
@@ -167,7 +196,7 @@ export function useUpdateDeal(dealId: string) {
       unwrap(
         api.PATCH('/api/deals/{deal_id}', {
           params: { path: { deal_id: dealId } },
-          body: body as unknown as DealUpdateBody,
+          body: asBody<DealUpdateBody>(body),
         }),
       ),
     onSuccess: () => {
@@ -218,7 +247,7 @@ export function useUpdateDeal(dealId: string) {
  *
  * `getQueriesData`/`setQueryData` are typed as `DealsResult` for this hook's own
  * purposes, but the same `['deals', ...]` key prefix also matches `features/
- * customers/queries.ts`'s `useCustomerDeals` (a plain wire `DealPage`). Both
+ * organizations/queries.ts`'s `useOrganizationDeals` (a plain wire `DealPage`). Both
  * shapes carry `.items: Deal[]`, which is all this hook ever reads or rewrites,
  * so touching that cache entry too is harmless -- and `onSettled`'s invalidation
  * below refreshes it correctly regardless.
@@ -253,9 +282,13 @@ export function useMoveDeal() {
       }
       toast.error(toProblem(error).detail)
     },
-    onSettled: (_data, _error, variables) => {
+    onSettled: (_date, _error, variables) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.deals() })
       void queryClient.invalidateQueries({ queryKey: queryKeys.deal(variables.dealId) })
+      // The move writes a «Cambio stato» row (and an automation may write more): the Timeline
+      // tab of the deal keeps its own cache, so without this it showed the old history until
+      // a reload.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.timeline('deal', variables.dealId) })
       // A stage can be deleted server-side (admin-only, `PipelineService.delete`)
       // between one load of the board and the next. `useStages`'s own cache has
       // no other reason to refresh mid-session, so without this a deleted stage
@@ -268,14 +301,14 @@ export function useMoveDeal() {
       // A move changes which stage a deal is in, which is the whole of the commercial
       // dashboard's pipeline snapshot, and it may change the closures too. By the
       // ['dashboard'] prefix: this mutation cannot know which period is on screen.
-      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardAll })
     },
   })
 }
 
 /**
  * `DELETE /api/deals/{id}` is a soft delete: the server sets `deleted_at`. Unlike
- * `CustomerService.soft_delete`, `DealService.soft_delete` raises no conflict --
+ * `OrganizationService.soft_delete`, `DealService.soft_delete` raises no conflict --
  * nothing else in this slice holds a foreign key to a deal -- so there is no
  * active-dependents count to surface here.
  */

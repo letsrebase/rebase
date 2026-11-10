@@ -22,11 +22,13 @@ import {
   SelectValue,
 } from '@rebase/ui/select'
 import { Textarea } from '@rebase/ui/textarea'
-import { useCustomer, useCustomers } from '@/features/customers/queries'
+import { OrganizationPicker } from '@/features/organizations/OrganizationPicker'
+import { useOrganization } from '@/features/organizations/queries'
 import { useDeal, useDeals } from '@/features/deals/queries'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
 import { useLegalEntity } from '@/lib/legalEntity'
+import { useModules } from '@/lib/modules'
 import { toIsoDate } from '@/lib/dates'
 import { AccrualPeriodFields } from './AccrualPeriodFields'
 import {
@@ -34,7 +36,7 @@ import {
   validateAccrualPeriod,
   type AccrualPeriodDraft,
 } from './accrualPeriod'
-import { formatMoney, previewImponibile } from './format'
+import { formatMoney, previewTaxableAmount } from './format'
 import { useCreateInvoice } from './queries'
 
 /**
@@ -48,15 +50,15 @@ import { useCreateInvoice } from './queries'
  * being a create, has nothing to clear.
  */
 interface DraftRow {
-  descrizione: string
-  quantita: string
-  prezzo_unitario: string
+  description: string
+  quantity: string
+  unit_price: string
 }
 
-/** `InvoiceLineIn.quantita` defaults to 1 server-side; the field is pre-filled with it
+/** `InvoiceLineIn.quantity` defaults to 1 server-side; the field is pre-filled with it
  *  so the commonest line (one of something) needs no typing at all. */
 function newRow(): DraftRow {
-  return { descrizione: '', quantita: '1', prezzo_unitario: '' }
+  return { description: '', quantity: '1', unit_price: '' }
 }
 
 /**
@@ -68,8 +70,8 @@ function newRow(): DraftRow {
  * caller has no opinion about it.
  */
 export interface ProformaPrefill {
-  descrizione: string
-  importo: string
+  description: string
+  amount: string
 }
 
 /**
@@ -92,60 +94,23 @@ export type FixedParties =
  *  this is a starting point and never an answer. */
 function firstRow(prefill?: ProformaPrefill): DraftRow {
   if (prefill === undefined) return newRow()
-  return { descrizione: prefill.descrizione, quantita: '1', prezzo_unitario: prefill.importo }
+  return { description: prefill.description, quantity: '1', unit_price: prefill.amount }
 }
 
 function isComplete(row: DraftRow): boolean {
-  return row.descrizione.trim() !== '' && row.prezzo_unitario.trim() !== ''
+  return row.description.trim() !== '' && row.unit_price.trim() !== ''
 }
 
 function isStarted(row: DraftRow): boolean {
-  return row.descrizione.trim() !== '' || row.prezzo_unitario.trim() !== ''
+  return row.description.trim() !== '' || row.unit_price.trim() !== ''
 }
 
 interface Errors {
   customer?: string
-  causale?: string
+  memo?: string
   data?: string
-  competenza?: string
-  righe?: string
-}
-
-/**
- * Split out so `useCustomers` is mounted -- and therefore requested -- only while the
- * dialog is actually open, the same reasoning `features/deals/DealForm.tsx`'s
- * `CustomerPicker` documents at length. `limit: 200` mirrors it too: a one-shot cap for
- * a dropdown, not a paginated list of its own.
- */
-function CustomerPicker({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (value: string) => void
-}) {
-  const customers = useCustomers({ limit: 200 })
-
-  return (
-    <div className="space-y-2">
-      <Label htmlFor="proforma-cliente">
-        Cliente
-        <span className="ml-1 text-destructive">*</span>
-      </Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger id="proforma-cliente" className="w-full">
-          <SelectValue placeholder="Seleziona un cliente…" />
-        </SelectTrigger>
-        <SelectContent>
-          {customers.data?.items.map((customer) => (
-            <SelectItem key={customer.id} value={customer.id}>
-              {customer.ragione_sociale}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  )
+  accrual?: string
+  lines?: string
 }
 
 /**
@@ -175,40 +140,40 @@ function FixedField({ label, value }: { label: string; value: string | undefined
 
 /**
  * The customer, when only the customer is fixed -- which is the Fatture tab of that
- * customer's own page. `useCustomer` is mounted there at route level, so this is a cache
+ * customer's own page. `useOrganization` is mounted there at route level, so this is a cache
  * hit and the name is on screen the instant the dialog opens.
  */
-function FixedCustomer({ customerId }: { customerId: string }) {
-  const customer = useCustomer(customerId)
-  return <FixedField label="Cliente" value={customer.data?.ragione_sociale} />
+function FixedOrganization({ customerId }: { customerId: string }) {
+  const customer = useOrganization(customerId)
+  return <FixedField label="Cliente" value={customer.data?.legal_name} />
 }
 
 /**
  * Both parties at once, when the deal is fixed too -- which is a deal's own header.
  *
  * One read names both, and it is the read the page has already made: `DealRead` carries
- * `customer_ragione_sociale` (denormalised there precisely so a deal can be shown
+ * `customer_legal_name` (denormalised there precisely so a deal can be shown
  * without a second request -- see that field's comment in `deals/schemas.py`), and
  * `useDeal(dealId)` is mounted at the deal route's own top level.
  *
- * This is why the customer is *not* read through `useCustomer` here: on the deal page
- * that would be a cold `GET /api/customers/{id}` on every open. `DealCustomerCard` does
+ * This is why the customer is *not* read through `useOrganization` here: on the deal page
+ * that would be a cold `GET /api/organizations/{id}` on every open. `DealCustomerCard` does
  * hold one, but it lives in the Collegamenti tab, which Radix leaves unmounted until it
  * is selected -- so its cache entry is not there to be hit.
  */
-function FixedCustomerAndDeal({ dealId }: { dealId: string }) {
+function FixedOrganizationAndDeal({ dealId }: { dealId: string }) {
   const deal = useDeal(dealId)
   return (
     <>
-      <FixedField label="Cliente" value={deal.data?.customer_ragione_sociale ?? undefined} />
-      <FixedField label="Deal" value={deal.data?.nome} />
+      <FixedField label="Cliente" value={deal.data?.customer_legal_name ?? undefined} />
+      <FixedField label="Deal" value={deal.data?.name} />
     </>
   )
 }
 
 /** `NO_DEAL` is a UI-only value: "no deal" is the *absence* of `deal_id` in the body,
  *  and a `Select` needs a non-empty string to represent an option. */
-const NO_DEAL = 'nessuno'
+const NO_DEAL = 'none'
 
 /**
  * Rendered only once a customer is chosen, which is what makes the list correct rather
@@ -238,7 +203,7 @@ function DealPicker({
           <SelectItem value={NO_DEAL}>Nessun deal</SelectItem>
           {deals.data?.items.map((deal) => (
             <SelectItem key={deal.id} value={deal.id}>
-              {deal.nome}
+              {deal.name}
             </SelectItem>
           ))}
         </SelectContent>
@@ -250,29 +215,29 @@ function DealPicker({
 /**
  * Creating a proforma.
  *
- * From the Fatture page, where nothing is known and both pickers are asked; from a
- * customer's Fatture tab, where the customer is; and from a deal's header, where the
+ * From the Invoices page, where nothing is known and both pickers are asked; from a
+ * customer's Invoices tab, where the customer is; and from a deal's header, where the
  * customer, the deal and the first line all are. One dialog for the three, because the
  * document they create is the same one -- what changes is only how many of its questions
  * the page behind it has already answered.
  *
- * A proforma and not a `fattura` bozza, even though `POST /api/invoices` accepts both:
+ * A proforma and not a `invoice` draft, even though `POST /api/invoices` accepts both:
  * what the owner does next is confirm it and issue it (`POST /{id}/confirm`, then
  * `POST /{id}/issue`), which is exactly the proforma's own path -- and neither shape
  * has a number until emission, so nothing here can burn one.
  *
- * `data_scadenza` is deliberately not a field. It is not on `InvoiceCreate` at all
+ * `due_date` is deliberately not a field. It is not on `InvoiceCreate` at all
  * (packages/core/src/pigrocrm/core/invoices/schemas.py): the due date is derived at
- * emission from the fiscal profile's `giorni_scadenza` (`InvoiceService.issue`). A
+ * emission from the fiscal profile's `due_days` (`InvoiceService.issue`). A
  * control for it here would have been silently dropped -- `InvoiceCreate` does not
  * forbid extra keys -- which is worse than not offering it, so the dialog says where
  * the date comes from instead.
  *
- * `data_emissione` *is* a field, since ORB-63: a proforma is a document the customer
+ * `issue_date` *is* a field, since ORB-63: a proforma is a document the customer
  * receives and answers to, so it carries a date of its own, the sender's and stable,
  * rather than printing the day it was rendered. Today by default, read from local date
  * parts (`toIsoDate`), and editable on the detail page until the proforma is consumed.
- * It is not a register date: the fattura issued from it takes its own at emission.
+ * It is not a register date: the invoice issued from it takes its own at emission.
  *
  * The accrual period (ORB-61) is optional, both ends or neither. It is what the P&L
  * «per competenza» reads and what the XML's `DataInizioPeriodo`/`DataFinePeriodo` say,
@@ -291,21 +256,23 @@ function NewProformaDialog({
   // need to know whether a human chose them or the page did.
   const [customerId, setCustomerId] = useState(fixedCustomerId ?? '')
   const [dealId, setDealId] = useState(fixedDealId ?? '')
-  const [causale, setCausale] = useState('')
-  const [dataEmissione, setDataEmissione] = useState(() => toIsoDate(new Date()))
-  const [competenza, setCompetenza] = useState<AccrualPeriodDraft>(emptyAccrualPeriod)
+  const [memo, setMemo] = useState('')
+  const [issueDate, setIssueDate] = useState(() => toIsoDate(new Date()))
+  const [accrual, setAccrual] = useState<AccrualPeriodDraft>(emptyAccrualPeriod)
   const [note, setNote] = useState('')
   const [rows, setRows] = useState<DraftRow[]>(() => [firstRow(prefill)])
   const [errors, setErrors] = useState<Errors>({})
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
-  // Which azienda will issue (REB-626, spec §1.7): the deal's when one is chosen, the
+  // Which legal entity will issue (REB-626, spec §1.7): the deal's when one is chosen, the
   // customer's otherwise, the same rule `InvoiceService.create` applies. Read only from
-  // the second azienda on; on the fixed variants both reads are the page's own cache hits.
-  const azienda = useLegalEntity()
-  const issuingCustomer = useCustomer(customerId, { enabled: azienda.several })
-  const issuingDeal = useDeal(dealId, { enabled: azienda.several })
-  const issuedBy = azienda.several
-    ? azienda.byId(dealId !== '' ? issuingDeal.data?.azienda_id : issuingCustomer.data?.azienda_id)
+  // the second legal entity on; on the fixed variants both reads are the page's own cache hits.
+  const legal_entity = useLegalEntity()
+  // The deal to link is offered only while `deals` is on (REB-953).
+  const dealsOn = useModules().on('deals')
+  const issuingOrganization = useOrganization(customerId, { enabled: legal_entity.several })
+  const issuingDeal = useDeal(dealId, { enabled: legal_entity.several })
+  const issuedBy = legal_entity.several
+    ? legal_entity.byId(dealId !== '' ? issuingDeal.data?.legal_entity_id : issuingOrganization.data?.legal_entity_id)
     : undefined
 
   function update(index: number, field: keyof DraftRow, value: string) {
@@ -314,7 +281,7 @@ function NewProformaDialog({
     )
   }
 
-  function chooseCustomer(value: string) {
+  function chooseOrganization(value: string) {
     setCustomerId(value)
     // A deal chosen for the previous customer would be a 409 from `_check_owner`, and
     // the picker below is about to list a different set entirely. Back to the *fixed*
@@ -330,14 +297,14 @@ function NewProformaDialog({
   function validate(): Errors {
     const found: Errors = {}
     if (customerId === '') found.customer = 'Scegli il cliente da fatturare.'
-    if (causale.trim() === '') found.causale = 'La causale è obbligatoria.'
-    if (dataEmissione === '') found.data = 'La proforma ha bisogno di una data.'
-    const periodError = validateAccrualPeriod(competenza)
-    if (periodError !== undefined) found.competenza = periodError
+    if (memo.trim() === '') found.memo = 'La causale è obbligatoria.'
+    if (issueDate === '') found.data = 'La proforma ha bisogno di una data.'
+    const periodError = validateAccrualPeriod(accrual)
+    if (periodError !== undefined) found.accrual = periodError
     if (!rows.some(isComplete)) {
-      found.righe = 'Serve almeno una riga con descrizione e prezzo unitario.'
+      found.lines = 'Serve almeno una riga con descrizione e prezzo unitario.'
     } else if (rows.some((row) => isStarted(row) && !isComplete(row))) {
-      found.righe = 'Ogni riga iniziata richiede descrizione e prezzo unitario.'
+      found.lines = 'Ogni riga iniziata richiede descrizione e prezzo unitario.'
     }
     return found
   }
@@ -350,26 +317,26 @@ function NewProformaDialog({
 
     const body: Record<string, unknown> = {
       customer_id: customerId,
-      tipo: 'proforma',
-      causale: causale.trim(),
-      data_emissione: dataEmissione,
+      type: 'proforma',
+      memo: memo.trim(),
+      issue_date: issueDate,
       // Only the complete rows, and each one with only the keys the user filled in.
       // An omitted optional key on a *create* is the server's own default, which is
       // what "the user did not say" means here -- unlike `InvoiceLinesEditor`, where a
       // full replacement makes an omitted key indistinguishable from an unchanged one
       // and `null` has to be explicit.
-      righe: rows.filter(isComplete).map((row) => ({
-        descrizione: row.descrizione.trim(),
-        quantita: row.quantita.trim() === '' ? '1' : row.quantita.trim(),
-        prezzo_unitario: row.prezzo_unitario.trim(),
+      lines: rows.filter(isComplete).map((row) => ({
+        description: row.description.trim(),
+        quantity: row.quantity.trim() === '' ? '1' : row.quantity.trim(),
+        unit_price: row.unit_price.trim(),
       })),
     }
     if (dealId !== '') body.deal_id = dealId
     // After `validate`, a non-empty start means a non-empty end too; an empty pair is
     // the server's own default, per the rule above.
-    if (competenza.competenza_da !== '') {
-      body.competenza_da = competenza.competenza_da
-      body.competenza_a = competenza.competenza_a
+    if (accrual.accrual_from !== '') {
+      body.accrual_from = accrual.accrual_from
+      body.accrual_to = accrual.accrual_to
     }
     if (note.trim() !== '') body.note_interne = note.trim()
 
@@ -411,19 +378,29 @@ function NewProformaDialog({
               the one read the deal page has already made. */}
           {fixedCustomerId === undefined ? (
             <>
-              <CustomerPicker value={customerId} onChange={chooseCustomer} />
+              <div className="space-y-2">
+                <Label htmlFor="proforma-customer">
+                  Cliente
+                  <span className="ml-1 text-destructive">*</span>
+                </Label>
+                <OrganizationPicker
+                  id="proforma-customer"
+                  value={customerId === '' ? null : customerId}
+                  onChange={(customer) => chooseOrganization(customer?.id ?? '')}
+                />
+              </div>
               {errors.customer ? (
                 <p className="text-sm text-destructive">{errors.customer}</p>
               ) : null}
             </>
           ) : fixedDealId === undefined ? (
-            <FixedCustomer customerId={fixedCustomerId} />
+            <FixedOrganization customerId={fixedCustomerId} />
           ) : (
             // The state and not `fixedDealId`: what is shown is what the body will carry.
-            <FixedCustomerAndDeal dealId={dealId} />
+            <FixedOrganizationAndDeal dealId={dealId} />
           )}
 
-          {fixedDealId === undefined && customerId !== '' ? (
+          {fixedDealId === undefined && customerId !== '' && dealsOn ? (
             <DealPicker
               customerId={customerId}
               value={dealId}
@@ -433,21 +410,21 @@ function NewProformaDialog({
 
           {/* Only once the read has answered: a `…` between choosing and knowing would
               read as an azienda with no name. */}
-          {issuedBy !== undefined ? <FixedField label="Emessa da" value={issuedBy.nome} /> : null}
+          {issuedBy !== undefined ? <FixedField label="Emessa da" value={issuedBy.name} /> : null}
 
           <div className="space-y-2">
-            <Label htmlFor="proforma-causale">
+            <Label htmlFor="proforma-description">
               Causale
               <span className="ml-1 text-destructive">*</span>
             </Label>
             <Input
-              id="proforma-causale"
-              value={causale}
-              onChange={(event) => setCausale(event.target.value)}
+              id="proforma-description"
+              value={memo}
+              onChange={(event) => setMemo(event.target.value)}
               placeholder="Consulenza settembre 2026"
             />
-            {errors.causale ? (
-              <p className="text-sm text-destructive">{errors.causale}</p>
+            {errors.memo ? (
+              <p className="text-sm text-destructive">{errors.memo}</p>
             ) : null}
           </div>
 
@@ -462,15 +439,15 @@ function NewProformaDialog({
                   id="proforma-data"
                   type="date"
                   required
-                  value={dataEmissione}
-                  onChange={(event) => setDataEmissione(event.target.value)}
+                  value={issueDate}
+                  onChange={(event) => setIssueDate(event.target.value)}
                 />
               </div>
-              <AccrualPeriodFields idPrefix="proforma" value={competenza} onChange={setCompetenza} />
+              <AccrualPeriodFields idPrefix="proforma" value={accrual} onChange={setAccrual} />
             </div>
             {errors.data ? <p className="text-sm text-destructive">{errors.data}</p> : null}
-            {errors.competenza ? (
-              <p className="text-sm text-destructive">{errors.competenza}</p>
+            {errors.accrual ? (
+              <p className="text-sm text-destructive">{errors.accrual}</p>
             ) : null}
           </div>
 
@@ -484,24 +461,24 @@ function NewProformaDialog({
                   <Input
                     aria-label={`Descrizione riga ${index + 1}`}
                     placeholder="Descrizione"
-                    value={row.descrizione}
-                    onChange={(event) => update(index, 'descrizione', event.target.value)}
+                    value={row.description}
+                    onChange={(event) => update(index, 'description', event.target.value)}
                   />
                 </div>
                 <div className="sm:col-span-2">
                   <Input
                     aria-label={`Quantità riga ${index + 1}`}
                     placeholder="Quantità"
-                    value={row.quantita}
-                    onChange={(event) => update(index, 'quantita', event.target.value)}
+                    value={row.quantity}
+                    onChange={(event) => update(index, 'quantity', event.target.value)}
                   />
                 </div>
                 <div className="sm:col-span-3">
                   <Input
                     aria-label={`Prezzo unitario riga ${index + 1}`}
                     placeholder="Prezzo unitario"
-                    value={row.prezzo_unitario}
-                    onChange={(event) => update(index, 'prezzo_unitario', event.target.value)}
+                    value={row.unit_price}
+                    onChange={(event) => update(index, 'unit_price', event.target.value)}
                   />
                 </div>
                 <div className="sm:col-span-1">
@@ -522,7 +499,7 @@ function NewProformaDialog({
                 </div>
               </div>
             ))}
-            {errors.righe ? <p className="text-sm text-destructive">{errors.righe}</p> : null}
+            {errors.lines ? <p className="text-sm text-destructive">{errors.lines}</p> : null}
 
             <div className="flex items-center justify-between">
               <Button
@@ -537,7 +514,7 @@ function NewProformaDialog({
                   own: the imponibile that counts is the one the service computes and
                   stores, with the regime's rules applied. */}
               <span className="text-muted-foreground text-sm">
-                Anteprima imponibile: {formatMoney(previewImponibile(rows))}
+                Anteprima imponibile: {formatMoney(previewTaxableAmount(rows))}
               </span>
             </div>
           </div>
@@ -571,8 +548,7 @@ function NewProformaDialog({
  * all three.
  *
  * The dialog is *mounted* only while open rather than kept behind `open={false}`, so
- * the customer list is fetched when someone actually wants to pick from it -- the same
- * fix, for the same reason, that `DealForm`'s `CustomerPicker` documents.
+ * organizations are searched when someone actually wants to pick one.
  */
 export function NewProformaButton(props: { prefill?: ProformaPrefill } & FixedParties) {
   const [open, setOpen] = useState(false)

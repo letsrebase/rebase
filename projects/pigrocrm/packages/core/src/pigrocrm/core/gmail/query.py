@@ -145,7 +145,7 @@ WEBMAIL_DOMAINS: frozenset[str] = frozenset(
 
 # Where the mail of certified email (PEC) providers comes from. A PEC address names its
 # provider, not the company that holds it, so it proposes nobody (REB-223).
-PEC_PROVIDER_DOMAINS: frozenset[str] = frozenset(
+CERTIFIED_EMAIL_PROVIDER_DOMAINS: frozenset[str] = frozenset(
     {
         "pec.it",
         "legalmail.it",
@@ -162,13 +162,13 @@ PEC_PROVIDER_DOMAINS: frozenset[str] = frozenset(
 
 def is_provider_domain(domain: str) -> bool:
     """A domain that names a mail provider rather than an organisation: the webmails
-    above, the PEC providers, and any `pec.` subdomain, which is how a company's own
+    above, the PEC providers, and any `certified_email.` subdomain, which is how a company's own
     certified mailbox is usually hosted. An address there says nothing about which
     customer the person works for."""
     normalised = domain.strip().lower()
     return (
         normalised in WEBMAIL_DOMAINS
-        or normalised in PEC_PROVIDER_DOMAINS
+        or normalised in CERTIFIED_EMAIL_PROVIDER_DOMAINS
         or normalised.startswith("pec.")
     )
 
@@ -206,22 +206,32 @@ def discovery_query(domain: str) -> str:
     return build_domain_clause(domain)
 
 
-def customer_domain(*, sito_web: str | None, email: str | None) -> str | None:
+def customer_domain(
+    *, website: str | None, email: str | None, other_emails: Sequence[str] = ()
+) -> str | None:
     """The domain a customer's correspondents share, read from the record and never
-    typed by the caller: the website first, the customer's own email second.
+    typed by the caller: the website first, the customer's own email second, then the rest
+    of its email points (`other_emails`, a customer keeps several: the primary may be a
+    webmail address while another is the company's). The caller passes the ones that may
+    name a company (`company_email_addresses`: the primary, then `work` and `other`), never
+    a billing or personal address.
 
     `None` when there is nothing to derive from, or when what there is names a webmail
     provider -- an answer of "nobody in particular" is worse than no answer, because it
     looks like one.
     """
-    for candidate in (_website_host(sito_web), _email_domain(email)):
+    for candidate in (
+        _website_host(website),
+        _email_domain(email),
+        *(_email_domain(address) for address in other_emails),
+    ):
         if candidate and candidate not in WEBMAIL_DOMAINS and _SAFE_DOMAIN.fullmatch(candidate):
             return candidate
     return None
 
 
-def _website_host(sito_web: str | None) -> str | None:
-    value = (sito_web or "").strip().lower()
+def _website_host(website: str | None) -> str | None:
+    value = (website or "").strip().lower()
     if not value:
         return None
     if "://" not in value:
@@ -242,7 +252,7 @@ def build_list_queries(
     """One query per batch of addresses. An empty roster yields **no** queries -- not
     one unfiltered query, which is the whole point.
 
-    Duplicates are collapsed, in order: the roster is assembled from customers, people
+    Duplicates are collapsed, in order: the roster is assembled from organizations, people
     and deals, so the same address arrives more than once routinely, and three
     identical clauses would spend a third of the `q`'s length limit on nothing.
 

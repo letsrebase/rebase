@@ -1,9 +1,9 @@
 import { Link, Outlet, useNavigate } from '@tanstack/react-router'
 import { Menu } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { BrandMark } from '@/components/BrandMark'
+import { BrandMark } from '@rebase/ui/brand-mark'
 import { SidebarNav } from '@/components/SidebarNav'
-import { useMediaQuery } from '@/hooks/use-media-query'
+import { useMediaQuery } from '@rebase/ui/use-media-query'
 import { Button } from '@rebase/ui/button'
 import { Loader } from '@rebase/ui/loader'
 import { Sheet, SheetContent, SheetTrigger } from '@rebase/ui/sheet'
@@ -18,7 +18,7 @@ const DESKTOP = '(min-width: 1024px)'
  * The one guard and the one frame every signed-in route passes through (REB-279):
  * `AdminLayout.tsx`'s dark sidebar and `pages/member/Guard.tsx`'s `MemberGuard`
  * collapse into this one component, reading `useMe()`. Nothing renders while the
- * session is unknown, a signed-out visitor goes to `/accedi`, and the admin group of
+ * session is unknown, a signed-out visitor goes to `/login`, and the admin group of
  * the sidebar shows only for `role === 'admin'`. `/admin/*`'s own access rule lives
  * one level further in, `AdminGuard`: a signed-in non-admin still belongs in this same
  * frame, just not in that section of it, which is what closes the old empty-frame bug

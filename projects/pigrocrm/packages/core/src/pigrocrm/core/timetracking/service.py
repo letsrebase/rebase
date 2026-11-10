@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
-from pigrocrm.core.clock import oggi_in_italia
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.errors import (
@@ -18,6 +18,7 @@ from pigrocrm.core.errors import (
     NotFound,
     ValidationFailed,
 )
+from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
@@ -43,28 +44,29 @@ from pigrocrm.core.timetracking.schemas import (
 )
 
 # Typed as the fields module's own EntityType (not a bare `str`), matching
-# CustomerService.ENTITY/DealService.ENTITY exactly: passing a plain `str` into
+# OrganizationService.ENTITY/DealService.ENTITY exactly: passing a plain `str` into
 # `specs_for` fails mypy strict, which requires the narrower Literal type.
 ENTITY: EntityType = "time_entry"
 
 # §4.3's table, as data. Frozen once the entry belongs to a fiscal document;
-# `note_interne` and `custom_fields` stay mutable because they appear on no artefact.
-# `descrizione` is in this tuple and it is not obvious: it is the column the client
+# `internal_notes` and `custom_fields` stay mutable because they appear on no artefact.
+# `description` is in this tuple and it is not obvious: it is the column the client
 # reads in the timesheet attached to the invoice, so changing it after issue would
 # make the delivered document and the database say two different things.
 FROZEN_WHEN_BILLED: tuple[str, ...] = (
-    "ore",
-    "data",
-    "tariffa_applicata",
-    "costo_applicato",
-    "descrizione",
+    "hours",
+    "date",
+    "applied_rate",
+    "applied_cost",
+    "description",
     "deal_id",
-    "fatturabile",
+    "billable",
+    "user_id",
 )
 
 
 def to_read(entry: TimeEntry) -> TimeEntryRead:
-    """The only place `valore_riga` and `costo_riga` are computed.
+    """The only place `line_value` and `line_cost` are computed.
 
     Returned already summed because §6 forbids the browser from doing any economic
     arithmetic: every figure the UI shows arrives finished. Task 4A-14 (the report) and
@@ -75,8 +77,8 @@ def to_read(entry: TimeEntry) -> TimeEntryRead:
     read = TimeEntryRead.model_validate(entry)
     return read.model_copy(
         update={
-            "valore_riga": line_value(entry.ore, entry.tariffa_applicata),
-            "costo_riga": line_value(entry.ore, entry.costo_applicato),
+            "line_value": line_value(entry.hours, entry.applied_rate),
+            "line_cost": line_value(entry.hours, entry.applied_cost),
         }
     )
 
@@ -93,11 +95,11 @@ def billed_entry_ids(session: Session, entries: Sequence[TimeEntry | TimeEntryRe
     orphans; the moment `issue()` commits, the bound hours are frozen without `issue()`
     having had to know they exist.
 
-    Only `emessa`. An **annulled** invoice keeps its number but not its revenue (§7.1) --
+    Only `issued`. An **annulled** invoice keeps its number but not its revenue (§7.1) --
     the struck-through page of a paper register -- so its hours are CRM data again and can
     be re-invoiced. A **proforma** never freezes anything: it does not touch the register
-    at all (slice 3 §5), and `confermata` is close enough to an emission in spirit that
-    `tipo` is filtered alongside `stato` rather than trusted to differ.
+    at all (slice 3 §5), and `confirmed` is close enough to an emission in spirit that
+    `type` is filtered alongside `status` rather than trusted to differ.
 
     A soft-deleted invoice does not freeze either, and it cannot be an issued one: slice
     3's `ck_invoices_deleted_unnumbered` allows `deleted_at` only on a row with no number.
@@ -115,13 +117,13 @@ def billed_entry_ids(session: Session, entries: Sequence[TimeEntry | TimeEntryRe
         return set()
     # Still one query: every line this session can see, with whether its invoice is
     # issued. A line the session cannot see at all freezes its entry as an issued one
-    # would (REB-634): since the row-level policies, an entry of a deal in one azienda
+    # would (REB-634): since the row-level policies, an entry of a deal in one legal entity
     # may be bound to an invoice of another, which a member scoped to the first cannot
     # read. Open, the guard would let them edit hours already billed; closed, the worst
     # case is a draft line of an invoice out of their sight that they cannot touch until
     # it is issued anyway (CodeRabbit's seventh adversarial pass on PR #513).
     issued_flag = and_(
-        Invoice.tipo == "fattura", Invoice.stato == "emessa", Invoice.deleted_at.is_(None)
+        Invoice.type == "invoice", Invoice.status == "issued", Invoice.deleted_at.is_(None)
     )
     seen = session.execute(
         select(InvoiceLine.id, issued_flag)
@@ -165,59 +167,35 @@ class TimeEntryService:
         user = self.users.get(user_id)
         if user is None:
             raise NotFound("user", user_id)
-        if not user.attivo:
+        if not user.active:
             raise ValidationFailed(
                 ENTITY, "user_id", "l'utente non è attivo", expected="un utente attivo"
             )
 
-    def _check_not_future(self, giorno: date) -> None:
+    def _check_not_future(self, day: date) -> None:
         """A future hour is not data, it is a forecast, and this slice makes no
         forecasts (§13). Back-dating has no floor at all, unlike slice 3's
-        `data_emissione`: there you write into a progressive fiscal register, where
+        `issue_date`: there you write into a progressive fiscal register, where
         inserting into a closed year is wrong regardless; here you declare when work
         was done, and forbidding it would produce hours dated the day somebody
         remembered to write them -- an archive that lies about its only temporal
         field.
 
-        The comparison is against `oggi_in_italia()` and never a bare `date.today()`
-        (see `clock.py`): the day this refuses to go past is the day the person doing
+        The comparison is against `today_local()` and never a bare `date.today()`
+        (see `db/clock.py`): the day this refuses to go past is the day the person doing
         the work is living in, not the day the process's own timezone happens to be
         in. The API image runs in UTC, where `date.today()` is still yesterday between
         midnight and 01:00 CET (02:00 CEST), so logging this morning's hours would be
         refused as `data futura` -- a legal entry rejected with a message that reads as
         a product defect. Run the process east of Italy and the same check silently
         accepts tomorrow, which is the forecast this slice says it does not make."""
-        if giorno > oggi_in_italia():
+        if day > today_local():
             raise ValidationFailed(
-                ENTITY, "data", "data futura", expected="una data non successiva a oggi"
+                ENTITY, "date", "data futura", expected="una data non successiva a oggi"
             )
 
     def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
         return validate_custom_fields(ENTITY, self.fields.specs_for(ENTITY), values)
-
-    def _update_custom_fields(self, entry: TimeEntry, provided: dict[str, Any]) -> dict[str, Any]:
-        """Copies `DealService._update_custom_fields`'s contract exactly -- see that
-        method's docstring for the full reasoning. Validates only the keys the caller
-        touches, against active definitions, never the union with what is stored; a
-        supplied `None` removes the entry unless its definition is active and
-        required."""
-        active_by_key = {spec.key: spec for spec in self.fields.specs_for(ENTITY)}
-        to_remove: set[str] = set()
-        for key, value in provided.items():
-            if value is not None:
-                continue
-            spec = active_by_key.get(key)
-            if spec is not None and spec.required:
-                raise ValidationFailed(
-                    ENTITY, key, "campo obbligatorio", expected="un valore non vuoto"
-                )
-            to_remove.add(key)
-        to_set = {k: v for k, v in provided.items() if v is not None}
-        touched = [spec for spec in active_by_key.values() if spec.key in to_set]
-        validated = validate_custom_fields(ENTITY, touched, to_set)
-        merged = {k: v for k, v in entry.custom_fields.items() if k not in to_remove}
-        merged.update(validated)
-        return merged
 
     def _require(self, entry_id: UUID, *, include_deleted: bool = False) -> TimeEntry:
         entry = self.repo.get(entry_id, include_deleted=include_deleted)
@@ -227,36 +205,39 @@ class TimeEntryService:
 
     # ---- writes -----------------------------------------------------------
 
-    def create(self, data: TimeEntryCreate, actor: Actor) -> TimeEntryRead:
+    def create(self, data: TimeEntryCreate, actor: Actor, *, commit: bool = True) -> TimeEntryRead:
+        """`commit=False` leaves the transaction to a caller that writes more than the entry
+        and needs the writes to stand or fall together (`TimerService.stop`); the entry is
+        flushed either way."""
         actor.require_write("log_time")
         deal = self._require_deal(data.deal_id)
         self._require_active_user(data.user_id)
-        self._check_not_future(data.data)
-        self.locks.assert_writable(ENTITY, "data", data.data)
+        self._check_not_future(data.date)
+        self.locks.assert_writable(ENTITY, "date", data.date)
 
         resolved = self.rates.resolve(
             deal_id=data.deal_id,
             user_id=data.user_id,
-            tariffa_esplicita=data.tariffa_applicata,
-            costo_esplicito=data.costo_applicato,
+            explicit_rate=data.applied_rate,
+            cost_explicit=data.applied_cost,
         )
         entry = self.repo.add(
             TimeEntry(
                 deal_id=data.deal_id,
                 user_id=data.user_id,
-                data=data.data,
-                ore=data.ore,
+                date=data.date,
+                hours=data.hours,
                 # Stored raw: multi-line, unescaped, exactly as typed. `escape_for`
                 # prepares it at render, once, for the context it lands in. The previous system
                 # escaped at write time and the value then reached the XLSX escaped and
                 # the PDF double-escaped.
-                descrizione=data.descrizione,
-                fatturabile=data.fatturabile,
-                tariffa_applicata=resolved.tariffa,
-                costo_applicato=resolved.costo,
-                tariffa_origine=resolved.tariffa_origine,
-                costo_origine=resolved.costo_origine,
-                note_interne=data.note_interne,
+                description=data.description,
+                billable=data.billable,
+                applied_rate=resolved.rate,
+                applied_cost=resolved.cost,
+                rate_source=resolved.rate_source,
+                cost_source=resolved.cost_source,
+                internal_notes=data.internal_notes,
                 custom_fields=self._validated_custom(data.custom_fields or {}),
             )
         )
@@ -267,21 +248,22 @@ class TimeEntryService:
             actor,
             {
                 "deal_id": str(entry.deal_id),
-                "ore": str(entry.ore),
-                "tariffa_applicata": str(entry.tariffa_applicata),
-                "tariffa_origine": entry.tariffa_origine,
+                "hours": str(entry.hours),
+                "applied_rate": str(entry.applied_rate),
+                "rate_source": entry.rate_source,
             },
         )
         stage = self.pipeline.get(deal.pipeline_stage_id)
-        if stage.tipo != "open":
+        if stage.type != "open":
             # Closing a deal blocks nothing (§4.3). On a won deal the work *begins* at
             # that moment; on a lost one the pre-sales hours are a real cost. Refusing
             # would force reopening the deal to tell the truth -- corrupting the
             # pipeline to save the actuals. The UI warns, this records, neither refuses.
             self.activities.record(
-                ENTITY, entry.id, "time_logged_on_closed_deal", actor, {"stage": stage.nome}
+                ENTITY, entry.id, "time_logged_on_closed_deal", actor, {"stage": stage.name}
             )
-        self.session.commit()
+        if commit:
+            self.session.commit()
         return to_read(entry)
 
     def update(self, entry_id: UUID, data: TimeEntryUpdate, actor: Actor) -> TimeEntryRead:
@@ -308,12 +290,12 @@ class TimeEntryService:
             self._require_deal(changes["deal_id"])
         if changes.get("user_id") is not None:
             self._require_active_user(changes["user_id"])
-        if changes.get("data") is not None:
-            self._check_not_future(changes["data"])
+        if changes.get("date") is not None:
+            self._check_not_future(changes["date"])
         # Both the stored date and the new one: moving a row out of a closed month is
         # still a write into it, and checking only the destination would let somebody
         # empty a reported month one row at a time.
-        self.locks.assert_writable(ENTITY, "data", entry.data, changes.get("data"))
+        self.locks.assert_writable(ENTITY, "date", entry.date, changes.get("date"))
 
         # A rate supplied on an update is an explicit override and is re-frozen with
         # `origine = "manuale"`; a rate NOT supplied is never re-resolved, because
@@ -322,21 +304,19 @@ class TimeEntryService:
         #
         # `in changes` on the key, not `is not None` on the value: since A14 was closed
         # a rate is clearable, and clearing one is a deliberate act ("this hour has no
-        # price") that must be recorded as such -- `assente`, frozen, chosen by
+        # price") that must be recorded as such -- `absent`, frozen, chosen by
         # somebody. A cleared rate that fell through to the `else` of nothing would keep
-        # the stale `manuale`/`deal` origin, and the next reader would believe a price
+        # the stale `manual`/`deal` origin, and the next reader would believe a price
         # that is no longer there.
-        if "tariffa_applicata" in changes:
-            changes["tariffa_origine"] = (
-                "manuale" if changes["tariffa_applicata"] is not None else "assente"
-            )
-        if "costo_applicato" in changes:
-            changes["costo_origine"] = (
-                "manuale" if changes["costo_applicato"] is not None else "assente"
-            )
+        if "applied_rate" in changes:
+            changes["rate_source"] = "manual" if changes["applied_rate"] is not None else "absent"
+        if "applied_cost" in changes:
+            changes["cost_source"] = "manual" if changes["applied_cost"] is not None else "absent"
 
         if data.custom_fields is not None:
-            changes["custom_fields"] = self._update_custom_fields(entry, data.custom_fields)
+            changes["custom_fields"] = merge_custom(
+                ENTITY, self.fields.specs_for(ENTITY), entry.custom_fields, data.custom_fields
+            )
         for key, value in changes.items():
             setattr(entry, key, value)
 
@@ -368,7 +348,7 @@ class TimeEntryService:
                 "la voce è legata a una riga di fattura: scollegala prima di cancellarla",
                 invoice_line_id=str(entry.invoice_line_id),
             )
-        self.locks.assert_writable(ENTITY, "data", entry.data)
+        self.locks.assert_writable(ENTITY, "date", entry.date)
         entry.deleted_at = datetime.now(UTC)
         self.activities.record(ENTITY, entry.id, "deleted", actor)
         self.session.commit()
@@ -397,7 +377,7 @@ class TimeEntryService:
                 deal_id=str(deal.id),
             )
 
-        self.locks.assert_writable(ENTITY, "data", entry.data)
+        self.locks.assert_writable(ENTITY, "date", entry.date)
         was_deleted = entry.deleted_at is not None
         entry.deleted_at = None
         if was_deleted:
@@ -416,7 +396,7 @@ class TimeEntryService:
         outside the audited set, which is the "the ban degrades into an oversight"
         failure §11 exists to prevent.
 
-        `admin`, not `collaboratore`: changing what an hour is worth is closer to
+        `admin`, not `collaborator`: changing what an hour is worth is closer to
         configuration than to writing an entity (slice 1 §6.3). Writes an activity,
         because the timeline is what reconstructs when a rate changed -- and is the
         reason §5 can afford not to historicise it (§4.5).
@@ -440,7 +420,7 @@ class TimeEntryService:
             user_id,
             "rates_updated",
             actor,
-            {"prima": previous, "dopo": {k: str(v) for k, v in changes.items()}},
+            {"before": previous, "after": {k: str(v) for k, v in changes.items()}},
         )
         self.session.commit()
 
@@ -456,14 +436,14 @@ class TimeEntryService:
             deal_id,
             "rate_updated",
             actor,
-            {"prima": previous, "dopo": {k: str(v) for k, v in changes.items()}},
+            {"before": previous, "after": {k: str(v) for k, v in changes.items()}},
         )
         self.session.commit()
 
     def recalculate_rates(self, deal_id: UUID, data: RecalculateRatesRequest, actor: Actor) -> int:
         """The only way to touch the past, and it is visible.
 
-        `admin`, never `collaboratore`, and **not exposed over MCP** (§11's exclusion
+        `admin`, never `collaborator`, and **not exposed over MCP** (§11's exclusion
         list, first name): rewriting what already-done work was worth is closer to
         configuration than to writing an entity -- slice 1 §6.3's reading, which slice
         3 §11 applied to issuing an invoice.
@@ -474,16 +454,19 @@ class TimeEntryService:
         would leave the interval in a state nobody chose, so the refusal happens before
         any assignment.
 
-        Returns how many entries were rewritten, so a caller can say "12 voci
-        aggiornate" instead of "done".
+        An entry whose rate (or cost) was written on the entry itself (`manual`) keeps it:
+        that figure was chosen, not resolved, and is corrected on the entry.
+
+        Returns how many entries were rewritten, so a caller can say "12 voci aggiornate"
+        (the Italian copy) instead of "done".
         """
         actor.require_unscoped_admin("recalculate_rates")
-        if data.a < data.da:
+        if data.date_to < data.date_from:
             raise ValidationFailed(
-                ENTITY, "a", "intervallo invertito", expected="una data non anteriore a 'da'"
+                ENTITY, "to", "intervallo invertito", expected="una data non anteriore a 'from'"
             )
         self._require_deal(deal_id)
-        entries = self.repo.in_range(deal_id, data.da, data.a)
+        entries = self.repo.in_range(deal_id, data.date_from, data.date_to)
 
         billed = billed_entry_ids(self.session, entries)
         if billed:
@@ -492,23 +475,31 @@ class TimeEntryService:
                 ENTITY,
                 "l'intervallo contiene voci già fatturate: quei valori sono stati "
                 "consegnati a un cliente e non si riscrivono",
-                voci_fatturate=len(billed),
-                prima_riga=str(first.invoice_line_id),
-                prima_voce=str(first.id),
+                entries_invoiced=len(billed),
+                before_line=str(first.invoice_line_id),
+                before_entry=str(first.id),
             )
 
         # A closed month is closed to this too: the lock and the recalculation are the
         # two ways the past can move, and leaving a gap between them would make the
         # lock decorative.
-        self.locks.assert_writable(ENTITY, "data", *[e.data for e in entries])
+        self.locks.assert_writable(ENTITY, "date", *[e.date for e in entries])
 
         touched = 0
         for entry in entries:
             resolved = self.rates.resolve(deal_id=entry.deal_id, user_id=entry.user_id)
-            if (
-                resolved.tariffa == entry.tariffa_applicata
-                and resolved.costo == entry.costo_applicato
-            ):
+            # A rate or a cost somebody wrote on the entry (`manual`) is a decision, like an
+            # explicit zero (`rates.py`): the recalculation re-resolves only what the rate
+            # levels gave it, each of the two figures on its own.
+            if entry.rate_source == "manual":
+                rate, rate_source = entry.applied_rate, entry.rate_source
+            else:
+                rate, rate_source = resolved.rate, resolved.rate_source
+            if entry.cost_source == "manual":
+                cost, cost_source = entry.applied_cost, entry.cost_source
+            else:
+                cost, cost_source = resolved.cost, resolved.cost_source
+            if rate == entry.applied_rate and cost == entry.applied_cost:
                 # Nothing changed for this row: skip it rather than writing an activity
                 # claiming a change that did not happen -- the same honesty guard
                 # `restore` applies to its own "restored" entry.
@@ -519,16 +510,16 @@ class TimeEntryService:
                 "rates_recalculated",
                 actor,
                 {
-                    "tariffa_prima": str(entry.tariffa_applicata),
-                    "tariffa_dopo": str(resolved.tariffa),
-                    "costo_prima": str(entry.costo_applicato),
-                    "costo_dopo": str(resolved.costo),
+                    "rate_before": str(entry.applied_rate),
+                    "rate_after": str(rate),
+                    "cost_before": str(entry.applied_cost),
+                    "cost_after": str(cost),
                 },
             )
-            entry.tariffa_applicata = resolved.tariffa
-            entry.tariffa_origine = resolved.tariffa_origine
-            entry.costo_applicato = resolved.costo
-            entry.costo_origine = resolved.costo_origine
+            entry.applied_rate = rate
+            entry.rate_source = rate_source
+            entry.applied_cost = cost
+            entry.cost_source = cost_source
             touched += 1
 
         self.session.commit()
@@ -551,40 +542,40 @@ class TimeEntryService:
     def deal_summary(self, deal_id: UUID, actor: Actor) -> DealTimeSummary:
         """The hours half of a deal's economics, readable with no invoices present.
 
-        Deliberately carries no `ricavi` and no `valore_maturato`: revenue is the
+        Deliberately carries no `revenue` and no `accrued_value`: revenue is the
         invoice (§3, decision 2) and there is no second notion of it. 4B's `DealPnl`
-        adds `ricavi` and defines `valore_maturato = ricavi +
+        adds `revenue` and defines `valore_maturato = ricavi +
         valore_ore_non_fatturate` on top of this, instead of 4A shipping a zero that
         would read as a real figure.
         """
         deal = self._require_deal(deal_id)
         entries = self.repo.for_deal(deal_id)
         billed = billed_entry_ids(self.session, entries)
-        unbilled_billable = [e for e in entries if e.fatturabile and e.id not in billed]
+        unbilled_billable = [e for e in entries if e.billable and e.id not in billed]
         stage = self.pipeline.get(deal.pipeline_stage_id)
-        stato: Literal["in corso", "da fatturare", "chiuso"]
-        if stage.tipo == "open":
-            stato = "in corso"
+        status: Literal["in_progress", "to_invoice", "closed"]
+        if stage.type == "open":
+            status = "in_progress"
         elif unbilled_billable:
-            stato = "da fatturare"
+            status = "to_invoice"
         else:
-            stato = "chiuso"
+            status = "closed"
         return DealTimeSummary(
             deal_id=deal_id,
-            stato=stato,
-            ore_totali=sum_hours([e.ore for e in entries]),
-            ore_fatturabili_non_fatturate=sum_hours([e.ore for e in unbilled_billable]),
+            status=status,
+            total_hours=sum_hours([e.hours for e in entries]),
+            billable_uninvoiced_hours=sum_hours([e.hours for e in unbilled_billable]),
             # Only priced hours contribute; an unpriced one is counted separately and
             # never valued at zero, which would say the work was free.
-            valore_ore_non_fatturate=sum_money(
-                [line_value(e.ore, e.tariffa_applicata) for e in unbilled_billable]
+            unbilled_hours_value=sum_money(
+                [line_value(e.hours, e.applied_rate) for e in unbilled_billable]
             ),
             # Includes the NON-billable hours: an internal meeting costs exactly what
             # it would cost if it were billed, and excluding it would make the deal
             # that demanded more of them look more profitable (§7.1).
-            costo_lavoro=sum_money([line_value(e.ore, e.costo_applicato) for e in entries]),
-            ore_senza_tariffa=sum(1 for e in entries if e.tariffa_applicata is None),
-            voci=len(entries),
+            work_cost=sum_money([line_value(e.hours, e.applied_cost) for e in entries]),
+            hours_without_rate=sum(1 for e in entries if e.applied_rate is None),
+            entries=len(entries),
         )
 
     # `list` stays the last method in this class -- the unconditional project rule.

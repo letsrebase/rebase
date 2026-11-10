@@ -12,7 +12,7 @@
  *
  *  1. every key names an action the core really guards;
  *  2. the kind of guard agrees with the table's minimum: a `require_admin` string
- *     cannot be listed as `collaboratore`, and a `require_write` one not as `admin`.
+ *     cannot be listed as `collaborator`, and a `require_write` one not as `admin`.
  *
  * Actions the core guards but the table does not list are *not* failures: the table
  * lists what a named control on a screen consults, and the core guards more than the
@@ -22,8 +22,8 @@
  * The core's indirect strings (`_SETTINGS_ACTION`, `_ROOTS_ACTION`, and since REB-415
  * the send's `_SEND_ACTION` and `_RECONCILE_ACTION`) resolve here the way ruff resolves
  * nothing: by reading the constant's own assignment in the file that guards with it.
- * Their values are Italian on purpose (they surface inside a sentence), and they are
- * keys here too, so the two sides stay one fact.
+ * Their values are the English action keys, the same strings the table holds, so the two
+ * sides stay one fact.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -113,7 +113,7 @@ describe('the permission table against the core source', () => {
 })
 
 describe('can()', () => {
-  const ROLES = ['admin', 'collaboratore', 'readonly'] as const
+  const ROLES = ['admin', 'collaborator', 'readonly'] as const
 
   it.each(Object.entries(MIN_ROLE))(
     'the whole action x role matrix: `%s`',
@@ -121,7 +121,7 @@ describe('can()', () => {
       for (const role of ROLES) {
         // The lattice: a role at or above the minimum may, below it may not.
         expect(can(role, action)).toBe(
-          minimum === 'admin' ? role === 'admin' : role === 'admin' || role === 'collaboratore',
+          minimum === 'admin' ? role === 'admin' : role === 'admin' || role === 'collaborator',
         )
       }
     },
@@ -148,21 +148,30 @@ describe('the settings tab visibility', () => {
     }
   })
 
-  it('shows a collaboratore the profile and their own Drive, and nothing else', () => {
+  it('shows a collaboratore the profile, the notifications and their own Drive, and nothing else', () => {
     // REB-457: the Drive credential is per CRM user and the service lets any writer
     // connect it, so a collaboratore gets the tab where the consent lands.
     for (const tab of SETTINGS_TABS) {
-      expect(canSeeSettingsTab('collaboratore', tab.value)).toBe(
-        tab.value === 'profile' || tab.value === 'drive',
+      expect(canSeeSettingsTab('collaborator', tab.value)).toBe(
+        tab.value === 'profile' || tab.value === 'notifications' || tab.value === 'drive',
       )
     }
   })
 
-  it('shows a readonly person exactly the profile tab', () => {
+  it('shows a readonly person exactly the profile and the notifications', () => {
     // A readonly person cannot start a Drive consent (`require_write`), so the Drive
     // tab would only offer controls the server refuses.
     for (const tab of SETTINGS_TABS) {
-      expect(canSeeSettingsTab('readonly', tab.value)).toBe(tab.value === 'profile')
+      expect(canSeeSettingsTab('readonly', tab.value)).toBe(
+        tab.value === 'profile' || tab.value === 'notifications',
+      )
+    }
+  })
+
+  it("keeps the space's reminder defaults to an admin: a member never sees «Promemoria»", () => {
+    expect(SETTINGS_TAB_MIN_ROLE.reminders).toBe('admin')
+    for (const role of ['collaborator', 'readonly'] as const) {
+      expect(canSeeSettingsTab(role, 'reminders')).toBe(false)
     }
   })
 

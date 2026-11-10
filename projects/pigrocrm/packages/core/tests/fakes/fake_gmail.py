@@ -133,7 +133,13 @@ class FakeGmail:
     # ---- the seam ---------------------------------------------------------------
 
     def __call__(
-        self, method: str, url: str, headers: dict[str, str], body: bytes | None
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
     ) -> tuple[int, bytes, dict[str, str]]:
         parsed = urlparse(url)
         recorded = RecordedRequest(
@@ -258,7 +264,7 @@ class FakeGmail:
         if self.timeout_on_send:
             if self.deliver_on_timeout:
                 self._register_sent(raw)
-            # The synthetic status `_urllib_call` produces when no HTTP response was
+            # The synthetic status `urllib_call` produces when no HTTP response was
             # ever received. This is the "we do not know" case of spec 6.3(b).
             return 599, json.dumps({"error": {"message": "timed out"}}).encode(), {}
         message = self._register_sent(raw)
@@ -309,7 +315,7 @@ class FakeGmail:
             # `Message-ID` so the right-hand side names their own infrastructure, and
             # whether Gmail's API path does is the one thing nobody has measured. With
             # this set the message really is in the mailbox and the `rfc822msgid` lookup
-            # cannot find it -- which is precisely the shape of "reported `fallito` for
+            # cannot find it -- which is precisely the shape of "reported `failed` for
             # mail sitting in Sent".
             message_id = f"<{gmail_id}@mail.gmail.com>"
         message = FakeMessage(

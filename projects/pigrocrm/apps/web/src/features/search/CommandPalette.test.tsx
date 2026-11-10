@@ -18,6 +18,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CommandPalette } from './CommandPalette'
 import { SEARCH_DEBOUNCE_MS, type SearchResults } from './queries'
 import { api } from '@/lib/api'
+import type { ModuleKey } from '@/lib/modules'
+import { seedModules } from '@/lib/modules.testing'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -38,39 +40,40 @@ function failed(error: unknown, status: number) {
 const CUSTOMER_ID = '0192f3b2-8c1a-7c3d-9f4e-1a2b3c4d5e6f'
 
 function results(
-  overrides: Partial<{ totale: number; totale_e_un_minimo: boolean }> = {},
+  overrides: Partial<{ total: number; total_is_minimum: boolean }> = {},
 ): SearchResults {
   return {
-    termine: 'rossi',
-    gruppi: [
+    term: 'rossi',
+    groups: [
       {
-        entity: 'customer',
-        totale: overrides.totale ?? 1,
-        totale_e_un_minimo: overrides.totale_e_un_minimo ?? false,
+        entity: 'organization',
+        total: overrides.total ?? 1,
+        total_is_minimum: overrides.total_is_minimum ?? false,
         hits: [
           {
-            entity: 'customer',
+            entity: 'organization',
             id: CUSTOMER_ID,
-            etichetta: 'Rossi Ingegneria Srl',
-            sottotitolo: '01234567890',
-            punteggio: '0.8000',
-            campo: 'ragione_sociale',
+            label: 'Rossi Ingegneria Srl',
+            subtitle: '01234567890',
+            score: '0.8000',
+            field: 'legal_name',
           },
         ],
       },
-      { entity: 'person', totale: 0, totale_e_un_minimo: false, hits: [] },
-      { entity: 'deal', totale: 0, totale_e_un_minimo: false, hits: [] },
-      { entity: 'document', totale: 0, totale_e_un_minimo: false, hits: [] },
+      { entity: 'person', total: 0, total_is_minimum: false, hits: [] },
+      { entity: 'deal', total: 0, total_is_minimum: false, hits: [] },
+      { entity: 'document', total: 0, total_is_minimum: false, hits: [] },
     ],
   }
 }
 
 const onOpenChange = vi.fn()
 
-function renderPalette() {
+function renderPalette(modulesOff?: readonly ModuleKey[]) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: 0 } },
   })
+  if (modulesOff !== undefined) seedModules(client, modulesOff)
   return render(
     <QueryClientProvider client={client}>
       <CommandPalette open onOpenChange={onOpenChange} />
@@ -96,6 +99,14 @@ beforeEach(() => {
   onOpenChange.mockReset()
 })
 
+/** The searches the palette sent: the palette also reads the space's modules (REB-953), and
+ *  that read is no search. */
+function searchCalls() {
+  return (vi.mocked(api.GET).mock.calls as unknown as [string, unknown][]).filter(
+    ([path]) => path === '/api/search',
+  )
+}
+
 describe('CommandPalette', () => {
   it('invites more typing below three characters and issues no request', async () => {
     renderPalette()
@@ -103,7 +114,7 @@ describe('CommandPalette', () => {
     await settle()
 
     expect(screen.getByText(/continua a scrivere/i)).toBeInTheDocument()
-    expect(api.GET).not.toHaveBeenCalled()
+    expect(searchCalls()).toHaveLength(0)
     expect(screen.queryByText(/nessun risultato/i)).not.toBeInTheDocument()
   })
 
@@ -113,7 +124,7 @@ describe('CommandPalette', () => {
     await type('rossi')
     await settle()
 
-    await waitFor(() => expect(api.GET).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(searchCalls()).toHaveLength(1))
     // Without the debounce this is three calls -- "ros", "ross", "rossi" -- and the
     // count alone would not say which term actually reached the server.
     expect(api.GET).toHaveBeenCalledWith('/api/search', {
@@ -137,14 +148,48 @@ describe('CommandPalette', () => {
     await user.click(await screen.findByRole('option', { name: /Rossi Ingegneria Srl/ }))
 
     expect(navigate).toHaveBeenCalledWith({
-      to: '/app/customers/$customerId',
-      params: { customerId: CUSTOMER_ID },
+      to: '/app/organizations/$organizationId',
+      params: { organizationId: CUSTOMER_ID },
     })
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
+  it('finds an attività and opens it in its dialog over the Attività page', async () => {
+    const TASK_ID = '0192f3b2-8c1a-7c3d-9f4e-aaaaaaaaaaaa'
+    vi.mocked(api.GET).mockResolvedValue(
+      ok({
+        deadline: 'proposte',
+        groups: [
+          {
+            entity: 'task',
+            total: 1,
+            total_is_minimum: false,
+            hits: [
+              {
+                entity: 'task',
+                id: TASK_ID,
+                label: 'Preparare le proposte',
+                subtitle: '30/10/2026',
+                score: '0.6000',
+                field: 'title',
+              },
+            ],
+          },
+        ],
+      }),
+    )
+    renderPalette()
+    const user = await type('proposte')
+
+    expect(await screen.findByText('Attività · 1')).toBeInTheDocument()
+    await user.click(await screen.findByRole('option', { name: /Preparare le proposte/ }))
+
+    expect(navigate).toHaveBeenCalledWith({ to: '/app/activities', search: { open: TASK_ID } })
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
   it('states the real count and offers "vedi tutti" when the group is truncated', async () => {
-    vi.mocked(api.GET).mockResolvedValue(ok(results({ totale: 42 })))
+    vi.mocked(api.GET).mockResolvedValue(ok(results({ total: 42 })))
     renderPalette()
     await type('rossi')
 
@@ -156,7 +201,7 @@ describe('CommandPalette', () => {
   })
 
   it('does not offer "vedi tutti" when the group is whole', async () => {
-    vi.mocked(api.GET).mockResolvedValue(ok(results({ totale: 1 })))
+    vi.mocked(api.GET).mockResolvedValue(ok(results({ total: 1 })))
     renderPalette()
     await type('rossi')
 
@@ -165,7 +210,7 @@ describe('CommandPalette', () => {
   })
 
   it('sends "vedi tutti" to the same list, filtered by the same term', async () => {
-    vi.mocked(api.GET).mockResolvedValue(ok(results({ totale: 42 })))
+    vi.mocked(api.GET).mockResolvedValue(ok(results({ total: 42 })))
     renderPalette()
     const user = await type('rossi')
     await user.click(await screen.findByRole('option', { name: /vedi tutti/i }))
@@ -173,14 +218,14 @@ describe('CommandPalette', () => {
     // The term travels in the URL, or the list the user lands on is not the list the
     // palette was describing.
     expect(navigate).toHaveBeenCalledWith({
-      to: '/app/customers',
+      to: '/app/organizations',
       search: { search: 'rossi' },
     })
   })
 
   it('says "oltre 200" rather than "200" when the count is a minimum', async () => {
     vi.mocked(api.GET).mockResolvedValue(
-      ok(results({ totale: 200, totale_e_un_minimo: true })),
+      ok(results({ total: 200, total_is_minimum: true })),
     )
     renderPalette()
     await type('rossi')
@@ -190,10 +235,44 @@ describe('CommandPalette', () => {
     expect(screen.getByRole('option', { name: /vedi tutti oltre 200/i })).toBeInTheDocument()
   })
 
+  /** REB-953: the server leaves the deal group empty with deals off; a deal hit a cache from
+   *  before the switch still holds would open a page that is not there. */
+  describe('a deal hit', () => {
+    const withDeal = (): SearchResults => ({
+      term: 'rossi',
+      groups: results().groups.map((group) =>
+        group.entity === 'deal'
+          ? {
+              ...group,
+              total: 1,
+              hits: [
+                { entity: 'deal', id: 'd1', label: 'Rinnovo Rossi', subtitle: null, score: '0.5000', field: 'name' },
+              ],
+            }
+          : group,
+      ),
+    })
+
+    it('is drawn while deals is on', async () => {
+      vi.mocked(api.GET).mockResolvedValue(ok(withDeal()))
+      renderPalette([])
+      await type('rossi')
+      expect(await screen.findByText('Rinnovo Rossi')).toBeInTheDocument()
+    })
+
+    it('is not drawn with deals off', async () => {
+      vi.mocked(api.GET).mockResolvedValue(ok(withDeal()))
+      renderPalette(['deals'])
+      await type('rossi')
+      expect(await screen.findByText('Rossi Ingegneria Srl')).toBeInTheDocument()
+      expect(screen.queryByText('Rinnovo Rossi')).not.toBeInTheDocument()
+    })
+  })
+
   it('says there is nothing, naming the term, when every group is empty', async () => {
     const empty: SearchResults = {
-      termine: 'zzzqqq',
-      gruppi: results().gruppi.map((group) => ({ ...group, hits: [], totale: 0 })),
+      term: 'zzzqqq',
+      groups: results().groups.map((group) => ({ ...group, hits: [], total: 0 })),
     }
     vi.mocked(api.GET).mockResolvedValue(ok(empty))
     renderPalette()

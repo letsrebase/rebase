@@ -17,6 +17,11 @@ services:
   vaultwarden:
     image: &vaultwarden-image vaultwarden/server:1.37.4@sha256:efb3cde962015fcc036b2ea625242248611943b27212ebf4392841fb30fad055
     restart: unless-stopped
+    # One variable, `BRANDING_REV`, a hash of the look's files (`branding/build.mjs`). Compose
+    # recreates a service when its configuration changes, not when a bind-mounted file does,
+    # and the server reads its templates once at start, so without this a deploy of a new
+    # look would go green and change nothing. The server ignores the variable.
+    env_file: ./branding/branding.env
     environment:
       DOMAIN: https://${VAULTWARDEN_DOMAIN:-vault.letsrebase.com}
       # Nobody registers on their own. A member is invited by an organisation owner (or,
@@ -51,12 +56,32 @@ services:
       SMTP_USERNAME: resend
       SMTP_PASSWORD: ${VAULTWARDEN_SMTP_PASSWORD:?set it in .env, a Resend API key made for Vaultwarden only}
       SMTP_FROM: ${VAULTWARDEN_MAIL_FROM:-vault@letsrebase.com}
-      SMTP_FROM_NAME: Rebase
+      # The display name a mail shows beside vault@letsrebase.com: it says what sends it.
+      SMTP_FROM_NAME: Rebase Password Manager
+      # The name the server puts in an invitation sent from the admin page, in the link's
+      # organisation parameter and in the mail confirming that member. Upstream's default is
+      # «Vaultwarden».
+      INVITATION_ORG_NAME: Rebase Password Manager
+      # The look (README, "Look"): the server compiles `scss/user.vaultwarden.scss.hbs` from
+      # this folder and appends it to /css/vaultwarden.css. Mounted read-only from the
+      # repository, so the data directory (and with it the backup) holds nothing of it.
+      TEMPLATES_FOLDER: /templates
+      # The same folder carries the mail partials (`email/`). Upstream attaches its wordmark and
+      # a GitHub icon to every mail as inline images whether the template uses them or not;
+      # ours uses neither, so the server is told to attach nothing (REB-690).
+      SMTP_EMBED_IMAGES: 'false'
     # On the host, outside Docker and outside the repository, like the hub's own data. No
     # default, for the reason `projects/hub/docker-compose.yml` gives for REBASE_DATA_DIR:
     # a `.env` that forgets it must refuse to start, not come up on an empty directory.
     volumes:
       - ${VAULTWARDEN_DATA_DIR:?set it in .env, to its own directory outside the repository}:/data
+      - ./branding/templates:/templates:ro
+      # The web vault's look (README, "Look", REB-699). The image's /start.sh sources every
+      # /etc/vaultwarden.d/*.sh before it execs the server; this one builds a copy of the web
+      # vault in the product's name, from the favicons mounted beside it, and points the
+      # server at the copy. Nothing in the image is replaced, so a bump keeps working.
+      - ./scripts/brand-web-vault.sh:/etc/vaultwarden.d/10-rebase-web-vault.sh:ro
+      - ./branding/images:/branding/images:ro
     ports:
       # Loopback only, and the address is not a variable: a `.env` can change the port
       # and cannot publish this wider. The host's nginx serves it as
@@ -93,13 +118,17 @@ services:
       VAULTWARDEN_BACKUP_ACCESS_KEY_ID: ${VAULTWARDEN_BACKUP_ACCESS_KEY_ID:?an Environment secret, written by the deploy}
       VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY: ${VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY:?an Environment secret, written by the deploy}
       VAULTWARDEN_BACKUP_AT: ${VAULTWARDEN_BACKUP_AT:-03:30}
+      # The healthchecks.io check the loop pings after every run (REB-671), the alarm a
+      # person actually receives; the healthcheck below only shows on the host.
+      VAULTWARDEN_BACKUP_PING_URL: ${VAULTWARDEN_BACKUP_PING_URL:?an Environment secret, written by the deploy}
     volumes:
       - ${VAULTWARDEN_DATA_DIR:?set it in .env, to its own directory outside the repository}:/data
       - ./scripts:/scripts:ro
     # The image's HEALTHCHECK curls the server's port, which this container does not
     # serve. This one says whether the last backup finished less than 26 hours ago, so
     # `docker compose ps` shows `unhealthy` for a backup that is failing quietly. It does
-    # not fail a deploy: only a container that is not `running` does.
+    # not fail a deploy: only a container that is not `running` does. Nobody reads it
+    # unprompted, which is why the loop also pings the monitor.
     healthcheck:
       test: ['CMD-SHELL', 'test -n "$$(find /tmp/last-backup-ok -mmin -1560 2>/dev/null)"']
       interval: 10m

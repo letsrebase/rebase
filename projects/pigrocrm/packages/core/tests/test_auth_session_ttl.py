@@ -25,10 +25,10 @@ def admin_user(db_session: Session) -> User:
     # persisted user row for `RefreshTokenService.issue`'s foreign key.
     user = User(
         email=f"session-ttl-{uuid4().hex[:8]}@example.it",
-        nome="Owner",
+        name="Owner",
         password_hash="x",
-        ruolo="admin",
-        attivo=True,
+        role="admin",
+        active=True,
     )
     db_session.add(user)
     db_session.flush()

@@ -26,16 +26,16 @@ def test_the_four_tables_exist_with_the_expected_columns(db_engine: Engine) -> N
         "deleted_at",
         "deal_id",
         "user_id",
-        "data",
-        "ore",
-        "descrizione",
-        "fatturabile",
-        "tariffa_applicata",
-        "costo_applicato",
-        "tariffa_origine",
-        "costo_origine",
+        "date",
+        "hours",
+        "description",
+        "billable",
+        "applied_rate",
+        "applied_cost",
+        "rate_source",
+        "cost_source",
         "invoice_line_id",
-        "note_interne",
+        "internal_notes",
         "custom_fields",
     }
 
@@ -55,13 +55,13 @@ def test_numeric_precision_is_the_three_scales_and_never_float(db_engine: Engine
                 )
             ).all()
         )
-    assert rows["time_entries.ore"] == "8,2"
-    assert rows["time_entries.tariffa_applicata"] == "12,6"
-    assert rows["time_entries.costo_applicato"] == "12,6"
-    assert rows["costs.importo"] == "12,2"
-    assert rows["deals.tariffa_oraria"] == "12,6"
-    assert rows["users.tariffa_oraria_default"] == "12,6"
-    assert rows["users.costo_orario_default"] == "12,6"
+    assert rows["time_entries.hours"] == "8,2"
+    assert rows["time_entries.applied_rate"] == "12,6"
+    assert rows["time_entries.applied_cost"] == "12,6"
+    assert rows["costs.amount"] == "12,2"
+    assert rows["deals.hourly_rate"] == "12,6"
+    assert rows["users.default_hourly_rate"] == "12,6"
+    assert rows["users.default_hourly_cost"] == "12,6"
     # And nothing in these tables is a float.
     with db_engine.connect() as conn:
         floats = conn.execute(
@@ -75,7 +75,7 @@ def test_numeric_precision_is_the_three_scales_and_never_float(db_engine: Engine
 
 
 def test_the_partial_indexes_this_slice_queries_by_exist(db_engine: Engine) -> None:
-    """(deal_id, data) and (user_id, data), both partial on `deleted_at IS NULL` --
+    """(deal_id, date) and (user_id, date), both partial on `deleted_at IS NULL` --
     the shape every query in this slice has, and the cure residual R7 asks for in
     general. Asserted through `pg_indexes.indexdef` so a non-partial index of the
     same name still fails."""
@@ -86,8 +86,8 @@ def test_the_partial_indexes_this_slice_queries_by_exist(db_engine: Engine) -> N
                 text("SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'time_entries'")
             ).all()
         }
-    assert "deleted_at IS NULL" in definitions["ix_time_entries_deal_data"]
-    assert "deleted_at IS NULL" in definitions["ix_time_entries_user_data"]
+    assert "deleted_at IS NULL" in definitions["ix_time_entries_deal_date"]
+    assert "deleted_at IS NULL" in definitions["ix_time_entries_user_date"]
     with db_engine.connect() as conn:
         cost_definitions = {
             name: definition
@@ -95,8 +95,8 @@ def test_the_partial_indexes_this_slice_queries_by_exist(db_engine: Engine) -> N
                 text("SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'costs'")
             ).all()
         }
-    assert "deleted_at IS NULL" in cost_definitions["ix_costs_deal_data"]
-    assert "deleted_at IS NULL" in cost_definitions["ix_costs_data"]
+    assert "deleted_at IS NULL" in cost_definitions["ix_costs_deal_date"]
+    assert "deleted_at IS NULL" in cost_definitions["ix_costs_date"]
 
 
 def test_a_billed_entry_cannot_be_soft_deleted_even_in_raw_sql(
@@ -126,9 +126,9 @@ def test_a_billed_entry_cannot_be_soft_deleted_even_in_raw_sql(
 
 
 def test_period_locks_primary_key_is_the_month(db_session: Session) -> None:
-    db_session.add(PeriodLock(anno=2026, mese=3, chiuso_il=datetime.now(UTC), chiuso_da=None))
+    db_session.add(PeriodLock(year=2026, month=3, closed_at=datetime.now(UTC), closed_by=None))
     db_session.flush()
-    db_session.add(PeriodLock(anno=2026, mese=3, chiuso_il=datetime.now(UTC), chiuso_da=None))
+    db_session.add(PeriodLock(year=2026, month=3, closed_at=datetime.now(UTC), closed_by=None))
     with pytest.raises(IntegrityError):
         db_session.flush()
     db_session.rollback()
@@ -136,18 +136,18 @@ def test_period_locks_primary_key_is_the_month(db_session: Session) -> None:
 
 def test_cost_category_code_is_unique_but_null_repeats(db_session: Session) -> None:
     """Copies `pipeline_stages.code` exactly (residual R11's fix): `code` is the stable
-    identity of a seeded category, distinct from `nome`, which the user may rename.
+    identity of a seeded category, distinct from `name`, which the user may rename.
     Postgres treats every NULL as distinct under a unique index, so any number of
     user-created code-less categories coexist."""
     db_session.add_all(
         [
-            CostCategory(nome="Prima", code=None),
-            CostCategory(nome="Seconda", code=None),
-            CostCategory(nome="Terza", code="viaggi"),
+            CostCategory(name="Prima", code=None),
+            CostCategory(name="Seconda", code=None),
+            CostCategory(name="Terza", code="viaggi"),
         ]
     )
     db_session.flush()
-    db_session.add(CostCategory(nome="Quarta", code="viaggi"))
+    db_session.add(CostCategory(name="Quarta", code="viaggi"))
     with pytest.raises(IntegrityError):
         db_session.flush()
     db_session.rollback()
@@ -158,15 +158,15 @@ def test_cost_amount_may_be_negative_but_never_zero(
 ) -> None:
     """§4.4: a negative amount is a refund or a credit note received -- the same choice
     slice 3 §6.1 rule 6 makes for a discount ("a discount is a line"), instead of a
-    `tipo` column that multiplies the cases in every sum. Zero is refused, because it
+    `type` column that multiplies the cases in every sum. Zero is refused, because it
     is neither a cost nor a correction."""
     db_session.add(
         Cost(
             deal_id=seeded_deal_id,
             category_id=seeded_category_id,
-            data=date(2026, 3, 1),
-            importo=Decimal("-120.00"),
-            descrizione="Rimborso hotel",
+            date=date(2026, 3, 1),
+            amount=Decimal("-120.00"),
+            description="Rimborso hotel",
         )
     )
     db_session.flush()
@@ -174,14 +174,14 @@ def test_cost_amount_may_be_negative_but_never_zero(
         Cost(
             deal_id=None,
             category_id=seeded_category_id,
-            data=date(2026, 3, 1),
-            importo=Decimal("0.00"),
-            descrizione="Niente",
+            date=date(2026, 3, 1),
+            amount=Decimal("0.00"),
+            description="Niente",
         )
     )
     with pytest.raises(IntegrityError) as excinfo:
         db_session.flush()
-    assert "ck_costs_importo_non_zero" in str(excinfo.value)
+    assert "ck_costs_amount_not_zero" in str(excinfo.value)
     db_session.rollback()
 
 
@@ -197,9 +197,9 @@ def test_hours_are_bounded_by_the_database_too(
             TimeEntry(
                 deal_id=seeded_deal_id,
                 user_id=seeded_user_id,
-                data=date(2026, 3, 1),
-                ore=bad,
-                descrizione="x",
+                date=date(2026, 3, 1),
+                hours=bad,
+                description="x",
             )
         )
         with pytest.raises(IntegrityError):

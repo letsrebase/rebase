@@ -41,7 +41,7 @@ from pigrocrm_api.deps import reset_session_factories
 from pigrocrm_api.main import create_app
 from pigrocrm_api.ratelimit import reset_rate_limit
 
-ENGAGEMENTS_TOKEN = "un-token-per-la-porta"
+ENGAGEMENTS_TOKEN = "un-token-per-la-porta-lungo-abbastanza"
 REGISTRY_TOKEN = "un-token-lungo-solo-per-questa-suite"
 FREELANCER_EMAIL = "ada@studio.it"
 # How `Conflict` renders its message (`errors.py`): the problem's `detail` carries the
@@ -54,23 +54,23 @@ def _upsert(**parts: dict[str, Any]) -> dict[str, Any]:
     """The body of spec § 2.3, with any part's fields overridden by name -- the same
     shape as `test_engagements.py`'s own `_upsert`, as JSON rather than a model."""
     body: dict[str, dict[str, Any]] = {
-        "freelancer": {"email": FREELANCER_EMAIL, "nome": "Ada", "cognome": "Lovelace"},
-        "lettera": {
-            "numero": "3/2026",
-            "ruolo": "Backend developer",
-            "azienda": "Acme S.r.l.",
-            "data_inizio": "2026-10-01",
-            "data_fine": "2026-12-31",
-            "compenso": "400.00",
-            "giorni_previsti": 40,
+        "freelancer": {"email": FREELANCER_EMAIL, "first_name": "Ada", "last_name": "Lovelace"},
+        "letter": {
+            "number": "3/2026",
+            "role": "Backend developer",
+            "company_name": "Acme S.r.l.",
+            "start_date": "2026-10-01",
+            "end_date": "2026-12-31",
+            "fee": "400.00",
+            "expected_days": 40,
         },
         "rebase": {
-            "ragione_sociale": "rebase S.r.l.",
-            "partita_iva": "01234567890",
-            "codice_fiscale": "01234567890",
-            "indirizzo": "Via Roma 1, 20121 Milano",
-            "pec": "rebase@pec.it",
-            "codice_sdi": "M5UXCR1",
+            "legal_name": "rebase S.r.l.",
+            "vat_number": "01234567890",
+            "tax_code": "01234567890",
+            "address": "Via Roma 1, 20121 Milano",
+            "certified_email": "rebase@pec.it",
+            "sdi_code": "M5UXCR1",
         },
     }
     for part, overrides in parts.items():
@@ -138,7 +138,7 @@ def _space(settings: Settings, slug: str) -> Iterator[Session]:
         engine.dispose()
 
 
-def _log_hours(settings: Settings, slug: str, deal_id: UUID, day: date, descrizione: str) -> None:
+def _log_hours(settings: Settings, slug: str, deal_id: UUID, day: date, description: str) -> None:
     """Eight hours on the deal, logged for the space's admin through the service: the
     admin has no password, so the service is the way in (A5's own test does the same
     at the core level, `test_engagements.py::_log`)."""
@@ -149,9 +149,9 @@ def _log_hours(settings: Settings, slug: str, deal_id: UUID, day: date, descrizi
             TimeEntryCreate(
                 deal_id=deal_id,
                 user_id=admin.id,
-                data=day,
-                ore=Decimal("8.00"),
-                descrizione=descrizione,
+                date=day,
+                hours=Decimal("8.00"),
+                description=description,
             ),
             Actor.system(),
         )
@@ -250,7 +250,7 @@ def test_put_creates_then_answers_200(door_client: TestClient) -> None:
     )
     assert created.status_code == 201, created.text
     body = created.json()
-    assert body["creato"] is True and body["spazio_creato"] is True
+    assert body["created"] is True and body["space_created"] is True
     assert body["slug"] == "ada-lovelace"
     assert body["url"] == "https://pigro.test/ada-lovelace/app/"
     assert body["deal_url"] == f"https://pigro.test/ada-lovelace/app/deal/{body['deal_id']}"
@@ -260,7 +260,7 @@ def test_put_creates_then_answers_200(door_client: TestClient) -> None:
     )
     assert again.status_code == 200, again.text
     again_body = again.json()
-    assert again_body["creato"] is False
+    assert again_body["created"] is False
     assert again_body["deal_id"] == body["deal_id"]
     assert again_body["customer_id"] == body["customer_id"]
 
@@ -299,17 +299,17 @@ def test_report_answers_the_hours(door_client: TestClient, container_settings: S
 
     report = door_client.get(
         f"/api/rebase/engagements/{match_id}/report",
-        params={"da": first.isoformat()},
+        params={"from": first.isoformat()},
         headers=_bearer(),
     )
     assert report.status_code == 200, report.text
     body = report.json()
     assert body["slug"] == linked["slug"]
     assert body["deal_url"] == linked["deal_url"]
-    assert [g["descrizione"] for g in body["giorni"]] == ["Setup", "API"]
-    assert body["totale_ore"] == "16.00"
-    assert body["ore_fatturate"] == "0.00"
-    assert body["ore_non_fatturate"] == "16.00"
+    assert [g["description"] for g in body["days"]] == ["Setup", "API"]
+    assert body["total_hours"] == "16.00"
+    assert body["billed_hours"] == "0.00"
+    assert body["unbilled_hours"] == "16.00"
 
 
 def _gone_problem(refused: httpx.Response) -> None:
@@ -376,14 +376,14 @@ def test_report_reversed_period_is_422(door_client: TestClient) -> None:
 
     refused = door_client.get(
         f"/api/rebase/engagements/{match_id}/report",
-        params={"da": "2026-10-02", "a": "2026-10-01"},
+        params={"from": "2026-10-02", "to": "2026-10-01"},
         headers=_bearer(),
     )
     assert refused.status_code == 422, refused.text
     body = refused.json()
     assert body["code"] == "validation_failed"
     assert body["entity"] == "engagement"
-    assert body["field"] == "periodo"
+    assert body["field"] == "period"
     assert body["reason"] == REVERSED
 
 

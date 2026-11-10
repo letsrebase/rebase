@@ -1,11 +1,14 @@
+import type { TalentAnswer } from './api'
+import { readWithFallback } from './legacy'
+
 /**
- * The availability mail's link (`/hub/team/risposta?t=…&r=si|no`, REB-517), taken out
- * of the URL before anything else runs, the way `entra-token.ts` takes the magic link's.
+ * The availability mail's link (`/hub/team/answer?t=…&r=yes|no`; `si` in the mails sent before the rename, REB-517), taken out
+ * of the URL before anything else runs, the way `verify-token.ts` takes the magic link's.
  *
  * The token is one talent's answer: left in the address bar it would sit in the
  * browser's history, in the first pageview PostHog captures at `initAnalytics`, and in
  * the session replay that starts there. `main.tsx` calls `stripAnswerLink` right after
- * `stripEntraToken`, ahead of `initAnalytics`, and the page reads the pair back with
+ * `stripVerifyToken`, ahead of `initAnalytics`, and the page reads the pair back with
  * `readAnswerLink`, keeping its own search params as the fallback for whatever reaches it
  * without `main.tsx` having run first (a test that renders the page directly). `r`
  * leaves with `t`: an answer without its token is nothing to keep.
@@ -21,10 +24,14 @@ export interface AnswerLink {
   r: string
 }
 
-const PATH = '/hub/team/risposta'
+/** The page, and the path the mails sent before the 2026-11 rename still link to: both
+ *  are taken out of the URL, the old one then redirects to the new. */
+const PATHS = ['/hub/team/answer', '/hub/team/risposta']
 
 /** Where the tab keeps the pair until the answer is posted. */
-export const ANSWER_LINK_KEY = 'rebase.team-risposta'
+export const ANSWER_LINK_KEY = 'rebase.team-answer'
+/** The key before the rename: read for 30 days (see `legacy.ts`), moved on the way. */
+export const PREVIOUS_ANSWER_LINK_KEY = 'rebase.team-risposta'
 
 let link: AnswerLink | null = null
 
@@ -48,7 +55,7 @@ function isLink(value: unknown): value is AnswerLink {
  *  call finds nothing in the URL and leaves the pair as it is. */
 export function stripAnswerLink(): void {
   if (typeof window === 'undefined') return
-  if (window.location.pathname !== PATH) return
+  if (!PATHS.includes(window.location.pathname)) return
   const url = new URL(window.location.href)
   const t = url.searchParams.get('t')
   if (!t) return
@@ -69,7 +76,7 @@ export function stripAnswerLink(): void {
 export function readAnswerLink(): AnswerLink | null {
   if (link) return link
   try {
-    const raw = storage()?.getItem(ANSWER_LINK_KEY)
+    const raw = readWithFallback(storage(), ANSWER_LINK_KEY, PREVIOUS_ANSWER_LINK_KEY)
     if (!raw) return null
     const stored: unknown = JSON.parse(raw)
     return isLink(stored) ? { t: stored.t, r: stored.r } : null
@@ -84,7 +91,15 @@ export function forgetAnswerLink(): void {
   link = null
   try {
     storage()?.removeItem(ANSWER_LINK_KEY)
+    storage()?.removeItem(PREVIOUS_ANSWER_LINK_KEY)
   } catch {
     /* refused: the tab forgets it when it closes */
   }
+}
+
+/** The answer a link carries: `r=yes`, or `r=si` as the mails sent before the 2026-11
+ *  rename spell it; the API only ever gets `yes` or `no`. */
+export function answerOf(r: string): TalentAnswer | null {
+  if (r === 'yes' || r === 'si') return 'yes'
+  return r === 'no' ? 'no' : null
 }

@@ -2,18 +2,88 @@ import * as React from "react"
 
 import { cn } from "./cn"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+/**
+ * A box that scrolls sideways when its content is wider than it is, and a region that
+ * scrolls must be reachable by keyboard (axe `scrollable-region-focusable`, serious): a
+ * person who cannot use a pointer otherwise cannot see what fell off the edge (REB-775).
+ * So while, and only while, the content overflows, the box takes a tab stop and the arrow
+ * keys scroll it, which the browser does for any focused scrollable box. It is measured,
+ * not assumed: content that fits stays out of the tab order, since a tab stop on every
+ * table in the product would be forty stops that do nothing.
+ *
+ * `label` is the region's accessible name, the one thing a screen reader says when the
+ * focus lands on it («Trattamento fiscale, regione»); a caller names what the box holds.
+ * Without a `label` the box is still focusable and scrolls, and it is not announced as a
+ * region, since a region with no name is noise.
+ *
+ * `Table` is this around a `<table>`.
+ */
+function ScrollBox({ label, className, ...props }: ScrollBoxProps) {
+  const container = React.useRef<HTMLDivElement>(null)
+  const [scrolls, setScrolls] = React.useState(false)
+
+  React.useEffect(() => {
+    const node = container.current
+    if (!node || typeof ResizeObserver === "undefined") return
+    // The observer reports once when it starts observing, so no measurement is made
+    // here: the first answer arrives through the callback like every later one.
+    const measure = () => setScrolls(node.scrollWidth > node.clientWidth)
+    const observer = new ResizeObserver(measure)
+    observer.observe(node)
+    // The content's own width moves with what it holds, the box's with the card; a chart's
+    // figure and its table of values sit side by side in one region, so every child counts.
+    for (const child of node.children) observer.observe(child)
+    return () => observer.disconnect()
+  }, [])
+
   return (
     <div
-      data-slot="table-container"
-      className="relative w-full overflow-x-auto"
-    >
+      ref={container}
+      data-slot="scroll-region"
+      tabIndex={scrolls ? 0 : undefined}
+      role={scrolls && label ? "region" : undefined}
+      aria-label={scrolls ? label : undefined}
+      /* The focus indicator is an outline drawn inside the box: the CRM's and the hub's list
+         wrappers clip overflow (`overflow-x-auto overflow-y-hidden`), and a ring is a shadow
+         outside the border box, which they cut off on every side. */
+      className={cn(
+        "relative w-full overflow-x-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+type ScrollBoxProps = Omit<React.ComponentProps<"div">, "aria-label"> & { label?: string }
+
+/**
+ * `ScrollBox` for a hand-written table (a chart's table of values, a week grid) that
+ * cannot be `Table` yet scrolls just the same (REB-782). The name is required, so a
+ * table of this kind cannot be left unnamed; `Table`, which may have neither
+ * `scrollLabel` nor `aria-label`, uses the box directly.
+ */
+function ScrollRegion({ label, ...props }: Omit<ScrollBoxProps, "label"> & { label: string }) {
+  return <ScrollBox label={label} {...props} />
+}
+
+/**
+ * The container is a `ScrollBox`, named by `scrollLabel`. A table that already carries
+ * an `aria-label` of its own lends it when no `scrollLabel` is given.
+ */
+function Table({
+  className,
+  scrollLabel,
+  ...props
+}: React.ComponentProps<"table"> & { scrollLabel?: string }) {
+  return (
+    <ScrollBox data-slot="table-container" label={scrollLabel ?? props["aria-label"]}>
       <table
         data-slot="table"
         className={cn("w-full caption-bottom text-sm", className)}
         {...props}
       />
-    </div>
+    </ScrollBox>
   )
 }
 
@@ -120,6 +190,7 @@ function TableCaption({
 }
 
 export {
+  ScrollRegion,
   Table,
   TableHeader,
   TableBody,

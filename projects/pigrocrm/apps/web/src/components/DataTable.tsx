@@ -1,7 +1,7 @@
 import { tableFeatures, useTable, type ColumnDef, type RowData } from '@tanstack/react-table'
 import type { KeyboardEvent } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import {
   Table,
   TableBody,
@@ -55,7 +55,7 @@ const features = tableFeatures({ columnMeta: {} as DataTableColumnMeta })
  * optional feature is registered, so `ColumnDef`'s feature-contributed options
  * (`enableSorting`, `filterFn`, ...) are not offered and cannot be set only to be
  * silently ignored. Exported so a caller can type its own `columns` array --
- * `ColumnDef<DataTableFeatures, Customer>[]` -- without reaching into
+ * `ColumnDef<DataTableFeatures, Organization>[]` -- without reaching into
  * `@tanstack/react-table` for `tableFeatures` itself, or for `stockFeatures` (the
  * all-features-at-once shortcut the library's own v9 migration guide flags as a
  * bundle-size regression outside of migrating pre-existing v8 code) just to
@@ -67,11 +67,15 @@ export type DataTableFeatures = typeof features
 // node_modules/.../@tanstack/table-core/dist/types/type-utils.d.ts) is what
 // `ColumnDef`'s own `TData` parameter requires -- an unconstrained `<T>` here
 // cannot be proven to satisfy it, since `T` could otherwise be instantiated with
-// a primitive. Every real row this table renders (Customer, Person, Deal, ...) is
+// a primitive. Every real row this table renders (Organization, Person, Deal, ...) is
 // already record-shaped, so this only makes an existing assumption explicit.
 interface DataTableProps<T extends RowData> {
   columns: ColumnDef<DataTableFeatures, T>[]
   data: T[]
+  /** What the table holds («Clienti»): the name of its scroll region while it overflows,
+   *  which is what a screen reader says when the focus lands on it (REB-782). Required, so
+   *  a new list cannot ship without one. */
+  label: string
   isLoading?: boolean
   /** True when the query behind `data` failed. Distinct from an empty `data`
    *  array on purpose -- see this function's own docstring. */
@@ -83,10 +87,8 @@ interface DataTableProps<T extends RowData> {
   emptyMessage?: string
 }
 
-const LOADING_ROW_COUNT = 5
-
 /**
- * One table for every list this product shows -- Clienti, Persone, Deal today,
+ * One table for every list this product shows -- Organizations, People, Deal today,
  * whatever a later slice adds tomorrow.
  *
  * `isLoading`, "zero rows", and a failed request render as three deliberately
@@ -97,7 +99,7 @@ const LOADING_ROW_COUNT = 5
  * all). Collapsing any two of these into one state would let a slow network, or
  * a failed one, masquerade as "there is nothing here", which is a different
  * claim and not this component's to make on the caller's behalf -- confirmed as
- * a real, live defect on Clienti/Persone/Deal alike before this fix: every
+ * a real, live defect on Organizations/People/Deal alike before this fix: every
  * column reading zero and "Nessun ..." is indistinguishable from a tenant that
  * genuinely has nothing, when the true state was "the request failed".
  *
@@ -113,6 +115,7 @@ const LOADING_ROW_COUNT = 5
 export function DataTable<T extends RowData>({
   columns,
   data,
+  label,
   isLoading,
   isError,
   error,
@@ -123,22 +126,11 @@ export function DataTable<T extends RowData>({
 
   if (isLoading) {
     return (
-      /* The same container, and bars the height of the rows they stand in for (`h-12`,
-         `ui/table.tsx`), so the table does not visibly jump the moment the request
-         lands. It is still a deliberately different *shape* -- animated bars, no header
-         -- because "something is happening" is not "here is your data"; what it stops
-         being is a different size. */
-      <div
-        data-slot="data-table"
-        className="overflow-hidden border border-border bg-card p-2"
-        role="status"
-        aria-label="Caricamento"
-      >
-        <div className="space-y-2">
-          {Array.from({ length: LOADING_ROW_COUNT }, (_, index) => (
-            <Skeleton key={index} className="h-12 w-full" />
-          ))}
-        </div>
+      /* The same container, so the table does not change width the moment the request
+         lands. It is still a deliberately different *shape* -- the brand loader, no header
+         -- because "something is happening" is not "here is your data". */
+      <div data-slot="data-table" className="overflow-hidden border border-border bg-card px-4">
+        <LoadingState className="py-8" />
       </div>
     )
   }
@@ -154,6 +146,9 @@ export function DataTable<T extends RowData>({
   // renders through, so a gap here is not local to a single screen.
   function handleRowKeyDown(event: KeyboardEvent<HTMLTableRowElement>, row: T) {
     if (!onRowClick) return
+    // Only the row's own key press: Enter on a button or a link inside a cell belongs to
+    // that control, and used to open the row instead of pressing it.
+    if (event.target !== event.currentTarget) return
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
     onRowClick(row)
@@ -172,7 +167,7 @@ export function DataTable<T extends RowData>({
       data-slot="data-table"
       className="overflow-x-auto overflow-y-hidden border border-border bg-card"
     >
-      <Table>
+      <Table scrollLabel={label}>
         <TableHeader>
           {table.getHeaderGroups().map((group) => (
             <TableRow key={group.id}>

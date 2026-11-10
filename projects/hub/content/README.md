@@ -3,14 +3,14 @@
 Source text for the perks a member downloads and the contracts a member signs, kept
 apart from the apps because it is prose reviewed on its own terms, not markup or code.
 
-- `guida-primi-passi-freelance.md`: the guide to the first steps as a freelancer, the
+- `guide-first-steps-freelance.md`: the guide to the first steps as a freelancer, the
   community's second perk (ORB-69). Italian, because it is what a member reads, not what
   the repository says about itself. Approved by Lorenzo on 2026-09-10 (PR #8).
-- `contratti/`: the example data and the ignored local files for the contract between
+- `contracts/`: the example data and the ignored local files for the contract between
   rebase and a freelancer (roadmap #285, REB-386). The two texts moved to
   `../packages/core/src/rebase_core/contracts/texts/` in REB-387, because the hub
   typesets them at request time and the API image carries only `packages/`:
-  `contratto-quadro.md` is signed once and holds every rule; `lettera-di-incarico.md` is
+  `framework-agreement.md` is signed once and holds every rule; `engagement-letter.md` is
   signed per engagement and holds the client, the work, the dates and the numbers.
   Italian for the same reason. Final since 2026-09-24, see [The contracts](#the-contracts)
   below.
@@ -18,7 +18,7 @@ apart from the apps because it is prose reviewed on its own terms, not markup or
 ## How a file here becomes something a member downloads
 
 `../tools/build_guide_pdf.py` typesets this Markdown with pandoc and Typst into
-`../packages/core/src/rebase_core/perks/`, from where `GET /api/hub/me/guida` hands it
+`../packages/core/src/rebase_core/perks/`, from where `GET /api/hub/me/guide` hands it
 to a resolved member session and 401s everybody else. It is a perk, so there is no public
 URL for it: the landing on `letsrebase.com` announces it and links to the wizard.
 
@@ -55,41 +55,51 @@ Each file opens with a front matter (`title`, `subtitle`, `version`, `date`, `st
 The version is what the member area will record against a signature (REB-454), so a
 change to the text after the first signature is a new version, not an edit.
 
-Two markers, both handled by `rebase_core.contracts.fields` (`../tools/build_contract_pdf.py` is the laptop's thin wrapper over it):
+Three markers, all handled by `rebase_core.contracts.fields` (`../tools/build_contract_pdf.py` is the laptop's thin wrapper over it):
 
 - `{{key}}`: a field, lowercase words joined by hyphens. The data fill it; without a
   value it prints as a labelled blank line, so the same file is the template and the
   printable form. The keys are Italian because the blank prints its key as the label.
 - `[[text]]`: a proposal still to be decided, highlighted in the draft. The build
   refuses a file whose `status` is not `draft` while one is left.
+- `{{se key}}` and `{{fine se}}`, each on a line of its own: what stands between them
+  prints only when the data fill `key`, and vanishes otherwise, leaving the letter as it
+  was without it. The letters use it for the «Pagamento a incasso» paragraph, with
+  `{{se giorni-incasso}}` (REB-979).
 
 ```
 uv run python projects/hub/tools/build_contract_pdf.py                       # every text, blank
-uv run python projects/hub/tools/build_contract_pdf.py lettera-di-incarico \
-  --data projects/hub/content/contratti/incarico.esempio.json               # one, filled
+uv run python projects/hub/tools/build_contract_pdf.py engagement-letter \
+  --data projects/hub/content/contracts/engagement.example.json               # one, filled
 ```
 
-The laptop's PDFs land in `contratti/dist/`, which git ignores; the hub stores its own per
+A build with no data leaves out the «Pagamento a incasso» paragraph, since no data fill
+`giorni-incasso`; the example sets it, so the filled letter prints it.
+
+The laptop's PDFs land in `contracts/dist/`, which git ignores; the hub stores its own per
 document, in its database (REB-387). Unlike the guide, nothing is committed or locked.
 `texts/rebase.json`, package data beside the texts, holds rebase's company data
 and the defaults every letter starts from (the payment term: 30 days from the end of the
 invoice's month); its `null`s wait for the SRL (roadmap #284). Until then the data of
-whoever signs for rebase goes in `contratti/rebase.local.json`, which git ignores and the
+whoever signs for rebase goes in `contracts/rebase.local.json`, which git ignores and the
 build reads over `rebase.json` when it is there: this repository is public. `compenso` is
 a JSON number, and the build refuses one given as text, not above zero, or with more than
 two decimals. The payment term is written by the build from `giorni-pagamento` and
 `fine-mese`, at most 30 days from the end of the month or 60 from the invoice, so no letter
-can print a term that article 7.1 and law 81/2017 forbid.
-`incarico.esempio.json` is fiction and names every field either letter asks for, which
+can print a term that article 7.1 and law 81/2017 forbid. With `giorni-incasso` (1 to 60,
+optional) it is written instead as that many days after the client has paid, and in any
+case within 60 days of receiving the invoice (the receipt, on the occasional letter).
+`engagement.example.json` is fiction and names every field either letter asks for, which
 `packages/core/tests/test_contract_pdf.py` checks. Real data names a real person and a
 real client: keep it outside the repository or in a `*.local.json`, which git ignores.
 
 Since REB-687 the package holds four texts: the two above and their occasional twins for
-a member who works without a partita IVA. `contratto-quadro-occasionale.md` is the
+a member who works without a partita IVA. `framework-agreement-occasional.md` is the
 ordinary framework agreement with the Collaboratore in place of the Professionista, the
 ricevuta in place of the fattura and the new article 5.7 on the 5.000 euro threshold;
-`lettera-di-incarico-occasionale.md` names its collaborator by the codice fiscale, and the
-build counts its payment term from the receipt. Both are `status: final` at version 1.0.
+`engagement-letter-occasional.md` names its collaborator by the codice fiscale, and the
+build counts its payment term from the receipt. Both were `status: final` at version 1.0
+and are at 1.1 since REB-979.
 The points left for the accountant before the first occasional letter leaves are in the
 design record's «Outside the code».
 
@@ -98,7 +108,9 @@ design record's «Outside the code».
 The highlighted proposals are gone: both texts are `status: final` at version 1.0.
 Decided by Ivan on 2026-09-23: the payment default (30 days from the end of the invoice's
 month, 7.1), the freelancer is paid whether or not the client has paid and rebase aligns
-the client's terms to that (7.2), the social security surcharge is inside the fee (5.5),
+the client's terms to that (7.2; since 2026-11-09 a letter may tie the term to the client's
+payment, within the 60 days, `docs/design/DECISIONS.md`), the social security surcharge is
+inside the fee (5.5),
 the 15% of 12.2, and the framework agreement lasting 12 months and renewing itself unless
 either side gives notice 30 days before the end (9.1, approved specifically as a tacit
 renewal). On 2026-09-24 Ivan accepted the framework agreement's remaining seven proposals
@@ -153,19 +165,19 @@ Three drafts at version 0.1, `status: draft`, written for a lawyer's review. The
 the renderer typeset them, the registry and the signing flow do not know them, and
 wiring one in is a card of its own after the review.
 
-- `condizioni-generali-azienda.md`: the general terms attached to every proposal. They
+- `company-general-terms.md`: the general terms attached to every proposal. They
   are what a company accepts with each proposal, the way Ivan's own consulting
   proposals already work: a proposal with the general terms attached.
-- `proposta-azienda.md`: the proposal for one engagement. It follows the layout of
+- `company-proposal.md`: the proposal for one engagement. It follows the layout of
   those consulting proposals (addressee and subject, scope and goals, activities, exclusions,
   economic terms, invoicing and payment, privacy, a summary of the general terms,
   validity, acceptance) and carries the company's specific approval of the onerous
   clauses (articles 1341 and 1342). One profile per proposal for now: the professionals'
   table has one row of fields, and a team needs a list field the renderer does not have.
   `corrispettivo` is held to the rules of `compenso` and printed the same way.
-  `proposta.esempio.json` is fiction and names every field it asks for, which
+  `proposal.example.json` is fiction and names every field it asks for, which
   `test_contract_pdf.py` checks.
-- `accordo-di-riservatezza.md`: the confidentiality agreement the freelancer signs on
+- `freelancer-nda.md`: the confidentiality agreement the freelancer signs on
   top of the framework agreement and the letter. It covers what a member sees before any
   engagement too (open requests, company names, a selection's material), lasts three
   years after the last information or engagement, and yields to whichever rule protects
@@ -178,8 +190,8 @@ into highlighted text; the edits that come back go into the Markdown, never the 
 
 ```
 perl -0pe 's/\{\{([a-z0-9-]+)\}\}/"[*".($1 =~ s#-# #gr)."*]"/ge; s/\[\[(.*?)\]\]/[$1]{.mark}/gs' \
-  projects/hub/packages/core/src/rebase_core/contracts/texts/proposta-azienda.md \
-  | pandoc --from=markdown+smart --shift-heading-level-by=-1 -o proposta-azienda.docx
+  projects/hub/packages/core/src/rebase_core/contracts/texts/company-proposal.md \
+  | pandoc --from=markdown+smart --shift-heading-level-by=-1 -o company-proposal.docx
 ```
 
 How the general terms give rebase what the framework agreement promises the freelancer:

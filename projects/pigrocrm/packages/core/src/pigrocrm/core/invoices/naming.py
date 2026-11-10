@@ -10,12 +10,11 @@ import re
 from uuid import UUID
 
 from pigrocrm.core.errors import ValidationFailed
-from pigrocrm.core.invoices.schemas import MAX_NUMERO
-
-ENTITY = "invoice"
+from pigrocrm.core.invoices.constants import ENTITY
+from pigrocrm.core.invoices.schemas import MAX_NUMBER
 
 _BASE36_DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-_PROGRESSIVO_WIDTH = 5
+_SEQUENTIAL_WIDTH = 5
 _YEAR_STRIDE = 10_000
 
 # An `IdCodice` is either an 11-digit VAT number or a 16-character fiscal code -- the
@@ -24,8 +23,8 @@ _YEAR_STRIDE = 10_000
 # trailing newline, and a name with a newline in it reaches a filesystem and a
 # `Content-Disposition` header as something neither agreed to.
 FISCAL_ID_RE = re.compile(r"\d{11}|[A-Z0-9]{16}")
-NUMERO_COMPLETO_RE = re.compile(r"\d{4}/\d{1,4}")
-RIFERIMENTO_PROFORMA_RE = re.compile(r"PROV-\d{4}-\d{4,6}")
+NUMBER_COMPLETE_RE = re.compile(r"\d{4}/\d{1,4}")
+REFERENCE_PROFORMA_RE = re.compile(r"PROV-\d{4}-\d{4,6}")
 
 
 def _to_base36(value: int, width: int) -> str:
@@ -36,7 +35,7 @@ def _to_base36(value: int, width: int) -> str:
     return "".join(reversed(digits)).rjust(width, "0")
 
 
-def progressivo_invio(anno: int, numero: int) -> str:
+def send_sequential(year: int, number: int) -> str:
     """`ProgressivoInvio`, and the same token the file name carries.
 
     It identifies the *file*, not the invoice, which is why the previous system deriving it from the
@@ -50,17 +49,17 @@ def progressivo_invio(anno: int, numero: int) -> str:
     above 2999 * 10000 + 9999). Past that the mapping stops being injective across
     years, so emission refuses rather than producing a name that could collide.
     """
-    if not 1 <= numero <= MAX_NUMERO:
+    if not 1 <= number <= MAX_NUMBER:
         raise ValidationFailed(
             ENTITY,
-            "numero",
-            f"un progressivo oltre {MAX_NUMERO} renderebbe ambiguo il nome del file XML",
-            expected=f"un numero fra 1 e {MAX_NUMERO}",
+            "number",
+            f"un progressivo oltre {MAX_NUMBER} renderebbe ambiguo il nome del file XML",
+            expected=f"un numero fra 1 e {MAX_NUMBER}",
         )
-    return _to_base36(anno * _YEAR_STRIDE + numero, _PROGRESSIVO_WIDTH)
+    return _to_base36(year * _YEAR_STRIDE + number, _SEQUENTIAL_WIDTH)
 
 
-def sdi_filename(id_fiscale: str, anno: int, numero: int) -> str:
+def sdi_filename(id_tax: str, year: int, number: int) -> str:
     """`IT{cf_o_piva}_{progressivo}.xml`, the SdI's own convention.
 
     This is the **download** name, set in `Content-Disposition`, not a storage key:
@@ -69,24 +68,24 @@ def sdi_filename(id_fiscale: str, anno: int, numero: int) -> str:
     prefix could never be one. The name matters because the file goes to an
     intermediary, which often validates the name before the content.
     """
-    if not FISCAL_ID_RE.fullmatch(id_fiscale):
+    if not FISCAL_ID_RE.fullmatch(id_tax):
         raise ValidationFailed(
-            "emitter_profile",
-            "partita_iva",
+            "legal_entity",
+            "vat_number",
             "il nome del file XML richiede una partita IVA di 11 cifre o un codice "
             "fiscale di 16 caratteri",
             expected="11 cifre oppure 16 caratteri alfanumerici maiuscoli",
         )
-    return f"IT{id_fiscale}_{progressivo_invio(anno, numero)}.xml"
+    return f"IT{id_tax}_{send_sequential(year, number)}.xml"
 
 
-def invoice_storage_prefix(azienda_id: UUID, anno: int, numero: int) -> str:
-    """`fatture/{azienda_id}/{anno}/{numero}` -- so a file pulled out of context is
+def invoice_storage_prefix(legal_entity_id: UUID, year: int, number: int) -> str:
+    """`invoices/{legal_entity_id}/{year}/{number}` -- so a file pulled out of context is
     still identifiable, which is mechanism 4 of the four that keep a proforma from
-    being mistaken for an invoice. The azienda first since REB-619, because `2026/1`
-    names one invoice per azienda; every key written before it stays on its row and is
+    being mistaken for an invoice. The legal entity first since REB-619, because `2026/1`
+    names one invoice per legal entity; every key written before it stays on its row and is
     never moved (spec 2026-10-03 §1.4)."""
-    return f"fatture/{azienda_id}/{anno}/{numero}"
+    return f"fatture/{legal_entity_id}/{year}/{number}"
 
 
 def proforma_storage_prefix(invoice_id: UUID) -> str:
@@ -96,34 +95,34 @@ def proforma_storage_prefix(invoice_id: UUID) -> str:
     return f"proforma/{invoice_id}"
 
 
-def numero_completo(anno: int, numero: int) -> str:
+def number_complete(year: int, number: int) -> str:
     """The `Numero` printed on the document and sent in the XML.
 
-    `{anno}/{numero}`, not the previous system's `"{n}/00"`: that form carried no year at all, on a
+    `{year}/{number}`, not the previous system's `"{n}/00"`: that form carried no year at all, on a
     progressive that was global and never reset, so two invoices from different years
     were indistinguishable by number.
     """
-    return f"{anno}/{numero}"
+    return f"{year}/{number}"
 
 
-def proforma_riferimento(anno: int, sequenza: int) -> str:
-    """`PROV-{anno}-{sequenza:04d}`.
+def proforma_reference(year: int, sequence: int) -> str:
+    """`PROV-{year}-{sequenza:04d}`.
 
     The non-numeric prefix is load-bearing: no fiscal-number pattern can accept it, so
     a proforma cannot be read as an invoice by any regex, in this codebase or in a
     spreadsheet somebody builds later.
     """
-    return f"PROV-{anno}-{sequenza:04d}"
+    return f"PROV-{year}-{sequence:04d}"
 
 
 __all__ = [
     "FISCAL_ID_RE",
-    "NUMERO_COMPLETO_RE",
-    "RIFERIMENTO_PROFORMA_RE",
+    "NUMBER_COMPLETE_RE",
+    "REFERENCE_PROFORMA_RE",
     "invoice_storage_prefix",
-    "numero_completo",
-    "proforma_riferimento",
+    "number_complete",
+    "proforma_reference",
     "proforma_storage_prefix",
-    "progressivo_invio",
+    "send_sequential",
     "sdi_filename",
 ]

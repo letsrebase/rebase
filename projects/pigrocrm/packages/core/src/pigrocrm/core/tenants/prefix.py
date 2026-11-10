@@ -27,7 +27,7 @@ def _pattern(segments: tuple[str, ...]) -> re.Pattern[str]:
 def split_tenant_prefix(
     path: str, root_slug: str = "", segments: tuple[str, ...] = API_SEGMENTS
 ) -> tuple[str | None, str]:
-    """`("studio", "/api/customers")` for `/studio/api/customers`; `(None, path)` when
+    """`("studio", "/api/organizations")` for `/studio/api/organizations`; `(None, path)` when
     there is no prefix, or when the would-be slug is a reserved word -- `/api/...` is
     never anybody's space, and `/app/...` never reaches either adapter.
 
@@ -40,6 +40,6 @@ def split_tenant_prefix(
     slug, rest = match.group(1), match.group(2)
     if root_slug and slug == root_slug:
         return None, rest
-    if slug in RESERVED_SLUGS or not SLUG_PATTERN.match(slug):
+    if slug in RESERVED_SLUGS or not SLUG_PATTERN.fullmatch(slug):
         return None, path
     return slug, rest

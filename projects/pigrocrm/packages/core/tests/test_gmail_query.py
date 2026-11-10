@@ -64,6 +64,12 @@ OUR_OWN_ROUTE_PATHS = frozenset(
             REPO_ROOT / "apps" / "api" / "src" / "pigrocrm_api" / "routers" / "gmail.py",
             "/messages",
         ),
+        # The model's provider, not Gmail: Anthropic's own endpoint ends in the same word
+        # (REB-972, `ai/transport.py`).
+        (
+            REPO_ROOT / "packages" / "core" / "src" / "pigrocrm" / "core" / "ai" / "transport.py",
+            "https://api.anthropic.com/v1/messages",
+        ),
     }
 )
 
@@ -101,7 +107,7 @@ def test_addresses_are_batched_and_every_batch_keeps_the_filter() -> None:
 
 
 def test_a_repeated_address_is_asked_for_once() -> None:
-    """The roster is built from customers, people and deals, so the same address can
+    """The roster is built from organizations, people and deals, so the same address can
     arrive three times. Three identical clauses would cost a third of the `q`'s length
     limit for nothing."""
     query = build_list_queries(

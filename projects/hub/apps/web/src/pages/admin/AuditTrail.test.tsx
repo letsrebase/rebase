@@ -15,11 +15,11 @@ const OVERRIDE: AdminAction = {
   entity_id: 'f1',
   kind: 'overridden',
   admin_id: 'u1',
-  admin_nome: 'Ivan Bianchi',
+  admin_name: 'Ivan Bianchi',
   payload: {
-    changed: ['tariffa_giornaliera'],
-    before: { tariffa_giornaliera: null },
-    after: { tariffa_giornaliera: '500.00' },
+    changed: ['daily_rate'],
+    before: { daily_rate: null },
+    after: { daily_rate: '500.00' },
   },
   created_at: '2026-09-22T15:30:00Z',
 }
@@ -30,7 +30,7 @@ const DELETE: AdminAction = {
   entity_id: 'f1',
   kind: 'deleted',
   admin_id: 'u1',
-  admin_nome: 'Ivan Bianchi',
+  admin_name: 'Ivan Bianchi',
   payload: {},
   created_at: '2026-09-20T09:00:00Z',
 }
@@ -45,7 +45,7 @@ const CLEARED: AdminAction = {
   entity_id: 'f1',
   kind: 'cleared',
   admin_id: 'u1',
-  admin_nome: 'Ivan Bianchi',
+  admin_name: 'Ivan Bianchi',
   payload: {
     changed: ['cv'],
     before: { cv_filename: 'cv.pdf', cv_mime: 'application/pdf', cv_size: 2048 },
@@ -62,7 +62,7 @@ const NOTICE_RECORDED: AdminAction = {
   entity_id: 'f1',
   kind: 'notice_recorded',
   admin_id: 'u1',
-  admin_nome: 'Ivan Bianchi',
+  admin_name: 'Ivan Bianchi',
   payload: {},
   created_at: '2026-09-24T09:00:00Z',
 }
@@ -75,7 +75,7 @@ const VETTED: AdminAction = {
   entity_id: 'f1',
   kind: 'vetted',
   admin_id: 'u1',
-  admin_nome: 'Ivan Bianchi',
+  admin_name: 'Ivan Bianchi',
   payload: { vetted: true },
   created_at: '2026-09-25T09:00:00Z',
 }
@@ -88,10 +88,105 @@ const PIGRO_LINK: AdminAction = {
   entity_id: 'm1',
   kind: 'pigro_link',
   admin_id: 'u1',
-  admin_nome: 'Ivan Bianchi',
-  payload: { esito: 'errore', errore: 'timeout' },
+  admin_name: 'Ivan Bianchi',
+  payload: { outcome: 'error', error: 'timeout' },
   created_at: '2026-10-01T09:05:00Z',
 }
+
+// Two cards of one person merged (REB-800): `merged` on the absorbed card lists the ids
+// that moved per relation, `absorbed` on the survivor counts them, `unmerged` is the
+// shell putting it back.
+const MERGED: AdminAction = {
+  id: 'a8',
+  entity_type: 'freelancer',
+  entity_id: 'f1',
+  kind: 'merged',
+  admin_id: 'u1',
+  admin_name: 'Ivan Bianchi',
+  payload: {
+    into_freelancer_id: 'f2',
+    moved: { logins: ['l1', 'l2'], notes: ['c1'] },
+    cv: 'absorbed',
+    card_to_regenerate: true,
+  },
+  created_at: '2026-10-02T09:00:00Z',
+}
+const ABSORBED: AdminAction = {
+  ...MERGED,
+  id: 'a9',
+  entity_id: 'f2',
+  kind: 'absorbed',
+  payload: { from_freelancer_id: 'f1', moved: { logins: 1 }, cv: 'kept', card_to_regenerate: false },
+}
+const UNMERGED: AdminAction = { ...MERGED, id: 'a10', kind: 'unmerged', payload: {} }
+
+// The notes' trail and a change of status (REB-856): who, the door, and the text, with
+// `before`/`after` plain strings (not a field diff), and nothing to revert.
+const NOTE_ADDED: AdminAction = {
+  id: 'a11',
+  entity_type: 'freelancer',
+  entity_id: 'f1',
+  kind: 'note_added',
+  admin_id: 'u1',
+  admin_name: 'Ivan Bianchi',
+  payload: { note_id: 'n1', source: 'mcp', text: 'Sentito al telefono.' },
+  created_at: '2026-10-29T09:00:00Z',
+}
+const NOTE_EDITED: AdminAction = {
+  ...NOTE_ADDED,
+  id: 'a12',
+  kind: 'note_edited',
+  payload: { note_id: 'n1', source: 'web', before: 'Sentito al telefono.', after: 'Sentito lunedì.' },
+}
+const NOTE_DELETED: AdminAction = { ...NOTE_ADDED, id: 'a13', kind: 'note_deleted', payload: { note_id: 'n1', source: 'web', text: 'Sentito lunedì.' } }
+const STATUS_CHANGED: AdminAction = {
+  ...NOTE_ADDED,
+  id: 'a14',
+  kind: 'status_changed',
+  payload: { before: 'new', after: 'contacted', source: 'mcp' },
+}
+
+// A regeneration of the card (REB-861): written or not, in bulk or on its own, by which door, with
+// its cost. One entry per card, signed by the admin who asked.
+const CARD_REGENERATED: AdminAction = {
+  id: 'a15',
+  entity_type: 'freelancer',
+  entity_id: 'f1',
+  kind: 'card_regenerated',
+  admin_id: 'u1',
+  admin_name: 'Ivan Bianchi',
+  payload: {
+    source: 'cli',
+    bulk: true,
+    start_action_id: 's1',
+    prompt_version: 3,
+    model: 'claude-opus-5',
+    outcome: 'written',
+    cost_eur: '0.012300',
+  },
+  created_at: '2026-10-30T09:00:00Z',
+}
+const CARD_NOT_REGENERATED: AdminAction = {
+  ...CARD_REGENERATED,
+  id: 'a16',
+  payload: {
+    source: 'web',
+    bulk: false,
+    prompt_version: 3,
+    model: 'claude-opus-5',
+    outcome: 'not_written',
+    reason: 'source_identifying',
+    cost_eur: '0.020000',
+  },
+}
+const ANON_CV: AdminAction = {
+  ...DELETE,
+  id: 'a20',
+  kind: 'anon_cv_downloaded',
+  payload: { reused: false },
+  created_at: '2026-10-30T09:00:00Z',
+}
+const ANON_CV_REUSED: AdminAction = { ...ANON_CV, id: 'a21', payload: { reused: true }, created_at: '2026-10-30T10:00:00Z' }
 
 function mount({ canRevert = true, onReverted = () => {} }: { canRevert?: boolean; onReverted?: () => void } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -116,6 +211,30 @@ describe('AuditTrail', () => {
     expect(entries[0]).toHaveTextContent('—')
     expect(entries[0]).toHaveTextContent('500.00')
     expect(entries[1]).toHaveTextContent('Eliminazione')
+  })
+
+  it('shows the closed values of a field diff in the admin’s words, never as the stored codes', async () => {
+    const changed: AdminAction = {
+      ...OVERRIDE,
+      id: 'a30',
+      payload: {
+        changed: ['remote', 'status', 'filled_by'],
+        before: { remote: 'hybrid', status: 'contacted', filled_by: 'person' },
+        after: { remote: 'on_site', status: 'in_progress', filled_by: 'admin' },
+      },
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [changed]))
+    mount()
+    const entry = (await screen.findByText('Modifica')).closest('li')!
+    expect(entry).toHaveTextContent('Ibrido')
+    expect(entry).toHaveTextContent('In sede')
+    expect(entry).toHaveTextContent('contattato')
+    expect(entry).toHaveTextContent('in corso')
+    expect(entry).toHaveTextContent('la persona')
+    expect(entry).toHaveTextContent('un admin')
+    for (const code of ['hybrid', 'on_site', 'contacted', 'in_progress']) {
+      expect(entry).not.toHaveTextContent(code)
+    }
   })
 
   it('shows the CV that was there before a clear, even though `changed` names a field absent from before/after', async () => {
@@ -155,6 +274,43 @@ describe('AuditTrail', () => {
     const entry = (await screen.findByText('Collegamento a Pigro')).closest('li')!
     expect(entry).toHaveTextContent('Ivan Bianchi')
     expect(entry.querySelector('dl')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
+  })
+
+  it('says the card was merged into another, with what moved, and no revert button (REB-800)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [MERGED]))
+    mount()
+    const entry = (await screen.findByText('Unita a un’altra scheda')).closest('li')!
+    expect(entry).toHaveTextContent('Ivan Bianchi')
+    // `merged` lists the ids that moved, per relation: 2 logins and 1 note.
+    expect(entry).toHaveTextContent('3 righe spostate · CV più recente passato alla scheda tenuta · scheda anonima da riscrivere')
+    expect(entry.querySelector('dl')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
+  })
+
+  it('says the card took another in, counting what moved (REB-800)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [ABSORBED]))
+    mount()
+    const entry = (await screen.findByText('Ha assorbito una scheda')).closest('li')!
+    expect(entry).toHaveTextContent('1 riga spostata')
+    expect(entry).not.toHaveTextContent('CV più recente')
+    expect(entry).not.toHaveTextContent('scheda anonima')
+  })
+
+  it('says a merge was put back by the shell (REB-800)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [UNMERGED]))
+    mount()
+    const entry = (await screen.findByText('Unione annullata')).closest('li')!
+    expect(entry).not.toHaveTextContent('righe spostate')
+  })
+
+  it('names a downloaded anonymous CV, and says when it was already made', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [ANON_CV_REUSED, ANON_CV]))
+    mount()
+    await screen.findByText('CV anonimo scaricato (già pronto)')
+    const entries = screen.getAllByRole('listitem')
+    expect(entries[1]).toHaveTextContent('CV anonimo scaricato')
+    expect(entries[1]).not.toHaveTextContent('già pronto')
     expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
   })
 
@@ -199,5 +355,55 @@ describe('AuditTrail', () => {
     mount()
     await userEvent.click(await screen.findByRole('button', { name: 'Ripristina questa modifica' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('si può ripristinare solo una modifica di campo')
+  })
+
+  it('says who added, edited and deleted a note and through which door, with no field diff (REB-856)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [NOTE_DELETED, NOTE_EDITED, NOTE_ADDED]))
+    mount()
+    await screen.findByText('Nota eliminata')
+    const [deleted, edited, added] = screen.getAllByRole('listitem')
+    expect(added).toHaveTextContent('Nota aggiunta')
+    expect(added).toHaveTextContent('Ivan Bianchi')
+    expect(added).toHaveTextContent('MCP')
+    expect(added).toHaveTextContent('Sentito al telefono.')
+    expect(edited).toHaveTextContent('Nota modificata')
+    expect(edited).toHaveTextContent('dal sito')
+    expect(edited).toHaveTextContent('Sentito al telefono. → Sentito lunedì.')
+    expect(deleted).toHaveTextContent('Sentito lunedì.')
+    for (const entry of [added, edited, deleted]) expect(entry?.querySelector('dl')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
+  })
+
+  it('shows a change of status as before → after with its door (REB-856)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [STATUS_CHANGED]))
+    mount()
+    const entry = (await screen.findByText('Cambio di stato')).closest('li')!
+    expect(entry).toHaveTextContent('nuovo → contattato')
+    expect(entry).toHaveTextContent('MCP')
+    expect(entry.querySelector('dl')).toBeNull()
+  })
+
+  it('says a card was regenerated, in bulk, from the command line, with the cost (REB-861)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [CARD_REGENERATED]))
+    mount()
+    const entry = (await screen.findByText('Scheda rigenerata')).closest('li')!
+    expect(entry).toHaveTextContent('Ivan Bianchi')
+    expect(entry).toHaveTextContent('da riga di comando')
+    expect(entry).toHaveTextContent('in blocco')
+    expect(entry).toHaveTextContent('prompt v3')
+    expect(entry).toHaveTextContent('0,0123')
+    expect(entry.querySelector('dl')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
+  })
+
+  it('says why a single regeneration did not write the card, and what it cost (REB-861)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [CARD_NOT_REGENERATED]))
+    mount()
+    const entry = (
+      await screen.findByText('Scheda non rigenerata: cita un account, un sito o un datore di lavoro')
+    ).closest('li')!
+    expect(entry).toHaveTextContent('dal sito')
+    expect(entry).toHaveTextContent('singola')
+    expect(entry).toHaveTextContent('0,02')
   })
 })

@@ -1,6 +1,6 @@
 import type { Band } from './api'
 
-/** Between a figure and «€», as `formatEuro` (`Intl.NumberFormat('it-IT')`) writes it:
+/** Between a figure and «€», as `formatMoney` (`Intl.NumberFormat('it-IT')`) writes it:
  *  a line never breaks between the two. */
 const NBSP = '\u00a0'
 /** Between a band's two bounds, as core's `Band.bounds()` writes them. */
@@ -36,6 +36,6 @@ function bounds(band: Band): string {
  *  spec § 3.3): «400–500 € al giorno», «oltre 800 € al giorno», «8.800–11.000 € al
  *  mese». The web cannot import Python, so `bands.test.ts` holds the same cases as core's
  *  `test_bands.py`. */
-export function bandLabel(band: Band, per: 'giorno' | 'mese' = 'giorno'): string {
-  return `${bounds(band)}${NBSP}€ al ${per}`
+export function bandLabel(band: Band, per: 'day' | 'month' = 'day'): string {
+  return `${bounds(band)}${NBSP}€ al ${per === 'day' ? 'giorno' : 'mese'}`
 }

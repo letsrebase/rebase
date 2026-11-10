@@ -1,6 +1,5 @@
-import type { Action, PigroStato } from './api'
+import type { Action, PigroStatus } from './api'
 
-const euro = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', useGrouping: 'always' })
 const day = new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })
 const moment = new Intl.DateTimeFormat('it-IT', {
   day: 'numeric',
@@ -9,11 +8,6 @@ const moment = new Intl.DateTimeFormat('it-IT', {
   hour: '2-digit',
   minute: '2-digit',
 })
-
-/** `"450.00"` from the API, as `450,00 €`. Parsed for display only; nothing here is summed. */
-export function formatEuro(value: string): string {
-  return euro.format(Number(value))
-}
 
 export function formatDate(value: string): string {
   return day.format(new Date(value))
@@ -65,61 +59,71 @@ export function formatBytes(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export const REMOTO_LABELS = { remoto: 'Da remoto', ibrido: 'Ibrido', in_sede: 'In sede' } as const
-export const FREELANCER_STATES = ['nuovo', 'contattato', 'attivo', 'scartato'] as const
+export const REMOTE_LABELS = { remote: 'Da remoto', hybrid: 'Ibrido', on_site: 'In sede' } as const
+/** Who filled a freelancer's card, as a diff of the audit trail reads it (`filled_by`). */
+export const FILLED_BY_LABELS: Record<string, string> = { person: 'la persona', admin: 'un admin' }
+export const FREELANCER_STATES = ['new', 'contacted', 'active', 'discarded'] as const
 /** The states the freelancer list filters by: the card's four, plus the pseudo-state of a
  *  signup with no card (ORB-163). */
 export const FREELANCER_LIST_STATES = [...FREELANCER_STATES, 'lead'] as const
-export const COMPANY_STATES = ['nuovo', 'contattato', 'in_corso', 'chiuso'] as const
+export const COMPANY_STATES = ['new', 'contacted', 'in_progress', 'closed'] as const
 export const STATE_LABELS: Record<string, string> = {
-  nuovo: 'Nuovo',
+  new: 'Nuovo',
   lead: 'Lead',
-  contattato: 'Contattato',
-  attivo: 'Attivo',
-  scartato: 'Scartato',
-  in_corso: 'In corso',
-  chiuso: 'Chiuso',
+  contacted: 'Contattato',
+  active: 'Attivo',
+  discarded: 'Scartato',
+  in_progress: 'In corso',
+  closed: 'Chiuso',
 }
 
 /** REB-413: the state chips on the «Match» list, in the order the brief gives them. */
-export const MATCH_STATES = ['bozza', 'in_firma', 'attivo', 'concluso', 'annullato'] as const
+export const MATCH_STATES = ['draft', 'awaiting_signature', 'active', 'concluded', 'cancelled'] as const
 /** What a match and a contract document are, in the admin's words: the same as the
  *  core's `MATCH_STATE_LABELS` and `DOCUMENT_STATE_LABELS` (`match_words.py`), which the
  *  MCP tools answer, so keep the two identical (REB-477): the core's
  *  `tests/test_web_labels.py` names any label that drifts. */
 export const MATCH_STATE_LABELS: Record<string, string> = {
-  bozza: 'Da inviare',
-  in_firma: 'In attesa di firma',
-  attivo: 'Attivo',
-  concluso: 'Concluso',
-  annullato: 'Annullato',
+  draft: 'Da inviare',
+  awaiting_signature: 'In attesa di firma',
+  active: 'Attivo',
+  concluded: 'Concluso',
+  cancelled: 'Annullato',
 }
 export const DOCUMENT_STATE_LABELS: Record<string, string> = {
-  generato: 'Pronto, non inviato',
-  in_attesa: 'Parte dopo il contratto quadro',
-  inviato: 'Da firmare',
-  firmato: 'Firmato',
-  annullato: 'Annullato',
-  disdetto: 'Disdetto',
+  generated: 'Pronto, non inviato',
+  pending: 'Parte dopo il contratto quadro',
+  sent: 'Da firmare',
+  signed: 'Firmato',
+  cancelled: 'Annullato',
+  notice_served: 'Disdetto',
+}
+
+/** What a letter prints after its fee for each way of pricing it, and what the admin reads
+ *  wherever a letter's pay mode is shown: the core's `PAY_MODE_WORDS` (`match_words.py`),
+ *  held equal by `tests/test_web_labels.py`. The API carries the mode, never the words. */
+export const PAY_MODE_WORDS: Record<string, string> = {
+  to_work_unit: 'a giornata',
+  lump_sum: 'a corpo',
 }
 
 /** P-REB-43: a team request's states, in the order the admin moves it («Richieste
  *  team»), and its words, where it came from, and a talent's answer to the availability
  *  mail: copies of the core's `team_words.py`, held equal by the core's
  *  `tests/test_web_labels.py` as the match labels above are. */
-export const TEAM_REQUEST_STATES = ['nuova', 'contattata', 'chiusa'] as const
+export const TEAM_REQUEST_STATES = ['new', 'contacted', 'closed'] as const
 export const TEAM_REQUEST_STATE_LABELS: Record<string, string> = {
-  nuova: 'Nuova',
-  contattata: 'Contattata',
-  chiusa: 'Chiusa',
+  new: 'Nuova',
+  contacted: 'Contattata',
+  closed: 'Chiusa',
 }
 export const TEAM_ORIGIN_LABELS: Record<string, string> = {
-  pubblico: 'Pubblico',
+  public: 'Pubblico',
   cloud: 'Cloud',
   admin: 'Admin',
 }
 export const TALENT_ANSWER_LABELS: Record<string, string> = {
-  si: 'Sì',
+  yes: 'Sì',
   no: 'No',
 }
 /** A talent who has the availability mail and has not answered (D1): core's
@@ -135,17 +139,30 @@ export const SENIORITY_LABELS: Record<string, string> = {
   lead: 'Lead',
 }
 
-/** A team member's `giorni_settimana` as the team reads it: «1 giorno a settimana»,
+/** A team member's `week_days` as the team reads it: «1 giorno a settimana»,
  *  «3 giorni a settimana», or «Giorni da definire» when the proposal left it open. */
-export function formatDaysPerWeek(giorni: number | null): string {
-  if (giorni === null) return 'Giorni da definire'
-  return giorni === 1 ? '1 giorno a settimana' : `${giorni} giorni a settimana`
+export function formatDaysPerWeek(days: number | null): string {
+  if (days === null) return 'Giorni da definire'
+  return days === 1 ? '1 giorno a settimana' : `${days} giorni a settimana`
 }
 
-/** A card's `anni`, as a phrase: «meno di un anno», «1 anno», «9 anni di esperienza». */
-export function formatExperience(anni: number): string {
-  if (anni === 0) return 'meno di un anno di esperienza'
-  return anni === 1 ? '1 anno di esperienza' : `${anni} anni di esperienza`
+/** A card's `experience_years`, as a phrase: «meno di un anno», «1 anno», «9 anni di esperienza»,
+ *  and «Anni non indicati nel CV» when the CV dates no role (REB-799). */
+export function formatExperience(experience_years: number | null): string {
+  if (experience_years === null) return 'Anni non indicati nel CV'
+  if (experience_years === 0) return 'meno di un anno di esperienza'
+  return experience_years === 1 ? '1 anno di esperienza' : `${experience_years} anni di esperienza`
+}
+
+/** A card's level for a company: «Senior, 9 anni di esperienza», with «(da verificare)»
+ *  after a seniority the CV's dates could not back (REB-799). */
+export function formatLevel(card: {
+  seniority: string
+  experience_years: number | null
+  seniority_uncertain?: boolean
+}): string {
+  const seniority = SENIORITY_LABELS[card.seniority] ?? card.seniority
+  return `${seniority}${card.seniority_uncertain ? ' (da verificare)' : ''}, ${formatExperience(card.experience_years)}`
 }
 
 /** REB-518: the talent's «Verificato» pill, core's `team_words.VETTED_LABEL`, and the
@@ -156,7 +173,7 @@ export const VETTED_UNMARK_LABEL = 'Togli la verifica'
 /** REB-519: the badge a vetted talent's card carries in the talent cloud, core's
  *  `team_words.CLOUD_VETTED_LABEL`, held equal by `tests/test_web_labels.py`. */
 export const CLOUD_VETTED_LABEL = 'Verificato da rebase'
-/** A company request that came from the team builder's beta box (`?da=team-builder`,
+/** A company request that came from the team builder's beta box (`?from=team-builder`,
  *  spec § 4.3), and the word its row in «Aziende» shows: core's `team_words`
  *  `TEAM_BUILDER_ORIGIN` and `TEAM_BUILDER_ORIGIN_LABEL`, held equal by
  *  `tests/test_web_labels.py`. */
@@ -166,30 +183,30 @@ export const TEAM_BUILDER_ORIGIN_LABEL = 'da team builder'
 /** Where a match's link to its deal on Pigro stands (REB-497), as the «Pigro» column on
  *  the «Match» list reads it. The web's own words: the core writes the sentence, not a
  *  label. */
-export const PIGRO_STATE_LABELS: Record<PigroStato, string> = {
-  collegato: 'Collegato',
-  da_collegare: 'Da collegare',
-  errore: 'Errore',
-  rifiutato: 'Rifiutato',
+export const PIGRO_STATE_LABELS: Record<PigroStatus, string> = {
+  linked: 'Collegato',
+  to_link: 'Da collegare',
+  error: 'Errore',
+  rejected: 'Rifiutato',
 }
 
 /** A referral's state on the «Match» list and on the ledger: the reward's own three (the
  *  ledger's `STATE_LABELS` read the same), `previsto` while its first letter is not signed
- *  (an estimate), `gia_maturato` when it already paid on another match (REB-609) and
- *  `da_verificare` while the referred person has not proved they hold the address (REB-658). */
+ *  (an estimate), `already_accrued` when it already paid on another match (REB-609) and
+ *  `to_verify` while the referred person has not proved they hold the address (REB-658). */
 export const REFERRAL_STATE_LABELS: Record<string, string> = {
-  previsto: 'Previsto',
-  da_verificare: 'Da verificare',
-  da_confermare: 'Da confermare',
-  confermato: 'Confermato',
-  pagato: 'Pagato',
-  gia_maturato: 'Già maturato',
+  expected: 'Previsto',
+  to_verify: 'Da verificare',
+  to_confirm: 'Da confermare',
+  confirmed: 'Confermato',
+  paid: 'Pagato',
+  already_accrued: 'Già maturato',
 }
 /** What verified a referral (REB-658), as the ledger row says it, one whole sentence each. */
 export const REFERRAL_VERIFIED_VIA_LABELS: Record<string, string> = {
-  accesso: 'Verificato con il primo accesso',
-  lettera: 'Verificato con la lettera firmata',
-  storico: 'Già contava prima della verifica',
+  login: 'Verificato con il primo accesso',
+  letter: 'Verificato con la lettera firmata',
+  history: 'Già contava prima della verifica',
 }
 /** Which side of a match a referral brought in. */
 export const REFERRAL_KIND_LABELS: Record<string, string> = { freelancer: 'freelance', company: 'azienda' }
@@ -198,62 +215,75 @@ export const REFERRAL_KIND_LABELS: Record<string, string> = { freelancer: 'freel
  *  invoice list uses for its state and its payment: the CRM's vocabulary, copied, since
  *  the hub imports nothing of it. */
 export const INVOICE_STATE_LABELS: Record<string, string> = {
-  bozza: 'Bozza',
-  emessa: 'Emessa',
-  annullata: 'Annullata',
-  confermata: 'Confermata',
-  consumata: 'Consumata',
+  draft: 'Bozza',
+  issued: 'Emessa',
+  cancelled: 'Annullata',
+  confirmed: 'Confermata',
+  consumed: 'Consumata',
 }
 export const PAYMENT_STATE_LABELS: Record<string, string> = {
-  da_incassare: 'Da incassare',
-  incassato: 'Incassato',
+  unpaid: 'Da incassare',
+  paid: 'Incassato',
 }
 
 /** The words on the button for each step the core names (REB-477). */
 export const ACTION_LABELS: Record<Action, string> = {
-  invia: 'Invia per la firma',
-  reinvia_email: 'Reinvia email',
-  aggiorna_stato: 'Aggiorna stato',
-  annulla: 'Annulla',
-  chiudi: 'Chiudi match',
-  registra_disdetta: 'Registra disdetta',
-  riprova_pigro: 'Riprova su Pigro',
+  send: 'Invia per la firma',
+  resend_email: 'Reinvia email',
+  status_refresh: 'Aggiorna stato',
+  cancel: 'Annulla',
+  close: 'Chiudi match',
+  record_notice: 'Registra disdetta',
+  retry_pigro: 'Riprova su Pigro',
 }
 /** The same button while its request runs. */
 export const ACTION_PENDING_LABELS: Record<Action, string> = {
-  invia: 'Invio…',
-  reinvia_email: 'Reinvio…',
-  aggiorna_stato: 'Aggiorno…',
-  annulla: 'Annullo…',
-  chiudi: 'Chiudo…',
-  registra_disdetta: 'Registro…',
-  riprova_pigro: 'Collego a Pigro…',
+  send: 'Invio…',
+  resend_email: 'Reinvio…',
+  status_refresh: 'Aggiorno…',
+  cancel: 'Annullo…',
+  close: 'Chiudo…',
+  record_notice: 'Registro…',
+  retry_pigro: 'Collego a Pigro…',
 }
 
 /** REB-392: a contract's state in the freelancer's own words, gendered to the document:
  *  the framework agreement (`il contratto quadro`) is masculine, a letter (`la lettera`)
- *  feminine. `inviato` keeps «Da firmare» for both: gender-neutral, and it tells the
- *  member what to do rather than just naming the state. `disdetto`/`disdetta` never
+ *  feminine. `sent` keeps «Da firmare» for both: gender-neutral, and it tells the
+ *  member what to do rather than just naming the state. `notice_served`/`disdetta` never
  *  actually reaches a letter (only a framework agreement can be,
- *  `ck_contract_documents_notice_for_quadro`), kept here only so a stray value still
+ *  `ck_contract_documents_notice_for_framework`), kept here only so a stray value still
  *  reads as a sentence rather than the raw state. */
 export const MEMBER_FRAMEWORK_STATE_LABELS: Record<string, string> = {
-  in_attesa: 'Parte dopo la firma del contratto quadro',
-  inviato: 'Da firmare',
-  firmato: 'Firmato',
-  annullato: 'Annullato: non va più firmato',
-  disdetto: 'Disdetto',
+  pending: 'Parte dopo la firma del contratto quadro',
+  sent: 'Da firmare',
+  signed: 'Firmato',
+  cancelled: 'Annullato: non va più firmato',
+  notice_served: 'Disdetto',
 }
 export const MEMBER_LETTER_STATE_LABELS: Record<string, string> = {
-  in_attesa: 'Parte dopo la firma del contratto quadro',
-  inviato: 'Da firmare',
-  firmato: 'Firmata',
-  annullato: 'Annullata: non va più firmata',
-  disdetto: 'Disdetta',
+  pending: 'Parte dopo la firma del contratto quadro',
+  sent: 'Da firmare',
+  signed: 'Firmata',
+  cancelled: 'Annullata: non va più firmata',
+  notice_served: 'Disdetta',
 }
 
 /** Which of the two gendered maps a document's own words come from. */
-export function memberDocumentStateLabel(kind: 'quadro' | 'lettera', stato: string): string {
-  const labels = kind === 'quadro' ? MEMBER_FRAMEWORK_STATE_LABELS : MEMBER_LETTER_STATE_LABELS
-  return labels[stato] ?? stato
+export function memberDocumentStateLabel(kind: 'framework' | 'letter', status: string): string {
+  const labels = kind === 'framework' ? MEMBER_FRAMEWORK_STATE_LABELS : MEMBER_LETTER_STATE_LABELS
+  return labels[status] ?? status
+}
+
+// A model call costs a fraction of a cent: `formatMoney`'s two places would show it as 0,00 €.
+const smallEuro = new Intl.NumberFormat('it-IT', {
+  style: 'currency',
+  currency: 'EUR',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 6,
+})
+
+/** `"0.012300"` from the API as `0,0123 €`: what a call or a regeneration cost. */
+export function formatSmallEuro(value: string): string {
+  return smallEuro.format(value as `${number}`)
 }

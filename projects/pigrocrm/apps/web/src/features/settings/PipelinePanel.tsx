@@ -32,7 +32,7 @@ const TYPES = [
   { value: 'lost', label: 'Perso' },
 ] as const
 
-const KNOWN_FIELDS = ['nome', 'posizione', 'probabilita_default', 'tipo', 'code']
+const KNOWN_FIELDS = ['name', 'position', 'default_probability', 'type', 'code']
 
 function unattributed(problem: ProblemDetail | null): string | null {
   if (!problem) return null
@@ -43,9 +43,9 @@ function unattributed(problem: ProblemDetail | null): string | null {
 
 export function PipelinePanel() {
   const [open, setOpen] = useState(false)
-  const [nome, setNome] = useState('')
-  const [probabilita, setProbabilita] = useState('0')
-  const [tipo, setTipo] = useState<'open' | 'won' | 'lost'>('open')
+  const [name, setName] = useState('')
+  const [probability, setProbability] = useState('0')
+  const [typeValue, setType] = useState<'open' | 'won' | 'lost'>('open')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
 
   const stages = useStages()
@@ -58,9 +58,9 @@ export function PipelinePanel() {
 
   function openDialog() {
     setProblem(null)
-    setNome('')
-    setProbabilita('0')
-    setTipo('open')
+    setName('')
+    setProbability('0')
+    setType('open')
     setOpen(true)
   }
 
@@ -68,10 +68,10 @@ export function PipelinePanel() {
     setProblem(null)
     create.mutate(
       {
-        nome,
-        posizione: stages.data?.length ?? 0,
-        probabilita_default: Number(probabilita),
-        tipo,
+        name,
+        position: stages.data?.length ?? 0,
+        default_probability: Number(probability),
+        type: typeValue,
       },
       {
         onSuccess: () => {
@@ -88,11 +88,11 @@ export function PipelinePanel() {
     // /api/pipeline-stages/{id}` is a hard delete (`PipelineRepository.delete`
     // calls `session.delete`, not a soft-delete flag), and there is no "undelete"
     // endpoint the way there is `unarchive` for a field. A plain confirm is the
-    // same cheap misclick guard `CustomerDetail`/`PersonDetail` already use before
+    // same cheap misclick guard `OrganizationDetail`/`PersonDetail` already use before
     // their own (reversible) archive -- here it matters even more, since this one
     // truly cannot be undone from the UI.
     const confirmed = window.confirm(
-      `Eliminare definitivamente lo stato "${stage.nome}"? L'operazione non è reversibile.`,
+      `Eliminare definitivamente lo stato "${stage.name}"? L'operazione non è reversibile.`,
     )
     if (!confirmed) return
 
@@ -101,9 +101,9 @@ export function PipelinePanel() {
       onError: (error) => {
         // Refused (409) if any deal, archived included, still points at this
         // stage -- `PipelineService.delete`'s own docstring. The server's
-        // sentence already says what to do about it ("spostali in un altro
-        // stato prima di eliminarlo"); the count riding along in `deals` is
-        // appended the same way `CustomerDetail.archive` appends its own
+        // sentence already says what to do about it (move them to another
+        // stage before deleting it); the count riding along in `deals` is
+        // appended the same way `OrganizationDetail.archive` appends its own
         // `active_deals`, rather than left to disappear even though the server
         // reported it.
         const failed = toProblem(error)
@@ -114,18 +114,18 @@ export function PipelinePanel() {
   }
 
   const columns: ColumnDef<DataTableFeatures, Stage>[] = [
-    { header: 'Posizione', accessorKey: 'posizione' },
-    { header: 'Nome', accessorKey: 'nome' },
-    { header: 'Probabilità', id: 'probabilita', accessorFn: (row) => `${row.probabilita_default}%` },
+    { header: 'Posizione', accessorKey: 'position' },
+    { header: 'Nome', accessorKey: 'name' },
+    { header: 'Probabilità', id: 'probability', accessorFn: (row) => `${row.default_probability}%` },
     {
       header: 'Tipo',
-      id: 'tipo',
-      // `DEAL_STAGE_TONE` rather than a tone chosen here: it is keyed on `tipo` -- the
+      id: 'type',
+      // `DEAL_STAGE_TONE` rather than a tone chosen here: it is keyed on `type` -- the
       // closed enum the backend guarantees -- and it is the same map the Kanban and the
       // deal list read, so a stage reads identically wherever it appears.
       cell: (info) => (
-        <StatusPill tone={DEAL_STAGE_TONE[info.row.original.tipo]}>
-          {TYPES.find((type) => type.value === info.row.original.tipo)?.label}
+        <StatusPill tone={DEAL_STAGE_TONE[info.row.original.type]}>
+          {TYPES.find((type) => type.value === info.row.original.type)?.label}
         </StatusPill>
       ),
     },
@@ -138,7 +138,7 @@ export function PipelinePanel() {
       // server (409), but a stage without them goes for good.
       cell: (info) => (
         <RowActions
-          label={`Azioni per ${info.row.original.nome}`}
+          label={`Azioni per ${info.row.original.name}`}
           items={[
             {
               label: 'Elimina',
@@ -184,6 +184,7 @@ export function PipelinePanel() {
       </div>
 
       <DataTable
+        label="Stati della pipeline"
         columns={columns}
         data={stages.data ?? []}
         isLoading={stages.isLoading}
@@ -210,11 +211,11 @@ export function PipelinePanel() {
               <Label htmlFor="stage-nome">Nome</Label>
               <Input
                 id="stage-nome"
-                aria-invalid={fieldError?.field === 'nome'}
-                value={nome}
-                onChange={(event) => setNome(event.target.value)}
+                aria-invalid={fieldError?.field === 'name'}
+                value={name}
+                onChange={(event) => setName(event.target.value)}
               />
-              {fieldError?.field === 'nome' && (
+              {fieldError?.field === 'name' && (
                 <p className="text-sm text-destructive">{fieldError.message}</p>
               )}
             </div>
@@ -225,18 +226,18 @@ export function PipelinePanel() {
                 type="number"
                 min={0}
                 max={100}
-                aria-invalid={fieldError?.field === 'probabilita_default'}
-                value={probabilita}
-                onChange={(event) => setProbabilita(event.target.value)}
+                aria-invalid={fieldError?.field === 'default_probability'}
+                value={probability}
+                onChange={(event) => setProbability(event.target.value)}
               />
-              {fieldError?.field === 'probabilita_default' && (
+              {fieldError?.field === 'default_probability' && (
                 <p className="text-sm text-destructive">{fieldError.message}</p>
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="stage-tipo">Tipo</Label>
-              <Select value={tipo} onValueChange={(value) => setTipo(value as typeof tipo)}>
-                <SelectTrigger id="stage-tipo" className="w-full">
+              <Label htmlFor="stage-type">Tipo</Label>
+              <Select value={typeValue} onValueChange={(value) => setType(value as typeof typeValue)}>
+                <SelectTrigger id="stage-type" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

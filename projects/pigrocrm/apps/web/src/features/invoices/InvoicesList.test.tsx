@@ -1,0 +1,373 @@
+/**
+ * The invoice list's own header and filter row (design spec §4).
+ *
+ * The page is what the revision changed: the title and the primary action moved into
+ * `PageHeader`, and the «stato» filter -- a `Select` until now -- became the row of
+ * squared chips the application-variant record draws. The chips are the part worth a
+ * test: they are the only filter on this screen a user drives, and a chip that looks
+ * pressed while the list behind it is unfiltered is a page lying about what it shows.
+ *
+ * `api.GET` is spied on directly rather than `useInvoices` being mocked, mirroring
+ * `organizations/$organizationId.test.tsx`: what is asserted is the query the page actually
+ * sends.
+ */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import type { ReactElement, ReactNode } from 'react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { api } from '@/lib/api'
+import { InvoicesList } from './InvoicesList'
+
+// REB-294: the list's «Nuova fattura» is the button that used to answer a readonly
+// press with a 403; it now asks `useCan('create_invoice')`. The suite renders as the
+// writer it has always asserted for, and the readonly shape is its own test below.
+const mockAuth = vi.hoisted(() => ({ may: true }))
+vi.mock('@/lib/auth', () => ({ useCan: () => mockAuth.may }))
+
+vi.mock('@tanstack/react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-router')>()
+  return {
+    ...actual,
+    useNavigate: () => vi.fn(),
+    // A real `Link` needs a router context this component test has no reason to stand
+    // up; what matters here is that the page renders one, not what TanStack does with
+    // it.
+    Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
+  }
+})
+
+const mockGet = vi.spyOn(api, 'GET')
+
+function ok(data: unknown) {
+  return Promise.resolve({ data, response: new Response(null, { status: 200 }) }) as never
+}
+
+beforeEach(() => {
+  mockAuth.may = true
+  mockGet.mockReset()
+  mockGet.mockImplementation((() => ok({ items: [], next_cursor: null })) as never)
+})
+
+function renderList(overdue?: boolean): ReactElement {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={client}>
+      <InvoicesList overdue={overdue} />
+    </QueryClientProvider>,
+  )
+  return <></>
+}
+
+/** One issued invoice as the API sends it, with whatever a test needs changed. */
+function invoice(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: 'f1',
+    year: 2026,
+    number: 7,
+    reference: null,
+    type: 'invoice',
+    status: 'issued',
+    payment_status: 'unpaid',
+    issue_date: '2026-08-20',
+    accrual_from: null,
+    accrual_to: null,
+    total: '1500.00',
+    customer_legal_name: 'ACME S.r.l.',
+    ...overrides,
+  }
+}
+
+/** Makes the list endpoint answer these rows; every other endpoint stays empty. */
+function mockInvoices(items: Record<string, unknown>[]): void {
+  mockGet.mockImplementation(((path: string) =>
+    path === '/api/invoices'
+      ? ok({ items, next_cursor: null })
+      : ok({ items: [], next_cursor: null })) as never)
+}
+
+/** Makes the list endpoint answer two pages: the first carries `next_cursor`, and a
+ *  request that sends that cursor back gets the second page with none after it. */
+function mockInvoicesPages(
+  first: Record<string, unknown>[],
+  second: Record<string, unknown>[],
+): void {
+  mockGet.mockImplementation(((
+    path: string,
+    options?: { params?: { query?: Record<string, unknown> } },
+  ) => {
+    if (path !== '/api/invoices') return ok({ items: [], next_cursor: null })
+    const cursor = options?.params?.query?.cursor
+    return cursor === undefined
+      ? ok({ items: first, next_cursor: 'page-2' })
+      : ok({ items: second, next_cursor: null })
+  }) as never)
+}
+
+/** The query the page last sent to the list endpoint. */
+function lastRequestedQuery(): Record<string, unknown> {
+  const calls = mockGet.mock.calls.filter((call) => call[0] === '/api/invoices')
+  const last = calls[calls.length - 1]?.[1] as
+    | { params?: { query?: Record<string, unknown> } }
+    | undefined
+  return last?.params?.query ?? {}
+}
+
+/** The `status` the page last asked the API for, or `undefined` when it asked for none. */
+function lastRequestedStatus(): unknown {
+  return lastRequestedQuery().status
+}
+
+describe('the invoice list', () => {
+  it('opens with its title as the page heading', async () => {
+    renderList()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Fatture' })).toBeInTheDocument()
+  })
+
+  it('offers its primary action in the header', async () => {
+    renderList()
+    expect(await screen.findByRole('button', { name: /nuova fattura/i })).toBeInTheDocument()
+  })
+
+  it('shows one state chip per invoice state, «Tutte» pressed to begin with', async () => {
+    renderList()
+    // Scoped to the state row: the payment row (REB-325) has a «Tutte» of its own.
+    const status = within(await screen.findByRole('search')).getByRole('group', {
+      name: 'Filtra per stato',
+    })
+    expect(within(status).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    for (const label of ['Bozza', 'Emessa', 'Annullata', 'Confermata', 'Consumata']) {
+      expect(within(status).getByRole('button', { name: label })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      )
+    }
+  })
+
+  it('asks the API for the state whose chip is pressed', async () => {
+    renderList()
+    const filters = await screen.findByRole('search')
+    expect(lastRequestedStatus()).toBeUndefined()
+
+    await userEvent.click(within(filters).getByRole('button', { name: 'Emessa' }))
+    expect(within(filters).getByRole('button', { name: 'Emessa' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(lastRequestedStatus()).toBe('issued')
+  })
+
+  it('clears the state filter when the pressed chip is pressed again', async () => {
+    renderList()
+    const status = within(await screen.findByRole('search')).getByRole('group', {
+      name: 'Filtra per stato',
+    })
+    await userEvent.click(within(status).getByRole('button', { name: 'Emessa' }))
+    await userEvent.click(within(status).getByRole('button', { name: 'Emessa' }))
+
+    expect(lastRequestedStatus()).toBeUndefined()
+    expect(within(status).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
+  /**
+   * Under «Tutte» the list showed 2026/18 and the proforma it came from as two rows with
+   * the same customer, period and total (ORB-169). The page now asks the server to leave
+   * the consumed ones out whenever no state is chosen; the «Consumata» chip asks for
+   * exactly them, so nothing is unreachable.
+   */
+  it('leaves consumed proformas out under «Tutte» and lists them under «Consumata»', async () => {
+    renderList()
+    const filters = await screen.findByRole('search')
+    expect(lastRequestedQuery()).toMatchObject({ exclude_consumed: true })
+    expect(lastRequestedStatus()).toBeUndefined()
+
+    await userEvent.click(within(filters).getByRole('button', { name: 'Consumata' }))
+    expect(lastRequestedStatus()).toBe('consumed')
+    expect(lastRequestedQuery().exclude_consumed).toBeUndefined()
+
+    await userEvent.click(within(filters).getByRole('button', { name: 'Emessa' }))
+    expect(lastRequestedQuery().exclude_consumed).toBeUndefined()
+
+    await userEvent.click(within(filters).getByRole('button', { name: 'Emessa' }))
+    expect(lastRequestedQuery()).toMatchObject({ exclude_consumed: true })
+  })
+
+  /**
+   * REB-325: «aggiungi un filtro per le fatture da incassare». The API has taken
+   * `payment_status` since slice 3 and nothing on the page ever sent it. A second chip
+   * row, «Incasso», does now, server-side like the state chips, so it holds across
+   * loaded pages. What «da incassare» selects (an issued fattura nobody has paid, never
+   * a draft) is the server's call, in `InvoiceRepository`, not this page's.
+   */
+  it('offers a payment chip row, «Tutte» pressed to begin with', async () => {
+    renderList()
+    const filters = await screen.findByRole('search')
+    const collection = within(filters).getByRole('group', { name: 'Filtra per incasso' })
+    expect(within(collection).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    for (const label of ['Da incassare', 'Incassato']) {
+      expect(within(collection).getByRole('button', { name: label })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      )
+    }
+    expect(lastRequestedQuery().payment_status).toBeUndefined()
+  })
+
+  it('asks the API for the payment state whose chip is pressed, and clears it on a second press', async () => {
+    renderList()
+    const filters = await screen.findByRole('search')
+    const collection = within(filters).getByRole('group', { name: 'Filtra per incasso' })
+
+    await userEvent.click(within(collection).getByRole('button', { name: 'Da incassare' }))
+    expect(lastRequestedQuery().payment_status).toBe('unpaid')
+    // The state row is its own filter: pressing a payment chip leaves it at «Tutte».
+    expect(lastRequestedStatus()).toBeUndefined()
+
+    await userEvent.click(within(collection).getByRole('button', { name: 'Da incassare' }))
+    expect(lastRequestedQuery().payment_status).toBeUndefined()
+    expect(within(collection).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
+  it('combines the payment chip with the state chip instead of replacing it', async () => {
+    renderList()
+    const filters = await screen.findByRole('search')
+    const status = within(filters).getByRole('group', { name: 'Filtra per stato' })
+    const collection = within(filters).getByRole('group', { name: 'Filtra per incasso' })
+
+    await userEvent.click(within(status).getByRole('button', { name: 'Emessa' }))
+    await userEvent.click(within(collection).getByRole('button', { name: 'Incassato' }))
+    expect(lastRequestedQuery()).toMatchObject({ status: 'issued', payment_status: 'paid' })
+  })
+
+  it('keeps the type filter as a select in the same row', async () => {
+    renderList()
+    const filters = await screen.findByRole('search')
+    expect(within(filters).getByLabelText('Filtra per tipo')).toBeInTheDocument()
+  })
+
+  /** The list is the one screen that mixes organizations, so it is the one that says whose
+   *  invoice each row is (ORB-98). The tab inside a customer's page does not: see
+   *  `InvoicesTab.test.tsx`. */
+  it('says which customer each invoice belongs to', async () => {
+    mockInvoices([invoice()])
+    renderList()
+    expect(await screen.findByRole('columnheader', { name: 'Cliente' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'ACME S.r.l.' })).toBeInTheDocument()
+  })
+
+  it('says what each invoice is for, right after the customer (ORB-130)', async () => {
+    mockInvoices([invoice({ memo: 'Consulenza agosto', imported_from: 'external' })])
+    renderList()
+    const headers = (await screen.findAllByRole('columnheader')).map((h) => h.textContent)
+    expect(headers.indexOf('Descrizione')).toBe(headers.indexOf('Cliente') + 1)
+    expect(screen.getByRole('cell', { name: 'Consulenza agosto' })).toBeInTheDocument()
+    expect(screen.queryByText(/^importata$/i)).toBeNull()
+  })
+
+  /** REB-368: unlike the "external" pill the list still suppresses (assertion above,
+   *  ORB-130), a "fatturapa" row's own badge names a fact the list can act on -- the
+   *  original file is on record and downloadable -- so it shows here too. A space
+   *  with both import kinds therefore reads two distinct badges across its rows: the
+   *  generic one on the detail page only, the honest "FatturaPA" one right here. */
+  it('shows the fatturapa row its own distinct badge, mixed with an esterno row', async () => {
+    mockInvoices([
+      invoice({ id: 'f-esterno', number: 5, imported_from: 'external' }),
+      invoice({ id: 'f-fatturapa', number: 8, imported_from: 'fatturapa' }),
+    ])
+    renderList()
+    expect(await screen.findByText('FatturaPA')).toBeInTheDocument()
+    expect(screen.queryByText(/^importata$/i)).toBeNull()
+  })
+
+  it('says which period each invoice is about, beside its date (ORB-126)', async () => {
+    mockInvoices([
+      invoice({
+        issue_date: '2026-09-02',
+        accrual_from: '2026-08-01',
+        accrual_to: '2026-08-31',
+      }),
+    ])
+    renderList()
+    const headers = (await screen.findAllByRole('columnheader')).map((h) => h.textContent)
+    expect(headers.indexOf('Competenza')).toBe(headers.indexOf('Data') + 1)
+    expect(screen.getByRole('cell', { name: '01/08/2026 - 31/08/2026' })).toBeInTheDocument()
+  })
+
+  it('still explains the «scadute» drill-through it arrives with', async () => {
+    renderList(true)
+    expect(await screen.findByRole('status')).toHaveTextContent(/scadute e non incassate/i)
+  })
+
+  /**
+   * `useInvoices` sends no `limit`/`cursor` and the page dropped `next_cursor` on the
+   * floor (REB-231): a space with more than one page of invoices had everything past
+   * the first fifty silently unreachable. The button walks the cursor one page at a
+   * time, the way `fetchAllDeals` already does for the Kanban.
+   */
+  it('offers "Carica altre" when the page is truncated, and loads the next page on click', async () => {
+    mockInvoicesPages(
+      [
+        invoice({ id: 'f1', customer_legal_name: 'ACME S.r.l.' }),
+        invoice({ id: 'f1b', customer_legal_name: 'ACME S.r.l.' }),
+      ],
+      [invoice({ id: 'f2', customer_legal_name: 'Beta S.r.l.' })],
+    )
+    renderList()
+
+    expect((await screen.findAllByRole('cell', { name: 'ACME S.r.l.' }))).toHaveLength(2)
+    expect(screen.queryByRole('cell', { name: 'Beta S.r.l.' })).not.toBeInTheDocument()
+
+    const loadMore = screen.getByRole('button', { name: 'Carica altre' })
+    expect(screen.getByText('Mostrate 2 fatture, ce ne sono altre.')).toBeInTheDocument()
+
+    await userEvent.click(loadMore)
+
+    expect(await screen.findByRole('cell', { name: 'Beta S.r.l.' })).toBeInTheDocument()
+    expect(screen.getAllByRole('cell', { name: 'ACME S.r.l.' })).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: 'Carica altre' })).not.toBeInTheDocument()
+    // The second request has to carry the exact cursor the first page returned, not
+    // merely *some* cursor: a stale or wrong-but-defined value would still pass every
+    // assertion above.
+    expect(lastRequestedQuery().cursor).toBe('page-2')
+  })
+
+  /** REB-294, the card's own symptom: the Fatture page showed «Nuova fattura» to a
+   *  readonly person, and the press answered 403. The list itself -- what a role may
+   *  read -- is unchanged. */
+  it('offers a readonly person no «Nuova fattura»', async () => {
+    mockAuth.may = false
+    mockGet.mockImplementation((() => ok({ items: [invoice()], next_cursor: null })) as never)
+    renderList()
+    await screen.findByRole('columnheader', { name: 'Numero' })
+    expect(screen.queryByRole('button', { name: /nuova fattura/i })).not.toBeInTheDocument()
+  })
+
+  /** REB-758: «Importa» sits beside «Nuova fattura» and asks the same gate for its own
+   *  action, since the service answers the review and the write with a 403 below admin. */
+  it('offers «Importa» beside «Nuova fattura», and to nobody the gate refuses', async () => {
+    mockGet.mockImplementation((() => ok({ items: [], next_cursor: null })) as never)
+    renderList()
+    expect(await screen.findByRole('button', { name: 'Importa' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /nuova fattura/i })).toBeInTheDocument()
+  })
+
+  it('offers a person the gate refuses no «Importa»', async () => {
+    mockAuth.may = false
+    mockGet.mockImplementation((() => ok({ items: [], next_cursor: null })) as never)
+    renderList()
+    await screen.findByRole('columnheader', { name: 'Numero' })
+    expect(screen.queryByRole('button', { name: 'Importa' })).not.toBeInTheDocument()
+  })
+})

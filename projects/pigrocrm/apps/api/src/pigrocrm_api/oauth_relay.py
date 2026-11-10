@@ -36,11 +36,19 @@ def relay_to_space(
     code: str | None,
     state: str | None,
     error: str | None,
+    lends: bool | None = None,
 ) -> RedirectResponse | None:
     """A 307 to the space the `state` names, or None when this consent is not the
     root's to relay: a request already under a space, an installation that lends no
-    client, or a state that names no space (the root's own consent is a bare jti)."""
-    if tenant_slug(request) is not None or not settings.google_shared_client:
+    client, or a state that names no space (the root's own consent is a bare jti).
+
+    `lends` says whether the root lends the app this callback belongs to. It defaults to
+    the Google switch, which is what the Gmail and Drive callbacks mean; Slack's callback
+    passes whether the root has a Slack app at all, since a space always borrows it
+    (`tenants/registry.py`, REB-739)."""
+    if lends is None:
+        lends = settings.google_shared_client
+    if tenant_slug(request) is not None or not lends:
         return None
     slug = relay_slug(state)
     # The root's own name is the root, not a space: relaying to it would land on this

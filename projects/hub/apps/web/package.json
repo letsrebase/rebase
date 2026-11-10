@@ -10,19 +10,21 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "generate:api": "uv run --frozen python scripts/dump-openapi.py | openapi-typescript -o src/lib/api-types.ts"
   },
   "dependencies": {
     "@rebase/analytics": "workspace:*",
     "@rebase/brand": "workspace:*",
     "@rebase/ui": "workspace:*",
-    "@tailwindcss/vite": "4.3.3",
-    "@tanstack/react-query": "5.104.0",
-    "@tanstack/react-router": "1.170.40",
-    "lucide-react": "^1.48.0",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
-    "tailwindcss": "4.3.3"
+    "@tailwindcss/vite": "4.3.4",
+    "@tanstack/react-query": "5.105.3",
+    "@tanstack/react-router": "1.170.46",
+    "lucide-react": "^1.67.0",
+    "openapi-fetch": "0.17.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tailwindcss": "4.3.4"
   },
   "devDependencies": {
     "@eslint/js": "catalog:",
@@ -38,6 +40,7 @@
     "eslint-plugin-react-refresh": "catalog:",
     "globals": "catalog:",
     "jsdom": "catalog:",
+    "openapi-typescript": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
     "vite": "catalog:",

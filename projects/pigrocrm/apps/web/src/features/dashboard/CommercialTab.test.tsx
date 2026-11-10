@@ -27,78 +27,85 @@ function failed(error: unknown, status: number) {
 }
 
 const RESPONSE = {
-  periodo: { da: '2026-03-01', a: '2026-03-31' },
-  calcolato_alle: '2026-03-15T10:00:00Z',
+  period: { from: '2026-03-01', to: '2026-03-31' },
+  calculated_at: '2026-03-15T10:00:00Z',
   pipeline: [
     {
       stage_id: 's1',
       stage_code: 'lead',
-      stage_nome: 'Lead',
-      stage_tipo: 'open',
-      posizione: 0,
-      numero: 4,
-      valore_totale: '3000.00',
-      senza_valore: 1,
-      valore_ponderato: '610.00',
+      stage_name: 'Lead',
+      stage_type: 'open',
+      position: 0,
+      number: 4,
+      total_value: '3000.00',
+      without_value: 1,
+      weighted_value: '610.00',
     },
     {
       stage_id: 's2',
-      stage_code: 'offerta',
-      stage_nome: 'Offerta',
-      stage_tipo: 'open',
-      posizione: 2,
-      numero: 1,
-      valore_totale: '500.00',
-      senza_valore: 0,
-      valore_ponderato: '250.00',
+      stage_code: 'offer',
+      stage_name: 'Offerta',
+      stage_type: 'open',
+      position: 2,
+      number: 1,
+      total_value: '500.00',
+      without_value: 0,
+      weighted_value: '250.00',
     },
     {
       stage_id: 's3',
-      stage_code: 'vinto',
-      stage_nome: 'Vinto',
-      stage_tipo: 'won',
-      posizione: 4,
-      numero: 8,
-      valore_totale: '9000.00',
-      senza_valore: 0,
-      valore_ponderato: '9000.00',
+      stage_code: 'won',
+      stage_name: 'Vinto',
+      stage_type: 'won',
+      position: 4,
+      number: 8,
+      total_value: '9000.00',
+      without_value: 0,
+      weighted_value: '9000.00',
     },
     {
       stage_id: 's4',
-      stage_code: 'perso',
-      stage_nome: 'Perso',
-      stage_tipo: 'lost',
-      posizione: 5,
-      numero: 2,
-      valore_totale: '1000.00',
-      senza_valore: 0,
-      valore_ponderato: '0.00',
+      stage_code: 'lost',
+      stage_name: 'Perso',
+      stage_type: 'lost',
+      position: 5,
+      number: 2,
+      total_value: '1000.00',
+      without_value: 0,
+      weighted_value: '0.00',
     },
   ],
-  chiusure: { vinti: 3, persi: 1, valore_vinto: '15000.00', tasso_conversione: '75.00' },
-  offerte_in_attesa: [
+  closings: {
+    won: 3,
+    lost: 1,
+    won_value: '15000.00',
+    won_monthly_recurring: '500.00',
+    conversion_rate: '75.00',
+  },
+  open_monthly_recurring: '1250.00',
+  offers_pending: [
     {
       document_id: 'd1',
-      titolo: 'Offerta impianti',
+      title: 'Offerta impianti',
       deal_id: 'x',
       customer_id: null,
-      stato_dal: '2026-02-01',
-      giorni: 42,
+      status_since: '2026-02-01',
+      days: 42,
     },
   ],
-  offerte_in_attesa_totale: 1,
-  chiusure_previste_30_giorni: 2,
-  chiusure_non_attribuibili: 7,
-  offerte_accettate_deal_non_vinto: 2,
+  offers_pending_total: 1,
+  expected_closings_30_days: 2,
+  closings_not_attributable: 7,
+  accepted_offers_deal_not_won: 2,
 }
 
-const PERIODO = { da: '2026-03-01', a: '2026-03-31' }
+const PERIOD = { from: '2026-03-01', to: '2026-03-31' }
 
-function renderTab(periodo = PERIODO) {
+function renderTab(period = PERIOD) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <CommercialTab periodo={periodo} />
+      <CommercialTab period={period} />
     </QueryClientProvider>,
   )
 }
@@ -109,13 +116,13 @@ beforeEach(() => {
 
 describe('CommercialTab', () => {
   it('asks for the period it was given, so a shared link answers its own question', async () => {
-    // The other half of the URL round trip: `periodo.test.ts` proves the search params are
+    // The other half of the URL round trip: `period.test.ts` proves the search params are
     // read back, this proves they reach the request instead of being decoration.
     vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
-    renderTab({ da: '2025-01-01', a: '2025-12-31' })
+    renderTab({ from: '2025-01-01', to: '2025-12-31' })
     await screen.findByRole('table', { name: /pipeline per stato/i })
     expect(api.GET).toHaveBeenCalledWith('/api/dashboard/sales', {
-      params: { query: { da: '2025-01-01', a: '2025-12-31' } },
+      params: { query: { from: '2025-01-01', to: '2025-12-31' } },
     })
   })
 
@@ -133,6 +140,21 @@ describe('CommercialTab', () => {
     expect(await screen.findByText('15.000,00 €')).toBeInTheDocument()
   })
 
+  it('shows the monthly recurring value of the open and of the won deals, each per month', async () => {
+    // REB-931: a fee of 500 a month is a figure per month. It sits in its own card and
+    // leaves «Valore vinto» as the API sent it, so no total quietly includes it.
+    vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
+    renderTab()
+    const open = await screen.findByRole('group', { name: 'Ricorrente mensile dei deal aperti' })
+    expect(within(open).getByText('1.250,00 €/mese')).toBeInTheDocument()
+    const won = screen.getByRole('group', {
+      name: 'Ricorrente mensile dei deal vinti nel periodo',
+    })
+    expect(within(won).getByText('500,00 €/mese')).toBeInTheDocument()
+    const value = screen.getByRole('group', { name: 'Valore vinto nel periodo' })
+    expect(within(value).getByText('15.000,00 €')).toBeInTheDocument()
+  })
+
   it('shows the conversion rate, and shows a dash rather than 0% when it is null', async () => {
     vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
     const { unmount } = renderTab()
@@ -140,7 +162,7 @@ describe('CommercialTab', () => {
     unmount()
 
     vi.mocked(api.GET).mockResolvedValue(
-      ok({ ...RESPONSE, chiusure: { ...RESPONSE.chiusure, tasso_conversione: null } }),
+      ok({ ...RESPONSE, closings: { ...RESPONSE.closings, conversion_rate: null } }),
     )
     renderTab()
     // "0%" would say "I lost everything"; null says "nothing closed". Different facts.
@@ -149,7 +171,7 @@ describe('CommercialTab', () => {
   })
 
   it('declares the deals that cannot be attributed to a period', async () => {
-    // §4.1: `chiuso_il` is not backfilled, so the dashboard says so instead of counting
+    // §4.1: `closed_at` is not backfilled, so the dashboard says so instead of counting
     // those rows as zero or putting them in the wrong month.
     vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
     renderTab()
@@ -160,7 +182,7 @@ describe('CommercialTab', () => {
   it('says nothing about unattributable deals when there are none', async () => {
     // A permanent "0 deal chiusi prima..." would be a caveat about nothing, printed for
     // every user forever.
-    vi.mocked(api.GET).mockResolvedValue(ok({ ...RESPONSE, chiusure_non_attribuibili: 0 }))
+    vi.mocked(api.GET).mockResolvedValue(ok({ ...RESPONSE, closings_not_attributable: 0 }))
     renderTab()
     await screen.findByRole('table', { name: /pipeline per stato/i })
     expect(screen.queryByText(/non sono attribuibili/i)).not.toBeInTheDocument()
@@ -169,8 +191,8 @@ describe('CommercialTab', () => {
   it('draws every stage, the closed ones last and behind a rule', async () => {
     // The card is «Pipeline per stato» since 2026-09-09: a list that stopped at the last
     // open stage never said where the work ended up. The order is open stages in their
-    // `posizione` order, then the separator, then the closed ones -- grouped by
-    // `stage_tipo` and never by `stage_nome`, which the user may rename.
+    // `position` order, then the separator, then the closed ones -- grouped by
+    // `stage_type` and never by `stage_name`, which the user may rename.
     vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
     renderTab()
     const table = await screen.findByRole('table', { name: /pipeline per stato/i })
@@ -186,9 +208,9 @@ describe('CommercialTab', () => {
   })
 
   it('scales every bar against the widest stage, closed ones included', async () => {
-    // Vinto (8) is the widest row, and it is a closed one. Scaling the open stages
+    // «Vinto» (8) is the widest row, and it is a closed one. Scaling the open stages
     // against the widest *open* stage would draw a four-deal Lead as a full bar beside an
-    // eight-deal Vinto, which is a chart that lies about the two it puts side by side.
+    // eight-deal «Vinto», which is a chart that lies about the two it puts side by side.
     vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
     renderTab()
     await screen.findByRole('table', { name: /pipeline per stato/i })
@@ -223,7 +245,7 @@ describe('CommercialTab', () => {
   it('draws no separator when the pipeline has no closed stage', async () => {
     // A rule with nothing under it is a divider between a list and its own end.
     vi.mocked(api.GET).mockResolvedValue(
-      ok({ ...RESPONSE, pipeline: RESPONSE.pipeline.filter((row) => row.stage_tipo === 'open') }),
+      ok({ ...RESPONSE, pipeline: RESPONSE.pipeline.filter((row) => row.stage_type === 'open') }),
     )
     renderTab()
     const table = await screen.findByRole('table', { name: /pipeline per stato/i })
@@ -279,23 +301,23 @@ describe('CommercialTab, with an azienda selected', () => {
   it('sends the selection beside the period, and nothing in «tutte»', async () => {
     vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
     const value: LegalEntityValue = {
-      aziende: [],
+      legal_entities: [],
       selected: 'a-2',
       select: vi.fn(),
-      several: true, scoped: false, pinned: false,
+      several: true, scoped: false, pinned: false, loaded: true,
       byId: () => undefined,
     }
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={client}>
         <LegalEntityContext value={value}>
-          <CommercialTab periodo={PERIODO} />
+          <CommercialTab period={PERIOD} />
         </LegalEntityContext>
       </QueryClientProvider>,
     )
     await screen.findByText('Pipeline per stato')
     expect(api.GET).toHaveBeenCalledWith('/api/dashboard/sales', {
-      params: { query: { ...PERIODO, azienda_id: 'a-2' } },
+      params: { query: { ...PERIOD, legal_entity_id: 'a-2' } },
     })
   })
 })

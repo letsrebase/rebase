@@ -48,7 +48,7 @@ const OVERLAYS = {
  *   everything that is not on the path to the open surface, sparing every `[aria-live]`
  *   region and its ancestors. Sonner's toaster is one of those and sits inside
  *   `<main>`, so the marks land on `<main>`'s own children rather than stopping at
- *   `#root`, and the reported nodes are the five sections of this page that hold
+ *   `#root`, and the reported nodes are the six sections of this page that hold
  *   focusable elements, never the trigger. Radix traps Tab inside the surface, so
  *   nothing outside is actually reachable, but axe reads the static DOM and cannot see
  *   a focus trap; the remedy it accepts is `inert` on the background, which radix does
@@ -60,7 +60,14 @@ const OVERLAYS = {
  *   so those two URLs assert nothing about this rule. Measured on radix-ui 1.6.7,
  *   which is the latest release. REB-308.
  */
-const HIDDEN_SECTIONS = ['#button', '#card', '#fields', '#floating-surfaces', '#tabs'].map(
+const HIDDEN_SECTIONS = [
+  '#button',
+  '#card',
+  '#fields',
+  '#floating-surfaces',
+  '#scrolling-table',
+  '#tabs',
+].map(
   (id) => `aria-hidden-focus ${id}`,
 )
 
@@ -310,5 +317,82 @@ test.describe('the gallery renders the system', () => {
     // the size once per layer: every one of them is the 16px cell.
     expect(body.size.split(', ')).toEqual(['16px 16px', '16px 16px'])
     expect(body.image.match(/linear-gradient/g) ?? []).toHaveLength(2)
+  })
+  test('lets a keyboard reach a table that scrolls, and leaves one that fits out of the tab order', async ({ page }) => {
+    // REB-775: `scrollable-region-focusable`, serious. The wide table sits in a 288px
+    // card and overflows; the invoices table above it fits.
+    await page.goto('/')
+    const wide = page.locator('#scrolling-table [data-slot="table-container"]')
+    await expect(wide).toHaveAttribute('tabindex', '0')
+    await expect(wide).toHaveAttribute('role', 'region')
+    await expect(wide).toHaveAccessibleName('Trattamento fiscale per voce')
+    const fits = page.locator('#table [data-slot="table-container"]')
+    await expect(fits).not.toHaveAttribute('tabindex', /.*/)
+
+    await wide.focus()
+    expect(await wide.evaluate((el) => el.scrollLeft)).toBe(0)
+    await page.keyboard.press('ArrowRight')
+    await expect.poll(() => wide.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0)
+  })
+
+  test('draws the focus indicator of a scrolling table inside a wrapper that clips', async ({ page }) => {
+    // The CRM's and the hub's lists wrap a Table in a box that clips and sit it flush
+    // against it: a ring is a shadow outside the box and would be cut off there. The
+    // fixture is that shape, and the indicator is an outline drawn inside the container, so
+    // nothing of it lies outside the box that clips.
+    await page.goto('/')
+    const wide = page.locator('#scrolling-table [data-slot="table-container"]')
+    await expect(wide).toHaveAttribute('tabindex', '0')
+    const clipper = page.locator('#scrolling-table [data-slot="table-container"]').locator('..')
+    expect(await clipper.evaluate((el) => getComputedStyle(el).overflowX)).toBe('hidden')
+
+    await wide.focus()
+    const geometry = await wide.evaluate((el) => {
+      const cs = getComputedStyle(el)
+      const own = el.getBoundingClientRect()
+      const clip = el.parentElement!.getBoundingClientRect()
+      return {
+        style: cs.outlineStyle,
+        width: parseFloat(cs.outlineWidth),
+        offset: parseFloat(cs.outlineOffset),
+        // How far the outline reaches past the container's own box, and how far the
+        // container sits inside the box that clips (the clip's own 1px border).
+        reach: parseFloat(cs.outlineWidth) + parseFloat(cs.outlineOffset),
+        inset: Math.min(own.left - clip.left, clip.right - own.right, own.top - clip.top),
+      }
+    })
+    expect(geometry.style).toBe('solid')
+    expect(geometry.width).toBeGreaterThan(0)
+    expect(geometry.reach, 'the outline stays inside the container').toBeLessThanOrEqual(0)
+    expect(geometry.inset).toBeGreaterThanOrEqual(0)
+    // And a pixel check on the clip: the outline's colour is on the container's edge.
+    const edge = await page.evaluate(() => {
+      const el = document.querySelector('#scrolling-table [data-slot="table-container"]')!
+      return getComputedStyle(el).outlineColor
+    })
+    expect(edge).not.toBe('rgba(0, 0, 0, 0)')
+  })
+
+  test('has no scrollable region a keyboard cannot reach at 390px', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/')
+    // The tab stop appears with the observer's first callback, so axe waits for it: before
+    // that the page has no unreachable region either, and the test would pass for nothing.
+    for (const section of ['#scrolling-table', '#table']) {
+      await expect(page.locator(`${section} [data-slot="table-container"]`)).toBeVisible()
+    }
+    await expect(page.locator('#scrolling-table [data-slot="table-container"]')).toHaveAttribute(
+      'tabindex',
+      '0',
+    )
+    // At this width the invoices table overflows its card too.
+    await expect(page.locator('#table [data-slot="table-container"]')).toHaveAttribute(
+      'tabindex',
+      '0',
+    )
+    const { violations } = await new AxeBuilder({ page })
+      .withRules(['scrollable-region-focusable'])
+      .analyze()
+    expect(violations.map((violation) => violation.id)).toEqual([])
   })
 })

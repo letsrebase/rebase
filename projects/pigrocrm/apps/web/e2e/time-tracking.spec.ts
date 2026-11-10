@@ -24,21 +24,21 @@ import { loginAsAdmin, rowAction, seedDealWithRate } from './helpers'
 // suite gives its fixtures (`crm.spec.ts`'s own `ACME ${Date.now()}` convention), an
 // exact label is both available and unambiguous, and `.first()` -- which silently picks
 // a row when the locator matches several -- is not needed at all.
-const GIORNO_LUNGO = new Intl.DateTimeFormat('it-IT', {
+const DAY_LONG = new Intl.DateTimeFormat('it-IT', {
   weekday: 'long',
   day: 'numeric',
   month: 'long',
 })
 
-const MESI = [
-  'gennaio',
-  'febbraio',
+const Months = [
+  'january',
+  'february',
   'marzo',
   'aprile',
   'maggio',
-  'giugno',
+  'june',
   'luglio',
-  'agosto',
+  'august',
   'settembre',
   'ottobre',
   'novembre',
@@ -55,8 +55,8 @@ function lunediDi(value: Date): Date {
   return monday
 }
 
-function piuGiorni(value: Date, giorni: number): Date {
-  return new Date(value.getFullYear(), value.getMonth(), value.getDate() + giorni)
+function moreDays(value: Date, days: number): Date {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate() + days)
 }
 
 /**
@@ -65,9 +65,9 @@ function piuGiorni(value: Date, giorni: number): Date {
  * -- and it is written out here rather than imported, for the reason `lunediDi` above is
  * too: a test that borrows the arithmetic of the code it is checking checks nothing.
  */
-function centesimi(testo: string): number {
-  const [intero = '0', decimali = ''] = testo.replace(/\./g, '').split(',')
-  return Number(intero) * 100 + Number(decimali.padEnd(2, '0').slice(0, 2))
+function cents(text: string): number {
+  const [whole = '0', decimals = ''] = text.replace(/\./g, '').split(',')
+  return Number(whole) * 100 + Number(decimals.padEnd(2, '0').slice(0, 2))
 }
 
 test.use({ timezoneId: 'Europe/Rome' })
@@ -84,11 +84,11 @@ test.describe('time tracking', () => {
     // deal, so a fixed name would collide with a previous run's row on any database
     // that outlives one -- and the row it addresses by `aria-label` would then be
     // ambiguous rather than merely duplicated.
-    const nome = `Progetto E2E ${Date.now()}`
+    const name = `Progetto E2E ${Date.now()}`
     // `page.request`, never the top-level `request` fixture -- see `seedDealWithRate`'s
     // own docstring: the fixture's cookie jar is a separate one and every call here
     // would come back 401.
-    const { dealId } = await seedDealWithRate(page.request, { nome, tariffa: '80.000000' })
+    const { dealId } = await seedDealWithRate(page.request, { name, rate: '80.000000' })
 
     // Both days this test writes into have to be real, writable days, and in the *same*
     // calendar month. Writable: the API refuses a day after today (`422 data futura`),
@@ -111,22 +111,22 @@ test.describe('time tracking', () => {
       .map(Number)
     const today = new Date(romeYear, romeMonth - 1, romeDay)
     let lunedi = lunediDi(today)
-    let settimaneIndietro = 0
+    let weeksBack = 0
     while (
-      piuGiorni(lunedi, 1) > today ||
-      piuGiorni(lunedi, 1).getMonth() !== lunedi.getMonth()
+      moreDays(lunedi, 1) > today ||
+      moreDays(lunedi, 1).getMonth() !== lunedi.getMonth()
     ) {
-      lunedi = piuGiorni(lunedi, -7)
-      settimaneIndietro += 1
+      lunedi = moreDays(lunedi, -7)
+      weeksBack += 1
     }
-    const martedi = piuGiorni(lunedi, 1)
-    const anno = lunedi.getFullYear()
-    const mese = `${anno}-${String(lunedi.getMonth() + 1).padStart(2, '0')}`
+    const martedi = moreDays(lunedi, 1)
+    const year = lunedi.getFullYear()
+    const month = `${year}-${String(lunedi.getMonth() + 1).padStart(2, '0')}`
     // `agosto 2026` -- `period_label`'s own long form, which is what both the closed-
     // periods list and the archived report's title read.
-    const mesePerEsteso = `${MESI[lunedi.getMonth()]} ${anno}`
+    const monthByLongName = `${Months[lunedi.getMonth()]} ${year}`
 
-    async function apriLaSettimana(): Promise<void> {
+    async function openTheWeek(): Promise<void> {
       await page.goto('/app/hours')
       // The grid is a tab now. `/app/hours` opens on «Registro» -- the timer bar and the
       // week as a list -- since 2026-09-09, and the grid this spec drives is one click
@@ -134,20 +134,20 @@ test.describe('time tracking', () => {
       // `grid-total` simply is not on it, which is how this spec spent three minutes
       // timing out on a screen that works.
       await page.getByRole('tab', { name: 'Settimana' }).click()
-      for (let passo = 0; passo < settimaneIndietro; passo += 1) {
+      for (let step = 0; step < weeksBack; step += 1) {
         await page.getByRole('button', { name: 'Settimana precedente' }).click()
       }
     }
 
-    const cellaDi = (giorno: Date) =>
-      page.getByLabel(`${nome}, ${GIORNO_LUNGO.format(giorno)}`, { exact: true })
+    const cellOf = (day: Date) =>
+      page.getByLabel(`${name}, ${DAY_LONG.format(day)}`, { exact: true })
 
     // 1. The weekly grid writes an hour, in the shape an Italian keyboard produces.
-    await apriLaSettimana()
-    const cella = cellaDi(lunedi)
-    const totalePrima = await page.getByTestId('grid-total').innerText()
-    await cella.fill('3,5')
-    await cella.blur()
+    await openTheWeek()
+    const cell = cellOf(lunedi)
+    const totalBefore = await page.getByTestId('grid-total').innerText()
+    await cell.fill('3,5')
+    await cell.blur()
     await expect(page.getByTestId(`row-total-${dealId}`)).toHaveText('3,5')
     // The footer too: the row total and the grid total are computed by two different
     // functions over the same cells, and this is the only place they are ever asked to
@@ -162,8 +162,8 @@ test.describe('time tracking', () => {
     // documented command -- and failed for the next person who ran the spec twice by
     // hand, which is the worse of the two ways to be wrong.
     await expect
-      .poll(async () => centesimi(await page.getByTestId('grid-total').innerText()))
-      .toBe(centesimi(totalePrima) + 350)
+      .poll(async () => cents(await page.getByTestId('grid-total').innerText()))
+      .toBe(cents(totalBefore) + 350)
 
     // 2. The deal's Ore tab shows it, with the rate frozen from the deal.
     await page.goto(`/app/deal/${dealId}`)
@@ -181,14 +181,14 @@ test.describe('time tracking', () => {
     // 3. Raising the deal rate must not move the hour already written (criterion 2,
     //    first half): the rate is copied onto the row when the row is created.
     await page.goto('/app/settings/rates')
-    const campoTariffa = page.getByLabel(`Tariffa oraria del deal ${nome}`)
-    const rigaTariffa = page.getByRole('row').filter({ has: campoTariffa })
-    await campoTariffa.fill('150')
+    const fieldRate = page.getByLabel(`Tariffa oraria del deal ${name}`)
+    const lineRate = page.getByRole('row').filter({ has: fieldRate })
+    await fieldRate.fill('150')
     // Scoped to the row: this screen renders one «Salva» per person and one per deal,
     // so the brief's page-wide `getByRole('button', { name: /salva tariffa/i })` matched
     // nothing at all (the button says «Salva») and a page-wide `/salva/i` would match
     // every row's.
-    await rigaTariffa.getByRole('button', { name: 'Salva' }).click()
+    await lineRate.getByRole('button', { name: 'Salva' }).click()
     await expect(page.getByText('Tariffa del deal aggiornata')).toBeVisible()
 
     await page.goto(`/app/deal/${dealId}`)
@@ -197,37 +197,35 @@ test.describe('time tracking', () => {
     await expect(page.getByText('280,00 €')).toHaveCount(2)
 
     // 4. The timesheet comes out in both formats, as real files (criterion 10).
-    await page.getByLabel(/rapporto ore del mese/i).fill(mese)
+    await page.getByLabel(/rapporto ore del mese/i).fill(month)
 
-    const scaricamento = page.waitForEvent('download')
-    await page.getByRole('link', { name: 'XLSX' }).click()
-    const foglio = await scaricamento
-    expect(await foglio.suggestedFilename()).toBe(`rapporto-ore-${mese}.xlsx`)
+    const download = page.waitForEvent('download')
+    await page.getByRole('button', { name: 'XLSX' }).click()
+    const sheet = await download
+    expect(await sheet.suggestedFilename()).toBe(`rapporto-ore-${month}.xlsx`)
     // A name is not a file. The first four bytes of every .xlsx are a ZIP local file
     // header ("PK\x03\x04"), so this is the cheapest proof that what arrived is a
     // workbook and not an error page with a helpful filename.
-    const bytes = readFileSync(await foglio.path())
+    const bytes = readFileSync(await sheet.path())
     expect(bytes.length).toBeGreaterThan(0)
     expect(bytes.subarray(0, 4).toString('latin1')).toBe('PK')
 
-    // The PDF, driven by its own button. It is not an anchor and cannot be one:
-    // `GET .../time-report?formato=pdf` archives the report through the slice 2 document
+    // The PDF, driven by its own button, which works in two steps:
+    // `POST .../time-report/pdf` archives the report through the slice 2 document
     // pipeline and answers **201 with the document's JSON**, so the button renders,
     // reads that answer, and downloads the archived document through
     // `/api/documents/{id}/download` -- the one path that carries authorisation on
     // either storage backend. Clicking it therefore has to produce a real file *and*
-    // leave a document behind, and both halves are asserted here: while the button was
-    // still a plain anchor pointed at that JSON, the archived half passed on its own
-    // and the file half was the one nobody was making.
-    const scaricamentoPdf = page.waitForEvent('download')
+    // leave a document behind, and both halves are asserted here.
+    const downloadPdf = page.waitForEvent('download')
     await page.getByRole('button', { name: 'PDF' }).click()
-    const rapporto = await scaricamentoPdf
-    const pdfBytes = readFileSync(await rapporto.path())
+    const report = await downloadPdf
+    const pdfBytes = readFileSync(await report.path())
     // "%PDF-". A name is not a file here either, and Typst either ran or it did not.
     expect(pdfBytes.subarray(0, 5).toString('latin1')).toBe('%PDF-')
 
     await page.getByRole('tab', { name: 'Documenti' }).click()
-    await expect(page.getByText(`Rapporto ore ${mesePerEsteso}`)).toBeVisible()
+    await expect(page.getByText(`Rapporto ore ${monthByLongName}`)).toBeVisible()
 
     // 5. A closed month refuses the next write, in the server's own words (criterion 2,
     //    second half). The refusal asserted below is the *API's* -- there is no
@@ -235,14 +233,14 @@ test.describe('time tracking', () => {
     //    `toProblem(error).detail`, the exact sentence `PeriodLockService.assert_open`
     //    raised.
     await page.goto('/app/settings/periods')
-    await page.getByLabel(/chiudi il mese/i).fill(mese)
+    await page.getByLabel(/chiudi il mese/i).fill(month)
     await page.getByRole('button', { name: 'Chiudi periodo' }).click()
-    await expect(page.getByText(mesePerEsteso, { exact: true })).toBeVisible()
+    await expect(page.getByText(monthByLongName, { exact: true })).toBeVisible()
 
-    await apriLaSettimana()
-    const bloccata = cellaDi(martedi)
-    await bloccata.fill('2')
-    await bloccata.blur()
+    await openTheWeek()
+    const blocked = cellOf(martedi)
+    await blocked.fill('2')
+    await blocked.blur()
     await expect(
       page.getByText(/è chiuso: riaprilo per modificare voci datate in quel mese/),
     ).toBeVisible()
@@ -264,11 +262,11 @@ test.describe('time tracking', () => {
     page.once('dialog', (dialog) => {
       void dialog.accept()
     })
-    await rowAction(page, mesePerEsteso, 'Riapri')
+    await rowAction(page, monthByLongName, 'Riapri')
     await expect(page.getByText('Nessun periodo chiuso.')).toBeVisible()
 
-    await apriLaSettimana()
-    const riaperta = cellaDi(martedi)
+    await openTheWeek()
+    const riaperta = cellOf(martedi)
     await riaperta.fill('2')
     await riaperta.blur()
     await expect(page.getByTestId(`row-total-${dealId}`)).toHaveText('5,5')

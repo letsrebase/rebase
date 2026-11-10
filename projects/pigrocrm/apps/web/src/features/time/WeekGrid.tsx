@@ -3,6 +3,7 @@ import type { Deal } from '@/features/deals/queries'
 import { formatHoursValue } from './columns'
 import type { TimeEntry } from './queries'
 import { WeekGridRow } from './WeekGridRow'
+import { ScrollRegion } from '@rebase/ui/table'
 import { buildGrid, columnTotal, gridTotal, type WeekDay } from './week'
 
 /**
@@ -28,7 +29,7 @@ export function WeekGrid({
   deals: Deal[]
 }) {
   const grid = useMemo(() => buildGrid(entries, days), [entries, days])
-  const dealNames = useMemo(() => new Map(deals.map((deal) => [deal.id, deal.nome])), [deals])
+  const dealNames = useMemo(() => new Map(deals.map((deal) => [deal.id, deal.name])), [deals])
   // Rows: every deal with an entry this week, plus every deal that exists, so a week can
   // be started from nothing rather than only continued. Deduplicated by id; ordered by
   // name through `localeCompare(..., 'it')`, so the row a person is looking for is where
@@ -43,7 +44,7 @@ export function WeekGrid({
 
   return (
     <div className="space-y-4">
-      <div className="overflow-x-auto border">
+      <ScrollRegion label="Ore della settimana per deal" className="border">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b bg-muted/40">
@@ -104,7 +105,7 @@ export function WeekGrid({
             </tr>
           </tfoot>
         </table>
-      </div>
+      </ScrollRegion>
 
       <p className="text-xs text-muted-foreground">
         La tariffa viene congelata sulla voce quando la registri. Una cella con più voci

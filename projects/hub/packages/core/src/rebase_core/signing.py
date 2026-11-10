@@ -3,186 +3,125 @@ phase 3).
 
 `send_match` is «Invia per la firma». At most one document leaves at a time: the
 framework agreement when the freelancer has none active (the letter waits for it,
-`in_attesa`, spec § 1e), else the letter. A document is typeset again as it leaves, with
-the parties as they are today, the day it leaves in rebase's blank («Documento emesso da
-rebase il ...», spec § 5) and the labels under the signing blanks left undrawn; Documenso
-gets the PDF with the freelancer as its one signer (`rebase_core.documenso`), and the hub
-mails the link itself, one mail per document. A text that says `status: draft` never
-leaves (spec § 1f), unless `allow_draft` is true, which only the preview's `.env` sets
-through `REBASE_CONTRACTS_ALLOW_DRAFT`; with every text `status: final` the preview
-leaves it false too, kept for the next draft. If Documenso refuses or does not answer, the
-transaction rolls back and nothing is marked sent; if only the mail fails, the document
-is `inviato` and the report says so, for «Reinvia email».
+`pending`, spec § 1e), else the letter. A document is typeset again as it leaves, with
+the parties as they are today, the day it leaves in rebase's blank
+(«Documento emesso da rebase il ...», spec § 5) and the labels under the signing blanks
+left undrawn; Documenso gets the PDF with the freelancer as its one signer
+(`rebase_core.documenso`), and the hub mails the link itself, one mail per document.
+A text that says `status: draft` never leaves (spec § 1f), unless `allow_draft` is true,
+which only the preview's `.env` sets through `REBASE_CONTRACTS_ALLOW_DRAFT`; with every
+text `status: final` the preview leaves it false too, kept for the next draft. If
+Documenso refuses or does not answer, the transaction rolls back and nothing is marked
+sent; if only the mail fails, the document
+is `sent` and the report says so, for «Reinvia email».
 
 A freelancer may hold framework agreements of both regimes (REB-687): a letter leaves
 only once the framework agreement of its own regime is signed, and a signature releases
 only the waiting letters of its own regime. An ordinary letter whose freelancer has lost
-the partita IVA since the draft is refused on `regime`, as «Crea match» refuses it.
+the `partita IVA` since the draft is refused on `regime`, as «Crea match» refuses it.
 
 Every write locks the freelancer's row first, as `MatchService.create` and
-`FiscalService.save` already do, then the match, then its document, because two admins,
-the webhook and «Aggiorna stato» can reach the same freelancer's documents at once.
+`FiscalService.save` already do, then the match, then its document (`match_rows`), because
+two admins, the webhook and «Aggiorna stato» can reach the same freelancer's documents at
+once. The Documenso calls of `dispatch` run inside the send's transaction, under the
+freelancer's row lock: a deliberate trade-off (the send is one admin's click, and a lock
+released before the call could not roll the document back when Documenso refuses), the
+opposite of `EngagementService.link`, which holds no lock across its call (REB-868).
 
-The webhook's side is `apply` and `finish`. `apply` locks the freelancer's row, its match
-(when it has one) and the document, in that order, and commits, so Documenso gets its
-answer long before its ten seconds (probe § 5). A rejection or a cancellation is moved
-and recorded there and then, the harm of forging one being small, so a second delivery of
-the same event waits on the lock and finds it already `annullato`. A completion is not
-moved by `apply`: the webhook's secret travels in clear (probe § 5), so `apply` only
-notes which document to confirm and leaves it `inviato` -- a second delivery of the same
-`DOCUMENT_COMPLETED`, arriving before the first's own confirmation has run, reads the
-same `inviato` row and schedules its own `finish` too. `finish` runs after `apply`'s
-commit, in the webhook's background task or under «Aggiorna stato»: it first confirms a
-still-`inviato` document with Documenso itself, over the hub's own API token, and only
-moves it to `firmato` (or, for a rejection or a cancellation the webhook never delivered,
-`annullato`) once Documenso says so (REB-431, a forged completion then needs the token
-too); then the sealed copy is downloaded and stored, the two mails (the freelancer's and
-rebase's) sent, each recorded on its own once accepted (`signed_copy_to_freelancer_at`,
-`signed_copy_to_rebase_at`), then, for a framework agreement, the letters that waited for
-it typeset with its signature date and sent. Each step checks under the document's own
-row lock whether it is still to do, so running `finish` twice -- two overlapping
-deliveries' own background tasks among them -- does everything once; a lost background
-task or a restart between steps leaves whichever of the two mail columns is unset, which
-the next `finish` reads as still to do for that recipient alone (REB-391).
+The webhook's side is `apply`, and `signing.recovery.finish` after it. `apply` locks the
+freelancer's row, its match (when it has one) and the document, in that order, and commits,
+so Documenso gets its answer long before its ten seconds (probe § 5). A rejection or a
+cancellation is moved and recorded there and then, the harm of forging one being small, so
+a second delivery of the same event waits on the lock and finds it already `cancelled`. A
+completion is not moved by `apply`: the webhook's secret travels in clear (probe § 5), so
+`apply` only notes which document to confirm and leaves it `sent` -- a second delivery of
+the same `DOCUMENT_COMPLETED`, arriving before the first's own confirmation has run, reads
+the same `sent` row and schedules its own `finish` too.
+
+`SigningService` is split by responsibility (REB-892), the parts built by it: `recovery`
+(`signing_recovery.SigningRecovery`: `finish`, the sealed copy, the mails, the framework
+agreement's waiting letters, the Pigro link, and `sweep`, the recovery `rebase
+contracts-sweep` runs) and `admin` (`signing_admin.SigningAdmin`: «Aggiorna stato»
+(`refresh`), «Reinvia email» (`resend_mail`), «Annulla» on a framework agreement
+(`cancel_document`) or on a match (`cancel_match`), and «Registra disdetta»
+(`record_notice`)). Their sentences are `signing_words`.
 
 `signing_from_settings` builds this service as an environment configures it, the one
 builder both the admin API and the admin MCP server use (REB-478).
-
-`sweep` is the recovery `rebase contracts-sweep` runs, every ten minutes on production and
-the preview alike, from the `sweep` service in `docker-compose.yml` (REB-393): `finish`
-again, for every document a webhook or an admin's «Aggiorna stato» never reached.
-
-A signature that turns a match `attivo` also marks its link to Pigro due (`pigro_stato`
-`da_collegare`, REB-499), and the webhook's `finish` then asks `EngagementService.link`
-for it, with no row lock held, after the signature's own steps: a CRM that takes its 90
-seconds to open a space delays no signed copy. Nothing a person waits on runs that
-provisioning: «Aggiorna stato» (`refresh`) applies the signature and leaves the link to
-the sweep, whose round after the documents (`link_pending`) retries every match still
-waiting or in error, or to the admin's «Riprova». A link that fails is left for the
-sweep too. A service built without the engagement service links nothing, as one without
-Documenso signs nothing.
-
-The recovery actions are the admin's: «Aggiorna stato» (`refresh`) for the event
-Documenso gave up on, «Reinvia email» (`resend_mail`), «Annulla» on a framework agreement
-(`cancel_document`) or on a match (`cancel_match`), both cancelling the envelope on
-Documenso before the row, and «Registra disdetta» (`record_notice`).
 """
 
 import logging
 from collections.abc import Callable, Mapping
 from datetime import date, datetime
 from enum import Enum
-from typing import Final, NamedTuple
+from typing import Final
 from uuid import UUID
 
-from sqlalchemy import exists, or_, select
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from rebase_core.audit import AdminActionService, utcnow
 from rebase_core.config import Settings
-from rebase_core.contract_schemas import ContractDocumentRead, MatchRead, SendReport
+from rebase_core.contract_schemas import ContractDocumentRead, SendReport
 from rebase_core.contracts.fields import ContractFailed, Value, signer_data
 from rebase_core.contracts.render import ContractRenderer, Renderer
 from rebase_core.documenso import (
     COMPLETED,
-    REJECTED,
-    UNREACHABLE,
     DocumensoClient,
     Outcome,
     client_from_settings,
     fields_from_blanks,
-    outcome_from_envelope,
 )
-from rebase_core.engagements import DA_COLLEGARE, EngagementService
-from rebase_core.errors import (
-    DocumensoFailed,
-    InvalidState,
-    NotFound,
-    SigningUnavailable,
-    ValidationFailed,
-)
+from rebase_core.engagements import EngagementService
+from rebase_core.errors import InvalidState, NotFound, SigningUnavailable
 from rebase_core.framework import (
     active_framework,
-    current_quadro_version,
+    current_framework_version,
     document_read,
-    is_active,
     pending_framework,
     rome_today,
 )
 from rebase_core.http import HttpCall, urllib_engagements_call
-from rebase_core.mail import (
-    Attachment,
-    EmailSender,
-    document_name,
-    sender_from_settings,
-    signed_copy_mail,
-    signing_cancelled_mail,
-    signing_request_mail,
-)
-from rebase_core.matches import (
+from rebase_core.mail import EmailSender, sender_from_settings
+from rebase_core.mail_contracts import document_name, signing_request_mail
+from rebase_core.match_rows import (
     ENTITY,
-    LETTERA,
-    QUADRO,
-    MatchService,
-    _full_name,
+    FRAMEWORK,
+    LETTER,
+    fiscal_row,
+    full_name,
+    lock_freelancer,
+    lock_match,
+    match_freelancer,
     require_regime_fits,
 )
-from rebase_core.models import CANCEL_REASON_MAX_LENGTH, ContractDocument, Freelancer, Match, User
-from rebase_core.referrals import ReferralService
+from rebase_core.match_words import STATE_WORDS
+from rebase_core.matches import MatchService
+from rebase_core.models import ContractDocument, Freelancer, User
 from rebase_core.regimes import document_stem, text_name
+from rebase_core.signing_admin import SigningAdmin
+from rebase_core.signing_recovery import SigningRecovery
+from rebase_core.signing_words import (
+    DRAFT_REFUSED,
+    NO_DOCUMENSO,
+    NO_SENDER,
+    cancel_reason,
+)
 
 _log = logging.getLogger(__name__)
 
-FREELANCER = "freelancer"
 DEFAULT_CONTRACTS_MAIL = str(Settings.model_fields["contracts_mail"].default)
 # What a document must print once it leaves: rebase's, the freelancer's and the client's
 # data, and the fields the hub fills itself. What may stay blank is what the signing site
 # fills (the signature, the date) and the engagement's optional lines.
 MUST_PRINT_PREFIXES = ("rebase-", "professionista-", "cliente-")
 MUST_PRINT = frozenset({"numero", "data-contratto-quadro", "luogo-firma", "firma-rebase"})
-_ALLOW_DRAFT_NOTE = " Su un ambiente di prova lo permette REBASE_CONTRACTS_ALLOW_DRAFT."
-DRAFT_REFUSED = {
-    QUADRO: (
-        "Il testo del contratto quadro è ancora una bozza (status: draft): si genera e si "
-        "salva, ma non parte per la firma." + _ALLOW_DRAFT_NOTE
-    ),
-    LETTERA: (
-        "Il testo della lettera di incarico è ancora una bozza (status: draft): si genera "
-        "e si salva, ma non parte per la firma." + _ALLOW_DRAFT_NOTE
-    ),
-}
-NO_DOCUMENSO = (
-    "La firma elettronica non è attiva su questo ambiente: mancano l'indirizzo o il token "
-    "di Documenso."
-)
-NO_SENDER = (
-    "L'invio delle email non è attivo su questo ambiente: il link per firmare non "
-    "arriverebbe a nessuno."
-)
-REFUSED_ON_SITE = "Rifiutato dal freelance sul sito di firma."
-CANCELLED_ON_DOCUMENSO = "Annullato su Documenso."
-CANCELLED_BY_REBASE = "Annullato da rebase."
-CANCELLED_WITH_MATCH = "Annullato da rebase con il suo match."
-CANCEL_REFUSED = (
-    "Documenso non annulla questo documento: forse è già stato firmato, rifiutato o "
-    "annullato. Premi «Aggiorna stato» e riprova."
-)
-
-
-def _cancel_reason(outcome: Outcome) -> str:
-    """Why a document the webhook cancels is `annullato`, as the page shows it."""
-    if outcome.kind == REJECTED:
-        reason = (outcome.reason or "").strip()
-        if not reason:
-            return REFUSED_ON_SITE
-        return f"Rifiutato dal freelance: {reason}"[:CANCEL_REASON_MAX_LENGTH]
-    return CANCELLED_ON_DOCUMENSO
 
 
 def _filename(document: ContractDocument, version: str) -> str:
     """The name Documenso keeps and seals as `<name>_signed.pdf` (probe § 4): the
     document's own text, so the two families never share one (REB-687)."""
-    return f"{document_stem(document.kind, document.regime, document.numero, version)}.pdf"
+    return f"{document_stem(document.kind, document.regime, document.number, version)}.pdf"
 
 
 def _refuse_blanks(blank: list[str]) -> None:
@@ -200,31 +139,6 @@ def _refuse_blanks(blank: list[str]) -> None:
             f"Il documento lascerebbe in bianco {', '.join(unfilled)}: completali prima di "
             "inviarlo."
         )
-
-
-class SweepResult(NamedTuple):
-    """`SigningService.sweep`'s own count (REB-431): `touched` is REB-433's, how many
-    documents actually moved; `unconfirmed` is how many stayed `inviato` because
-    Documenso itself could not be asked -- a refusal (an expired, revoked or wrong
-    token, an envelope answering 404) or an unreachable instance, never a document
-    merely not completed yet, and never a routine no-Documenso environment. `linked` and
-    `link_failed` are the round after the documents (REB-499,
-    `EngagementService.link_pending`): how many active matches it took to `collegato`,
-    and how many it tried and left otherwise; both zero without the engagement service
-    or its token."""
-
-    touched: int
-    unconfirmed: int
-    linked: int = 0
-    link_failed: int = 0
-
-
-class _FinishOutcome(NamedTuple):
-    """What one `finish` call did to one document, before `sweep` sums it into a
-    `SweepResult` across every document it visits."""
-
-    moved: bool
-    unconfirmed: bool
 
 
 class SigningService:
@@ -251,7 +165,7 @@ class SigningService:
         `signer` is the resolved mapping, for tests that already have one (including an
         explicit `{}`, which the caller means literally: no signer, and no
         `REBASE_SIGNER_JSON` to fall back on). `signer_json` is the raw setting, read
-        and cached on first use by a path that actually typesets a document (`_dispatch`,
+        and cached on first use by a path that actually typesets a document (`dispatch`,
         `_framework_to_send`), never here: this constructor runs for every `SigningDep`
         route (a future cancel, refresh or the webhook among them), and a malformed
         value must 503 only the send it breaks, not a route that never reaches a
@@ -268,29 +182,31 @@ class SigningService:
         self._signer_cache: Mapping[str, Value] | None = signer
         self.matches = MatchService(session, renderer, signer or {}, today)
         self.engagements = engagements
+        self.recovery = SigningRecovery(self)
+        self.admin = SigningAdmin(self, self.recovery)
 
     # ---- «Invia per la firma» ---------------------------------------------------------
 
     def send_match(self, match_id: UUID, admin_id: UUID) -> SendReport:
-        renderer = self._renderer()
-        self._documenso()
-        self._sender()
+        renderer = self.require_renderer()
+        self.require_documenso()
+        self.require_sender()
         leaving: ContractDocument | None = None
         try:
-            freelancer_id = self.matches.match_freelancer(match_id)
+            freelancer_id = match_freelancer(self.session, match_id)
             # The freelancer's row first, as `MatchService.create` already does, so
             # «Crea match» racing this send waits for it rather than reading a framework
-            # this send is about to dispatch as still merely `generato`.
-            self.matches.lock_freelancer(freelancer_id)
-            match = self.matches.lock_match(match_id)
-            if match.stato not in ("bozza", "in_firma"):
+            # this send is about to dispatch as still merely `generated`.
+            lock_freelancer(self.session, freelancer_id)
+            match = lock_match(self.session, match_id)
+            if match.status not in ("draft", "awaiting_signature"):
                 raise InvalidState(
                     f"Si invia per la firma solo un match in bozza o in firma: questo è "
-                    f"{match.stato}.",
-                    stato=match.stato,
+                    f"{STATE_WORDS[match.status]}.",
+                    status=match.status,
                 )
-            letter = self._lock_letter(match.id)
-            if letter is None or letter.stato not in ("generato", "in_attesa"):
+            letter = self.lock_letter(match.id)
+            if letter is None or letter.status not in ("generated", "pending"):
                 raise InvalidState(
                     "La lettera di questo match è già partita, firmata o annullata: non c'è "
                     "nulla da inviare."
@@ -299,28 +215,28 @@ class SigningService:
             # The tax data may have changed since the draft: an ordinary letter whose
             # freelancer no longer has a partita IVA is refused as «Crea match» refuses
             # it, before any document is typeset (REB-687).
-            require_regime_fits(self.matches._fiscal(freelancer_id).partita_iva, regime)
+            require_regime_fits(fiscal_row(self.session, freelancer_id).vat_number, regime)
             active = active_framework(self.session, match.freelancer_id, regime)
             if not self.allow_draft:
-                for kind in (LETTERA,) if active is not None else (QUADRO, LETTERA):
+                for kind in (LETTER,) if active is not None else (FRAMEWORK, LETTER):
                     if renderer.is_draft(text_name(kind, regime)):
                         raise InvalidState(DRAFT_REFUSED[kind])
             if active is not None:
                 leaving = letter
-                self._dispatch(letter, active, admin_id)
+                self.dispatch(letter, active, admin_id)
             else:
-                letter.stato = "in_attesa"
+                letter.status = "pending"
                 leaving = self._framework_to_send(match.freelancer_id, admin_id, regime)
                 if leaving is not None:
-                    self._dispatch(leaving, None, admin_id)
-            match.stato = "in_firma"
+                    self.dispatch(leaving, None, admin_id)
+            match.status = "awaiting_signature"
             self.session.commit()
         except Exception:
             self.session.rollback()
             raise
         sent_kind = leaving.kind if leaving is not None else None
         sent_id = leaving.id if leaving is not None else None
-        mailed = self._mail_signing_request(leaving) if leaving is not None else None
+        mailed = self.mail_signing_request(leaving) if leaving is not None else None
         # Nothing left when the letter waits on a framework agreement already out for
         # signature (`leaving` is `None`): no trail entry for a send that sent nothing.
         if leaving is not None:
@@ -329,9 +245,9 @@ class SigningService:
                 match_id,
                 "documents_sent",
                 admin_id,
-                {"documento": sent_id, "kind": sent_kind, "mail": mailed},
+                {"document": sent_id, "kind": sent_kind, "mail": mailed},
             )
-        return SendReport(match=self.matches.get(match_id), inviato=sent_kind, mail_inviata=mailed)
+        return SendReport(match=self.matches.reads.get(match_id), sent=sent_kind, mail_sent=mailed)
 
     def _framework_to_send(
         self, freelancer_id: UUID, admin_id: UUID, regime: str
@@ -340,20 +256,20 @@ class SigningService:
         one is out for signature already (the letter leaves after it), the one generated
         for a draft, else a new one, written now because the last was cancelled or
         refused. The caller must already hold the freelancer's row lock."""
-        self._signer()
+        self.require_signer()
         pending = pending_framework(self.session, freelancer_id, regime)
         if pending is None:
-            return self.matches.write_framework(freelancer_id, admin_id, regime)
-        framework = self._lock(pending.id)
-        if framework.stato == "inviato":
+            return self.matches.documents.write_framework(freelancer_id, admin_id, regime)
+        framework = self.lock_document(pending.id)
+        if framework.status == "sent":
             return None
-        if framework.stato == "generato":
+        if framework.status == "generated":
             return framework
         raise InvalidState(
             "Il contratto quadro è cambiato mentre lo inviavi: ricarica la pagina e riprova."
         )
 
-    def _dispatch(
+    def dispatch(
         self, document: ContractDocument, framework: ContractDocument | None, sent_by: UUID
     ) -> None:
         """Typeset `document` as it leaves, hand it to Documenso and record the envelope,
@@ -363,24 +279,24 @@ class SigningService:
         Documenso, a best-effort delete follows it (`_remove_orphan`, REB-406, REB-432;
         a cancel only when the delete itself is refused), so a retried send does not
         pile up drafts under the same externalId."""
-        self._signer()
-        renderer, documenso = self._renderer(), self._documenso()
+        self.require_signer()
+        renderer, documenso = self.require_renderer(), self.require_documenso()
         name = text_name(document.kind, document.regime)
-        data = self.matches.data_for_sending(document, self.today(), framework)
+        data = self.matches.documents.data_for_sending(document, self.today(), framework)
         rendered = renderer.render(name, data, signing=True)
         if rendered.draft and not self.allow_draft:
             raise InvalidState(DRAFT_REFUSED[document.kind])
         _refuse_blanks(rendered.blank)
         fields = fields_from_blanks(renderer.signature_blanks(name, data, signing=True))
-        user = self._owner(document.freelancer_id)
-        title = document_name(document.kind, document.numero, document.regime)
+        user = self.owner(document.freelancer_id)
+        title = document_name(document.kind, document.number, document.regime)
         envelope_id = documenso.create(
             title=title[0].upper() + title[1:],
             external_id=str(document.id),
             filename=_filename(document, rendered.version),
             pdf=rendered.pdf,
             signer_email=user.email,
-            signer_name=_full_name(user),
+            signer_name=full_name(user),
             fields=fields,
         )
         try:
@@ -392,11 +308,11 @@ class SigningService:
         document.data = dict(data)
         document.pdf = rendered.pdf
         document.text_version = rendered.version
-        document.testo_bozza = rendered.draft
+        document.draft_text = rendered.draft
         document.documenso_id = envelope_id
         document.documenso_item_id = envelope.item_id
         document.signing_url = signing_url
-        document.stato = "inviato"
+        document.status = "sent"
         document.sent_at = self.now()
         document.sent_by = sent_by
 
@@ -426,33 +342,16 @@ class SigningService:
                 "could not cancel the orphaned envelope %s either", envelope_id, exc_info=True
             )
 
-    def _cancel_envelope(self, envelope_id: str, reason: str) -> None:
-        """«Annulla», on a document or on a match's letter: Documenso refuses to cancel
-        an envelope that is no longer `PENDING` (already completed, rejected or
-        cancelled there, probe § 4), typically a webhook the hub missed. That refusal's
-        own English sentence is not fit for an admin, so it becomes an Italian one that
-        points at the way out; the row this call is inside stays untouched either way.
-        Documenso not answering at all is a different failure and keeps its own
-        sentence unchanged: it says nothing about the document's state, and translating
-        it to `CANCEL_REFUSED` would tell the admin it might already be signed when
-        Documenso is merely down (REB-391)."""
-        try:
-            self._documenso().cancel(envelope_id, reason)
-        except DocumensoFailed as exc:
-            if exc.message == UNREACHABLE:
-                raise
-            raise DocumensoFailed(CANCEL_REFUSED, exc.message) from exc
-
-    def _mail_signing_request(self, document: ContractDocument) -> bool:
-        """After the commit: a refused mail leaves the document `inviato`, and says so."""
+    def mail_signing_request(self, document: ContractDocument) -> bool:
+        """After the commit: a refused mail leaves the document `sent`, and says so."""
         if document.signing_url is None or self.sender is None:
             return False
-        user = self._owner(document.freelancer_id)
+        user = self.owner(document.freelancer_id)
         mail = signing_request_mail(
             user.email,
-            user.nome,
+            user.first_name,
             document.kind,
-            document.numero,
+            document.number,
             document.signing_url,
             regime=document.regime,
         )
@@ -469,7 +368,7 @@ class SigningService:
         one) and the document itself are locked in that order, the global rule (freelancer,
         match, document), because a letter's webhook can race a `send_match` or a cancel
         of the same match. Its state is re-checked once every lock is held, in case
-        anything moved while this delivery waited: only a document still `inviato`
+        anything moved while this delivery waited: only a document still `sent`
         moves, and an unknown envelope (the other environment's, or one the hub never
         recorded) and a document already signed or cancelled are acknowledged and left
         alone. No call leaves this method.
@@ -477,7 +376,7 @@ class SigningService:
         A rejection or a cancellation is moved and recorded here, same as before: the
         harm of forging one is small, and both only ever cancel. A completion is not
         moved here (REB-431): the webhook's own secret travels in clear (probe § 5), so a
-        forged `DOCUMENT_COMPLETED` must not by itself turn a document `firmato`. This
+        forged `DOCUMENT_COMPLETED` must not by itself turn a document `signed`. This
         only returns the document's id, for `finish` after the commit, which confirms the
         completion with Documenso itself before it counts. Returns `None` when nothing
         needs `finish`."""
@@ -490,666 +389,51 @@ class SigningService:
             self.session.rollback()
             return None
         document_id, freelancer_id, match_id = found
-        self.matches.lock_freelancer(freelancer_id)
+        lock_freelancer(self.session, freelancer_id)
         if match_id is not None:
-            self.matches.lock_match(match_id)
-        document = self._lock(document_id)
-        if document.stato != "inviato":
+            lock_match(self.session, match_id)
+        document = self.lock_document(document_id)
+        if document.status != "sent":
             self.session.rollback()
             return None
         signed: UUID | None = None
         if outcome.kind == COMPLETED:
-            # Left `inviato` on purpose: `finish` confirms it with Documenso itself
+            # Left `sent` on purpose: `finish` confirms it with Documenso itself
             # before moving it (REB-431).
             signed = document.id
         else:
-            document.stato = "annullato"
-            document.cancel_reason = _cancel_reason(outcome)
+            document.status = "cancelled"
+            document.cancel_reason = cancel_reason(outcome)
         self.session.commit()
         return signed
 
-    def finish(self, document_id: UUID) -> bool:
-        """What a signature leaves to do once it is committed, each step idempotent: the
-        outcome confirmed with Documenso itself and the document moved to `firmato`, or
-        to `annullato` for a rejection or a cancellation the webhook never delivered
-        (REB-431); the sealed copy downloaded and stored; the signed-copy mails sent,
-        once; for an active framework agreement, the letters that waited for it
-        released; for a match the signature turned active, its link to Pigro
-        (REB-499). A step that fails is logged and left for the next call (the next
-        «Aggiorna stato», or `sweep`); the others still run. Returns whether this call
-        actually moved anything -- the confirmation, a stored copy, an accepted mail, a
-        released letter -- so `sweep` counts only documents it truly advanced (REB-433),
-        not one still waiting on Documenso or a mail provider that keeps refusing. See
-        `_finish_outcome` for whether Documenso itself could not be asked at all."""
-        return self._finish_outcome(document_id).moved
-
-    def _finish_outcome(self, document_id: UUID, *, link: bool = True) -> _FinishOutcome:
-        """As `finish`, but also says whether the confirmation step itself could not
-        reach Documenso for an answer (REB-431): a refusal or an unreachable instance,
-        not the routine "not completed yet" or "no Documenso configured here". `sweep`
-        reads this so a real failure is visible instead of silently retried every ten
-        minutes forever; `finish` itself still answers a plain bool, unchanged, for its
-        other callers (the webhook's background task, «Aggiorna stato»). `sweep` passes
-        `link=False`: its own round after the documents links every match waiting, the
-        ones this run turned active among them, so each is asked for once a run and
-        counted once. `refresh` passes it too: an admin waiting on «Aggiorna stato» never
-        waits on the CRM opening a space. A link is the match's step, not the
-        document's, and never counts as `moved`."""
-        confirmed = self._confirm_completion(document_id)
-        moved = confirmed is True
-        try:
-            moved = self._store_signed_copy(document_id) is not None or moved
-        except (DocumensoFailed, SigningUnavailable, NotFound):
-            self.session.rollback()
-            _log.warning(
-                "the signed copy of document %s is not stored yet", document_id, exc_info=True
-            )
-        moved = self._mail_signed_copy_once(document_id) or moved
-        document = self.session.get(ContractDocument, document_id, populate_existing=True)
-        if document is not None and is_active(document):
-            moved = self._release_letters(document) or moved
-        if link:
-            self._link_to_pigro(document_id)
-        return _FinishOutcome(moved=moved, unconfirmed=confirmed is None)
-
-    def _link_to_pigro(self, document_id: UUID) -> None:
-        """The document's match linked to its deal on Pigro, when a signature has just
-        turned it active (REB-499). The match is read again rather than trusted from the
-        confirmation, which answers `True` for a rejection as well: only a match
-        `attivo` and still `da_collegare` is handed to `link`, which takes its own locks
-        and holds none across the call. Last of `finish`'s steps, so a CRM slow to open
-        a space delays nothing of the signature's, and nothing after it depends on it: a
-        link that fails, for any reason, a database error among them, is logged and left
-        for the sweep, never raised past a signature that is already done."""
-        if self.engagements is None:
-            return
-        found = self.session.execute(
-            select(Match.id, Match.stato, Match.pigro_stato)
-            .join(ContractDocument, ContractDocument.match_id == Match.id)
-            .where(ContractDocument.id == document_id)
-        ).first()
-        self.session.rollback()
-        if found is None:
-            return
-        match_id, stato, pigro_stato = found
-        if stato != "attivo" or pigro_stato != DA_COLLEGARE:
-            return
-        try:
-            self.engagements.link(match_id)
-        except Exception as exc:
-            self.session.rollback()
-            _log.warning(
-                "the match %s of document %s is not linked to Pigro yet (%s): the sweep "
-                "tries again",
-                match_id,
-                document_id,
-                type(exc).__name__,
-                exc_info=True,
-            )
-
-    def _confirm_completion(self, document_id: UUID) -> bool | None:
-        """Before a document counts as signed: Documenso's own word on the envelope,
-        read with no row lock held (a network call), so a forged webhook alone can no
-        longer move a document to `firmato` -- a forged event now needs the hub's own
-        API token too (REB-431). Nothing to confirm for a document not `inviato`, or
-        with no envelope. The freelancer's row, the document's match (when it has one)
-        and the document itself are then locked in that order, the global rule, and the
-        document re-read: only one still `inviato` moves. A `COMPLETED` envelope signs
-        it, with the signer's own date (`outcome_from_envelope(envelope).signed_at`),
-        turning its match `attivo` as `apply` used to, with its link to Pigro marked
-        `da_collegare` in the same commit (REB-499); a `REJECTED` or `CANCELLED` one
-        is applied the same way `refresh` already applies one, from the same envelope
-        this call already read, so a rejection or a cancellation a webhook never
-        delivered is recovered by the next `finish` or `sweep` too, not just a missed
-        signature (REB-431). Still `PENDING` (or `DRAFT`) leaves the row `inviato`,
-        logged at info level, tried again next time. Documenso not configured on this
-        environment at all (`SigningUnavailable`, `self._documenso()`'s own refusal) is
-        a routine, expected state (a preview with signing off, say) and is logged once
-        and left for the next call, returning `False` like every other no-op. Documenso
-        itself refusing or not answering (`DocumensoFailed`: an expired, revoked or
-        wrong token, an envelope answering 404, or the instance unreachable) is also
-        logged and left for the next call, but returns `None` rather than `False`, so
-        `sweep` can tell a real failure apart from a benign one and count it. Returns
-        `True` only when this call actually moved the document."""
-        document = self._document(document_id)
-        if document.stato != "inviato" or document.documenso_id is None:
-            return False
-        envelope_id = document.documenso_id
-        try:
-            envelope = self._documenso().get(envelope_id)
-        except SigningUnavailable:
-            # No REBASE_DOCUMENSO_URL/REBASE_DOCUMENSO_API_TOKEN on this environment: a
-            # routine, expected state (a preview with signing off, say), not a failure
-            # worth a traceback on every sweep run.
-            _log.info(
-                "no Documenso configured on this environment: document %s stays inviato",
-                document_id,
-            )
-            return False
-        except DocumensoFailed:
-            _log.warning(
-                "could not confirm envelope %s of document %s with Documenso",
-                envelope_id,
-                document_id,
-                exc_info=True,
-            )
-            return None
-        outcome = outcome_from_envelope(envelope)
-        self.matches.lock_freelancer(document.freelancer_id)
-        match = (
-            self.matches.lock_match(document.match_id) if document.match_id is not None else None
-        )
-        document = self._lock(document_id)
-        if document.stato != "inviato":
-            self.session.rollback()
-            return False
-        if outcome is None:
-            self.session.rollback()
-            _log.info("envelope %s of document %s is not completed yet", envelope_id, document_id)
-            return False
-        if outcome.kind != COMPLETED:
-            document.stato = "annullato"
-            document.cancel_reason = _cancel_reason(outcome)
-            self.session.commit()
-            return True
-        document.stato = "firmato"
-        # The signer's own date; the moment the hub heard of it only if Documenso said
-        # nothing, which a completed envelope never does.
-        document.signed_at = outcome.signed_at or self.now()
-        if match is not None:
-            if match.stato == "in_firma":
-                match.stato = "attivo"
-                # Its link to Pigro is due from this commit on (REB-499): `finish` asks
-                # for it next, and the sweep keeps asking until it holds.
-                match.pigro_stato = DA_COLLEGARE
-            # A letter is the only document with a match (`document.kind == LETTERA`,
-            # the same fact `document.match_id is not None` already established): the
-            # first signed letter of a referred freelancer's or a referred company's
-            # engagement earns a reward, once, ever (P-REB-44).
-            ReferralService(self.session).record_reward_if_signed(document, match)
-        self.session.commit()
-        return True
-
-    def sweep(self) -> SweepResult:
-        """`rebase contracts-sweep` (REB-391): redoes what a lost background task or a
-        restart left behind, for every document `finish` still has something to do for.
-        Each document runs in its own transaction, through `_finish_outcome`, so the two
-        steps stay exactly as idempotent as the webhook's own recovery; a failure is
-        logged and the next document is still tried, counted in neither number.
-        `touched` is how many `finish` actually moved (REB-433), not how many it merely
-        looked at -- a document still waiting on Documenso, tried again next time, does
-        not count. `unconfirmed` is how many stayed `inviato` because Documenso itself
-        refused the confirmation or could not be reached (REB-431): failed silently
-        before, now visible so a stuck token or a wrong URL is not read as "nothing to
-        do" forever. Then, with the engagement service, its own round (REB-499): every
-        active match whose link to Pigro is still due or failed last time, the ones this
-        run just turned active among them, is asked for once, `linked` and
-        `link_failed` counting what came of it."""
-        touched = 0
-        unconfirmed = 0
-        for document_id in self._to_finish():
-            try:
-                outcome = self._finish_outcome(document_id, link=False)
-            except Exception:
-                self.session.rollback()
-                _log.warning(
-                    "contracts-sweep: document %s could not be finished", document_id, exc_info=True
-                )
-                continue
-            if outcome.moved:
-                touched += 1
-            if outcome.unconfirmed:
-                unconfirmed += 1
-        if self.engagements is None:
-            return SweepResult(touched=touched, unconfirmed=unconfirmed)
-        pigro = self.engagements.link_pending()
-        return SweepResult(
-            touched=touched, unconfirmed=unconfirmed, linked=pigro.linked, link_failed=pigro.failed
-        )
-
-    def _to_finish(self) -> list[UUID]:
-        """Every document a sweep must run `finish` on: a document `inviato` with an
-        envelope, whose outcome (a completion, a rejection or a cancellation) a lost
-        webhook delivery never confirmed (REB-431); a signature or a notice whose sealed
-        copy is missing or not yet mailed to either recipient; and every active
-        framework agreement that still has a letter of its own regime (REB-687)
-        `in_attesa` on a match `in_firma` (a release `finish` itself missed, or never ran
-        for). `finish` is idempotent either way, so the three sets are simply run
-        together. The first costs one GET to Documenso per waiting document per sweep --
-        acceptable at the hub's volume."""
-        awaiting_confirmation = select(ContractDocument.id).where(
-            ContractDocument.stato == "inviato", ContractDocument.documenso_id.is_not(None)
-        )
-        unfinished_signatures = select(ContractDocument.id).where(
-            ContractDocument.stato.in_(("firmato", "disdetto")),
-            or_(
-                ContractDocument.signed_pdf.is_(None),
-                ContractDocument.signed_copy_to_freelancer_at.is_(None),
-                ContractDocument.signed_copy_to_rebase_at.is_(None),
-            ),
-        )
-        waiting_letter = aliased(ContractDocument)
-        frameworks_with_waiting_letters = select(ContractDocument.id).where(
-            ContractDocument.kind == QUADRO,
-            ContractDocument.stato == "firmato",
-            ContractDocument.notice_at.is_(None),
-            exists(
-                select(1)
-                .select_from(waiting_letter)
-                .join(Match, Match.id == waiting_letter.match_id)
-                .where(
-                    waiting_letter.kind == LETTERA,
-                    waiting_letter.stato == "in_attesa",
-                    waiting_letter.freelancer_id == ContractDocument.freelancer_id,
-                    waiting_letter.regime == ContractDocument.regime,
-                    Match.stato == "in_firma",
-                )
-            ),
-        )
-        ids = set(self.session.scalars(awaiting_confirmation).all())
-        ids.update(self.session.scalars(unfinished_signatures).all())
-        ids.update(self.session.scalars(frameworks_with_waiting_letters).all())
-        return sorted(ids, key=str)
-
-    def _store_signed_copy(self, document_id: UUID) -> ContractDocument | None:
-        """The download happens under the row's lock, so two callers download once: the
-        second waits, then finds the copy stored. `None` when there is nothing to store.
-        The freelancer's row is deliberately not locked here, out of the global order
-        (REB-391): a network call under one row lock cannot join a lock cycle, and adding
-        the freelancer's row would block «Crea match» for as long as Documenso takes."""
-        document = self._lock(document_id)
-        if (
-            document.stato not in ("firmato", "disdetto")
-            or document.signed_pdf is not None
-            or document.documenso_item_id is None
-        ):
-            self.session.rollback()
-            return None
-        document.signed_pdf = self._documenso().download_signed(document.documenso_item_id)
-        self.session.commit()
-        return document
-
-    def _mail_signed_copy_once(self, document_id: UUID) -> bool:
-        """The signed-copy mails, the freelancer's and rebase's, each sent at most once
-        and recorded on its own: one recipient's provider refusing forever must not
-        keep the other from ever getting theirs again once `finish` runs next (REB-391).
-        Returns whether either mail was actually accepted this call (REB-433)."""
-        freelancer_mailed = self._mail_signed_copy_to(document_id, to_freelancer=True)
-        rebase_mailed = self._mail_signed_copy_to(document_id, to_freelancer=False)
-        return freelancer_mailed or rebase_mailed
-
-    def _mail_signed_copy_to(self, document_id: UUID, *, to_freelancer: bool) -> bool:
-        """One recipient's own signed-copy mail, locked under the document's own row,
-        same as `_store_signed_copy`, so two concurrent `finish` calls mail this
-        recipient once. Nothing to mail yet (no stored copy) or this recipient already
-        mailed leaves the row untouched; their own column
-        (`signed_copy_to_freelancer_at` or `signed_copy_to_rebase_at`) is set, and
-        committed, only once their mail is accepted, still under this lock, so a refusal
-        is retried on the next `finish` without repeating the other recipient's mail,
-        already accepted and recorded under its own column (REB-391). Returns whether
-        this recipient's mail was accepted and recorded now (REB-433)."""
-        document = self._lock(document_id)
-        mailed_at = (
-            document.signed_copy_to_freelancer_at
-            if to_freelancer
-            else document.signed_copy_to_rebase_at
-        )
-        if document.signed_pdf is None or mailed_at is not None:
-            self.session.rollback()
-            return False
-        if self.sender is None:
-            self.session.rollback()
-            _log.warning(
-                "no mail sender: the signed copy of document %s was not mailed", document.id
-            )
-            return False
-        user = self._owner(document.freelancer_id)
-        pdf = self.matches.document_pdf(document.id, signed=True)
-        attachment = Attachment(filename=pdf.filename, content=pdf.content)
-        to = user.email if to_freelancer else self.contracts_mail
-        mail = signed_copy_mail(
-            to,
-            kind=document.kind,
-            numero=document.numero,
-            attachment=attachment,
-            nome=user.nome,
-            cognome=user.cognome,
-            for_rebase=not to_freelancer,
-            regime=document.regime,
-        )
-        if not self.sender.send(mail):
-            _log.warning(
-                "the signed copy of document %s was refused by the provider (%s)",
-                document.id,
-                "freelancer" if to_freelancer else "rebase",
-            )
-            self.session.rollback()
-            return False
-        if to_freelancer:
-            document.signed_copy_to_freelancer_at = self.now()
-        else:
-            document.signed_copy_to_rebase_at = self.now()
-        self.session.commit()
-        return True
-
-    def _release_letters(self, framework: ContractDocument) -> bool:
-        """The letters of this framework agreement's regime that waited for it (spec § 1e,
-        REB-687), each in a transaction of its own and mailed after its commit: a
-        Documenso refusal leaves that letter waiting for the next `finish` and lets the
-        others go. Only matches an admin sent (`in_firma`); a draft's letter leaves when
-        its match is sent.
-
-        `send_match` refuses up front without a mail sender (`_sender`), so a release
-        must not dispatch a letter to Documenso either when nobody could then be told
-        about it (REB-391): checked before any letter is even read. Returns whether at
-        least one letter was actually released this call (REB-433); its own signing-mail
-        need not have been accepted to count, the same as `send_match`'s own report."""
-        if self.sender is None:
-            _log.warning(
-                "no mail sender: the letters waiting on framework agreement %s stay waiting",
-                framework.id,
-            )
-            return False
-        # `Match.id`, not `ContractDocument.match_id`: the two are equal by the join, and
-        # the match's own key is typed as never missing, which a letter's nullable
-        # `match_id` is not.
-        waiting = list(
-            self.session.execute(
-                select(ContractDocument.id, Match.id)
-                .join(Match, Match.id == ContractDocument.match_id)
-                .where(
-                    ContractDocument.kind == LETTERA,
-                    ContractDocument.freelancer_id == framework.freelancer_id,
-                    ContractDocument.regime == framework.regime,
-                    ContractDocument.stato == "in_attesa",
-                    Match.stato == "in_firma",
-                )
-                .order_by(ContractDocument.created_at, ContractDocument.id)
-            )
-        )
-        framework_id = framework.id
-        sent_by = framework.sent_by or framework.created_by
-        freelancer_id = framework.freelancer_id
-        self.session.rollback()
-        released = False
-        for letter_id, match_id in waiting:
-            try:
-                letter = self._send_waiting(
-                    letter_id, match_id, framework_id, freelancer_id, sent_by
-                )
-            except (
-                ContractFailed,
-                DocumensoFailed,
-                InvalidState,
-                NotFound,
-                SigningUnavailable,
-                ValidationFailed,
-            ):
-                self.session.rollback()
-                _log.warning(
-                    "letter %s keeps waiting: its release failed", letter_id, exc_info=True
-                )
-                continue
-            if letter is not None:
-                released = True
-                mailed = self._mail_signing_request(letter)
-                # A letter released this way leaves the same trail `send_match` leaves
-                # for one it sends itself, attributed to whoever sent the framework
-                # agreement that just freed it (REB-391).
-                AdminActionService(self.session).record(
-                    ENTITY,
-                    match_id,
-                    "documents_sent",
-                    sent_by,
-                    {"documento": letter.id, "kind": LETTERA, "mail": mailed},
-                )
-        return released
-
-    def _send_waiting(
-        self,
-        letter_id: UUID,
-        match_id: UUID,
-        framework_id: UUID,
-        freelancer_id: UUID,
-        sent_by: UUID,
-    ) -> ContractDocument | None:
-        """The same lock order as `apply` (global rule): the freelancer's row, the
-        letter's match, then the letter itself; the framework agreement is only read,
-        never locked, since nothing here writes it."""
-        self.matches.lock_freelancer(freelancer_id)
-        match = self.matches.lock_match(match_id)
-        letter = self._lock(letter_id)
-        framework = self.session.get(ContractDocument, framework_id, populate_existing=True)
-        if (
-            letter.stato != "in_attesa"
-            or match.stato != "in_firma"
-            or framework is None
-            or not is_active(framework)
-            or framework.regime != letter.regime
-        ):
-            self.session.rollback()
-            return None
-        if not self.allow_draft and self._renderer().is_draft(text_name(LETTERA, letter.regime)):
-            raise InvalidState(DRAFT_REFUSED[LETTERA])
-        # The same rule `send_match` applies (REB-687): a partita IVA removed while the
-        # letter waited refuses it in those words, not as a blank field.
-        require_regime_fits(self.matches._fiscal(freelancer_id).partita_iva, letter.regime)
-        self._dispatch(letter, framework, sent_by)
-        self.session.commit()
-        return letter
-
-    # ---- recovery, and the framework agreement's end -----------------------------------
-
-    def refresh(self, document_id: UUID) -> ContractDocumentRead:
-        """«Aggiorna stato»: Documenso's own word on the envelope, applied the way the
-        webhook applies it, then whatever a signature still leaves to do (spec § 6, probe
-        § 11.3). The net for an event Documenso gave up on, a copy not downloaded yet, a
-        letter whose release failed.
-
-        This reads the envelope twice for a completion: once here, to apply a
-        rejection or a cancellation the same way «Aggiorna stato» always has, and again
-        inside `finish`'s own confirmation (REB-431), which a webhook's background task
-        and `sweep` also go through and must not need an envelope handed in from
-        somewhere else. An admin's own click, not a per-event webhook, pays that second
-        GET; simpler than giving `finish` a second signature for one caller.
-
-        A match the signature turns active is not linked to Pigro here (REB-499): the
-        admin is waiting on this click, and a new freelancer's first link opens a space,
-        which takes up to 90 seconds. It stays `da_collegare`, with its sentence, until
-        the sweep or «Riprova» links it."""
-        document = self._document(document_id)
-        if document.documenso_id is None:
-            raise InvalidState(
-                "Questo documento non è mai partito per la firma: non c'è nulla da aggiornare.",
-                stato=document.stato,
-            )
-        envelope = self._documenso().get(document.documenso_id)
-        self.session.rollback()
-        outcome = outcome_from_envelope(envelope)
-        if outcome is not None:
-            self.apply(outcome)
-        self._finish_outcome(document_id, link=False)
-        return self._read(document_id)
-
-    def resend_mail(self, document_id: UUID, admin_id: UUID) -> ContractDocumentRead:
-        """«Reinvia email»: the signing mail again, the same link, for a document that
-        still waits for the signature."""
-        self._sender()
-        document = self._document(document_id)
-        if document.stato != "inviato" or document.signing_url is None:
-            raise InvalidState(
-                "Si reinvia la mail solo di un documento che aspetta la firma.",
-                stato=document.stato,
-            )
-        if not self._mail_signing_request(document):
-            raise SigningUnavailable(
-                "La mail non è partita: il provider l'ha rifiutata. Riprova tra qualche minuto."
-            )
-        self._record(document, "mail_resent", admin_id)
-        return self._read(document_id)
-
-    def cancel_document(self, document_id: UUID, admin_id: UUID) -> ContractDocumentRead:
-        """«Annulla» on a framework agreement not signed yet: its envelope cancelled on
-        Documenso first, under the row's lock (only a `PENDING` one can be, probe § 4),
-        then the row. A letter is cancelled with its match. The letters that waited for
-        this framework agreement keep waiting: «Invia per la firma» on their match writes
-        a new one. A freelancer already told about this document by mail is told again,
-        once it is gone (REB-407).
-
-        The freelancer's row locks first, the global order: its id is read here with no
-        lock of its own (`_document`), only to know which row to take."""
-        freelancer_id = self._document(document_id).freelancer_id
-        self.matches.lock_freelancer(freelancer_id)
-        document = self._lock(document_id)
-        was_sent = False
-        try:
-            if document.kind != QUADRO:
-                raise InvalidState("Una lettera di incarico si annulla con il suo match.")
-            if document.stato not in ("generato", "inviato"):
-                raise InvalidState(
-                    f"Si annulla solo un contratto quadro non ancora firmato: questo è "
-                    f"{document.stato}.",
-                    stato=document.stato,
-                )
-            was_sent = document.stato == "inviato"
-            if was_sent and document.documenso_id is not None:
-                self._cancel_envelope(document.documenso_id, CANCELLED_BY_REBASE)
-            document.stato = "annullato"
-            document.cancel_reason = CANCELLED_BY_REBASE
-            self.session.commit()
-        except Exception:
-            self.session.rollback()
-            raise
-        self._record(document, "document_cancelled", admin_id)
-        if was_sent:
-            self._mail_cancellation(document)
-        return self._read(document_id)
-
-    def cancel_match(self, match_id: UUID, admin_id: UUID) -> MatchRead:
-        """«Annulla» on a match: a draft, still locked in the global order, delegates to
-        `MatchService.cancel` (which takes the same locks again, a no-op on a row this
-        transaction already holds); a match in signature also cancels its letter's
-        envelope when the letter is out for signature, so the link the freelancer got
-        stops working, and tells them by mail. The framework agreement is the
-        freelancer's, not the match's, and stays."""
-        freelancer_id = self.matches.match_freelancer(match_id)
-        self.matches.lock_freelancer(freelancer_id)
-        match = self.matches.lock_match(match_id)
-        if match.stato == "bozza":
-            return self.matches.cancel(match_id, admin_id)
-        letters: list[ContractDocument] = []
-        mailed: list[ContractDocument] = []
-        try:
-            if match.stato != "in_firma":
-                raise InvalidState(
-                    f"Si annulla solo un match in bozza o in firma: questo è {match.stato}.",
-                    stato=match.stato,
-                )
-            letters = list(
-                self.session.scalars(
-                    select(ContractDocument)
-                    .where(
-                        ContractDocument.match_id == match.id,
-                        ContractDocument.stato.in_(("generato", "in_attesa", "inviato")),
-                    )
-                    .with_for_update()
-                    .execution_options(populate_existing=True)
-                )
-            )
-            for letter in letters:
-                if letter.stato == "inviato":
-                    if letter.documenso_id is not None:
-                        self._cancel_envelope(letter.documenso_id, CANCELLED_BY_REBASE)
-                    mailed.append(letter)
-                letter.stato = "annullato"
-                letter.cancel_reason = CANCELLED_WITH_MATCH
-            match.stato = "annullato"
-            match.cancelled_at = self.now()
-            self.session.commit()
-        except Exception:
-            self.session.rollback()
-            raise
-        AdminActionService(self.session).record(
-            ENTITY, match_id, "match_cancelled", admin_id, {"documenti": [d.id for d in letters]}
-        )
-        for letter in mailed:
-            self._mail_cancellation(letter)
-        return self.matches.get(match_id)
-
-    def record_notice(self, document_id: UUID, admin_id: UUID) -> ContractDocumentRead:
-        """«Registra disdetta»: a notice or a withdrawal on an active framework agreement
-        (spec § 1d). From now the freelancer has none active, and their next match writes
-        a new one."""
-        freelancer_id = self._document(document_id).freelancer_id
-        self.matches.lock_freelancer(freelancer_id)
-        document = self._lock(document_id)
-        if not is_active(document):
-            self.session.rollback()
-            raise InvalidState(
-                "Si registra la disdetta solo di un contratto quadro attivo.",
-                stato=document.stato,
-            )
-        document.notice_at = self.now()
-        document.stato = "disdetto"
-        self.session.commit()
-        self._record(document, "notice_recorded", admin_id)
-        return self._read(document_id)
-
-    def _document(self, document_id: UUID) -> ContractDocument:
+    def document(self, document_id: UUID) -> ContractDocument:
         document = self.session.get(ContractDocument, document_id, populate_existing=True)
         if document is None:
-            raise NotFound("documento", document_id)
+            raise NotFound("document", document_id)
         return document
 
-    def _read(self, document_id: UUID) -> ContractDocumentRead:
-        document = self._document(document_id)
-        return document_read(document, self.today(), current_quadro_version(document.regime))
-
-    def _record(self, document: ContractDocument, kind: str, admin_id: UUID) -> None:
-        """A framework agreement's action lands on its freelancer's trail, since it
-        belongs to no match; a letter's on its match's."""
-        if document.match_id is not None:
-            entity, entity_id = ENTITY, document.match_id
-        else:
-            entity, entity_id = FREELANCER, document.freelancer_id
-        AdminActionService(self.session).record(
-            entity, entity_id, kind, admin_id, {"documento": document.id, "kind": document.kind}
-        )
-
-    def _mail_cancellation(self, document: ContractDocument) -> None:
-        """The freelancer's own notice that a document already out for signature will
-        not be signed after all: their link is dead from now on. A refused or missing
-        sender is logged, never raised -- the cancel already happened, and nothing here
-        may undo it (REB-407)."""
-        if self.sender is None:
-            _log.warning("no mail sender: nobody was told document %s was cancelled", document.id)
-            return
-        user = self._owner(document.freelancer_id)
-        mail = signing_cancelled_mail(
-            user.email, user.nome, document.kind, document.numero, regime=document.regime
-        )
-        if not self.sender.send(mail):
-            _log.warning(
-                "the cancellation mail of document %s was refused by the provider", document.id
-            )
+    def read(self, document_id: UUID) -> ContractDocumentRead:
+        document = self.document(document_id)
+        return document_read(document, self.today(), current_framework_version(document.regime))
 
     # ---- plumbing ----------------------------------------------------------------------
 
-    def _signer(self) -> Mapping[str, Value]:
+    def require_signer(self) -> Mapping[str, Value]:
         """`REBASE_SIGNER_JSON`, parsed once and cached, and only from here: the two
-        paths that typeset (`_dispatch`, `_framework_to_send`) call this before they
-        read `self.matches.signer`, so a malformed value 503s the send it actually
+        paths that typeset (`dispatch`, `_framework_to_send`) call this before they
+        read `self.matches.documents.signer`, so a malformed value 503s the send it actually
         breaks and nothing else (REB-406)."""
         if self._signer_cache is None:
             self._signer_cache = signer_data(self._signer_json)
-            self.matches.signer = self._signer_cache
+            self.matches.documents.signer = self._signer_cache
         return self._signer_cache
 
-    def _lock(self, document_id: UUID) -> ContractDocument:
+    def lock_document(self, document_id: UUID) -> ContractDocument:
         """The document, row-locked until this transaction ends, and read again from the
         database rather than from the session's memory: another transaction may have
         moved it while this one waited. The caller must already hold the freelancer's
-        row lock (`self.matches.lock_freelancer`)."""
+        row lock (`match_rows.lock_freelancer`)."""
         document = self.session.scalars(
             select(ContractDocument)
             .where(ContractDocument.id == document_id)
@@ -1157,12 +441,12 @@ class SigningService:
             .execution_options(populate_existing=True)
         ).first()
         if document is None:
-            raise NotFound("documento", document_id)
+            raise NotFound("document", document_id)
         return document
 
-    def _lock_letter(self, match_id: UUID) -> ContractDocument | None:
+    def lock_letter(self, match_id: UUID) -> ContractDocument | None:
         """The caller must already hold the freelancer's row lock
-        (`self.matches.lock_freelancer`)."""
+        (`match_rows.lock_freelancer`)."""
         return self.session.scalars(
             select(ContractDocument)
             .where(ContractDocument.match_id == match_id)
@@ -1172,7 +456,7 @@ class SigningService:
             .execution_options(populate_existing=True)
         ).first()
 
-    def _owner(self, freelancer_id: UUID) -> User:
+    def owner(self, freelancer_id: UUID) -> User:
         user = self.session.scalar(
             select(User)
             .join(Freelancer, Freelancer.user_id == User.id)
@@ -1182,17 +466,17 @@ class SigningService:
             raise NotFound("freelancer", freelancer_id)
         return user
 
-    def _renderer(self) -> Renderer:
+    def require_renderer(self) -> Renderer:
         if self.renderer is None:
             raise ContractFailed("no renderer was handed to SigningService")
         return self.renderer
 
-    def _documenso(self) -> DocumensoClient:
+    def require_documenso(self) -> DocumensoClient:
         if self.documenso is None:
             raise SigningUnavailable(NO_DOCUMENSO)
         return self.documenso
 
-    def _sender(self) -> EmailSender:
+    def require_sender(self) -> EmailSender:
         if self.sender is None:
             raise SigningUnavailable(NO_SENDER)
         return self.sender

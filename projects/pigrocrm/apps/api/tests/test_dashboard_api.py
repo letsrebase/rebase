@@ -30,66 +30,70 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, delete, select
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.dashboard.schemas import PeriodoQuery
+from pigrocrm.core.dashboard.schemas import PeriodQuery
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
-from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm_api.deps import get_snapshot_session
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages" / "core" / "tests"))
-from fakes.azienda_fixtures import committed_default_azienda, remove_azienda  # noqa: E402
+from fakes.legal_entity_fixtures import (  # noqa: E402
+    committed_default_legal_entity,
+    remove_legal_entity,
+)
 
 SEED = Actor(id=None, type="system", role="admin")
 _PREFIX = "APIDASH"
 
 EXPECTED_KEYS = {
-    "periodo",
-    "calcolato_alle",
-    "azienda_id",
+    "period",
+    "calculated_at",
+    "legal_entity_id",
     "pipeline",
-    "chiusure",
-    "offerte_in_attesa",
-    "offerte_in_attesa_totale",
-    "chiusure_previste_30_giorni",
-    "chiusure_non_attribuibili",
-    "offerte_accettate_deal_non_vinto",
+    "closings",
+    "open_monthly_recurring",
+    "offers_pending",
+    "offers_pending_total",
+    "expected_closings_30_days",
+    "closings_not_attributable",
+    "accepted_offers_deal_not_won",
 }
 
 ECONOMIC_KEYS = {
-    "periodo",
-    "calcolato_alle",
-    "azienda_id",
+    "period",
+    "calculated_at",
+    "legal_entity_id",
     "pnl",
-    "da_incassare",
-    "scaduto",
-    "fatture_emesse",
+    "unpaid",
+    "expired",
+    "issued_invoices",
 }
 
 OPERATIONAL_KEYS = {
-    "calcolato_alle",
-    "azienda_id",
-    "settimana",
-    "arretrato",
-    "segnali",
-    "attivita_recenti",
+    "calculated_at",
+    "legal_entity_id",
+    "week",
+    "backlog",
+    "signals",
+    "recent_activity",
 }
 
 RECEIVABLES_KEYS = {
-    "calcolato_alle",
-    "oggi",
-    "azienda_id",
-    "totale",
-    "fasce",
-    "per_mese",
-    "per_cliente",
-    "scadute",
-    "scadute_totale",
+    "calculated_at",
+    "today",
+    "legal_entity_id",
+    "total",
+    "bands",
+    "by_month",
+    "by_customer",
+    "overdue",
+    "total_overdue",
 }
 
 # Every drill-through this slice ships, as the pair criterion 2 actually cares about: the
@@ -118,101 +122,101 @@ def dashboard_corpus(client: TestClient, api_engine: Engine) -> Iterator[Engine]
         # `client` fixture already holds an uncommitted default on the test's own
         # connection, and a second one would wait on its unique index for the whole
         # test, so this one is named on each invoice below instead of being found.
-        azienda_id = committed_default_azienda(
-            session, nome=f"{_PREFIX} Azienda", predefinita=False
+        legal_entity_id = committed_default_legal_entity(
+            session, name=f"{_PREFIX} Azienda", is_default=False
         )
-        assert azienda_id is not None
+        assert legal_entity_id is not None
         stages = {s.code: s for s in PipelineService(session).seed_defaults(SEED) if s.code}
-        customer = Customer(ragione_sociale=f"{_PREFIX} Cliente", nazione="IT", custom_fields={})
+        customer = Organization(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         session.add(customer)
         session.flush()
-        aperto = Deal(
-            nome=f"{_PREFIX} aperto",
+        open = Deal(
+            name=f"{_PREFIX} aperto",
             customer_id=customer.id,
             pipeline_stage_id=stages["lead"].id,
-            valore_previsto=Decimal("1000.00"),
-            probabilita=50,
+            expected_value=Decimal("1000.00"),
+            probability=50,
             custom_fields={},
         )
-        session.add(aperto)
-        vinto = Deal(
-            nome=f"{_PREFIX} vinto",
+        session.add(open)
+        won = Deal(
+            name=f"{_PREFIX} vinto",
             customer_id=customer.id,
-            pipeline_stage_id=stages["vinto"].id,
-            valore_previsto=Decimal("5000.00"),
-            probabilita=100,
-            chiuso_il=today_local(),
+            pipeline_stage_id=stages["won"].id,
+            expected_value=Decimal("5000.00"),
+            probability=100,
+            closed_at=today_local(),
             custom_fields={},
         )
-        session.add(vinto)
+        session.add(won)
         session.add(
             Document(
                 customer_id=customer.id,
-                tipo="offerta",
-                titolo=f"{_PREFIX} offerta",
-                stato="inviata",
-                stato_dal=today_local(),
-                versione_corrente=1,
+                type="offer",
+                title=f"{_PREFIX} offerta",
+                status="sent",
+                status_since=today_local(),
+                current_version=1,
                 custom_fields={},
             )
         )
         session.flush()
         # One issued, unpaid, past-due invoice attached to the *open* deal. It is what
         # stops the two new dashboards from being tested against an empty register, and it
-        # is deliberately load-bearing on six figures at once: `pnl.in_corso` (its deal
-        # sits on an open stage), `fatture_emesse`, `da_incassare`, `scaduto`, and two of
-        # the three operational signals -- `fatturato_non_vinto` and
-        # `scaduto_non_incassato`. Without it, the money-as-a-string test below would be
+        # is deliberately load-bearing on six figures at once: `pnl.in_progress` (its deal
+        # sits on an open stage), `issued_invoices`, `unpaid`, `expired`, and two of
+        # the three operational signals -- `invoiced_unwon` and
+        # `overdue_unpaid`. Without it, the money-as-a-string test below would be
         # asserting the type of `"0.00"` on every path, which a dashboard wired to nothing
         # at all would pass just as well.
         #
-        # `data_emissione` is today, so the row falls inside the default period (the
-        # current month) whatever day the suite runs; `data_scadenza` is yesterday, so it
+        # `issue_date` is today, so the row falls inside the default period (the
+        # current month) whatever day the suite runs; `due_date` is yesterday, so it
         # is overdue under `_overdue_predicate`'s strict `<`.
         session.add(
             Invoice(
-                azienda_id=azienda_id,
+                legal_entity_id=legal_entity_id,
                 customer_id=customer.id,
-                deal_id=aperto.id,
-                tipo="fattura",
-                stato="emessa",
-                stato_pagamento="da_incassare",
-                imponibile=Decimal("1000.00"),
-                imposta=Decimal("0.00"),
-                bollo=Decimal("0.00"),
-                totale=Decimal("1000.00"),
-                data_emissione=today_local(),
-                data_scadenza=today_local() - timedelta(days=1),
-                causale=f"{_PREFIX} fattura",
-                tipo_documento="TD01",
-                divisa="EUR",
+                deal_id=open.id,
+                type="invoice",
+                status="issued",
+                payment_status="unpaid",
+                taxable_amount=Decimal("1000.00"),
+                vat_amount=Decimal("0.00"),
+                stamp_duty=Decimal("0.00"),
+                total=Decimal("1000.00"),
+                issue_date=today_local(),
+                due_date=today_local() - timedelta(days=1),
+                memo=f"{_PREFIX} fattura",
+                sdi_document_type="TD01",
+                currency="EUR",
                 custom_fields={},
             )
         )
         # A second issued invoice that is **not** overdue, on the *won* deal. Without it
         # every issued invoice in the register would be overdue, and
         # `test_every_signal_link_names_a_filter_the_api_actually_declares` could not tell
-        # `?scadute=true` from a filter that does nothing at all: the filtered list and the
+        # `?overdue=true` from a filter that does nothing at all: the filtered list and the
         # unfiltered one would be the same length, which is precisely the shape of the
-        # defect criterion 2 exists to catch. It also keeps `fatturato_non_vinto` at one
+        # defect criterion 2 exists to catch. It also keeps `invoiced_unwon` at one
         # deal out of two rather than moving the count, because its stage is `won`.
         session.add(
             Invoice(
-                azienda_id=azienda_id,
+                legal_entity_id=legal_entity_id,
                 customer_id=customer.id,
-                deal_id=vinto.id,
-                tipo="fattura",
-                stato="emessa",
-                stato_pagamento="da_incassare",
-                imponibile=Decimal("500.00"),
-                imposta=Decimal("0.00"),
-                bollo=Decimal("0.00"),
-                totale=Decimal("500.00"),
-                data_emissione=today_local(),
-                data_scadenza=today_local() + timedelta(days=30),
-                causale=f"{_PREFIX} fattura corrente",
-                tipo_documento="TD01",
-                divisa="EUR",
+                deal_id=won.id,
+                type="invoice",
+                status="issued",
+                payment_status="unpaid",
+                taxable_amount=Decimal("500.00"),
+                vat_amount=Decimal("0.00"),
+                stamp_duty=Decimal("0.00"),
+                total=Decimal("500.00"),
+                issue_date=today_local(),
+                due_date=today_local() + timedelta(days=30),
+                memo=f"{_PREFIX} fattura corrente",
+                sdi_document_type="TD01",
+                currency="EUR",
                 custom_fields={},
             )
         )
@@ -231,21 +235,23 @@ def dashboard_corpus(client: TestClient, api_engine: Engine) -> Iterator[Engine]
     finally:
         client.app.dependency_overrides.pop(get_snapshot_session, None)
         with factory() as session:
-            session.execute(delete(Document).where(Document.titolo.like(f"{_PREFIX} %")))
+            session.execute(delete(Document).where(Document.title.like(f"{_PREFIX} %")))
             # Before the deals: the invoice carries a foreign key to one of them. Scoped
             # to this file's own customer rather than a wholesale `DELETE FROM invoices`,
             # which would also destroy whatever another API test has committed.
             session.execute(
                 delete(Invoice).where(
                     Invoice.customer_id.in_(
-                        select(Customer.id).where(Customer.ragione_sociale.like(f"{_PREFIX} %"))
+                        select(Organization.id).where(Organization.legal_name.like(f"{_PREFIX} %"))
                     )
                 )
             )
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
-            session.execute(delete(Customer).where(Customer.ragione_sociale.like(f"{_PREFIX} %")))
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
+            session.execute(
+                delete(Organization).where(Organization.legal_name.like(f"{_PREFIX} %"))
+            )
             session.execute(delete(PipelineStage))
-            remove_azienda(session, azienda_id)
+            remove_legal_entity(session, legal_entity_id)
             session.commit()
 
 
@@ -276,7 +282,7 @@ def test_authentication_does_not_poison_the_snapshot(
     """
     response = logged_in.get("/api/dashboard/sales")
     assert response.status_code == 200, response.text
-    assert response.json()["calcolato_alle"]
+    assert response.json()["calculated_at"]
 
 
 def test_the_endpoint_returns_what_the_service_returns(
@@ -290,27 +296,31 @@ def test_the_endpoint_returns_what_the_service_returns(
     """
     body = logged_in.get("/api/dashboard/sales").json()
     with session_factory(dashboard_corpus)() as session:
-        direct = DashboardService(session).get_commercial_dashboard(PeriodoQuery(), SEED)
+        direct = DashboardService(session).get_commercial_dashboard(PeriodQuery(), SEED)
     expected = direct.model_dump(mode="json")
     assert body["pipeline"] == expected["pipeline"]
-    assert body["chiusure"] == expected["chiusure"]
-    assert body["offerte_in_attesa_totale"] == expected["offerte_in_attesa_totale"]
-    assert next(row for row in body["pipeline"] if row["stage_code"] == "lead")["numero"] == 1
+    assert body["closings"] == expected["closings"]
+    assert body["offers_pending_total"] == expected["offers_pending_total"]
+    assert next(row for row in body["pipeline"] if row["stage_code"] == "lead")["number"] == 1
 
 
 def test_the_period_round_trips_through_the_query_string(
     logged_in: TestClient, dashboard_corpus: Engine
 ) -> None:
-    response = logged_in.get("/api/dashboard/sales", params={"da": "2026-03-01", "a": "2026-03-31"})
-    assert response.json()["periodo"] == {"da": "2026-03-01", "a": "2026-03-31"}
+    response = logged_in.get(
+        "/api/dashboard/sales", params={"from": "2026-03-01", "to": "2026-03-31"}
+    )
+    assert response.json()["period"] == {"date_from": "2026-03-01", "date_to": "2026-03-31"}
 
 
 def test_an_inverted_period_is_a_422_naming_the_field(
     logged_in: TestClient, dashboard_corpus: Engine
 ) -> None:
-    response = logged_in.get("/api/dashboard/sales", params={"da": "2026-03-31", "a": "2026-03-01"})
+    response = logged_in.get(
+        "/api/dashboard/sales", params={"from": "2026-03-31", "to": "2026-03-01"}
+    )
     assert response.status_code == 422
-    assert response.json()["field"] == "da"
+    assert response.json()["field"] == "from"
 
 
 @pytest.mark.parametrize(("da", "a"), [("2026-03-01", None), (None, "2026-03-31")])
@@ -319,10 +329,10 @@ def test_half_a_period_is_a_422_naming_the_missing_bound(
 ) -> None:
     """Both spellings, because a rule written as `if da is None` alone accepts the other
     one -- and `field` is what `fieldErrorFrom` in the web client reads."""
-    params = {key: value for key, value in (("da", da), ("a", a)) if value is not None}
+    params = {key: value for key, value in (("from", da), ("to", a)) if value is not None}
     response = logged_in.get("/api/dashboard/sales", params=params)
     assert response.status_code == 422
-    assert response.json()["field"] == ("da" if da is None else "a")
+    assert response.json()["field"] == ("from" if da is None else "to")
 
 
 def test_money_is_serialised_as_a_string(logged_in: TestClient, dashboard_corpus: Engine) -> None:
@@ -335,10 +345,10 @@ def test_money_is_serialised_as_a_string(logged_in: TestClient, dashboard_corpus
     body = logged_in.get("/api/dashboard/sales").json()
     assert body["pipeline"], "the corpus produced no stage rows, so this test proved nothing"
     for row in body["pipeline"]:
-        assert isinstance(row["valore_totale"], str), row
-        assert isinstance(row["valore_ponderato"], str), row
-    assert isinstance(body["chiusure"]["valore_vinto"], str)
-    assert isinstance(body["chiusure"]["tasso_conversione"], str)
+        assert isinstance(row["total_value"], str), row
+        assert isinstance(row["weighted_value"], str), row
+    assert isinstance(body["closings"]["won_value"], str)
+    assert isinstance(body["closings"]["conversion_rate"], str)
 
 
 def test_a_readonly_actor_sees_the_dashboard(
@@ -361,23 +371,23 @@ def test_the_economic_dashboard_is_one_request(
 ) -> None:
     """One endpoint, not one per card. The key set is asserted whole, and the P&L is
     asserted to be *embedded* rather than flattened: §5 adds no aggregate to this page, so
-    a `ricavi` key at the top level would mean somebody had recombined the two columns on
+    a `revenue` key at the top level would mean somebody had recombined the two columns on
     the way out."""
     response = logged_in.get(
-        "/api/dashboard/economic", params={"da": "2026-03-01", "a": "2026-03-31"}
+        "/api/dashboard/economic", params={"from": "2026-03-01", "to": "2026-03-31"}
     )
     assert response.status_code == 200, response.text
     body = response.json()
     assert set(body) == ECONOMIC_KEYS
     assert set(body["pnl"]) >= {
-        "chiusi",
-        "in_corso",
-        "spese_generali",
-        "periodo_chiuso",
-        "voci_scritte_in_ritardo",
-        "valore_maturato",
-        "ore_fatturabili_non_fatturate",
-        "ore_senza_tariffa",
+        "closed",
+        "in_progress",
+        "general_expenses",
+        "closed_period",
+        "written_entries_overdue",
+        "accrued_value",
+        "billable_uninvoiced_hours",
+        "hours_without_rate",
     }
 
 
@@ -387,25 +397,25 @@ def test_the_economic_endpoint_returns_what_the_service_returns(
     """The adapter is thin on this route too. Compared against the service on its own
     fresh session over the same committed corpus, never against numbers recomputed here.
 
-    `calcolato_alle` is excluded because the two calls are two transactions and two
+    `calculated_at` is excluded because the two calls are two transactions and two
     instants -- that it differs is the property, not a discrepancy.
     """
     body = logged_in.get("/api/dashboard/economic").json()
     with session_factory(dashboard_corpus)() as session:
-        direct = DashboardService(session).get_economic_dashboard(PeriodoQuery(), SEED)
+        direct = DashboardService(session).get_economic_dashboard(PeriodQuery(), SEED)
     expected = direct.model_dump(mode="json")
-    for key in ECONOMIC_KEYS - {"calcolato_alle"}:
+    for key in ECONOMIC_KEYS - {"calculated_at"}:
         assert body[key] == expected[key], key
     # The corpus commits exactly one issued invoice inside the default period, so this is
     # a figure with a known floor rather than an equality between two zeros.
-    assert body["fatture_emesse"] >= 1
-    assert body["da_incassare"] != "0.00"
+    assert body["issued_invoices"] >= 1
+    assert body["unpaid"] != "0.00"
 
 
 def test_the_economic_dashboard_carries_no_fiscal_field(
     logged_in: TestClient, dashboard_corpus: Engine
 ) -> None:
-    """§5.3: the fiscal estimate stays at `/app/analisi/fiscale`, admin-only. A dashboard
+    """§5.3: the fiscal estimate stays at `/app/analisi/tax`, admin-only. A dashboard
     is the screen most likely to end up in a screenshot or a screen share.
 
     Asserted on the raw response text rather than on the parsed keys, so a fiscal figure
@@ -413,20 +423,20 @@ def test_the_economic_dashboard_carries_no_fiscal_field(
     this file ever being edited -- fails here too.
     """
     body = logged_in.get("/api/dashboard/economic").text
-    for forbidden in ("imponibile_fiscale", "imposta_sostitutiva", "contributi", "netto_stimato"):
+    for forbidden in ("taxable_amount", "substitute_tax", "contributions", "estimated_net_income"):
         assert forbidden not in body, forbidden
 
 
 def test_an_inverted_period_on_the_economic_endpoint_is_a_422_naming_the_field(
     logged_in: TestClient, dashboard_corpus: Engine
 ) -> None:
-    """The same `PeriodoQuery.resolve`, so the same answer: the route adds no validation
+    """The same `PeriodQuery.resolve`, so the same answer: the route adds no validation
     of its own and must not lose the one the service performs."""
     response = logged_in.get(
-        "/api/dashboard/economic", params={"da": "2026-03-31", "a": "2026-03-01"}
+        "/api/dashboard/economic", params={"from": "2026-03-31", "to": "2026-03-01"}
     )
     assert response.status_code == 422
-    assert response.json()["field"] == "da"
+    assert response.json()["field"] == "from"
 
 
 # -- the operational dashboard ---------------------------------------------------
@@ -446,7 +456,7 @@ def test_the_operational_dashboard_takes_no_period(
     schema = logged_in.get("/openapi.json").json()
     params = schema["paths"]["/api/dashboard/operational"]["get"].get("parameters", [])
     # The azienda is a scope, not a period (REB-631): the one parameter it does take.
-    assert [p["name"] for p in params] == ["azienda_id"]
+    assert [p["name"] for p in params] == ["legal_entity_id"]
 
     response = logged_in.get("/api/dashboard/operational")
     assert response.status_code == 200, response.text
@@ -461,16 +471,16 @@ def test_a_period_on_the_operational_endpoint_is_ignored_not_honoured(
     answer is byte-for-byte the one given without it, rather than merely a 200 -- a route
     that had quietly grown a period would still answer 200.
 
-    `calcolato_alle` and `attivita_recenti` are excluded: the first is a different instant
+    `calculated_at` and `recent_activity` are excluded: the first is a different instant
     by construction, and the second is a global feed any other committed activity moves.
     """
     plain = logged_in.get("/api/dashboard/operational").json()
     with_period = logged_in.get(
-        "/api/dashboard/operational", params={"da": "2020-01-01", "a": "2020-01-31"}
+        "/api/dashboard/operational", params={"from": "2020-01-01", "to": "2020-01-31"}
     )
     assert with_period.status_code == 200, with_period.text
     body = with_period.json()
-    for key in ("settimana", "arretrato", "segnali"):
+    for key in ("week", "backlog", "signals"):
         assert body[key] == plain[key], key
 
 
@@ -481,7 +491,7 @@ def test_the_operational_endpoint_returns_what_the_service_returns(
     with session_factory(dashboard_corpus)() as session:
         direct = DashboardService(session).get_operational_dashboard(SEED)
     expected = direct.model_dump(mode="json")
-    for key in ("settimana", "arretrato", "segnali"):
+    for key in ("week", "backlog", "signals"):
         assert body[key] == expected[key], key
 
 
@@ -492,21 +502,21 @@ def test_every_signal_carries_a_drill_through_link(
     somewhere to go. A count with no way to see the rows behind it is a number nobody
     can act on."""
     body = logged_in.get("/api/dashboard/operational").json()
-    assert [s["codice"] for s in body["segnali"]] == [
-        "fatturato_non_vinto",
-        "vinto_da_fatturare",
-        "scaduto_non_incassato",
-        "concentrazione_sopra_soglia",
+    assert [s["code"] for s in body["signals"]] == [
+        "invoiced_unwon",
+        "won_to_invoice",
+        "overdue_unpaid",
+        "concentration_above_threshold",
     ]
-    assert all(s["collegamento"] for s in body["segnali"])
+    assert all(s["link"] for s in body["signals"])
     # The corpus's invoice makes two of the four non-zero, so the links below are being
     # checked against cards that have rows behind them. The fourth, concentration, needs
-    # a fiscal-register `anno` no invoice here carries -- `dashboard_corpus`'s invoices
+    # a fiscal-register `year` no invoice here carries -- `dashboard_corpus`'s invoices
     # are never issued through `InvoiceService` -- and is its own dedicated test,
     # `test_the_concentration_signals_link_leads_to_the_same_rows_it_counted`, below.
-    conteggi = {s["codice"]: s["conteggio"] for s in body["segnali"]}
-    assert conteggi["fatturato_non_vinto"] >= 1
-    assert conteggi["scaduto_non_incassato"] >= 1
+    counts = {s["code"]: s["count"] for s in body["signals"]}
+    assert counts["invoiced_unwon"] >= 1
+    assert counts["overdue_unpaid"] >= 1
 
 
 def test_every_signal_link_names_a_filter_the_api_actually_declares(
@@ -514,7 +524,7 @@ def test_every_signal_link_names_a_filter_the_api_actually_declares(
 ) -> None:
     """**Criterion 2 at the adapter.** A card and its drill-through are the same predicate,
     and the core tests prove that for the predicate *functions*. What no core test can see
-    is whether the link the card carries reaches them: `collegamento` is an opaque string
+    is whether the link the card carries reaches them: `link` is an opaque string
     until an HTTP client resolves it, and a signal pointing at `?da_fatturarE=true` would
     silently list every deal -- a list longer than the card, describing a different set.
 
@@ -522,27 +532,27 @@ def test_every_signal_link_names_a_filter_the_api_actually_declares(
     OpenAPI schema of the list endpoint it corresponds to, then sent for real: declared,
     accepted, and narrowing. A parameter FastAPI does not declare is one it ignores.
 
-    `concentrazione_sopra_soglia` is not in this loop, by design and not by omission: its
+    `concentration_above_threshold` is not in this loop, by design and not by omission: its
     own link is the concentration table itself, not a filtered list -- there is no
-    "customers over the threshold" endpoint for a query parameter to narrow, so it would
+    "organizations over the threshold" endpoint for a query parameter to narrow, so it would
     fail this loop's `items` assumption for a reason unrelated to the one the loop checks.
     `test_the_concentration_signals_link_leads_to_the_same_rows_it_counted`, immediately
     below, is its own criterion 2.
     """
     body = logged_in.get("/api/dashboard/operational").json()
     schema = logged_in.get("/openapi.json").json()
-    assert body["segnali"], "no signals, so this test proved nothing"
+    assert body["signals"], "no signals, so this test proved nothing"
 
-    for signal in body["segnali"]:
-        if signal["codice"] == "concentrazione_sopra_soglia":
+    for signal in body["signals"]:
+        if signal["code"] == "concentration_above_threshold":
             continue
-        parts = urlsplit(signal["collegamento"])
+        parts = urlsplit(signal["link"])
         target = SIGNAL_LINK_TARGETS[parts.path]
         declared = {p["name"] for p in schema["paths"][target]["get"]["parameters"]}
         query = parse_qsl(parts.query)
-        assert query, f"{signal['codice']} links nowhere in particular"
+        assert query, f"{signal['code']} links nowhere in particular"
         for name, value in query:
-            assert name in declared, f"{signal['codice']} -> {target} has no `{name}`"
+            assert name in declared, f"{signal['code']} -> {target} has no `{name}`"
             filtered = logged_in.get(target, params={name: value})
             assert filtered.status_code == 200, filtered.text
             # And it narrows: the filtered list must not be the unfiltered one. The corpus
@@ -558,61 +568,63 @@ def test_the_concentration_signals_link_leads_to_the_same_rows_it_counted(
     """The fourth signal's own criterion 2, shaped differently because its own link is
     (§3, §5 item 2 of
     `docs/superpowers/specs/2026-09-23-forecasting-and-analytics-from-mastro-design.md`):
-    the economic tab's `concentrazione_clienti` table, not a filtered list. The card and
+    the economic tab's `customer_concentration` table, not a filtered list. The card and
     the rows behind its link still must not disagree, checked here by recomputing, from
     the same threshold `/api/settings/space` reports as effective right now, exactly
-    which customers the tab would show as over it -- and comparing the count to the
+    which organizations the tab would show as over it -- and comparing the count to the
     signal's own.
 
-    `dashboard_corpus`'s own invoices never carry `anno` (nothing else on this page reads
+    `dashboard_corpus`'s own invoices never carry `year` (nothing else on this page reads
     it), so a customer with an actual fiscal-register entry is added here -- without one
     the signal would sit at zero and the equality below would prove nothing.
     """
-    anno = today_local().year
+    year = today_local().year
     with session_factory(dashboard_corpus)() as session:
-        cliente = Customer(ragione_sociale=f"{_PREFIX} Concentrato", nazione="IT", custom_fields={})
-        session.add(cliente)
+        customer = Organization(legal_name=f"{_PREFIX} Concentrato", country="IT", custom_fields={})
+        session.add(customer)
         session.flush()
         # The corpus's own azienda (non-default, see `dashboard_corpus`), named on the
         # row since the column default only knows a default.
-        azienda_id = session.execute(
-            select(LegalEntity.id).where(LegalEntity.nome == f"{_PREFIX} Azienda")
+        legal_entity_id = session.execute(
+            select(LegalEntity.id).where(LegalEntity.name == f"{_PREFIX} Azienda")
         ).scalar_one()
-        cliente_id = cliente.id
+        customer_id = customer.id
         session.add(
             Invoice(
-                azienda_id=azienda_id,
-                customer_id=cliente_id,
-                tipo="fattura",
-                stato="emessa",
-                anno=anno,
-                numero=8001,
-                stato_pagamento="incassata",
-                imponibile=Decimal("900.00"),
-                imposta=Decimal("0.00"),
-                bollo=Decimal("0.00"),
-                totale=Decimal("900.00"),
-                data_emissione=today_local(),
-                tipo_documento="TD01",
-                divisa="EUR",
+                legal_entity_id=legal_entity_id,
+                customer_id=customer_id,
+                type="invoice",
+                status="issued",
+                year=year,
+                number=8001,
+                payment_status="incassata",
+                taxable_amount=Decimal("900.00"),
+                vat_amount=Decimal("0.00"),
+                stamp_duty=Decimal("0.00"),
+                total=Decimal("900.00"),
+                issue_date=today_local(),
+                sdi_document_type="TD01",
+                currency="EUR",
                 custom_fields={},
             )
         )
         session.commit()
     try:
         body = logged_in.get("/api/dashboard/operational").json()
-        signal = next(s for s in body["segnali"] if s["codice"] == "concentrazione_sopra_soglia")
-        assert signal["collegamento"] == "/app/?tab=economica"
+        signal = next(s for s in body["signals"] if s["code"] == "concentration_above_threshold")
+        assert signal["link"] == "/app?tab=economic"
 
-        soglia = logged_in.get("/api/settings/space").json()["concentrazione_soglia_preferita"]
-        overview = logged_in.get("/api/analytics/overview", params={"anno": anno}).json()
-        sopra_soglia = [row for row in overview["concentrazione_clienti"] if row["quota"] > soglia]
-        assert len(sopra_soglia) == signal["conteggio"]
-        assert signal["conteggio"] >= 1, "the added customer alone should cross the default share"
+        threshold = logged_in.get("/api/settings/space").json()["preferred_concentration_threshold"]
+        overview = logged_in.get("/api/analytics/overview", params={"year": year}).json()
+        above_threshold = [
+            row for row in overview["customer_concentration"] if row["share"] > threshold
+        ]
+        assert len(above_threshold) == signal["count"]
+        assert signal["count"] >= 1, "the added customer alone should cross the default share"
     finally:
         with session_factory(dashboard_corpus)() as session:
-            session.execute(delete(Invoice).where(Invoice.customer_id == cliente_id))
-            session.execute(delete(Customer).where(Customer.id == cliente_id))
+            session.execute(delete(Invoice).where(Invoice.customer_id == customer_id))
+            session.execute(delete(Organization).where(Organization.id == customer_id))
             session.commit()
 
 
@@ -625,19 +637,19 @@ def test_money_is_serialised_as_a_string_on_both_new_dashboards(
     """A JSON number is a float in every client that parses it, and a float total is the
     defect this whole slice is built to avoid.
 
-    The corpus puts a real invoice behind `da_incassare`, so this is not the type of a
+    The corpus puts a real invoice behind `unpaid`, so this is not the type of a
     zero a route wired to nothing would also produce.
     """
     economic = logged_in.get("/api/dashboard/economic").json()
-    assert isinstance(economic["da_incassare"], str)
-    assert isinstance(economic["scaduto"], str)
-    assert isinstance(economic["pnl"]["chiusi"]["ricavi"], str)
-    assert isinstance(economic["pnl"]["in_corso"]["ricavi"], str)
-    assert economic["da_incassare"] != "0.00"
+    assert isinstance(economic["unpaid"], str)
+    assert isinstance(economic["expired"], str)
+    assert isinstance(economic["pnl"]["closed"]["revenue"], str)
+    assert isinstance(economic["pnl"]["in_progress"]["revenue"], str)
+    assert economic["unpaid"] != "0.00"
 
     operational = logged_in.get("/api/dashboard/operational").json()
-    assert isinstance(operational["arretrato"]["valore_maturato"], str)
-    assert isinstance(operational["settimana"]["ore_totali"], str)
+    assert isinstance(operational["backlog"]["accrued_value"], str)
+    assert isinstance(operational["week"]["total_hours"], str)
 
 
 def test_the_receivables_dashboard_takes_no_period_and_adds_up(
@@ -645,34 +657,34 @@ def test_the_receivables_dashboard_takes_no_period_and_adds_up(
 ) -> None:
     """Slice 8 part A (REB-329). No period, like `operational`, asserted on the published
     schema; and the six buckets, as strings, whose sum is the economic dashboard's own
-    `da_incassare` -- the corpus has one overdue and one current invoice, so the two dated
+    `unpaid` -- the corpus has one overdue and one current invoice, so the two dated
     buckets are distinguishable from each other and from an empty register."""
     schema = logged_in.get("/openapi.json").json()
     params = schema["paths"]["/api/dashboard/receivables"]["get"].get("parameters", [])
-    assert [p["name"] for p in params] == ["azienda_id"]
+    assert [p["name"] for p in params] == ["legal_entity_id"]
 
     response = logged_in.get("/api/dashboard/receivables")
     assert response.status_code == 200, response.text
     page = response.json()
     assert set(page) == RECEIVABLES_KEYS
-    assert [f["codice"] for f in page["fasce"]] == [
-        "scaduto",
+    assert [f["code"] for f in page["bands"]] == [
+        "expired",
         "entro_30",
         "da_31_a_60",
         "da_61_a_90",
         "oltre_90",
-        "senza_scadenza",
+        "without_due_date",
     ]
-    assert all(isinstance(f["importo"], str) for f in page["fasce"])
-    assert isinstance(page["totale"], str)
-    by_code = {f["codice"]: f for f in page["fasce"]}
-    assert by_code["scaduto"]["importo"] == "1000.00"
-    assert by_code["scaduto"]["collegamento"] == "/app/invoices?scadute=true"
-    assert by_code["entro_30"]["importo"] == "500.00"
-    assert page["totale"] == logged_in.get("/api/dashboard/economic").json()["da_incassare"]
-    assert page["scadute_totale"] == 1
-    assert page["scadute"][0]["solleciti_inviati"] == 0
-    assert page["per_cliente"][0]["scaduto"] == "1000.00"
+    assert all(isinstance(f["amount"], str) for f in page["bands"])
+    assert isinstance(page["total"], str)
+    by_code = {f["code"]: f for f in page["bands"]}
+    assert by_code["expired"]["amount"] == "1000.00"
+    assert by_code["expired"]["link"] == "/app/invoices?overdue=true"
+    assert by_code["entro_30"]["amount"] == "500.00"
+    assert page["total"] == logged_in.get("/api/dashboard/economic").json()["unpaid"]
+    assert page["total_overdue"] == 1
+    assert page["overdue"][0]["sent_payment_reminders"] == 0
+    assert page["by_customer"][0]["expired"] == "1000.00"
 
 
 @pytest.mark.parametrize("path", ["sales", "economic", "operational", "receivables"])
@@ -690,7 +702,7 @@ def test_authentication_does_not_poison_the_snapshot_on_any_dashboard(
     """
     response = logged_in.get(f"/api/dashboard/{path}")
     assert response.status_code == 200, response.text
-    assert response.json()["calcolato_alle"]
+    assert response.json()["calculated_at"]
 
 
 @pytest.mark.parametrize("path", ["sales", "economic", "operational"])
@@ -717,8 +729,12 @@ def test_the_automation_config_is_readable_by_a_readonly_actor(
     response = readonly_client.get("/api/automation-config")
     assert response.status_code == 200
     assert set(response.json()) == {
-        "a1_offerta_accettata_vince_deal",
-        "a2_offerta_inviata_avanza_deal",
+        "a1_wins_accepted_offer_deal",
+        "a2_advances_sent_offer_deal",
+        "a3_sent_offer_follow_up",
+        "a4_stalled_deal",
+        "a4_stalled_deal_days",
+        "a5_overdue_invoice",
     }
 
 
@@ -733,53 +749,74 @@ def test_only_an_admin_may_change_the_automation_config(
     touched, and this is what says so.
     """
     forbidden = readonly_client.put(
-        "/api/automation-config", json={"a1_offerta_accettata_vince_deal": False}
+        "/api/automation-config", json={"a1_wins_accepted_offer_deal": False}
     )
     assert forbidden.status_code == 403
     assert (
-        readonly_client.get("/api/automation-config").json()["a1_offerta_accettata_vince_deal"]
-        is True
+        readonly_client.get("/api/automation-config").json()["a1_wins_accepted_offer_deal"] is True
     )
 
 
 def test_an_admin_switches_a_rule_off_and_it_stays_off(logged_in: TestClient) -> None:
-    allowed = logged_in.put(
-        "/api/automation-config", json={"a1_offerta_accettata_vince_deal": False}
-    )
+    allowed = logged_in.put("/api/automation-config", json={"a1_wins_accepted_offer_deal": False})
     assert allowed.status_code == 200, allowed.text
-    assert allowed.json()["a1_offerta_accettata_vince_deal"] is False
+    assert allowed.json()["a1_wins_accepted_offer_deal"] is False
     # Read back through the other endpoint: a `PUT` that answered correctly without
     # persisting would pass on its own response alone.
     assert logged_in.get("/api/automation-config").json() == {
-        "a1_offerta_accettata_vince_deal": False,
-        "a2_offerta_inviata_avanza_deal": True,
+        "a1_wins_accepted_offer_deal": False,
+        "a2_advances_sent_offer_deal": True,
+        "a3_sent_offer_follow_up": True,
+        "a4_stalled_deal": True,
+        "a4_stalled_deal_days": 30,
+        "a5_overdue_invoice": True,
     }
+
+
+def test_an_admin_switches_a_daily_rule_off_and_sets_its_threshold(logged_in: TestClient) -> None:
+    allowed = logged_in.put(
+        "/api/automation-config", json={"a4_stalled_deal": False, "a4_stalled_deal_days": 14}
+    )
+    assert allowed.status_code == 200, allowed.text
+    body = logged_in.get("/api/automation-config").json()
+    assert body["a4_stalled_deal"] is False and body["a4_stalled_deal_days"] == 14
+    assert body["a3_sent_offer_follow_up"] is True and body["a5_overdue_invoice"] is True
+    # The column's own bounds are the request's: a 422 naming the field, not a 500.
+    assert (
+        logged_in.put("/api/automation-config", json={"a4_stalled_deal_days": 0}).status_code == 422
+    )
 
 
 def test_an_unknown_field_on_the_config_is_refused(logged_in: TestClient) -> None:
     """`extra="forbid"`: a typo in a field name must not silently do nothing. The only
     thing a misspelled key can do on a settings form is report success for a change that
     was not made."""
-    response = logged_in.put("/api/automation-config", json={"a3_qualcosa": True})
+    response = logged_in.put("/api/automation-config", json={"a9_qualcosa": True})
     assert response.status_code == 422
 
 
-def test_the_description_names_both_rules_with_their_state(logged_in: TestClient) -> None:
+def test_the_description_names_every_rule_with_their_state(logged_in: TestClient) -> None:
     body = logged_in.get("/api/automations").json()
-    assert [rule["codice"] for rule in body["regole"]] == ["A1", "A2"]
-    assert all(rule["descrizione"] for rule in body["regole"])
-    assert body["configurazione"]["a1_offerta_accettata_vince_deal"] is True
+    assert [rule["code"] for rule in body["rules"]] == [
+        "A1",
+        "A2",
+        "sent_offer_follow_up",
+        "stalled_deal",
+        "overdue_invoice",
+    ]
+    assert all(rule["description"] for rule in body["rules"])
+    assert body["configuration"]["a1_wins_accepted_offer_deal"] is True
 
 
 def test_the_runs_endpoint_returns_the_recent_activities(logged_in: TestClient) -> None:
     """§9.4: the run log is a read of `activities` by `kind`, never a new table. Changing
     the configuration is itself one of the three kinds, so it is the cheapest way to prove
     the endpoint reads the real timeline rather than an empty list."""
-    logged_in.put("/api/automation-config", json={"a2_offerta_inviata_avanza_deal": False})
+    logged_in.put("/api/automation-config", json={"a2_advances_sent_offer_deal": False})
     response = logged_in.get("/api/automation-runs", params={"limit": 5})
     assert response.status_code == 200
     runs = response.json()
-    assert "automazione.configurazione_modificata" in [run["kind"] for run in runs]
+    assert "automation.config_changed" in [run["kind"] for run in runs]
     # A configuration change is not about a deal, and a bare `entity_id` here would render
     # as a link to a deal that does not exist.
     assert all(run["deal_id"] is None for run in runs)
@@ -796,36 +833,36 @@ def test_the_runs_limit_is_bounded(logged_in: TestClient) -> None:
 
 
 @pytest.mark.parametrize("path", ["sales", "economic", "operational", "receivables"])
-def test_every_dashboard_takes_the_azienda_and_echoes_it(
+def test_every_dashboard_takes_the_legal_entity_and_echoes_it(
     logged_in: TestClient, dashboard_corpus: Engine, path: str
 ) -> None:
     """The arithmetic is proven in `packages/core/tests/test_dashboard_per_azienda.py`;
     this is the wire: the parameter exists on all four, it is echoed back (`null` for
-    «tutte»), and under an azienda that owns nothing every figure the corpus put on
+    «all_entities»), and under an azienda that owns nothing every figure the corpus put on
     the page reads empty, while the page keeps its shape."""
     schema = logged_in.get("/openapi.json").json()
     declared = {p["name"] for p in schema["paths"][f"/api/dashboard/{path}"]["get"]["parameters"]}
-    assert "azienda_id" in declared
+    assert "legal_entity_id" in declared
 
-    tutte = logged_in.get(f"/api/dashboard/{path}")
-    assert tutte.status_code == 200, tutte.text
-    assert tutte.json()["azienda_id"] is None
+    all_entities = logged_in.get(f"/api/dashboard/{path}")
+    assert all_entities.status_code == 200, all_entities.text
+    assert all_entities.json()["legal_entity_id"] is None
 
     nobody = str(uuid4())
-    scoped = logged_in.get(f"/api/dashboard/{path}", params={"azienda_id": nobody})
+    scoped = logged_in.get(f"/api/dashboard/{path}", params={"legal_entity_id": nobody})
     assert scoped.status_code == 200, scoped.text
     body = scoped.json()
-    assert body["azienda_id"] == nobody
+    assert body["legal_entity_id"] == nobody
     if path == "sales":
         assert body["pipeline"], "every stage is still a row, at zero"
-        assert all(row["numero"] == 0 for row in body["pipeline"])
-        assert body["chiusure"]["vinti"] == 0
-        assert body["offerte_in_attesa"] == []
+        assert all(row["number"] == 0 for row in body["pipeline"])
+        assert body["closings"]["won"] == 0
+        assert body["offers_pending"] == []
     elif path == "economic":
-        assert (body["da_incassare"], body["scaduto"]) == ("0.00", "0.00")
+        assert (body["unpaid"], body["expired"]) == ("0.00", "0.00")
     elif path == "operational":
-        assert body["settimana"]["ore_totali"] == "0.00"
-        assert all(s["conteggio"] == 0 for s in body["segnali"])
+        assert body["week"]["total_hours"] == "0.00"
+        assert all(s["count"] == 0 for s in body["signals"])
     else:
-        assert body["totale"] == "0.00"
-        assert body["scadute"] == []
+        assert body["total"] == "0.00"
+        assert body["overdue"] == []

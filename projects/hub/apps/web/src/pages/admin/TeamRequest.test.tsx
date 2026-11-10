@@ -1,0 +1,513 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import {
+  Outlet,
+  RouterProvider,
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+} from '@tanstack/react-router'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { AdminTeamRequest } from './TeamRequest'
+
+function answer(status: number, body: unknown) {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+}
+
+// Written as escapes on purpose, as `bands.test.ts` does: an en dash looks like a hyphen.
+const DASH = '\u2013'
+
+const CARD = {
+  role: 'Backend developer',
+  seniority: 'senior',
+  experience_years: 9,
+  skills: ['Python', 'FastAPI'],
+  industries: ['fintech'],
+  languages: ['italiano', 'inglese'],
+  location: 'Torino',
+  profile_summary: 'Backend developer senior, nove anni fra fintech ed e-commerce.',
+}
+
+/** A public request as `GET /api/hub/team/requests/{id}` answers it: the proposal with
+ *  the talents' ids, the talents by name with their own rates, the contacts. */
+const REQUEST = {
+  id: 'r1',
+  proposal: {
+    id: 'p1',
+    summary: 'Una web app per i clienti di una fintech, con i pagamenti.',
+    location: { on_site: true, place: 'Milano' },
+    team: [
+      {
+        position: 1,
+        freelancer_id: 'f1',
+        role: 'Backend developer',
+        reasoning: 'Ha scritto API di pagamento per tre anni.',
+        week_days: 5,
+        card: CARD,
+        mode: 'hybrid',
+        band: { min: 500, max: 650 },
+      },
+      {
+        position: 2,
+        freelancer_id: 'f2',
+        role: 'Frontend developer',
+        reasoning: 'React e TypeScript da sei anni.',
+        week_days: 3,
+        card: { ...CARD, role: 'Frontend developer' },
+        mode: 'remote',
+        band: null,
+      },
+    ],
+    economics: { day: null, month: null, days_month: 22 },
+    previous_id: null,
+    origin: 'public',
+    created_at: '2026-09-25T09:00:00Z',
+  },
+  summary: 'Una web app per i clienti di una fintech, con i pagamenti.',
+  description: 'Siamo Acme e ci serve una web app per i nostri clienti, sei mesi, in sede a Milano.',
+  origin: 'public',
+  company: 'Acme S.r.l.',
+  email: 'anna@acme.it',
+  phone: '+39 02 1234567',
+  user_id: null,
+  company_id: null,
+  status: 'new',
+  note: null,
+  talents: [
+    {
+      freelancer_id: 'f1',
+      first_name: 'Ada',
+      last_name: 'Lovelace',
+      role: 'Backend developer',
+      daily_rate: '450.00',
+      band: { min: 500, max: 650 },
+      mail_sent_at: null,
+      answer: null,
+      answered_at: null,
+      contactable: true,
+    },
+    {
+      freelancer_id: 'f2',
+      first_name: 'Grace',
+      last_name: 'Hopper',
+      role: 'Frontend developer',
+      daily_rate: null,
+      band: null,
+      mail_sent_at: '2026-09-25T12:00:00Z',
+      answer: 'yes',
+      answered_at: '2026-09-26T09:30:00Z',
+      contactable: true,
+    },
+  ],
+  contacted_at: null,
+  closed_at: null,
+  created_at: '2026-09-25T10:00:00Z',
+}
+
+/** The pathless `signedIn` id and the two admin routes this page links to, stubbed. */
+function mount(path = '/admin/team/r1') {
+  const root = createRootRoute({ component: () => <Outlet /> })
+  const signedIn = createRoute({ getParentRoute: () => root, id: 'signedIn', component: () => <Outlet /> })
+  const page = createRoute({ getParentRoute: () => signedIn, path: '/admin/team/$id', component: AdminTeamRequest })
+  const list = createRoute({ getParentRoute: () => signedIn, path: '/admin/team', component: () => <p>lista</p> })
+  const talent = createRoute({
+    getParentRoute: () => signedIn,
+    path: '/admin/freelance/$id',
+    component: () => <p>talento</p>,
+  })
+  const router = createRouter({
+    routeTree: root.addChildren([signedIn.addChildren([page, list, talent])]),
+    history: createMemoryHistory({ initialEntries: [path] }),
+  })
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
+  return router
+}
+
+/** Answers the page's read, and hands every write to `write` with its parsed body. */
+function serve(write: (method: string, url: string, body: unknown) => Response = () => answer(500, {})) {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const url = String(input)
+    const method = init?.method ?? 'GET'
+    if (method === 'GET' && url === '/api/hub/team/requests/r1') return answer(200, REQUEST)
+    if (method === 'GET') throw new Error(`unhandled fetch in this test: ${method} ${url}`)
+    return write(method, url, JSON.parse((init?.body as string | undefined) ?? 'null'))
+  })
+}
+
+function cellUnder(row: HTMLElement, header: string): HTMLElement {
+  const table = row.closest('table')!
+  const headers = within(table).getAllByRole('columnheader').map((cell) => cell.textContent)
+  const index = headers.indexOf(header)
+  expect(index).toBeGreaterThanOrEqual(0)
+  return within(row).getAllByRole('cell')[index]!
+}
+
+afterEach(() => vi.restoreAllMocks())
+
+describe('a team request, as the admin reads it (REB-514, spec § 3.5)', () => {
+  it('shows the description, the summary in a box, the place, the contacts and the state', async () => {
+    serve()
+    mount()
+
+    expect(await screen.findByRole('heading', { level: 1, name: 'Acme S.r.l.' })).toBeInTheDocument()
+    expect(screen.getByText(REQUEST.description)).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Riassunto' })).toHaveValue(REQUEST.summary)
+    expect(screen.getByRole('button', { name: 'Salva il riassunto' })).toBeInTheDocument()
+    expect(screen.getByText('In sede, a Milano')).toBeInTheDocument()
+    expect(screen.getByText('Pubblico')).toBeInTheDocument()
+
+    const contacts = screen.getByRole('region', { name: 'Contatti' })
+    expect(within(contacts).getByRole('link', { name: 'anna@acme.it' })).toHaveAttribute('href', 'mailto:anna@acme.it')
+    expect(within(contacts).getByRole('link', { name: '+39 02 1234567' })).toHaveAttribute('href', 'tel:+39021234567')
+
+    const status = screen.getByRole('region', { name: 'Stato' })
+    expect(within(status).getByText('Nuova')).toBeInTheDocument()
+    expect(within(status).getByRole('button', { name: 'Segna come contattata' })).toBeInTheDocument()
+    expect(within(status).getByRole('button', { name: 'Chiudi' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Nota' })).toHaveValue('')
+    expect(screen.getByRole('button', { name: 'Salva la nota' })).toBeInTheDocument()
+
+    // A talent already has the availability mail (D1): writing again is to the silent.
+    expect(screen.getByRole('button', { name: 'Rimanda a chi non ha risposto' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Contatta i talenti' })).toBeNull()
+  })
+
+  it('shows the team by name, each linking to the talent, with the role, the rate, the band and the answer', async () => {
+    serve()
+    mount()
+
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    const ada = within(team).getByRole('link', { name: 'Ada Lovelace' })
+    expect(ada.getAttribute('href')).toMatch(/\/admin\/freelance\/f1$/)
+    const adaRow = ada.closest('tr')!
+    expect(cellUnder(adaRow, 'Ruolo')).toHaveTextContent('Backend developer')
+    expect(cellUnder(adaRow, 'Ruolo')).toHaveTextContent('Ha scritto API di pagamento per tre anni.')
+    expect(cellUnder(adaRow, 'Tariffa')).toHaveTextContent('450,00 €')
+    expect(cellUnder(adaRow, 'Fascia cliente')).toHaveTextContent(`500${DASH}650 € al giorno`)
+    expect(cellUnder(adaRow, 'Risposta')).toHaveTextContent(/^—$/)
+
+    const graceRow = within(team).getByRole('link', { name: 'Grace Hopper' }).closest('tr')!
+    expect(cellUnder(graceRow, 'Tariffa')).toHaveTextContent(/^—$/)
+    expect(cellUnder(graceRow, 'Fascia cliente')).toHaveTextContent(/^—$/)
+    expect(cellUnder(graceRow, 'Risposta')).toHaveTextContent(/^Sì/)
+    expect(cellUnder(graceRow, 'Risposta')).toHaveTextContent('26 set 2026')
+    // A member without a rate leaves the team with no band.
+    expect(screen.getByText('Tariffa da definire')).toBeInTheDocument()
+  })
+
+  it('saves the summary with «Salva il riassunto»', async () => {
+    const edited = 'Una web app per i clienti di una società di pagamenti.'
+    const spy = serve((method, url, body) => {
+      expect(`${method} ${url}`).toBe('PATCH /api/hub/team/requests/r1/summary')
+      expect(body).toEqual({ summary: edited })
+      return answer(200, { ...REQUEST, summary: edited, proposal: { ...REQUEST.proposal, summary: edited } })
+    })
+    mount()
+
+    const box = await screen.findByRole('textbox', { name: 'Riassunto' })
+    await userEvent.clear(box)
+    await userEvent.type(box, edited)
+    await userEvent.click(screen.getByRole('button', { name: 'Salva il riassunto' }))
+
+    expect(await screen.findByText('Riassunto salvato.')).toBeInTheDocument()
+    expect(box).toHaveValue(edited)
+    expect(spy).toHaveBeenCalledWith(
+      '/api/hub/team/requests/r1/summary',
+      expect.objectContaining({ method: 'PATCH' }),
+    )
+  })
+
+  it('shows the API’s refusal of a summary as it stands, and keeps what the admin typed', async () => {
+    // `team_requests.NAMES_THE_COMPANY`, a 409.
+    const refusal = "Il riassunto nomina l'azienda: correggilo prima di scrivere ai talenti."
+    serve(() => answer(409, { detail: refusal }))
+    mount()
+
+    const box = await screen.findByRole('textbox', { name: 'Riassunto' })
+    await userEvent.clear(box)
+    await userEvent.type(box, 'Acme rifà il gestionale.')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva il riassunto' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(refusal)
+    expect(box).toHaveValue('Acme rifà il gestionale.')
+  })
+
+  it('does not send an empty summary', async () => {
+    const spy = serve()
+    mount()
+
+    await userEvent.clear(await screen.findByRole('textbox', { name: 'Riassunto' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva il riassunto' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Il riassunto non può essere vuoto.')
+    expect(spy.mock.calls.every(([, init]) => (init?.method ?? 'GET') === 'GET')).toBe(true)
+  })
+
+  it('saves the note with «Salva la nota», and clears it with an empty box', async () => {
+    const bodies: unknown[] = []
+    serve((method, url, body) => {
+      expect(`${method} ${url}`).toBe('PATCH /api/hub/team/requests/r1/note')
+      bodies.push(body)
+      const note = (body as { note: string | null }).note
+      return answer(200, { ...REQUEST, note })
+    })
+    mount()
+
+    const box = await screen.findByRole('textbox', { name: 'Nota' })
+    await userEvent.type(box, 'Richiamare lunedì.')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva la nota' }))
+    expect(await screen.findByText('Nota salvata.')).toBeInTheDocument()
+
+    await userEvent.clear(box)
+    await userEvent.click(screen.getByRole('button', { name: 'Salva la nota' }))
+    await waitFor(() => expect(bodies).toHaveLength(2))
+    expect(bodies).toEqual([{ note: 'Richiamare lunedì.' }, { note: null }])
+  })
+
+  it('marks the request contacted, closes it, and reopens it after a mis-click', async () => {
+    const posted: unknown[] = []
+    serve((method, url, body) => {
+      expect(`${method} ${url}`).toBe('POST /api/hub/team/requests/r1/status')
+      posted.push(body)
+      const status = (body as { status: string }).status
+      return answer(200, {
+        ...REQUEST,
+        status,
+        contacted_at: '2026-09-26T08:00:00Z',
+        closed_at: status === 'closed' ? '2026-09-26T09:00:00Z' : null,
+      })
+    })
+    mount()
+
+    const status = await screen.findByRole('region', { name: 'Stato' })
+    await userEvent.click(within(status).getByRole('button', { name: 'Segna come contattata' }))
+    await within(status).findByText('Contattata')
+    expect(within(status).queryByRole('button', { name: 'Segna come contattata' })).toBeNull()
+    expect(within(status).getByText(/Contattata il 26 set 2026/)).toBeInTheDocument()
+
+    await userEvent.click(within(status).getByRole('button', { name: 'Chiudi' }))
+    await within(status).findByText('Chiusa')
+    expect(within(status).queryByRole('button', { name: 'Chiudi' })).toBeNull()
+    expect(within(status).queryByRole('button', { name: 'Segna come contattata' })).toBeNull()
+    expect(within(status).getByText(/Chiusa il 26 set 2026/)).toBeInTheDocument()
+
+    // Reopened, a request already contacted goes back to «Contattata», not to «Nuova».
+    await userEvent.click(within(status).getByRole('button', { name: 'Riapri' }))
+    await within(status).findByText('Contattata')
+    expect(posted).toEqual([{ status: 'contacted' }, { status: 'closed' }, { status: 'contacted' }])
+  })
+
+  it('shows the API’s sentence when a state change is refused', async () => {
+    serve(() => answer(404, { detail: 'Richiesta team non trovata.' }))
+    mount()
+    const status = await screen.findByRole('region', { name: 'Stato' })
+    await userEvent.click(within(status).getByRole('button', { name: 'Chiudi' }))
+    expect(await within(status).findByRole('alert')).toHaveTextContent('Richiesta team non trovata.')
+  })
+
+  it('has no summary to edit for a request of one talent from the cloud', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, {
+        ...REQUEST,
+        proposal: null,
+        summary: null,
+        description: null,
+        origin: 'cloud',
+        talents: [REQUEST.talents[0]],
+      }),
+    )
+    mount()
+    await screen.findByRole('heading', { level: 1, name: 'Acme S.r.l.' })
+    expect(screen.queryByRole('textbox', { name: 'Riassunto' })).toBeNull()
+    expect(screen.getByText('Una richiesta per un talento solo: non c’è un riassunto.')).toBeInTheDocument()
+    expect(screen.getByText('Cloud')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Ada Lovelace' })).toBeInTheDocument()
+  })
+
+  it('shows no team band for a proposal with nobody in it, rather than a rate to define', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, { ...REQUEST, proposal: { ...REQUEST.proposal, team: [] }, talents: [] }),
+    )
+    mount()
+    await screen.findByRole('heading', { level: 1, name: 'Acme S.r.l.' })
+    expect(screen.queryByText('Fascia del team')).toBeNull()
+    expect(screen.queryByText('Tariffa da definire')).toBeNull()
+    expect(screen.getByText('Nessun talento in questa richiesta.')).toBeInTheDocument()
+  })
+
+  it('says so when the request does not exist', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(404, { detail: 'Richiesta team non trovata.' }))
+    mount()
+    expect(await screen.findByText('Richiesta non trovata.')).toBeInTheDocument()
+  })
+})
+
+/** `REQUEST` before anyone was mailed: every talent silent, no answer, no send. */
+const FRESH = {
+  ...REQUEST,
+  talents: REQUEST.talents.map((talent) => ({ ...talent, mail_sent_at: null, answer: null, answered_at: null })),
+}
+
+/** Answers the page's read with `request`, and hands every write to `write`. */
+function serveRequest(request: unknown, write: (method: string, url: string) => Response) {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const url = String(input)
+    const method = init?.method ?? 'GET'
+    if (method === 'GET' && url === '/api/hub/team/requests/r1') return answer(200, request)
+    if (method === 'GET') throw new Error(`unhandled fetch in this test: ${method} ${url}`)
+    return write(method, url)
+  })
+}
+
+describe('the talents’ availability on the request’s page (REB-517, spec § 3.5, § 3.6)', () => {
+  it('contacts every talent the first time, then offers to write again to the silent', async () => {
+    const calls: string[] = []
+    serveRequest(FRESH, (method, url) => {
+      calls.push(`${method} ${url}`)
+      return answer(200, {
+        ...FRESH,
+        status: 'contacted',
+        contacted_at: '2026-09-26T08:00:00Z',
+        talents: FRESH.talents.map((talent) => ({ ...talent, mail_sent_at: '2026-09-26T08:00:00Z' })),
+      })
+    })
+    mount()
+
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    expect(within(team).queryByRole('button', { name: 'Rimanda a chi non ha risposto' })).toBeNull()
+    // Before any mail there is no older link to retire.
+    expect(within(team).queryByText('I link delle mail precedenti smettono di valere.')).toBeNull()
+    for (const link of within(team).getAllByRole('link')) {
+      expect(cellUnder(link.closest('tr')!, 'Risposta')).toHaveTextContent(/^—$/)
+    }
+    await userEvent.click(within(team).getByRole('button', { name: 'Contatta i talenti' }))
+
+    expect(await within(team).findByRole('button', { name: 'Rimanda a chi non ha risposto' })).toBeInTheDocument()
+    expect(calls).toEqual(['POST /api/hub/team/requests/r1/contact?only_silent=false'])
+    expect(within(team).getByRole('status')).toHaveTextContent('Mail in partenza')
+    expect(within(team).getByRole('button', { name: 'Rimanda a chi non ha risposto' })).toHaveAccessibleDescription(
+      'I link delle mail precedenti smettono di valere.',
+    )
+    for (const link of within(team).getAllByRole('link')) {
+      expect(cellUnder(link.closest('tr')!, 'Risposta')).toHaveTextContent(/^In attesa$/)
+    }
+    expect(within(screen.getByRole('region', { name: 'Stato' })).getByText('Contattata')).toBeInTheDocument()
+  })
+
+  it('writes again only to the silent with «Rimanda a chi non ha risposto»', async () => {
+    const calls: string[] = []
+    serveRequest(REQUEST, (method, url) => {
+      calls.push(`${method} ${url}`)
+      return answer(200, REQUEST)
+    })
+    mount()
+
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    await userEvent.click(within(team).getByRole('button', { name: 'Rimanda a chi non ha risposto' }))
+
+    expect(await within(team).findByRole('status')).toHaveTextContent('Mail in partenza')
+    expect(calls).toEqual(['POST /api/hub/team/requests/r1/contact?only_silent=true'])
+  })
+
+  it('shows the answers with their time, «In attesa» for the silent and a dash for who was never mailed', async () => {
+    serveRequest(
+      {
+        ...REQUEST,
+        talents: [
+          { ...REQUEST.talents[0], mail_sent_at: '2026-09-25T12:00:00Z', answer: 'no', answered_at: '2026-09-27T16:45:00Z' },
+          { ...REQUEST.talents[1], answer: null, answered_at: null },
+        ],
+      },
+      () => answer(500, {}),
+    )
+    mount()
+
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    const ada = cellUnder(within(team).getByRole('link', { name: 'Ada Lovelace' }).closest('tr')!, 'Risposta')
+    expect(ada).toHaveTextContent(/^No · /)
+    expect(ada).toHaveTextContent('27 set 2026')
+    const grace = cellUnder(within(team).getByRole('link', { name: 'Grace Hopper' }).closest('tr')!, 'Risposta')
+    expect(grace).toHaveTextContent(/^In attesa$/)
+  })
+
+  it('shows the refusal of a summary that names the company, and keeps the button', async () => {
+    const refusal = "Il riassunto nomina l'azienda: correggilo prima di scrivere ai talenti."
+    serveRequest(FRESH, () => answer(409, { detail: refusal }))
+    mount()
+
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    await userEvent.click(within(team).getByRole('button', { name: 'Contatta i talenti' }))
+
+    expect(await within(team).findByRole('alert')).toHaveTextContent(refusal)
+    expect(within(team).getByRole('button', { name: 'Contatta i talenti' })).toBeEnabled()
+  })
+
+  it('offers nothing to send once everyone answered', async () => {
+    const answered = {
+      ...REQUEST,
+      talents: REQUEST.talents.map((talent) => ({
+        ...talent,
+        mail_sent_at: '2026-09-25T12:00:00Z',
+        answer: 'yes',
+        answered_at: '2026-09-26T09:30:00Z',
+      })),
+    }
+    serveRequest(answered, () => answer(500, {}))
+    mount()
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    expect(within(team).queryByRole('button')).toBeNull()
+  })
+
+  it('says under «Rimanda» that the links already sent stop working', async () => {
+    serveRequest(REQUEST, () => answer(500, {}))
+    mount()
+
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    const button = within(team).getByRole('button', { name: 'Rimanda a chi non ha risposto' })
+    expect(button).toHaveAccessibleDescription('I link delle mail precedenti smettono di valere.')
+    expect(within(team).getByText('I link delle mail precedenti smettono di valere.')).toBeVisible()
+  })
+
+  it('offers nothing to send when only talents who cannot be written to are silent', async () => {
+    serveRequest(
+      {
+        ...REQUEST,
+        talents: [
+          { ...REQUEST.talents[0], contactable: false },
+          REQUEST.talents[1],
+        ],
+      },
+      () => answer(500, {}),
+    )
+    mount()
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    await within(team).findByRole('link', { name: 'Ada Lovelace' })
+    expect(within(team).queryByRole('button')).toBeNull()
+  })
+
+  it('shows the API’s sentence as it stands when nobody is left to write to', async () => {
+    // `team_requests.NOBODY_TO_CONTACT`, a 409: a card turned down since this page loaded.
+    const nobody = "Non c'è nessun talento da contattare."
+    serveRequest(FRESH, () => answer(409, { detail: nobody }))
+    mount()
+
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    await userEvent.click(within(team).getByRole('button', { name: 'Contatta i talenti' }))
+
+    expect(await within(team).findByRole('alert')).toHaveTextContent(new RegExp(`^${nobody}$`))
+  })
+
+  it('offers nothing to send on a closed request', async () => {
+    serveRequest({ ...FRESH, status: 'closed', closed_at: '2026-09-26T09:00:00Z' }, () => answer(500, {}))
+    mount()
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    expect(within(team).queryByRole('button')).toBeNull()
+  })
+})
+

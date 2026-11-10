@@ -10,7 +10,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_sender
-from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.mail import RecordingSender
 from rebase_core.models import Referral, User
 
@@ -27,7 +26,7 @@ def sender(client: TestClient) -> Iterator[RecordingSender]:
 
 @pytest.fixture
 def admin(api_session: Session) -> Iterator[None]:
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     yield
     api_session.rollback()
@@ -35,7 +34,8 @@ def admin(api_session: Session) -> Iterator[None]:
         "referral_rewards",
         "referrals",
         "referral_settings",
-        "comments",
+        "admin_actions",
+        "notes",
         "freelancers",
         "companies",
         "users",
@@ -55,7 +55,8 @@ def clean(api_session: Session) -> Iterator[None]:
         "referral_settings",
         "sessions",
         "magic_link_tokens",
-        "comments",
+        "admin_actions",
+        "notes",
         "freelancers",
         "companies",
         "users",
@@ -66,14 +67,14 @@ def clean(api_session: Session) -> Iterator[None]:
 
 def _enter(client: TestClient, sender: RecordingSender, email: str) -> None:
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     entered = client.post("/api/hub/auth/enter", json={"token": match.group(1)})
     assert entered.status_code == 200, entered.text
 
 
 def _member(api_session: Session, email: str = "mario@community.it") -> None:
-    api_session.add(User(email=email, nome="Mario", cognome="Rossi", role="member"))
+    api_session.add(User(email=email, first_name="Mario", last_name="Rossi", role="member"))
     api_session.commit()
 
 
@@ -115,7 +116,7 @@ def test_my_referral_issues_a_stable_code(
     assert first.json()["referred"] == []
 
 
-def test_a_freelancer_application_with_rif_shows_up_on_the_referrers_own_page(
+def test_to_freelancer_application_with_ref_shows_up_on_the_referrers_own_page(
     client: TestClient, sender: RecordingSender, api_session: Session, clean: None
 ) -> None:
     _member(api_session)
@@ -125,57 +126,57 @@ def test_a_freelancer_application_with_rif_shows_up_on_the_referrers_own_page(
     applied = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Ada",
-            "cognome": "Lovelace",
+            "first_name": "Ada",
+            "last_name": "Lovelace",
             "email": "ada@studio.it",
-            "tariffa_giornaliera": "450",
-            "posizione": "Backend developer",
-            "remoto": "remoto",
-            "rif": code,
+            "daily_rate": "450",
+            "job_title": "Backend developer",
+            "remote": "remote",
+            "ref": code,
         },
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
     )
     assert applied.status_code == 201, applied.text
 
     mine = client.get("/api/hub/me/referral").json()
-    assert [item["nome"] for item in mine["referred"]] == ["Ada Lovelace"]
+    assert [item["first_name"] for item in mine["referred"]] == ["Ada Lovelace"]
     assert mine["referred"][0]["kind"] == "freelancer"
 
 
-def test_a_malformed_rif_is_no_referral_not_a_422(
+def test_to_malformed_ref_is_no_referral_not_to_422(
     client: TestClient, sender: RecordingSender, api_session: Session, clean: None
 ) -> None:
-    """Regression: `rif` used to be a `Field(pattern=...)`, so punctuation or a code
+    """Regression: `ref` used to be a `Field(pattern=...)`, so punctuation or a code
     over ten characters failed the whole application with a 422. A malformed code is
     muted the same way an unknown one already is (`ReferralService.resolve_referrer`),
     never a reason to refuse someone applying (CodeRabbit)."""
     applied = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Grace",
-            "cognome": "Hopper",
+            "first_name": "Grace",
+            "last_name": "Hopper",
             "email": "grace@studio.it",
-            "tariffa_giornaliera": "450",
-            "posizione": "Backend developer",
-            "remoto": "remoto",
-            "rif": "not-a-code!",
+            "daily_rate": "450",
+            "job_title": "Backend developer",
+            "remote": "remote",
+            "ref": "not-a-code!",
         },
         files={"cv": ("Grace CV.pdf", PDF, "application/pdf")},
     )
     assert applied.status_code == 201, applied.text
 
 
-def _apply(client: TestClient, email: str, rif: str | None = None) -> tuple[int, str]:
+def _apply(client: TestClient, email: str, ref: str | None = None) -> tuple[int, str]:
     sent = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Ada",
-            "cognome": "Lovelace",
+            "first_name": "Ada",
+            "last_name": "Lovelace",
             "email": email,
-            "tariffa_giornaliera": "450",
-            "posizione": "Backend developer",
-            "remoto": "remoto",
-            **({"rif": rif} if rif else {}),
+            "daily_rate": "450",
+            "job_title": "Backend developer",
+            "remote": "remote",
+            **({"ref": ref} if ref else {}),
         },
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
     )
@@ -193,7 +194,6 @@ def test_a_squatted_address_is_pending_until_its_owner_logs_in_and_the_route_nev
     _enter(client, sender, "accomplice@community.it")
     code = client.get("/api/hub/me/referral").json()["code"]
     client.cookies.clear()
-    reset_rate_limit()  # the four public posts below are one stranger's, not the member's
 
     fresh = _apply(client, "prospect@acme.it", code)
     attributed_again = _apply(client, "prospect@acme.it", code)
@@ -202,18 +202,18 @@ def test_a_squatted_address_is_pending_until_its_owner_logs_in_and_the_route_nev
 
     assert fresh == attributed_again == plain == unattributed_again == (201, fresh[1])
     referral = api_session.query(Referral).one()
-    assert referral.stato == "da_verificare"
+    assert referral.status == "to_verify"
 
     # The owner of the address clicks the link the repeat application mailed them.
     mailed = next(mail for mail in reversed(sender.sent) if mail.to == "prospect@acme.it")
-    token = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", mailed.text)
+    token = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", mailed.text)
     assert token
     entered = client.post("/api/hub/auth/enter", json={"token": token.group(1)})
     assert entered.status_code == 200, entered.text
 
     api_session.expire_all()
     referral = api_session.query(Referral).one()
-    assert (referral.stato, referral.verified_via) == ("verificato", "accesso")
+    assert (referral.status, referral.verified_via) == ("verified", "login")
 
 
 def test_a_company_request_answers_the_same_whether_or_not_its_address_is_attributed(
@@ -223,29 +223,28 @@ def test_a_company_request_answers_the_same_whether_or_not_its_address_is_attrib
     _enter(client, sender, "accomplice@community.it")
     code = client.get("/api/hub/me/referral").json()["code"]
     client.cookies.clear()
-    reset_rate_limit()
     body = {
-        "nome_azienda": "ACME Srl",
-        "referente_nome": "Wile",
-        "referente_cognome": "E.",
+        "company_name": "ACME Srl",
+        "contact_first_name": "Wile",
+        "contact_last_name": "E.",
         "email": "wile@acme.it",
-        "telefono": "+39 345 1234567",
-        "figura_richiesta": "Backend developer",
-        "progetto": "Un backend developer per tre mesi.",
-        "periodo_da": "2026-10-01",
-        "durata": "3 mesi",
-        "budget_giornaliero": "500",
-        "remoto": "remoto",
-        "numero_risorse": 1,
+        "phone": "+39 345 1234567",
+        "requested_role": "Backend developer",
+        "project": "Un backend developer per tre mesi.",
+        "period_from": "2026-10-01",
+        "duration": "3 mesi",
+        "daily_budget": "500",
+        "remote": "remote",
+        "headcount": 1,
     }
 
-    squatted = client.post("/api/hub/companies", json={**body, "rif": code})
+    squatted = client.post("/api/hub/companies", json={**body, "ref": code})
     again = client.post("/api/hub/companies", json=body)
     other = client.post("/api/hub/companies", json={**body, "email": "other@beta.it"})
 
     assert (squatted.status_code, squatted.text) == (again.status_code, again.text)
     assert (other.status_code, other.text) == (squatted.status_code, squatted.text)
-    assert api_session.query(Referral).one().stato == "da_verificare"
+    assert api_session.query(Referral).one().status == "to_verify"
 
 
 def test_referral_routes_need_the_admin_cookie(client: TestClient, admin: None) -> None:
@@ -271,7 +270,7 @@ def test_the_admin_reads_and_saves_the_two_rates(
     )
     assert saved.status_code == 200
     assert (saved.json()["rate_freelancer"], saved.json()["rate_company"]) == ("0.12", "0.35")
-    assert saved.json()["updated_by_nome"] == "Ivan"
+    assert saved.json()["updated_by_name"] == "Ivan"
 
     read_back = client.get("/api/hub/referral-settings")
     assert (read_back.json()["rate_freelancer"], read_back.json()["rate_company"]) == (
@@ -293,25 +292,24 @@ def test_the_admin_ledger_starts_empty(
 
 def _login(client: TestClient, sender: RecordingSender, email: str = ADMIN_EMAIL) -> None:
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
 
 
-def test_a_cold_signup_with_rif_ends_in_a_pending_ledger_row_once_an_admin_drafts_the_card(
+def test_to_cold_signup_with_ref_ends_in_to_pending_ledger_row_once_an_admin_drafts_the_card(
     client: TestClient, sender: RecordingSender, api_session: Session, admin: None
 ) -> None:
-    """REB-554: the visitor's `?rif=` rides the community signup, and the referral is
+    """REB-554: the visitor's `?ref=` rides the community signup, and the referral is
     made only when an admin turns that signup into a card, pending like any other."""
     _member(api_session)
     _enter(client, sender, "mario@community.it")
     code = client.get("/api/hub/me/referral").json()["code"]
     client.cookies.clear()
-    reset_rate_limit()
 
     posted = client.post(
         "/api/community/signups",
-        json={"email": "cold@studio.it", "nome": "Cold", "cognome": "Lead", "rif": code},
+        json={"email": "cold@studio.it", "first_name": "Cold", "last_name": "Lead", "ref": code},
     )
     assert posted.status_code == 201 and posted.json() == {"ok": True}
     assert api_session.query(Referral).count() == 0  # a signup is not a user yet
@@ -319,21 +317,21 @@ def test_a_cold_signup_with_rif_ends_in_a_pending_ledger_row_once_an_admin_draft
     _login(client, sender)
     signup_id = next(
         item["id"]
-        for item in client.get("/api/hub/signups").json()["iscrizioni"]
+        for item in client.get("/api/hub/signups").json()["signups"]
         if item["email"] == "cold@studio.it"
     )
     drafted = client.post(
         f"/api/hub/signups/{signup_id}/card",
         json={
-            "nome": "Cold",
-            "cognome": "Lead",
-            "posizione": "Backend developer",
-            "fonti": ["https://cold.dev"],
+            "first_name": "Cold",
+            "last_name": "Lead",
+            "job_title": "Backend developer",
+            "sources": ["https://cold.dev"],
         },
     )
     assert drafted.status_code == 201, drafted.text
 
     items = client.get("/api/hub/referrals").json()["items"]
     assert len(items) == 1
-    assert items[0]["referral_stato"] == "da_verificare"
-    assert items[0]["referred_nome"] == "Cold Lead"
+    assert items[0]["referral_status"] == "to_verify"
+    assert items[0]["referred_name"] == "Cold Lead"

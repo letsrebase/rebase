@@ -22,6 +22,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from fakes.contacts import points
 from fakes.fake_gmail import FakeGmail, FakeMessage, RecordedRequest
 from fakes.gmail_fixtures import MAILBOX, actor_for, connected_account, sync_service
 from sqlalchemy import Engine, select
@@ -29,10 +30,10 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from pigrocrm.core.gmail.models import GmailKnownAddress, GmailMessage
 from pigrocrm.core.gmail.repository import GmailRepository
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 _ADDRESS_CLAUSE = re.compile(r"\b(?:from|to|cc|bcc|rfc822msgid):([^\s)]+)")
@@ -94,10 +95,15 @@ def _stored(session: Session) -> set[str]:
 
 
 def _person_of_new_customer(session: Session, email: str) -> Person:
-    customer = Customer(ragione_sociale=f"Acme {uuid4().hex[:6]}", email=None)
+    customer = Organization(legal_name=f"Acme {uuid4().hex[:6]}", contact_points=points(email=None))
     session.add(customer)
     session.flush()
-    person = Person(nome="Ada", cognome="Byron", email=email, customer_id=customer.id)
+    person = Person(
+        first_name="Ada",
+        last_name="Byron",
+        contact_points=points(email=email),
+        customer_id=customer.id,
+    )
     session.add(person)
     session.flush()
     return person
@@ -130,7 +136,7 @@ def test_a_newly_added_address_is_backfilled_over_ninety_days(db_session: Sessio
     # "nothing appeared" and "we looked back three months and nothing was there" are two
     # different answers.
     kinds = db_session.execute(select(Activity.kind).where(Activity.kind.like("gmail.%"))).scalars()
-    assert "gmail.backfill_eseguito" in set(kinds)
+    assert "gmail.backfill_run" in set(kinds)
 
     remembered = GmailRepository(db_session).seen_addresses(account.id)
     assert remembered == {"ada@acme.it"}
@@ -140,7 +146,7 @@ def test_the_second_cycle_asks_only_from_the_watermark(db_session: Session) -> N
     """The backfill happens once. A cycle that re-derived "new" from the roster alone
     would re-read three months of mail every fifteen minutes, forever."""
     account = connected_account(db_session)
-    db_session.add(Customer(ragione_sociale="Acme", email="info@acme.it"))
+    db_session.add(Organization(legal_name="Acme", contact_points=points(email="info@acme.it")))
     db_session.flush()
 
     fake = FakeGmail()
@@ -161,7 +167,7 @@ def test_the_second_cycle_asks_only_from_the_watermark(db_session: Session) -> N
     assert abs(first_after[0] - horizon.timestamp()) < 120
 
     entries = (
-        db_session.execute(select(Activity).where(Activity.kind == "gmail.backfill_eseguito"))
+        db_session.execute(select(Activity).where(Activity.kind == "gmail.backfill_run"))
         .scalars()
         .all()
     )
@@ -175,7 +181,7 @@ def test_an_address_added_later_is_backfilled_while_the_others_are_not(
     established correspondent must not be re-read over three months just because a
     colleague was added to the CRM this morning."""
     account = connected_account(db_session)
-    db_session.add(Customer(ragione_sociale="Acme", email="info@acme.it"))
+    db_session.add(Organization(legal_name="Acme", contact_points=points(email="info@acme.it")))
     db_session.flush()
 
     fake = FakeGmail()
@@ -215,16 +221,16 @@ def test_remembering_an_address_twice_keeps_the_rest_of_the_cycle(db_session: Se
     repo = GmailRepository(db_session)
     row = GmailMessage(
         google_account_id=account.id,
-        gmail_message_id="prima",
+        gmail_message_id="before",
         gmail_thread_id="t1",
         direction="inbound",
         from_address="ada@acme.it",
         to_addresses=[MAILBOX],
         cc_addresses=[],
         subject="Oggetto",
-        snippet="corpo",
+        snippet="body",
         internal_date=datetime.now(UTC),
-        body_text="corpo",
+        body_text="body",
         attachments=[],
     )
     assert repo.add_message_if_absent(row) is True
@@ -234,7 +240,7 @@ def test_remembering_an_address_twice_keeps_the_rest_of_the_cycle(db_session: Se
     db_session.flush()
 
     assert repo.seen_addresses(account.id) == {"ada@acme.it", "info@acme.it", "nuovo@acme.it"}
-    assert _stored(db_session) == {"prima"}
+    assert _stored(db_session) == {"before"}
 
 
 def test_the_register_is_per_mailbox(db_session: Session) -> None:
@@ -304,17 +310,22 @@ def test_a_customer_backfill_covers_the_people_who_work_there(db_session: Sessio
     the company record would silently miss every message from the person one actually
     writes to."""
     account = connected_account(db_session)
-    customer = Customer(ragione_sociale="Acme", email="info@acme.it")
+    customer = Organization(legal_name="Acme", contact_points=points(email="info@acme.it"))
     db_session.add(customer)
     db_session.flush()
     db_session.add(
-        Person(nome="Ada", cognome="Byron", email="ada@acme.it", customer_id=customer.id)
+        Person(
+            first_name="Ada",
+            last_name="Byron",
+            contact_points=points(email="ada@acme.it"),
+            customer_id=customer.id,
+        )
     )
     db_session.add(
         Person(
-            nome="Grace",
-            cognome="Hopper",
-            email="grace@acme.it",
+            first_name="Grace",
+            last_name="Hopper",
+            contact_points=points(email="grace@acme.it"),
             customer_id=customer.id,
             deleted_at=datetime.now(UTC),
         )
@@ -325,7 +336,7 @@ def test_a_customer_backfill_covers_the_people_who_work_there(db_session: Sessio
     fake.messages["daAda"] = _message("daAda", frm="ada@acme.it", when_ms=_ms(45))
     fake.messages["daInfo"] = _message("daInfo", frm="info@acme.it", when_ms=_ms(45))
     report = sync_service(db_session, fake).backfill(
-        "customer", customer.id, full=False, actor=actor_for(account)
+        "organization", customer.id, full=False, actor=actor_for(account)
     )
 
     assert report.messages_stored == 2
@@ -387,12 +398,12 @@ def test_backfill_on_an_entity_with_no_address_refuses_clearly(db_session: Sessi
     """Silence would be the worst answer: the user pressed a button, waited, and got a
     report of zero because there was never an address to look for."""
     account = connected_account(db_session)
-    customer = Customer(ragione_sociale="Acme", email=None)
+    customer = Organization(legal_name="Acme", contact_points=points(email=None))
     db_session.add(customer)
     db_session.flush()
     with pytest.raises(Conflict, match="nessun indirizzo"):
         sync_service(db_session, FakeGmail()).backfill(
-            "customer", customer.id, full=False, actor=actor_for(account)
+            "organization", customer.id, full=False, actor=actor_for(account)
         )
 
 
@@ -401,7 +412,7 @@ def test_backfill_on_an_unknown_entity_is_a_not_found(db_session: Session) -> No
     db_session.flush()
     with pytest.raises(NotFound):
         sync_service(db_session, FakeGmail()).backfill(
-            "customer", uuid4(), full=False, actor=actor_for(account)
+            "organization", uuid4(), full=False, actor=actor_for(account)
         )
 
 

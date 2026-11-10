@@ -1,0 +1,108 @@
+"""People (contacts) of a customer."""
+
+from collections.abc import Callable
+from typing import Any, cast
+from uuid import UUID
+
+from mcp.server import MCPServer
+
+from pigrocrm.core.db import SortDirection
+from pigrocrm.core.people.schemas import PersonListQuery
+from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
+from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.tools import (
+    people,
+)
+from pigrocrm_mcp.tools.params import BoundedLimit, OptionalContactPoints, PersonChanges
+
+
+def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:
+    # ---- people ----------------------------------------------------------
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def create_person(
+        first_name: str,
+        last_name: str | None = None,
+        role: str | None = None,
+        contact_points: OptionalContactPoints = None,
+        note: str | None = None,
+        customer_id: str | None = None,
+        custom_fields: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Create a person. `customer_id` is optional: a contact may not have a
+        customer yet. `note` is the first note (no date or author: the CRM signs it).
+        `contact_points`: emails, phones and LinkedIn profiles (see the server instructions).
+        """
+        return people.create(
+            context,
+            {
+                "first_name": first_name,
+                "last_name": last_name,
+                "role": role,
+                "contact_points": contact_points or [],
+                "note": note,
+                "customer_id": UUID(customer_id) if customer_id else None,
+                "custom_fields": custom_fields or {},
+            },
+        )
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def update_person(person_id: str, changes: PersonChanges) -> dict[str, Any]:
+        """Update a person. To detach it from the customer without assigning a new one, pass
+        `changes.detach = true` instead of `customer_id`.
+        """
+        return people.update(context, person_id, changes)
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def get_person(person_id: str) -> dict[str, Any]:
+        """Read a person, with the last 50 notes (`note`, newest first; `note_total`
+        counts them, all in `person://<id>`).
+        """
+        return people.get(context, person_id)
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def search_people(
+        search: str | None = None,
+        customer_id: str | None = None,
+        custom: dict[str, Any] | None = None,
+        limit: BoundedLimit = 50,
+        cursor: str | None = None,
+        sort: str | None = None,
+        # `str`, not a Literal -- see `search_organizations`.
+        dir: str = "asc",
+    ) -> dict[str, Any]:
+        """Search people by first name, last name or any email, phone or profile, optionally
+        within a customer. `sort`: `created_at`, `updated_at`, `last_name`.
+        """
+        return people.search(
+            context,
+            PersonListQuery(
+                search=search,
+                customer_id=UUID(customer_id) if customer_id else None,
+                custom=custom,
+                # cast: limit is `int | str` at runtime for the SDK-bypass reason
+                # documented on `BoundedLimit` in `tools/params.py`; the *ListQuery schema this
+                # feeds is what actually enforces (and coerces) "must be an int".
+                limit=cast(int, limit),
+                # An opaque string since slice 6 -- see `search_organizations`.
+                cursor=cursor,
+                sort=sort,
+                dir=cast(SortDirection, dir),
+            ),
+        )
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def archive_person(person_id: str) -> dict[str, str]:
+        """Archive a person (reversible with `restore_person`)."""
+        return people.archive(context, person_id)
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def restore_person(person_id: str) -> dict[str, Any]:
+        """Restore an archived person."""
+        return people.restore(context, person_id)

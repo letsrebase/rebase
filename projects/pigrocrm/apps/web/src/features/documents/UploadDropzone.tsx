@@ -9,6 +9,9 @@ interface Props {
   accept: string
   /** The file input's accessible name, for a caller that asks for one kind of file. */
   inputLabel?: string
+  /** Several files at once: the picker offers a multiple selection and the copy says
+   *  «i file». Off by default, which is what the documents tab asks for. */
+  multiple?: boolean
 }
 
 /**
@@ -20,7 +23,13 @@ interface Props {
  * does no type filtering of its own: the backend's `ALLOWED_CONTENT_TYPES` is the
  * authority, and a client-side second opinion is how the two start disagreeing.
  */
-export function UploadDropzone({ onFiles, busy, accept, inputLabel = 'Carica un documento' }: Props) {
+export function UploadDropzone({
+  onFiles,
+  busy,
+  accept,
+  multiple,
+  inputLabel = 'Carica un documento',
+}: Props) {
   const [over, setOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -49,14 +58,14 @@ export function UploadDropzone({ onFiles, busy, accept, inputLabel = 'Carica un 
     >
       <Upload aria-hidden className="mx-auto mb-2 h-6 w-6 text-muted-foreground" />
       <p className="text-sm text-muted-foreground">
-        {busy ? 'Caricamento…' : 'Trascina qui un file, oppure'}{' '}
+        {busy ? 'Caricamento…' : multiple ? 'Trascina qui i file, oppure' : 'Trascina qui un file, oppure'}{' '}
         {!busy && (
           <button
             type="button"
             className="underline underline-offset-2"
             onClick={() => inputRef.current?.click()}
           >
-            scegline uno
+            {multiple ? 'scegli i file' : 'scegline uno'}
           </button>
         )}
       </p>
@@ -65,6 +74,7 @@ export function UploadDropzone({ onFiles, busy, accept, inputLabel = 'Carica un 
         type="file"
         aria-label={inputLabel}
         accept={accept}
+        multiple={multiple}
         className="sr-only"
         disabled={busy}
         onChange={(event) => {

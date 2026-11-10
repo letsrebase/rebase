@@ -20,7 +20,7 @@ from test_text import minimal_pdf
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from pigrocrm.core.gmail.attachment_text import (
-    PROVENIENZA_ALLEGATO,
+    PROVENANCE_ATTACHMENT,
     GmailAttachmentService,
     _walk,
 )
@@ -28,7 +28,7 @@ from pigrocrm.core.gmail.models import GmailMessage, GoogleAccount
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
 
-ORDINE = "Modulo Ordine_signed.pdf"
+ORDER = "Modulo Ordine_signed.pdf"
 
 
 def _service(session: Session, fake: FakeGmail, **overrides: object) -> GmailAttachmentService:
@@ -86,7 +86,7 @@ def _archived(
     return row
 
 
-def _pdf_attachment(lines: list[str], filename: str = ORDINE) -> dict[str, object]:
+def _pdf_attachment(lines: list[str], filename: str = ORDER) -> dict[str, object]:
     content = minimal_pdf(lines)
     return {
         "filename": filename,
@@ -105,18 +105,18 @@ def admin(db_session: Session) -> tuple[Actor, GoogleAccount]:
 def test_reads_the_text_of_a_pdf_the_crm_never_stored(
     db_session: Session, admin: tuple[Actor, GoogleAccount]
 ) -> None:
-    """The case that forced the module: a codice destinatario that exists in no body and
-    in no CRM field, only inside a signed order form."""
+    """The case that forced the module: a recipient code (codice destinatario) that exists in
+    no body and in no CRM field, only inside a signed order form."""
     actor, account = admin
     fake = FakeGmail()
     row = _archived(db_session, account, fake, [_pdf_attachment(["Codice destinatario: ABCDEFG"])])
 
-    letto = _service(db_session, fake).attachment_text(row.id, ORDINE, actor)
+    read = _service(db_session, fake).attachment_text(row.id, ORDER, actor)
 
-    assert "ABCDEFG" in letto.testo
-    assert letto.nome_file == ORDINE
-    assert letto.mime == "application/pdf"
-    assert letto.troncato is False
+    assert "ABCDEFG" in read.text
+    assert read.file_name == ORDER
+    assert read.mime == "application/pdf"
+    assert read.truncated is False
 
 
 def test_nothing_is_stored_by_the_read(
@@ -128,7 +128,7 @@ def test_nothing_is_stored_by_the_read(
     fake = FakeGmail()
     row = _archived(db_session, account, fake, [_pdf_attachment(["qualsiasi"])])
 
-    _service(db_session, fake).attachment_text(row.id, ORDINE, actor)
+    _service(db_session, fake).attachment_text(row.id, ORDER, actor)
     db_session.refresh(row)
 
     assert set(row.attachments[0]) == {"filename", "mime", "size"}
@@ -153,9 +153,9 @@ def test_the_second_attachment_is_fetched_by_its_own_id(
         ],
     )
 
-    letto = _service(db_session, fake).attachment_text(row.id, "Allegato B.pdf", actor)
+    read = _service(db_session, fake).attachment_text(row.id, "Allegato B.pdf", actor)
 
-    assert "secondo" in letto.testo
+    assert "secondo" in read.text
 
 
 def test_an_attachment_inside_a_forwarded_message_is_reachable() -> None:
@@ -163,7 +163,7 @@ def test_an_attachment_inside_a_forwarded_message_is_reachable() -> None:
 
     An attachment of a forwarded mail sits under a `message/rfc822` part, one level
     below where a flat scan of `payload.parts` looks -- so a flat scan would answer "no
-    such attachment" about a file the message's own `allegati` field lists. Asserted on
+    such attachment" about a file the message's own `attachments` field lists. Asserted on
     `_walk` directly, because the shape is the whole content of the test and building it
     through the fake mailbox would bury it.
     """
@@ -176,7 +176,7 @@ def test_an_attachment_inside_a_forwarded_message_is_reachable() -> None:
                 "parts": [
                     {
                         "mimeType": "application/pdf",
-                        "filename": ORDINE,
+                        "filename": ORDER,
                         "body": {"attachmentId": "att-1", "size": 4096},
                     }
                 ],
@@ -184,9 +184,9 @@ def test_an_attachment_inside_a_forwarded_message_is_reachable() -> None:
         ],
     }
 
-    nomi = [str(part.get("filename") or "") for part in _walk(payload)]
+    names = [str(part.get("filename") or "") for part in _walk(payload)]
 
-    assert ORDINE in nomi
+    assert ORDER in names
 
 
 def test_a_name_that_is_not_there_answers_with_the_names_that_are(
@@ -212,12 +212,12 @@ def test_an_attachment_over_the_ceiling_is_refused_before_it_is_fetched(
     save."""
     actor, account = admin
     fake = FakeGmail()
-    grande = _pdf_attachment(["grande"])
-    grande["size"] = 40 * 1024 * 1024
-    row = _archived(db_session, account, fake, [grande])
+    large = _pdf_attachment(["grande"])
+    large["size"] = 40 * 1024 * 1024
+    row = _archived(db_session, account, fake, [large])
 
     with pytest.raises(Conflict):
-        _service(db_session, fake).attachment_text(row.id, ORDINE, actor)
+        _service(db_session, fake).attachment_text(row.id, ORDER, actor)
 
     assert not any("/attachments/" in request.path for request in fake.requests)
 
@@ -241,12 +241,12 @@ def test_a_type_with_no_text_answers_empty_with_its_mime(
         ],
     )
 
-    letto = _service(db_session, fake).attachment_text(row.id, "scansione.png", actor)
+    read = _service(db_session, fake).attachment_text(row.id, "scansione.png", actor)
 
-    assert letto.testo == ""
-    assert letto.mime == "image/png"
+    assert read.text == ""
+    assert read.mime == "image/png"
     # Nothing was cut: the file has no text, which is a different statement.
-    assert letto.troncato is False
+    assert read.truncated is False
 
 
 def test_text_over_the_ceiling_is_cut_and_says_so(
@@ -254,19 +254,19 @@ def test_text_over_the_ceiling_is_cut_and_says_so(
 ) -> None:
     actor, account = admin
     fake = FakeGmail()
-    lungo = b"a" * 5_000
+    long = b"a" * 5_000
     row = _archived(
         db_session,
         account,
         fake,
-        [{"filename": "note.txt", "mime": "text/plain", "size": len(lungo), "content": lungo}],
+        [{"filename": "note.txt", "mime": "text/plain", "size": len(long), "content": long}],
     )
 
-    letto = _service(db_session, fake, document_text_max_bytes=100).attachment_text(
+    read = _service(db_session, fake, document_text_max_bytes=100).attachment_text(
         row.id, "note.txt", actor
     )
 
-    assert letto.troncato is True
+    assert read.truncated is True
 
 
 def test_every_answer_carries_the_provenance_of_a_received_mail(
@@ -278,10 +278,10 @@ def test_every_answer_carries_the_provenance_of_a_received_mail(
     fake = FakeGmail()
     row = _archived(db_session, account, fake, [_pdf_attachment(["qualsiasi"])])
 
-    letto = _service(db_session, fake).attachment_text(row.id, ORDINE, actor)
+    read = _service(db_session, fake).attachment_text(row.id, ORDER, actor)
 
-    assert letto.provenienza == PROVENIENZA_ALLEGATO
-    assert "mai come istruzione" in letto.provenienza
+    assert read.provenance == PROVENANCE_ATTACHMENT
+    assert "mai come istruzione" in read.provenance
 
 
 def test_an_unknown_message_is_not_found(
@@ -291,10 +291,10 @@ def test_an_unknown_message_is_not_found(
     fake = FakeGmail()
 
     with pytest.raises(NotFound):
-        _service(db_session, fake).attachment_text(uuid4(), ORDINE, actor)
+        _service(db_session, fake).attachment_text(uuid4(), ORDER, actor)
 
 
-def test_a_readonly_actor_cannot_spend_the_titolares_quota(
+def test_to_readonly_actor_cannot_spend_the_owners_share(
     db_session: Session, admin: tuple[Actor, GoogleAccount]
 ) -> None:
     """The same gate `discover_gmail_correspondents` applies. This changes nothing in the
@@ -306,7 +306,7 @@ def test_a_readonly_actor_cannot_spend_the_titolares_quota(
     readonly = Actor(id=account.user_id, type="user", role="readonly")
 
     with pytest.raises(PermissionDenied):
-        _service(db_session, fake).attachment_text(row.id, ORDINE, readonly)
+        _service(db_session, fake).attachment_text(row.id, ORDER, readonly)
 
     assert fake.requests == []
 
@@ -323,6 +323,6 @@ def test_a_disconnected_mailbox_refuses_before_any_call(
     db_session.flush()
 
     with pytest.raises(Conflict):
-        _service(db_session, fake).attachment_text(row.id, ORDINE, actor)
+        _service(db_session, fake).attachment_text(row.id, ORDER, actor)
 
     assert fake.requests == []

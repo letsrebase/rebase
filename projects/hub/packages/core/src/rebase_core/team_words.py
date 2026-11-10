@@ -6,9 +6,9 @@ its own pair of maps: the word lives here once, the web copies it, and
 character at a time.
 """
 
-TEAM_REQUEST_STATE_LABELS = {"nuova": "Nuova", "contattata": "Contattata", "chiusa": "Chiusa"}
-TEAM_ORIGIN_LABELS = {"pubblico": "Pubblico", "cloud": "Cloud", "admin": "Admin"}
-TALENT_ANSWER_LABELS = {"si": "Sì", "no": "No"}
+TEAM_REQUEST_STATE_LABELS = {"new": "Nuova", "contacted": "Contattata", "closed": "Chiusa"}
+TEAM_ORIGIN_LABELS = {"public": "Pubblico", "cloud": "Cloud", "admin": "Admin"}
+TALENT_ANSWER_LABELS = {"yes": "Sì", "no": "No"}
 # A talent who has the availability mail and has not answered yet (REB-517); one who was
 # never mailed has no word at all, and the page shows the empty cell's dash.
 TALENT_WAITING_LABEL = "In attesa"
@@ -21,6 +21,6 @@ VETTED_LABEL = "Verificato"
 CLOUD_VETTED_LABEL = "Verificato da rebase"
 # A company request that came from the team builder's beta box, whose button opens the
 # company wizard with `?da=team-builder` (spec § 4.3): the origin as it lands in
-# `companies.origine`, and the word «Aziende» shows on its row.
+# `companies.origin`, and the word «Aziende» shows on its row.
 TEAM_BUILDER_ORIGIN = "team-builder"
 TEAM_BUILDER_ORIGIN_LABEL = "da team builder"

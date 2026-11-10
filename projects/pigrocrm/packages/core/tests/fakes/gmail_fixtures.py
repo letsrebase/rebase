@@ -18,7 +18,7 @@ from fakes.fake_gmail import FakeGmail
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
-from pigrocrm.core.gmail.crypto import seal
+from pigrocrm.core.crypto import seal
 from pigrocrm.core.gmail.drafts import EmailDraftService
 from pigrocrm.core.gmail.models import GoogleAccount
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
@@ -62,10 +62,10 @@ def connected_account(
     """
     user = User(
         email=f"user-{uuid4().hex[:8]}@example.it",
-        nome="Owner",
+        name="Owner",
         password_hash="x",
-        ruolo="admin",
-        attivo=True,
+        role="admin",
+        active=True,
     )
     session.add(user)
     session.flush()

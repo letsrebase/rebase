@@ -15,10 +15,11 @@ here: an agent may see which categories exist and which months are closed, and m
 change neither. A tool that contained business logic would be logic the web app cannot
 reach -- the failure this architecture exists to prevent. Every function here builds a
 core schema from caller-supplied data *inside* the guarded call, so a bad value becomes
-rendered guidance instead of a raw pydantic dump (see `tools/__init__.py`'s own note on
+rendered guidance instead of a raw pydantic dump (see `tools/params.py`'s own note on
 `WithJsonSchema` and `_guard`).
 """
 
+from datetime import date
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -30,8 +31,8 @@ from pigrocrm.core.timetracking.categories import CostCategoryService
 from pigrocrm.core.timetracking.costs import CostService
 from pigrocrm.core.timetracking.locks import PeriodLockService
 from pigrocrm.core.timetracking.schemas import (
-    ANNO_MAX,
-    ANNO_MIN,
+    YEAR_MAX,
+    YEAR_MIN,
     CostCreate,
     CostListQuery,
     CostUpdate,
@@ -45,14 +46,15 @@ from pigrocrm.core.timetracking.schemas import (
 from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm.core.timetracking.timer import TimerService
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.tools.changes import refuse_empty, refuse_nothing_given, report
 
-# `list_locks` takes no schema of its own -- `anno` goes straight into a `WHERE` -- so
+# `list_locks` takes no schema of its own -- `year` goes straight into a `WHERE` -- so
 # the year is validated here, inside the guarded call, against the same bounds
 # `PeriodLockCreate` declares. Through pydantic rather than a bare `int(...)` for the
 # reason `tools/documents.py::_NUMERO` states: `int("scorso")` would be rendered to the
 # agent as "non è un identificativo valido", and a non-numeric year reaching the query
 # would be a raw DataError instead of guidance.
-_ANNO: TypeAdapter[int] = TypeAdapter(Annotated[int, Field(ge=ANNO_MIN, le=ANNO_MAX)])
+_YEAR: TypeAdapter[int] = TypeAdapter(Annotated[int, Field(ge=YEAR_MIN, le=YEAR_MAX)])
 
 
 def log_time(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
@@ -64,16 +66,17 @@ def log_time(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
 
 
 def update_time_entry(context: McpContext, entry_id: str, data: dict[str, Any]) -> dict[str, Any]:
-    return (
-        TimeEntryService(context.session)
-        .update(UUID(entry_id), TimeEntryUpdate(**data), context.actor)
-        .model_dump(mode="json")
-    )
+    service = TimeEntryService(context.session)
+    identifier = UUID(entry_id)
+    changes = TimeEntryUpdate(**data)
+    refuse_empty(data)
+    before = service.get(identifier, context.actor)
+    return report(before, service.update(identifier, changes, context.actor))
 
 
 def archive_time_entry(context: McpContext, entry_id: str) -> dict[str, str]:
     TimeEntryService(context.session).soft_delete(UUID(entry_id), context.actor)
-    return {"status": "archiviata", "entry_id": entry_id}
+    return {"status": "archived", "entry_id": entry_id}
 
 
 def restore_time_entry(context: McpContext, entry_id: str) -> dict[str, Any]:
@@ -112,11 +115,14 @@ def start_timer(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
 
 
 def update_timer(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
-    return (
-        TimerService(context.session)
-        .update(TimerUpdate(**data), context.actor)
-        .model_dump(mode="json")
-    )
+    # `None` means «leave it» on this tool, so a call that names nothing has nothing to say.
+    refuse_nothing_given(**data)
+    service = TimerService(context.session)
+    changes = TimerUpdate(**data)
+    running = service.current(context.actor)
+    # With no timer running the service's own refusal is the answer, and it comes before
+    # there is anything to compare.
+    return report(running, service.update(changes, context.actor))
 
 
 def stop_timer(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
@@ -127,7 +133,7 @@ def stop_timer(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
 
 def discard_timer(context: McpContext) -> dict[str, str]:
     TimerService(context.session).discard(context.actor)
-    return {"status": "scartato"}
+    return {"status": "discarded"}
 
 
 def get_deal_time_summary(context: McpContext, deal_id: str) -> dict[str, Any]:
@@ -155,16 +161,17 @@ def create_cost(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
 
 
 def update_cost(context: McpContext, cost_id: str, data: dict[str, Any]) -> dict[str, Any]:
-    return (
-        CostService(context.session)
-        .update(UUID(cost_id), CostUpdate(**data), context.actor)
-        .model_dump(mode="json")
-    )
+    service = CostService(context.session)
+    identifier = UUID(cost_id)
+    changes = CostUpdate(**data)
+    refuse_empty(data)
+    before = service.get(identifier, context.actor)
+    return report(before, service.update(identifier, changes, context.actor))
 
 
 def archive_cost(context: McpContext, cost_id: str) -> dict[str, str]:
     CostService(context.session).soft_delete(UUID(cost_id), context.actor)
-    return {"status": "archiviato", "cost_id": cost_id}
+    return {"status": "archived", "cost_id": cost_id}
 
 
 def restore_cost(context: McpContext, cost_id: str) -> dict[str, Any]:
@@ -185,13 +192,13 @@ def list_costs(context: McpContext, query: CostListQuery) -> dict[str, Any]:
     }
 
 
-def list_period_locks(context: McpContext, anno: int | str | None) -> dict[str, Any]:
+def list_period_locks(context: McpContext, year: int | str | None) -> dict[str, Any]:
     """The months already closed. A read, and the answer to the refusal `log_time`
     raises: that `Conflict` names the one month it hit, which leaves an agent that has a
     week of entries to write guessing at the rest. `close_period`/`reopen_period` stay
     absent from this module -- seeing which months are closed is not deciding it."""
     locks = PeriodLockService(context.session).list_locks(
-        anno=_ANNO.validate_python(anno) if anno is not None else None
+        year=_YEAR.validate_python(year) if year is not None else None
     )
     return {"locks": [lock.model_dump(mode="json") for lock in locks]}
 
@@ -204,11 +211,12 @@ def list_cost_categories(context: McpContext, include_archived: bool) -> dict[st
 
 
 # ---- analytics ------------------------------------------------------------------
-# Six reads, and only six -- REB-373 added the fifth and sixth (ceiling headroom and
-# its simulator), the reason the comment now says "six" rather than "four": a count
+# Seven reads, and only seven -- REB-373 added the fifth and sixth (ceiling headroom and
+# its simulator) and REB-757 the seventh (the year register), the reason the comment
+# now says "seven" rather than "four": a count
 # that is never updated is worse than no count. `bind_time_to_invoice` and
 # `get_fiscal_estimate` are absent by decision, not by omission -- see
-# `tools/__init__.py`'s own block comment for the two (different) reasons, and
+# `tools/families/analytics.py`'s own note for the two (different) reasons, and
 # `apps/mcp/tests/test_mcp_invoice_ban.py`, which scans every file in this package
 # and fails the build if either method is ever called from one of them, whatever
 # the tool that reaches it is called. Ceiling headroom and its simulator are absent
@@ -227,7 +235,9 @@ def get_deal_pnl(context: McpContext, deal_id: str) -> dict[str, Any]:
 
 def get_period_pnl(context: McpContext, query: PeriodPnlQuery) -> dict[str, Any]:
     return (
-        AnalyticsService(context.session).period_pnl(query, context.actor).model_dump(mode="json")
+        AnalyticsService(context.session)
+        .period_pnl(query, context.actor, context.modules)
+        .model_dump(mode="json")
     )
 
 
@@ -240,33 +250,73 @@ def get_budget_vs_actual(context: McpContext, query: BudgetQuery) -> dict[str, A
 
 
 def get_unbilled_backlog(context: McpContext) -> dict[str, Any]:
-    return AnalyticsService(context.session).unbilled_backlog(context.actor).model_dump(mode="json")
+    return (
+        AnalyticsService(context.session)
+        .unbilled_backlog(context.actor, modules=context.modules)
+        .model_dump(mode="json")
+    )
 
 
 def get_ceiling_headroom(
-    context: McpContext, anno: int | str, azienda_id: UUID | None = None
+    context: McpContext, year: int | str, legal_entity_id: UUID | None = None
 ) -> dict[str, Any]:
     """The headroom under every active ceiling of the configured pack (REB-352 §1.4),
-    on the year's real paid revenue. Of one azienda (REB-631): the only one when none
+    on the year's real paid revenue. Of one legal entity (REB-631): the only one when none
     is named, required by name otherwise."""
     return (
         AnalyticsService(context.session)
-        .ceiling_headroom(_ANNO.validate_python(anno), context.actor, azienda_id)
+        .ceiling_headroom(_YEAR.validate_python(year), context.actor, legal_entity_id)
         .model_dump(mode="json")
     )
 
 
 def simulate_ceiling(
     context: McpContext,
-    anno: int | str,
+    year: int | str,
     query: CeilingSimulationQuery,
-    azienda_id: UUID | None = None,
+    legal_entity_id: UUID | None = None,
 ) -> dict[str, Any]:
     """The "would this fit?" simulator (REB-352 §1.4): the synthetic addition `query`
     carries, re-evaluated against every active ceiling without saving anything. The
-    azienda resolves as in `get_ceiling_headroom` (REB-631)."""
+    legal entity resolves as in `get_ceiling_headroom` (REB-631)."""
     return (
         AnalyticsService(context.session)
-        .simulate_ceiling(_ANNO.validate_python(anno), query, context.actor, azienda_id)
+        .simulate_ceiling(_YEAR.validate_python(year), query, context.actor, legal_entity_id)
+        .model_dump(mode="json")
+    )
+
+
+def get_year_overview(
+    context: McpContext, year: int | str, legal_entity_id: UUID | None = None
+) -> dict[str, Any]:
+    """The year of one legal entity as the accountant reads it (REB-757): revenue by regime
+    and tax treatment, and the register of issued invoices with the stamp duty and the
+    social security surcharge apart. The file is the web app's: an MCP tool returns no bytes."""
+    return (
+        AnalyticsService(context.session)
+        .year_overview(_YEAR.validate_python(year), context.actor, legal_entity_id)
+        .model_dump(mode="json")
+    )
+
+
+_DATE: TypeAdapter[date | None] = TypeAdapter(date | None)
+
+
+def get_days_analysis(
+    context: McpContext,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    legal_entity_id: UUID | None = None,
+) -> dict[str, Any]:
+    """The days of a period by month and state, the realised day rate and the trend of
+    days worked without approval (REB-756)."""
+    return (
+        AnalyticsService(context.session)
+        .days_analysis(
+            context.actor,
+            _DATE.validate_python(date_from),
+            _DATE.validate_python(date_to),
+            legal_entity_id,
+        )
         .model_dump(mode="json")
     )

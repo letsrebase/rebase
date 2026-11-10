@@ -15,7 +15,13 @@
  * review shows «—» for it and the person picks it again if they want to. A storage
  * that refuses (private mode, quota, a browser with it off) refuses quietly: the form
  * still works, it just forgets.
+ *
+ * A wizard whose key was renamed (`rebase.wizard.azienda` became `rebase.wizard.company`
+ * in the 2026-11 rename) passes the old key as `previousKey`: a draft is read from it for
+ * 30 days (see `lib/legacy.ts`), moved to the new key, and the old one dropped.
  */
+
+import { readWithFallback } from '@/lib/legacy'
 
 export const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -51,9 +57,35 @@ function blank(value: Record<string, unknown>): boolean {
   )
 }
 
-/** The draft under `key`, or `null` when there is none, it expired, or it cannot be read. */
-export function loadDraft<T>(key: string): Draft<T> | null {
-  const raw = storage()?.getItem(key)
+/** The answers of a draft saved before the 2026-11 rename carry the Italian field names
+ *  (`nome`, `remoto`: `ibrido`, ...): each is given its English name, and an answer whose
+ *  name nobody knows is dropped rather than spread into the form and sent. */
+export interface DraftRenames {
+  /** The current field names: the draft's keys not in it and not in `fields` are dropped. */
+  known: readonly string[]
+  /** Old field name to the current one. */
+  fields: Record<string, string>
+}
+
+/** The value of an option that was Italian in a draft's `remote` answer. */
+const REMOTE_OPTIONS: Record<string, string> = { 'remoto': 'remote', 'ibrido': 'hybrid', 'in_sede': 'on_site' }
+
+function translateDraft(value: Record<string, unknown>, renames: DraftRenames): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [name, item] of Object.entries(value)) {
+    const current = renames.known.includes(name) ? name : renames.fields[name]
+    if (!current) continue
+    // A current answer wins over an old one of the same field.
+    if (current !== name && current in value) continue
+    out[current] = current === 'remote' && typeof item === 'string' ? (REMOTE_OPTIONS[item] ?? item) : item
+  }
+  return out
+}
+
+/** The draft under `key` (or, for 30 days, under the `previousKey` it had before the
+ *  rename), or `null` when there is none, it expired, or it cannot be read. */
+export function loadDraft<T>(key: string, previousKey?: string, renames?: DraftRenames): Draft<T> | null {
+  const raw = previousKey ? readWithFallback(storage(), key, previousKey) : storage()?.getItem(key)
   if (!raw) return null
   try {
     const stored = JSON.parse(raw) as Partial<Stored>
@@ -67,10 +99,10 @@ export function loadDraft<T>(key: string): Draft<T> | null {
       return null
     }
     if (Date.now() - stored.savedAt > DRAFT_TTL_MS) {
-      clearDraft(key)
+      clearDraft(key, previousKey)
       return null
     }
-    return { value: stored.value as Partial<T>, index: stored.index }
+    return { value: (renames ? translateDraft(stored.value, renames) : stored.value) as Partial<T>, index: stored.index }
   } catch {
     return null
   }
@@ -93,9 +125,10 @@ export function saveDraft<T extends object>(key: string, value: T, index: number
   }
 }
 
-export function clearDraft(key: string): void {
+export function clearDraft(key: string, previousKey?: string): void {
   try {
     storage()?.removeItem(key)
+    if (previousKey) storage()?.removeItem(previousKey)
   } catch {
     /* nothing to forget, or nowhere to forget it from */
   }

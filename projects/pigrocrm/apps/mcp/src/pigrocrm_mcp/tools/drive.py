@@ -34,6 +34,7 @@ from mcp.server import MCPServer
 
 from pigrocrm.core.config import Settings
 from pigrocrm.core.drive.account import GoogleDriveAccountService
+from pigrocrm_mcp.annotations import READ_ONLY
 from pigrocrm_mcp.context import McpContext
 
 
@@ -44,17 +45,13 @@ def register(
     `gmail_tools.register`. Not registered means not listed and not callable: absent,
     not broken, exactly as `tools/gmail.py`'s own docstring puts it."""
 
-    @mcp.tool()
+    @mcp.tool(annotations=READ_ONLY)
     @guard
     def describe_drive_account() -> dict[str, Any]:
-        """Stato della credenziale Google Drive collegata: così diagnostichi invece di
-        ritentare.
-
-        `banner` distingue le stesse quattro situazioni di `describe_gmail_account` --
-        revocato, in scadenza, scaduto, autorizzazione mancante -- e nessuna delle
-        quattro si risolve riprovando: ricollegare Drive lo fa una persona, da
-        Impostazioni → Drive. Nessun account collegato non è un errore: è un'
-        installazione che non ha ancora acceso Drive.
+        """State of the connected Google Drive credential. `banner` tells revoked, expiring,
+        expired, missing authorization apart: none is fixed by retrying, a person reconnects
+        Drive from «Impostazioni → Drive». No connected account is not an
+        error.
         """
         health = GoogleDriveAccountService(context.session, settings=settings).health(context.actor)
         return health.model_dump(mode="json")

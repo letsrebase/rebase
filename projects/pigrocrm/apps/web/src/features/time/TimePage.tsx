@@ -14,8 +14,8 @@ import { WeekGrid } from './WeekGrid'
 import { shiftWeek, weekDays } from './week'
 
 const TABS = [
-  { id: 'registro', label: 'Registro' },
-  { id: 'settimana', label: 'Settimana' },
+  { id: 'register', label: 'Registro' },
+  { id: 'week', label: 'Settimana' },
 ] as const
 type TabId = (typeof TABS)[number]['id']
 
@@ -36,18 +36,18 @@ export function TimePage() {
   const canWrite = useCanWrite()
   const userId = user?.id
   const [anchor, setAnchor] = useState(() => new Date())
-  const [tab, setTab] = useState<TabId>('registro')
+  const [tab, setTab] = useState<TabId>('register')
   const days = useMemo(() => weekDays(anchor), [anchor])
 
   const entries = useTimeEntries(
-    { user_id: userId, da: days[0]?.iso, a: days[6]?.iso },
+    { user_id: userId, from: days[0]?.iso, to: days[6]?.iso },
     // See `useTimeEntries`' own docstring: an unfiltered list is answered, for an admin,
     // with the whole team's hours, so this must not fire before the session is known.
     { enabled: userId !== undefined },
   )
   const deals = useDeals()
   const dealNames = useMemo(
-    () => new Map((deals.data?.items ?? []).map((deal) => [deal.id, deal.nome])),
+    () => new Map((deals.data?.items ?? []).map((deal) => [deal.id, deal.name])),
     [deals.data],
   )
 
@@ -104,7 +104,7 @@ export function TimePage() {
         Caricamento…
       </p>
     )
-  } else if (tab === 'registro') {
+  } else if (tab === 'register') {
     body = (
       <>
         <TimerBar deals={deals.data.items} userId={userId} canWrite={canWrite} />

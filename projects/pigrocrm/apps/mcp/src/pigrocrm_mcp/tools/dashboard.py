@@ -14,22 +14,19 @@ body runs. A caller wiring `build_server` with a plain `lambda: shared_session` 
 what this package's own `server` fixture does -- gets the loud `RuntimeError` instead of a
 wrong number.
 
-Registered by Task B8 rather than by Task B12, which owns 6B's surface, for the reason
-`tools/__init__.py` gives beside `describe_automations`: the moment the service exists,
-both coverage tests demand that each of its public methods be a tool or a named exclusion,
-and deferring one to a later task is exactly the placeholder Task A11 cleared out of the
-taxonomy.
+A dashboard method is a tool the moment the service exists: both coverage tests demand
+that each public method of a service be a tool or a named exclusion.
 """
 
 from typing import Any
 from uuid import UUID
 
-from pigrocrm.core.dashboard.schemas import PeriodoQuery
+from pigrocrm.core.dashboard.schemas import PeriodQuery
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm_mcp.context import McpContext
 
 
-def get_commercial_dashboard(context: McpContext, query: PeriodoQuery) -> dict[str, Any]:
+def get_commercial_dashboard(context: McpContext, query: PeriodQuery) -> dict[str, Any]:
     return (
         DashboardService(context.session)
         .get_commercial_dashboard(query, context.actor)
@@ -37,7 +34,7 @@ def get_commercial_dashboard(context: McpContext, query: PeriodoQuery) -> dict[s
     )
 
 
-def get_economic_dashboard(context: McpContext, query: PeriodoQuery) -> dict[str, Any]:
+def get_economic_dashboard(context: McpContext, query: PeriodQuery) -> dict[str, Any]:
     """Registered by Task C4 rather than by Task C7, which owns 6C's surface, for the same
     reason Task B8 registered `get_commercial_dashboard` above: the moment the service
     method exists, both coverage tests demand it be a tool or a named exclusion, and "a
@@ -47,13 +44,13 @@ def get_economic_dashboard(context: McpContext, query: PeriodoQuery) -> dict[str
     """
     return (
         DashboardService(context.session)
-        .get_economic_dashboard(query, context.actor)
+        .get_economic_dashboard(query, context.actor, context.modules)
         .model_dump(mode="json")
     )
 
 
 def get_operational_dashboard(
-    context: McpContext, azienda_id: UUID | None = None
+    context: McpContext, legal_entity_id: UUID | None = None
 ) -> dict[str, Any]:
     """No query object, because §6's dashboard takes no period: its figures are the current
     week and a backlog, which are the two things that make no sense in the past.
@@ -62,7 +59,7 @@ def get_operational_dashboard(
     C7 must not register a second `get_operational_dashboard`.**
 
     `DashboardService(context.session)` with no second argument reads the *environment's*
-    `concentrazione_soglia_preferita` for the fourth signal (REB-371), not a space's own
+    `preferred_concentration_threshold` for the fourth signal (REB-371), not a space's own
     `space_settings` override -- `McpContext` carries no `Settings` at all, so every other
     settings-dependent service reached through this transport already has the same gap
     (`InvoiceService(context.session, context.storage)` a few files over reads its
@@ -72,19 +69,19 @@ def get_operational_dashboard(
     """
     return (
         DashboardService(context.session)
-        .get_operational_dashboard(context.actor, azienda_id)
+        .get_operational_dashboard(context.actor, legal_entity_id, modules=context.modules)
         .model_dump(mode="json")
     )
 
 
 def get_receivables_dashboard(
-    context: McpContext, azienda_id: UUID | None = None
+    context: McpContext, legal_entity_id: UUID | None = None
 ) -> dict[str, Any]:
     """No period, like the operational one: a receivable is owed today whatever window the
-    reader has in mind (slice 8 §2, REB-329). `azienda_id` narrows it to one azienda
+    reader has in mind (slice 8 §2, REB-329). `legal_entity_id` narrows it to one legal entity
     (REB-631, spec 2026-10-03 §7), like the three tools beside it."""
     return (
         DashboardService(context.session)
-        .get_receivables_dashboard(context.actor, azienda_id)
+        .get_receivables_dashboard(context.actor, legal_entity_id)
         .model_dump(mode="json")
     )

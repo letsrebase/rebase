@@ -4,7 +4,7 @@ is ever consulted.
 The whole design turns on one question: what happens to last quarter's margin when
 you raise a rate today? The answer is "nothing", and not out of discipline. A rate is
 resolved exactly once, at write time, and copied onto the row; from then on no report
-reads `deals.tariffa_oraria` or `users.tariffa_oraria_default` at all. The row is the
+reads `deals.hourly_rate` or `users.default_hourly_rate` at all. The row is the
 authority on itself, always and only -- the same shape as `invoices.snapshot` (slice 3
 §8.3), applied to the smallest unit.
 
@@ -14,7 +14,7 @@ with a history, an entry *back-dated* today would read the rate of the period it
 and change a total somebody has already read, so the value would still have to be
 frozen -- and then the history is a second place the same truth can diverge. It turns
 every read into a temporal join whose validity intervals are editable, so correcting a
-`valido_da` silently rewrites the margins of every period it covers. And the question
+`valid_from` silently rewrites the margins of every period it covers. And the question
 it would answer -- "when did Marco's rate change?" -- is already answered better by
 the timeline (§4.5), which is also the only place that says *who* changed it. The same
 reasoning slice 3 §7.1 used to refuse historicising `fiscal_profile`.
@@ -23,7 +23,7 @@ There is deliberately no "this person's rate on this deal" level. It is the four
 level every system of this kind eventually grows, and it stays out because nobody
 exercises it today: the audience is a freelancer or a two-person studio, where the
 rate is set by the contract with the client (level `deal`) and the exception is
-written on the single entry (level `manuale`). The extension path, if it is ever
+written on the single entry (level `manual`). The extension path, if it is ever
 needed, is a `deal_user_rates(deal_id, user_id, tariffa)` table inserted between
 levels 1 and 2 -- no new column on any existing table, and the freezing above makes it
 invisible to every row already written.
@@ -43,10 +43,10 @@ from pigrocrm.core.timetracking.schemas import CostOrigin, RateDescription, Rate
 
 @dataclass(frozen=True)
 class ResolvedRates:
-    tariffa: Decimal | None
-    tariffa_origine: RateOrigin
-    costo: Decimal | None
-    costo_origine: CostOrigin
+    rate: Decimal | None
+    rate_source: RateOrigin
+    cost: Decimal | None
+    cost_source: CostOrigin
 
 
 class RateResolver:
@@ -84,8 +84,8 @@ class RateResolver:
         *,
         deal_id: UUID,
         user_id: UUID,
-        tariffa_esplicita: Decimal | None = None,
-        costo_esplicito: Decimal | None = None,
+        explicit_rate: Decimal | None = None,
+        cost_explicit: Decimal | None = None,
     ) -> ResolvedRates:
         """Stops at the first level that yields a value.
 
@@ -98,35 +98,35 @@ class RateResolver:
         deal = self._deal(deal_id)
         user = self._user(user_id)
 
-        tariffa: Decimal | None
-        tariffa_origine: RateOrigin
-        if tariffa_esplicita is not None:
-            tariffa, tariffa_origine = tariffa_esplicita, "manuale"
-        elif deal.tariffa_oraria is not None:
-            tariffa, tariffa_origine = deal.tariffa_oraria, "deal"
-        elif user.tariffa_oraria_default is not None:
-            tariffa, tariffa_origine = user.tariffa_oraria_default, "utente"
+        rate: Decimal | None
+        rate_source: RateOrigin
+        if explicit_rate is not None:
+            rate, rate_source = explicit_rate, "manual"
+        elif deal.hourly_rate is not None:
+            rate, rate_source = deal.hourly_rate, "deal"
+        elif user.default_hourly_rate is not None:
+            rate, rate_source = user.default_hourly_rate, "user"
         else:
             # `None`, never `0.00`. A silent zero would say "this work was free",
             # which is a lie that sums; a global default would be a number nobody
             # chose quietly becoming everybody's rate. In the P&L these hours appear
             # in the hour count, are excluded from the accrued value and from the
             # margin, and are named on screen as "ore senza tariffa" with their count.
-            tariffa, tariffa_origine = None, "assente"
+            rate, rate_source = None, "absent"
 
-        costo: Decimal | None
-        costo_origine: CostOrigin
-        if costo_esplicito is not None:
-            costo, costo_origine = costo_esplicito, "manuale"
-        elif user.costo_orario_default is not None:
-            costo, costo_origine = user.costo_orario_default, "utente"
+        cost: Decimal | None
+        cost_source: CostOrigin
+        if cost_explicit is not None:
+            cost, cost_source = cost_explicit, "manual"
+        elif user.default_hourly_cost is not None:
+            cost, cost_source = user.default_hourly_cost, "user"
         else:
-            costo, costo_origine = None, "assente"
-        # No `deal` branch above, by design: `costo_origine` never takes that value,
+            cost, cost_source = None, "absent"
+        # No `deal` branch above, by design: `cost_source` never takes that value,
         # which is why `CostOrigin` is a narrower Literal than `RateOrigin` rather
         # than the same one with a value nobody writes.
 
-        return ResolvedRates(tariffa, tariffa_origine, costo, costo_origine)
+        return ResolvedRates(rate, rate_source, cost, cost_source)
 
     def describe(self, *, deal_id: UUID, user_id: UUID) -> RateDescription:
         """What a new entry would freeze right now, without writing one. Backs the
@@ -135,8 +135,8 @@ class RateResolver:
         return RateDescription(
             deal_id=deal_id,
             user_id=user_id,
-            tariffa=resolved.tariffa,
-            tariffa_origine=resolved.tariffa_origine,
-            costo=resolved.costo,
-            costo_origine=resolved.costo_origine,
+            rate=resolved.rate,
+            rate_source=resolved.rate_source,
+            cost=resolved.cost,
+            cost_source=resolved.cost_source,
         )

@@ -21,15 +21,16 @@ function ok(data: unknown) {
   return { data, response: new Response(null, { status: 200 }) } as never
 }
 
-const ADMIN = { id: 'u1', email: 'a@p.it', nome: 'Admin', ruolo: 'admin', attivo: true }
-const DEMOTED = { ...ADMIN, ruolo: 'collaboratore' }
+const ADMIN = { id: 'u1', email: 'a@p.it', name: 'Admin', role: 'admin', active: true }
+const DEMOTED = { ...ADMIN, role: 'collaborator' }
 
 function Probe() {
   const isAdmin = useIsAdmin()
-  const { login, logout } = useAuth()
+  const { login, logout, isError } = useAuth()
   return (
     <div>
       {isAdmin ? 'admin' : 'not-admin'}
+      {isError ? <span>session-unknown</span> : null}
       {/* `AppShell` fires `void logout()`; here the rejection is caught so a refused
           logout is asserted on rather than reported as an unhandled one. */}
       <button onClick={() => void logout().catch(() => undefined)}>Esci</button>
@@ -88,6 +89,29 @@ describe('AuthProvider — session freshness', () => {
     expect(await screen.findByText('not-admin')).toBeInTheDocument()
   })
 
+  it('keeps the person signed in when a poll fails for a reason that is not a 401', async () => {
+    vi.mocked(api.GET).mockReturnValueOnce(Promise.resolve(ok(ADMIN)))
+    renderProbe()
+    expect(await screen.findByText('admin')).toBeInTheDocument()
+
+    // The API restarting behind the proxy: a 502 says nothing about the session.
+    vi.mocked(api.GET).mockReturnValue(
+      Promise.resolve({ error: { detail: 'Bad gateway' }, response: new Response(null, { status: 502 }) } as never),
+    )
+    await vi.advanceTimersByTimeAsync(40_000)
+
+    expect(screen.getByText('admin')).toBeInTheDocument()
+    expect(resetUser).not.toHaveBeenCalled()
+  })
+
+  it('reports an unknown session, not a signed-out one, when the first read fails without a 401', async () => {
+    vi.mocked(api.GET).mockReturnValue(
+      Promise.resolve({ error: { detail: 'Bad gateway' }, response: new Response(null, { status: 502 }) } as never),
+    )
+    renderProbe()
+    expect(await screen.findByText('session-unknown', {}, { timeout: 10_000 })).toBeInTheDocument()
+  })
+
   it('does not poll before a session exists, so the login page does not hammer the endpoint pre-auth', async () => {
     vi.mocked(api.GET).mockReturnValue(
       Promise.resolve({ error: { detail: 'Autenticazione richiesta' }, response: new Response(null, { status: 401 }) } as never),
@@ -143,10 +167,10 @@ describe('AuthProvider — who PostHog sees', () => {
     expect(await screen.findByText('admin')).toBeInTheDocument()
 
     expect(identifyUser).toHaveBeenCalledTimes(1)
-    expect(identifyUser).toHaveBeenCalledWith('u1', { email: 'a@p.it', nome: 'Admin', ruolo: 'admin' })
+    expect(identifyUser).toHaveBeenCalledWith('u1', { email: 'a@p.it', name: 'Admin', role: 'admin' })
     // jsdom's page lives at `/`, which is the root installation, not a space.
     expect(identifyGroup).toHaveBeenCalledTimes(1)
-    expect(identifyGroup).toHaveBeenCalledWith('spazio', 'root')
+    expect(identifyGroup).toHaveBeenCalledWith('space', 'root')
 
     // The thirty-second re-read answers the same person as a new object.
     await vi.advanceTimersByTimeAsync(30_000)

@@ -11,11 +11,12 @@ import json
 from collections.abc import Iterator
 
 import pytest
+from api_responses import ok
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from rebase_api.ratelimit import SIGNUPS_PER_MINUTE
+from rebase_api.ratelimit import RETRY_AFTER_SECONDS, SIGNUPS_PER_MINUTE
 from rebase_api.routers import signups as signups_router
 from rebase_core.config import Settings, get_settings
 from rebase_core.conversions import hashed_email
@@ -24,7 +25,7 @@ from rebase_core.conversions import hashed_email
 def _row(session: Session, email: str) -> tuple[str | None, str | None, str | None]:
     return tuple(  # type: ignore[return-value]
         session.execute(
-            text("SELECT nome, cognome, linkedin_url FROM signups WHERE email = :email"),
+            text("SELECT first_name, last_name, linkedin_url FROM signups WHERE email = :email"),
             {"email": email},
         ).one()
     )
@@ -32,7 +33,7 @@ def _row(session: Session, email: str) -> tuple[str | None, str | None, str | No
 
 def _body(email: str, **extra: object) -> dict[str, object]:
     """What the landing posts: the three required answers, plus whatever the test adds."""
-    return {"email": email, "nome": "Ada", "cognome": "Lovelace", **extra}
+    return {"email": email, "first_name": "Ada", "last_name": "Lovelace", **extra}
 
 
 def test_a_visitor_with_no_account_can_sign_up(client: TestClient, api_session: Session) -> None:
@@ -67,7 +68,8 @@ def test_posting_someone_elses_address_discloses_nothing_about_them(
         json=_body("ada@studio.it", linkedin_url="https://www.linkedin.com/in/ada"),
     )
     probe = client.post(
-        "/api/community/signups", json={"email": "ada@studio.it", "nome": "x", "cognome": "y"}
+        "/api/community/signups",
+        json={"email": "ada@studio.it", "first_name": "x", "last_name": "y"},
     )
     assert (probe.status_code, probe.json()) == (first.status_code, first.json())
     assert "Lovelace" not in probe.text and "linkedin" not in probe.text
@@ -108,13 +110,14 @@ def test_the_422_names_the_field_it_refused_so_the_form_can_point_at_it(
 
 def test_too_many_signups_from_one_client_are_refused_in_italian(
     client: TestClient,
+    strict_rate_limit: None,
 ) -> None:
     for index in range(SIGNUPS_PER_MINUTE):
         accepted = client.post("/api/community/signups", json=_body(f"ada{index}@studio.it"))
         assert accepted.status_code == 201, accepted.text
     refused = client.post("/api/community/signups", json=_body("ancora@studio.it"))
     assert refused.status_code == 429
-    assert refused.headers["Retry-After"] == "60"
+    assert refused.headers["Retry-After"] == str(RETRY_AFTER_SECONDS)
     assert "Troppe richieste" in refused.json()["detail"]
 
 
@@ -124,7 +127,7 @@ def test_a_signup_without_a_name_is_a_422(client: TestClient) -> None:
     # FastAPI's own request-validation shape, the one the form's field highlighting
     # reads .
     missing = {error["loc"][-1] for error in response.json()["detail"]}
-    assert {"nome", "cognome"} <= missing
+    assert {"first_name", "last_name"} <= missing
 
 
 def test_a_profile_that_is_not_on_linkedin_is_a_422_not_a_row(
@@ -140,7 +143,7 @@ def test_a_profile_that_is_not_on_linkedin_is_a_422_not_a_row(
 def test_the_same_address_again_answers_exactly_the_same_thing(
     client: TestClient, api_session: Session
 ) -> None:
-    """One row, two identical successes. It used to be 201 then 200 with `nuova`, which
+    """One row, two identical successes. It used to be 201 then 200 with `new`, which
     told any caller whether an address was already on the list."""
     first = client.post("/api/community/signups", json=_body("ada@studio.it"))
     second = client.post("/api/community/signups", json=_body("ADA@studio.it"))
@@ -206,7 +209,7 @@ def test_the_rate_limit_key_is_the_address_nginx_saw_not_the_one_the_client_wrot
     assert _client_key(req({"X-Forwarded-For": "1.1.1.1, 203.0.113.9"})) == "203.0.113.9"
     assert _client_key(req({"X-Forwarded-For": "forged-value, 203.0.113.9"})) == "203.0.113.9"
     assert _client_key(req({})) == "127.0.0.1"
-    assert _client_key(req({}, client=None)) == "sconosciuto"
+    assert _client_key(req({}, client=None)) == "unknown"
 
 
 # --- the ad conversion ------------------------------------------------------------------
@@ -272,7 +275,8 @@ def test_a_signup_measures_one_conversion_with_the_id_the_browser_used(
     client: TestClient, api_session: Session, pixel: RecordingHttp
 ) -> None:
     response = client.post(
-        "/api/community/signups", json=_body("ada@studio.it", pixel_event_id=EVENT_ID)
+        "/api/community/signups",
+        json=_body("ada@studio.it", pixel_event_id=EVENT_ID, pixel_consent=True),
     )
 
     assert response.status_code == 201, response.text
@@ -294,7 +298,7 @@ def test_the_click_identifier_and_the_browser_cookie_reach_the_event(
     server event is a conversion the platform cannot attribute to a click."""
     response = client.post(
         "/api/community/signups",
-        json=_body("ada@studio.it", pixel_event_id=EVENT_ID, oppref="clic-123"),
+        json=_body("ada@studio.it", pixel_event_id=EVENT_ID, oppref="clic-123", pixel_consent=True),
         headers={
             # Sent as a header rather than through the client's cookie jar: the jar
             # applies its own domain and Secure policy, and what is under test is the
@@ -318,12 +322,12 @@ def test_the_click_identifier_and_the_browser_cookie_reach_the_event(
 def test_an_address_the_proxy_could_not_name_is_left_out_rather_than_invented(
     client: TestClient, pixel: RecordingHttp
 ) -> None:
-    """`_client_key` answers `"sconosciuto"` when there is no address to be had, which
+    """`client_key` answers `"unknown"` when there is no address to be had, which
     is fine for a rate-limit bucket and is not an IP. Forwarding it would put a word
     where a third party expects an address."""
     response = client.post(
         "/api/community/signups",
-        json=_body("ada@studio.it", pixel_event_id=EVENT_ID),
+        json=_body("ada@studio.it", pixel_event_id=EVENT_ID, pixel_consent=True),
         headers={"X-Real-IP": "non-un-indirizzo"},
     )
 
@@ -334,7 +338,13 @@ def test_an_address_the_proxy_could_not_name_is_left_out_rather_than_invented(
 def test_the_subscribers_address_does_not_travel(client: TestClient, pixel: RecordingHttp) -> None:
     """Not raw, not hashed. The installation has not asked for it -- and pasting a pixel
     id must not be what starts sending an ad platform the mailing list."""
-    client.post("/api/community/signups", json=_body("ada@studio.it", pixel_event_id=EVENT_ID))
+    ok(
+        client.post(
+            "/api/community/signups",
+            json=_body("ada@studio.it", pixel_event_id=EVENT_ID, pixel_consent=True),
+        ),
+        201,
+    )
 
     body = pixel.calls[-1][3].decode()
     assert "ada@studio.it" not in body
@@ -359,13 +369,32 @@ def test_an_installation_without_a_pixel_sends_nothing(
     assert _row(api_session, "ada@studio.it") == ("Ada", "Lovelace", None)
 
 
+@pytest.mark.parametrize("consent", [{}, {"pixel_consent": False}])
+def test_a_visitor_who_did_not_accept_the_notice_is_never_measured_by_the_server(
+    client: TestClient, api_session: Session, pixel: RecordingHttp, consent: dict[str, object]
+) -> None:
+    """The server event carries the visitor's address, user agent and click ids to
+    OpenAI, so it waits for the same yes the browser pixel waits for. A client that does
+    not know about the notice, or a visitor who refused it, signs up and is not sent."""
+    response = client.post(
+        "/api/community/signups",
+        json=_body("ada@studio.it", pixel_event_id=EVENT_ID, oppref="clic-123", **consent),
+    )
+
+    assert response.status_code == 201, response.text
+    assert pixel.calls == []
+    assert _row(api_session, "ada@studio.it") == ("Ada", "Lovelace", None)
+
+
 def test_a_signup_without_a_pixel_event_id_still_converts(
     client: TestClient, pixel: RecordingHttp
 ) -> None:
     """A client that posted without the pixel -- JavaScript off, a script, a curl. The
     event gets an id of its own, which makes it unpairable, and that is right: there is
     no browser event to pair it with."""
-    response = client.post("/api/community/signups", json=_body("ada@studio.it"))
+    response = client.post(
+        "/api/community/signups", json=_body("ada@studio.it", pixel_consent=True)
+    )
 
     assert response.status_code == 201, response.text
     assert pixel.event()["id"]
@@ -385,7 +414,8 @@ def test_a_failed_conversion_never_becomes_a_failed_signup(
     pixel.raises = bool(failure.get("raises", False))
 
     response = client.post(
-        "/api/community/signups", json=_body("ada@studio.it", pixel_event_id=EVENT_ID)
+        "/api/community/signups",
+        json=_body("ada@studio.it", pixel_event_id=EVENT_ID, pixel_consent=True),
     )
 
     assert response.status_code == 201, response.text

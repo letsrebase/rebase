@@ -10,7 +10,8 @@ Every pull request that changes something a person could **do** also ends with a
 click by click, so a reviewer watches the flow instead of reconstructing it from two
 still frames and the diff.
 
-The `pr-creation` skill (`.claude/skills/pr-creation/SKILL.md`) asks for the section;
+The `pr-creation` skill (`.agents/skills/pr-creation/SKILL.md`, with this repository's
+steps in `docs/agents/pr-creation.md`) asks for the section;
 this file is how the picture and the video get made in this monorepo.
 
 ## What counts as a visible change
@@ -147,7 +148,7 @@ export default async function (page, { pause }) {
 
 ```bash
 node docs/pr-screenshots/record.mjs steps.mjs demo-1-issue-proforma.mp4 \
-  --url http://localhost:5173/app/fatture --viewport 1440x900
+  --url http://localhost:5173/app/invoices --viewport 1440x900
 ```
 
 `--url` is the page the flow starts from and the script waits for it to be idle before

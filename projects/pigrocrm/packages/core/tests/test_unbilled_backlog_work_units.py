@@ -5,7 +5,7 @@ approved-or-later time.
 billable, unbilled hour unconditionally -- `test_unbilled_backlog.py` already pins
 that half. `work_units` is the one source that carries an approval state
 (REB-358/REB-359), so this file pins the one thing REB-372 adds: a day only
-contributes to the committed backlog once it has left `proposto` for an
+contributes to the committed backlog once it has left `proposed` for an
 approved-or-later state, and a day worked without the approval its own contract
 requires never contributes at all.
 """
@@ -20,9 +20,9 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.repository import AnalyticsRepository
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.contracts.models import Contract, RateCard
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.timetracking.models import TimeEntry
 from pigrocrm.core.work_units.models import WorkUnit
 
@@ -30,17 +30,17 @@ READONLY = Actor(id=uuid7(), type="user", role="readonly")
 
 
 def _contract(db_session: Session, **overrides: object) -> Contract:
-    customer = Customer(ragione_sociale=f"ACME {uuid4()}")
+    customer = Organization(legal_name=f"ACME {uuid4()}")
     db_session.add(customer)
     db_session.flush()
     payload: dict[str, object] = {
         "customer_id": customer.id,
-        "titolo": "Consulenza",
-        "inizio": date(2026, 1, 1),
-        "tipo_rinnovo": "nessuno",
-        "preavviso_disdetta_giorni": 30,
-        "cadenza_fatturazione": "mensile",
-        "politica_spese": {"kind": "non_rimborsabile"},
+        "title": "Consulenza",
+        "start": date(2026, 1, 1),
+        "renewal_type": "none",
+        "termination_notice_days": 30,
+        "billing_cadence": "monthly",
+        "expense_policy": {"kind": "not_reimbursable"},
     }
     payload.update(overrides)
     contract = Contract(**payload)  # type: ignore[arg-type]
@@ -52,11 +52,11 @@ def _contract(db_session: Session, **overrides: object) -> Contract:
 def _rate_card(db_session: Session, contract: Contract, **overrides: object) -> RateCard:
     payload: dict[str, object] = {
         "contract_id": contract.id,
-        "valido_da": date(2026, 1, 1),
-        "valido_a": None,
-        "tipo": "giornaliero",
-        "importo": Decimal("500.00"),
-        "unita": "giorno",
+        "valid_from": date(2026, 1, 1),
+        "valid_to": None,
+        "type": "daily",
+        "amount": Decimal("500.00"),
+        "unit": "day",
     }
     payload.update(overrides)
     rate_card = RateCard(**payload)  # type: ignore[arg-type]
@@ -68,34 +68,34 @@ def _rate_card(db_session: Session, contract: Contract, **overrides: object) -> 
 def _work_unit(db_session: Session, contract: Contract, **overrides: object) -> WorkUnit:
     payload: dict[str, object] = {
         "contract_id": contract.id,
-        "data": date(2026, 3, 5),
-        "quantita": Decimal("1.00"),
-        "descrizione": "Giornata di consulenza",
-        "stato": "lavorato",
+        "date": date(2026, 3, 5),
+        "quantity": Decimal("1.00"),
+        "description": "Giornata di consulenza",
+        "status": "worked",
     }
     payload.update(overrides)
     work_unit = WorkUnit(**payload)  # type: ignore[arg-type]
     db_session.add(work_unit)
     db_session.flush()
-    # `work_unit_enforce_state_machine` can rewrite `stato` in flight (the
-    # `lavorato` -> `lavorato_senza_approvazione` redirect, spec §5) -- refresh so
+    # `work_unit_enforce_state_machine` can rewrite `status` in flight (the
+    # `worked` -> `worked_without_approval` redirect, spec §5) -- refresh so
     # the returned object reflects what was actually written, not merely requested.
     db_session.refresh(work_unit)
     return work_unit
 
 
 def _bare_invoice_line(db_session: Session, contract: Contract) -> InvoiceLine:
-    invoice = Invoice(customer_id=contract.customer_id, tipo="fattura", stato="bozza")
+    invoice = Invoice(customer_id=contract.customer_id, type="invoice", status="draft")
     db_session.add(invoice)
     db_session.flush()
     line = InvoiceLine(
         invoice_id=invoice.id,
-        numero_linea=1,
-        descrizione="Riga esistente",
-        quantita=Decimal("1.000000"),
-        prezzo_unitario=Decimal("1.000000"),
-        prezzo_totale=Decimal("1.00"),
-        aliquota_iva=Decimal("22.00"),
+        line_number=1,
+        description="Riga esistente",
+        quantity=Decimal("1.000000"),
+        unit_price=Decimal("1.000000"),
+        total_price=Decimal("1.00"),
+        vat_rate=Decimal("22.00"),
     )
     db_session.add(line)
     db_session.flush()
@@ -108,21 +108,21 @@ def _bare_invoice_line(db_session: Session, contract: Contract) -> InvoiceLine:
 def test_an_approved_day_counts_towards_the_backlog(db_session: Session) -> None:
     contract = _contract(db_session)
     _rate_card(db_session, contract)
-    _work_unit(db_session, contract, stato="approvato")
+    _work_unit(db_session, contract, status="approved")
 
     backlog = AnalyticsService(db_session).unbilled_backlog(READONLY)
-    assert backlog.valore_maturato == Decimal("500.00")
-    assert backlog.voci == 1
+    assert backlog.accrued_value == Decimal("500.00")
+    assert backlog.entries == 1
 
 
 def test_a_merely_proposed_day_does_not_count(db_session: Session) -> None:
     contract = _contract(db_session)
     _rate_card(db_session, contract)
-    _work_unit(db_session, contract, stato="proposto")
+    _work_unit(db_session, contract, status="proposed")
 
     backlog = AnalyticsService(db_session).unbilled_backlog(READONLY)
-    assert backlog.valore_maturato == Decimal("0.00")
-    assert backlog.voci == 0
+    assert backlog.accrued_value == Decimal("0.00")
+    assert backlog.entries == 0
 
 
 # ---- the rest of the state machine ------------------------------------------------
@@ -131,33 +131,33 @@ def test_a_merely_proposed_day_does_not_count(db_session: Session) -> None:
 def test_a_worked_day_counts_the_same_as_an_approved_one(db_session: Session) -> None:
     contract = _contract(db_session)
     _rate_card(db_session, contract)
-    _work_unit(db_session, contract, stato="lavorato")
+    _work_unit(db_session, contract, status="worked")
 
     backlog = AnalyticsService(db_session).unbilled_backlog(READONLY)
-    assert backlog.valore_maturato == Decimal("500.00")
-    assert backlog.voci == 1
+    assert backlog.accrued_value == Decimal("500.00")
+    assert backlog.entries == 1
 
 
 def test_a_disputed_day_still_counts(db_session: Session) -> None:
-    """`contestato` is later in the lifecycle than `approvato`/`lavorato`, and mastro's
+    """`disputed` is later in the lifecycle than `approved`/`worked`, and mastro's
     own citation (spec §1.2) names it as one of the three qualifying states -- a
     dispute over an already-worked day does not retract the fact that the work
     happened and was billable."""
     contract = _contract(db_session)
     _rate_card(db_session, contract)
-    _work_unit(db_session, contract, stato="lavorato")
+    _work_unit(db_session, contract, status="worked")
     db_session.flush()
     work_unit = db_session.query(WorkUnit).filter_by(contract_id=contract.id).one()
-    work_unit.stato = "contestato"
+    work_unit.status = "disputed"
     db_session.flush()
 
     backlog = AnalyticsService(db_session).unbilled_backlog(READONLY)
-    assert backlog.valore_maturato == Decimal("500.00")
-    assert backlog.voci == 1
+    assert backlog.accrued_value == Decimal("500.00")
+    assert backlog.entries == 1
 
 
-def test_a_day_marked_fatturato_with_no_invoice_line_does_not_count(db_session: Session) -> None:
-    """`fatturato` says "already billed" on its own -- `WorkUnitService.transition`
+def test_to_day_marked_invoiced_with_no_invoice_line_does_not_count(db_session: Session) -> None:
+    """`invoiced` says "already billed" on its own -- `WorkUnitService.transition`
     (the generic, already-public state mover) has no coupling to `invoice_line_id`
     at all, so a day can reach this state through it while the link stays NULL.
     Relying on the `invoice_line_id IS NULL` filter alone to keep such a row out of
@@ -165,93 +165,93 @@ def test_a_day_marked_fatturato_with_no_invoice_line_does_not_count(db_session: 
     state itself has to be excluded."""
     contract = _contract(db_session)
     _rate_card(db_session, contract)
-    _work_unit(db_session, contract, stato="lavorato")
+    _work_unit(db_session, contract, status="worked")
     db_session.flush()
     work_unit = db_session.query(WorkUnit).filter_by(contract_id=contract.id).one()
-    work_unit.stato = "fatturato"
+    work_unit.status = "invoiced"
     db_session.flush()
     assert work_unit.invoice_line_id is None
 
     backlog = AnalyticsService(db_session).unbilled_backlog(READONLY)
-    assert backlog.valore_maturato == Decimal("0.00")
-    assert backlog.voci == 0
+    assert backlog.accrued_value == Decimal("0.00")
+    assert backlog.entries == 0
 
 
-def test_a_day_marked_pagato_with_no_invoice_line_does_not_count(db_session: Session) -> None:
+def test_to_day_marked_paid_with_no_invoice_line_does_not_count(db_session: Session) -> None:
     contract = _contract(db_session)
     _rate_card(db_session, contract)
-    _work_unit(db_session, contract, stato="lavorato")
+    _work_unit(db_session, contract, status="worked")
     db_session.flush()
     work_unit = db_session.query(WorkUnit).filter_by(contract_id=contract.id).one()
-    work_unit.stato = "fatturato"
+    work_unit.status = "invoiced"
     db_session.flush()
-    work_unit.stato = "pagato"
+    work_unit.status = "paid"
     db_session.flush()
     assert work_unit.invoice_line_id is None
 
     backlog = AnalyticsService(db_session).unbilled_backlog(READONLY)
-    assert backlog.valore_maturato == Decimal("0.00")
-    assert backlog.voci == 0
+    assert backlog.accrued_value == Decimal("0.00")
+    assert backlog.entries == 0
 
 
 def test_a_day_worked_without_the_required_approval_does_not_count(db_session: Session) -> None:
-    """The trigger's own automatic redirect (REB-359 §5/§12): a `'lavorato'` write with
+    """The trigger's own automatic redirect (REB-359 §5/§12): a `'worked'` write with
     no `approval_id`, on a contract that requires prior approval, is recorded as
-    `lavorato_senza_approvazione` rather than rejected outright -- and that flagged,
+    `worked_without_approval` rather than rejected outright -- and that flagged,
     unapproved branch is exactly the ambiguity this issue exists to keep out of the
     committed figure."""
     contract = _contract(db_session, requires_prior_approval=True)
     _rate_card(db_session, contract)
-    work_unit = _work_unit(db_session, contract, stato="lavorato", approval_id=None)
-    assert work_unit.stato == "lavorato_senza_approvazione"
+    work_unit = _work_unit(db_session, contract, status="worked", approval_id=None)
+    assert work_unit.status == "worked_without_approval"
 
     backlog = AnalyticsService(db_session).unbilled_backlog(READONLY)
-    assert backlog.valore_maturato == Decimal("0.00")
-    assert backlog.voci == 0
+    assert backlog.accrued_value == Decimal("0.00")
+    assert backlog.entries == 0
 
 
 def test_a_rejected_day_does_not_count(db_session: Session) -> None:
     contract = _contract(db_session)
     _rate_card(db_session, contract)
-    _work_unit(db_session, contract, stato="proposto")
+    _work_unit(db_session, contract, status="proposed")
     db_session.flush()
     work_unit = db_session.query(WorkUnit).filter_by(contract_id=contract.id).one()
-    work_unit.stato = "rifiutato"
+    work_unit.status = "rejected"
     db_session.flush()
 
     backlog = AnalyticsService(db_session).unbilled_backlog(READONLY)
-    assert backlog.valore_maturato == Decimal("0.00")
-    assert backlog.voci == 0
+    assert backlog.accrued_value == Decimal("0.00")
+    assert backlog.entries == 0
 
 
 def test_a_written_off_day_does_not_count(db_session: Session) -> None:
-    """`non_fatturabile` is real, recorded work -- just declared unbillable, the
+    """`non_billable` is real, recorded work -- just declared unbillable, the
     opposite of committed revenue."""
     contract = _contract(db_session)
     _rate_card(db_session, contract)
-    _work_unit(db_session, contract, stato="lavorato")
+    _work_unit(db_session, contract, status="worked")
     db_session.flush()
     work_unit = db_session.query(WorkUnit).filter_by(contract_id=contract.id).one()
-    work_unit.stato = "non_fatturabile"
+    work_unit.status = "non_billable"
     db_session.flush()
 
     backlog = AnalyticsService(db_session).unbilled_backlog(READONLY)
-    assert backlog.valore_maturato == Decimal("0.00")
-    assert backlog.voci == 0
+    assert backlog.accrued_value == Decimal("0.00")
+    assert backlog.entries == 0
 
 
 def test_an_already_invoiced_day_is_not_double_counted(db_session: Session) -> None:
     """`invoice_line_id IS NULL` is the same "not yet invoiced" fact the `TimeEntry`
     half of this figure already keys on -- an approved day already bound to a line
-    has left the backlog, whatever its own `stato` says."""
+    has left the backlog, whatever its own `status` says."""
     contract = _contract(db_session)
     _rate_card(db_session, contract)
     existing_line = _bare_invoice_line(db_session, contract)
-    _work_unit(db_session, contract, stato="approvato", invoice_line_id=existing_line.id)
+    _work_unit(db_session, contract, status="approved", invoice_line_id=existing_line.id)
 
     backlog = AnalyticsService(db_session).unbilled_backlog(READONLY)
-    assert backlog.valore_maturato == Decimal("0.00")
-    assert backlog.voci == 0
+    assert backlog.accrued_value == Decimal("0.00")
+    assert backlog.entries == 0
 
 
 # ---- pricing, missing coverage, and composing with the TimeEntry half ------------
@@ -264,13 +264,13 @@ def test_a_day_with_no_covering_rate_card_counts_but_prices_at_nothing(
     `unbilled_work_unit_lines`'s own `ValidationFailed` is the right refusal for an
     actual invoicing attempt, not for a dashboard figure."""
     contract = _contract(db_session)
-    _rate_card(db_session, contract, valido_da=date(2026, 1, 1), valido_a=date(2026, 2, 28))
-    _work_unit(db_session, contract, stato="approvato", data=date(2026, 3, 5))
+    _rate_card(db_session, contract, valid_from=date(2026, 1, 1), valid_to=date(2026, 2, 28))
+    _work_unit(db_session, contract, status="approved", date=date(2026, 3, 5))
 
     backlog = AnalyticsService(db_session).unbilled_backlog(READONLY)
-    assert backlog.valore_maturato == Decimal("0.00")
-    assert backlog.voci == 1
-    assert backlog.voci_senza_tariffa == 1
+    assert backlog.accrued_value == Decimal("0.00")
+    assert backlog.entries == 1
+    assert backlog.entries_without_rate == 1
 
 
 def test_work_units_and_time_entries_combine_in_the_same_figure(
@@ -283,25 +283,66 @@ def test_work_units_and_time_entries_combine_in_the_same_figure(
     entry = TimeEntry(
         deal_id=seeded_deal_id,
         user_id=seeded_user_id,
-        data=date(2026, 3, 1),
-        ore=Decimal("10.00"),
-        descrizione="Ore fatturabili",
-        fatturabile=True,
-        tariffa_applicata=Decimal("50.000000"),
-        tariffa_origine="manuale",
-        costo_origine="assente",
+        date=date(2026, 3, 1),
+        hours=Decimal("10.00"),
+        description="Ore fatturabili",
+        billable=True,
+        applied_rate=Decimal("50.000000"),
+        rate_source="manual",
+        cost_source="absent",
     )
     db_session.add(entry)
     db_session.flush()
 
     contract = _contract(db_session)
     _rate_card(db_session, contract)
-    _work_unit(db_session, contract, stato="approvato")
+    _work_unit(db_session, contract, status="approved")
 
     backlog = AnalyticsService(db_session).unbilled_backlog(READONLY)
-    assert backlog.ore_fatturabili_non_fatturate == Decimal("10.00")
-    assert backlog.valore_maturato == Decimal("1000.00")
-    assert backlog.voci == 2
+    assert backlog.billable_uninvoiced_hours == Decimal("10.00")
+    assert backlog.accrued_value == Decimal("1000.00")
+    assert backlog.entries == 2
+
+
+def test_each_half_of_the_backlog_belongs_to_its_own_module(
+    db_session: Session, seeded_deal_id: UUID, seeded_user_id: UUID
+) -> None:
+    """Hours are `time`'s and approved contract days `contracts`': a solo space (time off)
+    still has its days, a space with contracts off still has its hours, and neither is
+    counted twice or dropped by the other being off."""
+    db_session.add(
+        TimeEntry(
+            deal_id=seeded_deal_id,
+            user_id=seeded_user_id,
+            date=date(2026, 3, 1),
+            hours=Decimal("10.00"),
+            description="Ore fatturabili",
+            billable=True,
+            applied_rate=Decimal("50.000000"),
+            rate_source="manual",
+            cost_source="absent",
+        )
+    )
+    db_session.flush()
+    contract = _contract(db_session)
+    _rate_card(db_session, contract)
+    _work_unit(db_session, contract, status="approved")
+    service = AnalyticsService(db_session)
+
+    no_time = service.unbilled_backlog(READONLY, modules=frozenset({"contracts"}))
+    assert no_time.billable_uninvoiced_hours is None
+    assert (no_time.accrued_value, no_time.entries) == (Decimal("500.00"), 1)
+
+    no_contracts = service.unbilled_backlog(READONLY, modules=frozenset({"deals", "time"}))
+    assert no_contracts.billable_uninvoiced_hours == Decimal("10.00")
+    assert (no_contracts.accrued_value, no_contracts.entries) == (Decimal("500.00"), 1)
+
+    neither = service.unbilled_backlog(READONLY, modules=frozenset())
+    assert (neither.billable_uninvoiced_hours, neither.accrued_value, neither.entries) == (
+        None,
+        Decimal("0.00"),
+        0,
+    )
 
 
 def test_customer_id_scopes_work_units_through_their_contract(db_session: Session) -> None:
@@ -309,26 +350,26 @@ def test_customer_id_scopes_work_units_through_their_contract(db_session: Sessio
     out_of_scope = _contract(db_session)
     _rate_card(db_session, in_scope)
     _rate_card(db_session, out_of_scope)
-    _work_unit(db_session, in_scope, stato="approvato")
-    _work_unit(db_session, out_of_scope, stato="approvato")
+    _work_unit(db_session, in_scope, status="approved")
+    _work_unit(db_session, out_of_scope, status="approved")
 
-    ore, valore, senza_tariffa, voci = AnalyticsRepository(db_session).unbilled_backlog(
+    hours, value, without_rate, entries = AnalyticsRepository(db_session).unbilled_backlog(
         customer_id=in_scope.customer_id
     )
-    assert valore == Decimal("500.00")
-    assert voci == 1
-    assert ore == Decimal("0.00")
-    assert senza_tariffa == 0
+    assert value == Decimal("500.00")
+    assert entries == 1
+    assert hours == Decimal("0.00")
+    assert without_rate == 0
 
 
 def test_date_window_scopes_work_units_by_their_own_data(db_session: Session) -> None:
     contract = _contract(db_session)
     _rate_card(db_session, contract)
-    _work_unit(db_session, contract, stato="approvato", data=date(2026, 3, 5))
-    _work_unit(db_session, contract, stato="approvato", data=date(2026, 4, 5))
+    _work_unit(db_session, contract, status="approved", date=date(2026, 3, 5))
+    _work_unit(db_session, contract, status="approved", date=date(2026, 4, 5))
 
-    _, valore, _, voci = AnalyticsRepository(db_session).unbilled_backlog(
-        da=date(2026, 3, 1), a=date(2026, 3, 31)
+    _, value, _, entries = AnalyticsRepository(db_session).unbilled_backlog(
+        date_from=date(2026, 3, 1), date_to=date(2026, 3, 31)
     )
-    assert valore == Decimal("500.00")
-    assert voci == 1
+    assert value == Decimal("500.00")
+    assert entries == 1

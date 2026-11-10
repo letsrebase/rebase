@@ -15,6 +15,10 @@
 
 #text(size: 9pt, fill: muted)[Periodo di competenza: {{fattura.periodo_competenza}}]
 {{/if}}
+{{#if fattura.riferimento_ordine}}
+
+#text(size: 9pt, fill: muted)[Riferimento ordine: {{fattura.riferimento_ordine}}]
+{{/if}}
 
 #v(14pt)
 #text(size: 9pt, weight: "bold", fill: muted)[Committente]

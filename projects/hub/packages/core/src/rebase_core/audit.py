@@ -14,11 +14,14 @@ Three things this module owns:
   PigroCRM's `schemas.py` gives its own `Update` models, reimplemented for the hub's:
   `model_fields_set` is what tells "the caller sent `null`" apart from "the caller never
   mentioned this field", which a plain `model_dump(exclude_none=True)` cannot.
-* `AdminActionService`: the append-only trail itself. `record` must never be able to
-  fail the change it is recording -- the opposite failure mode from the change itself,
-  which does need to fail loudly on a bad value. It is therefore called only *after* the
-  caller's own commit, in its own transaction, wrapped so that a recording failure never
-  reaches the caller.
+* `AdminActionService`: the append-only trail itself, in two modes. By default `record`
+  must never be able to fail the change it is recording -- the opposite failure mode
+  from the change itself, which does need to fail loudly on a bad value -- so it is
+  called after the caller's own commit, in its own transaction, wrapped so that a
+  recording failure never reaches the caller. A sensitive change (an identity override,
+  a status, a role, tax data, a provider's key) is recorded with `commit=False` before
+  the caller's single commit instead: the entry and the change are one transaction, and
+  a trail that cannot be written refuses the change rather than leave it unrecorded.
 """
 
 import logging
@@ -26,16 +29,18 @@ import math
 from collections.abc import Mapping
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any, TypedDict, cast
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, SkipValidation
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.models import AdminAction, User
+from rebase_core.schema_common import ResponseModel
+from rebase_core.vocabulary import AdminActionEntity, AdminActionKind
 
 _log = logging.getLogger(__name__)
 
@@ -49,7 +54,15 @@ _KIND_MAX_LENGTH = 20
 # ---- the diff shape ----------------------------------------------------------------
 
 
-def field_changes(before: Mapping[str, Any], after: Mapping[str, Any]) -> dict[str, Any]:
+class FieldChanges(TypedDict, total=False):
+    """The diff of an override: empty when nothing moved, else all three keys."""
+
+    changed: list[str]
+    before: dict[str, object]
+    after: dict[str, object]
+
+
+def field_changes(before: Mapping[str, object], after: Mapping[str, object]) -> FieldChanges:
     """`{}` when nothing in `after` actually differs from `before`, else
     `{"changed": [...], "before": {...}, "after": {...}}` restricted to the keys whose
     value really changed. `before.get(key)` rather than `before[key]`, so a field set for
@@ -91,8 +104,8 @@ def coerce_stored_value(model: type[Any], field: str, value: Any) -> Any:
     storage, so a revert can `setattr` a properly typed value instead of a string that
     merely looks right until the next comparison. `None` passes through untouched -- a
     cleared column reverting to "no value" needs no coercion. Every column this module
-    reverts is either a plain string, a `Decimal` (`tariffa_giornaliera`,
-    `budget_giornaliero`) or a `date` (`periodo_da`); a column whose type declines to
+    reverts is either a plain string, a `Decimal` (`daily_rate`,
+    `daily_budget`) or a `date` (`period_from`); a column whose type declines to
     say what its Python type is (`links`' `JSONB`) is left exactly as stored, since
     `sanitize_payload` never reshapes a list of strings in the first place."""
     if value is None:
@@ -113,9 +126,9 @@ def coerce_stored_value(model: type[Any], field: str, value: Any) -> Any:
 
 # ---- sanitizing a payload before it reaches Postgres --------------------------------
 
-# Bounded above `PROGETTO_MAX_LENGTH`/`COMMENT_MAX_LENGTH` (both 4000, `models.py`) --
+# Bounded above `PROJECT_MAX_LENGTH`/`COMMENT_MAX_LENGTH` (both 4000, `models.py`) --
 # the widest text field `FreelancerOverride`/`CompanyOverride` ever carries (`note`,
-# `progetto`). `revert` reapplies a stored `before` value verbatim: truncating a value
+# `project`). `revert` reapplies a stored `before` value verbatim: truncating a value
 # no wider than the column itself would silently replace a genuine override with a
 # shorter one on the very next revert, corrupting exactly the data this trail exists
 # to protect. What is bounded here is a payload nobody validated, not one of these.
@@ -140,7 +153,7 @@ def _sanitize_string(value: str) -> str:
     return cleaned
 
 
-def _sanitize_value(value: Any, depth: int) -> Any:
+def _sanitize_value(value: object, depth: int) -> Any:
     if isinstance(value, dict):
         if depth >= MAX_DEPTH:
             return _DEPTH_PLACEHOLDER
@@ -164,7 +177,7 @@ def _sanitize_value(value: Any, depth: int) -> Any:
     return value
 
 
-def sanitize_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def sanitize_payload(payload: Mapping[str, object]) -> dict[str, Any]:
     """Sanitizes every value in `payload`, recursively, and never raises: an audit entry
     must not be able to fail the very change it is recording. `Decimal` and `UUID`
     become their canonical text form for the same reason `datetime`/`date` do -- the
@@ -177,19 +190,110 @@ def sanitize_payload(payload: dict[str, Any]) -> dict[str, Any]:
 # ---- the trail itself ----------------------------------------------------------------
 
 
-class AdminActionRead(BaseModel):
+class AdminActionFailure(TypedDict):
+    freelancer_id: str
+    reason: str
+
+
+def _never(value: object) -> bool:
+    return False
+
+
+# A key of a payload that may be absent: `exclude_if` is what keeps it out of `required` in
+# the response schema (`ResponseModel` lists every field as required otherwise), and it
+# never drops a key that is there.
+_MAY_BE_ABSENT = Field(exclude_if=_never)
+
+
+class AdminActionPayload(TypedDict, total=False):
+    """What an entry carries beyond its kind. Which keys are there depends on the kind, so
+    none is required; the keys listed are the ones the admin pages read, and any other
+    key a writer adds is kept and sent as it is (`extra="allow"`). Ids are strings,
+    amounts decimal strings: that is how `sanitize_payload` stores them.
+
+    * a field override or clear (`field_changes`): `changed`, `before`, `after`;
+    * `vetted`: `vetted`; a note or status entry: `source`, `text`, `note_id`;
+    * `pigro_link`: `outcome`, `error`; `anon_cv_downloaded`: `reused`;
+    * a merge (REB-800): `into_freelancer_id`/`from_freelancer_id`, `moved`, `left_behind`,
+      `cv`, `card_to_regenerate`, and `put_back` on the undo;
+    * the AI audit (REB-861): `provider`, `model`, `source`, `action`, `task`, and for a
+      card regeneration its start (`limit`, `queued`, `batch`, `batch_id`) and its end
+      (`start_action_id`, the counts, `cost_eur`, `failures`, `stop_reason`, ...)."""
+
+    __pydantic_config__ = ConfigDict(extra="allow")  # type: ignore[misc]
+
+    changed: Annotated[list[str], _MAY_BE_ABSENT]
+    before: Annotated[dict[str, Any] | str, _MAY_BE_ABSENT]
+    after: Annotated[dict[str, Any] | str, _MAY_BE_ABSENT]
+    vetted: Annotated[bool, _MAY_BE_ABSENT]
+    source: Annotated[str, _MAY_BE_ABSENT]
+    text: Annotated[str, _MAY_BE_ABSENT]
+    note_id: Annotated[str, _MAY_BE_ABSENT]
+    outcome: Annotated[str, _MAY_BE_ABSENT]
+    error: Annotated[str | None, _MAY_BE_ABSENT]
+    reused: Annotated[bool, _MAY_BE_ABSENT]
+    reason: Annotated[str, _MAY_BE_ABSENT]
+    into_freelancer_id: Annotated[str, _MAY_BE_ABSENT]
+    from_freelancer_id: Annotated[str, _MAY_BE_ABSENT]
+    moved: Annotated[dict[str, int | list[str]], _MAY_BE_ABSENT]
+    left_behind: Annotated[dict[str, int], _MAY_BE_ABSENT]
+    put_back: Annotated[dict[str, int], _MAY_BE_ABSENT]
+    cv: Annotated[str, _MAY_BE_ABSENT]
+    card_to_regenerate: Annotated[bool, _MAY_BE_ABSENT]
+    action_id: Annotated[str, _MAY_BE_ABSENT]
+    provider: Annotated[str, _MAY_BE_ABSENT]
+    model: Annotated[str, _MAY_BE_ABSENT]
+    action: Annotated[str, _MAY_BE_ABSENT]
+    task: Annotated[str, _MAY_BE_ABSENT]
+    limit: Annotated[int, _MAY_BE_ABSENT]
+    queued: Annotated[int, _MAY_BE_ABSENT]
+    batch: Annotated[bool, _MAY_BE_ABSENT]
+    batch_id: Annotated[str, _MAY_BE_ABSENT]
+    start_action_id: Annotated[str | None, _MAY_BE_ABSENT]
+    written: Annotated[int | None, _MAY_BE_ABSENT]
+    failed: Annotated[int | None, _MAY_BE_ABSENT]
+    superseded: Annotated[int | None, _MAY_BE_ABSENT]
+    skipped: Annotated[int | None, _MAY_BE_ABSENT]
+    errored: Annotated[int | None, _MAY_BE_ABSENT]
+    cost_eur: Annotated[str | None, _MAY_BE_ABSENT]
+    unpriced: Annotated[int, _MAY_BE_ABSENT]
+    failures: Annotated[list[AdminActionFailure] | None, _MAY_BE_ABSENT]
+    start_missing: Annotated[bool, _MAY_BE_ABSENT]
+    stopped: Annotated[bool, _MAY_BE_ABSENT]
+    stop_reason: Annotated[str, _MAY_BE_ABSENT]
+    left: Annotated[int, _MAY_BE_ABSENT]
+    batch_status: Annotated[str, _MAY_BE_ABSENT]
+
+
+class AdminActionRead(ResponseModel):
     """One entry of the trail, as an admin reads it: who, when, what kind, and the
     diff for an `overridden`/`cleared` entry (`payload["changed"/"before"/"after"]`,
     empty for `deleted`/`restored`, whose kind is the whole story)."""
 
     id: UUID
-    entity_type: str
+    entity_type: AdminActionEntity
     entity_id: UUID
-    kind: str
+    kind: AdminActionKind
     admin_id: UUID
-    admin_nome: str
-    payload: dict[str, Any]
+    admin_name: str
+    payload: Annotated[AdminActionPayload, SkipValidation]
     created_at: datetime
+
+
+def _entry(
+    entity_type: str,
+    entity_id: UUID,
+    kind: str,
+    admin_id: UUID,
+    payload: Mapping[str, object] | None,
+) -> AdminAction:
+    return AdminAction(
+        entity_type=entity_type,
+        entity_id=entity_id,
+        kind=kind,
+        admin_id=admin_id,
+        payload=sanitize_payload(payload or {}),
+    )
 
 
 class AdminActionService:
@@ -202,26 +306,45 @@ class AdminActionService:
         entity_id: UUID,
         kind: str,
         admin_id: UUID,
-        payload: dict[str, Any] | None = None,
-    ) -> None:
-        """Writes one entry and commits it on its own, deliberately never inside the
-        caller's own transaction: every caller here has already committed the change
-        this entry describes by the time it calls `record`, so a failure writing the
-        entry -- a constraint nobody expected, a session left unusable by an earlier
-        error -- can only cost the entry itself, never the change it was about to
-        describe. Logged rather than raised, for the same reason: a lost line in the
-        trail is a smaller failure than refusing an admin's override because the trail
-        could not keep up with it."""
-        try:
-            row = AdminAction(
-                entity_type=entity_type[:_ENTITY_TYPE_MAX_LENGTH],
-                entity_id=entity_id,
-                kind=kind[:_KIND_MAX_LENGTH],
-                admin_id=admin_id,
-                payload=sanitize_payload(payload or {}),
+        payload: Mapping[str, object] | None = None,
+        *,
+        commit: bool = True,
+    ) -> UUID | None:
+        """Writes one entry. By default it commits on its own, deliberately never inside
+        the caller's own transaction: the caller has already committed the change this
+        entry describes by the time it calls `record`, so a failure writing the entry --
+        a constraint nobody expected, a session left unusable by an earlier error -- can
+        only cost the entry itself, never the change it was about to describe. Logged
+        rather than raised, for the same reason: a lost line in the trail is a smaller
+        failure than refusing an admin's override because the trail could not keep up
+        with it. Answers the entry's id, or `None` when it was lost, for the caller that
+        points at it later (a regeneration's end names its start).
+
+        `commit=False` is for a sensitive change: the entry is added and flushed in the
+        caller's own transaction, before the caller's single commit, and a failure
+        propagates, so the change and its trail stand or fall together. It always
+        answers the entry's id.
+
+        A `kind` or `entity_type` wider than its 20-character column is a programming
+        mistake, not a runtime condition: it raises `ValueError` in both modes, and a
+        test over `ADMIN_ACTION_KINDS` keeps the known kinds inside it."""
+        if len(kind) > _KIND_MAX_LENGTH or len(entity_type) > _ENTITY_TYPE_MAX_LENGTH:
+            raise ValueError(
+                f"admin action {kind!r} on {entity_type!r} does not fit the "
+                f"{_KIND_MAX_LENGTH}-character columns"
             )
+        if not commit:
+            row = _entry(entity_type, entity_id, kind, admin_id, payload)
             self.session.add(row)
+            self.session.flush()
+            return row.id
+        try:
+            row = _entry(entity_type, entity_id, kind, admin_id, payload)
+            self.session.add(row)
+            self.session.flush()
+            row_id = row.id
             self.session.commit()
+            return row_id
         except Exception:
             self.session.rollback()
             _log.warning(
@@ -231,6 +354,7 @@ class AdminActionService:
                 entity_id,
                 exc_info=True,
             )
+            return None
 
     def timeline(
         self, entity_type: str, entity_id: UUID, limit: int = TIMELINE_LIMIT_DEFAULT
@@ -250,8 +374,8 @@ class AdminActionService:
                 entity_id=action.entity_id,
                 kind=action.kind,
                 admin_id=action.admin_id,
-                admin_nome=f"{admin.nome} {admin.cognome}".strip(),
-                payload=action.payload,
+                admin_name=f"{admin.first_name} {admin.last_name}".strip(),
+                payload=cast(AdminActionPayload, action.payload),
                 created_at=action.created_at,
             )
             for action, admin in rows

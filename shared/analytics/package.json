@@ -7,11 +7,15 @@
   "exports": {
     ".": "./posthog.ts",
     "./browser": "./browser.ts",
+    "./consent": "./consent.ts",
+    "./verify-token": "./verify-token.ts",
     "./package.json": "./package.json"
   },
   "files": [
     "posthog.ts",
-    "browser.ts"
+    "browser.ts",
+    "consent.ts",
+    "verify-token.ts"
   ],
   "scripts": {
     "lint": "eslint .",
@@ -19,7 +23,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "posthog-js": "1.434.15"
+    "posthog-js": "1.444.4"
   },
   "devDependencies": {
     "@eslint/js": "catalog:",

@@ -10,17 +10,17 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from orologio import congela
+from frozen_clock import freeze
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import PermissionDenied, ValidationFailed
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.templates.service import TemplateService
 from pigrocrm.core.timetracking import report as report_module
 from pigrocrm.core.timetracking.report import (
-    TIME_REPORT_TEMPLATE_NOME,
+    TIME_REPORT_TEMPLATE_NAME,
     TimeReportService,
     parse_period,
     report_variables,
@@ -29,7 +29,7 @@ from pigrocrm.core.timetracking.schemas import TimeEntryCreate
 from pigrocrm.core.timetracking.service import TimeEntryService
 
 ADMIN = Actor(id=None, type="system", role="admin")
-WRITER = Actor(id=None, type="user", role="collaboratore")
+WRITER = Actor(id=None, type="user", role="collaborator")
 
 HOSTILE = 'Call con @mario su [fase 1] & #2 — "urgente"\nseconda riga'
 
@@ -53,19 +53,19 @@ def test_a_well_formed_period_parses() -> None:
 def test_the_seeded_template_exists_and_names_no_freelancer(db_session: Session) -> None:
     """Criterion 10's last clause: a grep over the template sources finds no
     freelancer's name. Every identity value is `{{emittente.*}}`, read from
-    `emitter_profile`."""
-    from pigrocrm.core.gmail.solleciti_template import SOLLECITO_TEMPLATE_NOME
-    from pigrocrm.core.templates.service import OFFERTA_TEMPLATE_NOME
+    `legal_entities`."""
+    from pigrocrm.core.gmail.payment_reminders_template import PAYMENT_REMINDER_TEMPLATE_NAME
+    from pigrocrm.core.templates.service import OFFER_TEMPLATE_NAME
 
     created = TemplateService(db_session).seed_defaults(ADMIN)
     # Three since ORB-171: the default offer a space is born with joined the two.
-    assert [t.nome for t in created] == [
-        TIME_REPORT_TEMPLATE_NOME,
-        SOLLECITO_TEMPLATE_NOME,
-        OFFERTA_TEMPLATE_NOME,
+    assert [t.name for t in created] == [
+        TIME_REPORT_TEMPLATE_NAME,
+        PAYMENT_REMINDER_TEMPLATE_NAME,
+        OFFER_TEMPLATE_NAME,
     ]
-    assert [t.tipo for t in created] == ["rapporto_ore", "sollecito", "offerta"]
-    # Idempotent, deduplicating case-insensitively on `nome` to match uq_templates_nome.
+    assert [t.type for t in created] == ["hours_report", "payment_reminder", "offer"]
+    # Idempotent, deduplicating case-insensitively on `name` to match uq_templates_name.
     assert TemplateService(db_session).seed_defaults(ADMIN) == []
 
     body = (ASSETS / "template-time-report.md").read_text(encoding="utf-8")
@@ -105,9 +105,9 @@ def test_report_variables_carry_raw_values_and_a_finished_total(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 4),
-            ore=Decimal("2.50"),
-            descrizione=HOSTILE,
+            date=date(2026, 3, 4),
+            hours=Decimal("2.50"),
+            description=HOSTILE,
         ),
         WRITER,
     )
@@ -115,9 +115,9 @@ def test_report_variables_carry_raw_values_and_a_finished_total(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 20),
-            ore=Decimal("1.25"),
-            descrizione="Revisione",
+            date=date(2026, 3, 20),
+            hours=Decimal("1.25"),
+            description="Revisione",
         ),
         WRITER,
     )
@@ -126,9 +126,9 @@ def test_report_variables_carry_raw_values_and_a_finished_total(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 4, 1),
-            ore=Decimal("8.00"),
-            descrizione="Aprile",
+            date=date(2026, 4, 1),
+            hours=Decimal("8.00"),
+            description="Aprile",
         ),
         WRITER,
     )
@@ -159,12 +159,12 @@ def test_the_pdf_renders_and_contains_the_hostile_description_verbatim(
     produced PDF. The assertion is on the round trip, because the whole point is that
     the value reaches the page as the literal text somebody typed."""
     # The brief's own sample for this test omitted the emitter profile the render
-    # pipeline requires (`DocumentService._template_scope` calls
+    # pipeline requires (`DocumentTemplating.template_scope` calls
     # `LegalEntityService.as_template_values`, which raises `NotFound` with no
     # singleton row) -- every other slice-2 PDF test sets one up
     # (`test_documents_from_template.py`'s `setup` fixture); this one needs it too.
     LegalEntityService(db_session).upsert_default(
-        LegalEntityUpsert(ragione_sociale="Studio di prova", partita_iva="01234567890"),
+        LegalEntityUpsert(legal_name="Studio di prova", vat_number="01234567890"),
         ADMIN,
     )
     TemplateService(db_session).seed_defaults(ADMIN)
@@ -172,18 +172,18 @@ def test_the_pdf_renders_and_contains_the_hostile_description_verbatim(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2026, 3, 4),
-            ore=Decimal("2.50"),
-            descrizione=HOSTILE,
+            date=date(2026, 3, 4),
+            hours=Decimal("2.50"),
+            description=HOSTILE,
         ),
         WRITER,
     )
     document = TimeReportService(db_session, local_storage).render_pdf(
         seeded_deal_id, "2026-03", WRITER
     )
-    assert document.tipo == "rapporto_ore"
+    assert document.type == "hours_report"
     assert document.deal_id == seeded_deal_id
-    assert document.versione_corrente == 1
+    assert document.current_version == 1
 
     text = extract_pdf_text(local_storage, db_session, document.id)
     # Newlines and layout break lines unpredictably in a PDF, so each fragment is
@@ -201,8 +201,8 @@ def test_the_compilation_date_is_italys_own_day_not_the_processs(
     seeded_user_id: UUID,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`oggi` is the date printed at the head of the timesheet the client receives next
-    to the invoice, so it is a date in the issuer's calendar -- `clock.py`'s rule, and
+    """`today` is the date printed at the head of the timesheet the client receives next
+    to the invoice, so it is a date in the issuer's calendar -- `db/clock.py`'s rule, and
     the same rule `_italian_date` already states for every row.
 
     Frozen at 00:30 on 1 January in Rome, which a process running in UTC (the API image
@@ -214,14 +214,14 @@ def test_the_compilation_date_is_italys_own_day_not_the_processs(
         TimeEntryCreate(
             deal_id=seeded_deal_id,
             user_id=seeded_user_id,
-            data=date(2025, 12, 3),
-            ore=Decimal("2.00"),
-            descrizione="Dicembre",
+            date=date(2025, 12, 3),
+            hours=Decimal("2.00"),
+            description="Dicembre",
         ),
         WRITER,
     )
 
-    congela(monkeypatch, report_module)
+    freeze(monkeypatch, report_module)
     variables = TimeReportService(db_session, storage=None).variables_for(
         seeded_deal_id, "2025-12", WRITER
     )

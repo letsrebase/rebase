@@ -1,0 +1,350 @@
+import { Link } from '@tanstack/react-router'
+import { CalendarCheck, Download, FileCheck, FileText } from 'lucide-react'
+import { useState } from 'react'
+import { PageHeader } from '@/components/PageHeader'
+import { QueryErrorBanner } from '@/components/QueryErrorBanner'
+import { Button } from '@rebase/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@rebase/ui/dialog'
+import { Label } from '@rebase/ui/label'
+import { Loader } from '@rebase/ui/loader'
+import { toast } from '@rebase/ui/sonner'
+import { Textarea } from '@rebase/ui/textarea'
+import { formatOccurredAt } from '@/components/activityLabels'
+import { toProblem } from '@/lib/api'
+import { useCanWrite } from '@/lib/auth'
+import { formatIsoDateItalian } from '@/lib/dates'
+import { canReceiveApproval, channelLabel } from './approvals'
+import { DayStatePill } from './DayStatePill'
+import {
+  ACTIONS,
+  actorLabel,
+  quantityLabel,
+  reasonLabel,
+  statusLabel,
+  type WorkUnitDetail,
+  type WorkUnitStatus,
+} from './labels'
+import { downloadDisputeBundle, useMoveDay, useWorkUnit } from './queries'
+
+/**
+ * `/app/days/$workUnitId`: one day, with its state, the approval it rests on, the log of
+ * every move it made, and the moves its state allows.
+ *
+ * The buttons are the API's own list (`actions`): the state graph lives in the database and
+ * the service, and the page never carries a copy of it that could drift. A move asks for a
+ * reason where the move is a judgement (contesting, withdrawing, writing off) and sends a
+ * plain one where the act is the reason; the reason lands in the log beside who made the
+ * move and when, which is what a dispute is later argued from.
+ */
+export function DayDetail({ workUnitId }: { workUnitId: string }) {
+  const day = useWorkUnit(workUnitId)
+  if (day.isError) {
+    if (toProblem(day.error).status === 404) return <p className="p-8">Giornata non trovata.</p>
+    return (
+      <div className="p-8">
+        <QueryErrorBanner error={day.error} />
+      </div>
+    )
+  }
+  if (!day.data) {
+    return (
+      <div role="status" className="flex items-center gap-2 p-8 text-muted-foreground">
+        <Loader className="size-4" />
+        Caricamento…
+      </div>
+    )
+  }
+  return <Loaded day={day.data} />
+}
+
+function Loaded({ day }: { day: WorkUnitDetail }) {
+  const canWrite = useCanWrite()
+  const move = useMoveDay(day.id)
+  const [pending, setPending] = useState<WorkUnitStatus | null>(null)
+  const [reason, setReason] = useState('')
+  const spec = pending === null ? undefined : ACTIONS[pending]
+  const needsReason = spec !== undefined && spec.defaultReason === null
+  // Only the moves the page knows how to word: a state the API offers that has no entry in
+  // `ACTIONS` is not drawn as a button with a raw state name on it.
+  const offered = day.actions.filter((status) => ACTIONS[status] !== undefined)
+
+  function close() {
+    if (move.isPending) return
+    move.reset()
+    setPending(null)
+    setReason('')
+  }
+
+  function confirm() {
+    if (pending === null || spec === undefined) return
+    const reasonText = reason.trim() !== '' ? reason.trim() : spec.defaultReason
+    if (reasonText === null) return
+    move.mutate(
+      { status: pending, reason: reasonText },
+      {
+        onSuccess: (next) => {
+          toast.success(`Giornata: ${statusLabel(next.status).toLowerCase()}`)
+          setPending(null)
+          setReason('')
+        },
+      },
+    )
+  }
+
+  return (
+    <>
+      <PageHeader
+        icon={CalendarCheck}
+        title={`Giornata del ${formatIsoDateItalian(day.date)}`}
+        description={`${day.contract_title}, ${day.customer_name}`}
+        actions={
+          canWrite && offered.length > 0 ? (
+            <>
+              {offered.map((status) => {
+                const action = ACTIONS[status]
+                if (action === undefined) return null
+                return (
+                  <Button
+                    key={status}
+                    variant={action.tone}
+                    onClick={() => {
+                      move.reset()
+                      setPending(status)
+                    }}
+                  >
+                    {action.label}
+                  </Button>
+                )
+              })}
+            </>
+          ) : undefined
+        }
+      />
+
+      <div className="max-w-3xl space-y-8 px-4 pb-10 sm:px-8">
+        <p className="flex flex-wrap gap-x-4 text-sm text-muted-foreground">
+          <Link to="/app/days" search={{ contract: day.contract_id }} className="underline underline-offset-4">
+            Tutte le giornate del contratto
+          </Link>
+          <Link
+            to="/app/contracts/$contractId"
+            params={{ contractId: day.contract_id }}
+            className="underline underline-offset-4"
+          >
+            {day.contract_title}
+          </Link>
+          <Link
+            to="/app/organizations/$organizationId"
+            params={{ organizationId: day.customer_id }}
+            className="underline underline-offset-4"
+          >
+            {day.customer_name}
+          </Link>
+        </p>
+
+        <section aria-label="La giornata">
+          <dl className="border-t text-sm">
+            <Row label="Stato">
+              <DayStatePill status={day.status} />
+            </Row>
+            <Row label="Quanto">{quantityLabel(day.quantity)}</Row>
+            <Row label="Cosa è stato fatto">{day.description}</Row>
+            {day.note ? <Row label="Note">{day.note}</Row> : null}
+          </dl>
+        </section>
+
+        {day.status === 'worked_without_approval' ? (
+          <Notice>
+            Il contratto richiede l’approvazione preventiva del cliente e a questa giornata non è
+            collegata nessuna. Resta «{statusLabel('worked_without_approval')}» finché non ne arriva una.
+          </Notice>
+        ) : null}
+        {day.out_of_term ? (
+          <Notice>
+            {day.out_of_term === 'before_start'
+              ? `La data precede l’inizio del contratto, il ${formatIsoDateItalian(day.start_contract)}.`
+              : `La data è dopo la fine del contratto, il ${day.contract_end ? formatIsoDateItalian(day.contract_end) : ''}.`}
+          </Notice>
+        ) : null}
+
+        <Approval day={day} />
+        <History day={day} />
+        <Dossier day={day} />
+      </div>
+
+      <Dialog open={pending !== null} onOpenChange={(open) => (open ? undefined : close())}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{spec?.title}</DialogTitle>
+            <DialogDescription>{spec?.description}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="day-reason">{needsReason ? 'Motivo' : 'Motivo (facoltativo)'}</Label>
+            <Textarea
+              id="day-reason"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder={needsReason ? 'Cosa è successo' : (spec?.defaultReason ?? '')}
+              rows={3}
+            />
+          </div>
+          {move.error ? <QueryErrorBanner error={move.error} /> : null}
+          <DialogFooter>
+            <Button variant="outline" disabled={move.isPending} onClick={close}>
+              Annulla
+            </Button>
+            <Button
+              variant={spec?.tone === 'destructive' ? 'destructive' : 'default'}
+              disabled={move.isPending || (needsReason && reason.trim() === '')}
+              onClick={confirm}
+            >
+              {move.isPending ? <Loader className="mr-2 size-4" /> : null}
+              {spec?.label}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1 border-b py-2 sm:flex-row sm:justify-between sm:gap-6">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="font-medium sm:text-right">{children}</dd>
+    </div>
+  )
+}
+
+function Notice({ children }: { children: React.ReactNode }) {
+  return <p className="border border-muted bg-muted/40 px-3 py-2 text-sm">{children}</p>
+}
+
+/**
+ * The approval the day rests on, and the document that proves it. An approval is immutable
+ * evidence (a correction is a new one), so this only reads it: who sent it, when it was
+ * received, the verbatim excerpt, and a way into the archived original.
+ */
+function Approval({ day }: { day: WorkUnitDetail }) {
+  const approval = day.approval
+  const canWrite = useCanWrite()
+  return (
+    <section aria-labelledby="day-approval" className="space-y-3">
+      <h2 id="day-approval" className="font-semibold">
+        Approvazione
+      </h2>
+      {approval === null ? (
+        <>
+          <p className="text-sm text-muted-foreground">
+            {day.requires_prior_approval
+              ? 'Nessuna approvazione collegata, e il contratto ne richiede una.'
+              : 'Nessuna approvazione collegata. Il contratto non la richiede.'}
+          </p>
+          {canWrite && canReceiveApproval(day) ? (
+            <Button asChild variant="outline" size="sm">
+              <Link to="/app/approvals/new" search={{ contract: day.contract_id, days: day.id }}>
+                <FileCheck className="mr-2 size-4" aria-hidden />
+                Registra l’approvazione del cliente
+              </Link>
+            </Button>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <p className="text-sm text-muted-foreground">
+            Ricevuta il {formatOccurredAt(approval.received_at)} da {approval.sender}, per{' '}
+            {channelLabel(approval.channel).toLowerCase()}.
+          </p>
+          <blockquote className="whitespace-pre-line border-l-2 border-foreground pl-4 text-sm">
+            {approval.excerpt}
+          </blockquote>
+          <Button asChild variant="outline" size="sm">
+            <Link to="/app/documents/$documentId" params={{ documentId: approval.document_id }}>
+              <FileText className="mr-2 size-4" aria-hidden />
+              {approval.title_document ?? 'Apri il documento'}
+            </Link>
+          </Button>
+        </>
+      )}
+    </section>
+  )
+}
+
+/**
+ * The dispute bundle (REB-759): what an argument about this day needs, in one ZIP to hand to
+ * the other side. Open to every role, since it only reads, and offered on every day rather
+ * than only a contested one: a day is contested after the fact, and the proof is best
+ * collected while the approval is at hand.
+ */
+function Dossier({ day }: { day: WorkUnitDetail }) {
+  const [busy, setBusy] = useState(false)
+  return (
+    <section aria-labelledby="day-bundle" className="space-y-3">
+      <h2 id="day-bundle" className="font-semibold">
+        Fascicolo per la contestazione
+      </h2>
+      <p className="text-sm text-muted-foreground">
+        Un archivio ZIP con il riepilogo della giornata, l’approvazione e il suo estratto, la
+        cronologia, il registro del mese e la riga di fattura.{' '}
+        {day.approval === null
+          ? 'Questa giornata non ha un’approvazione: non c’è un originale da allegare.'
+          : 'Ci mette dentro anche l’originale archiviato su cui poggia l’approvazione, così com’è arrivato.'}
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true)
+          downloadDisputeBundle(day.id)
+            .catch((error: unknown) =>
+              toast.error(toProblem(error).detail ?? 'Non riesco a scaricare il fascicolo.'),
+            )
+            .finally(() => setBusy(false))
+        }}
+      >
+        <Download className="mr-2 size-4" aria-hidden="true" />
+        Scarica il fascicolo
+      </Button>
+    </section>
+  )
+}
+
+/** Every move the day made, oldest first as the log is written, each with when, by whom and why. */
+function History({ day }: { day: WorkUnitDetail }) {
+  return (
+    <section aria-labelledby="day-history" className="space-y-3">
+      <h2 id="day-history" className="font-semibold">
+        Cronologia
+      </h2>
+      <ol className="border-t">
+        {day.transitions.map((step) => (
+          <li key={step.id} className="space-y-1 border-b py-3 text-sm">
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              {step.previous_status === null ? (
+                <span className="font-medium">Registrata come {statusLabel(step.new_status).toLowerCase()}</span>
+              ) : (
+                <span className="font-medium">
+                  {statusLabel(step.previous_status)} <span aria-hidden="true">→</span>
+                  <span className="sr-only"> passa a </span> {statusLabel(step.new_status)}
+                </span>
+              )}
+            </p>
+            <p className="text-muted-foreground">
+              <time dateTime={step.created_at}>{formatOccurredAt(step.created_at)}</time>, {actorLabel(step.actor).toLowerCase()}
+            </p>
+            <p>{reasonLabel(step.reason)}</p>
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}

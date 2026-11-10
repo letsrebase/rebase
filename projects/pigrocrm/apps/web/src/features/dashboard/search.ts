@@ -1,8 +1,9 @@
 import type { components } from '@/lib/api-types'
-import { currentMonth } from './periodo'
+import { TAB_MODULES, type ModuleAccess } from '@/lib/modules'
+import { currentMonth } from './period'
 
 /**
- * `/app/?tab=&da=&a=&base=` — the dashboard's search params, and the one function that
+ * `/app/?tab=&from=&to=&base=` — the dashboard's search params, and the one function that
  * reads them back.
  *
  * The period is in the URL because a screenshot or a shared link of a dashboard with no
@@ -16,14 +17,39 @@ import { currentMonth } from './periodo'
 // the page; its API and MCP tool remain for the agent. Economica comes first since
 // 2026-09-09 (Ivan's request): the home opens on the money, the pipeline is one tab away.
 export const DASHBOARD_TABS = [
-  { id: 'economica', label: 'Economica' },
-  { id: 'commerciale', label: 'Commerciale' },
+  { id: 'economic', label: 'Economica' },
+  { id: 'commercial', label: 'Commerciale' },
   // Slice 8 part A (REB-329): when the money already invoiced arrives. The one tab with
   // no period, so the picker is hidden on it -- see `DashboardPage`.
-  { id: 'scadenziario', label: 'Scadenziario' },
+  { id: 'receivables', label: 'Scadenziario' },
+  // REB-757: the year as the accountant reads it, and the CSV of it. The period picker
+  // names the year, as it does on Economica.
+  { id: 'year', label: 'Anno' },
+  // REB-756: the days of the period by state, the rate they really earned and the trend of
+  // days worked without the approval the contract asks for.
+  { id: 'work_units', label: 'Giornate' },
 ] as const
 
 export type TabId = (typeof DASHBOARD_TABS)[number]['id']
+
+/**
+ * The tabs a space with these modules on shows (REB-953, spec 2026-11-09 B5): «Anno» is
+ * `taxes`, «Giornate» is `contracts`, «Commerciale» is `deals` (the table is `TAB_MODULES`);
+ * «Economica» and «Scadenziario» are the core's and always stay.
+ */
+export function availableTabs(access: ModuleAccess) {
+  return DASHBOARD_TABS.filter((tab) => access.on(...(TAB_MODULES[tab.id] ?? [])))
+}
+
+/**
+ * The tab to draw for the one the URL names: that tab when the space shows it, else the
+ * first it does show. The URL's own validator cannot know the modules, and a bookmark of
+ * «Anno» must open something rather than a tab that is not there.
+ */
+export function resolveTab(tab: TabId, access: ModuleAccess): TabId {
+  const tabs = availableTabs(access)
+  return tabs.some((candidate) => candidate.id === tab) ? tab : (tabs[0]?.id ?? 'economic')
+}
 
 /**
  * Which month a document's money falls in on the economic charts (ORB-133): the accrual
@@ -36,11 +62,21 @@ export type CashBase = components['schemas']['CashOverview']['base']
 /** `label` is the switch's word, `phrase` the one the page's sentence uses («Vista
  *  economica 2026 per competenza»): the wire value is a contract, never copy. */
 export const CASH_BASES: readonly { id: CashBase; label: string; phrase: string }[] = [
-  { id: 'competenza', label: 'Competenza', phrase: 'per competenza' },
-  { id: 'incasso', label: 'Incasso', phrase: 'per incasso' },
+  { id: 'accrual', label: 'Competenza', phrase: 'per competenza' },
+  { id: 'collection', label: 'Incasso', phrase: 'per incasso' },
 ]
 
-export type DashboardSearch = { tab: TabId; da: string; a: string; base: CashBase }
+const LEGACY_TABS: Record<string, TabId> = {
+  'economica': 'economic',
+  'commerciale': 'commercial',
+  'scadenziario': 'receivables',
+  'anno': 'year',
+  'giornate': 'work_units',
+}
+
+const LEGACY_BASES: Record<string, CashBase> = { 'competenza': 'accrual', 'incasso': 'collection' }
+
+export type DashboardSearch = { tab: TabId; from: string; to: string; base: CashBase }
 
 /**
  * A `YYYY-MM-DD` that names a day that exists.
@@ -63,7 +99,7 @@ function isCalendarDate(value: unknown): value is string {
  * on the home screen because a query parameter is missing would be absurd.
  *
  * What it deliberately does *not* decide is whether the two bounds make sense together.
- * `PeriodoQuery.resolve` answers `da > a` with a named `ValidationFailed` whose message
+ * `PeriodQuery.resolve` answers `da > a` with a named `ValidationFailed` whose message
  * the error banner shows; re-deciding it here is how two interfaces start disagreeing, and
  * silently swapping the bounds would answer a different question from the one the link
  * asked.
@@ -85,34 +121,41 @@ function isCalendarDate(value: unknown): value is string {
  * default period" — this function and the validator both call `currentMonth()`.
  */
 export function defaultDashboardSearch(): DashboardSearch {
-  const { da, a } = currentMonth()
-  return { tab: 'economica', da, a, base: 'competenza' }
+  const { from, to } = currentMonth()
+  return { tab: 'economic', from, to, base: 'accrual' }
 }
 
 /**
- * The Home's search: the dashboard's, plus the Gmail consent flow's `esito`, which the
+ * The Home's search: the dashboard's, plus the Gmail consent flow's `outcome`, which the
  * callback appends when it brings an empty space back to its start page (REB-222). A
- * string or nothing, looked up in a fixed table where it is shown (`messaggioEsito`),
+ * string or nothing, looked up in a fixed table where it is shown (`consentOutcome`),
  * exactly as on Impostazioni → Gmail. Optional, so a link into the dashboard never has
  * to name it.
  */
-export type HomeSearch = DashboardSearch & { esito?: string }
+export type HomeSearch = DashboardSearch & { outcome?: string }
 
 export function validateHomeSearch(search: Record<string, unknown>): HomeSearch {
   const dashboard = validateDashboardSearch(search)
-  return typeof search.esito === 'string' ? { ...dashboard, esito: search.esito } : dashboard
+  return typeof search.outcome === 'string' ? { ...dashboard, outcome: search.outcome } : dashboard
 }
 
 export function validateDashboardSearch(search: Record<string, unknown>): DashboardSearch {
   const fallback = currentMonth()
-  const tab = DASHBOARD_TABS.find((candidate) => candidate.id === search.tab)?.id ?? 'economica'
-  // The same fill-in-rather-than-reject as the tab: a link carrying `base=emissione`
+  // Links already sent (the Monday digest, bookmarks) carry the Italian words of before the
+  // English rename of 2026-11-02: `tab=anno`, `da=`, `a=`, `base=competenza`. They keep
+  // opening the same view, so each is read as the word it became.
+  const tabId = LEGACY_TABS[String(search.tab)] ?? search.tab
+  const baseId = LEGACY_BASES[String(search.base)] ?? search.base
+  const from = search.from ?? search.da
+  const to = search.to ?? search.a
+  const tab = DASHBOARD_TABS.find((candidate) => candidate.id === tabId)?.id ?? 'economic'
+  // The same fill-in-rather-than-reject as the tab: a link carrying `base=issue`
   // (the P&L's reading, not this view's) opens on the default rather than on a 422.
-  const base = CASH_BASES.find((candidate) => candidate.id === search.base)?.id ?? 'competenza'
+  const base = CASH_BASES.find((candidate) => candidate.id === baseId)?.id ?? 'accrual'
   return {
     tab,
-    da: isCalendarDate(search.da) ? search.da : fallback.da,
-    a: isCalendarDate(search.a) ? search.a : fallback.a,
+    from: isCalendarDate(from) ? from : fallback.from,
+    to: isCalendarDate(to) ? to : fallback.to,
     base,
   }
 }

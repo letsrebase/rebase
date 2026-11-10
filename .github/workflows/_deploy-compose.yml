@@ -93,6 +93,24 @@ on:
         type: string
         required: false
         default: ''
+      optional-env-secrets:
+        description: >-
+          Like `env-secrets`, for a feature that is opt-in on the host: each name is written
+          into the host `.env` when the environment has a value for it, and skipped with a
+          notice when it has none, so a deploy never fails for a secret nobody has created
+          yet. The compose overlay the secret feeds is what the host's `COMPOSE_FILE` turns
+          on. Every name must still be in the `S_*` union of the secrets step. Empty by
+          default.
+        type: string
+        required: false
+        default: ''
+      health-timeout-seconds:
+        description: >-
+          How long the health loop keeps asking before it gives up. A stack whose
+          api migrates every tenant database on start needs longer than the default.
+        type: number
+        required: false
+        default: 150
 
 permissions:
   contents: read
@@ -106,9 +124,10 @@ jobs:
       name: ${{ inputs.environment }}
       url: ${{ inputs.url }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
 
       - name: Verify the environment is configured
         # Five missing secrets produce five confusing failures further down (ssh to an
@@ -133,6 +152,25 @@ jobs:
               "${{ inputs.environment }}" "${missing[*]}"
             exit 1
           fi
+
+      - name: Refuse to deploy a commit that is not on main
+        # A tag on any commit, a feature branch included, gets its own green CI run
+        # and would then deploy. Production and preview code both come from `main`:
+        # the commit must be `main` itself or an ancestor of it (CI-A-01). The
+        # `*-production` environments should also be restricted to `*-v*` tags.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ inputs.ref || github.sha }}
+        run: |
+          set -euo pipefail
+          status=$(gh api "repos/${REPO}/compare/main...${SHA}" --jq .status)
+          case "$status" in
+            identical|behind) echo "${SHA} is on main (${status})." ;;
+            *)
+              echo "::error::${SHA} is not on main (compare status: ${status}). Refusing to deploy a commit that was never merged."
+              exit 1 ;;
+          esac
 
       - name: Refuse to deploy a commit CI has not passed
         # A deploy workflow is not a status check and nothing stops it from running on
@@ -251,8 +289,9 @@ jobs:
         # of the same name, replacing that one line and leaving every other line the
         # file already holds untouched (REB-650).
         #
-        # The values come from the inherited `secrets` context as one JSON blob, never
-        # as a workflow input (an input is not masked in a log, a secret is). Each value
+        # The values come from the named secrets below, never from the whole `secrets`
+        # context and never as a workflow input (an input is not masked in a log, a
+        # secret is). Each value
         # reaches the host base64-encoded on the ssh connection's stdin, which the remote
         # decodes: only the secret name and the env file path travel as arguments, the
         # way the DEPLOY_SSH_KEY above is written to a file rather than passed on a
@@ -260,16 +299,35 @@ jobs:
         # secrets only, which is what a `.env` line can hold. A name listed but unset on
         # the environment is a loud failure: the deploy is here to guarantee the managed
         # secrets are present, not to skip a missing one.
-        if: inputs.env-secrets != ''
+        #
+        # The step's environment holds exactly the union of the names any caller may
+        # list, not every inherited secret (`SNYK_TOKEN`, the deploy key and the rest
+        # stay out of it). A caller that lists a name outside the union fails the step;
+        # adding a managed secret means adding its `S_<NAME>` line here.
+        if: inputs.env-secrets != '' || inputs.optional-env-secrets != ''
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           ENVIRONMENT: ${{ inputs.environment }}
-          SECRETS_JSON: ${{ toJSON(secrets) }}
+          S_PIGROCRM_APP_PASSWORD: ${{ secrets.PIGROCRM_APP_PASSWORD }}
+          S_PIGROCRM_BACKUP_ACCESS_KEY_ID: ${{ secrets.PIGROCRM_BACKUP_ACCESS_KEY_ID }}
+          S_PIGROCRM_BACKUP_SECRET_ACCESS_KEY: ${{ secrets.PIGROCRM_BACKUP_SECRET_ACCESS_KEY }}
+          S_PIGROCRM_BACKUP_PING_URL: ${{ secrets.PIGROCRM_BACKUP_PING_URL }}
+          S_HUB_BACKUP_ACCESS_KEY_ID: ${{ secrets.HUB_BACKUP_ACCESS_KEY_ID }}
+          S_HUB_BACKUP_SECRET_ACCESS_KEY: ${{ secrets.HUB_BACKUP_SECRET_ACCESS_KEY }}
+          S_HUB_BACKUP_PING_URL: ${{ secrets.HUB_BACKUP_PING_URL }}
+          S_DOCUMENSO_BACKUP_PING_URL: ${{ secrets.DOCUMENSO_BACKUP_PING_URL }}
+          S_VAULTWARDEN_SMTP_PASSWORD: ${{ secrets.VAULTWARDEN_SMTP_PASSWORD }}
+          S_VAULTWARDEN_BACKUP_ACCESS_KEY_ID: ${{ secrets.VAULTWARDEN_BACKUP_ACCESS_KEY_ID }}
+          S_VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY: ${{ secrets.VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY }}
+          S_VAULTWARDEN_BACKUP_PING_URL: ${{ secrets.VAULTWARDEN_BACKUP_PING_URL }}
           WANT: ${{ inputs.env-secrets }}
+          OPTIONAL: ${{ inputs.optional-env-secrets }}
         run: |
           set -euo pipefail
+          # The optional names follow the required ones, each marked with a leading `?`.
+          WANT_ALL="${WANT}"$'\n'"$(printf '%s\n' "$OPTIONAL" | sed 's/^[[:space:]]*\(.\)/?\1/')"
           # Runs on the host with NAME and ENVFILE in its environment and the value's
           # base64 on stdin. No secret is in this string, so it is safe as an argument.
           # grep's exit 1 is "no line matched" (the first write of this key, or an empty
@@ -298,16 +356,32 @@ jobs:
             name="${name#"${name%%[![:space:]]*}"}"
             name="${name%"${name##*[![:space:]]}"}"
             [ -z "$name" ] && continue
-            # `jq -j` plus the trailing-`x` guard keep the value byte-exact: `jq -r`
-            # appends a newline and `$(...)` then strips every trailing newline, which
-            # would hide a secret that legitimately ends in one. Captured exactly, a
-            # value with any newline (trailing or internal) is rejected rather than
-            # written: a `.env` line holds one line, so a multi-line secret does not
-            # belong here, and silently dropping a trailing newline would change the
-            # secret without saying so.
-            value=$(printf '%s' "$SECRETS_JSON" | jq -j --arg k "$name" '.[$k] // ""'; printf x)
+            optional=0
+            if [ "${name:0:1}" = '?' ]; then
+              optional=1
+              name="${name:1}"
+            fi
+            # Only the names in the union above are in this step's environment, as
+            # `S_<NAME>`. Read by indirect expansion, so an unlisted name is an error
+            # here and not an empty value.
+            var="S_${name}"
+            if [[ ! "$name" =~ ^[A-Z0-9_]+$ ]] || [ -z "${!var+x}" ]; then
+              echo "::error::${name} is listed in env-secrets but is not one of the secrets this workflow can template (see the S_* names in this step's env). Add it there first."
+              exit 1
+            fi
+            # The trailing-`x` guard keeps the value byte-exact: `$(...)` strips every
+            # trailing newline, which would hide a secret that legitimately ends in one.
+            # Captured exactly, a value with any newline (trailing or internal) is
+            # rejected rather than written: a `.env` line holds one line, so a
+            # multi-line secret does not belong here, and silently dropping a trailing
+            # newline would change the secret without saying so.
+            value=$(printf '%s' "${!var}"; printf x)
             value=${value%x}
             if [ -z "$value" ]; then
+              if [ "$optional" = 1 ]; then
+                echo "::notice::Environment ${ENVIRONMENT} has no value for ${name}: skipped (optional-env-secrets)."
+                continue
+              fi
               echo "::error::Environment ${ENVIRONMENT} has no value for ${name}, listed in env-secrets."
               exit 1
             fi
@@ -319,7 +393,7 @@ jobs:
               | ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o GlobalKnownHostsFile=/dev/null \
                   "${DEPLOY_USER}@${DEPLOY_HOST}" \
                   "NAME='${name}' ENVFILE='${DEPLOY_PATH}/.env' bash -c '${remote}'"
-          done <<< "$WANT"
+          done <<< "$WANT_ALL"
 
       - name: Build and start the stack
         env:
@@ -349,13 +423,23 @@ jobs:
             # name, so moving a project in the repository would silently orphan a
             # running stack and build a second one beside it.
             #
+            # The host is one 3.8 GiB, single-core machine shared by every stack, so
+            # the build and the restart run under one host-wide lock (a second deploy
+            # waits instead of competing for memory and CPU), one image at a time
+            # (INFRA-A-12).
+            #
             # `build --pull` first: without it the host builds on whatever copy of
             # each base image (the nginx, Node and Python bases) it cached the first
             # time, and the security fixes Docker Hub rebuilds under the same tag
             # never reach a deployed image (REB-462). If a registry does not answer,
             # `set -e` stops here and the running containers are left as they are.
-            # `up -d` then recreates only the services whose image changed.
-            $COMPOSE -p "${COMPOSE_PROJECT}" --env-file "${DEPLOY_PATH}/.env" build --pull
+            # `pull --ignore-buildable` refreshes the registry images that `build --pull`
+            # does not touch; the databases are pinned by digest, so it moves none. `up -d` then recreates
+            # only the services whose image changed.
+            exec 9>/var/lock/rebase-deploy.lock
+            flock 9
+            COMPOSE_PARALLEL_LIMIT=1 $COMPOSE -p "${COMPOSE_PROJECT}" --env-file "${DEPLOY_PATH}/.env" build --pull
+            $COMPOSE -p "${COMPOSE_PROJECT}" --env-file "${DEPLOY_PATH}/.env" pull --ignore-buildable
             $COMPOSE -p "${COMPOSE_PROJECT}" --env-file "${DEPLOY_PATH}/.env" up -d
           SSH
 
@@ -373,12 +457,30 @@ jobs:
           HEALTH_URL: ${{ inputs.health-url }}
           EXTRA_HEALTH_URL: ${{ inputs.extra-health-url }}
           COMPOSE_PROJECT: ${{ inputs.compose-project }}
+          HEALTH_TIMEOUT: ${{ inputs.health-timeout-seconds }}
         run: |
           ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o GlobalKnownHostsFile=/dev/null \
             "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "HEALTH_URL='${HEALTH_URL}' EXTRA_HEALTH_URL='${EXTRA_HEALTH_URL}' COMPOSE_PROJECT='${COMPOSE_PROJECT}' bash -s" <<'SSH'
+            "HEALTH_URL='${HEALTH_URL}' EXTRA_HEALTH_URL='${EXTRA_HEALTH_URL}' COMPOSE_PROJECT='${COMPOSE_PROJECT}' HEALTH_TIMEOUT='${HEALTH_TIMEOUT}' bash -s" <<'SSH'
             set -uo pipefail
-            for attempt in $(seq 1 30); do
+            # This output goes to a public Actions log. Only the static front ends
+            # are dumped, with any `t=` query token redacted as a second line of
+            # defence; every other service (api lines carry tokens and PII, db and
+            # the workers carry data, documenso carries `/sign/<token>` paths,
+            # vaultwarden carries members' addresses) is read on the host.
+            dump_logs() {
+              for service in "$@"; do
+                case "${service}" in
+                  web|website)
+                    docker compose -p "${COMPOSE_PROJECT}" logs --tail 50 "${service}" 2>&1 \
+                      | sed -E 's/([?&]t=)[^ "&]+/\1[redacted]/g' || true ;;
+                  *)
+                    echo "${service}'s own logs are not dumped here; read them on the host with: docker compose -p ${COMPOSE_PROJECT} logs ${service}" ;;
+                esac
+              done
+            }
+            attempts=$(( (HEALTH_TIMEOUT + 4) / 5 ))
+            for attempt in $(seq 1 "${attempts}"); do
               code=$(curl -s -o /dev/null -w '%{http_code}' "${HEALTH_URL}" || true)
               extra_code=200
               if [ -n "${EXTRA_HEALTH_URL}" ]; then
@@ -396,7 +498,7 @@ jobs:
                 # nothing else, and the first version of this step failed the
                 # pigrocrm-v0.17.0 deploy after a successful rollout for that reason
                 # (REB-264).
-                states=$(docker compose -p "${COMPOSE_PROJECT}" ps -a --format '{{.Service}}\t{{.State}}\t{{.Labels}}') || {
+                states=$(docker compose -p "${COMPOSE_PROJECT}" ps -a --format '{{.Service}}\t{{.State}}\t{{.ExitCode}}\t{{.Labels}}') || {
                   echo "::error::Could not read container states for ${COMPOSE_PROJECT}."
                   exit 1
                 }
@@ -406,9 +508,14 @@ jobs:
                 fi
                 not_running=""
                 not_running_services=""
-                while IFS="$(printf '\t')" read -r service state labels; do
+                while IFS="$(printf '\t')" read -r service state exit_code labels; do
                   [ -z "${service}" ] && continue
                   case "${labels}" in *com.docker.compose.oneoff=True*) continue ;; esac
+                  # The one-shot `migrate` service finishes and stays exited; only a
+                  # clean exit counts as healthy, a failed migration is still an error.
+                  if [ "${service}" = migrate ] && [ "${state}" = exited ] && [ "${exit_code}" = 0 ]; then
+                    continue
+                  fi
                   if [ "${state}" != "running" ]; then
                     not_running="${not_running}${not_running:+, }${service}: ${state}"
                     not_running_services="${not_running_services} ${service}"
@@ -416,16 +523,26 @@ jobs:
                 done < <(printf '%s\n' "${states}")
                 if [ -n "$not_running" ]; then
                   echo "::error::Service(s) not running for ${COMPOSE_PROJECT}: ${not_running}"
-                  # Only the services that failed, never `documenso` (its lines can
-                  # carry a `/sign/<token>` path) nor `vaultwarden` (its lines carry
-                  # members' addresses and IPs): this log is a public Actions log.
-                  for service in ${not_running_services}; do
-                    if [ "${service}" = documenso ] || [ "${service}" = vaultwarden ]; then
-                      echo "${service}'s own logs are not dumped here; read them on the host with: docker compose -p ${COMPOSE_PROJECT} logs ${service}"
-                    else
-                      docker compose -p "${COMPOSE_PROJECT}" logs --tail 50 "${service}"
-                    fi
-                  done
+                  dump_logs ${not_running_services}
+                  exit 1
+                fi
+                # A container that crash-loops reads `running` between two restarts, so
+                # one look proves nothing: the first non-root preview of REB-894 had the
+                # CRM's mcp restarting every few seconds and this step reported success.
+                # Read every container's restart count, wait, and read it again.
+                restarts() {
+                  docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT}" --format '{{.Names}}' \
+                    | while read -r name; do
+                        printf '%s %s\n' "${name}" "$(docker inspect -f '{{.RestartCount}}' "${name}")"
+                      done | sort
+                }
+                before=$(restarts)
+                sleep 20
+                after=$(restarts)
+                if [ "${before}" != "${after}" ]; then
+                  echo "::error::A container of ${COMPOSE_PROJECT} restarted while the deploy was being checked:"
+                  diff <(printf '%s\n' "${before}") <(printf '%s\n' "${after}") || true
+                  dump_logs ${not_running_services}
                   exit 1
                 fi
                 exit 0
@@ -433,9 +550,9 @@ jobs:
               sleep 5
             done
             if [ -n "${EXTRA_HEALTH_URL}" ]; then
-              echo "::error::${HEALTH_URL} (${code}) or ${EXTRA_HEALTH_URL} (${extra_code}) did not answer 200 within 150 seconds."
+              echo "::error::${HEALTH_URL} (${code}) or ${EXTRA_HEALTH_URL} (${extra_code}) did not answer 200 within ${HEALTH_TIMEOUT} seconds."
             else
-              echo "::error::${HEALTH_URL} did not answer 200 within 150 seconds (last: ${code})."
+              echo "::error::${HEALTH_URL} did not answer 200 within ${HEALTH_TIMEOUT} seconds (last: ${code})."
             fi
             docker compose -p "${COMPOSE_PROJECT}" ps -a --format 'table {{.Name}}\t{{.Status}}' || true
             states=$(docker compose -p "${COMPOSE_PROJECT}" ps -a --format '{{.Service}}\t{{.State}}\t{{.Labels}}') || true
@@ -446,17 +563,8 @@ jobs:
               all_services="${all_services} ${service}"
             done < <(printf '%s\n' "${states}")
             # Every service, running or not: the health URL itself is what failed here, so
-            # a container that reports running can still be the one to blame. Never
-            # `documenso` (its lines can carry a `/sign/<token>` path) nor `vaultwarden`
-            # (its lines carry members' addresses and IPs): this log is a public Actions
-            # log.
-            for service in ${all_services}; do
-              if [ "${service}" = documenso ] || [ "${service}" = vaultwarden ]; then
-                echo "${service}'s own logs are not dumped here; read them on the host with: docker compose -p ${COMPOSE_PROJECT} logs ${service}"
-              else
-                docker compose -p "${COMPOSE_PROJECT}" logs --tail 50 "${service}" || true
-              fi
-            done
+            # a container that reports running can still be the one to blame.
+            dump_logs ${all_services}
             exit 1
           SSH
 

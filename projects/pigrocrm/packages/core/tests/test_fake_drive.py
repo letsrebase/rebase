@@ -74,9 +74,9 @@ def _build_tree() -> tuple[FakeDrive, dict[str, str]]:
     entirely -- so that "children of `Offerte` are exactly `a.pdf` and `sub`" is not
     accidentally true only because nothing else was ever added to the drive."""
     drive = FakeDrive()
-    offerte = drive.add_folder("Offerte", parent=drive.root_id)
-    a_pdf = drive.add_file("a.pdf", parent=offerte, mime="application/pdf", content=b"%PDF-a\n")
-    sub = drive.add_folder("sub", parent=offerte)
+    offers = drive.add_folder("Offerte", parent=drive.root_id)
+    a_pdf = drive.add_file("a.pdf", parent=offers, mime="application/pdf", content=b"%PDF-a\n")
+    sub = drive.add_folder("sub", parent=offers)
     b_docx = drive.add_file(
         "b.docx",
         parent=sub,
@@ -89,7 +89,7 @@ def _build_tree() -> tuple[FakeDrive, dict[str, str]]:
         mime=GOOGLE_DOC_MIME,
         content=b"Testo del preventivo, in chiaro.",
     )
-    return drive, {"offerte": offerte, "a_pdf": a_pdf, "sub": sub, "b_docx": b_docx, "doc": doc}
+    return drive, {"offerte": offers, "a_pdf": a_pdf, "sub": sub, "b_docx": b_docx, "doc": doc}
 
 
 def test_lists_the_children_of_a_folder() -> None:
@@ -176,7 +176,7 @@ def test_export_of_a_non_google_doc_is_refused_with_400() -> None:
     with pytest.raises(Conflict) as excinfo:
         transport.bytes("GET", _export_url(ids["a_pdf"]), what="export a.pdf")
 
-    assert excinfo.value.details["status"] == 400
+    assert excinfo.value.details["upstream_status"] == 400
 
 
 def test_a_contains_clause_is_refused_outright() -> None:
@@ -201,4 +201,4 @@ def test_unknown_id_is_404() -> None:
     with pytest.raises(Conflict) as excinfo:
         transport.json("GET", _metadata_url("does-not-exist"), what="get missing file")
 
-    assert excinfo.value.details["status"] == 404
+    assert excinfo.value.details["upstream_status"] == 404

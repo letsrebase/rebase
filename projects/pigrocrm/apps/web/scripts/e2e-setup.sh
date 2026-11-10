@@ -6,17 +6,16 @@
 # Deliberately independent of whatever else is running on this machine: the
 # container name, Postgres port (55433, not the default 5432) and database name
 # are all suffixed "-e2e" precisely so this can run next to a developer's own
-# Postgres, or next to the manual "Stack recipe" from the task brief, without
-# either one seeing the other.
+# Postgres, without either one seeing the other.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-cd "$REPO_ROOT"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+cd "$PROJECT_ROOT"
 
 # shellcheck source=./e2e-env.sh
-source "$REPO_ROOT/apps/web/scripts/e2e-env.sh"
+source "$PROJECT_ROOT/apps/web/scripts/e2e-env.sh"
 
-# Fix round 1: a Vite server orphaned by a previous, signal-interrupted run
+# A Vite server orphaned by a previous, signal-interrupted run
 # (e2e-teardown.sh's own comment has the full mechanism) would otherwise sit on
 # this port forever, and Playwright's `reuseExistingServer: !CI`
 # (playwright.config.ts) would then silently reuse that stale process for
@@ -44,7 +43,7 @@ echo "== pigrocrm e2e: bringing up Postgres on :$PIGROCRM_E2E_PG_PORT =="
 docker rm -f "$PIGROCRM_E2E_CONTAINER" >/dev/null 2>&1 || true
 docker run --rm -d --name "$PIGROCRM_E2E_CONTAINER" \
   -e POSTGRES_PASSWORD=pigrocrm -e POSTGRES_USER=pigrocrm -e POSTGRES_DB=pigrocrm_e2e \
-  -p "$PIGROCRM_E2E_PG_PORT":5432 postgres:17-alpine >/dev/null
+  -p "127.0.0.1:${PIGROCRM_E2E_PG_PORT}:5432" postgres:17-alpine >/dev/null
 
 echo "== pigrocrm e2e: waiting for Postgres to accept connections =="
 until docker exec "$PIGROCRM_E2E_CONTAINER" pg_isready -U pigrocrm >/dev/null 2>&1; do sleep 1; done
@@ -68,10 +67,11 @@ from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import get_settings
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.scope import bind_scope
-from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-from pigrocrm.core.emitter.service import LegalEntityService
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
+from pigrocrm.core.modules.service import SpaceModulesService
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.templates.service import TemplateService
 from pigrocrm.core.timetracking.categories import CostCategoryService
@@ -82,14 +82,12 @@ engine = create_engine(get_settings().owner_database_url, future=True)
 with session_factory(engine)() as session:
     bind_scope(session, Actor.system())
     UserService(session).create(
-        UserCreate(email="e2e@pigro.it", password="supersegreta1", nome="E2E", ruolo="admin"),
+        UserCreate(email="e2e@pigro.it", password="supersegreta1", name="E2E", role="admin"),
         Actor.system(),
     )
-    # `seed_defaults` is admin-only as of this codebase's own Task 15 review (it now
-    # calls `actor.require_admin` itself, not just the REST router) -- the brief's own
-    # sample called this with no `actor` at all, which `PipelineService.seed_defaults`
-    # no longer accepts. `Actor.system()` is the same actor `createadmin` and this
-    # script's own user-seeding step above already use.
+    # `seed_defaults` is admin-only (it calls `actor.require_admin` itself, not just the REST
+    # router). `Actor.system()` is the same actor `createadmin` and the user-seeding step above
+    # already use.
     PipelineService(session).seed_defaults(Actor.system())
     # The timesheet's PDF path needs the «Rapporto ore» template row to exist; without
     # it `TimeReportService.render_pdf` raises a `ValidationFailed` naming `pigrocrm
@@ -112,12 +110,12 @@ with session_factory(engine)() as session:
     # `_check_fiscal` requires).
     LegalEntityService(session).upsert_default(
         LegalEntityUpsert(
-            ragione_sociale="Studio E2E",
-            partita_iva="12345678903",
-            indirizzo="Via di Prova 1",
-            cap="00100",
-            comune="Roma",
-            provincia="RM",
+            legal_name="Studio E2E",
+            vat_number="12345678903",
+            address="Via di Prova 1",
+            postal_code="00100",
+            city="Roma",
+            province="RM",
             email="e2e@pigro.it",
         ),
         Actor.system(),
@@ -130,12 +128,17 @@ with session_factory(engine)() as session:
     # Both are honest failures at exactly the wrong time, and configuring the regime is
     # a step a real installation performs on «Impostazioni → Fiscale» before it issues
     # anything. The three rates are the forfettario's own published numbers, which is
-    # also `FiscalProfileUpsert`'s own default for each of them; `codice_regime` has no
+    # also `FiscalProfileUpsert`'s own default for each of them; `regime_code` has no
     # default and is the whole point of the row.
     FiscalProfileService(session).upsert(
-        FiscalProfileUpsert(codice_regime="RF19"),
+        FiscalProfileUpsert(regime_code="RF19"),
         Actor.system(),
     )
+    # The onboarding (REB-957) covers the screen of an administrator whose space has no
+    # profile, which would stand in front of every spec below. The space answers «Decido
+    # dopo» here, as a person would: every module stays on and `onboarding.spec.ts` finds
+    # the questions waiting in «Primi passi».
+    SpaceModulesService(session, get_settings()).skip_onboarding(Actor.system())
 print("seed complete")
 PY
 

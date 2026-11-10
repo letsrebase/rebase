@@ -1025,3 +1025,120 @@ a.avatar:hover {
     transition: none;
   }
 }
+
+/* --- Porta qualcuno (REB-711): the referral as a split of rebase's margin, inside the
+   step-shadow box. Each row is a rate as a figure (the deck's step-number scale, in the
+   accent) over a two-pixel bar whose fill is that rate's share of the bar; the caption
+   sits in the part the fill leaves. The figure, the bar and its width come from
+   referral.js, which reads the rate; without one the row is the sentence and nothing
+   else. `[hidden]` is restated because `.split` is a flex container and would win. */
+.referral [hidden] {
+  display: none;
+}
+
+.split-row {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.split-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.split-head h3 {
+  margin: 0;
+}
+
+.figure {
+  font-size: clamp(3rem, 4vw + 1.6rem, 6rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--landing-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.split {
+  display: flex;
+  align-items: center;
+  height: 3.25rem;
+  border: 2px solid var(--landing-ink);
+  background-color: #ffffff;
+  overflow: hidden;
+}
+
+.split-fill {
+  flex: none;
+  width: var(--share, 0);
+  height: 100%;
+  border-right: 2px solid var(--landing-ink);
+}
+
+.split-fill.talent {
+  background-color: var(--landing-gold);
+}
+
+.split-fill.company {
+  background-color: var(--landing-cta);
+}
+
+/* From 60% the fill leaves no room for the caption: the bar wraps and the caption takes
+   the line under it, still inside the box of the bar. */
+.split[data-wide] {
+  flex-wrap: wrap;
+  height: auto;
+}
+
+.split[data-wide] .split-fill {
+  height: 3.25rem;
+}
+
+.split[data-wide] .split-rest {
+  flex-basis: 100%;
+  padding-block: 0.5rem;
+  border-top: 2px solid var(--landing-ink);
+}
+
+.split-rest {
+  padding-inline: 1rem;
+  font-size: 1rem;
+  color: var(--landing-ink-quiet);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.referral .lines {
+  display: grid;
+  gap: 0.75rem;
+  max-width: 62ch;
+  padding-top: 1.25rem;
+}
+
+.referral .terms,
+.referral .example {
+  color: var(--landing-ink);
+}
+
+.referral .example {
+  font-size: 1.0625rem;
+}
+
+.ex-label {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--landing-ink-quiet);
+  margin-bottom: 0.25rem;
+}
+
+@media (max-width: 40rem) {
+  .split-rest {
+    font-size: 0.8125rem;
+    padding-inline: 0.6rem;
+  }
+}

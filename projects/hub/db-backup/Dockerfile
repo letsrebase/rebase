@@ -1,0 +1,26 @@
+# The database backup services' image (REB-715, REB-717), one for Documenso's database and
+# the hub's: the databases' own image, so that `pg_dump` is the same major version as the
+# servers it dumps, plus the two tools that image does not carry and the scripts need,
+# `openssl` for the CMS envelope and a `curl` new enough to sign S3 requests
+# (`--aws-sigv4`, 7.75). `test_documenso_compose.py` fails when the tag here and the tag of
+# `documenso-db` in ../docker-compose.documenso.yml or of `db` in ../docker-compose.yml
+# drift: a `pg_dump` older than its server refuses to run, and a newer one writes an
+# archive an older `pg_restore` cannot read.
+#
+# The digest is what the origin's `postgres:17-alpine` is today, and it has to be there, in
+# this line and in the three compose files' `db` services. The deploy runs `docker compose
+# build --pull` and `pull`, which fetch by tag; by tag alone that would move the host's
+# `postgres:17-alpine` to whatever Docker Hub has built since 2026-08-13, and the next `up -d`
+# would recreate every database container that names the tag (the hub's, Documenso's and the
+# CRM's) on a Postgres nobody chose for them. Pulled by digest, nothing moves. Bumping it is a
+# change to these four lines, made on purpose, in a pull request (Dependabot's docker and
+# docker-compose entries open it).
+#
+# The scripts are copied in rather than mounted, so a deploy that changes one is a
+# changed image and compose recreates the container; a bind-mounted file would be a
+# change compose cannot see, and the loop would go on running the old script.
+FROM postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+
+RUN apk add --no-cache curl openssl
+
+COPY scripts/ /scripts/

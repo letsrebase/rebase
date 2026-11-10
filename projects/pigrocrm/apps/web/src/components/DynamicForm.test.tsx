@@ -6,8 +6,8 @@ import type { ProblemDetail } from '@/lib/api'
 import type { FieldDefinition } from '@/lib/schema'
 
 const FIELDS: FieldDefinition[] = [
-  { key: 'partita_iva', label: 'Partita IVA', type: 'text', required: false, options: [] },
-  { key: 'note_interne', label: 'Note interne', type: 'textarea', required: false, options: [] },
+  { key: 'vat_number', label: 'Partita IVA', type: 'text', required: false, options: [] },
+  { key: 'internal_notes', label: 'Note interne', type: 'textarea', required: false, options: [] },
 ]
 
 const CHECKBOX: FieldDefinition = {
@@ -27,8 +27,8 @@ const VALIDATION_PROBLEM: ProblemDetail = {
   status: 422,
   detail: 'customer.partita_iva: deve essere di 11 cifre',
   code: 'validation_failed',
-  entity: 'customer',
-  field: 'partita_iva',
+  entity: 'organization',
+  field: 'vat_number',
   reason: 'deve essere di 11 cifre',
   expected: '11 cifre numeriche',
 }
@@ -44,14 +44,14 @@ describe('DynamicForm', () => {
     const onChange = vi.fn()
     render(<DynamicForm fields={FIELDS} values={{}} onChange={onChange} mode="edit" />)
     await userEvent.type(screen.getByLabelText('Partita IVA'), 'x')
-    expect(onChange).toHaveBeenCalledWith('partita_iva', 'x')
+    expect(onChange).toHaveBeenCalledWith('vat_number', 'x')
   })
 
   it('reads each field from its own key in values, defaulting an absent one to null', () => {
     render(
       <DynamicForm
         fields={FIELDS}
-        values={{ partita_iva: '01234567890' }}
+        values={{ vat_number: '01234567890' }}
         onChange={vi.fn()}
         mode="edit"
       />,
@@ -103,7 +103,7 @@ describe('DynamicForm', () => {
         fields={FIELDS}
         values={{}}
         onChange={vi.fn()}
-        problem={{ ...VALIDATION_PROBLEM, code: 'conflict', field: 'partita_iva' }}
+        problem={{ ...VALIDATION_PROBLEM, code: 'conflict', field: 'vat_number' }}
         mode="edit"
       />,
     )
@@ -111,7 +111,7 @@ describe('DynamicForm', () => {
   })
 
   /**
-   * The invisible half of the archived-field defect (see CustomerForm.test.tsx for
+   * The invisible half of the archived-field defect (see OrganizationForm.test.tsx for
    * the other half): the server names a field, this form renders no such control, and
    * the message used to be dropped on the floor -- the user pressed Salva and nothing
    * whatsoever happened, forever. `field: 'settore'` for a key no longer in the

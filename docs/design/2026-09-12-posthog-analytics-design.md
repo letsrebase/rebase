@@ -102,41 +102,41 @@ never mentions analytics and an action counts only when the API said yes.
 
 | Call | Event |
 |---|---|
-| `POST /api/tenants/` | `spazio_creato` |
-| `POST /api/auth/entra` | `entrato_con_link` |
-| `POST /api/customers` | `cliente_creato` |
-| `POST /api/customers/from-suggestions` (the Gmail proposals ticked, REB-223) | `clienti_importati` |
-| `POST /api/deals` | `deal_creato` |
-| `POST /api/documents` | `documento_creato` |
-| `POST /api/documents/from-template` | `documento_creato` |
-| `POST /api/time-entries` | `ore_registrate` |
-| `POST /api/invoices/{invoice_id}/issue` | `fattura_emessa` |
-| `POST /api/tokens` | `assistente_collegato` |
+| `POST /api/tenants/` | `space_created` |
+| `POST /api/auth/entra` | `signed_in_with_link` |
+| `POST /api/customers` | `customer_created` |
+| `POST /api/customers/from-suggestions` (the Gmail proposals ticked, REB-223) | `customers_imported` |
+| `POST /api/deals` | `deal_created` |
+| `POST /api/documents` | `document_created` |
+| `POST /api/documents/from-template` | `document_created` |
+| `POST /api/time-entries` | `hours_logged` |
+| `POST /api/invoices/{invoice_id}/issue` | `invoice_issued` |
+| `POST /api/tokens` | `assistant_connected` |
 | `PUT /api/settings/emitter` (the emitter profile) | `profilo_emittente_salvato` |
 
 The exact path of the last row is read from `api-types.ts` when the card is
 implemented; the table is the contract. «Primo cliente» and «attivato entro sette
 giorni» (spec `projects/pigrocrm/docs/superpowers/specs/2026-09-12-onboarding-product-led-design.md`
-§4) are funnels PostHog computes from these events and the `spazio_creato` timestamp;
+§4) are funnels PostHog computes from these events and the `space_created` timestamp;
 the code does not decide what «first» means. Since REB-223 a space's first customers can
-arrive in one batch from the Gmail proposals, which earns one `clienti_importati` and no
-`cliente_creato`: a «primo cliente» funnel counts either event.
+arrive in one batch from the Gmail proposals, which earns one `customers_imported` and no
+`customer_created`: a «primo cliente» funnel counts either event.
 
 ## The hub (ORB-185)
 
 The same `initAnalytics`, replay with inputs masked (the wizards are forms), pageviews
 on history change. Events, in the wizards and the member area:
 
-- `wizard_iniziato`, `wizard_passo` (with `passo`, the step index, and since REB-122
-  `schermata`, the screen's own id) and `wizard_completato`, each with `tipo`
+- `wizard_started`, `wizard_step` (with `passo`, the step index, and since REB-122
+  `schermata`, the screen's own id) and `wizard_completed`, each with `tipo`
   (`freelance` or `azienda`) and, when present,
   `perk` from the query string (`?perk=guida` is how the site's guide section arrives).
-  `wizard_passo` is what makes «where do they leave» (ORB-122) a funnel, and the
+  `wizard_step` is what makes «where do they leave» (ORB-122) a funnel, and the
   milestone «Three screens instead of eight» needs that baseline before the grouping.
   It fires for every step the engine shows, backward moves included, so a funnel takes
   the first in-order occurrence of each step and a «last `passo` per person» reading is
   not «where they left».
-- `guida_scaricata`, on the click of «Scarica la guida» in `pages/member/Area.tsx`. The
+- `guide_downloaded`, on the click of «Scarica la guida» in `pages/member/Area.tsx`. The
   PDF is served by `GET /api/hub/me/guida` behind the member cookie, so this is the only
   place a download can be counted; the site only links to the wizard.
 - Identity: the member (`id`, email, nome) when the area loads, the admin when the
@@ -145,11 +145,11 @@ on history change. Events, in the wizards and the member area:
 The hub's own MCP server is not instrumented: its only user is Ivan.
 
 **Amended 2026-09-15 (REB-215).** «Server-side events from the API are left out of this
-version» stops holding for one event: `iscrizione_completata`, sent by the API from
+version» stops holding for one event: `signup_completed`, sent by the API from
 `rebase_core.analytics` after `POST /api/hub/freelancers` and `/companies` answer, on
 the browser's own distinct id (posted with the application) and with
 `$process_person_profile: false`. The first two days of `wizard_*` showed why: three of
-seven profiles reached the hub with no browser event at all. `wizard_completato` stays
+seven profiles reached the hub with no browser event at all. `wizard_completed` stays
 as the client-side funnel's last step; the server event is what counts completions.
 
 **Amended 2026-09-17 (REB-274).** «Replay with inputs masked (the wizards are forms)»
@@ -161,17 +161,17 @@ The hub now asks `initAnalytics({ maskText: true })`, the same as the CRM, which
 `maskTextSelector`/`maskAllElementAttributes` (replay's own text and DOM attributes)
 and the top-level `mask_all_text`/`mask_all_element_attributes` (autocapture's
 `$el_text`/`attr__href` properties, a path replay's own masking never reaches). The
-wizard funnel events (`wizard_iniziato`, `wizard_passo`, `wizard_completato`) are
+wizard funnel events (`wizard_started`, `wizard_step`, `wizard_completed`) are
 unaffected, since they are explicit `capture` calls, neither replay nor autocapture.
 
 **Amended 2026-09-22 (REB-122).** `passo` alone stopped being enough to read a funnel
 by screen once REB-120/121 were scoped to regroup the wizards' fields onto fewer
 screens: the same numeric `passo` would mean a different screen before and after, so a
-baseline read today would go stale the moment the regroup ships. `wizard_passo` now
+baseline read today would go stale the moment the regroup ships. `wizard_step` now
 also carries `schermata`, the screen's own id (`Screen<T>['id']`, a field's id today,
 one field per screen until the regroup), so the pre-regroup rows stay self-describing
 for as long as PostHog keeps them, independent of which commit's field order applied
-when they were captured. `wizard_iniziato` and `wizard_completato` are unchanged: they
+when they were captured. `wizard_started` and `wizard_completed` are unchanged: they
 carry no step at all.
 
 ## The CRM's MCP server (ORB-186)
@@ -184,8 +184,10 @@ In `build_server`, when `PIGROCRM_POSTHOG_KEY` is set: `posthog.mcp.instrument(m
 client, ...)` with a callback that reads the actor of the current call and answers the
 user's id as `distinct_id` and the space slug as the `spazio` group. The wrapper emits
 `$mcp_tool_call`, `$mcp_tools_list` and `$mcp_initialize` with the tool name, the
-parameters, the response, the duration and the error flag. An empty key means no client
-is built and nothing changes. The key is forwarded by `docker-compose.yml` with an
+duration and the error flag. The adapter's own `$mcp_parameters`, `$mcp_response` and
+`$mcp_error_message` carry customer data, notes and mail bodies, so a `before_send`
+(`analytics.without_crm_content`) drops them before anything leaves the process. An
+empty key means no client is built and nothing changes. The key is forwarded by `docker-compose.yml` with an
 empty default and documented in `.env.example`; it is the same public project key, read
 from the environment rather than imported, because the MCP runs in the API image and a
 self-hosted CRM must be able to leave it empty.

@@ -3,7 +3,7 @@ and what each owner may change once signed in.
 
 The way in -- the magic link, session open/close, `resolve` -- moved to
 `rebase_core.users` (REB-278): a person signs in as a `users` row, member or admin
-alike. Every change the person makes is a comment in the row's thread (ORB-59), so
+alike. Every change the person makes is a note in the row's thread (ORB-59, REB-856), so
 the admin sees what moved without an audit table. A company files several requests
 over time (REB-381, `create_additional_request`), and since REB-602 the member area
 lists every one an admin has not soft-deleted and lets the person edit any of them by
@@ -15,71 +15,69 @@ older ones are none the wiser about.
 
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from rebase_core.audit import utcnow
 from rebase_core.cloud import TalentCloudService
-from rebase_core.comments import CommentService
+from rebase_core.company_schemas import CompanyFields, CompanyUpdate
+from rebase_core.contact_points import ContactPointInput, ContactPointService
+from rebase_core.crm_words import TO_LINK
 from rebase_core.errors import NotFound
+from rebase_core.freelancer_schemas import CvFile, MemberUpdate
 from rebase_core.freelancers import check_cv, cv_of
-from rebase_core.models import AUTORE_MAX_LENGTH, Company, Freelancer, User
-from rebase_core.schemas import (
-    CompanyFields,
-    CompanyUpdate,
-    CvFile,
-    MemberLookup,
-    MemberProfile,
-    MemberRequest,
-    MemberUpdate,
-    MeRead,
-)
+from rebase_core.member_schemas import MemberLookup, MemberProfile, MemberRequest, MeRead
+from rebase_core.models import Company, Freelancer, User
+from rebase_core.notes import NoteService
+from rebase_core.users import UserService, refuse_linkedin_conflict
 
 ENTITY = "freelancer"
-# What the comment calls each field, in the admin's language, in the wizard's order.
+# What the note calls each field, in the admin's language, in the wizard's order.
 FIELD_LABELS: dict[str, str] = {
-    "nome": "nome",
-    "cognome": "cognome",
+    "first_name": "nome",
+    "last_name": "cognome",
     "linkedin_url": "profilo LinkedIn",
-    "tariffa_giornaliera": "tariffa giornaliera",
-    "posizione": "posizione",
-    "remoto": "modalità di lavoro",
+    "daily_rate": "tariffa giornaliera",
+    "job_title": "posizione",
+    "remote": "modalità di lavoro",
     "links": "link",
 }
 # The three fields a freelancer card shares with its `users` row: since migration B
 # (REB-281) they live on `users` alone, so a change here writes there instead of the
 # card, and `GET /me` never reads a stale name the person just corrected.
-_IDENTITY_FIELDS = ("nome", "cognome", "linkedin_url")
+_IDENTITY_FIELDS = ("first_name", "last_name", "linkedin_url")
 
 COMPANY_ENTITY = "company"
-# What the comment calls each field, in the admin's language, in the wizard's order
+# What the note calls each field, in the admin's language, in the wizard's order
 # (REB-314; REB-380 adds the last four): the eight a company contact may change about
 # one of their requests.
 COMPANY_FIELD_LABELS: dict[str, str] = {
-    "progetto": "progetto",
-    "periodo_da": "data di inizio",
-    "durata": "durata",
-    "budget_giornaliero": "budget giornaliero",
-    "remoto": "modalità di lavoro",
-    "giorni_presenza": "giorni in sede",
-    "numero_risorse": "numero di persone richieste",
-    "figura_richiesta": "figura richiesta",
+    "project": "progetto",
+    "period_from": "data di inizio",
+    "duration": "durata",
+    "daily_budget": "budget giornaliero",
+    "remote": "modalità di lavoro",
+    "onsite_days": "giorni in sede",
+    "headcount": "numero di persone richieste",
+    "requested_role": "figura richiesta",
 }
 
 
 def _to_profile(row: Freelancer, user: User) -> MemberProfile:
     """`MemberProfile`, identity read off the linked `users` row since REB-281 dropped
-    the card's own `nome`/`cognome`/`email`/`linkedin_url`."""
+    the card's own `first_name`/`last_name`/`email`/`linkedin_url`."""
     return MemberProfile(
         id=row.id,
-        nome=user.nome,
-        cognome=user.cognome,
+        first_name=user.first_name,
+        last_name=user.last_name,
         email=user.email,
         linkedin_url=user.linkedin_url,
         cv_filename=row.cv_filename,
         cv_size=row.cv_size,
-        tariffa_giornaliera=row.tariffa_giornaliera,
-        posizione=row.posizione,
-        remoto=row.remoto,
+        daily_rate=row.daily_rate,
+        job_title=row.job_title,
+        remote=row.remote,
         links=list(row.links),
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -106,7 +104,7 @@ class MemberService:
         (design record §4)."""
         row = self.card_for_user(user_id)
         if row is None:
-            raise NotFound("scheda", user_id)
+            raise NotFound("card", user_id)
         return row
 
     # ---- the identity behind a company request -----------------------------------------
@@ -140,7 +138,7 @@ class MemberService:
         company contact."""
         row = self.company_for_user(user_id)
         if row is None:
-            raise NotFound("azienda", user_id)
+            raise NotFound("company", user_id)
         return row
 
     def require_request(self, user_id: UUID, company_id: UUID) -> Company:
@@ -155,7 +153,7 @@ class MemberService:
             )
         )
         if row is None:
-            raise NotFound("azienda", company_id)
+            raise NotFound("company", company_id)
         return row
 
     def me_read(self, user_id: UUID) -> MeRead:
@@ -169,24 +167,23 @@ class MemberService:
         card = self.card_for_user(user_id)
         return MeRead(
             id=user.id,
-            nome=user.nome,
-            cognome=user.cognome,
+            first_name=user.first_name,
+            last_name=user.last_name,
             email=user.email,
             linkedin_url=user.linkedin_url,
-            telefono=user.telefono,
+            phone=user.phone,
+            contact_points=ContactPointService.present(user),
             role=user.role,
             created_at=user.created_at,
             updated_at=user.updated_at,
-            ha_scheda=card is not None,
+            has_card=card is not None,
             cv_filename=card.cv_filename if card else None,
             cv_size=card.cv_size if card else None,
-            tariffa_giornaliera=card.tariffa_giornaliera if card else None,
-            posizione=card.posizione if card else None,
-            remoto=card.remoto if card else None,
+            daily_rate=card.daily_rate if card else None,
+            job_title=card.job_title if card else None,
+            remote=card.remote if card else None,
             links=list(card.links) if card else [],
-            richieste=[
-                MemberRequest.model_validate(row) for row in self.requests_for_user(user_id)
-            ],
+            requests=[MemberRequest.model_validate(row) for row in self.requests_for_user(user_id)],
             talent_cloud=TalentCloudService(self.session).for_user(user_id) is not None,
         )
 
@@ -196,13 +193,13 @@ class MemberService:
         """Whether a freelancer with that address exists, and their two names if so
         (ORB-173). The same match as `uq_freelancers_user_id`, so the answer agrees
         with what the wizard would have refused as a duplicate. An unknown address is
-        `membro=False` and never an error: the caller is PigroCRM's signup, and a person
+        `member=False` and never an error: the caller is PigroCRM's signup, and a person
         who is not in the community is the ordinary case there, not a fault."""
         result = self._by_email(email.strip().lower())
         if result is None:
-            return MemberLookup(membro=False)
+            return MemberLookup(member=False)
         _row, user = result
-        return MemberLookup(membro=True, nome=user.nome, cognome=user.cognome)
+        return MemberLookup(member=True, first_name=user.first_name, last_name=user.last_name)
 
     # ---- what they see and change -----------------------------------------------------
 
@@ -212,12 +209,12 @@ class MemberService:
         return _to_profile(row, user)
 
     def update(self, freelancer_id: UUID, data: MemberUpdate) -> MemberProfile:
-        """Applies the seven answers and leaves one comment naming the ones that moved,
-        signed with the person's name after the change. Nothing moved, no comment --
+        """Applies the seven answers and leaves one note naming the ones that moved,
+        signed with the person's name after the change. Nothing moved, no note --
         unless the card was an admin's draft from a signup (ORB-155): saving it, even
         unchanged, makes it the person's (`compilata_da = "persona"`), and the thread
-        says so. `stato`, `note` and the attribution are never touched here. `nome`/
-        `cognome`/`linkedin_url` live on the linked `users` row since REB-281, so a
+        says so. `status` and the attribution are never touched here. `nome`/
+        `last_name`/`linkedin_url` live on the linked `users` row since REB-281, so a
         change to them lands there directly rather than through the card."""
         row = self._require(freelancer_id)
         user = self._owner(row)
@@ -227,28 +224,58 @@ class MemberService:
             value = getattr(data, field)
             if field == "links":
                 value = list(value)
+            if field == "linkedin_url" and getattr(target, field) != value:
+                UserService(self.session).require_free_linkedin(user.id, value)
             if getattr(target, field) != value:
                 setattr(target, field, value)
                 changed.append(label)
-        taken_over = row.compilata_da != "persona"
+        taken_over = row.filled_by != "person"
         if not changed and not taken_over:
             return _to_profile(row, user)
-        row.compilata_da = "persona"
-        self.session.commit()
+        row.filled_by = "person"
+        try:
+            self.session.commit()
+        except IntegrityError as exc:
+            refuse_linkedin_conflict(self.session, exc)
         if changed:
-            self._comment(user, row, f"Profilo aggiornato dalla persona: {', '.join(changed)}")
+            self._note(user, row, f"Profilo aggiornato dalla persona: {', '.join(changed)}")
         else:
-            self._comment(user, row, "Scheda confermata dalla persona")
+            self._note(user, row, "Scheda confermata dalla persona")
         return _to_profile(row, user)
+
+    def update_contact_points(self, user_id: UUID, points: list[ContactPointInput]) -> MeRead:
+        """The signed-in person replaces their own list of extra contact points (REB-943),
+        whatever they are here: a freelancer, a company's referente or both. The address
+        they sign in with is not part of it. A change leaves one note in the thread of
+        the card, and of the newest request, saying the contacts moved and never what they
+        are, so the admin knows without a value in the thread."""
+        user = self.session.get(User, user_id)
+        if user is None:
+            raise NotFound("user", user_id)
+        if ContactPointService(self.session).replace(user, points):
+            self.session.commit()
+            card = self.card_for_user(user_id)
+            if card is not None:
+                self._note(user, card, "Recapiti aggiornati dalla persona")
+            request = self.company_for_user(user_id)
+            if request is not None:
+                NoteService(self.session).add(
+                    COMPANY_ENTITY,
+                    request.id,
+                    "Recapiti aggiornati dal referente",
+                    author_id=user.id,
+                    source="person",
+                )
+        return self.me_read(user_id)
 
     def update_company(
         self, user_id: UUID, data: CompanyUpdate, company_id: UUID | None = None
     ) -> MeRead:
         """Applies the eight project answers (REB-314; REB-380 adds the last four) to
         one of the signed-in person's own requests -- `company_id`, or their newest live
-        one when it is `None` (REB-602) -- and leaves a comment naming what moved, the
-        same discipline `update` keeps for the freelancer card. `stato`, `note`,
-        `nome_azienda`, `telefono` and the referente's identity are never touched
+        one when it is `None` (REB-602) -- and leaves a note naming what moved, the
+        same discipline `update` keeps for the freelancer card. `status`,
+        `company_name`, `phone` and the referente's identity are never touched
         here."""
         row = (
             self.require_company(user_id)
@@ -256,7 +283,8 @@ class MemberService:
             else self.require_request(user_id, company_id)
         )
         user = self.session.get(User, user_id)
-        assert user is not None
+        if user is None:
+            raise NotFound("user", user_id)
         changed: list[str] = []
         for field, label in COMPANY_FIELD_LABELS.items():
             value = getattr(data, field)
@@ -265,17 +293,19 @@ class MemberService:
                 changed.append(label)
         if changed:
             self.session.commit()
-            author = f"{user.nome} {user.cognome}"[:AUTORE_MAX_LENGTH]
-            CommentService(self.session).add(
+            NoteService(self.session).add(
                 COMPANY_ENTITY,
                 row.id,
                 f"Richiesta aggiornata dal referente: {', '.join(changed)}",
-                author,
+                author_id=user.id,
+                source="person",
             )
         return self.me_read(user_id)
 
-    def create_additional_request(self, user_id: UUID, payload: CompanyFields) -> MeRead:
-        """A signed-in referente files a genuinely new request instead of correcting
+    def create_additional_request(
+        self, user_id: UUID, payload: CompanyFields
+    ) -> tuple[MeRead, UUID]:
+        """A signed-in requester files a genuinely new request instead of correcting
         one of theirs (REB-381): a fresh `Company` row, not an edit, so every request
         already on file stands exactly as it was -- admin-editable, like any other. The
         company's own name is read off the newest live request and carried forward,
@@ -284,23 +314,27 @@ class MemberService:
         a request filed from inside the member area is not attributable to whatever ad
         brought the referente in the first time, so it goes in blank, the same as
         anything an admin creates. A person with no live request has nothing to add to,
-        so this is a 404 named "azienda" for them too, the same as `update_company`."""
+        so this is a 404 named "azienda" for them too, the same as `update_company`.
+
+        The row is written `to_link` (REB-868), in the same transaction, and its id is
+        answered beside the member's view so the route can start the CRM filing."""
         existing = self.require_company(user_id)
         row = Company(
             user_id=user_id,
-            nome_azienda=existing.nome_azienda,
-            figura_richiesta=payload.figura_richiesta,
-            progetto=payload.progetto,
-            periodo_da=payload.periodo_da,
-            durata=payload.durata,
-            budget_giornaliero=payload.budget_giornaliero,
-            remoto=payload.remoto,
-            giorni_presenza=payload.giorni_presenza,
-            numero_risorse=payload.numero_risorse,
+            company_name=existing.company_name,
+            requested_role=payload.requested_role,
+            project=payload.project,
+            period_from=payload.period_from,
+            duration=payload.duration,
+            daily_budget=payload.daily_budget,
+            remote=payload.remote,
+            onsite_days=payload.onsite_days,
+            headcount=payload.headcount,
+            crm_status=TO_LINK,
         )
         self.session.add(row)
         self.session.commit()
-        return self.me_read(user_id)
+        return self.me_read(user_id), row.id
 
     def replace_cv(
         self, freelancer_id: UUID, content: bytes, filename: str, mime: str
@@ -309,6 +343,11 @@ class MemberService:
         ones and the thread says so."""
         filename, mime = check_cv(content, filename, mime)
         row = self._require(freelancer_id)
+        # Locked and re-read: a merge that took this card's lock first has hidden it by
+        # now (REB-800), and a CV written on a hidden card would be lost to the person.
+        self.session.refresh(row, with_for_update=True)
+        if row.deleted_at is not None:
+            raise NotFound(ENTITY, freelancer_id)
         user = self._owner(row)
         first = row.cv_bytes is None
         row.cv_bytes, row.cv_filename, row.cv_mime, row.cv_size = (
@@ -317,9 +356,10 @@ class MemberService:
             mime,
             len(content),
         )
-        row.compilata_da = "persona"
+        row.cv_uploaded_at = utcnow()
+        row.filled_by = "person"
         self.session.commit()
-        self._comment(
+        self._note(
             user, row, "CV caricato dalla persona" if first else "CV aggiornato dalla persona"
         )
         return _to_profile(row, user)
@@ -331,12 +371,12 @@ class MemberService:
 
     def _owner(self, row: Freelancer) -> User:
         user = self.session.get(User, row.user_id)
-        assert user is not None
+        if user is None:
+            raise NotFound("user", row.user_id)
         return user
 
-    def _comment(self, user: User, row: Freelancer, text: str) -> None:
-        author = f"{user.nome} {user.cognome}"[:AUTORE_MAX_LENGTH]
-        CommentService(self.session).add(ENTITY, row.id, text, author)
+    def _note(self, user: User, row: Freelancer, text: str) -> None:
+        NoteService(self.session).add(ENTITY, row.id, text, author_id=user.id, source="person")
 
     def _require(self, freelancer_id: UUID) -> Freelancer:
         row = self.session.get(Freelancer, freelancer_id)
@@ -345,8 +385,13 @@ class MemberService:
         return row
 
     def _by_email(self, email: str) -> tuple[Freelancer, User] | None:
+        """The live card of the person who answers to this address, an address merged
+        away (REB-800) answering for the person it was merged into."""
+        person = UserService(self.session).person(email)
+        if person is None:
+            return None
         return self.session.execute(
             select(Freelancer, User)
             .join(User, User.id == Freelancer.user_id)
-            .where(func.lower(User.email) == email, Freelancer.deleted_at.is_(None))
+            .where(User.id == person.id, Freelancer.deleted_at.is_(None))
         ).first()

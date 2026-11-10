@@ -9,28 +9,44 @@ import {
   DialogTitle,
 } from '@rebase/ui/dialog'
 import { Label } from '@rebase/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@rebase/ui/select'
-import { useCustomers } from '@/features/customers/queries'
+import { OrganizationPicker } from '@/features/organizations/OrganizationPicker'
 import { EmailSyncNotice } from '@/features/gmail/EmailSyncNotice'
+import { ContactPointsEditor } from '@/features/contact-points/ContactPointsEditor'
+import {
+  CONTACT_POINTS_KEY,
+  isPointProblem,
+  newEmailAddresses,
+  pointErrors,
+  pointsAreSendable,
+  pointsForRequest,
+  pointsToDrafts,
+  type ContactPointDraft,
+} from '@/features/contact-points/contactPoints'
 import type { ProblemDetail } from '@/lib/api'
-import { clearedNativeValue, type FieldDefinition } from '@/lib/schema'
+import { toFormValues, toRequestBody, type FormValues } from '@/lib/formValues'
+import type { FieldDefinition } from '@/lib/schema'
 import type { Person } from './queries'
 
+// Email, phone and LinkedIn are not fields: they are the person's contact points, drawn by
+// `ContactPointsEditor` and sent as `contact_points`.
 const NATIVE_FIELDS: FieldDefinition[] = [
-  { key: 'nome', label: 'Nome', type: 'text', required: true, options: [] },
-  { key: 'cognome', label: 'Cognome', type: 'text', required: false, options: [] },
-  { key: 'ruolo', label: 'Ruolo', type: 'text', required: false, options: [] },
-  { key: 'email', label: 'Email', type: 'text', required: false, options: [] },
-  { key: 'telefono', label: 'Telefono', type: 'text', required: false, options: [] },
-  { key: 'linkedin', label: 'LinkedIn', type: 'url', required: false, options: [] },
-  { key: 'note', label: 'Note', type: 'textarea', required: false, options: [] },
+  { key: 'first_name', label: 'Nome', type: 'text', required: true, options: [] },
+  { key: 'last_name', label: 'Cognome', type: 'text', required: false, options: [] },
+  { key: 'role', label: 'Ruolo', type: 'text', required: false, options: [] },
 ]
+
+/**
+ * Create-only: on a new person `note` is its first note, signed and dated by whoever creates it
+ * (REB-879). Once it exists the notes are a thread of their own on the record's page, and
+ * the update schema refuses `note` outright, so an edit never draws this field.
+ */
+const FIRST_NOTE_FIELD: FieldDefinition = {
+  key: 'note',
+  label: 'Nota iniziale',
+  type: 'textarea',
+  required: false,
+  options: [],
+}
 
 /**
  * Every top-level key `PersonRead`/`PersonUpdate` carry outside `custom_fields`,
@@ -40,127 +56,32 @@ const NATIVE_FIELDS: FieldDefinition[] = [
  * column on the wire and needs the exact same structural provenance as the other
  * seven, or it would leak into `custom` the same way an unfiltered flat bag would
  * leak an archived key into `native` (see `PersonFormValues` below).
+ * `contact_points` is not among them: the list is seeded by `personToFormValues` as
+ * drafts and drawn by its own editor.
  */
 const NATIVE_FIELD_KEYS = [...NATIVE_FIELDS.map((field) => field.key), 'customer_id']
 
 /**
- * Radix's `Select` refuses an item whose `value` is the empty string (see
- * `DynamicFieldRenderer.tsx`'s own `CLEAR_OPTION` for the identical constraint on
- * a custom `select` field), so "no customer" needs a sentinel string of its own.
- * Any string is safe here, unlike a tenant-defined option: a customer id is
- * always a UUID minted by the database (`Customer.id`), never user-entered text,
- * so no real id can ever equal this literal.
+ * The form's state in the API's two namespaces -- see `FormValues`. `native` holds
+ * `NATIVE_FIELD_KEYS`, `customer_id` included.
  */
-const NO_CUSTOMER = '__nessuno__'
-
-/**
- * The form's state, kept in the two namespaces the API itself uses -- native
- * columns at the top level of the request body, custom fields inside
- * `custom_fields` -- and never flattened into one. Copies
- * `features/customers/CustomerForm.tsx`'s `CustomerFormValues` exactly, for the
- * exact same reason: flattening was a real, reproduced data bug on Customers
- * (see that file's own docstring for the full reproduction), not a style
- * preference. Provenance has to be structural -- a value that came out of
- * `person.custom_fields` stays in `custom` for as long as the dialog is open, no
- * matter what happens to its definition in the meantime, and nothing ever
- * re-asks the schema what it is.
- */
-export interface PersonFormValues {
-  /** Editable native columns, exactly `NATIVE_FIELD_KEYS` (customer_id included). */
-  native: Record<string, unknown>
-  /** Everything stored under `custom_fields`, including keys whose definition has
-   *  since been archived and which therefore render nowhere. */
-  custom: Record<string, unknown>
-}
+export type PersonFormValues = FormValues
 
 const DEFAULT_CREATE_VALUES: PersonFormValues = { native: {}, custom: {} }
 
 /**
- * Builds the form's starting state from a real, already-saved person.
- *
- * Deliberately not `{ ...person, ...person.custom_fields }`: `person` also
- * carries `id`, `created_at` and `updated_at`, and `PersonUpdate` declares
- * `model_config = ConfigDict(extra="forbid")` (people/schemas.py) -- sending
- * those three straight back would 422 with "extra fields not permitted" on
- * every single edit. Listing exactly the editable native keys keeps the round
- * trip to only what the form is actually allowed to send; `custom_fields` is
- * copied whole into its own namespace, archived keys included.
+ * Builds the form's starting state from a real, already-saved person. A `PersonRead`
+ * also carries `id`, `created_at` and `updated_at`, which `PersonUpdate`
+ * (`extra="forbid"`) refuses -- see `toFormValues`.
  */
 export function personToFormValues(person: Person): PersonFormValues {
-  const native: Record<string, unknown> = {}
-  for (const key of NATIVE_FIELD_KEYS) {
-    native[key] = (person as unknown as Record<string, unknown>)[key]
-  }
-  return { native, custom: { ...person.custom_fields } }
+  const values = toFormValues(person, NATIVE_FIELD_KEYS)
+  values.native[CONTACT_POINTS_KEY] = pointsToDrafts(person.contact_points)
+  return values
 }
 
-/** Mirrors `is_blank` in packages/core/src/pigrocrm/core/fields/validator.py, and
- *  `features/customers/CustomerForm.tsx`'s identical helper: `null`/`undefined`,
- *  a whitespace-only string, or an empty array all mean "no value" -- `false` and
- *  `0` do not, they are real values. */
-function isBlank(value: unknown): boolean {
-  if (value === null || value === undefined) return true
-  if (typeof value === 'string') return value.trim() === ''
-  if (Array.isArray(value)) return value.length === 0
-  return false
-}
-
-/**
- * Split out of `PersonForm`, back-porting `DealForm.tsx`'s own `CustomerPicker`
- * fix: `useCustomers({limit: 200})` used to run at `PersonForm`'s own top level,
- * unconditionally, on every render of this component -- and `PersonForm` itself
- * stays mounted by its callers regardless of `open` (the `wasOpen` reset pattern
- * below only makes sense because of that), so every view of the Persone list and
- * every person detail page fired `GET /api/customers?limit=200` for a dropdown
- * nobody had opened there. Moving the hook into a child rendered here, inside
- * `DialogContent`, fixes it the same way: Radix does not render `DialogContent`'s
- * children at all while its `Dialog` is closed, so this only ever mounts -- and
- * only ever calls `useCustomers` -- while the dialog is actually open. Unlike
- * `DealForm`'s copy, this one is never additionally gated by an `isCreate` check:
- * a person's customer can be changed or detached on edit, not only chosen once at
- * create (see `submit`'s own `detach` handling below), so this picker belongs in
- * both modes, not create-only.
- */
-function CustomerPicker({
-  value,
-  onChange,
-}: {
-  value: string | null
-  onChange: (value: string | null) => void
-}) {
-  // `limit: 200` mirrors `DealForm`'s identical picker -- a one-shot cap for a
-  // dropdown, not this screen's own list -- pagination for the Clienti list
-  // itself is a known limitation of `routes/app/customers/index.tsx` (a single
-  // unpaginated page, no further-pages control), not something this picker
-  // needs to solve.
-  const customers = useCustomers({ limit: 200 })
-
-  return (
-    <div className="space-y-2">
-      {/* «Azienda (cliente)» and not «Cliente»: what this picker sets is the person's
-          company -- their "azienda di riferimento", the same thing the Persone list now
-          shows in its «Azienda» column -- and it is a *customer* record that holds it,
-          which is why the parenthesis stays rather than the word being replaced. The
-          value written is still `customer_id`; only the label changed. */}
-      <Label htmlFor="customer">Azienda (cliente)</Label>
-      <Select
-        value={value ?? NO_CUSTOMER}
-        onValueChange={(next) => onChange(next === NO_CUSTOMER ? null : next)}
-      >
-        <SelectTrigger id="customer" className="w-full">
-          <SelectValue placeholder="Nessun cliente" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={NO_CUSTOMER}>Nessun cliente</SelectItem>
-          {customers.data?.items.map((customer) => (
-            <SelectItem key={customer.id} value={customer.id}>
-              {customer.ragione_sociale}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  )
+function draftsOf(values: PersonFormValues | undefined): ContactPointDraft[] {
+  return (values?.native[CONTACT_POINTS_KEY] as ContactPointDraft[] | undefined) ?? []
 }
 
 interface Props {
@@ -186,16 +107,21 @@ export function PersonForm({
 }: Props) {
   const [values, setValues] = useState<PersonFormValues>(initial ?? DEFAULT_CREATE_VALUES)
 
-  // Same "reset synchronously when `open` toggles" pattern as `CustomerForm`,
+  // Same "reset synchronously when `open` toggles" pattern as `OrganizationForm`,
   // for the identical reason: this component stays mounted across dialog opens
   // (`Dialog`'s own `open` prop toggles visibility, not this component's mount
   // state, or Radix's closing animation would break), so a plain
   // `useState(initial ?? {})` initializer would only ever run once and a second
   // "Nuova persona" would keep showing the first submission.
   const [wasOpen, setWasOpen] = useState(open)
+  // Whether Salva was pressed: from then on the editor shows the browser's own row checks.
+  const [checked, setChecked] = useState(false)
   if (open !== wasOpen) {
     setWasOpen(open)
-    if (open) setValues(initial ?? DEFAULT_CREATE_VALUES)
+    if (open) {
+      setValues(initial ?? DEFAULT_CREATE_VALUES)
+      setChecked(false)
+    }
   }
 
   /** True for a key the active schema currently renders as a custom-field
@@ -214,81 +140,61 @@ export function PersonForm({
     )
   }
 
-  // `values.native.email` and not the flattened bag handed to `DynamicForm`: email is a
-  // native column (`NATIVE_FIELDS`), and reading it out of the merged object would pick
-  // up a custom field somebody happened to key `email` instead.
-  const email = values.native.email
-  const emailIsNew =
-    typeof email === 'string' && email.trim() !== '' && email !== initial?.native.email
+  const drafts = draftsOf(values)
+  const initialDrafts = initial === undefined ? undefined : draftsOf(initial)
+  // The list is checked and sent only when it differs from the one the form opened with: a
+  // record whose stored values predate the rules must still save everything else.
+  const pointsEdited = pointsForRequest(drafts, initialDrafts) !== undefined
+  const errors = pointErrors(drafts, problem, checked && pointsEdited, initialDrafts)
+  // Only for an address that is new to this record: see the notice below.
+  const emailIsNew = newEmailAddresses(drafts, draftsOf(initial)).length > 0
 
   function submit() {
-    const native: Record<string, unknown> = {}
-    for (const [key, value] of Object.entries(values.native)) {
-      // `customer_id` cannot follow the plain-native-column rule below: see the
-      // dedicated handling just after this loop for why.
-      if (key === 'customer_id') continue
-      if (!isBlank(value)) {
-        native[key] = value
-      } else if (!isBlank(initial?.native[key])) {
-        // The user cleared a native column that used to hold a value. The spelling
-        // comes from the column's type (`clearedNativeValue`); every native field on
-        // this form is text-shaped, so it is `""` for all of them, as before task
-        // 4B-1 -- kept as a call so that a numeric column added here later cannot
-        // inherit the wrong one.
-        native[key] = clearedNativeValue(NATIVE_FIELDS, key)
-      }
-      // else: blank now, blank (or never set) before -- nothing to say.
+    if (pointsEdited && !pointsAreSendable(drafts, initialDrafts)) {
+      setChecked(true)
+      return
     }
+    // `customer_id` cannot follow the plain-native-column rule: see the dedicated
+    // handling below for why.
+    const payload = toRequestBody(values, {
+      fields: NATIVE_FIELDS,
+      initial,
+      isRenderedCustomKey,
+      skipNative: (key) => key === 'customer_id' || key === CONTACT_POINTS_KEY,
+    })
 
     // `customer_id` is a UUID column, not free text, and detaching it is not a
     // value of it. `""` would fail UUID parsing (422); `customer_id: null` never
     // reaches `PersonService.update`'s generic assignment at all -- the field is in
     // that method's `supplied_changes(exclude=...)` set, and stayed there when task
     // 4B-1 closed A14, precisely so the two spellings cannot disagree (read
-    // people/schemas.py and people/service.py -- Customer has no equivalent
+    // people/schemas.py and people/service.py -- Organization has no equivalent
     // relationship to generalise this from). The wire schema instead carries a
     // dedicated `detach: bool` for exactly this, checked first in
     // `PersonService.update` and winning outright over any `customer_id` also
-    // present in the same payload. Selecting "Nessun cliente" on a person who
+    // present in the same payload. Removing the customer of a person who
     // had one therefore has to send `detach: true`, never `customer_id: null`
     // and never an omitted key (which would just leave the old association in
     // place, indistinguishable from "the user changed nothing").
     const currentCustomerId = (values.native.customer_id as string | null | undefined) ?? null
     const initialCustomerId = (initial?.native.customer_id as string | null | undefined) ?? null
-    let detach = false
     if (currentCustomerId) {
       // Sent whenever set, whether or not it changed -- same idempotent-resend
-      // pattern as every other native field above; re-affirming the same
+      // pattern as every other native field; re-affirming the same
       // customer costs nothing beyond `PersonService._check_customer` confirming
       // it still exists.
-      native.customer_id = currentCustomerId
+      payload.customer_id = currentCustomerId
     } else if (initialCustomerId) {
-      detach = true
+      payload.detach = true
     }
     // else: no customer before, none now -- nothing to say, same as any other
     // untouched native field.
 
-    const custom: Record<string, unknown> = {}
-    for (const [key, value] of Object.entries(values.custom)) {
-      if (!isRenderedCustomKey(key)) {
-        // A stored value whose definition is archived: omit the key and
-        // `_update_custom_fields` carries the stored value over untouched --
-        // see `CustomerForm.submit`'s docstring for the four spellings this was
-        // verified against on Customers; `PersonService._update_custom_fields`
-        // copies that same contract exactly (people/service.py's own docstring
-        // says so).
-        continue
-      }
-      if (!isBlank(value)) {
-        custom[key] = value
-      } else if (!isBlank(initial?.custom[key])) {
-        // A custom field clears only on an explicit `null`.
-        custom[key] = null
-      }
-    }
+    // The whole list or nothing: a new person sends it when it has points, an edit only
+    // when it changed (an omitted list leaves the stored one, `[]` clears it).
+    const contactPoints = pointsForRequest(drafts, initialDrafts)
+    if (contactPoints !== undefined) payload.contact_points = contactPoints
 
-    const payload: Record<string, unknown> = { ...native, custom_fields: custom }
-    if (detach) payload.detach = true
     onSubmit(payload)
   }
 
@@ -299,23 +205,48 @@ export function PersonForm({
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
 
-        <CustomerPicker
-          value={(values.native.customer_id as string | null) ?? null}
-          onChange={(value) => change('customer_id', value)}
-        />
+        <div className="space-y-2">
+          {/* «Azienda (cliente)» and not «Cliente»: what this picker sets is the person's
+              company -- their "azienda di riferimento", the same thing the Persone list
+              shows in its «Azienda» column -- and it is a *customer* record that holds
+              it, which is why the parenthesis stays rather than the word being replaced.
+              The value written is still `customer_id`; only the label changed. Rendered
+              here, inside `DialogContent`: Radix mounts none of it while the dialog is
+              closed, so the Persone list and every person's page do not search organizations
+              for a picker nobody has opened. */}
+          <Label htmlFor="customer">Azienda (cliente)</Label>
+          <OrganizationPicker
+            id="customer"
+            value={(values.native.customer_id as string | null | undefined) ?? null}
+            onChange={(customer) => change('customer_id', customer?.id ?? null)}
+            placeholder="Nessun cliente: cerca per collegarne uno…"
+          />
+        </div>
 
         <DynamicForm
-          fields={[...NATIVE_FIELDS, ...customFields]}
+          fields={[...NATIVE_FIELDS, ...(initial === undefined ? [FIRST_NOTE_FIELD] : []), ...customFields]}
           // Flattened for rendering only -- one control per key is all a form can
           // draw. The state behind it stays split (`PersonFormValues`), so what
           // reaches `submit` still knows which namespace each value came from.
           values={{ ...values.native, ...values.custom }}
           onChange={change}
-          problem={problem}
+          // The list's own sentences are drawn under its rows, not as a second banner here.
+          problem={isPointProblem(problem) ? null : problem}
           // `initial`'s absence is what "Nuova persona" means; deriving `mode`
           // from it is what keeps the two from ever disagreeing. See
           // `DynamicForm`'s own docstring on this required prop.
           mode={initial === undefined ? 'create' : 'edit'}
+        />
+
+        <ContactPointsEditor
+          points={drafts}
+          onChange={(points) =>
+            setValues((previous) => ({
+              ...previous,
+              native: { ...previous.native, [CONTACT_POINTS_KEY]: points },
+            }))
+          }
+          errors={errors}
         />
 
         {/* Only for an address that is actually new to the CRM. An email already on
@@ -323,7 +254,7 @@ export function PersonForm({
             watermark, so repeating "at the next sync" on every edit would train the
             reader to ignore the one time it means something. `EmailSyncNotice` itself
             stays silent unless a cycle is really going to run -- see its docstring.
-            Rendered here, inside `DialogContent`, for the same reason `CustomerPicker`
+            Rendered here, inside `DialogContent`, for the same reason `OrganizationPicker`
             is: Radix mounts none of these children while the dialog is closed, so the
             health query is not read by every Persone list page. */}
         {emailIsNew ? <EmailSyncNotice /> : null}

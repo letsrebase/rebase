@@ -1,6 +1,7 @@
 """Journey states (spec § 2) and the settings campaigns read."""
 
 from decimal import Decimal
+from itertools import product
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from rebase_core.config import Settings
 from rebase_core.errors import ValidationFailed
 
 HUB = Path(__file__).resolve().parents[3]
+CARD_STATES = ("complete", "missing_cv", "card_empty_new", "card_empty_signed_in")
 
 
 def test_the_campaign_settings_have_their_defaults_and_reach_the_container() -> None:
@@ -34,11 +36,11 @@ def test_the_campaign_settings_have_their_defaults_and_reach_the_container() -> 
 @pytest.mark.parametrize(
     ("fields", "expected"),
     [
-        ((4, Decimal("1"), "Dev", "remoto"), "completo"),
-        ((None, Decimal("1"), "Dev", "remoto"), "manca_cv"),
-        ((4, Decimal("1"), None, "remoto"), "scheda"),  # position missing: not «manca_cv»
-        ((None, None, "Dev", "remoto"), "scheda"),
-        ((None, None, None, None), "scheda"),
+        ((4, Decimal("1"), "Dev", "remote"), "complete"),
+        ((None, Decimal("1"), "Dev", "remote"), "missing_cv"),
+        ((4, Decimal("1"), None, "remote"), "card"),  # position missing: not «manca_cv»
+        ((None, None, "Dev", "remote"), "card"),
+        ((None, None, None, None), "card"),
     ],
 )
 def test_card_state_reads_the_four_fields_is_complete_reads(
@@ -50,17 +52,17 @@ def test_card_state_reads_the_four_fields_is_complete_reads(
 def test_each_card_lands_in_exactly_one_state(clean: Session) -> None:  # noqa: F811  (fixture)
     person(clean, "done@studio.it")
     person(clean, "nocv@studio.it", cv=False)
-    person(clean, "nopos@studio.it", posizione=False)
-    person(clean, "empty-in@studio.it", cv=False, tariffa=False, logins=1)
-    person(clean, "empty-new@studio.it", cv=False, tariffa=False)
+    person(clean, "nopos@studio.it", job_title=False)
+    person(clean, "empty-in@studio.it", cv=False, rate=False, logins=1)
+    person(clean, "empty-new@studio.it", cv=False, rate=False)
     person(clean, "gone@studio.it", cv=False, deleted=True)
-    assert emails(candidates_for_state(clean, "completo")) == ["done@studio.it"]
-    assert emails(candidates_for_state(clean, "manca_cv")) == ["nocv@studio.it"]
-    assert sorted(emails(candidates_for_state(clean, "scheda_vuota_nuovi"))) == [
+    assert emails(candidates_for_state(clean, "complete")) == ["done@studio.it"]
+    assert emails(candidates_for_state(clean, "missing_cv")) == ["nocv@studio.it"]
+    assert sorted(emails(candidates_for_state(clean, "card_empty_new"))) == [
         "empty-new@studio.it",
         "nopos@studio.it",
     ]
-    assert emails(candidates_for_state(clean, "scheda_vuota_entrati")) == ["empty-in@studio.it"]
+    assert emails(candidates_for_state(clean, "card_empty_signed_in")) == ["empty-in@studio.it"]
 
 
 def test_a_lead_whose_address_has_a_card_is_not_a_lead_in_any_case(clean: Session) -> None:  # noqa: F811  (fixture)
@@ -69,23 +71,23 @@ def test_a_lead_whose_address_has_a_card_is_not_a_lead_in_any_case(clean: Sessio
     lead(clean, "giulia@studio.it")
     found = candidates_for_state(clean, "lead")
     assert emails(found) == ["giulia@studio.it"]
-    assert found[0].tipo == "lead" and found[0].nome == "Giulia"
+    assert found[0].kind == "lead" and found[0].name == "Giulia"
 
 
-def test_a_referente_with_two_open_requests_is_one_row(clean: Session) -> None:  # noqa: F811  (fixture)
+def test_to_contact_person_with_two_open_requests_is_one_row(clean: Session) -> None:  # noqa: F811  (fixture)
     first = company(clean, "info@block-buy.it")
-    second = company(clean, "info@block-buy.it", stato="in_corso")
-    company(clean, "closed@acme.it", stato="chiuso")
+    second = company(clean, "info@block-buy.it", status="in_progress")
+    company(clean, "closed@acme.it", status="closed")
     company(clean, "deleted@acme.it", deleted=True)
-    found = candidates_for_state(clean, "azienda_aperta")
+    found = candidates_for_state(clean, "company_open")
     assert emails(found) == ["info@block-buy.it"]
     assert set(found[0].company_ids) == {first.id, second.id}
-    assert found[0].tipo == "azienda"
+    assert found[0].kind == "company"
 
 
 def test_the_pigro_state_waits_for_phase_three(clean: Session) -> None:  # noqa: F811  (fixture)
     with pytest.raises(ValidationFailed, match="fase Pigro"):
-        candidates_for_state(clean, "pigro_vuoto")
+        candidates_for_state(clean, "pigro_empty")
 
 
 @pytest.mark.parametrize(
@@ -100,3 +102,35 @@ def test_the_pigro_state_waits_for_phase_three(clean: Session) -> None:  # noqa:
 )
 def test_display_name_fixes_only_all_lower_or_all_upper(raw: str | None, shown: str | None) -> None:
     assert display_name(raw) == shown
+
+
+def test_the_sql_states_agree_with_card_state_for_every_combination(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """`_cards` filters in SQL what `card_state` decides in Python: the same state for
+    every card whether the CV, the rate, the position and the work mode are there or not,
+    and whether the person has logged in."""
+    expected: dict[str, list[str]] = {state: [] for state in CARD_STATES}
+    for n, (cv, rate, job_title, remote, entered) in enumerate(product((True, False), repeat=5)):
+        email = f"c{n}@studio.it"
+        person(
+            clean,
+            email,
+            cv=cv,
+            rate=rate,
+            job_title=job_title,
+            remote=remote,
+            logins=1 if entered else 0,
+        )
+        state = card_state(
+            4 if cv else None,
+            Decimal("450") if rate else None,
+            "Dev" if job_title else None,
+            "remote" if remote else None,
+        )
+        key = (
+            state if state != "card" else ("card_empty_signed_in" if entered else "card_empty_new")
+        )
+        expected[key].append(email)
+    for state, wanted in expected.items():
+        assert sorted(emails(candidates_for_state(clean, state))) == sorted(wanted), state

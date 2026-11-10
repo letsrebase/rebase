@@ -1,6 +1,8 @@
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import pytest
 from alembic.autogenerate import compare_metadata
@@ -9,6 +11,7 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.exc import IntegrityError
 
 import pigrocrm.core.models_registry  # noqa: F401
 from pigrocrm.core.config import get_settings
@@ -27,37 +30,35 @@ HAND_MAINTAINED_INDEXES = {
     # REB-615, migration 0045: one default per space (partial, `WHERE predefinita`) and
     # one azienda per fiscal id (partial, functional over `upper(...)`). Both are shapes
     # `compare_metadata` cannot compare, so they are asserted on their definitions below.
-    "uq_emitter_profile_predefinita",
-    "uq_emitter_profile_partita_iva",
-    "uq_emitter_profile_codice_fiscale",
+    "uq_legal_entities_default",
+    "uq_legal_entities_vat_number",
+    "uq_legal_entities_tax_code",
     "uq_pipeline_stage_code",
-    "ix_customers_custom_fields",
+    "ix_organizations_custom_fields",
     "ix_people_custom_fields",
     "ix_deals_custom_fields",
-    "uq_invoices_azienda_anno_numero",
+    "uq_invoices_legal_entity_year_number",
     # REB-619: the `(anno, numero)` path the unique index stopped offering to a search
     # across aziende; partial, so `compare_metadata` cannot see it either.
-    "ix_invoices_anno_numero",
+    "ix_invoices_year_number",
     "ix_invoices_custom_fields",
     # Same shape as `uq_pipeline_stage_code`: a plain unique index on a nullable
     # column, one of the two shapes autogenerate is known to silently omit.
     "uq_cost_categories_code",
     "ix_time_entries_custom_fields",
     "ix_costs_custom_fields",
-    # Same shape as `uq_users_email_lower`: a functional unique index over lower(nome).
-    "uq_cost_categories_nome",
+    # Same shape as `uq_users_email_lower`: a functional unique index over lower(name).
+    "uq_cost_categories_name",
     # Slice 6, migration 0021. A *partial* GIN index over an operator class is a fourth
     # shape autogenerate handles poorly, and nine trigram indexes omitted in silence are
     # nine sequential scans that come back a month later.
-    "ix_customers_ragione_sociale_trgm",
-    "ix_customers_partita_iva_trgm",
-    "ix_customers_codice_fiscale_trgm",
-    "ix_customers_email_trgm",
-    "ix_people_nome_trgm",
-    "ix_people_cognome_trgm",
-    "ix_people_email_trgm",
-    "ix_deals_nome_trgm",
-    "ix_documents_titolo_trgm",
+    "ix_organizations_legal_name_trgm",
+    "ix_organizations_vat_number_trgm",
+    "ix_organizations_tax_code_trgm",
+    "ix_people_name_trgm",
+    "ix_people_last_name_trgm",
+    "ix_deals_name_trgm",
+    "ix_documents_title_trgm",
     # Slice 6, migration 0022. Residuo R9's other half: one `(column, id)` B-tree per
     # admitted sort key, plus the one descending index the single nullable sort column
     # costs. The twelve ascending ones are ordinary composite indexes that autogenerate
@@ -65,26 +66,29 @@ HAND_MAINTAINED_INDEXES = {
     # silence is the same sequential scan as a GIN index dropped in silence, and the
     # thirteenth is an expression index over `DESC NULLS LAST` that autogenerate cannot
     # compare at all.
-    "ix_customers_created_at_id",
-    "ix_customers_updated_at_id",
-    "ix_customers_ragione_sociale_id",
+    "ix_organizations_created_at_id",
+    "ix_organizations_updated_at_id",
+    "ix_organizations_legal_name_id",
     "ix_people_created_at_id",
     "ix_people_updated_at_id",
-    "ix_people_cognome_id",
-    "ix_people_cognome_desc_id",
+    "ix_people_last_name_id",
+    "ix_people_last_name_desc_id",
     "ix_deals_created_at_id",
     "ix_deals_updated_at_id",
-    "ix_deals_nome_id",
+    "ix_deals_name_id",
     "ix_documents_created_at_id",
     "ix_documents_updated_at_id",
-    "ix_documents_titolo_id",
+    "ix_documents_title_id",
     # Slice 6, migration 0023. The two period-filter columns of §4.1. Both are ordinary
     # single-column B-trees that autogenerate handles correctly; they are listed here for
     # the same reason the twelve ascending sort indexes are, which is that an index
     # dropped in silence is a sequential scan on every dashboard load, and this file is
     # where a missing index is supposed to fail by name.
-    "ix_deals_chiuso_il",
-    "ix_documents_stato_dal",
+    "ix_deals_closed_at",
+    # REB-879, migration 0064: the references of the engagements door, a `text[]` with a GIN
+    # index, the shape autogenerate does not compare.
+    "ix_deals_rebase_refs",
+    "ix_documents_status_since",
     # Slice 6, migration 0024. A *descending* expression index over two columns, which is
     # the fifth shape autogenerate cannot compare: `compare_metadata` does not look at
     # index expressions at all, so this one would be dropped in total silence and the
@@ -94,16 +98,37 @@ HAND_MAINTAINED_INDEXES = {
     # Slice 6, migration 0024 as well: the tenth and last trigram index of §8.3, added
     # with the fifth search branch. Same partial-GIN-over-an-operator-class shape as the
     # nine of 0021, and picked up automatically by `TRGM_INDEX_NAMES` below.
-    "ix_invoices_causale_trgm",
+    "ix_invoices_memo_trgm",
+    # REB-723, migration 0052: the eleventh and twelfth, `tasks.title` and `.note`, added
+    # with the sixth search branch. Same shape, picked up by `TRGM_INDEX_NAMES` below.
+    "ix_tasks_title_trgm",
+    "ix_tasks_note_trgm",
     # REB-290, migration 0036. Functional (over `lower(email)`) and partial at once --
     # the two shapes autogenerate omits, stacked: a functional index it drops silently
     # re-opens the case-insensitive duplicate, a partial predicate it drops silently
     # makes an accepted or revoked invitation block the address forever. Its declared
     # shape is asserted on `indexdef` text below.
     "uq_invitations_email_lower_open",
+    # REB-940, migration 0073: the contact points' partial unique indexes, which autogenerate
+    # does not compare (one point per owner, kind and value; one primary per owner and kind),
+    # and their two trigram indexes, which replace the people and customers email ones (and
+    # the lowercase ones of 0067 with them: the roster now looks `(kind, normalized)` up).
+    "uq_contact_points_person_value",
+    "uq_contact_points_customer_value",
+    "uq_contact_points_person_primary",
+    "uq_contact_points_customer_primary",
+    "ix_contact_points_value_trgm",
+    "ix_contact_points_normalized_trgm",
 }
 
-TRGM_INDEX_NAMES = frozenset(n for n in HAND_MAINTAINED_INDEXES if n.endswith("_trgm"))
+# The trigram indexes of the soft-deletable tables: partial on `deleted_at IS NULL`. The two of
+# `contact_points` have no such column and are checked on their own below.
+CONTACT_TRGM_INDEX_NAMES = frozenset(
+    {"ix_contact_points_value_trgm", "ix_contact_points_normalized_trgm"}
+)
+TRGM_INDEX_NAMES = frozenset(
+    n for n in HAND_MAINTAINED_INDEXES if n.endswith("_trgm") and n not in CONTACT_TRGM_INDEX_NAMES
+)
 
 
 def _alembic_config(url: str) -> Config:
@@ -138,7 +163,7 @@ def test_every_table_the_slice_needs_exists() -> None:
         "field_definitions",
         "pipeline_stages",
         "activities",
-        "customers",
+        "organizations",
         "people",
         "deals",
         "fiscal_profile",
@@ -191,7 +216,7 @@ def test_hand_maintained_indexes_survive_the_migration(pigrocrm_postgres: Any) -
     )
 
     for gin_index in (
-        "ix_customers_custom_fields",
+        "ix_organizations_custom_fields",
         "ix_people_custom_fields",
         "ix_deals_custom_fields",
         "ix_time_entries_custom_fields",
@@ -206,11 +231,11 @@ def test_hand_maintained_indexes_survive_the_migration(pigrocrm_postgres: Any) -
     cost_categories_code_def = indexes["uq_cost_categories_code"]
     assert "UNIQUE" in cost_categories_code_def, "uq_cost_categories_code must be a unique index"
 
-    cost_categories_nome_def = indexes["uq_cost_categories_nome"]
-    assert "UNIQUE" in cost_categories_nome_def, "uq_cost_categories_nome must be a unique index"
-    assert "lower(" in cost_categories_nome_def and "nome" in cost_categories_nome_def, (
-        f"uq_cost_categories_nome is not a functional index over lower(nome): "
-        f"{cost_categories_nome_def}"
+    cost_categories_name_def = indexes["uq_cost_categories_name"]
+    assert "UNIQUE" in cost_categories_name_def, "uq_cost_categories_name must be a unique index"
+    assert "lower(" in cost_categories_name_def and "name" in cost_categories_name_def, (
+        f"uq_cost_categories_name is not a functional index over lower(name): "
+        f"{cost_categories_name_def}"
     )
 
     invitations_email_open_def = indexes["uq_invitations_email_lower_open"]
@@ -225,25 +250,25 @@ def test_hand_maintained_indexes_survive_the_migration(pigrocrm_postgres: Any) -
         "uq_invitations_email_lower_open lost its pending predicate, so an accepted or "
         f"revoked invitation would block the address forever: {invitations_email_open_def}"
     )
-    anno_numero_def = indexes["uq_invoices_azienda_anno_numero"]
-    assert "UNIQUE" in anno_numero_def, "uq_invoices_azienda_anno_numero must be a unique index"
-    assert "WHERE" in anno_numero_def and "numero IS NOT NULL" in anno_numero_def, (
+    year_number_def = indexes["uq_invoices_legal_entity_year_number"]
+    assert "UNIQUE" in year_number_def, "uq_invoices_azienda_anno_numero must be a unique index"
+    assert "WHERE" in year_number_def and "number IS NOT NULL" in year_number_def, (
         "uq_invoices_azienda_anno_numero lost its partial predicate, so every unnumbered "
-        f"draft is now a duplicate of every other: {anno_numero_def}"
+        f"draft is now a duplicate of every other: {year_number_def}"
     )
-    # REB-619: the register is per azienda, so the azienda leads the key.
-    assert "azienda_id" in anno_numero_def, anno_numero_def
+    # REB-619: each legal entity keeps its own register, so the legal entity leads the key.
+    assert "legal_entity_id" in year_number_def, year_number_def
 
 
-def test_0045_gives_a_used_database_with_no_emitter_row_its_azienda(
+def test_0045_gives_to_used_database_with_no_legal_entity_row_its_legal_entity(
     pigrocrm_postgres: Any,
 ) -> None:
     """The root installation is not in the registry, so `ensure_defaults` never reaches
-    it, and the API updates an azienda by id: a root with no emitter row would have no
+    it, and the API updates a legal entity by id: a root with no emitter row would have no
     issuer to configure at all. 0045 inserts one, named after the database, on a database
     that already has a user (REB-615). A database with none is one being provisioned,
     whose migrations run before its owner is written: it gets nothing here, so that
-    `ensure_defaults` can name its azienda after the space and not after the database."""
+    `ensure_defaults` can name its legal entity after the space and not after the database."""
     with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
@@ -263,21 +288,24 @@ def test_0045_gives_a_used_database_with_no_emitter_row_its_azienda(
         upgrade(config, "0045")
         with engine.connect() as connection:
             rows = connection.execute(
-                text("SELECT nome, ragione_sociale, predefinita, attiva FROM emitter_profile")
+                text(
+                    "SELECT nome AS name, ragione_sociale AS legal_name, "
+                    "predefinita AS is_default, attiva AS active FROM emitter_profile"
+                )
             ).all()
             db_name = connection.execute(text("SELECT current_database()")).scalar_one()
         engine.dispose()
     assert empty == 0
     assert len(rows) == 1
-    assert rows[0].ragione_sociale == db_name
-    assert rows[0].nome == db_name[:80]
-    assert rows[0].predefinita is True and rows[0].attiva is True
+    assert rows[0].legal_name == db_name
+    assert rows[0].name == db_name[:80]
+    assert rows[0].is_default is True and rows[0].active is True
 
 
-def test_the_azienda_indexes_are_partial_and_the_fiscal_ones_functional(
+def test_the_legal_entity_indexes_are_partial_and_the_fiscal_ones_functional(
     pigrocrm_postgres: Any,
 ) -> None:
-    """REB-615: `uq_emitter_profile_predefinita` is what makes «exactly one default»
+    """REB-615: `uq_legal_entities_default` is what makes «exactly one default»
     a fact of the database, and the two fiscal-id indexes compare the upper-cased
     column, the shape the import classifier compares. None of the three is visible to
     `compare_metadata`."""
@@ -288,32 +316,32 @@ def test_the_azienda_indexes_are_partial_and_the_fiscal_ones_functional(
         with engine.connect() as connection:
             rows = connection.execute(
                 text(
-                    "SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'emitter_profile'"
+                    "SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'legal_entities'"
                 )
             ).all()
         engine.dispose()
     indexes = {name: definition for name, definition in rows}
-    assert "UNIQUE" in indexes["uq_emitter_profile_predefinita"]
-    assert "WHERE predefinita" in indexes["uq_emitter_profile_predefinita"]
+    assert "UNIQUE" in indexes["uq_legal_entities_default"]
+    assert "WHERE is_default" in indexes["uq_legal_entities_default"]
     for name, column in (
-        ("uq_emitter_profile_partita_iva", "partita_iva"),
-        ("uq_emitter_profile_codice_fiscale", "codice_fiscale"),
+        ("uq_legal_entities_vat_number", "vat_number"),
+        ("uq_legal_entities_tax_code", "tax_code"),
     ):
         assert "UNIQUE" in indexes[name]
         assert f"upper(({column})::text)" in indexes[name], indexes[name]
         assert f"WHERE ({column} IS NOT NULL)" in indexes[name], indexes[name]
 
 
-def test_0045_binds_the_one_fiscal_row_to_the_one_azienda_and_refuses_to_undo_two(
+def test_0045_binds_the_one_fiscal_row_to_the_one_legal_entity_and_refuses_to_undo_two(
     pigrocrm_postgres: Any,
 ) -> None:
     """The migration over real rows planted at 0044, not read as text (REB-615).
 
     A 120-character `ragione_sociale` proves the `nome` backfill cuts to the column's
-    width; the fiscal row proves the backfill of `azienda_id`; a lower-case codice
-    fiscale proves the row is brought to the classifier's shape (a P.IVA with an `IT`
+    width; the fiscal row proves the backfill of `legal_entity_id`; a lower-case tax
+    code proves the row is brought to the classifier's shape (a P.IVA with an `IT`
     prefix cannot be planted: the column is eleven wide); the downgrade
-    with one azienda succeeds, and with two it refuses before touching anything.
+    with one legal entity succeeds, and with two it refuses before touching anything.
     """
     with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
@@ -354,13 +382,14 @@ def test_0045_binds_the_one_fiscal_row_to_the_one_azienda_and_refuses_to_undo_tw
 
         engine = create_engine(url)
         with engine.connect() as connection:
-            azienda = connection.execute(
+            legal_entity = connection.execute(
                 text(
-                    "SELECT nome, predefinita, attiva, partita_iva, codice_fiscale "
+                    "SELECT nome AS name, predefinita AS is_default, attiva AS active, "
+                    "partita_iva AS vat_number, codice_fiscale AS tax_code "
                     "FROM emitter_profile"
                 )
             ).one()
-            fiscal_azienda = connection.execute(
+            fiscal_legal_entity = connection.execute(
                 text("SELECT azienda_id FROM fiscal_profile")
             ).scalar_one()
             users_flag = connection.execute(
@@ -370,11 +399,11 @@ def test_0045_binds_the_one_fiscal_row_to_the_one_azienda_and_refuses_to_undo_tw
                 )
             ).scalar_one()
         engine.dispose()
-        assert azienda.nome == "S" * 80
-        assert azienda.predefinita is True and azienda.attiva is True
-        assert azienda.partita_iva == "01234567890"
-        assert azienda.codice_fiscale == "HMCRFT00A01H501K"
-        assert str(fiscal_azienda) == "00000000-0000-7000-8000-0000000000a1"
+        assert legal_entity.name == "S" * 80
+        assert legal_entity.is_default is True and legal_entity.active is True
+        assert legal_entity.vat_number == "01234567890"
+        assert legal_entity.tax_code == "HMCRFT00A01H501K"
+        assert str(fiscal_legal_entity) == "00000000-0000-7000-8000-0000000000a1"
         assert users_flag == "false"
 
         # One azienda: the downgrade goes back to 0044 and the two singletons return.
@@ -439,9 +468,10 @@ def test_every_trigram_index_is_a_partial_gin_index_over_gin_trgm_ops(
         engine.dispose()
 
     indexes = {row.indexname: row.indexdef for row in rows}
-    # Ten -- nine from migration 0021 plus `invoices.causale` from 0024 -- and the count is
-    # asserted: a set comprehension that silently matched nothing would make every
-    # assertion below vacuous, and §8.3 names ten columns rather than "some".
+    # Ten -- seven of migration 0021 (the two email ones moved to `contact_points` in 0073),
+    # `invoices.memo` from 0024 and the two of `tasks` from 0052 -- and the count is asserted:
+    # a set comprehension that silently matched nothing would make every assertion below
+    # vacuous, and §8.3 names the columns rather than "some".
     assert len(TRGM_INDEX_NAMES) == 10
     for name in sorted(TRGM_INDEX_NAMES):
         definition = indexes[name]
@@ -454,6 +484,10 @@ def test_every_trigram_index_is_a_partial_gin_index_over_gin_trgm_ops(
             f"{name} wraps the column in lower(), which stops ILIKE on the raw column "
             f"from using it (spec §8.2): {definition}"
         )
+    for name in sorted(CONTACT_TRGM_INDEX_NAMES):
+        definition = indexes[name]
+        assert "USING gin" in definition and "gin_trgm_ops" in definition, definition
+        assert "lower(" not in definition, definition
 
 
 # (index name, the exact `USING btree (...)` body Postgres must report). Residuo R9's
@@ -463,19 +497,19 @@ def test_every_trigram_index_is_a_partial_gin_index_over_gin_trgm_ops(
 # thirteen exist to avoid. Pinned as text because the *order* of the members and the
 # `DESC NULLS LAST` qualifier are observable nowhere else.
 SORT_INDEX_BODIES: dict[str, str] = {
-    "ix_customers_created_at_id": "(created_at, id)",
-    "ix_customers_updated_at_id": "(updated_at, id)",
-    "ix_customers_ragione_sociale_id": "(ragione_sociale, id)",
+    "ix_organizations_created_at_id": "(created_at, id)",
+    "ix_organizations_updated_at_id": "(updated_at, id)",
+    "ix_organizations_legal_name_id": "(legal_name, id)",
     "ix_people_created_at_id": "(created_at, id)",
     "ix_people_updated_at_id": "(updated_at, id)",
-    "ix_people_cognome_id": "(cognome, id)",
-    "ix_people_cognome_desc_id": "(cognome DESC NULLS LAST, id DESC)",
+    "ix_people_last_name_id": "(last_name, id)",
+    "ix_people_last_name_desc_id": "(last_name DESC NULLS LAST, id DESC)",
     "ix_deals_created_at_id": "(created_at, id)",
     "ix_deals_updated_at_id": "(updated_at, id)",
-    "ix_deals_nome_id": "(nome, id)",
+    "ix_deals_name_id": "(name, id)",
     "ix_documents_created_at_id": "(created_at, id)",
     "ix_documents_updated_at_id": "(updated_at, id)",
-    "ix_documents_titolo_id": "(titolo, id)",
+    "ix_documents_title_id": "(title, id)",
 }
 
 
@@ -486,7 +520,7 @@ def test_every_sort_index_is_a_btree_over_the_column_and_the_identifier(
 
     `compare_metadata` does not compare index expressions at all, so the one index that
     matters most here is exactly the one a schema diff would let through:
-    `ix_people_cognome_desc_id`. Without it a descending scan of `people.cognome` reads
+    `ix_people_last_name_desc_id`. Without it a descending scan of `people.last_name` reads
     the ascending index backwards, which yields NULLS FIRST -- not the order
     `db/sort.py::order_by` declares -- and Postgres sorts the whole table in memory
     instead.
@@ -620,10 +654,10 @@ def test_a_migration_leaves_the_host_process_loggers_emitting(pigrocrm_postgres:
     )
 
 
-def test_stato_dal_is_backfilled_from_the_timeline_and_chiuso_il_is_not() -> None:
+def test_status_since_is_backfilled_from_the_timeline_and_closed_at_is_not() -> None:
     """The asymmetry of spec §4.1, asserted rather than described.
 
-    A migration that quietly backfilled `chiuso_il` from the stage-change payload would
+    A migration that quietly backfilled `closed_at` from the stage-change payload would
     pass every other test in this file and would silently attribute deals to months
     derived from a renamable string. Asserted on the migration's source text because the
     absence of a statement is observable nowhere else: a schema comparison sees identical
@@ -644,8 +678,8 @@ def test_stato_dal_is_backfilled_from_the_timeline_and_chiuso_il_is_not() -> Non
 def test_the_backfill_reaches_only_offers_and_reads_the_emitters_day() -> None:
     """Two clauses that a passing schema comparison cannot see either.
 
-    `d.stato IS NOT NULL` is what keeps the backfill to offers: `documents.stato` is NULL
-    on every non-offer document, and stamping a `stato_dal` on a row with no state would
+    `d.stato IS NOT NULL` is what keeps the backfill to offers: `documents.status` is NULL
+    on every non-offer document, and stamping a `status_since` on a row with no state would
     make "this offer has been sitting for N days" answer for a contract.
 
     `AT TIME ZONE 'Europe/Rome'` is the same rule as `db/clock.py`, applied to history: a
@@ -676,7 +710,7 @@ def test_the_backfill_actually_fills_the_right_day_on_the_right_rows(
       * taking the oldest state change instead of the newest -> 10 March;
       * dropping the `kind` filter -> 1 August, the day of the unrelated activity;
       * projecting through UTC instead of the emitter's zone -> 30 June;
-      * dropping `d.stato IS NOT NULL` -> the contract gets a `stato_dal` too.
+      * dropping `d.stato IS NOT NULL` -> the contract gets a `status_since` too.
     """
     with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
@@ -745,17 +779,17 @@ def test_the_backfill_actually_fills_the_right_day_on_the_right_rows(
 
         engine = create_engine(url)
         with engine.connect() as connection:
-            offerta, verbale = (
+            offer, minutes = (
                 connection.execute(text("SELECT stato_dal FROM documents ORDER BY id"))
                 .scalars()
                 .all()
             )
-            chiuso_il = connection.execute(text("SELECT chiuso_il FROM deals")).scalar_one()
+            closed_at = connection.execute(text("SELECT chiuso_il FROM deals")).scalar_one()
         engine.dispose()
 
-    assert offerta == date(2026, 7, 1), offerta
-    assert verbale is None, "a document with no stato must not acquire a stato_dal"
-    assert chiuso_il is None, (
+    assert offer == date(2026, 7, 1), offer
+    assert minutes is None, "a document with no stato must not acquire a stato_dal"
+    assert closed_at is None, (
         "deals.chiuso_il must stay null: a closure deduced from a renamable stage name is "
         "a conversion rate that is plausible and wrong (spec §4.1)"
     )
@@ -783,7 +817,7 @@ def test_the_migration_seeds_exactly_one_automation_config_row(pigrocrm_postgres
         with engine.connect() as connection:
             rows = connection.execute(
                 text(
-                    "SELECT a1_offerta_accettata_vince_deal, a2_offerta_inviata_avanza_deal "
+                    "SELECT a1_wins_accepted_offer_deal, a2_advances_sent_offer_deal "
                     "FROM automation_config"
                 )
             ).all()
@@ -884,7 +918,7 @@ def test_a_write_folder_configured_before_0027_is_not_assumed_verified(
     )
 
 
-def test_0029_moves_any_legacy_import_provenance_to_esterno(pigrocrm_postgres: Any) -> None:
+def test_0029_moves_any_legacy_import_provenance_to_external(pigrocrm_postgres: Any) -> None:
     """The two things migration 0029 has to get right about the rows that already exist.
 
     `invoices.importata_da` is read back by the API and by MCP, and its value used to be
@@ -1002,7 +1036,7 @@ def test_0029_moves_any_legacy_import_provenance_to_esterno(pigrocrm_postgres: A
     assert payloads_after_downgrade["imported"]["importata_da"] == "esterno"
 
 
-def _competenza_checks(url: str) -> set[str]:
+def _accrual_checks(url: str) -> set[str]:
     engine: Engine = create_engine(url)
     try:
         with engine.connect() as connection:
@@ -1035,17 +1069,17 @@ def _proforma_dates(url: str) -> dict[str, date | None]:
         engine.dispose()
 
 
-def test_0033_dates_every_undated_proforma_in_rome_and_touches_no_fattura(
+def test_0033_dates_every_undated_proforma_in_rome_and_touches_no_invoice(
     pigrocrm_postgres: Any,
 ) -> None:
     """The backfill of migration 0033 (ORB-63), asserted on rows planted at 0032.
 
-    A proforma used to keep `data_emissione` `NULL` until a fattura was issued from it,
+    A proforma used to keep `data_emissione` `NULL` until a invoice was issued from it,
     and its PDF printed the Europe/Rome civil date of `created_at`. The backfill has to
     write exactly that date -- so no proforma anyone has already received changes its
     date -- and it has to be the *Rome* date: a row created at 22:30 UTC on 30 June is a
     document dated 1 July, and one created at 23:30 UTC on New Year's Eve belongs to the
-    next year. `date(created_at)` would have said June and December. The two fattura
+    next year. `date(created_at)` would have said June and December. The two invoice
     rows are the other half of the assertion: a draft's `NULL` means "not yet issued"
     and must stay, and an issued row's date is a register entry the migration may not
     look at.
@@ -1099,19 +1133,19 @@ def test_0033_dates_every_undated_proforma_in_rome_and_touches_no_fattura(
                 )
             )
         engine.dispose()
-        assert _competenza_checks(url) == set()
+        assert _accrual_checks(url) == set()
 
         upgrade(config, "0033")
         after_upgrade = _proforma_dates(url)
-        checks_after_upgrade = _competenza_checks(url)
+        checks_after_upgrade = _accrual_checks(url)
 
         downgrade(config, "0032")
         after_downgrade = _proforma_dates(url)
-        checks_after_downgrade = _competenza_checks(url)
+        checks_after_downgrade = _accrual_checks(url)
 
         upgrade(config, "0033")
         after_second_upgrade = _proforma_dates(url)
-        checks_after_second_upgrade = _competenza_checks(url)
+        checks_after_second_upgrade = _accrual_checks(url)
 
     expected = {
         "PROV-2026-0001": date(2026, 7, 1),
@@ -1179,15 +1213,15 @@ def test_0041_backfills_pack_id_and_pack_version_on_the_existing_row(
     assert (pack_id, pack_version) == ("it-flat-rate", "1")
 
 
-def test_0046_keys_the_register_by_azienda_over_planted_rows_and_refuses_to_undo_two(
+def test_0046_keys_the_register_by_legal_entity_over_planted_rows_and_refuses_to_undo_two(
     pigrocrm_postgres: Any,
 ) -> None:
     """The migration over real rows planted at 0045, not read as text (REB-619): a
-    default azienda, a fiscal profile, a counter and a declared gap. The upgrade keys
-    counter and gap to the azienda, swaps the two uniques and the primary key, lets
-    `codice_regime` be empty and widens the P.IVA; the downgrade with one azienda goes
-    back, and with a second azienda's counter it refuses before touching anything."""
-    azienda = "00000000-0000-7000-8000-0000000000a1"
+    default legal entity, a fiscal profile, a counter and a declared gap. The upgrade keys
+    counter and gap to the legal entity, swaps the two uniques and the primary key, lets
+    `regime_code` be empty and widens the P.IVA; the downgrade with one legal entity goes
+    back, and with a second legal entity's counter it refuses before touching anything."""
+    legal_entity = "00000000-0000-7000-8000-0000000000a1"
     with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
@@ -1203,7 +1237,7 @@ def test_0046_keys_the_register_by_azienda_over_planted_rows_and_refuses_to_undo
                     VALUES (:id, 'Studio', true, true, 'Studio Rossi', 'IT', now(), now())
                     """
                 ),
-                {"id": azienda},
+                {"id": legal_entity},
             )
             connection.execute(
                 text(
@@ -1216,7 +1250,7 @@ def test_0046_keys_the_register_by_azienda_over_planted_rows_and_refuses_to_undo
                             2.00, 'TP02', 'MP05', 30, now(), now())
                     """
                 ),
-                {"id": azienda},
+                {"id": legal_entity},
             )
             connection.execute(
                 text("INSERT INTO invoice_counters (anno, ultimo_numero) VALUES (2026, 3)")
@@ -1254,14 +1288,20 @@ def test_0046_keys_the_register_by_azienda_over_planted_rows_and_refuses_to_undo
 
         engine = create_engine(url)
         with engine.connect() as connection:
-            invoice_azienda = connection.execute(
+            invoice_legal_entity = connection.execute(
                 text("SELECT azienda_id FROM invoices WHERE numero = 3")
             ).scalar_one()
             counter = connection.execute(
-                text("SELECT azienda_id, anno, ultimo_numero FROM invoice_counters")
+                text(
+                    "SELECT azienda_id AS legal_entity_id, anno AS year, "
+                    "ultimo_numero AS last_number FROM invoice_counters"
+                )
             ).one()
             gap = connection.execute(
-                text("SELECT azienda_id, anno, numero FROM invoice_register_gaps")
+                text(
+                    "SELECT azienda_id AS legal_entity_id, anno AS year, numero AS number "
+                    "FROM invoice_register_gaps"
+                )
             ).one()
             pk = connection.execute(
                 text(
@@ -1276,7 +1316,7 @@ def test_0046_keys_the_register_by_azienda_over_planted_rows_and_refuses_to_undo
                     text("SELECT indexname FROM pg_indexes WHERE tablename = 'invoices'")
                 ).scalars()
             )
-            regime_nullable, piva_width = connection.execute(
+            regime_nullable, vat_number_width = connection.execute(
                 text(
                     "SELECT (SELECT is_nullable FROM information_schema.columns "
                     "        WHERE table_name = 'fiscal_profile' "
@@ -1286,15 +1326,19 @@ def test_0046_keys_the_register_by_azienda_over_planted_rows_and_refuses_to_undo
                 )
             ).one()
         engine.dispose()
-        assert str(invoice_azienda) == azienda
-        assert (str(counter.azienda_id), counter.anno, counter.ultimo_numero) == (azienda, 2026, 3)
-        assert (str(gap.azienda_id), gap.anno, gap.numero) == (azienda, 2026, 2)
+        assert str(invoice_legal_entity) == legal_entity
+        assert (str(counter.legal_entity_id), counter.year, counter.last_number) == (
+            legal_entity,
+            2026,
+            3,
+        )
+        assert (str(gap.legal_entity_id), gap.year, gap.number) == (legal_entity, 2026, 2)
         assert pk == ["azienda_id", "anno"]
         assert "uq_invoices_azienda_anno_numero" in invoice_indexes
         assert "ix_invoices_anno_numero" in invoice_indexes
         assert "uq_invoices_anno_numero" not in invoice_indexes
         assert "ix_invoices_azienda_id" in invoice_indexes
-        assert (regime_nullable, piva_width) == ("YES", 20)
+        assert (regime_nullable, vat_number_width) == ("YES", 20)
 
         # One azienda: the downgrade goes back to 0045 and the old key returns.
         downgrade(config, "0045")
@@ -1368,14 +1412,14 @@ def test_0046_keys_the_register_by_azienda_over_planted_rows_and_refuses_to_undo
         assert head == "0046"
 
 
-def test_0047_binds_every_existing_row_to_the_one_azienda_and_a_cost_to_its_deals(
+def test_0047_binds_every_existing_row_to_the_one_legal_entity_and_to_cost_to_its_deals(
     pigrocrm_postgres: Any,
 ) -> None:
     """The migration over real rows planted at 0046 (REB-623): a customer, a deal, a
     contract, a document, a cost on the deal and a shared one. Every owned row is bound
     to the default azienda, the cost on a deal to the deal's, the shared cost to none;
     the downgrade drops the five columns and the indexes with them."""
-    azienda = "00000000-0000-7000-8000-0000000000a1"
+    legal_entity = "00000000-0000-7000-8000-0000000000a1"
     with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
@@ -1389,7 +1433,7 @@ def test_0047_binds_every_existing_row_to_the_one_azienda_and_a_cost_to_its_deal
                     "nazione, created_at, updated_at) VALUES (:id, 'Studio', true, true, "
                     "'Studio Rossi', 'IT', now(), now())"
                 ),
-                {"id": azienda},
+                {"id": legal_entity},
             )
             connection.execute(
                 text(
@@ -1477,8 +1521,8 @@ def test_0047_binds_every_existing_row_to_the_one_azienda_and_a_cost_to_its_deal
                 ).scalars()
             )
         engine.dispose()
-        assert set(owned.values()) == {azienda}
-        assert costs["00000000-0000-7000-8000-0000000000f1"] == azienda
+        assert set(owned.values()) == {legal_entity}
+        assert costs["00000000-0000-7000-8000-0000000000f1"] == legal_entity
         assert costs["00000000-0000-7000-8000-0000000000f2"] is None
         assert indexes >= {
             "ix_customers_azienda_id",
@@ -1604,3 +1648,1607 @@ def test_0049_puts_the_fast_path_first_and_its_downgrade_restores_0048(
             assert at_0048[1][name].lstrip().startswith("SELECT scope_tutte() OR "), name
     assert back_at_0048 == at_0048
     assert at_head_again == at_head
+
+
+def _order_shape(url: str) -> tuple[set[str], set[str]]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            columns = set(
+                connection.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'invoices' AND column_name LIKE 'ordine\\_%'"
+                    )
+                ).scalars()
+            )
+            checks = set(
+                connection.execute(
+                    text(
+                        "SELECT conname FROM pg_constraint "
+                        "WHERE conrelid = 'invoices'::regclass "
+                        "AND conname = 'ck_invoices_ordine_needs_numero'"
+                    )
+                ).scalars()
+            )
+            return columns, checks
+    finally:
+        engine.dispose()
+
+
+def _insert_orphan_tender_code_draft(url: str) -> None:
+    """A draft invoice with a tender code and no order number, straight through SQL."""
+    engine: Engine = create_engine(url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO emitter_profile (id, nome, predefinita, attiva, "
+                    "ragione_sociale, nazione, created_at, updated_at) VALUES "
+                    "('00000000-0000-7000-8000-0000000000a1', 'Studio', true, true, "
+                    "'Studio Rossi', 'IT', now(), now())"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO customers (id, azienda_id, ragione_sociale, nazione, "
+                    "custom_fields, created_at, updated_at) VALUES "
+                    "('00000000-0000-7000-8000-0000000000c1', "
+                    "'00000000-0000-7000-8000-0000000000a1', 'Acme', 'IT', '{}', now(), now())"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO invoices (id, azienda_id, customer_id, tipo, stato, "
+                    "tipo_documento, divisa, imponibile, imposta, bollo, totale, "
+                    "stato_pagamento, custom_fields, ordine_cig, created_at, updated_at) VALUES "
+                    "('00000000-0000-7000-8000-0000000000d1', "
+                    "'00000000-0000-7000-8000-0000000000a1', "
+                    "'00000000-0000-7000-8000-0000000000c1', 'fattura', 'bozza', 'TD01', "
+                    "'EUR', 0, 0, 0, 0, 'da_incassare', '{}', 'Z0A1B2C3D4', now(), now())"
+                )
+            )
+    finally:
+        engine.dispose()
+
+
+def test_0050_adds_the_purchase_order_columns_and_its_downgrade_drops_them(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-693: four nullable columns and one CHECK, no backfill, both ways."""
+    purchase_order = {"ordine_numero", "ordine_data", "ordine_cig", "ordine_cup"}
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0049")
+        assert _order_shape(url) == (set(), set())
+        upgrade(config, "0050")
+        assert _order_shape(url) == (purchase_order, {"ck_invoices_ordine_needs_numero"})
+        with pytest.raises(IntegrityError, match="ck_invoices_ordine_needs_numero"):
+            _insert_orphan_tender_code_draft(url)
+        downgrade(config, "0049")
+        assert _order_shape(url) == (set(), set())
+        upgrade(config, "0050")
+        assert _order_shape(url) == (purchase_order, {"ck_invoices_ordine_needs_numero"})
+
+
+def _invitation_mail_columns(url: str) -> set[str]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            return set(
+                connection.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'invitations' AND column_name LIKE 'mail\\_%'"
+                    )
+                ).scalars()
+            )
+    finally:
+        engine.dispose()
+
+
+def test_0051_adds_the_invitation_mail_columns_and_its_downgrade_drops_them(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-678: three nullable columns, no backfill, both ways."""
+    mail = {"mail_id", "mail_status", "mail_sent_at"}
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0050")
+        assert _invitation_mail_columns(url) == set()
+        upgrade(config, "0051")
+        assert _invitation_mail_columns(url) == mail
+        downgrade(config, "0050")
+        assert _invitation_mail_columns(url) == set()
+        upgrade(config, "0051")
+        assert _invitation_mail_columns(url) == mail
+
+
+def test_0058_repoints_an_ordinary_profile_at_its_own_pack_and_clears_the_forfettarios_figures(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-760 over real rows planted at 0057: an `RF01` profile left on the flat-rate
+    regime's pack with its coefficients, and a flat-rate profile beside it. The first moves
+    to `it-standard` with the flat-rate figures and the stamp duty cleared; the second is
+    untouched; the downgrade points the first back."""
+    ordinary, flat_rate = (
+        "00000000-0000-7000-8000-0000000000b1",
+        "00000000-0000-7000-8000-0000000000b2",
+    )
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0057")
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            for legal_entity, profile_name, regime, rate, stamp_duty, params in (
+                (ordinary, "ordinaria", "RF01", "22.00", "true", ("67.00", "5.00", "26.07")),
+                (flat_rate, "forfettaria", "RF19", "0.00", "true", ("78.00", "5.00", "26.07")),
+            ):
+                connection.execute(
+                    text(
+                        """
+                        INSERT INTO emitter_profile (id, nome, predefinita, attiva,
+                            ragione_sociale, nazione, created_at, updated_at)
+                        VALUES (:id, :nome, false, true, :nome, 'IT', now(), now())
+                        """
+                    ),
+                    {"id": legal_entity, "nome": profile_name},
+                )
+                connection.execute(
+                    text(
+                        f"""
+                        INSERT INTO fiscal_profile (id, azienda_id, codice_regime,
+                            aliquota_iva_default, applica_bollo, soglia_bollo, importo_bollo,
+                            condizioni_pagamento, modalita_pagamento, giorni_scadenza,
+                            coefficiente_redditivita, aliquota_imposta_sostitutiva,
+                            aliquota_inps, natura_default, riferimento_normativo, pack_id,
+                            pack_version, created_at, updated_at)
+                        VALUES (gen_random_uuid(), :azienda, :regime, :rate, {stamp_duty}, 77.47,
+                            2.00, 'TP02', 'MP05', 30, :c, :s, :i, 'N2.2', 'L. 190/2014',
+                            'it-flat-rate', '1', now(), now())
+                        """
+                    ),
+                    {
+                        "azienda": legal_entity,
+                        "regime": regime,
+                        "rate": rate,
+                        "c": params[0],
+                        "s": params[1],
+                        "i": params[2],
+                    },
+                )
+        engine.dispose()
+
+        def read() -> dict[str, tuple[Any, ...]]:
+            engine = create_engine(url)
+            try:
+                with engine.connect() as connection:
+                    rows = connection.execute(
+                        text(
+                            "SELECT azienda_id::text, pack_id, applica_bollo, "
+                            "coefficiente_redditivita, aliquota_imposta_sostitutiva, "
+                            "aliquota_inps, natura_default, riferimento_normativo "
+                            "FROM fiscal_profile"
+                        )
+                    ).all()
+                return {row[0]: tuple(row[1:]) for row in rows}
+            finally:
+                engine.dispose()
+
+        upgrade(config, "0058")
+        after = read()
+        assert after[ordinary] == ("it-standard", False, None, None, None, None, None)
+        assert after[flat_rate] == (
+            "it-flat-rate",
+            True,
+            Decimal("78.00"),
+            Decimal("5.00"),
+            Decimal("26.07"),
+            "N2.2",
+            "L. 190/2014",
+        )
+
+        downgrade(config, "0057")
+        assert read()[ordinary][0] == "it-flat-rate"
+        assert read()[flat_rate][0] == "it-flat-rate"
+
+
+def _cap_shape(url: str) -> tuple[set[str], set[str]]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            columns = set(
+                connection.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'contracts' AND column_name = 'tetto_quota_cliente'"
+                    )
+                ).scalars()
+            )
+            checks = set(
+                connection.execute(
+                    text(
+                        "SELECT conname FROM pg_constraint "
+                        "WHERE conname = 'ck_contracts_tetto_quota_cliente_range'"
+                    )
+                ).scalars()
+            )
+        return columns, checks
+    finally:
+        engine.dispose()
+
+
+def test_0059_adds_the_share_cap_column_and_its_range_check_both_ways(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-761: one nullable column and one CHECK, no backfill, both ways."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0058")
+        assert _cap_shape(url) == (set(), set())
+        upgrade(config, "0059")
+        assert _cap_shape(url) == (
+            {"tetto_quota_cliente"},
+            {"ck_contracts_tetto_quota_cliente_range"},
+        )
+        downgrade(config, "0058")
+        assert _cap_shape(url) == (set(), set())
+        upgrade(config, "0059")
+        assert _cap_shape(url)[1] == {"ck_contracts_tetto_quota_cliente_range"}
+
+
+def _clause_notes_shape(url: str) -> tuple[set[str], bool, set[str]]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            columns = set(
+                connection.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'clause_notes'"
+                    )
+                ).scalars()
+            )
+            forced = bool(
+                connection.execute(
+                    text("SELECT relforcerowsecurity FROM pg_class WHERE relname = 'clause_notes'")
+                ).scalar()
+            )
+            policies = set(
+                connection.execute(
+                    text("SELECT policyname FROM pg_policies WHERE tablename = 'clause_notes'")
+                ).scalars()
+            )
+        return columns, forced, policies
+    finally:
+        engine.dispose()
+
+
+def test_0060_creates_clause_notes_under_the_legal_entities_policy_and_its_downgrade_drops_it(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-762: one table keyed on a contract, with the row-level policy every table that
+    reaches an azienda carries, forced; no backfill, both ways."""
+    columns = {
+        "id",
+        "contract_id",
+        "riferimento_clausola",
+        "testo_letterale",
+        "interpretazione_adottata",
+        "note",
+        "created_at",
+        "updated_at",
+    }
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0059")
+        assert _clause_notes_shape(url) == (set(), False, set())
+        upgrade(config, "0060")
+        assert _clause_notes_shape(url) == (columns, True, {"ambito_azienda"})
+        downgrade(config, "0059")
+        assert _clause_notes_shape(url) == (set(), False, set())
+        upgrade(config, "0060")
+        assert _clause_notes_shape(url)[0] == columns
+
+
+def _job_run_shape(url: str) -> tuple[set[str], bool]:
+    """`reminder_job_run`'s columns beside `job`, and whether `ran_at` is nullable."""
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            rows = connection.execute(
+                text(
+                    "SELECT column_name, is_nullable FROM information_schema.columns "
+                    "WHERE table_name = 'reminder_job_run' AND column_name IN "
+                    "('ran_at', 'failed_at', 'failure')"
+                )
+            ).all()
+    finally:
+        engine.dispose()
+    return {row[0] for row in rows}, {row[0]: row[1] for row in rows}["ran_at"] == "YES"
+
+
+def _plant_job_run(url: str, columns: str, values: str) -> None:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(  # noqa: S608 - fixed test fragments
+                    f"INSERT INTO reminder_job_run (id, job, {columns}) "
+                    f"VALUES (gen_random_uuid(), {values})"
+                )
+            )
+    finally:
+        engine.dispose()
+
+
+def _job_runs(url: str) -> list[str]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            return list(
+                connection.execute(text("SELECT job FROM reminder_job_run ORDER BY job")).scalars()
+            )
+    finally:
+        engine.dispose()
+
+
+def test_0061_adds_the_failure_columns_keeps_the_rows_and_its_downgrade_drops_the_failed_ones(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-764: two nullable columns, `ran_at` nullable and two CHECKs, no backfill; the
+    downgrade drops the rows with no success, which the old shape cannot hold, and keeps
+    the others."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0060")
+        assert _job_run_shape(url) == ({"ran_at"}, False)
+        _plant_job_run(url, "ran_at", "'reminders', now()")
+
+        upgrade(config, "0061")
+        assert _job_run_shape(url) == ({"ran_at", "failed_at", "failure"}, True)
+        assert _job_runs(url) == ["reminders"], "the reminder pass's row is untouched"
+        _plant_job_run(url, "failed_at, failure", "'automations', now(), 'RuntimeError'")
+        assert _job_runs(url) == ["automations", "reminders"]
+
+        with pytest.raises(IntegrityError, match="ck_reminder_job_run_failure_pair"):
+            _plant_job_run(url, "failed_at", "'digest', now()")
+        with pytest.raises(IntegrityError, match="ck_reminder_job_run_has_a_time"):
+            _plant_job_run(url, "ran_at", "'digest', NULL")
+
+        downgrade(config, "0060")
+        assert _job_run_shape(url) == ({"ran_at"}, False)
+        assert _job_runs(url) == ["reminders"], "a job that never succeeded has nothing to keep"
+
+
+def _plant_tokens(url: str, switch_row: str | None) -> None:
+    """One member with a live and a revoked token, and the space's `mcp_full_access` row
+    when `switch_row` is not None."""
+    engine: Engine = create_engine(url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email, password_hash, nome, ruolo, attivo) "
+                    "VALUES ('00000000-0000-7000-8000-0000000000f1', 'titolare@example.it', "
+                    "'x', 'Titolare', 'admin', true)"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO personal_access_tokens "
+                    "(id, user_id, nome, token_hash, prefix, revoked_at) VALUES "
+                    "(gen_random_uuid(), '00000000-0000-7000-8000-0000000000f1', 'viva', "
+                    "'h1', 'pgc_aaaa', NULL), "
+                    "(gen_random_uuid(), '00000000-0000-7000-8000-0000000000f1', 'morta', "
+                    "'h2', 'pgc_bbbb', now())"
+                )
+            )
+            if switch_row is not None:
+                connection.execute(
+                    text(
+                        "INSERT INTO space_settings (key, value) VALUES ('mcp_full_access', :value)"
+                    ),
+                    {"value": switch_row},
+                )
+    finally:
+        engine.dispose()
+
+
+def _token_flags(url: str) -> dict[str, bool]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            rows = connection.execute(text("SELECT nome, full_access FROM personal_access_tokens"))
+            return {token_name: flag for token_name, flag in rows}
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("switch_row", "environment", "expected"),
+    [
+        # The space's own row wins either way: on, with the environment closed...
+        ("true", "false", True),
+        ("sì", "false", True),
+        # ...and off, with the environment open, which is the space that closed it.
+        ("false", "true", False),
+        # No row: the space inherits the environment, as `space_base_settings` gives it.
+        (None, "true", True),
+        (None, "false", False),
+    ],
+)
+def test_0063_gives_every_existing_token_what_its_space_switch_gave_it_yesterday(
+    pigrocrm_postgres: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    switch_row: str | None,
+    environment: str,
+    expected: bool,
+) -> None:
+    """REB-810: the switch moves to the token and nobody loses a door. Whatever the space's
+    effective `mcp_full_access` was, every token (the revoked one too, so the list reads
+    one way) now carries it as its own flag, and the downgrade drops the column."""
+    monkeypatch.setenv("PIGROCRM_MCP_FULL_ACCESS", environment)
+    get_settings.cache_clear()
+    try:
+        with pigrocrm_postgres.fresh_container() as container:
+            url = container.get_connection_url()
+            config = _alembic_config(url)
+            upgrade(config, "0062")
+            _plant_tokens(url, switch_row)
+
+            upgrade(config, "0063")
+            assert _token_flags(url) == {"viva": expected, "morta": expected}
+
+            downgrade(config, "0062")
+            engine: Engine = create_engine(url)
+            try:
+                with engine.connect() as connection:
+                    columns = set(
+                        connection.execute(
+                            text(
+                                "SELECT column_name FROM information_schema.columns "
+                                "WHERE table_name = 'personal_access_tokens'"
+                            )
+                        ).scalars()
+                    )
+            finally:
+                engine.dispose()
+            assert "full_access" not in columns
+    finally:
+        get_settings.cache_clear()
+
+
+def test_0063_leaves_a_token_made_afterwards_closed(
+    pigrocrm_postgres: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The column's default is closed: a token inserted by anything that does not name the
+    flag, in a space whose switch was open, is not opened by the migration's backfill."""
+    monkeypatch.setenv("PIGROCRM_MCP_FULL_ACCESS", "true")
+    get_settings.cache_clear()
+    try:
+        with pigrocrm_postgres.fresh_container() as container:
+            url = container.get_connection_url()
+            config = _alembic_config(url)
+            upgrade(config, "0062")
+            _plant_tokens(url, "true")
+            upgrade(config, "0063")
+            engine: Engine = create_engine(url)
+            try:
+                with engine.begin() as connection:
+                    connection.execute(
+                        text(
+                            "INSERT INTO personal_access_tokens "
+                            "(id, user_id, nome, token_hash, prefix) VALUES "
+                            "(gen_random_uuid(), '00000000-0000-7000-8000-0000000000f1', "
+                            "'nuova', 'h3', 'pgc_cccc')"
+                        )
+                    )
+            finally:
+                engine.dispose()
+            assert _token_flags(url)["nuova"] is False
+    finally:
+        get_settings.cache_clear()
+
+
+LEGAL_ENTITY_0064 = "00000000-0000-7000-8000-0000000000a1"
+STAGE_0064 = "00000000-0000-7000-8000-0000000000e1"
+REQUEST_1, REQUEST_2, REQUEST_3, REQUEST_4 = (
+    f"rebase:request=00000000-0000-4000-8000-00000000000{n}" for n in range(1, 5)
+)
+MATCH_1, MATCH_2 = (f"rebase:match=00000000-0000-4000-8000-0000000000a{n}" for n in range(1, 3))
+
+
+def _plant_0064(url: str) -> None:
+    """Three customers, a person and six deals as 0063 leaves them, each with the `note`
+    the old code could have written: plain text, nothing, only spaces, a reference line
+    under a sentence, a reference alone, two references, a reference inside a line."""
+    engine: Engine = create_engine(url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO emitter_profile (id, nome, predefinita, attiva, ragione_sociale, "
+                    "nazione, created_at, updated_at) VALUES (:id, 'Studio', true, true, "
+                    "'Studio Rossi', 'IT', now(), now())"
+                ),
+                {"id": LEGAL_ENTITY_0064},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO pipeline_stages (id, nome, posizione, probabilita_default, tipo, "
+                    "created_at, updated_at) VALUES (:id, 'Lead', 0, 10, 'open', now(), now())"
+                ),
+                {"id": STAGE_0064},
+            )
+            customers = {
+                "c1": "Cliente storico\nsu due righe",
+                "c2": None,
+                "c3": "   \n",
+            }
+            for key, note in customers.items():
+                connection.execute(
+                    text(
+                        "INSERT INTO customers (id, ragione_sociale, nazione, azienda_id, note, "
+                        "custom_fields, created_at, updated_at) VALUES "
+                        f"('00000000-0000-7000-8000-0000000000{key}', :nome, 'IT', :azienda, "
+                        ":note, '{}', '2025-01-01', '2026-01-10 09:30:00+00')"
+                    ),
+                    {"nome": f"Cliente {key}", "azienda": LEGAL_ENTITY_0064, "note": note},
+                )
+            connection.execute(
+                text(
+                    "INSERT INTO people (id, nome, customer_id, note, custom_fields, created_at, "
+                    "updated_at) VALUES ('00000000-0000-7000-8000-0000000000b1', 'Anna', "
+                    "'00000000-0000-7000-8000-0000000000c1', 'Contatto storico', '{}', "
+                    "'2025-01-01', '2026-02-11 10:00:00+00')"
+                )
+            )
+            deals = {
+                "d1": f"Riga uno\n{REQUEST_1}",
+                "d2": MATCH_1,
+                "d3": f"Testo\n{REQUEST_2}\n{REQUEST_3}\n",
+                "d4": f"Vedi {MATCH_2} nel testo",
+                "d5": None,
+                "d6": "Solo testo",
+            }
+            for key, note in deals.items():
+                connection.execute(
+                    text(
+                        "INSERT INTO deals (id, nome, customer_id, azienda_id, pipeline_stage_id, "
+                        "probabilita, note, custom_fields, created_at, updated_at) VALUES "
+                        f"('00000000-0000-7000-8000-0000000000{key}', :nome, "
+                        "'00000000-0000-7000-8000-0000000000c1', :azienda, :stage, 10, :note, "
+                        "'{}', '2025-01-01', '2026-03-12 11:15:00+00')"
+                    ),
+                    {
+                        "nome": f"Deal {key}",
+                        "azienda": LEGAL_ENTITY_0064,
+                        "stage": STAGE_0064,
+                        "note": note,
+                    },
+                )
+    finally:
+        engine.dispose()
+
+
+def _moved_0064(
+    url: str,
+) -> tuple[list[tuple[str, str, str, str | None, str | None, str]], dict[str, list[str]]]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            notes = [
+                tuple(row)
+                for row in connection.execute(
+                    text(
+                        "SELECT entity_type, right(entity_id::text, 2), testo, fonte, "
+                        "autore_id::text, created_at::text FROM notes "
+                        "ORDER BY entity_type, entity_id"
+                    )
+                )
+            ]
+            refs = {
+                row[0]: row[1]
+                for row in connection.execute(
+                    text("SELECT right(id::text, 2), rebase_refs FROM deals ORDER BY 1")
+                )
+            }
+        return notes, refs  # type: ignore[return-value]
+    finally:
+        engine.dispose()
+
+
+def _note_columns(url: str) -> set[str]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            return set(
+                connection.execute(
+                    text(
+                        "SELECT table_name FROM information_schema.columns "
+                        "WHERE column_name = 'note' "
+                        "AND table_name IN ('deals', 'customers', 'people')"
+                    )
+                ).scalars()
+            )
+    finally:
+        engine.dispose()
+
+
+def _table_shape(url: str, table: str) -> tuple[bool, bool, set[str]]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            exists = bool(
+                connection.execute(
+                    text("SELECT to_regclass(:name) IS NOT NULL"), {"name": f"public.{table}"}
+                ).scalar()
+            )
+            forced = bool(
+                connection.execute(
+                    text("SELECT relforcerowsecurity FROM pg_class WHERE relname = :name"),
+                    {"name": table},
+                ).scalar()
+            )
+            policies = set(
+                connection.execute(
+                    text("SELECT policyname FROM pg_policies WHERE tablename = :name"),
+                    {"name": table},
+                ).scalars()
+            )
+        return exists, forced, policies
+    finally:
+        engine.dispose()
+
+
+def test_0064_moves_every_note_into_a_thread_and_the_markers_into_a_column(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-879: over the notes planted at 0063. Each non-blank `note` of the three tables
+    becomes the first note of its row, with no author and no source and the row's
+    `updated_at` as its date; a reference line of a deal's note leaves the text and goes to
+    `rebase_refs`; the three columns are dropped; the table is under the azienda policy,
+    forced. The downgrade rebuilds the columns, references back as the last lines."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0063")
+        _plant_0064(url)
+        assert _note_columns(url) == {"deals", "customers", "people"}
+        assert _table_shape(url, "notes") == (False, False, set())
+        assert _table_shape(url, "note_revisions") == (False, False, set())
+
+        upgrade(config, "0064")
+
+        notes, refs = _moved_0064(url)
+        assert notes == [
+            (
+                "customer",
+                "c1",
+                "Cliente storico\nsu due righe",
+                None,
+                None,
+                "2026-01-10 09:30:00+00",
+            ),
+            ("deal", "d1", "Riga uno", None, None, "2026-03-12 11:15:00+00"),
+            ("deal", "d3", "Testo", None, None, "2026-03-12 11:15:00+00"),
+            ("deal", "d4", f"Vedi {MATCH_2} nel testo", None, None, "2026-03-12 11:15:00+00"),
+            ("deal", "d6", "Solo testo", None, None, "2026-03-12 11:15:00+00"),
+            ("person", "b1", "Contatto storico", None, None, "2026-02-11 10:00:00+00"),
+        ]
+        assert refs == {
+            "d1": [REQUEST_1],
+            "d2": [MATCH_1],
+            "d3": [REQUEST_2, REQUEST_3],
+            "d4": [MATCH_2],
+            "d5": [],
+            "d6": [],
+        }
+        assert _note_columns(url) == set()
+        assert _table_shape(url, "notes") == (True, True, {"ambito_azienda"})
+        assert _table_shape(url, "note_revisions") == (True, True, {"ambito_azienda"})
+
+        downgrade(config, "0063")
+
+        assert _table_shape(url, "notes")[0] is False
+        assert _table_shape(url, "note_revisions")[0] is False
+        assert _note_columns(url) == {"deals", "customers", "people"}
+        engine: Engine = create_engine(url)
+        with engine.connect() as connection:
+            restored = {
+                row[0]: row[1]
+                for row in connection.execute(
+                    text(
+                        "SELECT right(id::text, 2), note FROM deals "
+                        "UNION ALL SELECT right(id::text, 2), note FROM customers "
+                        "UNION ALL SELECT right(id::text, 2), note FROM people"
+                    )
+                )
+            }
+        engine.dispose()
+        assert restored["d1"] == f"Riga uno\n{REQUEST_1}"
+        assert restored["d2"] == MATCH_1
+        assert restored["d3"] == f"Testo\n{REQUEST_2}\n{REQUEST_3}"
+        assert restored["c1"] == "Cliente storico\nsu due righe"
+        assert restored["b1"] == "Contatto storico"
+        assert restored["d5"] is None and restored["c2"] is None
+
+        # And forward again over what the downgrade left: the same thread.
+        upgrade(config, "0064")
+        assert _moved_0064(url)[1] == refs
+
+
+def test_0064_runs_on_a_database_with_no_notes_at_all(pigrocrm_postgres: Any) -> None:
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0063")
+        upgrade(config, "0064")
+        assert _moved_0064(url) == ([], {})
+
+
+def test_0068_renames_the_vocabulary_and_the_json_both_ways(pigrocrm_postgres: Any) -> None:
+    """REB-898 over rows planted at 0067: a task with its status and origin, a pipeline
+    stage code, a space setting key and three timeline entries (a renamed kind with renamed
+    payload keys and values, a kind that keeps its name next to English keys of its own, and
+    a task kind). Up, the words and keys are English and the tables carry the new names;
+    down, every row is what was planted."""
+    task_id = "00000000-0000-7000-8000-0000000000a1"
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0067")
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO attivita (id, titolo, stato, origine, regola, completata_il) "
+                    "VALUES (:id, 't', 'completata', 'automazione', 'deal_fermo', now())"
+                ),
+                {"id": task_id},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO pipeline_stages (id, code, nome, posizione, probabilita_default,"
+                    " tipo) VALUES (gen_random_uuid(), 'negoziazione', 'N', 1, 50, 'open')"
+                )
+            )
+            connection.execute(
+                text("INSERT INTO space_settings (key, value) VALUES ('solleciti_grace_days', '3')")
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO activities (id, entity_type, entity_id, kind, actor_type, "
+                    "payload, occurred_at) VALUES "
+                    "(gen_random_uuid(), 'attivita', :id, 'completata', 'user', "
+                    ' \'{"il": "2026-01-01"}\', now()), '
+                    "(gen_random_uuid(), 'emitter_profile', :id, 'created', 'user', "
+                    ' \'{"nome": "Studio", "changed": ["nome", "predefinita"]}\', now()), '
+                    "(gen_random_uuid(), 'deal', :id, 'stage_changed', 'user', "
+                    ' \'{"from": "a", "to": "b"}\', now())'
+                ),
+                {"id": task_id},
+            )
+        engine.dispose()
+
+        before = _read_0068(url, "attivita", "stato, origine, regola")
+        upgrade(config, "0068")
+        after = _read_0068(url, "tasks", "status, origin, rule")
+        downgrade(config, "0067")
+        round_trip = _read_0068(url, "attivita", "stato, origine, regola")
+    assert after[0] == ("completed", "automation", "stalled_deal")
+    assert after[1] == "negotiation"
+    assert after[2] == "payment_reminders_grace_days"
+    assert after[3] == [
+        ("deal", "stage_changed", {"to": "b", "from": "a"}),
+        ("legal_entity", "created", {"name": "Studio", "changed": ["name", "is_default"]}),
+        ("task", "completed", {"at": "2026-01-01"}),
+    ]
+    assert before == round_trip
+
+
+def _read_0068(url: str, table: str, columns: str) -> tuple[Any, ...]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            task = tuple(
+                connection.execute(text(f"SELECT {columns} FROM {table}")).one()  # noqa: S608
+            )
+            stage = connection.execute(text("SELECT code FROM pipeline_stages")).scalar_one()
+            setting = connection.execute(text("SELECT key FROM space_settings")).scalar_one()
+            timeline = connection.execute(
+                text("SELECT entity_type, kind, payload FROM activities ORDER BY entity_type")
+            ).all()
+        return task, stage, setting, [tuple(row) for row in timeline]
+    finally:
+        engine.dispose()
+
+
+def test_0069_renames_the_postal_code_column_and_its_json_both_ways(pigrocrm_postgres: Any) -> None:
+    """REB-898 over rows planted at 0068: a customer and a legal entity with their `cap`, an
+    invoice whose snapshot carries it in both parties, and timeline entries naming it in
+    `changed`, `before` and `after`. Up, the columns, the snapshot keys and the payload
+    names say `postal_code`; down, every row is what was planted."""
+    snapshot = (
+        '{"version": 1, "legal_entity": {"legal_name": "L", "cap": "00100"},'
+        ' "customer": {"legal_name": "C", "cap": "20124"}, "tax": {}}'
+    )
+    payload = '{"changed": ["cap", "city"], "before": {"cap": "1"}, "after": {"cap": "2"}}'
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0068")
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO legal_entities (id, name, legal_name, country, cap) VALUES "
+                    "('00000000-0000-7000-8000-0000000000e1', 'E', 'E srl', 'IT', '00100')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO customers (id, legal_name, country, cap, custom_fields, "
+                    "legal_entity_id) VALUES ('00000000-0000-7000-8000-0000000000c1', 'C srl', "
+                    "'IT', '20124', '{}', '00000000-0000-7000-8000-0000000000e1')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO activities (id, entity_type, entity_id, kind, actor_type, "
+                    "payload, occurred_at) VALUES "
+                    "(gen_random_uuid(), 'customer', gen_random_uuid(), 'updated', 'user', "
+                    "CAST(:payload AS jsonb), now()), "
+                    "(gen_random_uuid(), 'deal', gen_random_uuid(), 'updated', 'user', "
+                    "CAST(:payload AS jsonb), now())"
+                ),
+                {"payload": payload},
+            )
+            connection.execute(text("SELECT set_config('pigrocrm.legal_entities', '*', false)"))
+            connection.execute(
+                text(
+                    "INSERT INTO invoices (id, customer_id, legal_entity_id, type, status, "
+                    "sdi_document_type, currency, taxable_amount, vat_amount, stamp_duty, total, "
+                    "payment_status, custom_fields, snapshot_version, snapshot) VALUES "
+                    "('00000000-0000-7000-8000-0000000000f1', "
+                    "'00000000-0000-7000-8000-0000000000c1', "
+                    "'00000000-0000-7000-8000-0000000000e1', 'invoice', 'draft', "
+                    "'TD01', 'EUR', 0, 0, 0, 0, 'unpaid', '{}', 1, CAST(:snapshot AS jsonb))"
+                ),
+                {"snapshot": snapshot},
+            )
+        engine.dispose()
+
+        before = _read_0069(url, "cap")
+        upgrade(config, "0069")
+        after = _read_0069(url, "postal_code")
+        downgrade(config, "0068")
+        round_trip = _read_0069(url, "cap")
+    assert after[0] == ("00100", "20124")
+    assert after[1]["legal_entity"] == {"legal_name": "L", "postal_code": "00100"}
+    assert after[1]["customer"] == {"legal_name": "C", "postal_code": "20124"}
+    assert after[2] == {
+        "customer": {
+            "changed": ["postal_code", "city"],
+            "before": {"postal_code": "1"},
+            "after": {"postal_code": "2"},
+        },
+        "deal": {"changed": ["cap", "city"], "before": {"cap": "1"}, "after": {"cap": "2"}},
+    }
+    assert before == round_trip
+
+
+def _read_0069(url: str, column: str) -> tuple[Any, ...]:
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT set_config('pigrocrm.legal_entities', '*', false)"))
+            columns = tuple(
+                connection.execute(
+                    text(
+                        f"SELECT (SELECT {column} FROM legal_entities), "  # noqa: S608
+                        f"(SELECT {column} FROM customers)"
+                    )
+                ).one()
+            )
+            snapshot = connection.execute(text("SELECT snapshot FROM invoices")).scalar_one()
+            timeline = {
+                entity: payload
+                for entity, payload in connection.execute(
+                    text("SELECT entity_type, payload FROM activities")
+                ).all()
+            }
+        return columns, snapshot, timeline
+    finally:
+        engine.dispose()
+
+
+def test_0070_gives_every_valued_deal_one_lump_sum_line_and_drops_with_the_values_kept(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-928 over deals planted at 0069: two with a value, one with none. Up, each valued
+    deal has one `flat`, `one_off` line of quantity 1 at its value and the unvalued one has
+    none; the table is forced and policied. Down, the table is gone and the values stay."""
+    entity = "00000000-0000-7000-8000-0000000000e1"
+    stage = "00000000-0000-7000-8000-0000000000f1"
+    customer = "00000000-0000-7000-8000-0000000000c1"
+    values = {"d1": "1234.50", "d2": "0.00", "d3": None}
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0069")
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO legal_entities (id, name, legal_name, country) "
+                    f"VALUES ('{entity}', 'E', 'E srl', 'IT')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO pipeline_stages (id, name, position, default_probability, type) "
+                    f"VALUES ('{stage}', 'Lead', 0, 10, 'open')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO customers (id, legal_name, country, legal_entity_id, "
+                    f"custom_fields) VALUES ('{customer}', 'C', 'IT', '{entity}', '{{}}')"
+                )
+            )
+            for key, value in values.items():
+                connection.execute(
+                    text(
+                        "INSERT INTO deals (id, name, customer_id, legal_entity_id, "
+                        "pipeline_stage_id, probability, expected_value, custom_fields) VALUES "
+                        f"('00000000-0000-7000-8000-0000000000{key}', :name, '{customer}', "
+                        f"'{entity}', '{stage}', 10, :value, '{{}}')"
+                    ),
+                    {"name": key, "value": value},
+                )
+        engine.dispose()
+
+        upgrade(config, "0070")
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            lines = connection.execute(
+                text(
+                    "SELECT d.name, l.position, l.unit, l.delivery_period, l.unit_price, "
+                    "l.quantity, l.start, l.duration_months FROM deal_value_lines l "
+                    "JOIN deals d ON d.id = l.deal_id ORDER BY d.name"
+                )
+            ).all()
+        engine.dispose()
+        assert [tuple(row) for row in lines] == [
+            ("d1", 0, "flat", "one_off", Decimal("1234.50"), Decimal("1.00"), None, None),
+            ("d2", 0, "flat", "one_off", Decimal("0.00"), Decimal("1.00"), None, None),
+        ]
+        assert _table_shape(url, "deal_value_lines") == (True, True, {"legal_entity_scope"})
+
+        downgrade(config, "0069")
+        assert _table_shape(url, "deal_value_lines")[0] is False
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            kept = connection.execute(
+                text("SELECT name, expected_value FROM deals ORDER BY name")
+            ).all()
+        engine.dispose()
+        assert [tuple(row) for row in kept] == [
+            ("d1", Decimal("1234.50")),
+            ("d2", Decimal("0.00")),
+            ("d3", None),
+        ]
+
+
+def test_0070_refuses_a_line_the_service_would_refuse(pigrocrm_postgres: Any) -> None:
+    """The CHECKs are the second line behind `DealService`: a flat line of quantity 2, a flat
+    one-off with a duration, a negative price and a zero quantity are each refused by the
+    database, and `(deal_id, position)` is unique."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0070")
+        engine: Engine = create_engine(url)
+        deal = "00000000-0000-7000-8000-0000000000d1"
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO legal_entities (id, name, legal_name, country) "
+                    "VALUES ('00000000-0000-7000-8000-0000000000e1', 'E', 'E srl', 'IT')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO pipeline_stages (id, name, position, default_probability, type) "
+                    "VALUES ('00000000-0000-7000-8000-0000000000f1', 'Lead', 0, 10, 'open')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO customers (id, legal_name, country, legal_entity_id, "
+                    "custom_fields) VALUES ('00000000-0000-7000-8000-0000000000c1', 'C', 'IT', "
+                    "'00000000-0000-7000-8000-0000000000e1', '{}')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO deals (id, name, customer_id, legal_entity_id, "
+                    "pipeline_stage_id, probability, custom_fields) VALUES "
+                    f"('{deal}', 'D', '00000000-0000-7000-8000-0000000000c1', "
+                    "'00000000-0000-7000-8000-0000000000e1', "
+                    "'00000000-0000-7000-8000-0000000000f1', 10, '{}')"
+                )
+            )
+
+        def insert(position: int, unit: str, period: str, price: str, qty: str, months: str):  # type: ignore[no-untyped-def]
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO deal_value_lines (id, deal_id, position, unit, "
+                        "delivery_period, unit_price, quantity, duration_months) VALUES "
+                        f"(gen_random_uuid(), '{deal}', {position}, '{unit}', '{period}', "
+                        f"{price}, {qty}, {months})"
+                    )
+                )
+
+        insert(0, "flat", "monthly", "10", "1", "null")
+        for args in (
+            (1, "flat", "monthly", "10", "2", "null"),
+            (1, "flat", "one_off", "10", "1", "3"),
+            (1, "flat", "one_off", "-1", "1", "null"),
+            (1, "day", "monthly", "10", "0", "null"),
+            (1, "day", "monthly", "10", "1", "0"),
+            (1, "week", "monthly", "10", "1", "null"),
+            (1, "flat", "quarterly", "10", "1", "null"),
+            (0, "flat", "monthly", "10", "1", "null"),
+        ):
+            with pytest.raises(IntegrityError):
+                insert(*args)
+        insert(1, "day", "one_off", "800", "5", "1")
+        engine.dispose()
+
+
+def test_0073_turns_the_five_columns_into_primary_work_points_and_downgrade_restores_them(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-940 over people and customers planted at 0072. Up, each non-blank value becomes one
+    primary `work` point (email, then phone, then LinkedIn, numbered from 0), compared in the
+    shape the service compares (lowercase address, digits of a number), a phone with no digit
+    is not carried over, the five columns and their indexes are gone and the table is forced and
+    policied. Down, the primary values are back in the columns, with their indexes."""
+    entity = "00000000-0000-7000-8000-0000000000e1"
+    customer = "00000000-0000-7000-8000-0000000000c1"
+    ada = "00000000-0000-7000-8000-0000000000a1"
+    blank = "00000000-0000-7000-8000-0000000000a2"
+    phone_only = "00000000-0000-7000-8000-0000000000a3"
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0072")
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO legal_entities (id, name, legal_name, country) "
+                    f"VALUES ('{entity}', 'E', 'E srl', 'IT')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO customers (id, legal_name, country, legal_entity_id, email, "
+                    f"phone, custom_fields) VALUES ('{customer}', 'C', 'IT', '{entity}', "
+                    "' Info@Acme.IT ', '+39 02 7654321', '{}')"
+                )
+            )
+            for person, first, email, phone, linkedin in (
+                (ada, "Ada", " Ada@Acme.IT ", "+39 02-123 4567", "https://www.linkedin.com/in/ada"),
+                (blank, "Blank", "  ", "n/a", None),
+                (phone_only, "Phone", None, "0039 333 1234567", None),
+            ):
+                connection.execute(
+                    text(
+                        "INSERT INTO people (id, first_name, customer_id, email, phone, "
+                        "linkedin, custom_fields) VALUES (:id, :first, :customer, :email, "
+                        ":phone, :linkedin, '{}')"
+                    ),
+                    {
+                        "id": person,
+                        "first": first,
+                        "customer": customer,
+                        "email": email,
+                        "phone": phone,
+                        "linkedin": linkedin,
+                    },
+                )
+        engine.dispose()
+
+        upgrade(config, "0073")
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            points = connection.execute(
+                text(
+                    "SELECT coalesce(person_id, customer_id)::text, kind, value, normalized, "
+                    "label, is_primary, position FROM contact_points "
+                    "ORDER BY 1, position"
+                )
+            ).all()
+            columns = set(
+                connection.execute(
+                    text(
+                        "SELECT table_name || '.' || column_name FROM information_schema.columns "
+                        "WHERE table_name IN ('people', 'customers') "
+                        "AND column_name IN ('email', 'phone', 'linkedin')"
+                    )
+                ).scalars()
+            )
+            indexes = set(
+                connection.execute(
+                    text(
+                        "SELECT indexname FROM pg_indexes "
+                        "WHERE tablename IN ('people', 'customers') "
+                        "AND indexname LIKE 'ix_%_email%'"
+                    )
+                ).scalars()
+            )
+        engine.dispose()
+        assert [tuple(row) for row in points] == [
+            (ada, "email", "Ada@Acme.IT", "ada@acme.it", "work", True, 0),
+            (ada, "phone", "+39 02-123 4567", "+39021234567", "work", True, 1),
+            (
+                ada,
+                "linkedin",
+                "https://www.linkedin.com/in/ada",
+                "https://www.linkedin.com/in/ada",
+                "work",
+                True,
+                2,
+            ),
+            (phone_only, "phone", "0039 333 1234567", "00393331234567", "work", True, 0),
+            (customer, "email", "Info@Acme.IT", "info@acme.it", "work", True, 0),
+            (customer, "phone", "+39 02 7654321", "+39027654321", "work", True, 1),
+        ]
+        assert columns == set() and indexes == set()
+        assert _table_shape(url, "contact_points") == (True, True, {"legal_entity_scope"})
+
+        downgrade(config, "0072")
+        assert _table_shape(url, "contact_points")[0] is False
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            restored = connection.execute(
+                text("SELECT first_name, email, phone, linkedin FROM people ORDER BY first_name")
+            ).all()
+            customer_row = connection.execute(text("SELECT email, phone FROM customers")).one()
+            indexes = set(
+                connection.execute(
+                    text(
+                        "SELECT indexname FROM pg_indexes "
+                        "WHERE tablename IN ('people', 'customers') "
+                        "AND indexname LIKE 'ix_%_email%'"
+                    )
+                ).scalars()
+            )
+        engine.dispose()
+        assert [tuple(row) for row in restored] == [
+            ("Ada", "Ada@Acme.IT", "+39 02-123 4567", "https://www.linkedin.com/in/ada"),
+            ("Blank", None, None, None),
+            ("Phone", None, "0039 333 1234567", None),
+        ]
+        assert tuple(customer_row) == ("Info@Acme.IT", "+39 02 7654321")
+        assert indexes == {
+            "ix_people_email",
+            "ix_people_email_lower",
+            "ix_people_email_trgm",
+            "ix_customers_email",
+            "ix_customers_email_lower",
+            "ix_customers_email_trgm",
+        }
+
+
+def test_0073_carries_legacy_free_text_and_an_owner_holding_it_saves_unchanged(
+    pigrocrm_postgres: Any, capfd: pytest.CaptureFixture[str]
+) -> None:
+    """REB-940 over free text the old columns allowed. It is carried over as typed (nothing is
+    validated by the migration); a phone with no digit becomes the note of its owner's email
+    point, or, with no email to carry it, is named in the log with the owner's id; and an owner
+    that holds such values saves, with the list read back, unchanged and with something else
+    added: what predates the rules is never the reason a save is refused."""
+    from sqlalchemy.orm import Session
+
+    from pigrocrm.core.actor import Actor
+    from pigrocrm.core.contact_points.schemas import ContactPointIn
+    from pigrocrm.core.people.schemas import PersonUpdate
+    from pigrocrm.core.people.service import PersonService
+
+    entity = "00000000-0000-7000-8000-0000000000e1"
+    customer = "00000000-0000-7000-8000-0000000000c1"
+    legacy = "00000000-0000-7000-8000-0000000000b1"
+    noted = "00000000-0000-7000-8000-0000000000b2"
+    orphan = "00000000-0000-7000-8000-0000000000b3"
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0072")
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO legal_entities (id, name, legal_name, country) "
+                    f"VALUES ('{entity}', 'E', 'E srl', 'IT')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO customers (id, legal_name, country, legal_entity_id, "
+                    "custom_fields) VALUES (:id, 'C', 'IT', :entity, '{}')"
+                ),
+                {"id": customer, "entity": entity},
+            )
+            for person, email, phone, linkedin in (
+                (legacy, "ada(at)acme", "tel. 02 123 45 (ufficio)", "Ada Lovelace on LinkedIn"),
+                (noted, "noted@acme.it", "n/a", None),
+                (orphan, None, "chiedere in portineria", None),
+            ):
+                connection.execute(
+                    text(
+                        "INSERT INTO people (id, first_name, customer_id, email, phone, "
+                        "linkedin, custom_fields) VALUES (:id, :name, :customer, :email, "
+                        ":phone, :linkedin, '{}')"
+                    ),
+                    {
+                        "id": person,
+                        "name": f"P{person[-2:]}",
+                        "customer": customer,
+                        "email": email,
+                        "phone": phone,
+                        "linkedin": linkedin,
+                    },
+                )
+        engine.dispose()
+
+        capfd.readouterr()
+        upgrade(config, "0073")
+        # Alembic's own logging setup replaces the logger's handlers, so the line is read where
+        # it is written: the console.
+        seen = capfd.readouterr().err.splitlines()
+        lines = [m for m in seen if "legacy phone" in m]
+        assert len(lines) == 1 and orphan in lines[0] and "chiedere in portineria" in lines[0]
+
+        # The service below reads through today's models, which name `organizations`: bring
+        # the database on to head (REB-969) now that the log line of 0073 has been read.
+        upgrade(config, "head")
+
+        engine = create_engine(url)
+        with Session(engine) as session:
+            service = PersonService(session)
+            actor = Actor(id=None, type="system", role="admin")
+            before = service.get(UUID(legacy), actor)
+            assert [(p.kind, p.value) for p in before.contact_points] == [
+                ("email", "ada(at)acme"),
+                ("phone", "tel. 02 123 45 (ufficio)"),
+                ("linkedin", "Ada Lovelace on LinkedIn"),
+            ]
+            assert service.get(UUID(noted), actor).contact_points[0].note == "Telefono: n/a"
+            assert service.get(UUID(orphan), actor).contact_points == []
+
+            sent = [
+                ContactPointIn.model_validate(p.model_dump(exclude={"id", "position"}))
+                for p in before.contact_points
+            ]
+            # Unchanged: saves, and writes nothing.
+            unchanged = service.update(UUID(legacy), PersonUpdate(contact_points=sent), actor)
+            assert [p.id for p in unchanged.contact_points] == [p.id for p in before.contact_points]
+            # With a new point beside them: saves, and the legacy values stay as they were.
+            sent.append(ContactPointIn(kind="email", value="ada@acme.it"))
+            grown = service.update(UUID(legacy), PersonUpdate(contact_points=sent), actor)
+            assert [(p.kind, p.value) for p in grown.contact_points] == [
+                ("email", "ada(at)acme"),
+                ("phone", "tel. 02 123 45 (ufficio)"),
+                ("linkedin", "Ada Lovelace on LinkedIn"),
+                ("email", "ada@acme.it"),
+            ]
+            assert grown.email == "ada(at)acme"
+        engine.dispose()
+
+
+def test_0075_gives_every_legal_entity_31_december_adds_the_policied_table_and_downgrade_undoes_it(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-974 over a legal entity and its profile planted at 0074. Up, the entity reads 12 and
+    31 from the column default, the profile has no INPS category and no ISA, `fiscal_estimates`
+    exists, forced and policied, and the two check constraints refuse a category that is not
+    one of the two and a 30 February. Down, the table and the five columns are gone."""
+    entity = "00000000-0000-7000-8000-0000000000e1"
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0074")
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO legal_entities (id, name, legal_name, country) "
+                    f"VALUES ('{entity}', 'E', 'E srl', 'IT')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO fiscal_profile (id, legal_entity_id, default_vat_rate, "
+                    "apply_stamp_duty, stamp_duty_threshold, stamp_duty_amount, payment_terms, "
+                    "payment_method, due_days) VALUES "
+                    f"(gen_random_uuid(), '{entity}', 0, true, 77.47, 2.00, 'TP02', 'MP05', 30)"
+                )
+            )
+        engine.dispose()
+
+        upgrade(config, "0075")
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            year_end = connection.execute(
+                text("SELECT fiscal_year_end_month, fiscal_year_end_day FROM legal_entities")
+            ).one()
+            parameters = connection.execute(
+                text("SELECT inps_category, isa FROM fiscal_profile")
+            ).one()
+        assert tuple(year_end) == (12, 31)
+        assert tuple(parameters) == (None, None)
+        assert _table_shape(url, "fiscal_estimates") == (True, True, {"legal_entity_scope"})
+        for statement in (
+            "UPDATE fiscal_profile SET inps_category = 'cassa_forense'",
+            "UPDATE legal_entities SET fiscal_year_end_month = 2, fiscal_year_end_day = 30",
+        ):
+            with pytest.raises(IntegrityError), engine.begin() as connection:
+                connection.execute(text(statement))
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE legal_entities SET fiscal_year_end_month = 2, fiscal_year_end_day = 29"
+                )
+            )
+        engine.dispose()
+
+        downgrade(config, "0074")
+        assert _table_shape(url, "fiscal_estimates")[0] is False
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            columns = set(
+                connection.execute(
+                    text(
+                        "SELECT table_name || '.' || column_name FROM information_schema.columns "
+                        "WHERE column_name IN ('inps_category', 'isa', "
+                        "'fiscal_year_end_month', 'fiscal_year_end_day')"
+                    )
+                ).scalars()
+            )
+        engine.dispose()
+        assert columns == set()
+
+
+def _due_items_shape(url: str) -> tuple[set[str], set[str], set[str]]:
+    """Which of the two due item tables exist, which of them carry a forced row-level
+    security, and which carry the `legal_entity_scope` policy."""
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    text(
+                        "SELECT tablename FROM pg_tables WHERE schemaname = 'public' "
+                        "AND tablename IN ('due_items', 'due_item_settlements')"
+                    )
+                )
+            }
+            forced = {
+                row[0]
+                for row in connection.execute(
+                    text(
+                        "SELECT relname FROM pg_class WHERE relrowsecurity AND relforcerowsecurity "
+                        "AND relname IN ('due_items', 'due_item_settlements')"
+                    )
+                )
+            }
+            policies = {
+                row[0]
+                for row in connection.execute(
+                    text(
+                        "SELECT tablename FROM pg_policies WHERE policyname = 'legal_entity_scope' "
+                        "AND tablename IN ('due_items', 'due_item_settlements')"
+                    )
+                )
+            }
+    finally:
+        engine.dispose()
+    return tables, forced, policies
+
+
+def test_0076_creates_the_due_item_tables_under_the_scope_policy_and_downgrade_drops_them(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-967: two new tables, both with the row-level policy every table that reaches a
+    legal entity carries, forced; nothing is backfilled, so both ways are a pure create and
+    drop."""
+    both = {"due_items", "due_item_settlements"}
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0075")
+        assert _due_items_shape(url) == (set(), set(), set())
+        upgrade(config, "0076")
+        assert _due_items_shape(url) == (both, both, both)
+        downgrade(config, "0075")
+        assert _due_items_shape(url) == (set(), set(), set())
+        upgrade(config, "0076")
+        assert _due_items_shape(url)[0] == both
+
+
+def _tables_shape(url: str, names: set[str]) -> tuple[set[str], set[str], set[str]]:
+    """Which of `names` exist, which carry a forced row-level security, and which carry the
+    `legal_entity_scope` policy."""
+    engine: Engine = create_engine(url)
+    listed = ", ".join(f"'{name}'" for name in sorted(names))
+    try:
+        with engine.connect() as connection:
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    text(
+                        "SELECT tablename FROM pg_tables WHERE schemaname = 'public' "
+                        f"AND tablename IN ({listed})"
+                    )
+                )
+            }
+            forced = {
+                row[0]
+                for row in connection.execute(
+                    text(
+                        "SELECT relname FROM pg_class WHERE relrowsecurity AND relforcerowsecurity "
+                        f"AND relname IN ({listed})"
+                    )
+                )
+            }
+            policies = {
+                row[0]
+                for row in connection.execute(
+                    text(
+                        "SELECT tablename FROM pg_policies WHERE policyname = 'legal_entity_scope' "
+                        f"AND tablename IN ({listed})"
+                    )
+                )
+            }
+    finally:
+        engine.dispose()
+    return tables, forced, policies
+
+
+def _entity_visible_names(url: str) -> tuple[bool, bool]:
+    """Whether the row-level function of the activity feed names `staff_member` and
+    `payroll_settings`."""
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            definition = connection.execute(
+                text(
+                    "SELECT pg_get_functiondef('entity_visible(text, uuid, boolean)'::regprocedure)"
+                )
+            ).scalar_one()
+    finally:
+        engine.dispose()
+    return "'staff_member'" in definition, "'payroll_settings'" in definition
+
+
+def test_0079_creates_the_staff_tables_under_the_scope_policy_and_downgrade_drops_them(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-977: two new tables, both with the row-level policy every table that reaches a
+    legal entity carries, forced; nothing is backfilled, so both ways are a pure create and
+    drop."""
+    both = {"staff_members", "payroll_settings"}
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0078")
+        assert _tables_shape(url, both) == (set(), set(), set())
+        assert _entity_visible_names(url) == (False, False)
+        upgrade(config, "0079")
+        assert _tables_shape(url, both) == (both, both, both)
+        assert _entity_visible_names(url) == (True, True)
+        downgrade(config, "0078")
+        assert _tables_shape(url, both) == (set(), set(), set())
+        assert _entity_visible_names(url) == (False, False)
+        upgrade(config, "0079")
+        assert _tables_shape(url, both)[0] == both
+        assert _entity_visible_names(url) == (True, True)
+
+
+def _collaborators_shape(url: str) -> tuple[bool, bool, bool]:
+    """Whether `engagements` exists, whether `organizations` has `hub_freelancer_id`, and whether
+    the unique index on it is there."""
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            table = connection.execute(
+                text("SELECT to_regclass('public.engagements') IS NOT NULL")
+            ).scalar_one()
+            column = connection.execute(
+                text(
+                    "SELECT count(*) > 0 FROM information_schema.columns WHERE "
+                    "table_name = 'organizations' AND column_name = 'hub_freelancer_id'"
+                )
+            ).scalar_one()
+            index = connection.execute(
+                text(
+                    "SELECT count(*) > 0 FROM pg_indexes WHERE "
+                    "indexname = 'uq_organizations_hub_freelancer_id'"
+                )
+            ).scalar_one()
+    finally:
+        engine.dispose()
+    return bool(table), bool(column), bool(index)
+
+
+def test_0081_adds_the_hub_freelancer_id_and_the_engagements_table_and_downgrade_removes_them(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-976: a column and a table, nothing backfilled. The checks that keep the payment rule
+    and `days_per_week` honest are in the schema, so a row that breaks them is refused here."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0080")
+        assert _collaborators_shape(url) == (False, False, False)
+        upgrade(config, "0081")
+        assert _collaborators_shape(url) == (True, True, True)
+
+        engine = create_engine(url)
+        try:
+            with engine.begin() as connection:
+                freelancer = connection.execute(
+                    text(
+                        "INSERT INTO organizations "
+                        "(id, legal_name, country, custom_fields, roles, hub_freelancer_id) "
+                        "VALUES (gen_random_uuid(), 'F', 'IT', '{}', "
+                        "ARRAY['freelancer']::varchar[], "
+                        "gen_random_uuid()) RETURNING id"
+                    )
+                ).scalar_one()
+            insert = text(
+                "INSERT INTO engagements (id, freelancer_id, role, starts_on, fee, fee_unit, "
+                "payment_rule, payment_days, collection_days, days_per_week) VALUES "
+                "(gen_random_uuid(), :f, 'r', '2026-11-02', 100, 'day', :rule, :days, :coll, :dpw)"
+            )
+            ok = {"f": freelancer, "rule": "fixed_term", "days": 30, "coll": None, "dpw": 2.5}
+            with engine.begin() as connection:
+                connection.execute(insert, ok)
+            for bad in (
+                {**ok, "days": 61},
+                {**ok, "coll": 10},
+                {**ok, "rule": "on_collection", "days": 30, "coll": 10},
+                {**ok, "rule": "on_collection", "days": None, "coll": 61},
+                {**ok, "dpw": 0.7},
+                {**ok, "dpw": 5.5},
+            ):
+                with pytest.raises(IntegrityError), engine.begin() as connection:
+                    connection.execute(insert, bad)
+            with pytest.raises(IntegrityError), engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO organizations "
+                        "(id, legal_name, country, custom_fields, hub_freelancer_id) "
+                        "VALUES (gen_random_uuid(), 'C', 'IT', '{}', gen_random_uuid())"
+                    )
+                )
+        finally:
+            engine.dispose()
+
+        downgrade(config, "0080")
+        assert _collaborators_shape(url) == (False, False, False)
+        upgrade(config, "0081")
+        assert _collaborators_shape(url)[0] is True

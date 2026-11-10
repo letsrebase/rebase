@@ -35,45 +35,45 @@ const ENTRY_B = 'dddddddd-dddd-7ddd-8ddd-dddddddddddd'
 
 const pnl = (overrides: Record<string, unknown> = {}) => ({
   deal_id: DEAL,
-  stato: 'in corso',
-  ricavi: '0.00',
-  costi_diretti: '500.00',
-  costo_lavoro: '600.00',
-  margine_lordo: '-1100.00',
-  margine_percentuale: null,
-  ore_totali: '20.00',
-  ore_fatturabili_non_fatturate: '20.00',
-  valore_maturato: '2000.00',
-  ore_senza_tariffa: 0,
-  fatture_emesse: 0,
+  status: 'in_progress',
+  revenue: '0.00',
+  direct_costs: '500.00',
+  work_cost: '600.00',
+  gross_margin: '-1100.00',
+  percentage_margin: null,
+  total_hours: '20.00',
+  billable_uninvoiced_hours: '20.00',
+  accrued_value: '2000.00',
+  hours_without_rate: 0,
+  issued_invoices: 0,
   ...overrides,
 })
 
 const totals = (overrides: Record<string, unknown> = {}) => ({
-  ricavi: '0.00',
-  costi_diretti: '0.00',
-  costo_lavoro: '0.00',
-  margine_lordo: '0.00',
-  margine_percentuale: null,
+  revenue: '0.00',
+  direct_costs: '0.00',
+  work_cost: '0.00',
+  gross_margin: '0.00',
+  percentage_margin: null,
   deal: 0,
   ...overrides,
 })
 
 const periodPnl = (overrides: Record<string, unknown> = {}) => ({
-  da: '2026-01-01',
-  a: '2026-12-31',
+  from: '2026-01-01',
+  to: '2026-12-31',
   customer_id: CUSTOMER,
-  chiusi: totals({
-    ricavi: '10000.00',
-    costo_lavoro: '1100.00',
-    margine_lordo: '8900.00',
-    margine_percentuale: '89.00',
+  closed: totals({
+    revenue: '10000.00',
+    work_cost: '1100.00',
+    gross_margin: '8900.00',
+    percentage_margin: '89.00',
     deal: 2,
   }),
-  in_corso: totals({ margine_lordo: '-1100.00', costo_lavoro: '1100.00', deal: 1 }),
-  spese_generali: '450.00',
-  periodo_chiuso: false,
-  voci_scritte_in_ritardo: 0,
+  in_progress: totals({ gross_margin: '-1100.00', work_cost: '1100.00', deal: 1 }),
+  general_expenses: '450.00',
+  closed_period: false,
+  written_entries_overdue: 0,
   ...overrides,
 })
 
@@ -81,16 +81,16 @@ const entry = (overrides: Record<string, unknown> = {}) => ({
   id: ENTRY_A,
   deal_id: DEAL,
   user_id: '33333333-3333-7333-8333-333333333333',
-  data: '2026-03-10',
-  ore: '10.00',
-  descrizione: 'Analisi',
-  fatturabile: true,
-  tariffa_applicata: '100.000000',
-  costo_applicato: null,
-  tariffa_origine: 'deal',
-  costo_origine: 'assente',
-  valore_riga: '1000.00',
-  costo_riga: null,
+  date: '2026-03-10',
+  hours: '10.00',
+  description: 'Analisi',
+  billable: true,
+  applied_rate: '100.000000',
+  applied_cost: null,
+  rate_source: 'deal',
+  cost_source: 'absent',
+  line_value: '1000.00',
+  line_cost: null,
   invoice_line_id: null,
   note_interne: null,
   custom_fields: {},
@@ -142,7 +142,7 @@ describe('EconomicsTab on a deal', () => {
     routeGet({ '/api/deals/{deal_id}/pnl': ok(pnl()) })
     renderTab({ dealId: DEAL })
 
-    // On an `in corso` deal the margin is provisional and the accrued value sits beside
+    // On an `in_progress` deal the margin is provisional and the accrued value sits beside
     // it under a heading of its own. The margin must never appear unqualified.
     expect(await screen.findByText(/provvisorio/i)).toBeInTheDocument()
     expect(screen.getByText('Valore maturato')).toBeInTheDocument()
@@ -155,7 +155,7 @@ describe('EconomicsTab on a deal', () => {
    *  still provisional there, and reading `stato !== 'in corso'` as "done" would report
    *  a definitive loss on every deal still waiting for its invoice. */
   it('still calls the margin provisional on a deal that is only da fatturare', async () => {
-    routeGet({ '/api/deals/{deal_id}/pnl': ok(pnl({ stato: 'da fatturare' })) })
+    routeGet({ '/api/deals/{deal_id}/pnl': ok(pnl({ status: 'to_invoice' })) })
     renderTab({ dealId: DEAL })
 
     expect(await screen.findByText(/provvisorio/i)).toBeInTheDocument()
@@ -174,13 +174,13 @@ describe('EconomicsTab on a deal', () => {
     routeGet({
       '/api/deals/{deal_id}/pnl': ok(
         pnl({
-          stato: 'chiuso',
-          ricavi: '10000.00',
-          margine_lordo: '8900.00',
-          margine_percentuale: '89.00',
-          ore_fatturabili_non_fatturate: '0.00',
-          valore_maturato: '10000.00',
-          fatture_emesse: 2,
+          status: 'closed',
+          revenue: '10000.00',
+          gross_margin: '8900.00',
+          percentage_margin: '89.00',
+          billable_uninvoiced_hours: '0.00',
+          accrued_value: '10000.00',
+          issued_invoices: 2,
         }),
       ),
     })
@@ -196,7 +196,7 @@ describe('EconomicsTab on a deal', () => {
   })
 
   it('names the unpriced hours with their count', async () => {
-    routeGet({ '/api/deals/{deal_id}/pnl': ok(pnl({ ore_senza_tariffa: 6 })) })
+    routeGet({ '/api/deals/{deal_id}/pnl': ok(pnl({ hours_without_rate: 6 })) })
     renderTab({ dealId: DEAL })
 
     expect(await screen.findByText(/6 voci senza tariffa/i)).toBeInTheDocument()
@@ -223,7 +223,7 @@ describe('EconomicsTab on a deal', () => {
    *  the string the API sent, and `"0.00"` is the only spelling `Numeric(12,2)` produces
    *  for "nothing left to invoice". */
   it('offers no draft button when there is nothing left to invoice', async () => {
-    routeGet({ '/api/deals/{deal_id}/pnl': ok(pnl({ ore_fatturabili_non_fatturate: '0.00' })) })
+    routeGet({ '/api/deals/{deal_id}/pnl': ok(pnl({ billable_uninvoiced_hours: '0.00' })) })
     renderTab({ dealId: DEAL })
 
     await screen.findByText(/provvisorio/i)
@@ -262,7 +262,7 @@ describe('EconomicsTab on a customer', () => {
       // Explicit even though it is the server's default: the request states the reading
       // the card shows, and a reader of the network tab should not have to know which
       // one "absent" means.
-      base: 'emissione',
+      base: 'issue',
     })
   })
 
@@ -288,7 +288,7 @@ describe('EconomicsTab on a customer', () => {
   })
 
   /** ORB-61: the second reading is the server's `coalesce(competenza_da, data_emissione)`,
-   *  asked for with `base=competenza`; nothing is re-attributed in the browser. */
+   *  asked for with `base=accrual`; nothing is re-attributed in the browser. */
   it('switches to the accrual reading by asking the server again with base=competenza', async () => {
     routeGet({ '/api/analytics/pnl': ok(periodPnl()) })
     renderTab({ customerId: CUSTOMER })
@@ -304,7 +304,7 @@ describe('EconomicsTab on a customer', () => {
             (call as unknown as [string, { params: { query: Record<string, unknown> } }])[1]
               .params.query.base,
         )
-      expect(bases).toContain('competenza')
+      expect(bases).toContain('accrual')
     })
     expect(screen.getByRole('button', { name: 'Per competenza' })).toHaveAttribute(
       'aria-pressed',
@@ -346,6 +346,26 @@ describe('EconomicsTab on a customer', () => {
     expect(screen.queryByText('7.800,00 €')).toBeNull()
   })
 
+  it('prints no labour cost when the hours module is off and the API sends none', async () => {
+    routeGet({
+      '/api/analytics/pnl': ok(
+        periodPnl({
+          closed: totals({ revenue: '1000.00', work_cost: null, gross_margin: '1000.00' }),
+          in_progress: totals({ work_cost: null }),
+          accrued_value: null,
+          billable_uninvoiced_hours: null,
+          hours_without_rate: null,
+          written_entries_overdue: null,
+        }),
+      ),
+    })
+    renderTab({ customerId: CUSTOMER })
+
+    const closed = await screen.findByRole('group', { name: /deal chiusi/i })
+    expect(within(closed).getByText(/margine lordo/i)).toBeInTheDocument()
+    expect(within(closed).queryByText(/costo del lavoro/i)).toBeNull()
+  })
+
   it('says the general expenses belong to no customer', async () => {
     routeGet({ '/api/analytics/pnl': ok(periodPnl()) })
     renderTab({ customerId: CUSTOMER })
@@ -373,7 +393,7 @@ describe('ToInvoiceDialog', () => {
 
   const twoEntries = {
     '/api/time-entries': ok({
-      items: [entry(), entry({ id: ENTRY_B, descrizione: 'Sviluppo', ore: '5.00' })],
+      items: [entry(), entry({ id: ENTRY_B, description: 'Sviluppo', hours: '5.00' })],
       next_cursor: null,
     }),
   }
@@ -390,8 +410,8 @@ describe('ToInvoiceDialog', () => {
     ]
     expect(call[1].params.query).toMatchObject({
       deal_id: DEAL,
-      fatturabile: true,
-      fatturato: false,
+      billable: true,
+      invoiced: false,
     })
   })
 
@@ -404,11 +424,11 @@ describe('ToInvoiceDialog', () => {
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
     const [path, options] = vi.mocked(api.POST).mock.calls[0] as unknown as [
       string,
-      { body: { entry_ids: string[]; raggruppa_per_mese: boolean } },
+      { body: { entry_ids: string[]; group_by_month: boolean } },
     ]
     expect(path).toBe('/api/deals/{deal_id}/time-entries/to-invoice-draft')
     expect(options.body.entry_ids).toEqual([ENTRY_A, ENTRY_B])
-    expect(options.body.raggruppa_per_mese).toBe(true)
+    expect(options.body.group_by_month).toBe(true)
   })
 
   it('sends only the entries still ticked', async () => {
@@ -436,9 +456,9 @@ describe('ToInvoiceDialog', () => {
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
     const [, options] = vi.mocked(api.POST).mock.calls[0] as unknown as [
       string,
-      { body: { raggruppa_per_mese: unknown } },
+      { body: { group_by_month: unknown } },
     ]
-    expect(options.body.raggruppa_per_mese).toBe(false)
+    expect(options.body.group_by_month).toBe(false)
   })
 
   /** `BindTimeRequest.entry_ids` has `min_length=1`, so an empty list is a 422 the user

@@ -350,3 +350,48 @@ def test_the_in_transaction_convention_has_its_own_guard() -> None:
     guard = CORE_ROOT / "tests" / "test_in_transaction_callers.py"
     assert guard.exists(), "the *_in_transaction caller guard is missing"
     assert "core/automations/" in guard.read_text(encoding="utf-8")
+
+
+def _interpolated_sql(source: str) -> list[int]:
+    """The line of every `text(...)` or `.execute(...)` whose first argument is an f-string
+    with a substitution, a `%` format or a `+` concatenation: SQL built from a value."""
+    found: list[int] = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+        func = node.func
+        name = func.id if isinstance(func, ast.Name) else getattr(func, "attr", "")
+        if name not in {"text", "execute", "exec_driver_sql"}:
+            continue
+        first = node.args[0]
+        built = (
+            isinstance(first, ast.JoinedStr)
+            and any(isinstance(part, ast.FormattedValue) for part in first.values)
+        ) or (isinstance(first, ast.BinOp) and isinstance(first.op, ast.Add | ast.Mod))
+        if built:
+            found.append(node.lineno)
+    return found
+
+
+def test_no_sql_is_built_from_a_value_outside_the_sidecar_module() -> None:
+    """The row-level policies read a setting any session may write (`set_config`), so the
+    scope holds only while no statement is assembled from input (B-10). Today's exceptions
+    are the identifiers `db/sidecar.py` quotes for `CREATE/DROP DATABASE`, and the
+    constant-named sequence of the proforma numbers (`invoices/repository.py`); a new one
+    is a decision to make here, not a line to add quietly."""
+    allowed = {"db/sidecar.py", "invoices/repository.py"}
+    offenders = []
+    for path in CORE_SRC.rglob("*.py"):
+        relative = path.relative_to(CORE_SRC).as_posix()
+        if relative in allowed:
+            continue
+        lines = _interpolated_sql(path.read_text(encoding="utf-8"))
+        offenders.extend(f"{relative}:{line}" for line in lines)
+    assert not offenders, "SQL built from a value:\n  " + "\n  ".join(offenders)
+
+
+def test_the_scan_for_built_sql_catches_the_shapes_it_bans() -> None:
+    assert _interpolated_sql('conn.execute(text(f"select {x}"))') == [1]
+    assert _interpolated_sql('session.execute("select " + x)') == [1]
+    assert _interpolated_sql('session.execute(text("select 1"))') == []
+    assert _interpolated_sql('session.execute(text(f"select 1"))') == []

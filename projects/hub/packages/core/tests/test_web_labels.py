@@ -4,14 +4,21 @@ import Python, so this reads `format.ts` from the repository and compares the ma
 by key. The parser is strict on purpose: each map is simple `key: 'value',` lines, and a
 line of any other shape fails here rather than being skipped."""
 
+import importlib.util
 import re
 from pathlib import Path
+from types import ModuleType
 from typing import get_args
 
 import pytest
 
 from rebase_core.bands import BANDS
-from rebase_core.match_words import DOCUMENT_STATE_LABELS, MATCH_STATE_LABELS, Action
+from rebase_core.match_words import (
+    DOCUMENT_STATE_LABELS,
+    MATCH_STATE_LABELS,
+    PAY_MODE_WORDS,
+    Action,
+)
 from rebase_core.models import CARD_SENIORITIES
 from rebase_core.team_words import (
     CLOUD_VETTED_LABEL,
@@ -27,19 +34,30 @@ from rebase_core.team_words import (
 REPO = Path(__file__).resolve().parents[5]
 FORMAT_TS = REPO / "projects" / "hub" / "apps" / "web" / "src" / "lib" / "format.ts"
 BANDS_TS = FORMAT_TS.with_name("bands.ts")
+CAMPAIGNS_TS = FORMAT_TS.with_name("campaigns.ts")
+MIGRATION = (
+    REPO
+    / "projects"
+    / "hub"
+    / "packages"
+    / "core"
+    / "migrations"
+    / "versions"
+    / "0049_english_names.py"
+)
 ENTRY = re.compile(r"(\w+): '([^'\\]*)',")
 
 
-def _web_map(name: str) -> dict[str, str]:
-    """The `export const <name>: Record<…> = { … }` map of `format.ts`, one entry per
-    line."""
-    source = FORMAT_TS.read_text(encoding="utf-8")
+def _web_map(name: str, path: Path = FORMAT_TS) -> dict[str, str]:
+    """The `export const <name>: Record<…> = { … }` map of `format.ts` (or of `path`), one
+    entry per line."""
+    source = path.read_text(encoding="utf-8")
     block = re.search(
         rf"^export const {name}: Record<\w+, string> = \{{\n(.*?)^\}}$",
         source,
         re.MULTILINE | re.DOTALL,
     )
-    assert block is not None, f"{name} is not a `Record<…, string>` map in {FORMAT_TS.name}"
+    assert block is not None, f"{name} is not a `Record<…, string>` map in {path.name}"
     entries: dict[str, str] = {}
     for line in block.group(1).splitlines():
         entry = ENTRY.fullmatch(line.strip())
@@ -82,7 +100,7 @@ def test_the_web_labels_every_action_the_core_names_and_no_other(name: str) -> N
     )
 
 
-def test_the_web_says_in_attesa_as_the_core_does() -> None:
+def test_the_web_says_pending_as_the_core_does() -> None:
     """REB-517: the word for a talent mailed and silent is one string, not a map."""
     source = FORMAT_TS.read_text(encoding="utf-8")
     found = re.search(r"^export const TALENT_WAITING_LABEL = '([^'\\]*)'$", source, re.MULTILINE)
@@ -138,7 +156,95 @@ def test_the_web_offers_the_bands_the_core_places_a_price_in() -> None:
 
 
 def test_a_drifted_label_is_named_with_both_words() -> None:
-    web = {**MATCH_STATE_LABELS, "bozza": "Bozza"}
+    web = {**MATCH_STATE_LABELS, "draft": "Bozza"}
     assert _drift("MATCH_STATE_LABELS", web, MATCH_STATE_LABELS) == [
-        "MATCH_STATE_LABELS.bozza: web 'Bozza', core 'Da inviare'"
+        "MATCH_STATE_LABELS.draft: web 'Bozza', core 'Da inviare'"
     ]
+
+
+def _migration_0049() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("migration_0049_english_names", MIGRATION)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _renamed(columns: list[tuple[str, str]]) -> set[str]:
+    """The English values migration 0049 gave the persisted codes of these columns."""
+    values = _migration_0049().VALUES
+    return {new for column in columns for _old, new in values[column]}
+
+
+# Each web map that words a renamed code, with the persisted columns it words: a code the
+# migration renamed and the map has no word for would reach the screen as the English code.
+WORDED: list[tuple[str, Path, list[tuple[str, str]]]] = [
+    (
+        "STATE_LABELS",
+        FORMAT_TS,
+        [("freelancers", "status"), ("companies", "status")],
+    ),
+    ("MATCH_STATE_LABELS", FORMAT_TS, [("matches", "status")]),
+    ("DOCUMENT_STATE_LABELS", FORMAT_TS, [("contract_documents", "status")]),
+    (
+        "PIGRO_STATE_LABELS",
+        FORMAT_TS,
+        [("matches", "pigro_status"), ("companies", "crm_status")],
+    ),
+    (
+        "REFERRAL_STATE_LABELS",
+        FORMAT_TS,
+        [("referral_rewards", "status")],
+    ),
+    ("REFERRAL_VERIFIED_VIA_LABELS", FORMAT_TS, [("referrals", "verified_via")]),
+    ("TEAM_REQUEST_STATE_LABELS", FORMAT_TS, [("team_requests", "status")]),
+    (
+        "TEAM_ORIGIN_LABELS",
+        FORMAT_TS,
+        [("team_requests", "origin"), ("team_proposals", "origin")],
+    ),
+    ("TALENT_ANSWER_LABELS", FORMAT_TS, [("team_request_talents", "answer")]),
+    ("CAMPAIGN_STATE_LABELS", CAMPAIGNS_TS, [("campaigns", "status")]),
+    ("RECIPIENT_STATE_LABELS", CAMPAIGNS_TS, [("campaign_recipients", "status")]),
+    ("ACTION_LABELS", CAMPAIGNS_TS, [("campaigns", "action")]),
+]
+
+
+@pytest.mark.parametrize(("name", "path", "columns"), WORDED, ids=[row[0] for row in WORDED])
+def test_the_web_has_a_word_for_every_code_the_rename_gave_a_column(
+    name: str, path: Path, columns: list[tuple[str, str]]
+) -> None:
+    missing = _renamed(columns) - set(_web_map(name, path))
+    assert not missing, f"{name} has no word for {sorted(missing)}"
+
+
+def test_the_web_prints_a_letters_pay_mode_in_the_words_the_core_does() -> None:
+    """The matches list carries the letter's pay mode (`to_work_unit`, `lump_sum`), never the
+    words; the page words it with the core's `PAY_MODE_WORDS`."""
+    assert _drift("PAY_MODE_WORDS", _web_map("PAY_MODE_WORDS"), PAY_MODE_WORDS) == []
+
+
+def test_every_renamed_value_is_either_worded_or_not_shown_by_the_web() -> None:
+    """Columns of migration 0049 with a closed value set that the web words elsewhere or never
+    prints, each with the reason: a new vocabulary has to be worded above or listed here."""
+    not_shown = {
+        ("campaign_optouts", "source"): "no page prints it",
+        ("campaign_recipients", "kind"): "no page prints it",
+        ("campaigns", "source"): "the wizard reads it; no page prints it",
+        ("campaigns", "button_meta"): "worded by META_LABELS, which is partial by design",
+        ("campaigns", "journey_status"): "the templates carry their own label",
+        ("contract_documents", "kind"): "no page prints it; the card's title says which",
+        ("contract_documents", "regime"): "worded by REGIME_OPTIONS in lib/contracts.ts",
+        ("freelancers", "filled_by"): "worded by FILLED_BY_LABELS and the detail's sentence",
+        ("freelancers", "remote"): "worded by REMOTE_LABELS",
+        ("companies", "remote"): "worded by REMOTE_LABELS",
+        ("notes", "source"): "worded by NOTE_SOURCE_LABELS in lib/notes.ts",
+        ("ai_tasks", "task"): "worded by TASK_LABELS in AiModels.tsx",
+        ("ai_usage", "task"): "worded by TASK_LABELS in AiModels.tsx",
+        ("ai_usage", "purpose"): "no page prints it",
+        ("referrals", "status"): "the page compares it; the proof is worded by verified_via",
+    }
+    worded = {column for _name, _path, columns in WORDED for column in columns}
+    values = _migration_0049().VALUES
+    assert sorted(set(values) - worded - set(not_shown)) == []
+    assert not worded & set(not_shown)

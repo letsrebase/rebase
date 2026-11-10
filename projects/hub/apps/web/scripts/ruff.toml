@@ -1,0 +1,9 @@
+extend = "../../../ruff.toml"
+
+# The one script here boots no server: it imports the API's app object to print its
+# OpenAPI document, so `rebase_api` is allowed and the PigroCRM ban stays.
+[lint.flake8-tidy-imports.banned-api]
+"rebase_mcp".msg = "the web app's scripts have no business with apps/mcp"
+"pigrocrm".msg = "the hub is a product of its own and imports nothing from PigroCRM"
+"pigrocrm_api".msg = "the hub is a product of its own and imports nothing from PigroCRM"
+"pigrocrm_mcp".msg = "the hub is a product of its own and imports nothing from PigroCRM"

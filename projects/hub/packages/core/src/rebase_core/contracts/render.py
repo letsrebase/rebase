@@ -42,24 +42,24 @@ TEXTS = PACKAGE / "texts"
 TEMPLATE = PACKAGE / "contract.typ.template"
 COMPANY_DEFAULTS = TEXTS / "rebase.json"
 DOCUMENTS = (
-    "contratto-quadro",
-    "contratto-quadro-occasionale",
-    "lettera-di-incarico",
-    "lettera-di-incarico-occasionale",
+    "framework-agreement",
+    "framework-agreement-occasional",
+    "engagement-letter",
+    "engagement-letter-occasional",
 )
 # Texts the laptop typesets for review and that no hub flow signs yet (REB-689): the
 # company's general terms and proposal, and the freelancer's confidentiality agreement.
 # They are drafts, kept out of `DOCUMENTS` so the registry and the signing flow ignore
 # them until a card wires them in.
 REVIEW_TEXTS = (
-    "accordo-di-riservatezza",
-    "condizioni-generali-azienda",
-    "proposta-azienda",
+    "freelancer-nda",
+    "company-general-terms",
+    "company-proposal",
 )
 ALL_TEXTS = DOCUMENTS + REVIEW_TEXTS
 # The texts whose payment term counts from the collaborator's receipt rather than an
 # invoice (REB-687): a prestazione occasionale is paid on a ricevuta.
-RECEIPT_TEXTS = frozenset({"lettera-di-incarico-occasionale"})
+RECEIPT_TEXTS = frozenset({"engagement-letter-occasional"})
 SIGNATURE_LABEL = "signature-blank"
 TOOL_TIMEOUT_SECONDS = 60
 # The page the template sets (`paper: "a4"`), in points.

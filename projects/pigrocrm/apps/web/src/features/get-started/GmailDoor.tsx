@@ -15,12 +15,12 @@
  *   while the space is empty (`routers/gmail.py::_back`).
  * - **Connected, consent lapsed** (`expired`, `revoked`): the server's own sentence and
  *   the same anchor to give it again.
- * - **Connected**: the mailbox, and under it the customers it proposes, to tick and
- *   import (`SuggestedCustomers`, REB-223).
+ * - **Connected**: the mailbox, and under it the organizations it proposes, to tick and
+ *   import (`SuggestedOrganizations`, REB-223).
  *
  * Connecting is `require_write` in the service, and a mailbox is its owner's own
  * (`account_for_user`), so a readonly person reads why there is no button rather than
- * who could press it for them. `esito` is the callback's outcome, looked up in the
+ * who could press it for them. `outcome` is the callback's outcome, looked up in the
  * settings page's own table and never rendered as given.
  */
 import { Link } from '@tanstack/react-router'
@@ -28,11 +28,11 @@ import { Mail } from 'lucide-react'
 import { Button } from '@rebase/ui/button'
 import { useAuth, useCanWrite } from '@/lib/auth'
 import { ConsentOutcome } from '@/components/ConsentOutcome'
-import { messaggioEsito, riprovaEsito } from '@/features/gmail/esito'
+import { consentOutcome } from '@/features/consent/outcome'
 import { GMAIL_OAUTH_START, useGmailHealth } from '@/features/gmail/queries'
-import { SuggestedCustomers } from '@/features/gmail/SuggestedCustomers'
+import { SuggestedOrganizations } from '@/features/gmail/SuggestedOrganizations'
 
-export function GmailDoor({ esito }: { esito?: string }) {
+export function GmailDoor({ outcome }: { outcome?: string }) {
   return (
     <section aria-labelledby="porta-gmail" className="space-y-3 border p-4">
       <header className="flex items-start gap-3">
@@ -47,7 +47,7 @@ export function GmailDoor({ esito }: { esito?: string }) {
           </p>
         </div>
       </header>
-      <ConsentOutcome messaggio={messaggioEsito(esito)} riprova={riprovaEsito(esito)} />
+      <ConsentOutcome {...consentOutcome('gmail', outcome)} />
       <DoorState />
     </section>
   )
@@ -57,7 +57,7 @@ function DoorState() {
   const health = useGmailHealth()
   const { user } = useAuth()
   const canWrite = useCanWrite()
-  const isAdmin = user?.ruolo === 'admin'
+  const isAdmin = user?.role === 'admin'
 
   if (health.isError) {
     return (
@@ -95,7 +95,7 @@ function DoorState() {
           <p className="font-medium">Casella collegata</p>
           <p className="text-muted-foreground">{account.email_address}</p>
         </div>
-        {canWrite ? <SuggestedCustomers /> : null}
+        {canWrite ? <SuggestedOrganizations /> : null}
       </div>
     )
   }

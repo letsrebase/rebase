@@ -18,6 +18,6 @@ date: 2026-09-17T20:18:10Z
 |---|---|
 | Fatture (A/B) | projects/pigrocrm/apps/web/src/routes/app/fatture/index.tsx, features/invoices/columns.tsx |
 | Nuovo cliente (A/B) | projects/pigrocrm/apps/web/src/features/customers/CustomerForm.tsx, routes/app/clienti/index.tsx |
-| Talenti (A/B) | projects/hub/apps/web/src/pages/admin/lists.tsx, pages/admin/AdminLayout.tsx, lib/format.ts |
-| La mia scheda (A/B) | projects/hub/apps/web/src/pages/member/Area.tsx, pages/member/Modifica.tsx, components/Shell.tsx |
+| Talenti (A/B) | projects/hub/apps/web/src/pages/admin/talent/, pages/admin/freelancer/, pages/admin/AdminLayout.tsx, lib/format.ts |
+| La mia scheda (A/B) | projects/hub/apps/web/src/pages/member/Area.tsx, pages/member/Edit.tsx, components/Shell.tsx |
 | Tokens & signature | shared/brand/palette.css, projects/website/src/landing.css |

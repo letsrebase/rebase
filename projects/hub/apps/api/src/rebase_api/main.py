@@ -3,6 +3,9 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
@@ -11,6 +14,7 @@ from rebase_api.ratelimit import RETRY_AFTER_SECONDS
 from rebase_api.routers import (
     admin,
     admin_team,
+    ai,
     campaigns,
     cloud,
     companies,
@@ -19,6 +23,7 @@ from rebase_api.routers import (
     matches,
     members,
     pigro,
+    referral_rates,
     resend,
     signups,
     team,
@@ -27,6 +32,8 @@ from rebase_api.routers import (
 from rebase_core import analytics
 from rebase_core.contracts.fields import ContractFailed
 from rebase_core.errors import (
+    AnonymousCvFailed,
+    CvPrintFailed,
     DocumensoFailed,
     DomainError,
     LlmUnavailable,
@@ -52,9 +59,11 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
     """A domain error is a sentence and a status, never a stack trace. `NotFound` is a
     404, `ValidationFailed` a 422 in FastAPI's own shape so a form can point at the
     field, `LlmUnavailable` a 502, `ContractFailed` a 503, `DocumensoFailed` a 502,
-    `SigningUnavailable` a 503, `TeamBuilderOff` a 503, `TeamBuilderBusy` a 503 with
+    `SigningUnavailable` a 503, `AnonymousCvFailed` a 422 with its sentence,
+    `CvPrintFailed` a 503, `TeamBuilderOff` a 503, `TeamBuilderBusy` a 503 with
     `Retry-After`, anything else a 409."""
-    assert isinstance(exc, DomainError)
+    if not isinstance(exc, DomainError):
+        raise exc  # registered for this type only, so never reached
     if isinstance(exc, NotFound):
         return JSONResponse({"detail": exc.message}, status_code=404)
     if isinstance(exc, ValidationFailed):
@@ -74,6 +83,15 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
         # Claude did not answer: a gateway's failure, in the one Italian sentence a
         # page can show as it stands (`llm.py`, REB-508).
         return JSONResponse({"detail": exc.message}, status_code=502)
+    if isinstance(exc, AnonymousCvFailed):
+        # The CV could not be written (no text, a refusal, a body that still names the
+        # person): the request was fine, the CV on file is what cannot be done. One
+        # sentence of ours, in the `detail` a page shows as it stands.
+        return JSONResponse({"detail": exc.message}, status_code=422)
+    if isinstance(exc, CvPrintFailed):
+        # The PDF could not be typeset: the server's failure, as a contract's is. The
+        # sentence only; Typst's words went to the log (`anonymous_cv.render`).
+        return JSONResponse({"detail": exc.message}, status_code=503)
     if isinstance(exc, ContractFailed):
         # A contract that could not be typeset is the server's failure, not the
         # request's: pandoc missing, a template that no longer compiles, a malformed
@@ -99,17 +117,34 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
     return JSONResponse({"detail": exc.message}, status_code=409)
 
 
+async def validation_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """FastAPI's own 422, except on a provider key's route: the default answer echoes each
+    error's `input`, which there is the submitted key (a body that is a bare string, a key
+    over the length limit), and a key never comes back in a response (REB-833)."""
+    if not isinstance(exc, RequestValidationError):
+        raise exc  # registered for this type only, so never reached
+    path = request.url.path
+    if path.startswith("/api/hub/admin/ai/providers/") and path.endswith("/key"):
+        errors = [{k: v for k, v in e.items() if k != "input"} for e in exc.errors()]
+        return JSONResponse({"detail": jsonable_encoder(errors)}, status_code=422)
+    return await request_validation_exception_handler(request, exc)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="rebase API", version="0.1.0", lifespan=lifespan)
     app.add_exception_handler(DomainError, domain_error_handler)
+    app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.include_router(signups.router)
     app.include_router(freelancers.router)
     app.include_router(companies.router)
     app.include_router(admin.router)
+    app.include_router(ai.router)
     app.include_router(matches.router)
     app.include_router(documenso.router)
     app.include_router(members.router)
+    app.include_router(referral_rates.router)
     app.include_router(campaigns.public)
+    app.include_router(campaigns.legacy_public)
     app.include_router(campaigns.router)
     app.include_router(pigro.router)
     app.include_router(resend.router)

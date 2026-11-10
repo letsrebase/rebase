@@ -33,14 +33,14 @@ describe('InvoicesTab', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 
-  /** A consumed proforma's number lives on the fattura it became; the tab shows the
-   *  fattura and not both, like the list page under «Tutte» (ORB-169). */
+  /** A consumed proforma's number lives on the invoice it became; the tab shows the
+   *  invoice and not both, like the list page under «Tutte» (ORB-169). */
   it('asks the server to leave out consumed proformas', async () => {
     renderWithClient(<InvoicesTab owner={{ dealId: 'd1' }} />)
     await screen.findByText('Nessuna fattura.')
     const call = mockGet.mock.calls.find((c) => c[0] === '/api/invoices')
     const options = call?.[1] as { params?: { query?: Record<string, unknown> } } | undefined
-    expect(options?.params?.query).toEqual({ deal_id: 'd1', escludi_consumate: true })
+    expect(options?.params?.query).toEqual({ deal_id: 'd1', exclude_consumed: true })
   })
 
   /** Every row on this tab belongs to the customer (or the deal's customer) named in

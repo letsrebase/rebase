@@ -14,17 +14,21 @@
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { CONSENT_STORAGE_KEY } from '@rebase/analytics/consent'
+import { POSTHOG_ASSET_HOST, POSTHOG_HOST, POSTHOG_KEY } from '@rebase/analytics'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const js = readFileSync(join(__dirname, 'consent.js'), 'utf-8')
+const withdrawJs = readFileSync(join(__dirname, 'consent-withdraw.js'), 'utf-8')
+const revealGateJs = readFileSync(join(__dirname, 'public/assets/reveal-gate.js'), 'utf-8')
 const SDK_URL = 'https://bzrcdn.openai.com/sdk/oaiq.min.js'
-const POSTHOG_URL = 'https://eu-assets.i.posthog.com/static/array.js'
-const KEY = 'orbiters.consent'
+const POSTHOG_URL = `${POSTHOG_ASSET_HOST}/static/array.js`
+const KEY = 'rebase.consent'
+const LEGACY_KEY = 'orbiters.consent'
 
 type Consent = {
   start: () => void
   decide: (decision: string, box?: Element | null) => void
-  withdraw: () => void
   measured: (hostname: string) => boolean
   internal: (hostname: string) => boolean
   STORAGE_KEY: string
@@ -63,6 +67,37 @@ function press(label: string): void {
   ;(button as HTMLButtonElement).click()
 }
 
+const realLocation = window.location
+
+/** The page's `window.location` with some members replaced: another host, a `reload` to spy on. */
+function stubLocation(overrides: Record<string, unknown>): void {
+  Object.defineProperty(window, 'location', {
+    value: { ...realLocation, hostname: realLocation.hostname, ...overrides },
+    writable: true,
+    configurable: true,
+  })
+}
+
+/** Runs the withdraw script on a page with one "Ritira il consenso" link and clicks it.
+ *  Returns whether the browser's own navigation was left to happen (it must not be). */
+function clickWithdraw(): boolean {
+  document.body.innerHTML = '<a href="/privacy" data-consent-withdraw>Ritira il consenso</a>'
+  new Function(withdrawJs)()
+  const click = new MouseEvent('click', { bubbles: true, cancelable: true })
+  document.querySelector('[data-consent-withdraw]')?.dispatchEvent(click)
+  return !click.defaultPrevented
+}
+
+function clearCookies(): void {
+  for (const pair of document.cookie.split(';')) {
+    const name = pair.split('=')[0]?.trim()
+    if (!name) continue
+    for (const domain of ['', '; Domain=letsrebase.com', '; Domain=.letsrebase.com']) {
+      document.cookie = `${name}=; Max-Age=0; Path=/${domain}`
+    }
+  }
+}
+
 beforeEach(() => {
   document.body.innerHTML = ''
   document.head.innerHTML = ''
@@ -75,6 +110,9 @@ beforeEach(() => {
 
 afterEach(() => {
   window.localStorage.clear()
+  window.sessionStorage.clear()
+  clearCookies()
+  Object.defineProperty(window, 'location', { value: realLocation, writable: true, configurable: true })
 })
 
 describe('before anyone has decided', () => {
@@ -127,7 +165,7 @@ describe('once somebody accepts', () => {
     const queued = (window as unknown as { oaiq: { q: unknown[][] } }).oaiq.q
     expect(Array.from(queued[0] ?? [])).toEqual([
       'init',
-      { pixelId: '9r6qrnPxBV8WDVGtpuaqxh', debug: true },
+      { pixelId: '9r6qrnPxBV8WDVGtpuaqxh' },
     ])
   })
 
@@ -149,8 +187,12 @@ describe('once somebody accepts', () => {
     expect(stub._i).toHaveLength(1)
     const [key, config] = stub._i[0] ?? []
     expect(key).toMatch(/^phc_/)
+    // The project and hosts are the ones every other surface reads from
+    // `shared/analytics`; consent.js repeats them as literals because it has no bundler.
+    expect(key).toBe(POSTHOG_KEY)
+    expect(scripts[0]?.src).toBe(POSTHOG_URL)
     expect(config).toMatchObject({
-      api_host: 'https://eu.i.posthog.com',
+      api_host: POSTHOG_HOST,
       person_profiles: 'identified_only',
       session_recording: { maskAllInputs: true },
     })
@@ -164,7 +206,14 @@ describe('once somebody accepts', () => {
     expect(internal('preview.pigro.letsrebase.com')).toBe(true)
     expect(internal('letsrebase.com')).toBe(false)
     expect(internal('www.letsrebase.com')).toBe(false)
-    expect(js).toContain('if (internal(window.location.hostname)) stub.setInternalOrTestUser()')
+  })
+
+  it('marks the preview stacks as internal, where a visitor\'s host queues nothing of the kind', () => {
+    stubLocation({ hostname: 'preview.letsrebase.com' })
+    run()
+    press('Va bene')
+    const stub = stubs().posthog as unknown[]
+    expect(stub[0]).toEqual(['setInternalOrTestUser'])
   })
 
   it('takes the notice away and does not ask again on the next page', () => {
@@ -190,21 +239,17 @@ describe('withdrawing consent', () => {
     // the transition back out of it.
     const consent = run()
     press('Va bene')
-    expect(window.localStorage.getItem(KEY)).toBe('granted')
+    expect(window.localStorage.getItem(consent.STORAGE_KEY)).toBe('granted')
+    // The website and the hub read the decision under the one key `shared/analytics`
+    // names, and the withdraw script clears that same key.
+    expect(consent.STORAGE_KEY).toBe(CONSENT_STORAGE_KEY)
 
     const reload = vi.fn()
-    const original = window.location
-    Object.defineProperty(window, 'location', {
-      value: { ...original, reload },
-      writable: true,
-      configurable: true,
-    })
-
-    consent.withdraw()
+    stubLocation({ reload })
+    expect(clickWithdraw()).toBe(false)
 
     expect(window.localStorage.getItem(KEY)).toBeNull()
     expect(reload).toHaveBeenCalledTimes(1)
-    Object.defineProperty(window, 'location', { value: original, writable: true, configurable: true })
 
     // The reload itself: a fresh run(), the same way `once somebody accepts` simulates
     // the next page load above.
@@ -217,31 +262,58 @@ describe('withdrawing consent', () => {
     expect(posthogScripts()).toHaveLength(0)
   })
 
+  it('also takes away what the trackers left behind: ph_* and __obref cookies, ph_* storage', () => {
+    run()
+    press('Va bene')
+    // Set the way the SDKs set them: on the top-level domain, and PostHog's also on the host.
+    document.cookie = 'ph_phc_abc_posthog=1; Domain=.letsrebase.com; Path=/'
+    document.cookie = '__obref=click; Domain=.letsrebase.com; Path=/'
+    document.cookie = 'ph_other=1; Path=/'
+    document.cookie = 'keep=1; Path=/'
+    window.localStorage.setItem('ph_phc_abc_posthog', '{}')
+    window.localStorage.setItem('unrelated', '1')
+    window.sessionStorage.setItem('ph_session_id', 'x')
+    window.sessionStorage.setItem('unrelated', '1')
+    expect(document.cookie).toContain('ph_phc_abc_posthog')
+
+    stubLocation({ reload: vi.fn() })
+    clickWithdraw()
+
+    expect(document.cookie).toBe('keep=1')
+    expect(window.localStorage.getItem('ph_phc_abc_posthog')).toBeNull()
+    expect(window.localStorage.getItem('unrelated')).toBe('1')
+    expect(window.sessionStorage.getItem('ph_session_id')).toBeNull()
+    expect(window.sessionStorage.getItem('unrelated')).toBe('1')
+  })
+
   it('leaves a stored refusal alone: a no stays final', () => {
     // The property `start`'s DENIED branch and the `once somebody refuses` describe
     // below both hold: a refusal is not asked again. Clearing it on a withdraw click
     // would put the notice back in front of somebody who already said no.
-    const consent = run()
+    run()
     press('No')
     expect(window.localStorage.getItem(KEY)).toBe('denied')
 
     const reload = vi.fn()
-    const original = window.location
-    Object.defineProperty(window, 'location', {
-      value: { ...original, reload },
-      writable: true,
-      configurable: true,
-    })
-
-    consent.withdraw()
+    stubLocation({ reload })
+    clickWithdraw()
 
     expect(window.localStorage.getItem(KEY)).toBe('denied')
     expect(reload).toHaveBeenCalledTimes(1)
-    Object.defineProperty(window, 'location', { value: original, writable: true, configurable: true })
+  })
+
+  it('withdraws an old yes too', () => {
+    window.localStorage.setItem(LEGACY_KEY, 'granted')
+    const reload = vi.fn()
+    stubLocation({ reload })
+    clickWithdraw()
+    expect(window.localStorage.getItem(KEY)).toBeNull()
+    expect(window.localStorage.getItem(LEGACY_KEY)).toBeNull()
+    expect(reload).toHaveBeenCalledTimes(1)
   })
 })
 
-describe('where PostHog stays silent even after a yes', () => {
+describe('where the trackers stay silent even after a yes', () => {
   it('is a developer machine or a test runner, and nowhere real', () => {
     // The e2e suite runs Playwright against `vite preview` on localhost and clicks
     // «Va bene» on every measured page: without this rule every CI run would count as
@@ -254,12 +326,45 @@ describe('where PostHog stays silent even after a yes', () => {
     for (const host of ['letsrebase.com', 'www.letsrebase.com', 'preview.letsrebase.com']) {
       expect(measured(host), host).toBe(true)
     }
-    // And the rule is applied where the script is created, before any request.
-    const load = js.slice(js.indexOf('function loadPostHog'), js.indexOf('function button'))
-    expect(load.indexOf('if (!measured(window.location.hostname)) return')).toBeGreaterThan(-1)
-    expect(load.indexOf('if (!measured(window.location.hostname)) return')).toBeLessThan(
-      load.indexOf('script.src'),
-    )
+  })
+
+  it('loads neither SDK on localhost', () => {
+    stubLocation({ hostname: 'localhost' })
+    run()
+    press('Va bene')
+    expect(window.localStorage.getItem(KEY)).toBe('granted')
+    expect(sdkScripts()).toHaveLength(0)
+    expect(posthogScripts()).toHaveLength(0)
+    expect(stubs().oaiq).toBeUndefined()
+    expect(stubs().posthog).toBeUndefined()
+  })
+
+  it('loads PostHog but not the pixel on a preview stack', () => {
+    stubLocation({ hostname: 'preview.letsrebase.com' })
+    run()
+    press('Va bene')
+    expect(sdkScripts()).toHaveLength(0)
+    expect(stubs().oaiq).toBeUndefined()
+    expect(posthogScripts()).toHaveLength(1)
+  })
+})
+
+describe('the reveal gate', () => {
+  it('marks the page as scripted at once, and reveals everything after three seconds', () => {
+    vi.useFakeTimers()
+    try {
+      document.documentElement.className = ''
+      new Function(revealGateJs)()
+      expect(document.documentElement.classList.contains('js')).toBe(true)
+      expect(document.documentElement.classList.contains('reveal-all')).toBe(false)
+      vi.advanceTimersByTime(2999)
+      expect(document.documentElement.classList.contains('reveal-all')).toBe(false)
+      vi.advanceTimersByTime(1)
+      expect(document.documentElement.classList.contains('reveal-all')).toBe(true)
+    } finally {
+      vi.useRealTimers()
+      document.documentElement.className = ''
+    }
   })
 })
 
@@ -286,6 +391,46 @@ describe('once somebody refuses', () => {
     expect(notice()).toBeNull()
     expect(sdkScripts()).toHaveLength(0)
     expect(posthogScripts()).toHaveLength(0)
+  })
+})
+
+describe('a decision stored before the rename (REB-668)', () => {
+  // The key was `orbiters.consent` until REB-668. Somebody who answered then must not be
+  // asked again, and a refusal above all stays final: the notice coming back for a
+  // visitor who said no is the dark pattern the DENIED branch exists to rule out.
+  it('keeps an old yes: no notice, the SDK loads, the decision moves to the new key', () => {
+    window.localStorage.setItem(LEGACY_KEY, 'granted')
+    run()
+    expect(notice()).toBeNull()
+    expect(sdkScripts()).toHaveLength(1)
+    expect(window.localStorage.getItem(KEY)).toBe('granted')
+    expect(window.localStorage.getItem(LEGACY_KEY)).toBeNull()
+  })
+
+  it('keeps an old no: no notice, nothing loads, the decision moves to the new key', () => {
+    window.localStorage.setItem(LEGACY_KEY, 'denied')
+    run()
+    expect(notice()).toBeNull()
+    expect(sdkScripts()).toHaveLength(0)
+    expect(posthogScripts()).toHaveLength(0)
+    expect(window.localStorage.getItem(KEY)).toBe('denied')
+    expect(window.localStorage.getItem(LEGACY_KEY)).toBeNull()
+  })
+
+  it('prefers the new key when both are there', () => {
+    window.localStorage.setItem(KEY, 'denied')
+    window.localStorage.setItem(LEGACY_KEY, 'granted')
+    run()
+    expect(sdkScripts()).toHaveLength(0)
+    expect(notice()).toBeNull()
+  })
+
+  it('writes the new key and drops the old one when a decision is taken', () => {
+    const consent = run()
+    window.localStorage.setItem(LEGACY_KEY, 'denied')
+    consent.decide('granted')
+    expect(window.localStorage.getItem(KEY)).toBe('granted')
+    expect(window.localStorage.getItem(LEGACY_KEY)).toBeNull()
   })
 })
 

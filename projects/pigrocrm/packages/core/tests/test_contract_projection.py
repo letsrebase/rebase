@@ -1,7 +1,7 @@
 """REB-375's own "what the implementing issue must test": the recurring-fee
 occurrence schedule, the irrevocability window, and the renewal-assumption proration
 that together produce the genuine "projected" figure the Done-when criterion names --
-distinct from PigroCRM's existing draft-based `CashOverview.proiettato` (never
+distinct from PigroCRM's existing draft-based `CashOverview.projected` (never
 imported here, and never touched by `contracts/projection.py`).
 
 Every function under test is pure (no session, no clock), so every object below is a
@@ -17,7 +17,6 @@ from pigrocrm.core.contracts.models import Contract, RateCard, RenewalAssumption
 from pigrocrm.core.contracts.projection import (
     RecurringFeeOccurrence,
     generate_recurring_fee_occurrences,
-    irrevocability_window_end,
     project,
     renewal_assumption_contribution,
     schedule_end,
@@ -29,13 +28,13 @@ def _contract(**overrides: object) -> Contract:
     payload: dict[str, object] = {
         "id": uuid4(),
         "customer_id": uuid4(),
-        "titolo": "Consulenza CTO",
-        "inizio": date(2026, 1, 1),
-        "fine": None,
-        "tipo_rinnovo": "nessuno",
-        "preavviso_disdetta_giorni": 30,
-        "cadenza_fatturazione": "mensile",
-        "politica_spese": {"tipo": "non_rimborsabile"},
+        "title": "Consulenza CTO",
+        "start": date(2026, 1, 1),
+        "end": None,
+        "renewal_type": "none",
+        "termination_notice_days": 30,
+        "billing_cadence": "monthly",
+        "expense_policy": {"kind": "not_reimbursable"},
     }
     payload.update(overrides)
     return Contract(**payload)  # type: ignore[arg-type]
@@ -43,12 +42,12 @@ def _contract(**overrides: object) -> Contract:
 
 def _rate_card(**overrides: object) -> RateCard:
     payload: dict[str, object] = {
-        "valido_da": date(2026, 1, 1),
-        "valido_a": None,
-        "tipo": "ricorrente_fisso",
-        "importo": Decimal("1000.00"),
-        "unita": "mese",
-        "periodo_erogazione": "mensile",
+        "valid_from": date(2026, 1, 1),
+        "valid_to": None,
+        "type": "fixed_recurring",
+        "amount": Decimal("1000.00"),
+        "unit": "month",
+        "delivery_period": "monthly",
     }
     payload.update(overrides)
     return RateCard(**payload)  # type: ignore[arg-type]
@@ -56,9 +55,9 @@ def _rate_card(**overrides: object) -> RateCard:
 
 def _assumption(**overrides: object) -> RenewalAssumption:
     payload: dict[str, object] = {
-        "probabilita": 50,
-        "volume_atteso": Decimal("36500.00"),
-        "orizzonte_al": date(2027, 12, 31),
+        "probability": 50,
+        "expected_volume": Decimal("36500.00"),
+        "horizon_until": date(2027, 12, 31),
     }
     payload.update(overrides)
     return RenewalAssumption(**payload)  # type: ignore[arg-type]
@@ -68,23 +67,23 @@ def _assumption(**overrides: object) -> RenewalAssumption:
 
 
 def test_monthly_cadence_generates_one_occurrence_per_month_through_the_horizon() -> None:
-    card = _rate_card(periodo_erogazione="mensile", valido_da=date(2026, 1, 1))
+    card = _rate_card(delivery_period="monthly", valid_from=date(2026, 1, 1))
     occurrences = generate_recurring_fee_occurrences(_contract(), [card], through=date(2026, 4, 1))
-    assert [o.data for o in occurrences] == [
+    assert [o.date for o in occurrences] == [
         date(2026, 1, 1),
         date(2026, 2, 1),
         date(2026, 3, 1),
         date(2026, 4, 1),
     ]
-    assert all(o.importo == Decimal("1000.00") for o in occurrences)
+    assert all(o.amount == Decimal("1000.00") for o in occurrences)
 
 
 def test_quarterly_cadence_steps_three_months() -> None:
-    card = _rate_card(periodo_erogazione="trimestrale", valido_da=date(2026, 1, 1))
+    card = _rate_card(delivery_period="quarterly", valid_from=date(2026, 1, 1))
     occurrences = generate_recurring_fee_occurrences(
         _contract(), [card], through=date(2026, 12, 31)
     )
-    assert [o.data for o in occurrences] == [
+    assert [o.date for o in occurrences] == [
         date(2026, 1, 1),
         date(2026, 4, 1),
         date(2026, 7, 1),
@@ -96,42 +95,42 @@ def test_annual_cadence_steps_twelve_months_clamping_the_day_of_month() -> None:
     """31 January plus twelve months lands on 31 January the next year; the clamp
     only matters when the target month is shorter, exercised by the monthly test
     below via a day-31 start stepping into February."""
-    card = _rate_card(periodo_erogazione="annuale", valido_da=date(2026, 1, 31))
+    card = _rate_card(delivery_period="annual", valid_from=date(2026, 1, 31))
     occurrences = generate_recurring_fee_occurrences(_contract(), [card], through=date(2028, 1, 31))
-    assert [o.data for o in occurrences] == [
+    assert [o.date for o in occurrences] == [
         date(2026, 1, 31),
         date(2027, 1, 31),
         date(2028, 1, 31),
     ]
 
 
-def test_a_day_31_start_stepping_monthly_clamps_into_february() -> None:
-    card = _rate_card(periodo_erogazione="mensile", valido_da=date(2026, 1, 31))
+def test_a_day_31_start_clamps_into_a_short_month_and_returns_to_the_31st() -> None:
+    card = _rate_card(delivery_period="monthly", valid_from=date(2026, 1, 31))
     occurrences = generate_recurring_fee_occurrences(_contract(), [card], through=date(2026, 4, 30))
-    assert [o.data for o in occurrences] == [
+    assert [o.date for o in occurrences] == [
         date(2026, 1, 31),
         date(2026, 2, 28),
-        date(2026, 3, 28),
-        date(2026, 4, 28),
+        date(2026, 3, 31),
+        date(2026, 4, 30),
     ]
 
 
-def test_una_tantum_disbursement_produces_exactly_one_occurrence() -> None:
-    card = _rate_card(periodo_erogazione="una_tantum", valido_da=date(2026, 3, 15))
+def test_one_off_disbursement_produces_exactly_one_occurrence() -> None:
+    card = _rate_card(delivery_period="one_off", valid_from=date(2026, 3, 15))
     occurrences = generate_recurring_fee_occurrences(_contract(), [card], through=date(2028, 1, 1))
-    assert [o.data for o in occurrences] == [date(2026, 3, 15)]
+    assert [o.date for o in occurrences] == [date(2026, 3, 15)]
 
 
-def test_una_tantum_starting_after_the_horizon_produces_nothing() -> None:
-    card = _rate_card(periodo_erogazione="una_tantum", valido_da=date(2029, 1, 1))
+def test_one_off_starting_after_the_horizon_produces_nothing() -> None:
+    card = _rate_card(delivery_period="one_off", valid_from=date(2029, 1, 1))
     occurrences = generate_recurring_fee_occurrences(_contract(), [card], through=date(2028, 1, 1))
     assert occurrences == []
 
 
-def test_no_periodo_erogazione_recorded_contributes_nothing() -> None:
+def test_no_delivery_period_recorded_contributes_nothing() -> None:
     """A recurring-fee card with no cadence recorded projects nothing -- never a
     guessed cadence standing in for a missing one."""
-    card = _rate_card(periodo_erogazione=None)
+    card = _rate_card(delivery_period=None)
     occurrences = generate_recurring_fee_occurrences(
         _contract(), [card], through=date(2026, 12, 31)
     )
@@ -139,85 +138,62 @@ def test_no_periodo_erogazione_recorded_contributes_nothing() -> None:
 
 
 def test_a_non_recurring_card_type_is_never_expanded() -> None:
-    card = _rate_card(tipo="orario", periodo_erogazione=None, unita="ora")
+    card = _rate_card(type="hourly", delivery_period=None, unit="ora")
     occurrences = generate_recurring_fee_occurrences(
         _contract(), [card], through=date(2026, 12, 31)
     )
     assert occurrences == []
 
 
-def test_the_cards_own_valido_a_bounds_its_occurrences() -> None:
-    card = _rate_card(valido_da=date(2026, 1, 1), valido_a=date(2026, 3, 1))
+def test_the_cards_own_valid_to_bounds_its_occurrences() -> None:
+    card = _rate_card(valid_from=date(2026, 1, 1), valid_to=date(2026, 3, 1))
     occurrences = generate_recurring_fee_occurrences(
         _contract(), [card], through=date(2026, 12, 31)
     )
-    assert [o.data for o in occurrences] == [date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)]
+    assert [o.date for o in occurrences] == [date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)]
 
 
 def test_the_contracts_own_fine_bounds_occurrences_even_for_an_open_ended_card() -> None:
-    contract = _contract(fine=date(2026, 3, 1))
-    card = _rate_card(valido_da=date(2026, 1, 1), valido_a=None)
+    contract = _contract(end=date(2026, 3, 1))
+    card = _rate_card(valid_from=date(2026, 1, 1), valid_to=None)
     occurrences = generate_recurring_fee_occurrences(contract, [card], through=date(2026, 12, 31))
-    assert [o.data for o in occurrences] == [date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)]
+    assert [o.date for o in occurrences] == [date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)]
 
 
 def test_a_card_starting_after_the_horizon_contributes_nothing() -> None:
-    card = _rate_card(valido_da=date(2027, 1, 1))
+    card = _rate_card(valid_from=date(2027, 1, 1))
     occurrences = generate_recurring_fee_occurrences(
         _contract(), [card], through=date(2026, 12, 31)
     )
     assert occurrences == []
-
-
-# ---- irrevocability_window_end -----------------------------------------------------
-
-
-def test_window_end_is_the_notice_period_from_today_for_an_open_ended_contract() -> None:
-    contract = _contract(fine=None, preavviso_disdetta_giorni=30)
-    assert irrevocability_window_end(contract, date(2026, 6, 1)) == date(2026, 7, 1)
-
-
-def test_window_end_clips_to_a_fixed_terms_own_fine() -> None:
-    contract = _contract(fine=date(2026, 6, 15), preavviso_disdetta_giorni=30)
-    assert irrevocability_window_end(contract, date(2026, 6, 1)) == date(2026, 6, 15)
-
-
-def test_window_end_is_none_once_the_contract_has_already_ended() -> None:
-    contract = _contract(fine=date(2025, 12, 31), preavviso_disdetta_giorni=30)
-    assert irrevocability_window_end(contract, date(2026, 6, 1)) is None
-
-
-def test_a_contract_ending_exactly_today_is_not_yet_considered_over() -> None:
-    contract = _contract(fine=date(2026, 6, 1), preavviso_disdetta_giorni=30)
-    assert irrevocability_window_end(contract, date(2026, 6, 1)) == date(2026, 6, 1)
 
 
 # ---- schedule_end -------------------------------------------------------------------
 
 
 def test_schedule_end_is_the_fixed_terms_own_fine_regardless_of_occurrences() -> None:
-    contract = _contract(fine=date(2026, 12, 31))
-    occurrences = [RecurringFeeOccurrence(data=date(2026, 3, 1), importo=Decimal("1.00"))]
+    contract = _contract(end=date(2026, 12, 31))
+    occurrences = [RecurringFeeOccurrence(date=date(2026, 3, 1), amount=Decimal("1.00"))]
     assert schedule_end(contract, date(2026, 7, 1), occurrences) == date(2026, 12, 31)
 
 
 def test_schedule_end_for_an_open_ended_contract_is_its_last_occurrence() -> None:
-    contract = _contract(fine=None)
+    contract = _contract(end=None)
     occurrences = [
-        RecurringFeeOccurrence(data=date(2026, 3, 1), importo=Decimal("1.00")),
-        RecurringFeeOccurrence(data=date(2026, 9, 1), importo=Decimal("1.00")),
+        RecurringFeeOccurrence(date=date(2026, 3, 1), amount=Decimal("1.00")),
+        RecurringFeeOccurrence(date=date(2026, 9, 1), amount=Decimal("1.00")),
     ]
     assert schedule_end(contract, date(2026, 1, 1), occurrences) == date(2026, 9, 1)
 
 
 def test_schedule_end_for_an_open_ended_contract_with_no_occurrences_is_the_window_end() -> None:
-    contract = _contract(fine=None)
+    contract = _contract(end=None)
     assert schedule_end(contract, date(2026, 7, 1), []) == date(2026, 7, 1)
 
 
 # ---- renewal_assumption_contribution ------------------------------------------------
 
-_FIXED_TERM = _contract(fine=date(2026, 12, 31), preavviso_disdetta_giorni=30)
+_FIXED_TERM = _contract(end=date(2026, 12, 31), termination_notice_days=30)
 
 
 def test_no_assumption_contributes_nothing() -> None:
@@ -228,7 +204,7 @@ def test_no_assumption_contributes_nothing() -> None:
 
 
 def test_an_already_ended_contract_contributes_nothing_even_with_an_assumption() -> None:
-    ended = _contract(fine=date(2025, 12, 31), preavviso_disdetta_giorni=30)
+    ended = _contract(end=date(2025, 12, 31), termination_notice_days=30)
     assumption = _assumption()
     contribution = renewal_assumption_contribution(
         ended, assumption, [], date(2026, 6, 1), date(2026, 1, 1), date(2027, 1, 1)
@@ -237,7 +213,7 @@ def test_an_already_ended_contract_contributes_nothing_even_with_an_assumption()
 
 
 def test_an_already_elapsed_horizon_contributes_nothing() -> None:
-    assumption = _assumption(orizzonte_al=date(2026, 12, 31))  # before schedule_end + 1 day
+    assumption = _assumption(horizon_until=date(2026, 12, 31))  # before schedule_end + 1 day
     contribution = renewal_assumption_contribution(
         _FIXED_TERM, assumption, [], date(2026, 6, 1), date(2026, 1, 1), date(2028, 1, 1)
     )
@@ -245,7 +221,7 @@ def test_an_already_elapsed_horizon_contributes_nothing() -> None:
 
 
 def test_a_query_window_entirely_before_the_assumption_span_contributes_nothing() -> None:
-    assumption = _assumption(orizzonte_al=date(2027, 12, 31))
+    assumption = _assumption(horizon_until=date(2027, 12, 31))
     contribution = renewal_assumption_contribution(
         _FIXED_TERM, assumption, [], date(2026, 6, 1), date(2026, 1, 1), date(2027, 1, 1)
     )
@@ -256,7 +232,7 @@ def test_full_overlap_returns_the_whole_probability_weighted_volume() -> None:
     """schedule_end (2026-12-31) + 1 day = 2027-01-01; horizon 2027-12-31 -> 365 days
     at 50% of 36500.00 = 18250.00, spread evenly is 50.00/day, and the query window
     covers the whole span."""
-    assumption = _assumption(probabilita=50, volume_atteso=Decimal("36500.00"))
+    assumption = _assumption(probability=50, expected_volume=Decimal("36500.00"))
     contribution = renewal_assumption_contribution(
         _FIXED_TERM, assumption, [], date(2026, 6, 1), date(2027, 1, 1), date(2028, 1, 1)
     )
@@ -266,7 +242,7 @@ def test_full_overlap_returns_the_whole_probability_weighted_volume() -> None:
 def test_a_partial_overlap_is_prorated_by_the_exact_day_count() -> None:
     """The first half of the same span (2027-01-01..2027-07-01, 181 days) at
     50.00/day is 9050.00."""
-    assumption = _assumption(probabilita=50, volume_atteso=Decimal("36500.00"))
+    assumption = _assumption(probability=50, expected_volume=Decimal("36500.00"))
     contribution = renewal_assumption_contribution(
         _FIXED_TERM, assumption, [], date(2026, 6, 1), date(2027, 1, 1), date(2027, 7, 1)
     )
@@ -290,48 +266,90 @@ def test_project_combines_the_schedule_and_the_renewal_assumption() -> None:
     """The Done-when criterion itself: a contract's own recurring-fee schedule and
     renewal assumption produce one genuine "projected" figure. Every number here
     divides evenly so the assertion is exact."""
-    contract = _contract(fine=date(2026, 12, 31), preavviso_disdetta_giorni=30)
-    card = _rate_card(valido_da=date(2026, 1, 1), periodo_erogazione="mensile")
-    assumption = _assumption(probabilita=50, volume_atteso=Decimal("36500.00"))
+    contract = _contract(end=date(2026, 12, 31), termination_notice_days=30)
+    card = _rate_card(valid_from=date(2026, 1, 1), delivery_period="monthly")
+    assumption = _assumption(probability=50, expected_volume=Decimal("36500.00"))
 
     result = project(
         contract,
         [card],
         assumption,
-        come_di=date(2026, 6, 1),
-        da=date(2026, 1, 1),
-        a=date(2027, 6, 1),
+        as_of=date(2026, 6, 1),
+        date_from=date(2026, 1, 1),
+        date_to=date(2027, 6, 1),
     )
 
     assert result.contract_id == contract.id
-    assert result.finestra_irrevocabilita_fino_al == date(2026, 7, 1)
+    assert result.irrevocability_window_until_to == date(2026, 7, 1)
     # 2026-08-01 through 2026-12-01: five monthly occurrences beyond the window and
     # within the contract's own term.
-    assert result.programmato == Decimal("5000.00")
+    assert result.scheduled == Decimal("5000.00")
     # 2027-01-01..2027-06-01 (151 days) of the assumption's own 2027-01-01..2027-12-31
     # span, at 50.00/day.
-    assert result.da_rinnovo == Decimal("7550.00")
-    assert result.totale == Decimal("12550.00")
+    assert result.from_renewal == Decimal("7550.00")
+    assert result.total == Decimal("12550.00")
 
 
 def test_project_with_no_renewal_assumption_is_the_schedule_alone() -> None:
-    contract = _contract(fine=date(2026, 12, 31), preavviso_disdetta_giorni=30)
-    card = _rate_card(valido_da=date(2026, 1, 1), periodo_erogazione="mensile")
+    contract = _contract(end=date(2026, 12, 31), termination_notice_days=30)
+    card = _rate_card(valid_from=date(2026, 1, 1), delivery_period="monthly")
 
     result = project(
-        contract, [card], None, come_di=date(2026, 6, 1), da=date(2026, 1, 1), a=date(2027, 6, 1)
+        contract,
+        [card],
+        None,
+        as_of=date(2026, 6, 1),
+        date_from=date(2026, 1, 1),
+        date_to=date(2027, 6, 1),
     )
 
-    assert result.programmato == Decimal("5000.00")
-    assert result.da_rinnovo == ZERO_MONEY
-    assert result.totale == Decimal("5000.00")
+    assert result.scheduled == Decimal("5000.00")
+    assert result.from_renewal == ZERO_MONEY
+    assert result.total == Decimal("5000.00")
 
 
 def test_project_with_no_rate_cards_and_no_assumption_is_zero() -> None:
-    contract = _contract(fine=date(2026, 12, 31), preavviso_disdetta_giorni=30)
+    contract = _contract(end=date(2026, 12, 31), termination_notice_days=30)
     result = project(
-        contract, [], None, come_di=date(2026, 6, 1), da=date(2026, 1, 1), a=date(2027, 6, 1)
+        contract,
+        [],
+        None,
+        as_of=date(2026, 6, 1),
+        date_from=date(2026, 1, 1),
+        date_to=date(2027, 6, 1),
     )
-    assert result.programmato == ZERO_MONEY
-    assert result.da_rinnovo == ZERO_MONEY
-    assert result.totale == ZERO_MONEY
+    assert result.scheduled == ZERO_MONEY
+    assert result.from_renewal == ZERO_MONEY
+    assert result.total == ZERO_MONEY
+
+
+def test_an_open_ended_contracts_projection_does_not_depend_on_where_the_window_stops() -> None:
+    """Two adjacent windows add up to the window that spans both: the schedule an
+    open-ended contract's renewal assumption starts after is its own, not the last
+    occurrence the query happened to ask for."""
+    contract = _contract(end=None, termination_notice_days=30)
+    card = _rate_card(valid_from=date(2026, 1, 1), delivery_period="monthly")
+    assumption = _assumption(probability=50, expected_volume=Decimal("36500.00"))
+    kwargs = {"as_of": date(2026, 6, 1)}
+
+    whole = project(
+        contract, [card], assumption, date_from=date(2026, 8, 1), date_to=date(2028, 1, 1), **kwargs
+    )
+    first = project(
+        contract,
+        [card],
+        assumption,
+        date_from=date(2026, 8, 1),
+        date_to=date(2027, 3, 15),
+        **kwargs,
+    )
+    second = project(
+        contract,
+        [card],
+        assumption,
+        date_from=date(2027, 3, 15),
+        date_to=date(2028, 1, 1),
+        **kwargs,
+    )
+
+    assert first.total + second.total == whole.total

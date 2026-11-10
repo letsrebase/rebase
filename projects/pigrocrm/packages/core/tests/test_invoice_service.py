@@ -16,7 +16,6 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.errors import (
     Conflict,
@@ -26,13 +25,13 @@ from pigrocrm.core.errors import (
     ValidationFailed,
 )
 from pigrocrm.core.fiscal.schemas import (
-    DEFAULT_RIFERIMENTO_NORMATIVO,
-    RIFERIMENTO_NORMATIVO_EXTRA_UE,
+    DEFAULT_LEGAL_REFERENCE,
+    LEGAL_REFERENCE_EXTRA_UE,
     FiscalProfileUpsert,
 )
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.models import Invoice
-from pigrocrm.core.invoices.naming import RIFERIMENTO_PROFORMA_RE
+from pigrocrm.core.invoices.naming import REFERENCE_PROFORMA_RE
 from pigrocrm.core.invoices.schemas import (
     InvoiceCreate,
     InvoiceLineIn,
@@ -41,11 +40,12 @@ from pigrocrm.core.invoices.schemas import (
     PaymentState,
 )
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
-COLLABORATORE = Actor(id=None, type="user", role="collaboratore")
+COLLABORATOR = Actor(id=None, type="user", role="collaborator")
 READONLY = Actor(id=None, type="user", role="readonly")
 
 
@@ -56,31 +56,31 @@ def storage(tmp_path) -> LocalFileStorage:  # type: ignore[no-untyped-def]
 
 @pytest.fixture
 def service(db_session: Session, storage: LocalFileStorage) -> InvoiceService:
-    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
+    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
     return InvoiceService(db_session, storage)
 
 
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
-    customer = Customer(
-        ragione_sociale="Acme S.r.l.",
-        partita_iva="12345678901",
-        codice_sdi="ABCDEFG",
-        indirizzo="Corso Italia 5",
-        cap="00100",
-        comune="Roma",
-        provincia="RM",
-        nazione="IT",
+    customer = Organization(
+        legal_name="Acme S.r.l.",
+        vat_number="12345678901",
+        sdi_code="ABCDEFG",
+        address="Corso Italia 5",
+        postal_code="00100",
+        city="Roma",
+        province="RM",
+        country="IT",
     )
     db_session.add(customer)
     db_session.flush()
     return customer.id
 
 
-def _line(descrizione: str = "Consulenza", prezzo: str = "1000.00", **kw: object) -> InvoiceLineIn:
+def _line(description: str = "Consulenza", price: str = "1000.00", **kw: object) -> InvoiceLineIn:
     payload: dict[str, object] = {
-        "descrizione": descrizione,
-        "prezzo_unitario": Decimal(prezzo),
+        "description": description,
+        "unit_price": Decimal(price),
     }
     payload.update(kw)
     return InvoiceLineIn(**payload)  # type: ignore[arg-type]
@@ -93,32 +93,32 @@ def test_a_new_invoice_is_a_draft_with_no_number(
     service: InvoiceService, customer_id: UUID
 ) -> None:
     invoice = service.create(InvoiceCreate(customer_id=customer_id), ADMIN)
-    assert invoice.tipo == "fattura"
-    assert invoice.stato == "bozza"
-    assert invoice.anno is None
-    assert invoice.numero is None
-    assert invoice.riferimento is None
-    assert invoice.tipo_documento == "TD01"
-    assert invoice.divisa == "EUR"
-    assert invoice.totale == Decimal("0.00")
-    assert invoice.stato_pagamento == "da_incassare"
+    assert invoice.type == "invoice"
+    assert invoice.status == "draft"
+    assert invoice.year is None
+    assert invoice.number is None
+    assert invoice.reference is None
+    assert invoice.sdi_document_type == "TD01"
+    assert invoice.currency == "EUR"
+    assert invoice.total == Decimal("0.00")
+    assert invoice.payment_status == "unpaid"
 
 
 def test_a_new_proforma_gets_a_reference_no_fiscal_regex_can_accept(
     service: InvoiceService, customer_id: UUID
 ) -> None:
     proforma = service.create(
-        InvoiceCreate(customer_id=customer_id, tipo="proforma", righe=[_line()]), ADMIN
+        InvoiceCreate(customer_id=customer_id, type="proforma", lines=[_line()]), ADMIN
     )
-    assert proforma.stato == "bozza"
-    assert proforma.numero is None
-    assert RIFERIMENTO_PROFORMA_RE.fullmatch(proforma.riferimento or "")
+    assert proforma.status == "draft"
+    assert proforma.number is None
+    assert REFERENCE_PROFORMA_RE.fullmatch(proforma.reference or "")
 
 
 def test_two_proformas_get_different_references(service: InvoiceService, customer_id: UUID) -> None:
-    first = service.create(InvoiceCreate(customer_id=customer_id, tipo="proforma"), ADMIN)
-    second = service.create(InvoiceCreate(customer_id=customer_id, tipo="proforma"), ADMIN)
-    assert first.riferimento != second.riferimento
+    first = service.create(InvoiceCreate(customer_id=customer_id, type="proforma"), ADMIN)
+    second = service.create(InvoiceCreate(customer_id=customer_id, type="proforma"), ADMIN)
+    assert first.reference != second.reference
 
 
 def test_creation_computes_and_stores_the_totals(
@@ -129,56 +129,56 @@ def test_creation_computes_and_stores_the_totals(
     invoice = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            righe=[
-                _line("Consulenza", "33.333333", quantita=Decimal("3.000000")),
+            lines=[
+                _line("Consulenza", "33.333333", quantity=Decimal("3.000000")),
                 _line("Sconto", "-10.00"),
             ],
         ),
         ADMIN,
     )
-    assert invoice.imponibile == Decimal("90.00")
-    assert invoice.imposta == Decimal("0.00")
-    assert invoice.totale == Decimal("90.00")
-    assert invoice.bollo == Decimal("2.00")
+    assert invoice.taxable_amount == Decimal("90.00")
+    assert invoice.vat_amount == Decimal("0.00")
+    assert invoice.total == Decimal("90.00")
+    assert invoice.stamp_duty == Decimal("2.00")
 
 
 def test_the_stamp_duty_is_stored_but_stays_out_of_the_total(
     service: InvoiceService, customer_id: UUID
 ) -> None:
     invoice = service.create(
-        InvoiceCreate(customer_id=customer_id, righe=[_line("Consulenza", "1000.00")]), ADMIN
+        InvoiceCreate(customer_id=customer_id, lines=[_line("Consulenza", "1000.00")]), ADMIN
     )
-    assert invoice.bollo == Decimal("2.00")
-    assert invoice.totale == Decimal("1000.00")
+    assert invoice.stamp_duty == Decimal("2.00")
+    assert invoice.total == Decimal("1000.00")
 
 
-def test_the_regime_decides_the_line_natura(service: InvoiceService, customer_id: UUID) -> None:
-    invoice = service.create(InvoiceCreate(customer_id=customer_id, righe=[_line()]), ADMIN)
-    (riga,) = service.lines(invoice.id, ADMIN)
-    assert riga.numero_linea == 1
-    assert riga.aliquota_iva == Decimal("0.00")
-    assert riga.natura == "N2.2"
-    assert riga.riferimento_normativo == DEFAULT_RIFERIMENTO_NORMATIVO
+def test_the_regime_decides_the_line_vat_nature(service: InvoiceService, customer_id: UUID) -> None:
+    invoice = service.create(InvoiceCreate(customer_id=customer_id, lines=[_line()]), ADMIN)
+    (line,) = service.lines(invoice.id, ADMIN)
+    assert line.line_number == 1
+    assert line.vat_rate == Decimal("0.00")
+    assert line.vat_nature == "N2.2"
+    assert line.legal_reference == DEFAULT_LEGAL_REFERENCE
 
 
 def _non_resident_customer(db_session: Session) -> UUID:
     """The shape of ORB-32: a British company, no SDI code, no PEC, a postcode that is
     not five digits and no province."""
-    customer = Customer(
-        ragione_sociale="Example Ltd",
-        partita_iva="GB123456789",
-        indirizzo="1 Old Street",
-        cap="EC1V 9HL",
-        comune="London",
-        provincia="",
-        nazione="GB",
+    customer = Organization(
+        legal_name="Example Ltd",
+        vat_number="GB123456789",
+        address="1 Old Street",
+        postal_code="EC1V 9HL",
+        city="London",
+        province="",
+        country="GB",
     )
     db_session.add(customer)
     db_session.flush()
     return customer.id
 
 
-def test_a_non_resident_customer_gets_natura_n2_1_and_the_7_ter_reference(
+def test_to_not_resident_customer_gets_vat_nature_n_2_1_and_the_7_ter_reference(
     service: InvoiceService, db_session: Session
 ) -> None:
     """ORB-32. The regime reads the customer's country: a service to a business outside
@@ -186,13 +186,13 @@ def test_a_non_resident_customer_gets_natura_n2_1_and_the_7_ter_reference(
     carries `N2.1` and the 7-ter reference, not the domestic `N2.2` declaration."""
     customer_id = _non_resident_customer(db_session)
     invoice = service.create(
-        InvoiceCreate(customer_id=customer_id, tipo="proforma", righe=[_line()]), ADMIN
+        InvoiceCreate(customer_id=customer_id, type="proforma", lines=[_line()]), ADMIN
     )
-    (riga,) = service.lines(invoice.id, ADMIN)
-    assert riga.aliquota_iva == Decimal("0.00")
-    assert riga.natura == "N2.1"
-    assert riga.riferimento_normativo == RIFERIMENTO_NORMATIVO_EXTRA_UE
-    assert "7-ter" in riga.riferimento_normativo
+    (line,) = service.lines(invoice.id, ADMIN)
+    assert line.vat_rate == Decimal("0.00")
+    assert line.vat_nature == "N2.1"
+    assert line.legal_reference == LEGAL_REFERENCE_EXTRA_UE
+    assert "7-ter" in line.legal_reference
 
 
 def test_replacing_the_lines_reads_the_customer_s_country_again(
@@ -202,32 +202,32 @@ def test_replacing_the_lines_reads_the_customer_s_country_again(
     this fix, or before the customer's country was corrected, is repaired by replacing
     its lines: that is the remedy for the proforma in ORB-32."""
     customer_id = _non_resident_customer(db_session)
-    invoice = service.create(InvoiceCreate(customer_id=customer_id, righe=[_line()]), ADMIN)
-    customer = db_session.get(Customer, customer_id)
+    invoice = service.create(InvoiceCreate(customer_id=customer_id, lines=[_line()]), ADMIN)
+    customer = db_session.get(Organization, customer_id)
     assert customer is not None
-    customer.nazione = "IT"
-    customer.provincia = "RM"
-    customer.cap = "00100"
+    customer.country = "IT"
+    customer.province = "RM"
+    customer.postal_code = "00100"
     db_session.flush()
 
     service.replace_lines(invoice.id, [_line()], ADMIN)
-    (riga,) = service.lines(invoice.id, ADMIN)
-    assert riga.natura == "N2.2"
-    assert riga.riferimento_normativo == DEFAULT_RIFERIMENTO_NORMATIVO
+    (line,) = service.lines(invoice.id, ADMIN)
+    assert line.vat_nature == "N2.2"
+    assert line.legal_reference == DEFAULT_LEGAL_REFERENCE
 
 
-def test_a_non_zero_rate_under_the_forfettario_is_refused_by_field_name(
+def test_to_not_zero_rate_under_the_flat_rate_is_refused_by_field_name(
     service: InvoiceService, customer_id: UUID
 ) -> None:
     with pytest.raises(ValidationFailed) as caught:
         service.create(
             InvoiceCreate(
                 customer_id=customer_id,
-                righe=[_line(aliquota_iva=Decimal("22.00"))],
+                lines=[_line(vat_rate=Decimal("22.00"))],
             ),
             ADMIN,
         )
-    assert caught.value.details["field"] == "aliquota_iva"
+    assert caught.value.details["field"] == "vat_rate"
 
 
 def test_an_unknown_customer_is_not_found_rather_than_a_foreign_key_violation(
@@ -255,10 +255,10 @@ def test_a_deal_belonging_to_another_customer_is_refused(
     # stage id or the insert fails on the column, not on anything this test means to
     # exercise.
     stage = PipelineService(db_session).seed_defaults(ADMIN)[0]
-    other = Customer(ragione_sociale="Altro", nazione="IT")
+    other = Organization(legal_name="Altro", country="IT")
     db_session.add(other)
     db_session.flush()
-    deal = Deal(nome="Progetto", customer_id=other.id, pipeline_stage_id=stage.id)
+    deal = Deal(name="Progetto", customer_id=other.id, pipeline_stage_id=stage.id)
     db_session.add(deal)
     db_session.flush()
     with pytest.raises(ValidationFailed) as caught:
@@ -269,14 +269,12 @@ def test_a_deal_belonging_to_another_customer_is_refused(
 def test_creation_without_a_fiscal_profile_says_which_configuration_is_missing(
     db_session: Session, storage: LocalFileStorage, customer_id: UUID
 ) -> None:
-    # The azienda exists, as it does on every provisioned space; what is missing is
+    # The legal entity exists, as it does on every provisioned space; what is missing is
     # its fiscal profile, which is the configuration the message has to name.
-    from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-    from pigrocrm.core.emitter.service import LegalEntityService
+    from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+    from pigrocrm.core.legal_entities.service import LegalEntityService
 
-    LegalEntityService(db_session).upsert_default(
-        LegalEntityUpsert(ragione_sociale="Studio"), ADMIN
-    )
+    LegalEntityService(db_session).upsert_default(LegalEntityUpsert(legal_name="Studio"), ADMIN)
     with pytest.raises(NotFound) as caught:
         InvoiceService(db_session, storage).create(InvoiceCreate(customer_id=customer_id), ADMIN)
     assert caught.value.details["entity"] == "fiscal_profile"
@@ -287,10 +285,10 @@ def test_a_readonly_actor_cannot_create(service: InvoiceService, customer_id: UU
         service.create(InvoiceCreate(customer_id=customer_id), READONLY)
 
 
-def test_a_collaboratore_may_create_a_draft(service: InvoiceService, customer_id: UUID) -> None:
+def test_to_collaborator_may_create_to_draft(service: InvoiceService, customer_id: UUID) -> None:
     """Drafting is ordinary entity writing; only consuming a register number is not
     (spec 11)."""
-    assert service.create(InvoiceCreate(customer_id=customer_id), COLLABORATORE).stato == "bozza"
+    assert service.create(InvoiceCreate(customer_id=customer_id), COLLABORATOR).status == "draft"
 
 
 def test_creation_records_an_activity(
@@ -310,24 +308,24 @@ def test_replacing_the_lines_renumbers_them_from_one_contiguously(
     """Contiguity is a service invariant -- no single-row CHECK can see the other rows
     -- and this is where it is maintained: the whole list is renumbered from 1."""
     invoice = service.create(
-        InvoiceCreate(customer_id=customer_id, righe=[_line("A"), _line("B"), _line("C")]), ADMIN
+        InvoiceCreate(customer_id=customer_id, lines=[_line("A"), _line("B"), _line("C")]), ADMIN
     )
     service.replace_lines(invoice.id, [_line("Solo questa", "50.00")], ADMIN)
-    righe = service.lines(invoice.id, ADMIN)
-    assert [r.numero_linea for r in righe] == [1]
-    assert righe[0].descrizione == "Solo questa"
+    lines = service.lines(invoice.id, ADMIN)
+    assert [r.line_number for r in lines] == [1]
+    assert lines[0].description == "Solo questa"
 
 
 def test_replacing_the_lines_recomputes_the_totals(
     service: InvoiceService, customer_id: UUID
 ) -> None:
     invoice = service.create(
-        InvoiceCreate(customer_id=customer_id, righe=[_line("A", "1000.00")]), ADMIN
+        InvoiceCreate(customer_id=customer_id, lines=[_line("A", "1000.00")]), ADMIN
     )
     updated = service.replace_lines(invoice.id, [_line("A", "10.00")], ADMIN)
-    assert updated.totale == Decimal("10.00")
+    assert updated.total == Decimal("10.00")
     # Below the threshold now, so the duty disappears with the amount.
-    assert updated.bollo == Decimal("0.00")
+    assert updated.stamp_duty == Decimal("0.00")
 
 
 def test_replacing_the_lines_with_an_empty_list_is_allowed_on_a_draft(
@@ -335,8 +333,8 @@ def test_replacing_the_lines_with_an_empty_list_is_allowed_on_a_draft(
 ) -> None:
     """A draft with no lines is a legitimate intermediate state; only *emission*
     requires at least one line."""
-    invoice = service.create(InvoiceCreate(customer_id=customer_id, righe=[_line()]), ADMIN)
-    assert service.replace_lines(invoice.id, [], ADMIN).totale == Decimal("0.00")
+    invoice = service.create(InvoiceCreate(customer_id=customer_id, lines=[_line()]), ADMIN)
+    assert service.replace_lines(invoice.id, [], ADMIN).total == Decimal("0.00")
     assert service.lines(invoice.id, ADMIN) == []
 
 
@@ -344,20 +342,20 @@ def test_bulk_replacement_is_how_an_optional_numeric_field_gets_cleared(
     service: InvoiceService, customer_id: UUID
 ) -> None:
     """Written when A14 made bulk replacement the *only* way to clear
-    `sconto_importo`; kept now that task 4B-1 has closed A14, because lines still have
+    `discount_amount`; kept now that task 4B-1 has closed A14, because lines still have
     no `Update` schema and replacement is still how a line editor saves."""
     invoice = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            righe=[_line("A", "100.00", sconto_importo=Decimal("10.00"), unita_misura="ore")],
+            lines=[_line("A", "100.00", discount_amount=Decimal("10.00"), unit_of_measure="hours")],
         ),
         ADMIN,
     )
     service.replace_lines(invoice.id, [_line("A", "100.00")], ADMIN)
-    (riga,) = service.lines(invoice.id, ADMIN)
-    assert riga.sconto_importo is None
-    assert riga.unita_misura is None
-    assert riga.prezzo_totale == Decimal("100.00")
+    (line,) = service.lines(invoice.id, ADMIN)
+    assert line.discount_amount is None
+    assert line.unit_of_measure is None
+    assert line.total_price == Decimal("100.00")
 
 
 def test_a_percentage_and_a_fixed_discount_compose_in_a_defined_order(
@@ -366,19 +364,19 @@ def test_a_percentage_and_a_fixed_discount_compose_in_a_defined_order(
     invoice = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            righe=[
+            lines=[
                 _line(
                     "A",
                     "100.00",
-                    quantita=Decimal("2.000000"),
-                    sconto_percentuale=Decimal("10.00"),
-                    sconto_importo=Decimal("5.00"),
+                    quantity=Decimal("2.000000"),
+                    discount_percentage=Decimal("10.00"),
+                    discount_amount=Decimal("5.00"),
                 )
             ],
         ),
         ADMIN,
     )
-    assert invoice.totale == Decimal("175.00")
+    assert invoice.total == Decimal("175.00")
 
 
 def test_more_lines_than_the_bound_are_refused_by_the_schema(
@@ -387,7 +385,7 @@ def test_more_lines_than_the_bound_are_refused_by_the_schema(
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        InvoiceCreate(customer_id=customer_id, righe=[_line()] * 201)
+        InvoiceCreate(customer_id=customer_id, lines=[_line()] * 201)
 
 
 def test_replacing_lines_records_an_activity(
@@ -402,29 +400,29 @@ def test_replacing_lines_records_an_activity(
 # --- editing what may be edited -----------------------------------------------------
 
 
-def test_the_causale_and_the_notes_are_editable_on_a_draft(
+def test_the_memo_and_the_notes_are_editable_on_to_draft(
     service: InvoiceService, customer_id: UUID
 ) -> None:
-    invoice = service.create(InvoiceCreate(customer_id=customer_id, causale="Bozza"), ADMIN)
+    invoice = service.create(InvoiceCreate(customer_id=customer_id, memo="Bozza"), ADMIN)
     updated = service.update(
-        invoice.id, InvoiceUpdate(causale="Consulenza agosto", note_interne="da rileggere"), ADMIN
+        invoice.id, InvoiceUpdate(memo="Consulenza agosto", internal_notes="da rileggere"), ADMIN
     )
-    assert updated.causale == "Consulenza agosto"
-    assert updated.note_interne == "da rileggere"
+    assert updated.memo == "Consulenza agosto"
+    assert updated.internal_notes == "da rileggere"
 
 
 def test_an_empty_string_clears_a_text_column(service: InvoiceService, customer_id: UUID) -> None:
     """The only clear-it spelling that exists, and it works because both editable
     native columns are text-shaped."""
-    invoice = service.create(InvoiceCreate(customer_id=customer_id, causale="Bozza"), ADMIN)
-    assert service.update(invoice.id, InvoiceUpdate(causale=""), ADMIN).causale == ""
+    invoice = service.create(InvoiceCreate(customer_id=customer_id, memo="Bozza"), ADMIN)
+    assert service.update(invoice.id, InvoiceUpdate(memo=""), ADMIN).memo == ""
 
 
 def test_an_omitted_key_clears_nothing(service: InvoiceService, customer_id: UUID) -> None:
     invoice = service.create(
-        InvoiceCreate(customer_id=customer_id, causale="Bozza", note_interne="nota"), ADMIN
+        InvoiceCreate(customer_id=customer_id, memo="Bozza", internal_notes="note"), ADMIN
     )
-    assert service.update(invoice.id, InvoiceUpdate(causale="Altro"), ADMIN).note_interne == "nota"
+    assert service.update(invoice.id, InvoiceUpdate(memo="Altro"), ADMIN).internal_notes == "note"
 
 
 # --- proforma confirmation ----------------------------------------------------------
@@ -434,22 +432,22 @@ def test_confirming_a_proforma_moves_it_out_of_draft(
     service: InvoiceService, customer_id: UUID
 ) -> None:
     proforma = service.create(
-        InvoiceCreate(customer_id=customer_id, tipo="proforma", righe=[_line()]), ADMIN
+        InvoiceCreate(customer_id=customer_id, type="proforma", lines=[_line()]), ADMIN
     )
-    assert service.confirm_proforma(proforma.id, ADMIN).stato == "confermata"
+    assert service.confirm_proforma(proforma.id, ADMIN).status == "confirmed"
 
 
 def test_confirming_a_proforma_with_no_lines_is_refused(
     service: InvoiceService, customer_id: UUID
 ) -> None:
-    proforma = service.create(InvoiceCreate(customer_id=customer_id, tipo="proforma"), ADMIN)
+    proforma = service.create(InvoiceCreate(customer_id=customer_id, type="proforma"), ADMIN)
     with pytest.raises(ValidationFailed) as caught:
         service.confirm_proforma(proforma.id, ADMIN)
-    assert caught.value.details["field"] == "righe"
+    assert caught.value.details["field"] == "lines"
 
 
-def test_a_fattura_cannot_be_confirmed(service: InvoiceService, customer_id: UUID) -> None:
-    invoice = service.create(InvoiceCreate(customer_id=customer_id, righe=[_line()]), ADMIN)
+def test_to_invoice_cannot_be_confirmed(service: InvoiceService, customer_id: UUID) -> None:
+    invoice = service.create(InvoiceCreate(customer_id=customer_id, lines=[_line()]), ADMIN)
     with pytest.raises(Conflict):
         service.confirm_proforma(invoice.id, ADMIN)
 
@@ -460,10 +458,10 @@ def test_a_confirmed_proforma_can_still_be_edited(
     """A proforma is entirely mutable until it is consumed -- that is what it is for
     (spec 5): agree the amount before consuming a number."""
     proforma = service.create(
-        InvoiceCreate(customer_id=customer_id, tipo="proforma", righe=[_line()]), ADMIN
+        InvoiceCreate(customer_id=customer_id, type="proforma", lines=[_line()]), ADMIN
     )
     service.confirm_proforma(proforma.id, ADMIN)
-    assert service.replace_lines(proforma.id, [_line("B", "20.00")], ADMIN).totale == Decimal(
+    assert service.replace_lines(proforma.id, [_line("B", "20.00")], ADMIN).total == Decimal(
         "20.00"
     )
 
@@ -484,7 +482,7 @@ def test_a_draft_can_be_soft_deleted_and_disappears_from_the_list(
 def test_soft_deleting_a_draft_also_removes_its_lines_from_the_reader(
     service: InvoiceService, customer_id: UUID
 ) -> None:
-    invoice = service.create(InvoiceCreate(customer_id=customer_id, righe=[_line()]), ADMIN)
+    invoice = service.create(InvoiceCreate(customer_id=customer_id, lines=[_line()]), ADMIN)
     service.soft_delete(invoice.id, ADMIN)
     with pytest.raises(NotFound):
         service.lines(invoice.id, ADMIN)
@@ -497,11 +495,11 @@ def test_the_payment_state_cannot_be_set_on_a_draft(
     service: InvoiceService, customer_id: UUID
 ) -> None:
     """There is nothing to collect on a document that was never issued."""
-    invoice = service.create(InvoiceCreate(customer_id=customer_id, righe=[_line()]), ADMIN)
+    invoice = service.create(InvoiceCreate(customer_id=customer_id, lines=[_line()]), ADMIN)
     with pytest.raises(Conflict):
         service.set_payment_state(
             invoice.id,
-            PaymentState(stato_pagamento="incassato", data_incasso=date(2026, 9, 1)),
+            PaymentState(payment_status="paid", payment_date=date(2026, 9, 1)),
             ADMIN,
         )
 
@@ -513,8 +511,8 @@ def test_marking_collected_without_a_date_is_refused(
     a single method takes both and checks their agreement."""
     invoice = _issued_row(db_session, customer_id)
     with pytest.raises(ValidationFailed) as caught:
-        service.set_payment_state(invoice.id, PaymentState(stato_pagamento="incassato"), ADMIN)
-    assert caught.value.details["field"] == "data_incasso"
+        service.set_payment_state(invoice.id, PaymentState(payment_status="paid"), ADMIN)
+    assert caught.value.details["field"] == "payment_date"
 
 
 def test_going_back_to_uncollected_clears_the_date(
@@ -522,16 +520,14 @@ def test_going_back_to_uncollected_clears_the_date(
 ) -> None:
     invoice = _issued_row(db_session, customer_id)
     service.set_payment_state(
-        invoice.id, PaymentState(stato_pagamento="incassato", data_incasso=date(2026, 9, 1)), ADMIN
+        invoice.id, PaymentState(payment_status="paid", payment_date=date(2026, 9, 1)), ADMIN
     )
-    back = service.set_payment_state(
-        invoice.id, PaymentState(stato_pagamento="da_incassare"), ADMIN
-    )
-    assert back.stato_pagamento == "da_incassare"
-    assert back.data_incasso is None
+    back = service.set_payment_state(invoice.id, PaymentState(payment_status="unpaid"), ADMIN)
+    assert back.payment_status == "unpaid"
+    assert back.payment_date is None
 
 
-def test_a_collaboratore_may_record_a_payment(
+def test_to_collaborator_may_record_to_payment(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
     """Spec 11: `set_payment_state` is the one invoice write a collaborator -- and an
@@ -541,10 +537,10 @@ def test_a_collaboratore_may_record_a_payment(
     assert (
         service.set_payment_state(
             invoice.id,
-            PaymentState(stato_pagamento="incassato", data_incasso=date(2026, 9, 1)),
-            COLLABORATORE,
-        ).stato_pagamento
-        == "incassato"
+            PaymentState(payment_status="paid", payment_date=date(2026, 9, 1)),
+            COLLABORATOR,
+        ).payment_status
+        == "paid"
     )
 
 
@@ -554,20 +550,20 @@ def _issued_row(db_session: Session, customer_id: UUID, **overrides: object) -> 
     flush, since `(anno, numero)` is unique and a second row needs its own number."""
     fields: dict[str, object] = dict(
         customer_id=customer_id,
-        tipo="fattura",
-        stato="emessa",
-        anno=2026,
-        numero=1,
-        data_emissione=date(2026, 8, 20),
-        tipo_documento="TD01",
-        divisa="EUR",
-        imponibile=Decimal("100.00"),
-        imposta=Decimal("0.00"),
-        bollo=Decimal("2.00"),
-        totale=Decimal("100.00"),
-        stato_pagamento="da_incassare",
-        snapshot={"versione": 1},
-        snapshot_versione=1,
+        type="invoice",
+        status="issued",
+        year=2026,
+        number=1,
+        issue_date=date(2026, 8, 20),
+        sdi_document_type="TD01",
+        currency="EUR",
+        taxable_amount=Decimal("100.00"),
+        vat_amount=Decimal("0.00"),
+        stamp_duty=Decimal("2.00"),
+        total=Decimal("100.00"),
+        payment_status="unpaid",
+        snapshot={"version": 1},
+        snapshot_version=1,
         custom_fields={},
     )
     fields.update(overrides)
@@ -586,16 +582,16 @@ def test_the_lines_of_an_issued_invoice_cannot_be_replaced(
     invoice = _issued_row(db_session, customer_id)
     with pytest.raises(ImmutableField) as caught:
         service.replace_lines(invoice.id, [_line()], ADMIN)
-    assert caught.value.details["field"] == "righe"
+    assert caught.value.details["field"] == "lines"
 
 
-def test_the_causale_of_an_issued_invoice_cannot_be_changed(
+def test_the_memo_of_an_issued_invoice_cannot_be_changed(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
     invoice = _issued_row(db_session, customer_id)
     with pytest.raises(ImmutableField) as caught:
-        service.update(invoice.id, InvoiceUpdate(causale="ripensamento"), ADMIN)
-    assert caught.value.details["field"] == "causale"
+        service.update(invoice.id, InvoiceUpdate(memo="ripensamento"), ADMIN)
+    assert caught.value.details["field"] == "memo"
 
 
 def test_the_internal_notes_of_an_issued_invoice_can_still_be_changed(
@@ -604,7 +600,9 @@ def test_the_internal_notes_of_an_issued_invoice_can_still_be_changed(
     """They appear on no artefact, so they are not part of the document (spec 4)."""
     invoice = _issued_row(db_session, customer_id)
     assert (
-        service.update(invoice.id, InvoiceUpdate(note_interne="sollecitato"), ADMIN).note_interne
+        service.update(
+            invoice.id, InvoiceUpdate(internal_notes="sollecitato"), ADMIN
+        ).internal_notes
         == "sollecitato"
     )
 
@@ -620,91 +618,91 @@ def test_an_issued_invoice_cannot_be_soft_deleted(
 # --- listing ------------------------------------------------------------------------
 
 
-def test_the_list_finds_the_fattura_a_consumed_proforma_was_issued_as(
+def test_the_list_finds_the_invoice_to_consumed_proforma_was_issued_as(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
-    """The fattura points back at its proforma and the proforma points at nothing, so
-    the consumed proforma's page finds its fattura by asking the list for the row whose
-    `origine_proforma_id` is its own id (ORB-134). Another fattura, or another
-    proforma's fattura, does not answer."""
-    proforma = service.create(InvoiceCreate(customer_id=customer_id, tipo="proforma"), ADMIN)
-    other = service.create(InvoiceCreate(customer_id=customer_id, tipo="proforma"), ADMIN)
-    from_proforma = _issued_row(db_session, customer_id, origine_proforma_id=proforma.id)
-    _issued_row(db_session, customer_id, numero=2, origine_proforma_id=other.id)
-    standalone = _issued_row(db_session, customer_id, numero=3)
+    """The invoice points back at its proforma and the proforma points at nothing, so
+    the consumed proforma's page finds its invoice by asking the list for the row whose
+    `origin_proforma_id` is its own id (ORB-134). Another invoice, or another
+    proforma's invoice, does not answer."""
+    proforma = service.create(InvoiceCreate(customer_id=customer_id, type="proforma"), ADMIN)
+    other = service.create(InvoiceCreate(customer_id=customer_id, type="proforma"), ADMIN)
+    from_proforma = _issued_row(db_session, customer_id, origin_proforma_id=proforma.id)
+    _issued_row(db_session, customer_id, number=2, origin_proforma_id=other.id)
+    standalone = _issued_row(db_session, customer_id, number=3)
 
-    found = service.list(InvoiceListQuery(origine_proforma_id=proforma.id), ADMIN).items
+    found = service.list(InvoiceListQuery(origin_proforma_id=proforma.id), ADMIN).items
     assert [i.id for i in found] == [from_proforma.id]
     assert standalone.id not in {i.id for i in found}
-    assert service.list(InvoiceListQuery(origine_proforma_id=uuid4()), ADMIN).items == []
+    assert service.list(InvoiceListQuery(origin_proforma_id=uuid4()), ADMIN).items == []
 
 
-def test_the_list_can_leave_out_the_proformas_that_became_a_fattura(
+def test_the_list_can_leave_out_the_proformas_that_became_to_invoice(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
     """Under «Tutte» the web showed 2026/18 and the proforma it came from as two rows
-    with the same customer, period and total (ORB-169). `escludi_consumate` drops the
-    consumed ones and nothing else; asked by `stato`, they still answer."""
-    draft = service.create(InvoiceCreate(customer_id=customer_id, tipo="proforma"), ADMIN)
-    consumed = service.create(InvoiceCreate(customer_id=customer_id, tipo="proforma"), ADMIN)
-    db_session.get(Invoice, consumed.id).stato = "consumata"  # type: ignore[union-attr]
-    fattura = _issued_row(db_session, customer_id, origine_proforma_id=consumed.id)
+    with the same customer, period and total (ORB-169). `exclude_consumed` drops the
+    consumed ones and nothing else; asked by `status`, they still answer."""
+    draft = service.create(InvoiceCreate(customer_id=customer_id, type="proforma"), ADMIN)
+    consumed = service.create(InvoiceCreate(customer_id=customer_id, type="proforma"), ADMIN)
+    db_session.get(Invoice, consumed.id).status = "consumed"  # type: ignore[union-attr]
+    invoice = _issued_row(db_session, customer_id, origin_proforma_id=consumed.id)
     db_session.flush()
 
     everything = {i.id for i in service.list(InvoiceListQuery(), ADMIN).items}
-    assert {draft.id, consumed.id, fattura.id} <= everything
-    trimmed = {i.id for i in service.list(InvoiceListQuery(escludi_consumate=True), ADMIN).items}
+    assert {draft.id, consumed.id, invoice.id} <= everything
+    trimmed = {i.id for i in service.list(InvoiceListQuery(exclude_consumed=True), ADMIN).items}
     assert trimmed == everything - {consumed.id}
-    by_state = service.list(InvoiceListQuery(stato="consumata"), ADMIN).items
+    by_state = service.list(InvoiceListQuery(status="consumed"), ADMIN).items
     assert [i.id for i in by_state] == [consumed.id]
 
 
-def test_the_list_filters_by_tipo_stato_year_and_payment(
+def test_the_list_filters_by_type_status_year_and_payment(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
     draft = service.create(InvoiceCreate(customer_id=customer_id), ADMIN)
-    proforma = service.create(InvoiceCreate(customer_id=customer_id, tipo="proforma"), ADMIN)
+    proforma = service.create(InvoiceCreate(customer_id=customer_id, type="proforma"), ADMIN)
     issued = _issued_row(db_session, customer_id)
 
-    assert {i.id for i in service.list(InvoiceListQuery(tipo="proforma"), ADMIN).items} == {
+    assert {i.id for i in service.list(InvoiceListQuery(type="proforma"), ADMIN).items} == {
         proforma.id
     }
-    assert {i.id for i in service.list(InvoiceListQuery(stato="bozza"), ADMIN).items} == {
+    assert {i.id for i in service.list(InvoiceListQuery(status="draft"), ADMIN).items} == {
         draft.id,
         proforma.id,
     }
-    assert {i.id for i in service.list(InvoiceListQuery(anno=2026), ADMIN).items} == {issued.id}
+    assert {i.id for i in service.list(InvoiceListQuery(year=2026), ADMIN).items} == {issued.id}
     assert {
-        i.id for i in service.list(InvoiceListQuery(stato_pagamento="incassato"), ADMIN).items
+        i.id for i in service.list(InvoiceListQuery(payment_status="paid"), ADMIN).items
     } == set()
 
 
-def test_the_list_under_da_incassare_answers_only_the_receivables(
+def test_the_list_under_unpaid_answers_only_the_receivables(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
-    """REB-325: every row is born `da_incassare`, so an equality on the column listed
-    drafts and proformas as unpaid. The filter now means what the dashboard's «Da
-    incassare» card means (`_receivable_filter`): an issued fattura nobody has paid."""
+    """REB-325: every row is born `unpaid`, so an equality on the column listed
+    drafts and proformas as unpaid. The filter now means what the dashboard's "Da
+    incassare" (to collect) card means (`_receivable_filter`): an issued invoice nobody has paid."""
     service.create(InvoiceCreate(customer_id=customer_id), ADMIN)
-    service.create(InvoiceCreate(customer_id=customer_id, tipo="proforma"), ADMIN)
+    service.create(InvoiceCreate(customer_id=customer_id, type="proforma"), ADMIN)
     owed = _issued_row(db_session, customer_id)
     _issued_row(
         db_session,
         customer_id,
-        numero=2,
-        stato_pagamento="incassato",
-        data_incasso=date(2026, 8, 25),
+        number=2,
+        payment_status="paid",
+        payment_date=date(2026, 8, 25),
     )
     _issued_row(
         db_session,
         customer_id,
-        numero=3,
-        stato="annullata",
-        annullata_il=date(2026, 8, 21),
-        motivo_annullamento="storno",
+        number=3,
+        status="cancelled",
+        cancelled_at=date(2026, 8, 21),
+        cancellation_reason="storno",
     )
 
-    receivable = service.list(InvoiceListQuery(stato_pagamento="da_incassare"), ADMIN).items
+    receivable = service.list(InvoiceListQuery(payment_status="unpaid"), ADMIN).items
     assert [i.id for i in receivable] == [owed.id]
 
 
@@ -739,34 +737,30 @@ def test_list_is_the_last_method_of_the_service_class() -> None:
 
 
 def test_a_draft_may_carry_an_accrual_period(service: InvoiceService, customer_id: UUID) -> None:
-    """The month the work belongs to used to live only in the free text of the causale
+    """The month the work belongs to used to live only in the free text of the memo
     ("FDE, agosto 2026"); now it is two dates the XML and the P&L can read."""
     invoice = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            competenza_da=date(2026, 8, 1),
-            competenza_a=date(2026, 8, 31),
+            accrual_from=date(2026, 8, 1),
+            accrual_to=date(2026, 8, 31),
         ),
         ADMIN,
     )
-    assert invoice.competenza_da == date(2026, 8, 1)
-    assert invoice.competenza_a == date(2026, 8, 31)
-    assert service.create(InvoiceCreate(customer_id=customer_id), ADMIN).competenza_da is None
+    assert invoice.accrual_from == date(2026, 8, 1)
+    assert invoice.accrual_to == date(2026, 8, 31)
+    assert service.create(InvoiceCreate(customer_id=customer_id), ADMIN).accrual_from is None
 
 
 def test_half_an_accrual_period_is_refused_by_field_name(
     service: InvoiceService, customer_id: UUID
 ) -> None:
     with pytest.raises(ValidationFailed) as caught:
-        service.create(
-            InvoiceCreate(customer_id=customer_id, competenza_da=date(2026, 8, 1)), ADMIN
-        )
-    assert caught.value.details["field"] == "competenza_a"
+        service.create(InvoiceCreate(customer_id=customer_id, accrual_from=date(2026, 8, 1)), ADMIN)
+    assert caught.value.details["field"] == "accrual_to"
     with pytest.raises(ValidationFailed) as caught:
-        service.create(
-            InvoiceCreate(customer_id=customer_id, competenza_a=date(2026, 8, 31)), ADMIN
-        )
-    assert caught.value.details["field"] == "competenza_da"
+        service.create(InvoiceCreate(customer_id=customer_id, accrual_to=date(2026, 8, 31)), ADMIN)
+    assert caught.value.details["field"] == "accrual_from"
 
 
 def test_an_inverted_accrual_period_is_refused(service: InvoiceService, customer_id: UUID) -> None:
@@ -774,12 +768,12 @@ def test_an_inverted_accrual_period_is_refused(service: InvoiceService, customer
         service.create(
             InvoiceCreate(
                 customer_id=customer_id,
-                competenza_da=date(2026, 8, 31),
-                competenza_a=date(2026, 8, 1),
+                accrual_from=date(2026, 8, 31),
+                accrual_to=date(2026, 8, 1),
             ),
             ADMIN,
         )
-    assert caught.value.details["field"] == "competenza_a"
+    assert caught.value.details["field"] == "accrual_to"
 
 
 def test_the_accrual_period_is_editable_on_a_draft_one_end_at_a_time(
@@ -789,19 +783,19 @@ def test_the_accrual_period_is_editable_on_a_draft_one_end_at_a_time(
     whose other end is already stored is one field, and so is moving one end."""
     invoice = service.create(InvoiceCreate(customer_id=customer_id), ADMIN)
     with pytest.raises(ValidationFailed) as caught:
-        service.update(invoice.id, InvoiceUpdate(competenza_da=date(2026, 8, 1)), ADMIN)
-    assert caught.value.details["field"] == "competenza_a"
+        service.update(invoice.id, InvoiceUpdate(accrual_from=date(2026, 8, 1)), ADMIN)
+    assert caught.value.details["field"] == "accrual_to"
 
     updated = service.update(
         invoice.id,
-        InvoiceUpdate(competenza_da=date(2026, 8, 1), competenza_a=date(2026, 8, 31)),
+        InvoiceUpdate(accrual_from=date(2026, 8, 1), accrual_to=date(2026, 8, 31)),
         ADMIN,
     )
-    assert (updated.competenza_da, updated.competenza_a) == (date(2026, 8, 1), date(2026, 8, 31))
-    moved = service.update(invoice.id, InvoiceUpdate(competenza_a=date(2026, 9, 30)), ADMIN)
-    assert (moved.competenza_da, moved.competenza_a) == (date(2026, 8, 1), date(2026, 9, 30))
+    assert (updated.accrual_from, updated.accrual_to) == (date(2026, 8, 1), date(2026, 8, 31))
+    moved = service.update(invoice.id, InvoiceUpdate(accrual_to=date(2026, 9, 30)), ADMIN)
+    assert (moved.accrual_from, moved.accrual_to) == (date(2026, 8, 1), date(2026, 9, 30))
     with pytest.raises(ValidationFailed):
-        service.update(invoice.id, InvoiceUpdate(competenza_a=date(2026, 7, 31)), ADMIN)
+        service.update(invoice.id, InvoiceUpdate(accrual_to=date(2026, 7, 31)), ADMIN)
 
 
 def test_the_accrual_period_is_cleared_as_a_pair(
@@ -810,18 +804,16 @@ def test_the_accrual_period_is_cleared_as_a_pair(
     invoice = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            competenza_da=date(2026, 8, 1),
-            competenza_a=date(2026, 8, 31),
+            accrual_from=date(2026, 8, 1),
+            accrual_to=date(2026, 8, 31),
         ),
         ADMIN,
     )
     with pytest.raises(ValidationFailed) as caught:
-        service.update(invoice.id, InvoiceUpdate(competenza_da=None), ADMIN)
-    assert caught.value.details["field"] == "competenza_da"
-    cleared = service.update(
-        invoice.id, InvoiceUpdate(competenza_da=None, competenza_a=None), ADMIN
-    )
-    assert cleared.competenza_da is None and cleared.competenza_a is None
+        service.update(invoice.id, InvoiceUpdate(accrual_from=None), ADMIN)
+    assert caught.value.details["field"] == "accrual_from"
+    cleared = service.update(invoice.id, InvoiceUpdate(accrual_from=None, accrual_to=None), ADMIN)
+    assert cleared.accrual_from is None and cleared.accrual_to is None
 
 
 # --- a proforma has a document date of its own (ORB-63) ------------------------------
@@ -832,10 +824,10 @@ def test_a_new_proforma_is_dated_today_in_the_issuer_s_calendar(
 ) -> None:
     """The PDF used to print the render day, so the same proforma re-rendered tomorrow
     said tomorrow. The date is the sender's and it is stored at creation."""
-    from pigrocrm.core.clock import oggi_in_italia
+    from pigrocrm.core.db.clock import today_local
 
-    proforma = service.create(InvoiceCreate(customer_id=customer_id, tipo="proforma"), ADMIN)
-    assert proforma.data_emissione == oggi_in_italia()
+    proforma = service.create(InvoiceCreate(customer_id=customer_id, type="proforma"), ADMIN)
+    assert proforma.issue_date == today_local()
 
 
 def test_a_proforma_may_be_created_with_its_own_date(
@@ -844,63 +836,63 @@ def test_a_proforma_may_be_created_with_its_own_date(
     """Not a register date: no monotonicity, no closed-year rule, and a date in another
     year is fine, because the proforma touches no register (spec 5)."""
     proforma = service.create(
-        InvoiceCreate(customer_id=customer_id, tipo="proforma", data_emissione=date(2025, 12, 31)),
+        InvoiceCreate(customer_id=customer_id, type="proforma", issue_date=date(2025, 12, 31)),
         ADMIN,
     )
-    assert proforma.data_emissione == date(2025, 12, 31)
+    assert proforma.issue_date == date(2025, 12, 31)
 
 
-def test_a_fattura_draft_takes_its_date_at_issue_not_at_creation(
+def test_to_invoice_draft_takes_its_date_at_issue_not_at_creation(
     service: InvoiceService, customer_id: UUID
 ) -> None:
     with pytest.raises(ValidationFailed) as caught:
         service.create(
-            InvoiceCreate(customer_id=customer_id, tipo="fattura", data_emissione=date(2026, 8, 1)),
+            InvoiceCreate(customer_id=customer_id, type="invoice", issue_date=date(2026, 8, 1)),
             ADMIN,
         )
-    assert caught.value.details["field"] == "data_emissione"
+    assert caught.value.details["field"] == "issue_date"
     draft = service.create(InvoiceCreate(customer_id=customer_id), ADMIN)
-    assert draft.data_emissione is None
+    assert draft.issue_date is None
     with pytest.raises(ValidationFailed) as caught:
-        service.update(draft.id, InvoiceUpdate(data_emissione=date(2026, 8, 1)), ADMIN)
-    assert caught.value.details["field"] == "data_emissione"
+        service.update(draft.id, InvoiceUpdate(issue_date=date(2026, 8, 1)), ADMIN)
+    assert caught.value.details["field"] == "issue_date"
 
 
 def test_a_proforma_date_is_editable_while_a_draft_and_never_cleared(
     service: InvoiceService, customer_id: UUID
 ) -> None:
-    proforma = service.create(InvoiceCreate(customer_id=customer_id, tipo="proforma"), ADMIN)
-    moved = service.update(proforma.id, InvoiceUpdate(data_emissione=date(2026, 8, 31)), ADMIN)
-    assert moved.data_emissione == date(2026, 8, 31)
-    # `confermata` is still a draft for this purpose: the amount is agreed, the document
+    proforma = service.create(InvoiceCreate(customer_id=customer_id, type="proforma"), ADMIN)
+    moved = service.update(proforma.id, InvoiceUpdate(issue_date=date(2026, 8, 31)), ADMIN)
+    assert moved.issue_date == date(2026, 8, 31)
+    # `confirmed` is still a draft for this purpose: the amount is agreed, the document
     # is still the sender's to date.
     service.replace_lines(proforma.id, [_line()], ADMIN)
     service.confirm_proforma(proforma.id, ADMIN)
-    moved = service.update(proforma.id, InvoiceUpdate(data_emissione=date(2026, 9, 1)), ADMIN)
-    assert moved.data_emissione == date(2026, 9, 1)
+    moved = service.update(proforma.id, InvoiceUpdate(issue_date=date(2026, 9, 1)), ADMIN)
+    assert moved.issue_date == date(2026, 9, 1)
     with pytest.raises(ValidationFailed) as caught:
-        service.update(proforma.id, InvoiceUpdate(data_emissione=None), ADMIN)
-    assert caught.value.details["field"] == "data_emissione"
+        service.update(proforma.id, InvoiceUpdate(issue_date=None), ADMIN)
+    assert caught.value.details["field"] == "issue_date"
 
 
 # --- the customer's name on the read shape -------------------------------------------
 
 
 def test_every_read_carries_the_customer_s_name(service: InvoiceService, customer_id: UUID) -> None:
-    """`InvoiceRead.customer_ragione_sociale` is denormalised from `customers` at read
+    """`InvoiceRead.customer_legal_name` is denormalised from `organizations` at read
     time, exactly as `DealRead` does it (ORB-98): the list page has to say whose invoice
     a row is without a request per row. Every path that hands back an `InvoiceRead`
     carries it, so a mutation's answer and the next `get` agree on the same shape."""
     created = service.create(InvoiceCreate(customer_id=customer_id), ADMIN)
-    assert created.customer_ragione_sociale == "Acme S.r.l."
+    assert created.customer_legal_name == "Acme S.r.l."
 
-    assert service.get(created.id, ADMIN).customer_ragione_sociale == "Acme S.r.l."
+    assert service.get(created.id, ADMIN).customer_legal_name == "Acme S.r.l."
 
-    updated = service.update(created.id, InvoiceUpdate(causale="Consulenza"), ADMIN)
-    assert updated.customer_ragione_sociale == "Acme S.r.l."
+    updated = service.update(created.id, InvoiceUpdate(memo="Consulenza"), ADMIN)
+    assert updated.customer_legal_name == "Acme S.r.l."
 
     page = service.list(InvoiceListQuery(), ADMIN)
-    assert [item.customer_ragione_sociale for item in page.items] == ["Acme S.r.l."]
+    assert [item.customer_legal_name for item in page.items] == ["Acme S.r.l."]
 
 
 def test_the_customer_name_costs_one_query_for_the_whole_page(
@@ -909,7 +901,7 @@ def test_the_customer_name_costs_one_query_for_the_whole_page(
     """Counted, not reasoned about, for the same reason `test_deals.py` counts it: an N+1
     reintroduced by a later refactor is invisible to every other assertion here."""
     for index in range(3):
-        customer = Customer(ragione_sociale=f"ACME {index}", nazione="IT")
+        customer = Organization(legal_name=f"ACME {index}", country="IT")
         db_session.add(customer)
         db_session.flush()
         service.create(InvoiceCreate(customer_id=customer.id), ADMIN)
@@ -929,8 +921,147 @@ def test_the_customer_name_costs_one_query_for_the_whole_page(
     assert len(page.items) == 3
     # The list itself, plus exactly one lookup for the three customer names.
     assert len(statements) == 2, statements
-    assert sorted(item.customer_ragione_sociale or "" for item in page.items) == [
+    assert sorted(item.customer_legal_name or "" for item in page.items) == [
         "ACME 0",
         "ACME 1",
         "ACME 2",
+    ]
+
+
+# --- the purchase order (REB-693) -----------------------------------------------------
+
+
+def test_a_draft_may_carry_a_purchase_order_stored_clean(
+    service: InvoiceService, customer_id: UUID
+) -> None:
+    invoice = service.create(
+        InvoiceCreate(
+            customer_id=customer_id,
+            purchase_order_number=" ODA-14 ",
+            purchase_order_date=date(2026, 10, 9),
+            purchase_order_tender_code="z0a1b2c3d4",
+            purchase_order_project_code="j41e22000110005",
+        ),
+        ADMIN,
+    )
+    assert (
+        invoice.purchase_order_number,
+        invoice.purchase_order_date,
+        invoice.purchase_order_tender_code,
+        invoice.purchase_order_project_code,
+    ) == ("ODA-14", date(2026, 10, 9), "Z0A1B2C3D4", "J41E22000110005")
+    bare = service.create(InvoiceCreate(customer_id=customer_id), ADMIN)
+    assert (
+        bare.purchase_order_number,
+        bare.purchase_order_date,
+        bare.purchase_order_tender_code,
+        bare.purchase_order_project_code,
+    ) == (
+        None,
+        None,
+        None,
+        None,
+    )
+
+
+def test_a_padded_cup_is_stored_stripped_and_upper_case(
+    service: InvoiceService, customer_id: UUID
+) -> None:
+    invoice = service.create(
+        InvoiceCreate(
+            customer_id=customer_id,
+            purchase_order_number="ODA-14",
+            purchase_order_project_code=" j41e22000110005 ",
+        ),
+        ADMIN,
+    )
+    assert invoice.purchase_order_project_code == "J41E22000110005"
+
+
+def test_to_tender_code_without_an_order_number_is_refused_on_the_number(
+    service: InvoiceService, customer_id: UUID
+) -> None:
+    with pytest.raises(ValidationFailed) as caught:
+        service.create(
+            InvoiceCreate(customer_id=customer_id, purchase_order_tender_code="Z0A1B2C3D4"), ADMIN
+        )
+    assert caught.value.details["field"] == "purchase_order_number"
+
+
+def test_to_malformed_tender_code_is_refused_by_field_name(
+    service: InvoiceService, customer_id: UUID
+) -> None:
+    with pytest.raises(ValidationFailed) as caught:
+        service.create(
+            InvoiceCreate(
+                customer_id=customer_id,
+                purchase_order_number="ODA-14",
+                purchase_order_tender_code="Z0A1",
+            ),
+            ADMIN,
+        )
+    assert caught.value.details["field"] == "purchase_order_tender_code"
+
+
+def test_the_order_is_edited_on_the_merged_row_and_cleared_as_a_whole(
+    service: InvoiceService, customer_id: UUID
+) -> None:
+    """Like the accrual period: adding a tender code to a document whose number is stored is
+    one field, dropping the number while the tender code stays is refused and leaves the row as
+    it was, and four nulls clear the order."""
+    invoice = service.create(
+        InvoiceCreate(customer_id=customer_id, purchase_order_number="ODA-14"), ADMIN
+    )
+    with_tender_code = service.update(
+        invoice.id, InvoiceUpdate(purchase_order_tender_code="z0a1b2c3d4"), ADMIN
+    )
+    assert (
+        with_tender_code.purchase_order_number,
+        with_tender_code.purchase_order_tender_code,
+    ) == ("ODA-14", "Z0A1B2C3D4")
+
+    with pytest.raises(ValidationFailed) as caught:
+        service.update(invoice.id, InvoiceUpdate(purchase_order_number=None), ADMIN)
+    assert caught.value.details["field"] == "purchase_order_number"
+    assert service.get(invoice.id, ADMIN).purchase_order_number == "ODA-14"
+
+    cleared = service.update(
+        invoice.id,
+        InvoiceUpdate(
+            purchase_order_number=None,
+            purchase_order_date=None,
+            purchase_order_tender_code=None,
+            purchase_order_project_code=None,
+        ),
+        ADMIN,
+    )
+    assert (cleared.purchase_order_number, cleared.purchase_order_tender_code) == (None, None)
+
+
+def test_unpaid_for_customer_lists_the_issued_unpaid_rows_oldest_deadline_first(
+    service: InvoiceService, db_session: Session
+) -> None:
+    from datetime import timedelta
+
+    from fakes.invoice_fixtures import unpaid_invoice
+
+    from pigrocrm.core.db.clock import today_local
+
+    today = today_local()
+    customer = Organization(legal_name="Debitore S.r.l.")
+    db_session.add(customer)
+    db_session.flush()
+    later = unpaid_invoice(db_session, due=today + timedelta(days=20), customer=customer)
+    earlier = unpaid_invoice(db_session, due=today + timedelta(days=5), customer=customer)
+    paid = unpaid_invoice(db_session, due=today + timedelta(days=1), customer=customer)
+    paid.payment_status = "paid"
+    paid.payment_date = today
+    unpaid_invoice(db_session, due=today + timedelta(days=2))  # another customer's
+    db_session.flush()
+
+    rows = service.unpaid_for_customer(customer.id, ADMIN, limit=10)
+
+    assert [row.invoice.id for row in rows] == [earlier.id, later.id]
+    assert [row.invoice.id for row in service.unpaid_for_customer(customer.id, ADMIN, limit=1)] == [
+        earlier.id
     ]

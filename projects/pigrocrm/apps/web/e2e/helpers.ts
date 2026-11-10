@@ -43,7 +43,7 @@ export async function login(page: Page, email: string, password: string): Promis
   // And not the `/\/app\/?$/` that replaced it either, which anchored on the end of the
   // string and therefore stopped being true the moment `/app/` grew a `validateSearch`
   // (slice 6: the dashboard's period is in the URL, §4). The landing URL is now
-  // `/app?tab=commerciale&da=…&a=…`, so an end-anchored pattern fails for every spec in
+  // `/app?tab=commercial&from=…&to=…`, so an end-anchored pattern fails for every spec in
   // this suite while the login it is checking has actually succeeded. `(\?|$)` is what
   // admits the search string without re-admitting `/app/login`: after `/app` the next
   // character has to be `?` or nothing, and in `/app/login` it is `l`.
@@ -69,10 +69,10 @@ export async function loginAsAdmin(page: Page): Promise<void> {
  * so a run against a stack kept alive does not grow a row per spec.
  */
 export async function ensureSpaceHasWork(page: Page): Promise<void> {
-  const list = (await (await page.request.get('/api/customers?limit=1')).json()) as { items: unknown[] }
+  const list = (await (await page.request.get('/api/organizations?limit=1')).json()) as { items: unknown[] }
   if (list.items.length > 0) return
-  const created = await page.request.post('/api/customers', {
-    data: { ragione_sociale: `Home ${Date.now()} Srl` },
+  const created = await page.request.post('/api/organizations', {
+    data: { legal_name: `Home ${Date.now()} Srl` },
   })
   expect(created.status()).toBe(201)
 }
@@ -90,35 +90,23 @@ export async function ensureSpaceHasWork(page: Page): Promise<void> {
  *
  * The menu is opened by its accessible name rather than by the user's initials: the
  * trigger shows an avatar, a name and a role, and all three change with whoever is
- * logged in, while `aria-label="Menu del profilo"` does not.
+ * logged in, while the «menu del profilo» at the end of its `aria-label` does not.
  */
 export async function logout(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Menu del profilo' }).click()
+  await page.getByRole('button', { name: /menu del profilo/i }).click()
   await page.getByRole('menuitem', { name: 'Esci' }).click()
   await expect(page).toHaveURL(/\/app\/login$/)
 }
 
-/** The two collapsible groups of the sidebar, spelled as their headers spell them. */
-export type SidebarGroup = 'Vendite' | 'Amministrazione'
-
 /**
- * Navigates through the sidebar, opening the entry's group first when it is closed.
+ * Navigates through the sidebar by the entry's own name.
  *
- * The third thing the UI revision of 2026-09-08 changed under these specs: nine flat
- * entries became two groups, and a group is *closed* unless it holds the current route
- * or you opened it yourself (`AppShell.tsx`: `isOpen`). So from the dashboard the
- * «Deal» link is in the DOM's future rather than on the screen, and clicking it waits
- * until the test times out.
- *
- * The header is clicked only when the entry is not already visible: from a page inside
- * the group the entry is there, and clicking the header would *close* the group.
+ * Since REB-873 the sections are captions that are always open, so every entry is on the
+ * screen from any page and there is no group to open first. The match is `exact` so that a
+ * short name never also finds a longer link that contains it.
  */
-export async function navigate(page: Page, group: SidebarGroup, entry: string): Promise<void> {
-  const link = page.getByRole('link', { name: entry, exact: true })
-  if (!(await link.isVisible())) {
-    await page.getByRole('button', { name: group }).click()
-  }
-  await link.click()
+export async function navigate(page: Page, entry: string): Promise<void> {
+  await page.getByRole('link', { name: entry, exact: true }).click()
 }
 
 /**
@@ -190,14 +178,14 @@ export async function dragDealToStage(page: Page, dealName: string, stageName: s
 }
 
 /**
- * Creates a customer through the real UI (`/app/customers` → "Nuovo cliente"), the
+ * Creates a customer through the real UI (`/app/organizations` → "Nuovo cliente"), the
  * same form flow `crm.spec.ts`'s own customer-creation test drives, and returns the
  * generated, timestamp-suffixed name so a caller can find the row it just made
  * without racing any other customer already on screen.
  */
-export async function createCustomer(page: Page): Promise<string> {
+export async function createOrganization(page: Page): Promise<string> {
   const name = `Documenti ${Date.now()}`
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill(name)
   await page.getByRole('button', { name: 'Salva' }).click()
@@ -327,43 +315,43 @@ export async function relaunchApi(): Promise<void> {
  * behind `get_actor`, so that jar's requests all come back 401. `page.request` shares
  * the browser context's cookies, session cookie included.
  *
- * `tariffa` travels as the string it was written as (`"80.000000"`), never as a
+ * `rate` travels as the string it was written as (`"80.000000"`), never as a
  * number: `Numeric(12,6)` is what the column is, and a rate at the sixth decimal
  * place is exactly what a `number` round trip would quietly lose.
  */
 export async function seedDealWithRate(
   request: APIRequestContext,
   {
-    nome,
-    tariffa,
-    cliente,
-  }: { nome: string; tariffa: string; cliente?: Record<string, string> },
+    name,
+    rate: rateValue,
+    customer: customerOverrides,
+  }: { name: string; rate: string; customer?: Record<string, string> },
 ): Promise<{ dealId: string; customerId: string }> {
-  const customerResponse = await request.post('/api/customers', {
+  const customerResponse = await request.post('/api/organizations', {
     // Merged over the default, never replacing it: `time-tracking.spec.ts` needs
     // nothing but a name, and `economics.spec.ts` needs a customer complete enough to
     // be *invoiced* -- `check_party_exportable` and `check_recipient_routing` both run
     // inside `InvoiceService.issue`, before a register number is consumed, and refuse a
-    // recipient with no address, no P.IVA or no `codice_sdi`. A second seeding helper
+    // recipient with no address, no P.IVA or no `sdi_code`. A second seeding helper
     // for that one difference would be two fixtures to keep in step; an override on the
     // one that exists is the same fixture with more of the record filled in.
-    data: { ragione_sociale: `${nome} SRL`, ...cliente },
+    data: { legal_name: `${name} SRL`, ...customerOverrides },
   })
   expect(customerResponse.status(), await customerResponse.text()).toBe(201)
   const customer = (await customerResponse.json()) as { id: string }
 
   const dealResponse = await request.post('/api/deals', {
-    data: { nome, customer_id: customer.id },
+    data: { name, customer_id: customer.id },
   })
   expect(dealResponse.status(), await dealResponse.text()).toBe(201)
   const deal = (await dealResponse.json()) as { id: string }
 
-  // The rate goes on through its own endpoint rather than as a `tariffa_oraria` on
+  // The rate goes on through its own endpoint rather than as a `hourly_rate` on
   // `DealCreate` (which would also accept it): `PUT /api/deals/{id}/rate` is the one
   // the Tariffe screen itself calls, so seeding through it means the fixture and the
   // screen under test are writing the same column the same way.
   const rate = await request.put(`/api/deals/${deal.id}/rate`, {
-    data: { tariffa_oraria: tariffa },
+    data: { hourly_rate: rateValue },
   })
   expect(rate.status(), await rate.text()).toBe(204)
 
@@ -371,7 +359,7 @@ export async function seedDealWithRate(
 }
 
 /**
- * Seeds `count` customers through the real API, in parallel batches.
+ * Seeds `count` organizations through the real API, in parallel batches.
  *
  * Through the API and not through the UI: 500 rows via forms would take minutes and
  * would be testing the form, not the palette. Through `page.request` and a relative URL,
@@ -384,14 +372,14 @@ export async function seedDealWithRate(
  * spec that made them; a generic term would make an assertion pass or fail depending on
  * which spec ran first.
  */
-export async function seedCustomers(page: Page, prefix: string, count: number): Promise<void> {
+export async function seedOrganizations(page: Page, prefix: string, count: number): Promise<void> {
   const BATCH = 25
   for (let start = 0; start < count; start += BATCH) {
     const size = Math.min(BATCH, count - start)
     const responses = await Promise.all(
       Array.from({ length: size }, (_, offset) =>
-        page.request.post('/api/customers', {
-          data: { ragione_sociale: `${prefix} ${String(start + offset).padStart(4, '0')} Srl` },
+        page.request.post('/api/organizations', {
+          data: { legal_name: `${prefix} ${String(start + offset).padStart(4, '0')} Srl` },
         }),
       ),
     )
@@ -412,18 +400,18 @@ export interface CycleFixture {
   customerName: string
   dealId: string
   dealName: string
-  /** The offer still `inviata`. Accepting it in the UI is the human half of criterion 15. */
+  /** The offer still `sent`. Accepting it in the UI is the human half of criterion 15. */
   documentId: string
   documentTitle: string
-  /** Already `accettata`, on the same still-open deal: the inconsistency the signal counts. */
+  /** Already `accepted`, on the same still-open deal: the inconsistency the signal counts. */
   staleDocumentId: string
-  partitaIva: string
+  vatNumber: string
 }
 
 /**
  * One customer with a recognisable VAT number, one deal in an open stage, and **two**
- * offers on that deal: one already `accettata` from a moment when automation A1 was
- * switched off, and one still `inviata` for a human to accept with A1 back on.
+ * offers on that deal: one already `accepted` from a moment when automation A1 was
+ * switched off, and one still `sent` for a human to accept with A1 back on.
  *
  * Two offers on one deal, rather than the brief's one offer on each of two deals, because
  * the criterion asks to watch «offerta accettata, deal non vinto» go **down by one** when
@@ -437,7 +425,7 @@ export interface CycleFixture {
  * `vinto`, and the stale offer stops counting. One down — because the deal was repaired,
  * which is the only thing this signal ever asks anyone to do.
  *
- * Seeded through the API for the same reason `seedCustomers` is: driving the customer form,
+ * Seeded through the API for the same reason `seedOrganizations` is: driving the customer form,
  * the deal form and the upload dropzone first would make a failure in any of them read as a
  * failure of the cycle. Those flows are asserted, once, in `crm.spec.ts` and
  * `documents.spec.ts`.
@@ -451,7 +439,7 @@ export async function seedCycleFixture(page: Page): Promise<CycleFixture> {
   const stamp = Date.now()
   // Eleven digits, the shape `_check_fiscal` requires; the last eleven of the millisecond
   // clock, which is what makes it unique per run.
-  const partitaIva = String(stamp).slice(-11)
+  const vatNumber = String(stamp).slice(-11)
   // A suffix with no digits in it, deliberately: the only place the fragment searched
   // through the palette can be found is the P.IVA, a column the palette's row never shows.
   const suffix = stamp.toString(36).replace(/[0-9]/g, 'x')
@@ -459,8 +447,8 @@ export async function seedCycleFixture(page: Page): Promise<CycleFixture> {
   const dealName = `Ciclo rifacimento impianti ${suffix}`
   const documentTitle = `Ciclo offerta impianti ${suffix}`
 
-  const customer = await page.request.post('/api/customers', {
-    data: { ragione_sociale: customerName, partita_iva: partitaIva },
+  const customer = await page.request.post('/api/organizations', {
+    data: { legal_name: customerName, vat_number: vatNumber },
   })
   expect(customer.status(), await customer.text()).toBe(201)
   const customerId = ((await customer.json()) as { id: string }).id
@@ -476,13 +464,17 @@ export async function seedCycleFixture(page: Page): Promise<CycleFixture> {
 
   const deal = await page.request.post('/api/deals', {
     data: {
-      nome: dealName,
+      name: dealName,
       customer_id: customerId,
       pipeline_stage_id: openStage.id,
-      // A string, never a JSON number: `valore_previsto` is `Numeric(12,2)`, and a float
-      // round trip is exactly what the rest of this codebase refuses to do to money.
-      valore_previsto: '18000.00',
-      probabilita: 60,
+      // The value is written as lines now (`expected_value` is derived from them and a call
+      // that sends it is refused). The price is a string, never a JSON number: it is
+      // `Numeric(12,2)`, and a float round trip is exactly what the rest of this codebase
+      // refuses to do to money.
+      value_lines: [
+        { unit: 'flat', delivery_period: 'one_off', unit_price: '18000.00', quantity: '1' },
+      ],
+      probability: 60,
     },
   })
   expect(deal.status(), await deal.text()).toBe(201)
@@ -494,7 +486,7 @@ export async function seedCycleFixture(page: Page): Promise<CycleFixture> {
   // exactly the state the signal exists to detect — an accepted offer whose deal was never
   // moved — and leaves the automation on for the half of the cycle a human drives.
   await setAutomationA1(page, false)
-  await setOfferState(page, staleDocumentId, 'accettata')
+  await setOfferState(page, staleDocumentId, 'accepted')
   await setAutomationA1(page, true)
 
   const documentId = await seedOffer(page, dealId, documentTitle)
@@ -507,40 +499,40 @@ export async function seedCycleFixture(page: Page): Promise<CycleFixture> {
     documentId,
     documentTitle,
     staleDocumentId,
-    partitaIva,
+    vatNumber,
   }
 }
 
 /**
- * An offer on `dealId`, created and moved to `inviata` — the one state `accettata` is
+ * An offer on `dealId`, created and moved to `sent` — the one state `accepted` is
  * reachable from, in the server's own state machine and in `OFFER_TRANSITIONS` which
  * mirrors it.
  */
-async function seedOffer(page: Page, dealId: string, titolo: string): Promise<string> {
+async function seedOffer(page: Page, dealId: string, title: string): Promise<string> {
   const created = await page.request.post('/api/documents', {
-    data: { deal_id: dealId, tipo: 'offerta', titolo },
+    data: { deal_id: dealId, type: 'offer', title },
   })
   expect(created.status(), await created.text()).toBe(201)
   const documentId = ((await created.json()) as { id: string }).id
-  await setOfferState(page, documentId, 'inviata')
+  await setOfferState(page, documentId, 'sent')
   return documentId
 }
 
-async function setOfferState(page: Page, documentId: string, stato: string): Promise<void> {
+async function setOfferState(page: Page, documentId: string, status: string): Promise<void> {
   const response = await page.request.post(`/api/documents/${documentId}/status`, {
-    data: { stato },
+    data: { status },
   })
   expect(response.status(), await response.text()).toBe(200)
 }
 
 async function setAutomationA1(page: Page, on: boolean): Promise<void> {
   const response = await page.request.put('/api/automation-config', {
-    data: { a1_offerta_accettata_vince_deal: on },
+    data: { a1_wins_accepted_offer_deal: on },
   })
   expect(response.status(), await response.text()).toBe(200)
   // Read back rather than trusted. Everything the fixture is for depends on which way this
   // switch points, and a body the server quietly ignored would seed the opposite state and
   // fail three screens later, somewhere that looks like the product's fault.
-  const config = (await response.json()) as { a1_offerta_accettata_vince_deal: boolean }
-  expect(config.a1_offerta_accettata_vince_deal).toBe(on)
+  const config = (await response.json()) as { a1_wins_accepted_offer_deal: boolean }
+  expect(config.a1_wins_accepted_offer_deal).toBe(on)
 }

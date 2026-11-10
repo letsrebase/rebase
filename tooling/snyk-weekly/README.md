@@ -59,8 +59,11 @@ The report is one table per severity (Critical, High, Medium) with the source, t
 package and version or the file and line, the title, the Snyk id with its CVEs, and the
 fixed-in version; lows are a count per source. An advisory found in several places (two
 workspace packages, the two API images that share a base) is one row that names them
-all. The run's job summary always has the whole table; what is filed is cut to fit
-GitHub's 65,536 characters, dropping the least severe rows first and saying so.
+all. Findings in our own code (Snyk Code, with their file and line) and advisories with
+no fixed version yet are published nowhere public: the job summary, the job log and the
+GitHub issue carry counts only for them, and the whole table is on the Linear card. What is
+filed on GitHub is cut to fit its 65,536 characters, dropping the least severe rows first
+and saying so.
 
 - **Nothing at medium or above:** nothing is filed. An issue or a card still open from
   an earlier week gets a comment that says the week was clean, above the counts.

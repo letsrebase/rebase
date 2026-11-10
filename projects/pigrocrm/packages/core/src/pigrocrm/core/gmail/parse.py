@@ -3,7 +3,7 @@
 Positions taken, all from spec 5.4:
 
 * **Only `text/plain`.** If a message is HTML-only, the text conversion is stored and
-  `body_html_scartato` is set. Email HTML carries tracking pixels, remote CSS and
+  `body_html_discarded` is set. Email HTML carries tracking pixels, remote CSS and
   script; rendering it would make the CRM a beacon and an XSS surface. For the original
   there is "open in Gmail".
 * **Bodies are truncated with a marker**, at `gmail_body_max_bytes` (256 KB), the same
@@ -66,7 +66,7 @@ class ParsedMessage:
     internal_date: datetime
     body_text: str
     body_truncated: bool
-    body_html_scartato: bool
+    body_html_discarded: bool
     attachments: list[ParsedAttachment] = field(default_factory=list)
     # Address -> the display name the header gave it, for every participant that had
     # one. Read by discovery, which has to suggest *who* an address is; the stored
@@ -232,6 +232,6 @@ def parse_message(
         internal_date=datetime.fromtimestamp(internal_ms / 1000, tz=UTC),
         body_text=body_text,
         body_truncated=body_truncated,
-        body_html_scartato=html_discarded,
+        body_html_discarded=html_discarded,
         attachments=attachments,
     )

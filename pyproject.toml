@@ -42,8 +42,8 @@ dev = [
   "pytest-xdist==3.8.0",
   "testcontainers[postgres]==4.15.0",
   "httpx==0.28.1",
-  "ruff==0.16.8",
-  "mypy==2.3.1",
+  "ruff==0.17.3",
+  "mypy==2.4.0",
   "lxml-stubs==0.5.1",
   # openpyxl ships no inline types, so under `strict` every `from openpyxl import ...`
   # is an `import-untyped` error and the whole workbook builder degrades to `Any` --
@@ -59,7 +59,7 @@ dev = [
   # a woff2 cannot be opened at all. Also a runtime dependency of `rebase-core` since
   # REB-387, which typesets the contracts in the API; listed here too for the guide's
   # script.
-  "fonttools[woff]==4.65.0",
+  "fonttools[woff]==4.67.0",
 ]
 
 # Both tables below name one project's paths explicitly, and grow by a few lines per
@@ -86,7 +86,7 @@ testpaths = [
 #
 # The cost of that mode is that pytest no longer inserts each test root into `sys.path`,
 # and these suites do import their own neighbours by bare name (`fakes.fake_gmail`,
-# `periodo_fiscale`, `test_mcp_invoice_ban`). `pythonpath` puts back exactly the six
+# `tax_period`, `test_mcp_invoice_ban`). `pythonpath` puts back exactly the six
 # directories that insertion used to add, one per test root, listed the same way and for
 # the same reason `testpaths` is: a glob here would also match a project with no tests.
 addopts = "--import-mode=importlib"
@@ -152,3 +152,10 @@ files = [
   # checked by nothing.
   "projects/hub/tools",
 ]
+
+# `asn1crypto` ships neither inline types nor stubs, and typeshed has none: the one module
+# that reads a `.p7m` (`pigrocrm/core/inbox/p7m.py`) treats it as `Any` and checks what it
+# gets back itself.
+[[tool.mypy.overrides]]
+module = ["asn1crypto", "asn1crypto.*"]
+ignore_missing_imports = true

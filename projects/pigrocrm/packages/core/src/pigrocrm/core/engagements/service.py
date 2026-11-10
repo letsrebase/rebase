@@ -30,9 +30,6 @@ from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.schemas import UserCreate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.repository import CustomerRepository
-from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.deals.repository import DealRepository
@@ -56,9 +53,14 @@ from pigrocrm.core.engagements.schemas import (
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.mail import EmailSender
+from pigrocrm.core.modules.service import SpaceModulesService
 from pigrocrm.core.money import sum_hours
+from pigrocrm.core.organizations.repository import OrganizationRepository
+from pigrocrm.core.organizations.schemas import OrganizationCreate, OrganizationUpdate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm.core.tenants.models import Tenant
+from pigrocrm.core.tenants.registry import space_base_settings
 from pigrocrm.core.tenants.schemas import SLUG_MAX, TenantSignup, slugify
 from pigrocrm.core.tenants.service import TenantService
 from pigrocrm.core.tenants.welcome import welcome
@@ -80,11 +82,11 @@ REVERSED = "La data di fine precede quella di inizio."
 # The report reads the deal's hours through `TimeEntryService.list`, this many a page
 # (its own cap), until the cursor runs out.
 REPORT_PAGE_SIZE = 200
-# `deals.tariffa_oraria` is Numeric(12, 6).
+# `deals.hourly_rate` is Numeric(12, 6).
 RATE_PLACES = Decimal("0.000001")
 # What `slugify` of a name made only of characters it drops (a name in another script)
 # stands in with: an empty base would never become a valid slug, whatever its suffix.
-FALLBACK_SLUG = "spazio"
+FALLBACK_SLUG = "space"
 # `-2` ... `-50`: past this many namesakes the name is not what is wrong.
 SLUG_SUFFIX_MAX = 50
 
@@ -113,19 +115,21 @@ class SpaceUnreachable(Exception):
 def full_name(freelancer: EngagementFreelancer) -> str:
     """`Ada Lovelace`, cut to the signup's 200 characters: the space's name and its
     admin's, the same on a space the door opens and on an admin it completes."""
-    return f"{freelancer.nome} {freelancer.cognome}"[:SPACE_NAME_MAX_LENGTH]
+    return f"{freelancer.first_name} {freelancer.last_name}"[:SPACE_NAME_MAX_LENGTH]
 
 
-def deal_name(numero: str, ruolo: str, azienda: str) -> str:
+def deal_name(number: str, role: str, legal_entity: str) -> str:
     """`Lettera n. 3/2026 · Backend developer per Acme S.r.l.`, the role cut to 80 and
-    the company to 100 characters so the longest inputs stay under deals.nome's 255.
+    the company to 100 characters so the longest inputs stay under deals.name's 255.
     A label: the marker below is what finds a deal again."""
-    return f"Lettera n. {numero} · {ruolo[:ROLE_IN_DEAL_NAME]} per {azienda[:COMPANY_IN_DEAL_NAME]}"
+    role_part = role[:ROLE_IN_DEAL_NAME]
+    company_part = legal_entity[:COMPANY_IN_DEAL_NAME]
+    return f"Lettera n. {number} · {role_part} per {company_part}"
 
 
 def deal_marker(match_id: UUID) -> str:
-    """`rebase:match=<match_id>`, the last line of the deal's note and the key a retry
-    recovers the deal by (`DealRepository.find_by_marker`). The name is not: a
+    """`rebase:match=<match_id>`, written to the deal's `rebase_refs` and the key a retry
+    recovers the deal by (`DealRepository.find_by_rebase_ref`). The name is not: a
     freelancer may have a deal of their own with the same label, or rename ours."""
     return f"rebase:match={match_id}"
 
@@ -144,20 +148,20 @@ def deal_url(settings: Settings, slug: str, deal_id: UUID) -> str:
     return f"{space_url(settings, slug)}deal/{deal_id}"
 
 
-def _customer_note(numero: str) -> str:
+def _customer_note(number: str) -> str:
     return (
-        f"Creato da rebase per la lettera n. {numero}. rebase legge le ore dei deal di "
+        f"Creato da rebase per la lettera n. {number}. rebase legge le ore dei deal di "
         "questo cliente per rendicontare gli incarichi."
     )
 
 
-def _deal_note(numero: str, azienda: str, match_id: UUID) -> str:
+def _deal_note(number: str, legal_entity: str) -> str:
     # «con Acme S.r.l. rebase legge»: a company whose name ends in a full stop ends the
     # sentence with it, and a second one would read as a typo.
-    sentence = azienda if azienda.endswith(".") else f"{azienda}."
+    sentence = legal_entity if legal_entity.endswith(".") else f"{legal_entity}."
     return (
-        f"Creato da rebase per la lettera n. {numero} con {sentence} rebase legge le ore "
-        f"di questo deal per la rendicontazione al cliente.\n{deal_marker(match_id)}"
+        f"Creato da rebase per la lettera n. {number} con {sentence} rebase legge le ore "
+        "di questo deal per la rendicontazione al cliente."
     )
 
 
@@ -211,12 +215,12 @@ class EngagementService:
                 self._unlock(lock, email)
 
     def report(
-        self, match_id: UUID, da: date | None = None, a: date | None = None
+        self, match_id: UUID, date_from: date | None = None, date_to: date | None = None
     ) -> EngagementReport:
         """The hours on the match's deal from `da` to `a`, both included (spec § 2.4):
         one row per time entry with the invoice its line belongs to, the CRM's own split
         of billed hours, and one row per invoice with the hours of this report on it.
-        Nothing else of the space: not its customers, not its other deals, not an
+        Nothing else of the space: not its organizations, not its other deals, not an
         invoice these hours do not sit on.
 
         `da` defaults to the day the deal was created and `a` to today, both in the
@@ -234,15 +238,15 @@ class EngagementService:
 
         with self._space_session(tenant) as space:
             deal = self._live_deal(space, deal_id, match_id)
-            first, last = self._period(deal, da, a)
+            first, last = self._period(deal, date_from, date_to)
             times = TimeEntryService(space)
             entries = self._entries(times, deal_id, first, last)
-            stato = times.deal_summary(deal_id, Actor.rebase()).stato
+            status = times.deal_summary(deal_id, Actor.rebase()).status
             billed = billed_entry_ids(space, entries)
             invoice_of_line, invoices = self._invoices(space, entries)
 
         on_invoice: dict[UUID, list[Decimal]] = {}
-        giorni = []
+        days = []
         for entry in entries:
             invoice_id = (
                 invoice_of_line.get(entry.invoice_line_id)
@@ -250,25 +254,25 @@ class EngagementService:
                 else None
             )
             if invoice_id is not None:
-                on_invoice.setdefault(invoice_id, []).append(entry.ore)
-            giorni.append(
+                on_invoice.setdefault(invoice_id, []).append(entry.hours)
+            days.append(
                 ReportEntry(
-                    data=entry.data,
-                    ore=entry.ore,
-                    descrizione=entry.descrizione,
-                    fatturabile=entry.fatturabile,
-                    fattura=invoices[invoice_id][0] if invoice_id is not None else None,
+                    date=entry.date,
+                    hours=entry.hours,
+                    description=entry.description,
+                    billable=entry.billable,
+                    invoice=invoices[invoice_id][0] if invoice_id is not None else None,
                 )
             )
-        totale = sum_hours(entry.ore for entry in entries)
-        fatturate = sum_hours(entry.ore for entry in entries if entry.id in billed)
+        total = sum_hours(entry.hours for entry in entries)
+        invoiced = sum_hours(entry.hours for entry in entries if entry.id in billed)
         # Newest first by the date it was issued, the undated (a draft, a proforma) last;
         # among equals the one created last first, then by id, so the order is stable.
         newest_first = sorted(
             invoices.values(),
             key=lambda pair: (
-                pair[0].data is not None,
-                pair[0].data or date.min,
+                pair[0].date is not None,
+                pair[0].date or date.min,
                 pair[1],
                 pair[0].id,
             ),
@@ -279,17 +283,17 @@ class EngagementService:
             deal_url=deal_url(self.settings, tenant.slug, deal_id),
             deal=ReportDeal(
                 id=deal.id,
-                nome=deal.nome,
-                tariffa_oraria=deal.tariffa_oraria,
-                ore_preventivate=deal.ore_preventivate,
-                stato=stato,
+                name=deal.name,
+                hourly_rate=deal.hourly_rate,
+                budgeted_hours=deal.budgeted_hours,
+                status=status,
             ),
-            giorni=giorni,
-            totale_ore=totale,
-            ore_fatturate=fatturate,
-            ore_non_fatturate=totale - fatturate,
-            fatture=[
-                invoice.model_copy(update={"ore": sum_hours(on_invoice[invoice.id])})
+            days=days,
+            total_hours=total,
+            billed_hours=invoiced,
+            unbilled_hours=total - invoiced,
+            invoices=[
+                invoice.model_copy(update={"hours": sum_hours(on_invoice[invoice.id])})
                 for invoice, _ in newest_first
             ],
         )
@@ -300,25 +304,29 @@ class EngagementService:
         if not _origin(self.settings):
             raise ValidationFailed(ENTITY, "public_url", "PIGROCRM_PUBLIC_URL non configurato")
 
-    def _period(self, deal: DealRead, da: date | None, a: date | None) -> tuple[date, date]:
+    def _period(
+        self, deal: DealRead, date_from: date | None, date_to: date | None
+    ) -> tuple[date, date]:
         """`da` or the day the deal was created, `a` or today, both in the CRM's zone:
         `created_at` is an instant, and 22:30 UTC on 1 October is the 2nd in Rome. At
         most `REPORT_MAX_DAYS` from one to the other, so the hub's windows of exactly
         that many days, bounds touching, all pass."""
         first = (
-            da
-            if da is not None
+            date_from
+            if date_from is not None
             else deal.created_at.astimezone(ZoneInfo(self.settings.timezone)).date()
         )
-        last = a if a is not None else today_local(self.settings)
+        last = date_to if date_to is not None else today_local(self.settings)
         if last < first:
-            raise ValidationFailed(ENTITY, "periodo", REVERSED)
+            raise ValidationFailed(ENTITY, "period", REVERSED)
         if (last - first).days > REPORT_MAX_DAYS:
-            raise ValidationFailed(ENTITY, "periodo", f"al massimo {REPORT_MAX_DAYS} giorni")
+            raise ValidationFailed(ENTITY, "period", f"al massimo {REPORT_MAX_DAYS} giorni")
         return first, last
 
     @staticmethod
-    def _entries(times: TimeEntryService, deal_id: UUID, da: date, a: date) -> list[TimeEntryRead]:
+    def _entries(
+        times: TimeEntryService, deal_id: UUID, date_from: date, date_to: date
+    ) -> list[TimeEntryRead]:
         """Every live entry of the deal in `[da, a]`, through the service's own list and
         its cursor to the end, sorted by day and then by when it was logged (the list
         itself runs newest first)."""
@@ -327,13 +335,17 @@ class EngagementService:
         while True:
             page = times.list(
                 TimeEntryListQuery(
-                    deal_id=deal_id, da=da, a=a, limit=REPORT_PAGE_SIZE, cursor=cursor
+                    deal_id=deal_id,
+                    date_from=date_from,
+                    date_to=date_to,
+                    limit=REPORT_PAGE_SIZE,
+                    cursor=cursor,
                 ),
                 Actor.rebase(),
             )
             entries.extend(page.items)
             if page.next_cursor is None:
-                return sorted(entries, key=lambda e: (e.data, e.created_at, e.id))
+                return sorted(entries, key=lambda e: (e.date, e.created_at, e.id))
             cursor = page.next_cursor
 
     @staticmethod
@@ -352,12 +364,12 @@ class EngagementService:
             select(
                 InvoiceLine.id,
                 Invoice.id,
-                Invoice.tipo,
-                Invoice.anno,
-                Invoice.numero,
-                Invoice.stato,
-                Invoice.stato_pagamento,
-                Invoice.data_emissione,
+                Invoice.type,
+                Invoice.year,
+                Invoice.number,
+                Invoice.status,
+                Invoice.payment_status,
+                Invoice.issue_date,
                 Invoice.created_at,
             )
             .join(Invoice, Invoice.id == InvoiceLine.invoice_id)
@@ -365,17 +377,17 @@ class EngagementService:
         ).all()
         invoice_of_line: dict[UUID, UUID] = {}
         invoices: dict[UUID, tuple[ReportInvoice, datetime]] = {}
-        for line_id, invoice_id, tipo, anno, numero, stato, pagamento, emissione, created in rows:
+        for line_id, invoice_id, type, year, number, status, payment, issue, created in rows:
             invoice_of_line[line_id] = invoice_id
             invoices[invoice_id] = (
                 ReportInvoice(
                     id=invoice_id,
-                    tipo=tipo,
-                    anno=anno,
-                    numero=numero,
-                    stato=stato,
-                    stato_pagamento=pagamento,
-                    data=emissione,
+                    type=type,
+                    year=year,
+                    number=number,
+                    status=status,
+                    payment_status=payment,
+                    date=issue,
                 ),
                 created,
             )
@@ -448,6 +460,12 @@ class EngagementService:
                     self._create_admin(space, data.freelancer, email)
                 customer_id, deal_id = self._customer_and_deal(space, match_id, data, email)
                 if row.space_created:
+                    # A freelancer's space is `solo` with the deal its match just made
+                    # kept on (spec 2026-11-09 B7). Written only where no profile is
+                    # stored, so a retry never undoes an admin's choice.
+                    SpaceModulesService(
+                        space, space_base_settings(self.settings, tenant.slug)
+                    ).ensure_profile("solo", Actor.rebase(), keep_on=("deals",))
                     # The welcome goes out with the call that completes the engagement,
                     # not with the one that opened the space: a call that stops on the
                     # way sends nothing, and the row tells its retry to send it. A call
@@ -458,7 +476,7 @@ class EngagementService:
             row.customer_id = customer_id
             row.deal_id = deal_id
             registry.commit()
-            return self._answer(tenant.slug, customer_id, deal_id, row.space_created, creato=True)
+            return self._answer(tenant.slug, customer_id, deal_id, row.space_created, created=True)
 
     def _recorded(
         self, tenant: Tenant, customer_id: UUID | None, deal_id: UUID, match_id: UUID
@@ -470,7 +488,7 @@ class EngagementService:
         # Step 6 writes both ids together, so a row with a deal has its customer; the
         # deal's own stands in only for a row somebody edited by hand.
         answered = customer_id if customer_id is not None else deal.customer_id
-        return self._answer(tenant.slug, answered, deal_id, False, creato=False)
+        return self._answer(tenant.slug, answered, deal_id, False, created=False)
 
     @staticmethod
     def _live_deal(space: Session, deal_id: UUID, match_id: UUID) -> DealRead:
@@ -482,7 +500,7 @@ class EngagementService:
             raise Conflict(ENTITY, GONE, match_id=str(match_id)) from exc
 
     def _answer(
-        self, slug: str, customer_id: UUID, deal_id: UUID, spazio_creato: bool, *, creato: bool
+        self, slug: str, customer_id: UUID, deal_id: UUID, space_created: bool, *, created: bool
     ) -> EngagementRead:
         return EngagementRead(
             slug=slug,
@@ -490,8 +508,8 @@ class EngagementService:
             customer_id=customer_id,
             deal_id=deal_id,
             deal_url=deal_url(self.settings, slug, deal_id),
-            spazio_creato=spazio_creato,
-            creato=creato,
+            space_created=space_created,
+            created=created,
         )
 
     def _owned_space(self, registry: Session, email: str) -> Tenant | None:
@@ -513,20 +531,22 @@ class EngagementService:
         candidate's, is the caller's. The welcome the signup sends is not sent here but
         by `_ensure` once the deal exists, from the row's `space_created`."""
         tenants = TenantService(registry, self.settings)
-        nome = full_name(freelancer)
-        base = slugify(nome) or FALLBACK_SLUG
+        name = full_name(freelancer)
+        base = slugify(name) or FALLBACK_SLUG
         for n in range(1, SLUG_SUFFIX_MAX + 1):
             suffix = "" if n == 1 else f"-{n}"
             candidate = base if n == 1 else f"{base[: SLUG_MAX - len(suffix)]}{suffix}"
-            if not tenants.availability(candidate).disponibile:
+            if not tenants.availability(candidate).available:
                 continue
             try:
                 created = tenants.provision(
                     TenantSignup(
                         slug=candidate,
-                        nome=nome,
+                        name=name,
                         email=email,
-                        membro=True,
+                        member=True,
+                        first_name=freelancer.first_name,
+                        last_name=freelancer.last_name,
                     )
                 )
             except Conflict as exc:
@@ -541,7 +561,7 @@ class EngagementService:
         request waiting on it."""
         if self.sender is None:
             return
-        mail = welcome(space, self.settings, self.sender, email, slug, membro=True)
+        mail = welcome(space, self.settings, self.sender, email, slug, member=True)
         if mail is not None:
             self.sender.send(mail)
 
@@ -554,7 +574,7 @@ class EngagementService:
         registry row does not, and without it the deal would have no owner and the hub
         would mail a link nobody can enter."""
         UserService(space).create(
-            UserCreate(email=email, password=None, nome=full_name(freelancer), ruolo="admin"),
+            UserCreate(email=email, password=None, name=full_name(freelancer), role="admin"),
             Actor.system(),
         )
 
@@ -566,7 +586,7 @@ class EngagementService:
         failed to record, and its customer is the one that call found or created, even
         after the freelancer renamed it or changed its VAT number. Only without it is
         the customer looked up, or created, and the deal created under it."""
-        recorded = DealRepository(space).find_by_marker(deal_marker(match_id))
+        recorded = DealRepository(space).find_by_rebase_ref(deal_marker(match_id))
         if recorded is not None:
             return recorded.customer_id, recorded.id
         customer_id = self._customer(space, data)
@@ -594,31 +614,44 @@ class EngagementService:
 
     def _customer(self, space: Session, data: EngagementUpsert) -> UUID:
         """Step 4: the customer «rebase», by VAT number when the body carries one, then
-        by its exact name among the live customers; created when neither finds it. The
+        by its exact name among the live organizations; created when neither finds it. The
         name is tried after a VAT number that finds nothing too: a space whose customer
         was created before the signer data had a VAT number keeps that one customer,
         rather than gain a second the day the number arrives. An existing one is left as
         it is: its fields are the freelancer's to edit."""
         rebase = data.rebase
-        customers = CustomerRepository(space)
+        organizations = OrganizationRepository(space)
+        # Whatever role it holds: a company that is already a supplier here is the same
+        # company, and gets the customer role instead of a second row (one registry, one
+        # record per company, design 2026-11-09 suppliers § 1).
         found = (
-            customers.match_by_fiscal_id(partita_iva=rebase.partita_iva, codice_fiscale=None)
-            if rebase.partita_iva is not None
+            organizations.match_by_fiscal_id(
+                vat_number=rebase.vat_number, tax_code=None, role="any"
+            )
+            if rebase.vat_number is not None
             else None
         )
         if found is None:
-            found = customers.find_by_name(rebase.ragione_sociale)
+            found = organizations.find_by_name(rebase.legal_name, role="any")
         if found is not None:
+            if "customer" not in found.roles:
+                OrganizationService(space).update(
+                    found.id,
+                    OrganizationUpdate(roles=[*found.roles, "customer"]),
+                    Actor.rebase(),
+                )
             return found.id
-        created = CustomerService(space).create(
-            CustomerCreate(
-                ragione_sociale=rebase.ragione_sociale,
-                partita_iva=rebase.partita_iva,
-                codice_fiscale=rebase.codice_fiscale,
-                indirizzo=rebase.indirizzo,
-                pec=str(rebase.pec) if rebase.pec is not None else None,
-                codice_sdi=rebase.codice_sdi,
-                note=_customer_note(data.lettera.numero),
+        created = OrganizationService(space).create(
+            OrganizationCreate(
+                legal_name=rebase.legal_name,
+                vat_number=rebase.vat_number,
+                tax_code=rebase.tax_code,
+                address=rebase.address,
+                certified_email=str(rebase.certified_email)
+                if rebase.certified_email is not None
+                else None,
+                sdi_code=rebase.sdi_code,
+                note=_customer_note(data.letter.number),
             ),
             Actor.rebase(),
         )
@@ -636,22 +669,23 @@ class EngagementService:
         found no deal with this match's marker. A deal with the same name and no marker
         is somebody else's, and ours is created beside it, in the default open stage,
         owned by the space's admin whose address is the freelancer's."""
-        lettera = data.lettera
+        letter = data.letter
         owner = UserRepository(space).get_by_email(email)
         created = DealService(space).create(
             DealCreate(
-                nome=deal_name(lettera.numero, lettera.ruolo, lettera.azienda),
+                name=deal_name(letter.number, letter.role, letter.company_name),
                 customer_id=customer_id,
-                tariffa_oraria=(lettera.compenso / HOURS_PER_DAY).quantize(RATE_PLACES),
-                ore_preventivate=(
-                    lettera.giorni_previsti * HOURS_PER_DAY
-                    if lettera.giorni_previsti is not None
+                hourly_rate=(letter.fee / HOURS_PER_DAY).quantize(RATE_PLACES),
+                budgeted_hours=(
+                    letter.expected_days * HOURS_PER_DAY
+                    if letter.expected_days is not None
                     else None
                 ),
-                data_chiusura_prevista=lettera.data_fine,
-                owner_id=owner.id if owner is not None else None,
-                note=_deal_note(lettera.numero, lettera.azienda, match_id),
+                expected_close_date=letter.end_date,
+                owner_id=owner.id if owner is not None and owner.active else None,
+                note=_deal_note(letter.number, letter.company_name),
             ),
             Actor.rebase(),
+            rebase_ref=deal_marker(match_id),
         )
         return created.id

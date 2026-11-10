@@ -10,7 +10,7 @@ const EMPTY = '—'
 
 /**
  * `null` and `""` both mean "nothing here" for a native text column -- identical
- * reasoning to `displayNative` in `features/customers/columns.tsx`: a native
+ * reasoning to `displayNative` in `features/organizations/columns.tsx`: a native
  * column has no field type that could make `0`/`false` a legitimate value to
  * preserve (that is `renderFieldValue`'s job, for a dynamic custom field), so the
  * wider check is safe here and `??` alone is not. `PersonUpdate.model_dump(
@@ -18,9 +18,9 @@ const EMPTY = '—'
  * through `PersonForm` sends an explicit `""`, never `null` -- see that file's
  * own `submit` for why -- and `??` alone would render that legitimately-cleared
  * value as a blank cell instead of the same dash every other absent value gets.
- * Defined locally rather than imported from `features/customers/columns`: the two
- * features are not coupled today (Customer's own file has no reciprocal import
- * from this one), and this is the same four-line helper `features/customers/
+ * Defined locally rather than imported from `features/organizations/columns`: the two
+ * features are not coupled today (Organization's own file has no reciprocal import
+ * from this one), and this is the same four-line helper `features/organizations/
  * columns.tsx` itself keeps local to its own file rather than lifting into a
  * shared module.
  */
@@ -31,7 +31,7 @@ export function displayNative(value: string | null): string {
 /**
  * `Person` plus the one read field `lib/api-types.ts` does not carry yet.
  *
- * `PersonRead.customer_ragione_sociale` exists in
+ * `PersonRead.customer_legal_name` exists in
  * packages/core/src/pigrocrm/core/people/schemas.py as of this change, but the
  * generated types are produced by `npm run generate:api` against the API running
  * on :8000, which is not this code -- regenerating here would have written a file
@@ -46,25 +46,25 @@ export function displayNative(value: string | null): string {
 /**
  * «Mario Rossi», or «Mario» for a person whose surname nobody filled in.
  *
- * Not `${nome} ${cognome}`: `cognome` is nullable *and* can hold the explicit `""` a
+ * Not `${first_name} ${last_name}`: `last_name` is nullable *and* can hold the explicit `""` a
  * cleared native column leaves behind (see `displayNative` above), either of which
  * would otherwise produce a trailing space and, worse, a second initial taken from
  * nothing.
  */
 function fullName(person: Person): string {
-  const cognome = person.cognome === null || person.cognome === '' ? '' : ` ${person.cognome}`
-  return `${person.nome}${cognome}`
+  const last_name = person.last_name === null || person.last_name === '' ? '' : ` ${person.last_name}`
+  return `${person.first_name}${last_name}`
 }
 
 /**
  * TanStack Table v9 (pinned exactly in package.json): `ColumnDef` takes
  * `<TFeatures, TData, TValue>`, not v8's `<TData, TValue>` -- see
- * `features/customers/columns.tsx`'s identical comment for how this was
+ * `features/organizations/columns.tsx`'s identical comment for how this was
  * confirmed against `@tanstack/table-core`'s own types rather than assumed.
  * `DataTableFeatures` (`DataTable.tsx`'s own export) is the same `TFeatures`
  * every table in this product is instantiated with.
  *
- * Order -- Nome, Azienda, Ruolo, Email, Telefono -- is "the columns you
+ * Order -- Nome, Legal entity, Role, Email, Phone -- is "the columns you
  * need to call someone", not alphabetical or wire order: who they are, where they
  * work, what they do there, then how to reach them. «Azienda» sits immediately
  * after the name because it is read as part of the identity ("Mario Rossi, ACME
@@ -81,16 +81,16 @@ export function buildPersonColumns(
   const native: ColumnDef<DataTableFeatures, Person>[] = [
     {
       header: 'Nome',
-      accessorKey: 'nome',
+      accessorKey: 'first_name',
       // The row *is* a person, so the first cell carries their identity (design spec
       // §4): initials, the full name, and the company underneath when the row brought
-      // one. The accessor stays the bare `nome` -- it is what this column's own tests
+      // one. The accessor stays the bare `first_name` -- it is what this column's own tests
       // read and what a future sort or export would use -- while `cell` shows the whole
       // name, because initials taken from a first name alone say almost nothing.
       cell: ({ row }) => (
         <EntityCell
           name={fullName(row.original)}
-          sub={row.original.customer_ragione_sociale ?? null}
+          sub={row.original.customer_legal_name ?? null}
         />
       ),
     },
@@ -101,21 +101,21 @@ export function buildPersonColumns(
     // one is a link to the customer, and a sub-line is not.
     {
       header: 'Azienda',
-      id: 'customer_ragione_sociale',
+      id: 'customer_legal_name',
       // The accessor stays a plain string -- the same `displayNative` dash every
       // other native column shows when there is nothing there (most people have no
       // customer at all: see `Person`'s own docstring in core). `cell` only *adds* a
       // link on top of that value, so the column still has one text value the table
       // can read, and «—» is never a link to nowhere.
-      accessorFn: (row) => displayNative(row.customer_ragione_sociale ?? null),
+      accessorFn: (row) => displayNative(row.customer_legal_name ?? null),
       cell: ({ row }) => {
-        const { customer_id, customer_ragione_sociale } = row.original
-        const label = displayNative(customer_ragione_sociale ?? null)
+        const { customer_id, customer_legal_name } = row.original
+        const label = displayNative(customer_legal_name ?? null)
         if (!customer_id || label === EMPTY) return label
         return (
           <Link
-            to="/app/customers/$customerId"
-            params={{ customerId: customer_id }}
+            to="/app/organizations/$organizationId"
+            params={{ organizationId: customer_id }}
             className="underline underline-offset-2"
             // The whole row is already clickable (`DataTable`'s `onRowClick` sends it
             // to the person), so without this the company link fires two navigations
@@ -123,20 +123,20 @@ export function buildPersonColumns(
             // person, which is the one thing this cell must not do.
             onClick={(event) => event.stopPropagation()}
           >
-            {customer_ragione_sociale}
+            {customer_legal_name}
           </Link>
         )
       },
     },
-    { header: 'Ruolo', id: 'ruolo', accessorFn: (row) => displayNative(row.ruolo) },
+    { header: 'Ruolo', id: 'role', accessorFn: (row) => displayNative(row.role) },
     { header: 'Email', id: 'email', accessorFn: (row) => displayNative(row.email) },
-    { header: 'Telefono', id: 'telefono', accessorFn: (row) => displayNative(row.telefono) },
+    { header: 'Telefono', id: 'phone', accessorFn: (row) => displayNative(row.phone) },
   ]
 
   // Prefixed `custom_` id so a tenant-defined key can never collide with a
   // native column's own id -- identical reasoning (and identical residual gap:
   // `FieldDefinitionService.create` does not itself guard against this) as
-  // `features/customers/columns.tsx`.
+  // `features/organizations/columns.tsx`.
   const custom: ColumnDef<DataTableFeatures, Person>[] = customFields.map((field) => ({
     header: field.label,
     id: `custom_${field.key}`,

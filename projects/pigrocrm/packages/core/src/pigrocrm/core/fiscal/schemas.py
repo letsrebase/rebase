@@ -14,44 +14,47 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE, PACK_NON_IT
+from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE, PACK_IT_STANDARD, PACK_NON_IT
 from pigrocrm.core.validation import SafeStr
 
 # The packs a profile may point at (REB-619): `pack.py` owns them, this is the shape
 # the API and MCP accept. A `Literal` and not a free string, so a typo is refused by
 # the schema instead of reaching `resolve_pack`'s `KeyError` at the first emission.
-PackId = Literal["it-flat-rate", "non-it"]
-assert set(get_args(PackId)) == {PACK_IT_FLAT_RATE, PACK_NON_IT}  # noqa: S101
+PackId = Literal["it-flat-rate", "it-standard", "non-it"]
+InpsCategory = Literal["gestione_separata", "artigiani_commercianti"]
+# The profile keys a save that does not name them leaves as they are (`stored_fields`).
+KEPT_WHEN_OMITTED = ("inps_category", "isa")
+assert set(get_args(PackId)) == {PACK_IT_FLAT_RATE, PACK_IT_STANDARD, PACK_NON_IT}  # noqa: S101
 
 # `RF01`..`RF19`, the codes FPR12's own `RegimeFiscaleType` enumerates. `.fullmatch`
 # is what the callers use, never `.match` with `$`: "RF19\n" is five characters and
 # would reach the String(4) column as a raw, session-poisoning DataError.
-CODICE_REGIME_RE = re.compile(r"RF(0[1-9]|1[0-9])")
+REGIME_CODE_RE = re.compile(r"RF(0[1-9]|1[0-9])")
 
-CODICE_REGIME_MAX_LENGTH = 4
-NATURA_MAX_LENGTH = 4
-CONDIZIONI_PAGAMENTO_MAX_LENGTH = 4
-MODALITA_PAGAMENTO_MAX_LENGTH = 4
+REGIME_CODE_MAX_LENGTH = 4
+VAT_NATURE_MAX_LENGTH = 4
+PAYMENT_TERMS_MAX_LENGTH = 4
+PAYMENT_METHOD_MAX_LENGTH = 4
 IBAN_MAX_LENGTH = 34
 MONEY_MAX_DIGITS = 12
 MONEY_DECIMAL_PLACES = 2
 RATE_MAX_DIGITS = 5
 RATE_DECIMAL_PLACES = 2
-GIORNI_SCADENZA_MIN = 0
-GIORNI_SCADENZA_MAX = 365
+DUE_DAYS_MIN = 0
+DUE_DAYS_MAX = 365
 
 # The previous system shipped `RiferimentoNormativo` as "N2.2 (non soggette - altri casi)", which is
 # the *description of the code*, not a normative reference. This is the real one for
-# the forfettario, and it is a default rather than a constant because the article
+# the flat-rate regime, and it is a default rather than a constant because the article
 # numbers have changed before.
-DEFAULT_RIFERIMENTO_NORMATIVO = (
+DEFAULT_LEGAL_REFERENCE = (
     "Operazione non soggetta a IVA ai sensi dell'art. 1, commi 54-89, "
     "L. 190/2014 - regime forfettario"
 )
 
 # A customer established outside Italy (ORB-32). A service to a business abroad is
 # outside the territorial scope of Italian VAT under art. 7-ter DPR 633/1972, which the
-# SdI codes as `N2.1`, not as the `N2.2` the forfettario's own declaration covers: the
+# SdI codes as `N2.1`, not as the `N2.2` the flat-rate regime's own declaration covers: the
 # accountant's tool issued 13/2026 to a GB company with N2.1 while every domestic
 # invoice carries N2.2, and the two registers have to agree. The annotation the invoice
 # must carry is dictated by art. 21, comma 6-bis, DPR 633/1972 and differs by where the
@@ -60,9 +63,9 @@ DEFAULT_RIFERIMENTO_NORMATIVO = (
 # soggetta". Constants rather than profile columns because `fiscal_profile` describes
 # the issuer and this depends on the customer; both texts stay within FPR12's 100
 # characters for `RiferimentoNormativo`, which is why neither also spells out L. 190/2014.
-NATURA_NON_RESIDENTE = "N2.1"
-RIFERIMENTO_NORMATIVO_UE = "Inversione contabile - art. 7-ter DPR 633/1972 - regime forfettario"
-RIFERIMENTO_NORMATIVO_EXTRA_UE = (
+VAT_NATURE_NOT_RESIDENT = "N2.1"
+LEGAL_REFERENCE_UE = "Inversione contabile - art. 7-ter DPR 633/1972 - regime forfettario"
+LEGAL_REFERENCE_EXTRA_UE = (
     "Operazione non soggetta a IVA in Italia ai sensi dell'art. 7-ter DPR 633/1972 "
     "- regime forfettario"
 )
@@ -70,7 +73,7 @@ RIFERIMENTO_NORMATIVO_EXTRA_UE = (
 # The 27 member states, ISO 3166-1 alpha-2 (Greece is `GR`, not the VAT prefix `EL`).
 # Italy is in the set because it is a member state; the strategy handles it first, so
 # membership here only ever decides between the two texts above for a foreign customer.
-PAESI_UE = frozenset(
+COUNTRIES_UE = frozenset(
     {
         "AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "ES", "FI", "FR", "GR", "HR", "HU",
         "IE", "IT", "LT", "LU", "LV", "MT", "NL", "PL", "PT", "RO", "SE", "SI", "SK",
@@ -80,18 +83,24 @@ PAESI_UE = frozenset(
 # Values of law, not preferences: 77.47 EUR is the threshold above which the stamp
 # duty is due and 2.00 EUR is its amount. Configurable because the law has already
 # changed them once.
-DEFAULT_SOGLIA_BOLLO = Decimal("77.47")
-DEFAULT_IMPORTO_BOLLO = Decimal("2.00")
+DEFAULT_STAMP_DUTY_THRESHOLD = Decimal("77.47")
+DEFAULT_STAMP_DUTY_AMOUNT = Decimal("2.00")
 
-# §4.5. The three constants that used to live nel gestionale precedente's `App.jsx` --
-# `FORFETTARIO_PROFITABILITY_RATE = 0.67`, `FORFETTARIO_SUBSTITUTE_TAX_RATE = 0.05`,
-# `FORFETTARIO_INPS_RATE = 0.2607` -- expressed as percentages, which is how their owner
-# reads and types them. Defaults rather than constants for the same reason the bollo
-# values above are: the ATECO coefficient depends on the activity code, and the INPS
-# gestione separata rate is re-set by the Legge di Bilancio most years.
-DEFAULT_COEFFICIENTE_REDDITIVITA = Decimal("67.00")
-DEFAULT_ALIQUOTA_IMPOSTA_SOSTITUTIVA = Decimal("5.00")
-DEFAULT_ALIQUOTA_INPS = Decimal("26.07")
+# §4.5. The estimate's three rates (profitability 0.67, substitute tax 0.05, INPS 0.2607),
+# expressed as percentages, which is how their owner reads and types them. Defaults
+# rather than constants for the same reason the stamp duty values above are: the ATECO
+# coefficient depends on the activity code, and the INPS gestione separata rate is
+# re-set by the Legge di Bilancio most years.
+DEFAULT_PROFITABILITY_COEFFICIENT = Decimal("67.00")
+DEFAULT_SUBSTITUTE_TAX_RATE = Decimal("5.00")
+DEFAULT_SOCIAL_SECURITY_RATE = Decimal("26.07")
+
+# The ordinary regime (REB-760): `RF01` is FPR12's code for it, and 22% is the standard VAT
+# rate (art. 16, comma 1, DPR 633/1972), the profile's proposed default and never a
+# constant of an invoice: a line takes the rate it is given. The same figure mastro's
+# `it-standard` pack carries as its `defaultTreatment`.
+REGIME_CODE_ORDINARY = "RF01"
+DEFAULT_VAT_RATE_ORDINARY = Decimal("22.00")
 
 # A percentage: `Numeric(5, 2)` alone would accept `999.99`, and a rate outside 0..100 is
 # not a rate. `decimal_places` matters as much -- `1.005` would otherwise be rounded by
@@ -110,34 +119,38 @@ class FiscalSnapshot(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    # `None` on a foreign azienda (REB-619): RF01..RF19 are FatturaPA values and mean
+    # `None` on a foreign legal entity (REB-619): RF01..RF19 are FatturaPA values and mean
     # nothing abroad. `pack_id` defaults to the Italian pack so every snapshot frozen
     # before the column reached the snapshot still validates, and reads as what it was.
-    codice_regime: str | None = Field(default=None, max_length=CODICE_REGIME_MAX_LENGTH)
+    regime_code: str | None = Field(default=None, max_length=REGIME_CODE_MAX_LENGTH)
     pack_id: str = PACK_IT_FLAT_RATE
-    aliquota_iva_default: Decimal = Field(
+    default_vat_rate: Decimal = Field(
         max_digits=RATE_MAX_DIGITS, decimal_places=RATE_DECIMAL_PLACES
     )
-    natura_default: str | None = Field(default=None, max_length=NATURA_MAX_LENGTH)
-    riferimento_normativo: str | None = None
-    applica_bollo: bool
-    soglia_bollo: Decimal = Field(max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_DECIMAL_PLACES)
-    importo_bollo: Decimal = Field(max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_DECIMAL_PLACES)
-    condizioni_pagamento: str = Field(max_length=CONDIZIONI_PAGAMENTO_MAX_LENGTH)
-    modalita_pagamento: str = Field(max_length=MODALITA_PAGAMENTO_MAX_LENGTH)
-    giorni_scadenza: int = Field(ge=GIORNI_SCADENZA_MIN, le=GIORNI_SCADENZA_MAX)
+    default_vat_nature: str | None = Field(default=None, max_length=VAT_NATURE_MAX_LENGTH)
+    legal_reference: str | None = None
+    apply_stamp_duty: bool
+    stamp_duty_threshold: Decimal = Field(
+        max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_DECIMAL_PLACES
+    )
+    stamp_duty_amount: Decimal = Field(
+        max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_DECIMAL_PLACES
+    )
+    payment_terms: str = Field(max_length=PAYMENT_TERMS_MAX_LENGTH)
+    payment_method: str = Field(max_length=PAYMENT_METHOD_MAX_LENGTH)
+    due_days: int = Field(ge=DUE_DAYS_MIN, le=DUE_DAYS_MAX)
     iban: str | None = Field(default=None, max_length=IBAN_MAX_LENGTH)
 
 
 class FiscalProfileUpsert(BaseModel):
     """One shape for create and update: there is only ever one row, so "create" and
     "update" are the same operation with the same required fields -- the same decision
-    the azienda's own upsert already made.
+    the legal entity's own upsert already made.
 
-    `codice_regime` carries `max_length` because the column is `String(4)` and the
+    `regime_code` carries `max_length` because the column is `String(4)` and the
     service's own `.fullmatch` check is *not* a length check on its own for a value
     that fails the pattern for another reason. Every `Numeric` carries
-    `max_digits`/`decimal_places` mirroring its column, and `giorni_scadenza` carries
+    `max_digits`/`decimal_places` mirroring its column, and `due_days` carries
     a bound, because none of the three has a service-level range check that would make
     a schema bound redundant.
     """
@@ -146,79 +159,96 @@ class FiscalProfileUpsert(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _foreign_defaults(cls, data: Any) -> Any:
-        """On the `non-it` pack a key the caller leaves out is empty, not the
-        forfettario's (REB-619): `natura_default` «N2.2», the bollo on and the three
-        income parameters are Italian facts, and a foreign profile saved with them would
-        be refused («una natura con un'aliquota diversa da zero») or, worse, would have
-        the fiscal estimate compute Italian taxes. The rule lives here, where the API
-        and MCP deserialise, and not only in the SPA's form."""
-        if isinstance(data, dict) and data.get("pack_id") == PACK_NON_IT:
-            data = dict(data)
-            for key, value in (
-                ("natura_default", None),
-                ("riferimento_normativo", None),
-                ("applica_bollo", False),
-                ("coefficiente_redditivita", None),
-                ("aliquota_imposta_sostitutiva", None),
-                ("aliquota_inps", None),
-            ):
-                data.setdefault(key, value)
+    def _pack_defaults(cls, data: Any) -> Any:
+        """A key the caller leaves out defaults to the pack's own value, not the
+        flat-rate regime's: `default_vat_nature` «N2.2», the stamp duty on and the three income
+        parameters are the flat-rate regime's facts, and a profile on another pack saved with
+        them would be refused («una natura con un'aliquota diversa da zero») or, worse,
+        would have the fiscal estimate compute the flat-rate regime's taxes for a legal entity it
+        does not apply to. `non-it` (REB-619) is empty of all of them; `it-standard`
+        (REB-760) is the ordinary regime, `RF01` at the standard VAT rate. The rule lives
+        here, where the API and MCP deserialise, and not only in the SPA's form."""
+        if not isinstance(data, dict):
+            return data
+        pack_id = data.get("pack_id")
+        if pack_id not in (PACK_NON_IT, PACK_IT_STANDARD):
+            return data
+        data = dict(data)
+        if pack_id == PACK_IT_STANDARD:
+            data.setdefault("regime_code", REGIME_CODE_ORDINARY)
+            data.setdefault("default_vat_rate", DEFAULT_VAT_RATE_ORDINARY)
+        for key, value in (
+            ("default_vat_nature", None),
+            ("legal_reference", None),
+            ("apply_stamp_duty", False),
+            ("profitability_coefficient", None),
+            ("substitute_tax_rate", None),
+            ("social_security_rate", None),
+        ):
+            data.setdefault(key, value)
+        if pack_id == PACK_NON_IT:
+            # A company abroad has no Italian INPS category and no ISA.
+            data.setdefault("inps_category", None)
+            data.setdefault("isa", None)
         return data
 
     # Optional in the schema and required by the service on an Italian pack
     # (`resolve_regime`): the same field is legitimately empty on `non-it`, and a
     # schema cannot say «required unless that other field says otherwise» without
-    # the error losing the field's name. The service's refusal names `codice_regime`.
-    codice_regime: SafeStr | None = Field(default=None, max_length=CODICE_REGIME_MAX_LENGTH)
+    # the error losing the field's name. The service's refusal names `regime_code`.
+    regime_code: SafeStr | None = Field(default=None, max_length=REGIME_CODE_MAX_LENGTH)
     pack_id: PackId = PACK_IT_FLAT_RATE
-    aliquota_iva_default: Decimal = Field(
+    default_vat_rate: Decimal = Field(
         default=Decimal("0.00"), max_digits=RATE_MAX_DIGITS, decimal_places=RATE_DECIMAL_PLACES
     )
-    natura_default: SafeStr | None = Field(default="N2.2", max_length=NATURA_MAX_LENGTH)
-    riferimento_normativo: SafeStr | None = Field(default=DEFAULT_RIFERIMENTO_NORMATIVO)
-    applica_bollo: bool = True
-    soglia_bollo: Decimal = Field(
-        default=DEFAULT_SOGLIA_BOLLO,
+    default_vat_nature: SafeStr | None = Field(default="N2.2", max_length=VAT_NATURE_MAX_LENGTH)
+    legal_reference: SafeStr | None = Field(default=DEFAULT_LEGAL_REFERENCE)
+    apply_stamp_duty: bool = True
+    stamp_duty_threshold: Decimal = Field(
+        default=DEFAULT_STAMP_DUTY_THRESHOLD,
         max_digits=MONEY_MAX_DIGITS,
         decimal_places=MONEY_DECIMAL_PLACES,
     )
-    importo_bollo: Decimal = Field(
-        default=DEFAULT_IMPORTO_BOLLO,
+    stamp_duty_amount: Decimal = Field(
+        default=DEFAULT_STAMP_DUTY_AMOUNT,
         max_digits=MONEY_MAX_DIGITS,
         decimal_places=MONEY_DECIMAL_PLACES,
     )
-    condizioni_pagamento: SafeStr = Field(
-        default="TP02", max_length=CONDIZIONI_PAGAMENTO_MAX_LENGTH
-    )
-    modalita_pagamento: SafeStr = Field(default="MP05", max_length=MODALITA_PAGAMENTO_MAX_LENGTH)
-    giorni_scadenza: int = Field(default=30, ge=GIORNI_SCADENZA_MIN, le=GIORNI_SCADENZA_MAX)
+    payment_terms: SafeStr = Field(default="TP02", max_length=PAYMENT_TERMS_MAX_LENGTH)
+    payment_method: SafeStr = Field(default="MP05", max_length=PAYMENT_METHOD_MAX_LENGTH)
+    due_days: int = Field(default=30, ge=DUE_DAYS_MIN, le=DUE_DAYS_MAX)
     iban: SafeStr | None = Field(default=None, max_length=IBAN_MAX_LENGTH)
     # Nullable in the column, and still defaulted here: a profile saved without them
     # would otherwise leave the fiscal estimate with nothing to compute from, and "the
-    # forfettario's own numbers" is a far better answer than NULL for the only regime
+    # flat-rate regime's own numbers" is a far better answer than NULL for the only regime
     # this project implements. Clearing them is still possible -- an explicit `null`.
-    coefficiente_redditivita: Decimal | None = Field(
-        default=DEFAULT_COEFFICIENTE_REDDITIVITA,
+    profitability_coefficient: Decimal | None = Field(
+        default=DEFAULT_PROFITABILITY_COEFFICIENT,
         max_digits=RATE_MAX_DIGITS,
         decimal_places=RATE_DECIMAL_PLACES,
         ge=RATE_MIN,
         le=RATE_MAX,
     )
-    aliquota_imposta_sostitutiva: Decimal | None = Field(
-        default=DEFAULT_ALIQUOTA_IMPOSTA_SOSTITUTIVA,
+    substitute_tax_rate: Decimal | None = Field(
+        default=DEFAULT_SUBSTITUTE_TAX_RATE,
         max_digits=RATE_MAX_DIGITS,
         decimal_places=RATE_DECIMAL_PLACES,
         ge=RATE_MIN,
         le=RATE_MAX,
     )
-    aliquota_inps: Decimal | None = Field(
-        default=DEFAULT_ALIQUOTA_INPS,
+    social_security_rate: Decimal | None = Field(
+        default=DEFAULT_SOCIAL_SECURITY_RATE,
         max_digits=RATE_MAX_DIGITS,
         decimal_places=RATE_DECIMAL_PLACES,
         ge=RATE_MIN,
         le=RATE_MAX,
     )
+    # REB-974, taxes design § 1: the taxpayer's other parameters. `None` is «not stated»,
+    # never a default: a figure that needs one gives no figure. The category's values are
+    # the design's; its rates, minimums and dates are TO VERIFY (A5). The ISA flag decides
+    # 50/50 or 40/60 income tax advances (A5, verified).
+    inps_category: InpsCategory | None = None
+    isa: bool | None = None
     # The version check of REB-622 (spec 2026-10-03 §11): the `updated_at` read off
     # `FiscalProfileRead`, never a column the service assigns. A save whose value is
     # not the row's is refused with `StaleRow` (409). Sent as `null` it is the version
@@ -227,57 +257,73 @@ class FiscalProfileUpsert(BaseModel):
     updated_at: datetime | None = Field(
         default=None,
         description=(
-            "L'`updated_at` letto sul profilo da cui parte questa modifica, `null` per "
-            "un profilo non ancora salvato: se nel frattempo qualcun altro ha salvato, la "
-            "richiesta è rifiutata con 409 `stale_row`. Omesso, nessun controllo."
+            "The `updated_at` read on the profile this change starts from, `null` for a profile "
+            "not yet saved: if someone else saved in the meantime, the request is rejected with "
+            "409 `stale_row`. Omitted, no check."
         ),
     )
+
+    def stored_fields(self) -> dict[str, Any]:
+        """The columns a save writes: the body without its version, and without the two
+        taxpayer parameters of REB-974 (`inps_category`, `isa`) when the caller did not name
+        them. The rest of the profile is a whole-row replacement, so a key left out goes
+        back to its default; these two have no default worth restoring and no field in the
+        web form yet, so a save that does not mention them leaves what the row holds."""
+        payload = self.model_dump(exclude={"updated_at"})
+        for key in KEPT_WHEN_OMITTED:
+            if key not in self.model_fields_set:
+                del payload[key]
+        return payload
 
 
 class FiscalProfileRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    codice_regime: str | None
-    aliquota_iva_default: Decimal
-    natura_default: str | None
-    riferimento_normativo: str | None
-    applica_bollo: bool
-    soglia_bollo: Decimal
-    importo_bollo: Decimal
-    condizioni_pagamento: str
-    modalita_pagamento: str
-    giorni_scadenza: int
+    regime_code: str | None
+    default_vat_rate: Decimal
+    default_vat_nature: str | None
+    legal_reference: str | None
+    apply_stamp_duty: bool
+    stamp_duty_threshold: Decimal
+    stamp_duty_amount: Decimal
+    payment_terms: str
+    payment_method: str
+    due_days: int
     iban: str | None
     # Bare `Decimal | None`, deliberately: a Read schema validates values the database
     # produced, so a bound here would reject a row the column legitimately holds.
-    coefficiente_redditivita: Decimal | None
-    aliquota_imposta_sostitutiva: Decimal | None
-    aliquota_inps: Decimal | None
+    profitability_coefficient: Decimal | None
+    substitute_tax_rate: Decimal | None
+    social_security_rate: Decimal | None
     # REB-361: the jurisdiction pack pointer. Written through `FiscalProfileUpsert`
     # since REB-619 brought the second pack, `non-it`; the version is still the one
     # each pack ships.
     pack_id: str
     pack_version: str
+    inps_category: str | None
+    isa: bool | None
     created_at: datetime
     updated_at: datetime
 
 
 __all__ = [
-    "CODICE_REGIME_RE",
+    "REGIME_CODE_ORDINARY",
+    "REGIME_CODE_RE",
     "PackId",
-    "DEFAULT_ALIQUOTA_IMPOSTA_SOSTITUTIVA",
-    "DEFAULT_ALIQUOTA_INPS",
-    "DEFAULT_COEFFICIENTE_REDDITIVITA",
-    "DEFAULT_IMPORTO_BOLLO",
-    "DEFAULT_RIFERIMENTO_NORMATIVO",
-    "DEFAULT_SOGLIA_BOLLO",
+    "DEFAULT_SUBSTITUTE_TAX_RATE",
+    "DEFAULT_SOCIAL_SECURITY_RATE",
+    "DEFAULT_VAT_RATE_ORDINARY",
+    "DEFAULT_PROFITABILITY_COEFFICIENT",
+    "DEFAULT_STAMP_DUTY_AMOUNT",
+    "DEFAULT_LEGAL_REFERENCE",
+    "DEFAULT_STAMP_DUTY_THRESHOLD",
     "FiscalProfileRead",
     "FiscalProfileUpsert",
     "FiscalSnapshot",
-    "NATURA_NON_RESIDENTE",
-    "PAESI_UE",
-    "RIFERIMENTO_NORMATIVO_EXTRA_UE",
-    "RIFERIMENTO_NORMATIVO_UE",
+    "VAT_NATURE_NOT_RESIDENT",
+    "COUNTRIES_UE",
+    "LEGAL_REFERENCE_EXTRA_UE",
+    "LEGAL_REFERENCE_UE",
     "SafeStr",
 ]

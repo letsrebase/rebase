@@ -19,17 +19,19 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.db.clock import today_local
+from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.deals.repository import DealRepository
-from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
 from pigrocrm.core.money import round_hours
 from pigrocrm.core.timetracking.models import TimeTimer
 from pigrocrm.core.timetracking.schemas import (
-    ORE_MAX,
-    ORE_MIN,
+    HOURS_MAX,
+    HOURS_MIN,
     TimeEntryCreate,
     TimeEntryRead,
     TimerRead,
@@ -43,7 +45,10 @@ ENTITY = "timer"
 
 # What an entry made from a stopped timer says when nobody typed anything: honest about
 # where it came from, and replaceable from the entry itself, like the grid's default.
-DEFAULT_DESCRIZIONE = "Ore registrate dal timer"
+DEFAULT_DESCRIPTION = "Ore registrate dal timer"
+
+# The unique index that allows one running timer per user (`models.py`).
+TIMER_USER_INDEX = "ux_time_timers_user"
 
 
 def _now() -> datetime:
@@ -53,14 +58,14 @@ def _now() -> datetime:
 def elapsed_hours(started_at: datetime, stopped_at: datetime) -> Decimal:
     """Seconds between the two instants, as hours with two decimals.
 
-    Clamped into the same range `TimeEntryCreate.ore` accepts: a timer stopped after
+    Clamped into the same range `TimeEntryCreate.hours` accepts: a timer stopped after
     twenty seconds is still an entry of one hundredth of an hour rather than a 422 the
     person cannot act on, and one left running over a weekend is capped at the day the
     schema allows -- the entry is then visibly wrong in the right direction, and editable.
     """
     seconds = Decimal(max((stopped_at - started_at).total_seconds(), 0))
     hours = round_hours(seconds / Decimal(3600))
-    return min(max(hours, ORE_MIN), ORE_MAX)
+    return min(max(hours, HOURS_MIN), HOURS_MAX)
 
 
 class TimerService:
@@ -73,13 +78,16 @@ class TimerService:
         if self.deals.get(deal_id) is None:
             raise NotFound("deal", deal_id)
 
-    def _row(self, actor: Actor) -> TimeTimer | None:
+    def _row(self, actor: Actor, *, lock: bool = False) -> TimeTimer | None:
         if actor.id is None:
             # A system actor has no clock: a timer measures a person's hours.
             return None
-        return self.session.execute(
-            select(TimeTimer).where(TimeTimer.user_id == actor.id)
-        ).scalar_one_or_none()
+        stmt = select(TimeTimer).where(TimeTimer.user_id == actor.id)
+        if lock:
+            # `populate_existing`: a copy loaded earlier in the session must not stand in
+            # for the row as it is once the lock is granted.
+            stmt = stmt.with_for_update().execution_options(populate_existing=True)
+        return self.session.execute(stmt).scalar_one_or_none()
 
     def current(self, actor: Actor) -> TimerRead | None:
         """The running timer of whoever is asking, or nothing. Never somebody else's:
@@ -99,11 +107,19 @@ class TimerService:
         row = TimeTimer(
             user_id=actor.id,
             deal_id=data.deal_id,
-            descrizione=data.descrizione,
-            fatturabile=data.fatturabile,
+            description=data.description,
+            billable=data.billable,
             started_at=_now(),
         )
-        self.session.add(row)
+
+        def refuse(exc: IntegrityError) -> DomainError | IntegrityError:
+            # Two starts at once both passed the check above; the unique index is the authority.
+            if TIMER_USER_INDEX not in str(exc.orig):
+                return exc
+            return Conflict(ENTITY, "un timer è già in corso: fermalo o scartalo prima")
+
+        with savepoint(self.session, refuse):
+            self.session.add(row)
         self.session.commit()
         return TimerRead.model_validate(row)
 
@@ -113,10 +129,10 @@ class TimerService:
         if data.deal_id is not None:
             self._require_deal(data.deal_id)
             row.deal_id = data.deal_id
-        if data.descrizione is not None:
-            row.descrizione = data.descrizione
-        if data.fatturabile is not None:
-            row.fatturabile = data.fatturabile
+        if data.description is not None:
+            row.description = data.description
+        if data.billable is not None:
+            row.billable = data.billable
         self.session.commit()
         return TimerRead.model_validate(row)
 
@@ -126,9 +142,14 @@ class TimerService:
         The deal may arrive now or have been set at start; without one there is nothing
         to attach the hours to, and the timer is left running rather than lost -- the
         person is told what is missing and can choose the deal and stop again.
+
+        The timer row is locked and the entry and the deletion of the row commit together:
+        a double click or a second device waits for the first stop and then finds no timer,
+        so the hours are written once, and no failure leaves an hour either lost (timer
+        gone, no entry) or counted twice (entry written, timer still running).
         """
         actor.require_write("stop_timer")
-        row = self._require(actor)
+        row = self._require(actor, lock=True)
         deal_id = data.deal_id if data.deal_id is not None else row.deal_id
         if deal_id is None:
             raise ValidationFailed(
@@ -137,21 +158,19 @@ class TimerService:
                 "scegli il deal su cui registrare le ore prima di fermare il timer",
                 expected="l'id di un deal esistente",
             )
-        descrizione = data.descrizione if data.descrizione is not None else row.descrizione
+        description = data.description if data.description is not None else row.description
         entry = self.entries.create(
             TimeEntryCreate(
                 deal_id=deal_id,
                 user_id=row.user_id,
-                data=data.data if data.data is not None else today_local(),
-                ore=elapsed_hours(row.started_at, _now()),
-                descrizione=descrizione.strip() or DEFAULT_DESCRIZIONE,
-                fatturabile=row.fatturabile,
+                date=data.date if data.date is not None else today_local(),
+                hours=elapsed_hours(row.started_at, _now()),
+                description=description.strip() or DEFAULT_DESCRIPTION,
+                billable=row.billable,
             ),
             actor,
+            commit=False,
         )
-        # `create` committed the entry. The timer goes in its own commit right after:
-        # an entry that exists with a timer still running is recoverable (discard it),
-        # a timer deleted with no entry written is an hour lost, so the order is this one.
         self.session.delete(row)
         self.session.commit()
         return entry
@@ -162,8 +181,8 @@ class TimerService:
         self.session.delete(row)
         self.session.commit()
 
-    def _require(self, actor: Actor) -> TimeTimer:
-        row = self._row(actor)
+    def _require(self, actor: Actor, *, lock: bool = False) -> TimeTimer:
+        row = self._row(actor, lock=lock)
         if row is None:
-            raise NotFound(ENTITY, "in corso")
+            raise NotFound(ENTITY, "in_progress")
         return row

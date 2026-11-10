@@ -30,10 +30,10 @@ from uuid import uuid4
 from fastapi import APIRouter, BackgroundTasks, Request, status
 
 from rebase_api.deps import SessionDep, SettingsDep
-from rebase_api.ratelimit import client_key, spend_one
+from rebase_api.ratelimit import observed_address, spend_one
 from rebase_core.conversions import Visitor, pixel_from_settings
-from rebase_core.schemas import SignupAck, SignupCreate
 from rebase_core.service import SignupService
+from rebase_core.signup_schemas import SignupAck, SignupCreate
 
 # The cookie the measurement SDK sets on our own domain. First-party, so the browser
 # sends it to this endpoint too, which is the only reason the server event can carry it.
@@ -45,12 +45,12 @@ router = APIRouter(prefix="/api/community", tags=["community"])
 def _visitor_ip(request: Request) -> str | None:
     """The visitor's address, or `None` when what we have is not one.
 
-    `client_key` answers the same question for the rate limiter, which needs
-    *a* key and is happy with `"sconosciuto"`. This one is a value forwarded to a third
-    party as an IP address, so a string that is not an IP must become no field at all
-    rather than nonsense in somebody else's database.
+    The limiter keys on `client_key`, which wants *a* key (an IPv6 address as its /64,
+    a word when there is no address). This one is a value forwarded to a third party as
+    an IP address, so the address as written must be a real one, and anything else
+    becomes no field at all rather than nonsense in somebody else's database.
     """
-    candidate = client_key(request)
+    candidate = observed_address(request)
     try:
         return str(ipaddress.ip_address(candidate))
     except ValueError:
@@ -102,9 +102,12 @@ def subscribe(
     `_measure_the_conversion`. It is scheduled even for an address already on the list,
     because the browser fires its own event on the same submit and the two carry one id
     -- suppressing the server half would not remove that event, it would only remove the
-    half that survives an ad blocker.
+    half that survives an ad blocker. But only for a visitor who accepted the cookie
+    notice (`pixel_consent`): the event carries their address, user agent and click ids
+    to OpenAI, which is the same decision the browser pixel waits for.
     """
     spend_one(request)
     SignupService(session).subscribe(data)
-    background.add_task(_measure_the_conversion, data, request, settings)
+    if data.pixel_consent:
+        background.add_task(_measure_the_conversion, data, request, settings)
     return SignupAck()

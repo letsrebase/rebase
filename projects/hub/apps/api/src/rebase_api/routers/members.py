@@ -3,14 +3,14 @@
 `POST /auth/link` answers 202 whether the address applied or not, and the mail goes out
 in a background task after the response, so neither the status nor the timing nor a
 provider failure says whether an address is known. `POST /auth/enter` spends the token
-and sets `orbiters_user`, for anyone with a `users` row, member or admin alike
+and sets `rebase_user`, for anyone with a `users` row, member or admin alike
 (REB-278): the identity resolution behind both lives in `rebase_core.users`, not here.
 Everything under `/me` reads the row from the session and never from the URL: there is
 no `/me/{id}`. The one id the URL does carry is a company request's: `PATCH
 /me/company/{id}` (REB-602) edits one of the caller's own requests, and somebody
 else's, a soft-deleted one and an id that does not exist are the same 404.
 `PATCH /me/company` (REB-314) is the id-less form of it, for the caller's newest
-request. Neither reaches `stato`, `note` or the company's own identity. `POST
+request. Neither reaches `status`, `note` or the company's own identity. `POST
 /me/company` (REB-381) is a different door onto the same table: not an edit, a
 brand-new `Company` request, the company's name carried forward and everything else
 asked fresh -- a 404 for a referente with nothing to add to yet, the same as the
@@ -48,48 +48,44 @@ from fastapi import (
 )
 
 from rebase_api.deps import (
-    MEMBER_COOKIE,
-    LlmDep,
+    CardLlmDep,
+    CrmFilingDep,
     MeDep,
     SenderDep,
     SessionDep,
     SessionOpenerDep,
     SettingsDep,
+    clear_member_cookie,
+    session_tokens,
+    set_member_cookie,
 )
 from rebase_api.downloads import cv_response, pdf_response, perk_response
 from rebase_api.ratelimit import spend_one
-from rebase_core.cards import write_after_response
+from rebase_core.card_writer import write_after_response
+from rebase_core.company_schemas import CompanyFields, CompanyUpdate
 from rebase_core.contract_schemas import MemberContracts
-from rebase_core.mail import EmailSender, Mail
+from rebase_core.freelancer_schemas import MemberUpdate
+from rebase_core.mail import send_after_response
 from rebase_core.member_contracts import MemberContractService
+from rebase_core.member_schemas import (
+    ContactPointsUpdate,
+    EnterRequest,
+    LinkRequest,
+    MemberLookup,
+    MemberLookupRequest,
+    MeRead,
+)
 from rebase_core.members import MemberService
 from rebase_core.models import CV_MAX_BYTES
 from rebase_core.perks import GUIDE_FILENAME, PerkService, guide_bytes
 from rebase_core.referral_schemas import MemberReferral
 from rebase_core.referrals import ReferralService
-from rebase_core.schemas import (
-    Ack,
-    CompanyFields,
-    CompanyUpdate,
-    EnterRequest,
-    LinkRequest,
-    MemberLookup,
-    MemberLookupRequest,
-    MemberUpdate,
-    MeRead,
-)
-from rebase_core.users import UserService
+from rebase_core.schema_common import Ack
+from rebase_core.users import VIA_LOGIN, UserService
 
 router = APIRouter(prefix="/api/hub", tags=["hub-member"])
 
 _log = logging.getLogger(__name__)
-
-
-def _send(sender: EmailSender, mail: Mail) -> None:
-    """Runs after the response. A refusal is logged without the address or the key: the
-    operator needs to know the provider said no, not to whom."""
-    if not sender.send(mail):
-        _log.warning("the magic link mail was refused by the provider")
 
 
 @router.post("/auth/link", response_model=Ack, status_code=status.HTTP_202_ACCEPTED)
@@ -107,9 +103,10 @@ def request_link(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "L'accesso via email non è ancora attivo. Riprova più avanti.",
         )
-    mail = UserService(session, settings).request_link(payload.email, utm=payload.utm)
+    users = UserService(session, settings)
+    mail = users.request_link(payload.email, utm=payload.utm, via=VIA_LOGIN)
     if mail is not None:
-        background.add_task(_send, sender, mail)
+        background.add_task(send_after_response, sender, mail, "the magic link mail")
     return Ack()
 
 
@@ -128,15 +125,7 @@ def enter(
             status.HTTP_401_UNAUTHORIZED, "Link non valido o scaduto. Chiedine un altro."
         )
     user, raw = outcome
-    response.set_cookie(
-        MEMBER_COOKIE,
-        raw,
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite="lax",
-        max_age=settings.member_session_days * 86400,
-        path="/",
-    )
+    set_member_cookie(response, settings, raw)
     return MemberService(session).me_read(user.id)
 
 
@@ -155,6 +144,17 @@ def update_me(me: MeDep, session: SessionDep, payload: MemberUpdate) -> MeRead:
     return service.me_read(me.id)
 
 
+@router.put("/me/contact-points", response_model=MeRead)
+def replace_my_contact_points(
+    me: MeDep, session: SessionDep, payload: ContactPointsUpdate
+) -> MeRead:
+    """The caller's own list of extra contact points, replaced whole (REB-943): a phone,
+    a second address or a profile with its label and note, whether they are a freelancer,
+    a company's referente or both. The address they sign in with is read-only and not in
+    it. An address that is somebody else's is a 422 that names it."""
+    return MemberService(session).update_contact_points(me.id, payload.contact_points)
+
+
 @router.patch("/me/company", response_model=MeRead)
 def update_my_company(me: MeDep, session: SessionDep, payload: CompanyUpdate) -> MeRead:
     """The caller's newest request, the id-less form of the route below."""
@@ -169,8 +169,17 @@ def update_my_company_request(
 
 
 @router.post("/me/company", response_model=MeRead, status_code=status.HTTP_201_CREATED)
-def create_my_company_request(me: MeDep, session: SessionDep, payload: CompanyFields) -> MeRead:
-    return MemberService(session).create_additional_request(me.id, payload)
+def create_my_company_request(
+    me: MeDep,
+    session: SessionDep,
+    background: BackgroundTasks,
+    crm_filing: CrmFilingDep,
+    payload: CompanyFields,
+) -> MeRead:
+    read, company_id = MemberService(session).create_additional_request(me.id, payload)
+    # Written `to_link` with the row; the first attempt at the CRM runs after the answer.
+    background.add_task(crm_filing, company_id)
+    return read
 
 
 @router.put("/me/cv", response_model=MeRead)
@@ -179,7 +188,7 @@ def replace_my_cv(
     request: Request,
     session: SessionDep,
     background: BackgroundTasks,
-    llm: LlmDep,
+    llm: CardLlmDep,
     open_session: SessionOpenerDep,
     cv: Annotated[UploadFile, File()],
 ) -> MeRead:
@@ -242,8 +251,10 @@ def my_referral(me: MeDep, session: SessionDep) -> MemberReferral:
     (P-REB-44): the code, who has signed up under it so far, and the two rates in
     force now (REB-610), read live on every call. Never a euro figure of a real
     engagement -- rebase's own margin is an admin-only number the member area never
-    shows, the same isolation `budget_giornaliero` already keeps."""
-    return ReferralService(session).for_user(me.id)
+    shows, the same isolation `daily_budget` already keeps."""
+    referral = ReferralService(session).for_user(me.id)
+    session.commit()  # `code_for` only flushes the code it issues
+    return referral
 
 
 @router.post("/members/lookup", response_model=MemberLookup)
@@ -262,14 +273,14 @@ def lookup_member(
     error: the hub says who is a member, not who is at the keyboard. A POST so the address
     travels in the body and not in a URL the access log would keep."""
     if not settings.pigro_registry_token:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not Found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not_found")
     presented = authorization.removeprefix("Bearer ").strip() if authorization else ""
     # Bytes, not str: Starlette decodes headers as latin-1 and `compare_digest` refuses a
     # `str` with a non-ASCII character, which would turn a stray byte into a 500.
     if not presented or not secrets.compare_digest(
         presented.encode("utf-8"), settings.pigro_registry_token.encode("utf-8")
     ):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token non valido")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid_token")
     return MemberService(session).lookup(payload.email)
 
 
@@ -277,5 +288,7 @@ def lookup_member(
 def logout(
     request: Request, response: Response, session: SessionDep, settings: SettingsDep
 ) -> None:
-    UserService(session, settings).close_session(request.cookies.get(MEMBER_COOKIE))
-    response.delete_cookie(MEMBER_COOKIE, path="/")
+    users = UserService(session, settings)
+    for raw in session_tokens(request):
+        users.close_session(raw)
+    clear_member_cookie(response, settings)

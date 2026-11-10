@@ -8,6 +8,7 @@ import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
 import { CostsPanel } from '@/features/costs/CostsPanel'
 import { useCanWrite } from '@/lib/auth'
+import { dealStatusLabel } from '@/lib/dealStatus'
 import { useEntitySchema } from '@/lib/schema'
 import { TimeEntryForm } from './TimeEntryForm'
 import { TimeReportButtons } from './TimeReportButtons'
@@ -25,7 +26,15 @@ function Figure({ label, value, hint }: { label: string; value: string; hint?: s
   )
 }
 
-export function TimeEntriesTab({ dealId }: { dealId: string }) {
+export function TimeEntriesTab({
+  dealId,
+  withCosts = true,
+}: {
+  dealId: string
+  /** The deal's costs under the hours: the `costs` module's part of this tab, left out when
+   *  that module is off (REB-953). */
+  withCosts?: boolean
+}) {
   const entries = useTimeEntries({ deal_id: dealId })
   const summary = useDealTimeSummary(dealId)
   const schema = useEntitySchema('time_entry')
@@ -51,27 +60,27 @@ export function TimeEntriesTab({ dealId }: { dealId: string }) {
                 document: §6 puts the summing in `packages/core`, and re-adding the
                 rows on screen is how two surfaces start disagreeing about the same
                 deal. */}
-            <Figure label="Ore consuntivate" value={formatHoursValue(summary.data.ore_totali)} />
+            <Figure label="Ore consuntivate" value={formatHoursValue(summary.data.total_hours)} />
             <Figure
               label="Da fatturare"
-              value={formatHoursValue(summary.data.ore_fatturabili_non_fatturate)}
+              value={formatHoursValue(summary.data.billable_uninvoiced_hours)}
             />
             <Figure
               label="Valore maturato (stima)"
-              value={formatMoneyValue(summary.data.valore_ore_non_fatturate)}
+              value={formatMoneyValue(summary.data.unbilled_hours_value)}
               // Named as a stima and never as a margin: it is the estimate of §3
               // decision 2, and it stops being consulted the moment an invoice exists.
               hint="Non è un ricavo: il ricavo è la fattura"
             />
             <div className="flex flex-col items-start gap-2">
               <p className="text-sm text-muted-foreground">Stato</p>
-              <Badge variant={summary.data.stato === 'chiuso' ? 'default' : 'secondary'}>
-                {summary.data.stato}
+              <Badge variant={summary.data.status === 'closed' ? 'default' : 'secondary'}>
+                {dealStatusLabel(summary.data.status)}
               </Badge>
-              {summary.data.ore_senza_tariffa > 0 && (
+              {summary.data.hours_without_rate > 0 && (
                 <p className="text-xs text-muted-foreground">
-                  {summary.data.ore_senza_tariffa}{' '}
-                  {summary.data.ore_senza_tariffa === 1 ? 'voce' : 'voci'} senza tariffa,
+                  {summary.data.hours_without_rate}{' '}
+                  {summary.data.hours_without_rate === 1 ? 'voce' : 'voci'} senza tariffa,
                   esclusa dal valore maturato
                 </p>
               )}
@@ -91,6 +100,7 @@ export function TimeEntriesTab({ dealId }: { dealId: string }) {
       </div>
 
       <DataTable
+        label="Ore registrate"
         columns={buildTimeEntryColumns(customFields)}
         data={entries.data?.items ?? []}
         isLoading={entries.isLoading}
@@ -115,7 +125,7 @@ export function TimeEntriesTab({ dealId }: { dealId: string }) {
       {/* Costs sit on the Ore tab in 4A rather than on an «Economia» tab because that
           tab does not exist until 4B, and a cost with nowhere to be entered is a cost
           nobody records. */}
-      <CostsPanel dealId={dealId} />
+      {withCosts && <CostsPanel dealId={dealId} />}
 
       <TimeEntryForm
         open={creating}

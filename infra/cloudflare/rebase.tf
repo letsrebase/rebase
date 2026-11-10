@@ -6,15 +6,22 @@ locals {
   rebase_zone_id = "904a60b42314c819a66340ae8c1a0e88"
 }
 
+# The origin server's address, once. Every record that names it is un-proxied: there is no CDN
+# in front of the origin (INFRA-A-14), which is why the vhosts carry their own rate limits
+# (infra/origin/nginx/rate-limits.conf).
+locals {
+  origin_ip = "204.168.255.175"
+}
+
 resource "cloudflare_dns_record" "rebase_apex_a" {
   provider = cloudflare.rebase
   zone_id  = local.rebase_zone_id
   name     = "letsrebase.com"
   type     = "A"
-  content  = "204.168.255.175"
+  content  = local.origin_ip
   ttl      = 1
   proxied  = false
-  comment  = "Hetzner origin, same host as joinorbiters.com (migration 2026-09-14)"
+  comment  = "Hetzner origin (migration 2026-09-14)"
 }
 
 resource "cloudflare_dns_record" "rebase_pigro_a" {
@@ -22,10 +29,10 @@ resource "cloudflare_dns_record" "rebase_pigro_a" {
   zone_id  = local.rebase_zone_id
   name     = "pigro.letsrebase.com"
   type     = "A"
-  content  = "204.168.255.175"
+  content  = local.origin_ip
   ttl      = 1
   proxied  = false
-  comment  = "Hetzner origin, same host as joinorbiters.com (migration 2026-09-14)"
+  comment  = "Hetzner origin (migration 2026-09-14)"
 }
 
 resource "cloudflare_dns_record" "rebase_preview_a" {
@@ -33,10 +40,10 @@ resource "cloudflare_dns_record" "rebase_preview_a" {
   zone_id  = local.rebase_zone_id
   name     = "preview.letsrebase.com"
   type     = "A"
-  content  = "204.168.255.175"
+  content  = local.origin_ip
   ttl      = 1
   proxied  = false
-  comment  = "Hetzner origin, same host as joinorbiters.com (migration 2026-09-14)"
+  comment  = "Hetzner origin (migration 2026-09-14)"
 }
 
 resource "cloudflare_dns_record" "rebase_preview_pigro_a" {
@@ -44,10 +51,10 @@ resource "cloudflare_dns_record" "rebase_preview_pigro_a" {
   zone_id  = local.rebase_zone_id
   name     = "preview.pigro.letsrebase.com"
   type     = "A"
-  content  = "204.168.255.175"
+  content  = local.origin_ip
   ttl      = 1
   proxied  = false
-  comment  = "Hetzner origin, same host as joinorbiters.com (migration 2026-09-14)"
+  comment  = "Hetzner origin (migration 2026-09-14)"
 }
 
 resource "cloudflare_dns_record" "rebase_rsend_cname" {
@@ -90,7 +97,7 @@ resource "cloudflare_dns_record" "rebase_dmarc_txt" {
   type     = "TXT"
   content  = "\"v=DMARC1; p=quarantine; adkim=r; aspf=r;\""
   ttl      = 1
-  comment  = "mirrors joinorbiters.com without the GoDaddy rua"
+  comment  = "DMARC for the zone (migration 2026-09-14)"
 }
 
 resource "cloudflare_dns_record" "rebase_resend_domainkey_txt" {
@@ -114,7 +121,10 @@ resource "cloudflare_dns_record" "rebase_send_txt" {
 }
 
 # Google Search Console's proof of ownership for the domain property (ORB-195). The
-# token is per Google account and per property; it is not a secret.
+# token is per Google account and per property; it is not a secret. The property has
+# two owners (Ivan and ciao@letsrebase.com, read on 2026-10-20) and the zone carries two
+# verification tokens, this one and the Workspace one below; which account each serves
+# is not recorded anywhere we can read. Remove neither.
 resource "cloudflare_dns_record" "rebase_apex_google_site_verification_txt" {
   provider = cloudflare.rebase
   zone_id  = local.rebase_zone_id
@@ -123,6 +133,51 @@ resource "cloudflare_dns_record" "rebase_apex_google_site_verification_txt" {
   content  = "\"google-site-verification=ClhNGnYHY95wDv2fWqKoRz60_7wVXZw7SI0UciLQWsc\""
   ttl      = 1
   comment  = "Search Console domain property (2026-09-14)"
+}
+
+# Google Workspace for ciao@letsrebase.com, added in the panel on 2026-09-18 and taken
+# into this file on 2026-10-20 (REB-702) exactly as they were, which is why none carries
+# a Cloudflare comment: adding one would be a change, and these four are only imported.
+# The mailbox (MX), its signature (DKIM) and its sender policy (SPF) make ciao@ work at
+# all. The site verification was added in the same second as the SPF, so it came with
+# the Workspace setup; whether it is also what keeps an account verified in Search
+# Console is not known (the console says only «domain name provider»). Remove none of
+# them.
+resource "cloudflare_dns_record" "rebase_google_workspace_mx" {
+  provider = cloudflare.rebase
+  zone_id  = local.rebase_zone_id
+  name     = "letsrebase.com"
+  type     = "MX"
+  content  = "smtp.google.com"
+  ttl      = 300
+  priority = 10
+}
+
+resource "cloudflare_dns_record" "rebase_google_workspace_domainkey_txt" {
+  provider = cloudflare.rebase
+  zone_id  = local.rebase_zone_id
+  name     = "google._domainkey.letsrebase.com"
+  type     = "TXT"
+  content  = "\"v=DKIM1;k=rsa;p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAv/jSJRgzZpZmYZ1LCxVna8gayA3OGRmNa3TxUtJvznp8RQVJu7cxy8dy6yec4UW3Av0NEFdgrSxmFh39oTh69WBxw5yirs5LMazqdCuUb88xGkMrwUX5ZlDdHduH4p/amYWOk5kATDXMB7GLZsIjJHixMzeO7KBbhIHjDLE0Eg3fEv5YAskx2fCefIhXwqa6Oy6\" \"L8uZzOn2qxyp8Pp/OAbWU0SyOM4qDacUZdU89yEGbykW84P0DMtWnEeVkYNOklbL520K472mfDD5Q86C0NY8r/Gia192oHH7QwfxuAveVCf7GHaoRxM4wrVs8HtUtIkK8UnRxmEewutvDpiwfewIDAQAB\""
+  ttl      = 3600
+}
+
+resource "cloudflare_dns_record" "rebase_google_workspace_spf_txt" {
+  provider = cloudflare.rebase
+  zone_id  = local.rebase_zone_id
+  name     = "letsrebase.com"
+  type     = "TXT"
+  content  = "\"v=spf1 include:_spf.google.com ~all\""
+  ttl      = 3600
+}
+
+resource "cloudflare_dns_record" "rebase_google_workspace_site_verification_txt" {
+  provider = cloudflare.rebase
+  zone_id  = local.rebase_zone_id
+  name     = "letsrebase.com"
+  type     = "TXT"
+  content  = "\"google-site-verification=dSF1rAy3hgizON3rYAH29kjA_XBr17gYgOUNaRq2Qus\""
+  ttl      = 3600
 }
 
 resource "cloudflare_dns_record" "rebase_links_cname" {
@@ -143,7 +198,7 @@ resource "cloudflare_dns_record" "rebase_firma_a" {
   zone_id  = local.rebase_zone_id
   name     = "firma.letsrebase.com"
   type     = "A"
-  content  = "204.168.255.175"
+  content  = local.origin_ip
   ttl      = 1
   proxied  = false
   comment  = "Documenso, the contracts' signing site (REB-393)"
@@ -157,7 +212,7 @@ resource "cloudflare_dns_record" "rebase_vault_a" {
   zone_id  = local.rebase_zone_id
   name     = "vault.letsrebase.com"
   type     = "A"
-  content  = "204.168.255.175"
+  content  = local.origin_ip
   ttl      = 1
   proxied  = false
   comment  = "Vaultwarden, the members' password manager (REB-648)"

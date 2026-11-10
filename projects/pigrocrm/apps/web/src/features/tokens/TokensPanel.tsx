@@ -1,5 +1,5 @@
 import type { ColumnDef } from '@tanstack/react-table'
-import { Copy, KeyRound, Plus } from 'lucide-react'
+import { Bot, Copy, Plug, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { DateCell } from '@/components/cells'
@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { RowActions } from '@/components/RowActions'
 import { StatusPill, type StatusTone } from '@/components/StatusPill'
 import { Button } from '@rebase/ui/button'
+import { Checkbox } from '@rebase/ui/checkbox'
 import { DataTable, type DataTableFeatures } from '@/components/DataTable'
 import {
   Dialog,
@@ -21,7 +22,18 @@ import { Label } from '@rebase/ui/label'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { roleLabel } from '@/lib/roles'
-import { useCreateToken, useRevokeToken, useTokens, type CreatedToken, type TokenRecord } from './queries'
+import { ConnectAgentDialog } from './ConnectAgentDialog'
+import {
+  useCreateToken,
+  useRevokeToken,
+  useSetTokenFullAccess,
+  useTeamTokens,
+  useTokenOptions,
+  useTokens,
+  type CreatedToken,
+  type TeamTokenRecord,
+  type TokenRecord,
+} from './queries'
 import { useUnsavedTokenGuard } from './useUnsavedTokenGuard'
 
 const dateFormatter = new Intl.DateTimeFormat('it-IT', { dateStyle: 'medium', timeStyle: 'short' })
@@ -38,51 +50,98 @@ function formatUsed(value: string | null): string {
  * left as a pair of inline ternaries -- so the label and the tone have one key to agree
  * on, the same shape the four stored enums use.
  *
- * `attivo` is the ordinary, settled state. `revocato` stays quiet rather than reading as
+ * `active` is the ordinary, settled state. `revoked` stays quiet rather than reading as
  * a warning: revoking is something the owner *did*, deliberately, and a list of old
  * tokens all in the destructive tint would say something went wrong when nothing did.
  */
-type TokenStato = 'attivo' | 'revocato'
+type TokenStatus = 'active' | 'revoked'
 
-const TOKEN_STATE_LABELS: Record<TokenStato, string> = { attivo: 'Attivo', revocato: 'Revocato' }
+const TOKEN_STATE_LABELS: Record<TokenStatus, string> = { active: 'Attivo', revoked: 'Revocato' }
 
-const TOKEN_STATE_TONE: Record<TokenStato, StatusTone> = { attivo: 'ink', revocato: 'muted' }
+const TOKEN_STATE_TONE: Record<TokenStatus, StatusTone> = { active: 'ink', revoked: 'muted' }
 
-function statoOf(token: TokenRecord): TokenStato {
-  return token.revoked_at ? 'revocato' : 'attivo'
+function statusOf(token: TokenRecord): TokenStatus {
+  return token.revoked_at ? 'revoked' : 'active'
+}
+
+/**
+ * What the token may do beyond the ordinary tools (REB-810): the invoice, rate and
+ * period-lock tools. «Completo» wears the gold dot, the one tone in the product that says
+ * «look here»: it is the setting somebody scans the list for. An ordinary token is quiet.
+ */
+const ACCESS_LABELS = { complete: 'Completo', standard: 'Standard' } as const
+const ACCESS_TONE: Record<keyof typeof ACCESS_LABELS, StatusTone> = {
+  complete: 'gold',
+  standard: 'muted',
+}
+
+function accessOf(token: TokenRecord): keyof typeof ACCESS_LABELS {
+  return token.full_access ? 'complete' : 'standard'
+}
+
+const FULL_ACCESS_HELP =
+  'Con l’accesso completo l’agente può emettere e annullare fatture, cambiare tariffe e chiudere i mesi: atti che non si annullano.'
+
+/** The row action that opens or closes a token's full access, for a token of anybody; none
+ *  for a revoked one. Closing is offered whatever the space says: it is always allowed. */
+function fullAccessAction(
+  token: TokenRecord,
+  available: boolean,
+  change: (token: TokenRecord, fullAccess: boolean) => void,
+) {
+  if (token.revoked_at) return []
+  if (token.full_access) {
+    return [{ label: 'Chiudi l’accesso completo', onSelect: () => change(token, false) }]
+  }
+  return [
+    // Disabled rather than missing when the space has not opened it: the item is where
+    // somebody looks for it, and the page says why it does not work.
+    { label: 'Dai l’accesso completo', disabled: !available, onSelect: () => change(token, true) },
+  ]
 }
 
 export function TokensPanel() {
   const { user } = useAuth()
   const [creating, setCreating] = useState(false)
-  const [nome, setNome] = useState('')
+  const [connecting, setConnecting] = useState(false)
+  const [name, setName] = useState('')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
+  const [fullAccess, setFullAccess] = useState(false)
   const [issued, setIssued] = useState<CreatedToken | null>(null)
   const [copied, setCopied] = useState(false)
 
   const tokens = useTokens()
   const create = useCreateToken()
   const revoke = useRevokeToken()
+  const setAccess = useSetTokenFullAccess()
+  const options = useTokenOptions()
+  const isAdmin = user?.role === 'admin'
+  const team = useTeamTokens(isAdmin)
+  // Unknown (still loading, or the read failed) counts as closed: the server refuses an
+  // opening the space does not offer, and an offered box that fails on submit is worse than
+  // a disabled one that explains itself.
+  const fullAccessAvailable = options.data?.full_access_available === true
 
   useUnsavedTokenGuard(Boolean(issued))
 
   const fieldError = problem ? fieldErrorFrom(problem) : null
-  const banner = problem && fieldError?.field !== 'nome' ? problem.detail : null
+  const banner = problem && fieldError?.field !== 'name' ? problem.detail : null
 
   function openDialog() {
     setProblem(null)
-    setNome('')
+    setName('')
+    setFullAccess(false)
     setCreating(true)
   }
 
   function submit() {
     setProblem(null)
-    create.mutate(nome, {
+    create.mutate({ name, full_access: fullAccess && fullAccessAvailable }, {
       onSuccess: (created) => {
         setIssued(created)
         setCopied(false)
         setCreating(false)
-        setNome('')
+        setName('')
       },
       onError: (error) => setProblem(toProblem(error)),
     })
@@ -103,7 +162,7 @@ export function TokensPanel() {
 
   function revokeToken(token: TokenRecord) {
     const confirmed = window.confirm(
-      `Revocare il token "${token.nome}"? Chi lo usa smetterà immediatamente di avere accesso. L'operazione non è reversibile.`,
+      `Revocare il token "${token.name}"? Chi lo usa smetterà immediatamente di avere accesso. L'operazione non è reversibile.`,
     )
     if (!confirmed) return
 
@@ -113,9 +172,41 @@ export function TokensPanel() {
     })
   }
 
+  /** Opening asks first, since what it hands over cannot be taken back once used; closing
+   *  never does. `whose` is empty for the caller's own token. */
+  function changeAccess(token: TokenRecord, next: boolean, whose = '') {
+    if (next) {
+      const confirmed = window.confirm(
+        `Dare l’accesso completo al token "${token.name}"${whose}? ${FULL_ACCESS_HELP}`,
+      )
+      if (!confirmed) return
+    }
+    setAccess.mutate(
+      { tokenId: token.id, full_access: next },
+      {
+        onSuccess: () =>
+          toast.success(next ? 'Accesso completo attivato' : 'Accesso completo chiuso'),
+        onError: (error) => toast.error(toProblem(error).detail),
+      },
+    )
+  }
+
+  function accessColumn<T extends TokenRecord>(): ColumnDef<DataTableFeatures, T> {
+    return {
+      header: 'Accesso',
+      id: 'full_access',
+      accessorFn: (row) => ACCESS_LABELS[accessOf(row)],
+      cell: (info) => {
+        const access = accessOf(info.row.original)
+        return <StatusPill tone={ACCESS_TONE[access]}>{ACCESS_LABELS[access]}</StatusPill>
+      },
+    }
+  }
+
   const columns: ColumnDef<DataTableFeatures, TokenRecord>[] = [
-    { header: 'Nome', accessorKey: 'nome' },
+    { header: 'Nome', accessorKey: 'name' },
     { header: 'Prefisso', id: 'prefix', cell: (info) => <code>{info.row.original.prefix}</code> },
+    accessColumn<TokenRecord>(),
     {
       header: 'Ultimo uso',
       id: 'last_used_at',
@@ -131,10 +222,10 @@ export function TokensPanel() {
       // The accessor carries the word, so the column has one plain text value; the pill
       // is the same dotted one every other state in the product wears (design spec §4),
       // not the filled badge this column used to show.
-      accessorFn: (row) => TOKEN_STATE_LABELS[statoOf(row)],
+      accessorFn: (row) => TOKEN_STATE_LABELS[statusOf(row)],
       cell: (info) => {
-        const stato = statoOf(info.row.original)
-        return <StatusPill tone={TOKEN_STATE_TONE[stato]}>{TOKEN_STATE_LABELS[stato]}</StatusPill>
+        const status = statusOf(info.row.original)
+        return <StatusPill tone={TOKEN_STATE_TONE[status]}>{TOKEN_STATE_LABELS[status]}</StatusPill>
       },
     },
     {
@@ -146,11 +237,16 @@ export function TokensPanel() {
         // for it at all rather than a menu holding one disabled item.
         return (
           <RowActions
-            label={`Azioni per ${token.nome}`}
+            label={`Azioni per ${token.name}`}
             items={
               token.revoked_at
                 ? []
-                : [{ label: 'Revoca', destructive: true, onSelect: () => revokeToken(token) }]
+                : [
+                    ...fullAccessAction(token, fullAccessAvailable, (t, next) =>
+                      changeAccess(t, next),
+                    ),
+                    { label: 'Revoca', destructive: true, onSelect: () => revokeToken(token) },
+                  ]
             }
           />
         )
@@ -158,19 +254,56 @@ export function TokensPanel() {
     },
   ]
 
-  const ruolo = user ? roleLabel(user.ruolo) : null
+  const teamColumns: ColumnDef<DataTableFeatures, TeamTokenRecord>[] = [
+    { header: 'Titolare', accessorKey: 'owner_name' },
+    { header: 'Nome', accessorKey: 'name' },
+    { header: 'Prefisso', id: 'prefix', cell: (info) => <code>{info.row.original.prefix}</code> },
+    accessColumn<TeamTokenRecord>(),
+    {
+      header: 'Ultimo uso',
+      id: 'last_used_at',
+      accessorFn: (row) => formatUsed(row.last_used_at),
+      cell: (info) => <DateCell value={info.row.original.last_used_at} absent="mai" />,
+    },
+    {
+      header: '',
+      id: 'actions',
+      cell: (info) => {
+        const token = info.row.original
+        return (
+          <RowActions
+            label={`Azioni per ${token.name} di ${token.owner_name}`}
+            items={fullAccessAction(token, fullAccessAvailable, (t, next) =>
+              changeAccess(t, next, ` di ${token.owner_name}`),
+            )}
+          />
+        )
+      },
+    },
+  ]
+
+  const role = user ? roleLabel(user.role) : null
 
   return (
     <>
       <PageHeader
-        icon={KeyRound}
-        title="Token di accesso"
-        description="Servono a far usare PigroCRM a un agente (per esempio Claude, tramite il server MCP) con le credenziali di questo account."
+        icon={Bot}
+        title="Agenti"
+        description="Un agente (per esempio Claude, tramite il server MCP) usa PigroCRM con un token di accesso di questo account."
         actions={
-          <Button onClick={openDialog}>
-            <Plus className="mr-2 size-4" />
-            Nuovo token
-          </Button>
+          <>
+            {/* The page's one strong action (REB-873): connecting an agent is what the
+                token is for, and the dialog mints the token as its first step. A bare
+                token, to put in a variable by hand, is the quieter one beside it. */}
+            <Button onClick={() => setConnecting(true)}>
+              <Plug className="mr-2 size-4" />
+              Collega un agente
+            </Button>
+            <Button variant="outline" onClick={openDialog}>
+              <Plus className="mr-2 size-4" />
+              Nuovo token
+            </Button>
+          </>
         }
       />
 
@@ -187,14 +320,22 @@ export function TokensPanel() {
         {/* Stays on the page rather than folding into the header's own description: it
             is the warning, not the explanation, and the two read differently. */}
         <p className="text-sm text-muted-foreground">
-          Un token eredita <strong>l&apos;intero ruolo di chi lo crea</strong>, senza possibilità
-          di limitarne l&apos;ambito e senza scadenza: chiunque lo possieda può fare, tramite
-          l&apos;API, tutto ciò che puoi fare tu — un token creato da un amministratore può
-          anche creare altri amministratori. Trattalo come una password: non condividerlo e
-          revocalo subito se sospetti che sia stato esposto.
+          Un token eredita <strong>l&apos;intero ruolo di chi lo crea</strong> e va{' '}
+          <strong>senza scadenza</strong>: chiunque lo possieda può fare, tramite l&apos;API,
+          tutto ciò che puoi fare tu, tranne gestire utenti, token, impostazioni, posta e
+          collegamenti: quelle operazioni restano solo a una persona che accede dall&apos;app.
+          Trattalo come una password: non condividerlo e revocalo subito se
+          sospetti che sia stato esposto.
+        </p>
+
+        <p className="text-sm text-muted-foreground">
+          Fatture, tariffe e chiusura dei mesi sono fuori dalla portata di un token, a meno che tu
+          non gli dia l&apos;<strong>accesso completo</strong>: lo scegli token per token, ed è
+          chiuso finché non lo chiedi.
         </p>
 
         <DataTable
+          label="Token"
           columns={columns}
           data={tokens.data ?? []}
           isLoading={tokens.isLoading}
@@ -202,6 +343,27 @@ export function TokensPanel() {
           error={tokens.error}
           emptyMessage="Nessun token creato."
         />
+
+        {isAdmin && (
+          <section className="space-y-2 pt-4" aria-labelledby="team-tokens-title">
+            <h2 id="team-tokens-title" className="text-base font-medium">
+              Token del team
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              I token attivi degli altri membri. Puoi chiudere l’accesso completo di uno che non
+              deve arrivare alle fatture; la modifica compare nella cronologia del titolare.
+            </p>
+            <DataTable
+              label="Token del team"
+              columns={teamColumns}
+              data={team.data ?? []}
+              isLoading={team.isLoading}
+              isError={team.isError}
+              error={team.error}
+              emptyMessage="Nessun altro membro ha un token attivo."
+            />
+          </section>
+        )}
       </div>
 
       <Dialog open={creating} onOpenChange={setCreating}>
@@ -210,7 +372,7 @@ export function TokensPanel() {
             <DialogTitle>Nuovo token</DialogTitle>
             <DialogDescription>
               Dai un nome riconoscibile, es. &quot;Claude sul portatile&quot;. Avrà lo stesso ruolo
-              di questo account ({ruolo}) e non scadrà finché non lo revochi.
+              di questo account ({role}) e non scadrà finché non lo revochi.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -225,13 +387,29 @@ export function TokensPanel() {
             <Label htmlFor="token-nome">Nome</Label>
             <Input
               id="token-nome"
-              aria-invalid={fieldError?.field === 'nome'}
-              value={nome}
-              onChange={(event) => setNome(event.target.value)}
+              aria-invalid={fieldError?.field === 'name'}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
             />
-            {fieldError?.field === 'nome' && (
+            {fieldError?.field === 'name' && (
               <p className="text-sm text-destructive">{fieldError.message}</p>
             )}
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="token-full-access"
+                checked={fullAccess && fullAccessAvailable}
+                disabled={!fullAccessAvailable}
+                onCheckedChange={(checked) => setFullAccess(checked === true)}
+              />
+              <Label htmlFor="token-full-access">Accesso completo</Label>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {fullAccessAvailable
+                ? FULL_ACCESS_HELP
+                : 'Chiuso per questo spazio: lo apre un amministratore in Impostazioni → Spazio. Senza, l’agente non ha gli strumenti per le fatture, le tariffe e la chiusura dei mesi.'}
+            </p>
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setCreating(false)}>
@@ -243,6 +421,8 @@ export function TokensPanel() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConnectAgentDialog open={connecting} onOpenChange={setConnecting} />
 
       {/*
        * The one and only place this value is shown. No Esc, no click-outside,

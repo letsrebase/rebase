@@ -27,7 +27,7 @@ function page(items: Partial<Deal>[], nextCursor: string | null) {
 }
 
 function deal(id: string): Partial<Deal> {
-  return { id, nome: `Deal ${id}`, pipeline_stage_id: 's1' }
+  return { id, name: `Deal ${id}`, pipeline_stage_id: 's1' }
 }
 
 describe('fetchAllDeals', () => {
@@ -104,10 +104,10 @@ describe('fetchAllDeals', () => {
 
   /**
    * The one safety valve: a tenant so large it never runs out of `next_cursor`
-   * within `MAX_PAGES` gets `truncated: true` instead of looping forever, or
-   * worse, silently stopping with no way for the caller to know. Not a state
-   * this product's own target user is expected to reach -- see the constant's
-   * own comment in queries.ts -- but if it ever happens, this is what the UI's
+   * within `fetchAllPages`' page cap gets `truncated: true` instead of looping
+   * forever, or worse, silently stopping with no way for the caller to know. Not
+   * a state this product's own target user is expected to reach -- see
+   * `DEFAULT_MAX_PAGES` in lib/fetchAllPages.ts -- but if it ever happens, this is what the UI's
    * truncation banner (routes/app/deal/index.tsx, routes/app/deal/list.tsx)
    * keys off.
    */
@@ -246,6 +246,26 @@ describe('useMoveDeal', () => {
 
     expect(invalidateSpy).toHaveBeenCalledWith(
       expect.objectContaining({ queryKey: queryKeys.stages }),
+    )
+  })
+
+  // The deal's Timeline tab keeps its own cache: a move writes a «Cambio stato» row, so it
+  // has to refetch or it shows the old history until the page is reloaded.
+  it('invalidates the deal timeline on settle', async () => {
+    const client = newClient()
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries')
+    mockPatch.mockReturnValueOnce(Promise.resolve(ok({ id: 'a', pipeline_stage_id: 's2' })))
+
+    const { result } = renderHook(() => useMoveDeal(), { wrapper: createWrapper(client) })
+
+    act(() => {
+      result.current.mutate({ dealId: 'a', stageId: 's2' })
+    })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: queryKeys.timeline('deal', 'a') }),
     )
   })
 })

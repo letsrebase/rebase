@@ -2,18 +2,23 @@
 
 The registry and every space this file creates live in the same container `api_engine`
 starts. `get_settings` is overridden with that container's URL so `TenantService` and
-`deps._tenant_session_factory` both derive their databases from it, and the per-process
+`deps.space_session_factory` both derive their databases from it, and the per-process
 caches in `deps` are reset around each test so a space provisioned here never outlives
 the settings it was built under.
 """
 
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 
+from pigrocrm.core.auth.tokens import issue_access_token
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db.sidecar import drop_database
 from pigrocrm.core.tenants import MemberLookup, ensure_tenants_database
@@ -21,17 +26,22 @@ from pigrocrm.core.tenants.database import tenant_database_name, tenant_database
 from pigrocrm_api.deps import get_session, reset_session_factories
 from pigrocrm_api.main import create_app
 from pigrocrm_api.ratelimit import (
-    DISPONIBILE_REQUESTS_PER_MINUTE,
+    AVAILABLE_REQUESTS_BY_MINUTE,
+    MAIL_BURST_PER_RECIPIENT,
     REQUESTS_PER_MINUTE,
     reset_rate_limit,
+    spend_for_recipient,
 )
+from pigrocrm_api.routers.tenants import SIGNUP_CLOSED
 from pigrocrm_api.tenancy import split_tenant_prefix
 
 SLUG = "studio-prova"
 REGISTRY_TOKEN = "un-token-lungo-solo-per-questa-suite"
 SIGNUP = {
     "slug": SLUG,
-    "nome": "Ada Lovelace",
+    "name": "Ada Lovelace",
+    "first_name": "Ada",
+    "last_name": "Lovelace",
     "email": "ada@studio.it",
 }
 
@@ -92,9 +102,9 @@ def registry_client(container_settings: Settings) -> Iterator[TestClient]:
 
 
 def test_the_prefix_is_split_only_for_a_space_and_only_before_api_or_health() -> None:
-    assert split_tenant_prefix("/studio/api/customers") == ("studio", "/api/customers")
+    assert split_tenant_prefix("/studio/api/organizations") == ("studio", "/api/organizations")
     assert split_tenant_prefix("/studio/health") == ("studio", "/health")
-    assert split_tenant_prefix("/api/customers") == (None, "/api/customers")
+    assert split_tenant_prefix("/api/organizations") == (None, "/api/organizations")
     assert split_tenant_prefix("/app/api/x") == (None, "/app/api/x")  # reserved word
     assert split_tenant_prefix("/studio/app/login") == (None, "/studio/app/login")  # not the API
     assert split_tenant_prefix("/Studio/api/x") == (None, "/Studio/api/x")  # not a slug
@@ -109,28 +119,28 @@ def test_a_reserved_or_malformed_name_is_refused_before_touching_the_server(
 
 
 def test_availability_says_why(spaces_client: TestClient) -> None:
-    assert spaces_client.get("/api/tenants/app/disponibile").json() == {
+    assert spaces_client.get("/api/tenants/app/available").json() == {
         "slug": "app",
-        "disponibile": False,
-        "motivo": "questo nome è riservato",
+        "available": False,
+        "reason": "questo nome è riservato",
     }
-    assert spaces_client.get(f"/api/tenants/{SLUG}/disponibile").json()["disponibile"] is True
+    assert spaces_client.get(f"/api/tenants/{SLUG}/available").json()["available"] is True
 
 
-def test_disponibile_is_throttled_per_client(spaces_client: TestClient) -> None:
-    """Unauthenticated by design, like `membro` (REB-228): the request past the budget
-    is a 429 with a `Retry-After`. Its own, larger budget (`DISPONIBILE_REQUESTS_PER_MINUTE`),
-    separate from `membro`'s and `signup`'s `REQUESTS_PER_MINUTE`: this is the one route
+def test_available_is_throttled_by_client(spaces_client: TestClient) -> None:
+    """Unauthenticated by design, like `member` (REB-228): the request past the budget
+    is a 429 with a `Retry-After`. Its own, larger budget (`AVAILABLE_REQUESTS_BY_MINUTE`),
+    separate from `member`'s and `signup`'s `REQUESTS_PER_MINUTE`: this is the one route
     of the three a person's own typing calls repeatedly, and sharing the signup's tighter
     bucket would let a few hesitations while naming a business starve the tokens the
     actual `POST /` still needs to create the space."""
-    for _ in range(DISPONIBILE_REQUESTS_PER_MINUTE):
-        assert spaces_client.get(f"/api/tenants/{SLUG}/disponibile").status_code == 200
-    refused = spaces_client.get(f"/api/tenants/{SLUG}/disponibile")
+    for _ in range(AVAILABLE_REQUESTS_BY_MINUTE):
+        assert spaces_client.get(f"/api/tenants/{SLUG}/available").status_code == 200
+    refused = spaces_client.get(f"/api/tenants/{SLUG}/available")
     assert refused.status_code == 429, refused.text
     assert refused.headers["Retry-After"] == "60"
     # Another client has its own bucket.
-    other = spaces_client.get(f"/api/tenants/{SLUG}/disponibile", headers={"X-Real-IP": "10.0.0.7"})
+    other = spaces_client.get(f"/api/tenants/{SLUG}/available", headers={"X-Real-IP": "10.0.0.7"})
     assert other.status_code == 200, other.text
 
 
@@ -144,7 +154,7 @@ def test_signing_up_creates_a_space_that_serves_its_own_data(
     assert created.headers["Location"] == f"/{SLUG}/app/"
 
     # The name is gone, and a second signup with it is a 409, not a second space.
-    assert spaces_client.get(f"/api/tenants/{SLUG}/disponibile").json()["disponibile"] is False
+    assert spaces_client.get(f"/api/tenants/{SLUG}/available").json()["available"] is False
     again = spaces_client.post("/api/tenants/", json={**SIGNUP, "email": "bob@studio.it"})
     assert again.status_code == 409, again.text
 
@@ -154,9 +164,9 @@ def test_signing_up_creates_a_space_that_serves_its_own_data(
     assert spaces_client.get(f"/{SLUG}/api/auth/me").json()["email"] == SIGNUP["email"]
 
     # The space is empty and separate: the root's session is not this one.
-    customers = spaces_client.get(f"/{SLUG}/api/customers")
-    assert customers.status_code == 200, customers.text
-    assert customers.json()["items"] == []
+    organizations = spaces_client.get(f"/{SLUG}/api/organizations")
+    assert organizations.status_code == 200, organizations.text
+    assert organizations.json()["items"] == []
 
     # Gmail does not exist for a space, whatever the installation has configured: the
     # account read says "nothing connected", and connecting one is refused outright.
@@ -173,7 +183,7 @@ def test_signing_up_creates_a_space_that_serves_its_own_data(
 
 
 def test_an_unknown_space_is_a_404_not_a_server_error(spaces_client: TestClient) -> None:
-    response = spaces_client.get("/nessuno-qui/api/customers")
+    response = spaces_client.get("/nessuno-qui/api/organizations")
     assert response.status_code == 404, response.text
     assert response.json()["code"] == "not_found"
 
@@ -246,7 +256,7 @@ def test_the_root_slug_is_the_root_itself_and_nobody_elses_name(
             deletions = logout.headers.get_list("set-cookie")
             assert sum("Path=/studiorossi/;" in c for c in deletions) == 2
             assert sum("Path=/;" in c for c in deletions) == 2
-            assert client.get("/api/tenants/studiorossi/disponibile").json()["motivo"] == (
+            assert client.get("/api/tenants/studiorossi/available").json()["reason"] == (
                 "questo nome è riservato"
             )
             refused = client.post("/api/tenants/", json={**SIGNUP, "slug": "studiorossi"})
@@ -308,7 +318,7 @@ def test_a_link_asked_at_the_root_reaches_the_space_that_address_owns(
     """Spec 2026-09-12 §6.2: the bare login page asks for a link, the registry says which
     space the address owns, and the link enters that space with cookies scoped to it."""
     from pigrocrm.core.mail import RecordingSender
-    from pigrocrm_api.routers.auth import get_sender
+    from pigrocrm_api.sessions import get_sender
 
     recording = RecordingSender()
     spaces_client.app.dependency_overrides[get_sender] = lambda: recording  # type: ignore[attr-defined]
@@ -335,7 +345,7 @@ def test_a_link_asked_at_the_root_reaches_the_space_that_address_owns(
 def test_a_link_asked_under_a_space_reaches_that_space_only(spaces_client: TestClient) -> None:
     """Under `/<slug>/api`, the space's own user and the space's own entry page."""
     from pigrocrm.core.mail import RecordingSender
-    from pigrocrm_api.routers.auth import get_sender
+    from pigrocrm_api.sessions import get_sender
 
     recording = RecordingSender()
     spaces_client.app.dependency_overrides[get_sender] = lambda: recording  # type: ignore[attr-defined]
@@ -355,36 +365,34 @@ def test_a_link_asked_under_a_space_reaches_that_space_only(spaces_client: TestC
     assert len(recording.sent) == 1
 
 
-def test_the_signup_learns_whether_an_address_is_a_member_and_how_many_spaces_it_owns(
+def test_the_signup_learns_whether_an_address_is_a_member_and_owns_a_space_and_nothing_more(
     spaces_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """ORB-173: the hub's answer and the registry's, in one body. The hub is stubbed at
-    the client the router calls; `spazi` is what only the registry knows and is read for
-    real, from the space this test provisions. A count and never the slugs: the address
-    is not proven yet."""
+    the client the router calls; `has_spaces` is what only the registry knows and is read
+    for real, from the space this test provisions. The address is not proven yet, so the
+    hub's names and the count and slugs of the spaces never leave: two booleans."""
     asked: list[str] = []
 
     def fake_lookup(settings: Settings, email: str) -> MemberLookup:
         asked.append(email)
-        return MemberLookup(membro=True, nome="Ada", cognome="Lovelace")
+        return MemberLookup(member=True, first_name="Ada", last_name="Lovelace")
 
     monkeypatch.setattr("pigrocrm_api.routers.tenants.lookup_member", fake_lookup)
 
     before = spaces_client.post("/api/tenants/member", json={"email": "Ada@Studio.it"})
     assert before.status_code == 200, before.text
-    assert before.json() == {"membro": True, "nome": "Ada", "cognome": "Lovelace", "spazi": 0}
+    assert before.json() == {"member": True, "has_spaces": False, "known_name": True}
     assert asked == ["ada@studio.it"]
 
     created = spaces_client.post("/api/tenants/", json=SIGNUP)
     assert created.status_code == 201, created.text
     after = spaces_client.post("/api/tenants/member", json={"email": SIGNUP["email"]})
-    assert after.json()["spazi"] == 1
+    assert after.json() == {"member": True, "has_spaces": True, "known_name": True}
     assert SLUG not in after.text
     # Somebody else's address owns nothing here, whatever the hub says about them.
-    assert (
-        spaces_client.post("/api/tenants/member", json={"email": "bob@studio.it"}).json()["spazi"]
-        == 0
-    )
+    other = spaces_client.post("/api/tenants/member", json={"email": "bob@studio.it"})
+    assert other.json()["has_spaces"] is False
 
 
 def test_an_unreachable_hub_still_answers_and_says_not_a_member(
@@ -397,7 +405,7 @@ def test_an_unreachable_hub_still_answers_and_says_not_a_member(
     with _serving(with_hub) as client:
         answer = client.post("/api/tenants/member", json={"email": "ada@studio.it"})
         assert answer.status_code == 200, answer.text
-        assert answer.json() == {"membro": False, "nome": None, "cognome": None, "spazi": 0}
+        assert answer.json() == {"member": False, "has_spaces": False, "known_name": False}
 
 
 def test_a_malformed_or_missing_address_is_a_422_and_the_query_string_is_not_read(
@@ -421,7 +429,7 @@ def test_the_member_question_is_throttled_per_client(
     because the limiter runs inside the route, after validation."""
     monkeypatch.setattr(
         "pigrocrm_api.routers.tenants.lookup_member",
-        lambda settings, email: MemberLookup(membro=False),
+        lambda settings, email: MemberLookup(member=False),
     )
     question = {"email": "ada@studio.it"}
     for _ in range(REQUESTS_PER_MINUTE):
@@ -436,7 +444,7 @@ def test_the_member_question_is_throttled_per_client(
     assert other.status_code == 200, other.text
 
 
-WIZARD_SIGNUP = {**SIGNUP, "membro": False}
+WIZARD_SIGNUP = {**SIGNUP, "member": False}
 
 
 def test_signing_up_enters_for_a_while_and_the_welcome_link_makes_it_durable(
@@ -459,10 +467,10 @@ def test_signing_up_enters_for_a_while_and_the_welcome_link_makes_it_durable(
     assert not any("pigrocrm_refresh=" in c for c in cookies)
     # In, for the access token's life: `me` answers, `refresh` has nothing to refresh.
     me = spaces_client.get(f"/{SLUG}/api/auth/me")
-    assert me.status_code == 200 and me.json()["ruolo"] == "admin"
+    assert me.status_code == 200 and me.json()["role"] == "admin"
     assert spaces_client.post(f"/{SLUG}/api/auth/refresh").status_code == 401
     # Nothing durable before the address is proven: no token, no second user.
-    token = spaces_client.post(f"/{SLUG}/api/tokens", json={"nome": "claude"})
+    token = spaces_client.post(f"/{SLUG}/api/tokens", json={"name": "claude"})
     assert token.status_code == 422, token.text
     assert "conferma il tuo indirizzo" in token.text
     user = spaces_client.post(
@@ -470,8 +478,8 @@ def test_signing_up_enters_for_a_while_and_the_welcome_link_makes_it_durable(
         json={
             "email": "b@studio.it",
             "password": "lunghissima1",
-            "nome": "B",
-            "ruolo": "collaboratore",
+            "name": "B",
+            "role": "collaborator",
         },
     )
     assert user.status_code == 422, user.text
@@ -489,7 +497,7 @@ def test_signing_up_enters_for_a_while_and_the_welcome_link_makes_it_durable(
         for c in entered.headers.get_list("set-cookie")
     )
     assert spaces_client.post(f"/{SLUG}/api/auth/refresh").status_code == 200
-    assert spaces_client.post(f"/{SLUG}/api/tokens", json={"nome": "claude"}).status_code == 201
+    assert spaces_client.post(f"/{SLUG}/api/tokens", json={"name": "claude"}).status_code == 201
     # No password was ever set: the password form knows nothing of this admin.
     denied = spaces_client.post(
         f"/{SLUG}/api/auth/login", json={"email": "ada@studio.it", "password": "qualunque11"}
@@ -498,9 +506,215 @@ def test_signing_up_enters_for_a_while_and_the_welcome_link_makes_it_durable(
 
 
 def test_signing_up_without_a_sender_still_creates_the_space(spaces_client: TestClient) -> None:
-    created = spaces_client.post("/api/tenants/", json={**WIZARD_SIGNUP, "membro": True})
+    created = spaces_client.post("/api/tenants/", json={**WIZARD_SIGNUP, "member": True})
     assert created.status_code == 201, created.text
     assert spaces_client.get(f"/{SLUG}/api/auth/me").status_code == 200
+
+
+def _hub_knows(monkeypatch: pytest.MonkeyPatch, lookup: MemberLookup) -> None:
+    monkeypatch.setattr(
+        "pigrocrm_api.routers.tenants.lookup_member", lambda settings, email: lookup
+    )
+
+
+def _founder_name(client: TestClient) -> str:
+    """The founder as the pickers list them: the name on the space's own user list."""
+    me = client.get(f"/{SLUG}/api/auth/me")
+    assert me.status_code == 200, me.text
+    listed = client.get(f"/{SLUG}/api/users")
+    assert listed.status_code == 200, listed.text
+    names = [row["name"] for row in listed.json() if row["email"] == "ada@studio.it"]
+    assert len(names) == 1
+    return names[0]
+
+
+def test_the_founder_is_named_after_the_person_the_hub_knows_not_after_the_space(
+    spaces_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """REB-822: the space is «Rossi Studio», the person is Ada Lovelace, and the pickers
+    list the person."""
+    _hub_knows(monkeypatch, MemberLookup(member=True, first_name="Ada", last_name="Lovelace"))
+    body = {"slug": SLUG, "name": "Rossi Studio", "email": "ada@studio.it", "member": True}
+    created = spaces_client.post("/api/tenants/", json=body)
+    assert created.status_code == 201, created.text
+    assert _founder_name(spaces_client) == "Ada Lovelace"
+
+
+def test_a_name_typed_in_the_wizard_wins_over_the_hub_and_the_space_name(
+    spaces_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_knows(monkeypatch, MemberLookup(member=True, first_name="Augusta", last_name="Byron"))
+    body = {
+        "slug": SLUG,
+        "name": "Rossi Studio",
+        "email": "ada@studio.it",
+        "first_name": " Ada ",
+        "last_name": "Lovelace",
+    }
+    assert spaces_client.post("/api/tenants/", json=body).status_code == 201
+    assert _founder_name(spaces_client) == "Ada Lovelace"
+
+
+def test_an_address_nobody_knows_is_asked_for_its_name_and_no_space_is_created(
+    spaces_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_knows(monkeypatch, MemberLookup(member=False))
+    body = {"slug": SLUG, "name": "Rossi Studio", "email": "ada@studio.it"}
+    refused = spaces_client.post("/api/tenants/", json=body)
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["field"] == "first_name"
+    # Nothing was left behind: the name is still free and the same body plus a name works.
+    assert spaces_client.get(f"/api/tenants/{SLUG}/available").json()["available"] is True
+    assert (
+        spaces_client.post("/api/tenants/", json={**body, "first_name": "Ada"}).status_code == 201
+    )
+    assert _founder_name(spaces_client) == "Ada"
+
+
+def test_a_hub_that_knows_the_person_but_not_the_last_name_names_the_founder_by_the_first(
+    spaces_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hub_knows(monkeypatch, MemberLookup(member=True, first_name="Ada"))
+    body = {"slug": SLUG, "name": "Rossi Studio", "email": "ada@studio.it"}
+    assert spaces_client.post("/api/tenants/", json=body).status_code == 201
+    assert _founder_name(spaces_client) == "Ada"
+
+
+def test_the_signup_refuses_past_the_ceiling_on_spaces(container_settings: Settings) -> None:
+    """`Settings.max_spaces` bounds what an anonymous caller can make this server hold:
+    each space is a database. Past it the answer is a 503 with a sentence, and nothing is
+    provisioned."""
+    capped = container_settings.model_copy(update={"max_spaces": 1})
+    with _serving(capped) as client:
+        assert client.post("/api/tenants/", json=SIGNUP).status_code == 201
+        full = client.post(
+            "/api/tenants/", json={**SIGNUP, "slug": "studio-due", "email": "b@studio.it"}
+        )
+        assert full.status_code == 503, full.text
+        assert full.json()["detail"] == SIGNUP_CLOSED
+        assert client.get("/api/tenants/studio-due/available").json()["available"] is True
+
+
+def test_signups_in_flight_are_bounded_and_the_slot_comes_back(
+    spaces_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A signup is a `CREATE DATABASE` and a migration on one of the API's pool threads, so
+    only a couple may run at once: past that the answer is a 503 with a `Retry-After`, and
+    nothing is provisioned. The slot is released, so the same signup then goes through."""
+    slots = threading.BoundedSemaphore(1)
+    slots.acquire()
+    monkeypatch.setattr("pigrocrm_api.routers.tenants._provisioning", slots)
+
+    busy = spaces_client.post("/api/tenants/", json=SIGNUP)
+    assert busy.status_code == 503, busy.text
+    assert busy.headers["Retry-After"] == "60"
+    assert spaces_client.get(f"/api/tenants/{SLUG}/available").json()["available"] is True
+
+    slots.release()
+    assert spaces_client.post("/api/tenants/", json=SIGNUP).status_code == 201
+    # Taken and given back: another signup could take it again.
+    assert slots.acquire(blocking=False)
+
+
+def test_the_signup_has_a_global_rate_under_the_per_client_one(
+    spaces_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A script that rotates its source address escapes every per-client bucket, so the
+    signup also spends from one bucket for the whole process."""
+    monkeypatch.setattr("pigrocrm_api.routers.tenants.GLOBAL_SIGNUPS_PER_MINUTE", 1)
+    assert spaces_client.post("/api/tenants/", json=SIGNUP).status_code == 201
+    refused = spaces_client.post(
+        "/api/tenants/",
+        json={**SIGNUP, "slug": "studio-due", "email": "b@studio.it"},
+        headers={"X-Real-IP": "10.0.0.7"},
+    )
+    assert refused.status_code == 429, refused.text
+    assert refused.headers["Retry-After"] == "60"
+
+
+def test_a_recipient_past_its_mail_budget_gets_no_welcome_but_still_a_space(
+    spaces_client: TestClient,
+) -> None:
+    from pigrocrm.core.mail import RecordingSender
+    from pigrocrm_api.sessions import get_sender
+
+    recording = RecordingSender()
+    spaces_client.app.dependency_overrides[get_sender] = lambda: recording  # type: ignore[attr-defined]
+    for _ in range(MAIL_BURST_PER_RECIPIENT):
+        assert spend_for_recipient(SIGNUP["email"])
+
+    created = spaces_client.post("/api/tenants/", json=WIZARD_SIGNUP)
+    assert created.status_code == 201, created.text
+    assert recording.sent == []
+    assert spaces_client.get(f"/{SLUG}/api/auth/me").status_code == 200
+
+
+def test_link_mails_to_one_address_are_throttled_whoever_asks(spaces_client: TestClient) -> None:
+    """The per-client bucket does not stop a script that rotates its source address from
+    filling one inbox: the address has a budget of its own, spent before the lookup so the
+    answer is the same for an address that is known and for one that is not. Another
+    address is unaffected."""
+    from pigrocrm.core.mail import RecordingSender
+    from pigrocrm_api.sessions import get_sender
+
+    recording = RecordingSender()
+    spaces_client.app.dependency_overrides[get_sender] = lambda: recording  # type: ignore[attr-defined]
+    address = {"email": "vittima@studio.it"}
+    for attempt in range(MAIL_BURST_PER_RECIPIENT):
+        response = spaces_client.post(
+            "/api/auth/link", json=address, headers={"X-Real-IP": f"10.1.0.{attempt}"}
+        )
+        assert response.status_code == 202, response.text
+    refused = spaces_client.post("/api/auth/link", json=address, headers={"X-Real-IP": "10.1.1.1"})
+    assert refused.status_code == 429, refused.text
+    assert int(refused.headers["Retry-After"]) > 0
+    # The normalised address is the key: case and spaces do not make a new budget.
+    shouted = {"email": " VITTIMA@studio.it "}
+    assert (
+        spaces_client.post(
+            "/api/auth/link", json=shouted, headers={"X-Real-IP": "10.1.1.2"}
+        ).status_code
+        == 429
+    )
+    other = spaces_client.post(
+        "/api/auth/link", json={"email": "altro@studio.it"}, headers={"X-Real-IP": "10.1.1.3"}
+    )
+    assert other.status_code == 202, other.text
+
+
+def test_an_access_token_is_good_for_the_space_it_was_minted_for(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    """The root and every space share one signing secret, so the `aud` claim is what keeps
+    a token from one the credential of another. A token minted for the root, or for no
+    space at all (one from before the claim existed), is refused at the space, and the
+    one minted for the space is accepted."""
+    created = spaces_client.post("/api/tenants/", json=SIGNUP)
+    assert created.status_code == 201, created.text
+    user_id = UUID(spaces_client.get(f"/{SLUG}/api/auth/me").json()["id"])
+    spaces_client.cookies.clear()
+
+    def me_with(token: str) -> int:
+        headers = {"Cookie": f"pigrocrm_access={token}"}
+        return spaces_client.get(f"/{SLUG}/api/auth/me", headers=headers).status_code
+
+    own = issue_access_token(user_id, "admin", container_settings, space=SLUG)
+    assert me_with(own) == 200
+    assert me_with(issue_access_token(user_id, "admin", container_settings)) == 401
+    assert me_with(issue_access_token(user_id, "admin", container_settings, space="altro")) == 401
+    now = datetime.now(UTC)
+    legacy = jwt.encode(
+        {
+            "sub": str(user_id),
+            "role": "admin",
+            "type": "access",
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(minutes=5)).timestamp()),
+        },
+        container_settings.jwt_secret,
+        algorithm="HS256",
+    )
+    assert me_with(legacy) == 401
 
 
 def test_the_signup_refuses_a_password(spaces_client: TestClient) -> None:

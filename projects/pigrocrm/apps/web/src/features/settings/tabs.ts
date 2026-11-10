@@ -1,5 +1,5 @@
 /**
- * The tabs of the settings page, in the order they are shown.
+ * The sections of the settings page and the groups they belong to, in the order shown.
  *
  * Its own module because two places need the same list and neither can own it:
  * `SettingsLayout` renders them as tabs, and `AppShell` renders them as the sub-items of
@@ -14,26 +14,92 @@
  * the sidebar maps each `value` to a literal path of its own (`AppShell`'s
  * `SETTINGS_PATHS`), and adding a tab there is a compile error until the route exists.
  *
- * `profilo` first, and the one exception to "every tab here is admin-only": it is a
- * person's own preferences (`ProfilePanel`), not something `require_admin` gates
- * anywhere, and `SettingsLayout` exempts exactly this one value from the page's
- * otherwise-blanket admin gate so the weekly digest's opt-out link works for whoever
- * receives the mail (spec 2026-09-16 §3.6).
+ * The sections are grouped as the REB-770 brief says (option A, DECISIONS.md 2026-10-26):
+ * the sidebar lists the groups, the page's tab strip lists the sections of the current
+ * group, and the URL is always the section's (`/app/settings/<value>`), never the group.
+ *
+ * Three sections are the exception to "every section here is admin-only": `profile` and
+ * `notifications` are a person's own (`ProfilePanel`, `NotificationsPanel`), not something
+ * `require_admin` gates, and `SettingsLayout` lets any role open them so the weekly digest's
+ * opt-out link, which lands on Notifiche, works for whoever receives the mail (spec
+ * 2026-09-16 §3.6); `drive` is open to a collaboratore (REB-457). `SETTINGS_TAB_MIN_ROLE` in
+ * `lib/permissions.ts` is the table that says which.
  */
-export const SETTINGS_TABS = [
-  { value: 'profile', label: 'Profilo' },
-  { value: 'space', label: 'Spazio' },
-  { value: 'fields', label: 'Campi' },
-  { value: 'pipeline', label: 'Pipeline' },
-  { value: 'template', label: 'Template' },
-  { value: 'aziende', label: 'Aziende' },
-  { value: 'users', label: 'Utenti' },
-  { value: 'cost-categories', label: 'Categorie costo' },
-  { value: 'rates', label: 'Tariffe' },
-  { value: 'periods', label: 'Periodi' },
-  { value: 'gmail', label: 'Gmail' },
-  { value: 'drive', label: 'Google Drive' },
-  { value: 'automations', label: 'Automazioni' },
+export const SETTINGS_GROUPS = [
+  {
+    id: 'personal',
+    label: 'Personale',
+    tabs: [
+      { value: 'profile', label: 'Profilo' },
+      // A person's own reminder overrides and the weekly digest (REB-735); like Profilo it
+      // is every role's, and the digest mail's opt-out link lands here.
+      { value: 'notifications', label: 'Notifiche' },
+    ],
+  },
+  {
+    id: 'space',
+    label: 'Spazio e persone',
+    tabs: [
+      { value: 'space', label: 'Spazio' },
+      // Which parts of the CRM the space uses, and its profile (REB-954): admin only.
+      { value: 'modules', label: 'Moduli' },
+      { value: 'users', label: 'Utenti' },
+    ],
+  },
+  {
+    id: 'organizations-deals',
+    label: 'Clienti e deal',
+    tabs: [
+      { value: 'fields', label: 'Campi' },
+      { value: 'pipeline', label: 'Pipeline' },
+      { value: 'templates', label: 'Template' },
+    ],
+  },
+  {
+    id: 'invoicing',
+    label: 'Fatturazione e costi',
+    tabs: [
+      { value: 'legal-entities', label: 'Aziende' },
+      { value: 'cost-categories', label: 'Categorie costo' },
+      { value: 'rates', label: 'Tariffe' },
+      { value: 'periods', label: 'Periodi' },
+    ],
+  },
+  {
+    id: 'connections',
+    label: 'Collegamenti',
+    tabs: [
+      { value: 'gmail', label: 'Gmail' },
+      { value: 'drive', label: 'Google Drive' },
+      // The Slack app installed in the space, who in it is whom, and the channel (REB-739).
+      { value: 'slack', label: 'Slack' },
+      // The model PigroCRM reads incoming documents with: off until an admin turns it on (REB-972).
+      { value: 'ai-model', label: 'Modello AI' },
+    ],
+  },
+  {
+    id: 'reminders',
+    label: 'Promemoria e automazioni',
+    tabs: [
+      // The space's reminder defaults (REB-735), admin only like every section but the two
+      // personal ones.
+      { value: 'reminders', label: 'Promemoria' },
+      { value: 'automations', label: 'Automazioni' },
+      // What the cron commands last did in this space (REB-764): admin only.
+      { value: 'jobs', label: 'Esecuzioni' },
+    ],
+  },
 ] as const
 
-export type SettingsTabValue = (typeof SETTINGS_TABS)[number]['value']
+export type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
+
+/** Every section, flattened in group order: the list the permissions table is keyed by. */
+export const SETTINGS_TABS: ReadonlyArray<{ value: SettingsTabValue; label: string }> =
+  SETTINGS_GROUPS.flatMap((group) => [...group.tabs])
+
+export type SettingsTabValue = SettingsGroup['tabs'][number]['value']
+
+/** The group a section belongs to, or `undefined` for a path that is no section. */
+export function settingsGroupOf(value: string | undefined): SettingsGroup | undefined {
+  return SETTINGS_GROUPS.find((group) => group.tabs.some((tab) => tab.value === value))
+}

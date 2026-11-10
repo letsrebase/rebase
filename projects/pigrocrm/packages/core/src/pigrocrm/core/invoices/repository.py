@@ -9,18 +9,18 @@ MCP exclusion list at exactly four names, so a new public method on `InvoiceServ
 force either a new tool or an edit to another slice's declared list.
 """
 
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import NamedTuple, cast
+from typing import cast
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, case, delete, distinct, func, select, text
+from sqlalchemy import ColumnElement, Row, case, delete, distinct, func, select, text
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.db import today_local
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.due_items.models import DueItem, DueItemSettlement
+from pigrocrm.core.due_items.sales import join_sales_item, remaining_amount
 from pigrocrm.core.gmail.models import PaymentReminder
 from pigrocrm.core.invoices.models import (
     PROFORMA_SEQUENCE_NAME,
@@ -29,142 +29,36 @@ from pigrocrm.core.invoices.models import (
     InvoiceLine,
     InvoiceRegisterGap,
 )
-from pigrocrm.core.invoices.naming import numero_completo
+from pigrocrm.core.invoices.naming import number_complete
+from pigrocrm.core.invoices.receivables import (
+    BANDS_RECEIVABLES,
+    BandRow,
+    MonthRow,
+    OpenReceivable,
+    OrganizationRow,
+    OverdueRow,
+    Payment,
+    UnpaidInvoice,
+    _issued_filter,
+    _legal_entity_filter,
+    _overdue_predicate,
+    _receivable_filter,
+    invoiced_not_won_predicate,
+)
 from pigrocrm.core.invoices.schemas import InvoiceListQuery
-from pigrocrm.core.money import round_money
+from pigrocrm.core.money import round_money, share
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 
 
-def _issued_filter() -> tuple[ColumnElement[bool], ...]:
-    """The one definition of "an invoice that exists as a fiscal document".
-
-    Identical to `AnalyticsRepository._revenue_filter` on purpose and not imported from it:
-    that function answers "which invoices are revenue" and this one answers "which invoices
-    are documents somebody owes on". They coincide today because both mean "a `fattura`
-    that was issued and not annulled", and the day they stop coinciding a shared alias
-    would silently pick a side -- the same reasoning `analytics/schemas.py` records for
-    `DealStato`.
-    """
-    return (
-        Invoice.deleted_at.is_(None),
-        Invoice.tipo == "fattura",
-        Invoice.stato == "emessa",
-    )
-
-
-def _azienda_filter(azienda_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
-    """One azienda's register, or every azienda's (REB-630, spec 2026-10-03 §1.9): the
-    one predicate the dashboard sums below add when the sidebar names an azienda, so
-    «tutte» stays their unfiltered sum by construction."""
-    return () if azienda_id is None else (Invoice.azienda_id == azienda_id,)
-
-
-def _receivable_filter() -> tuple[ColumnElement[bool], ...]:
-    """An issued invoice nobody has paid. The base of both "Da incassare" and "Scaduto",
-    which is what makes the second a subset of the first rather than a figure of its own
-    (§5.2)."""
-    return (*_issued_filter(), Invoice.stato_pagamento == "da_incassare")
-
-
-def _overdue_predicate() -> tuple[ColumnElement[bool], ...]:
-    """A receivable past its due date, strictly.
-
-    Due today is due today, so `<` and not `<=`. A null `data_scadenza` is never overdue,
-    which Postgres's three-valued logic gives for free -- the explicit `IS NOT NULL` is
-    there because relying on that silently is how the opposite gets implemented by
-    accident.
-
-    `today_local()` and not `CURRENT_DATE`: `CURRENT_DATE` is the *database server's* day,
-    and every date in this product is a day in the emitter's zone (`db/clock.py`). Read at
-    call time, never bound once at import, so a process that outlives midnight in Rome does
-    not keep answering yesterday.
-    """
-    return (
-        *_receivable_filter(),
-        Invoice.data_scadenza.is_not(None),
-        Invoice.data_scadenza < today_local(),
-    )
-
-
-# The six ageing buckets of the scadenziario (slice 8 §2.1, REB-329), in the order the
-# page draws them. Six and not five: `data_scadenza` is nullable and a NULL is not today.
-FASCE_SCADENZIARIO: tuple[str, ...] = (
-    "scaduto",
-    "entro_30",
-    "da_31_a_60",
-    "da_61_a_90",
-    "oltre_90",
-    "senza_scadenza",
-)
-
-
-class FasciaRow(NamedTuple):
-    codice: str
-    da: date | None
-    a: date | None
-    importo: Decimal
-    numero: int
-    # The bucket's share of the largest bucket, in [0, 1], so a page can scale a bar
-    # without turning an amount string into a number (slice 6 criterion 14).
-    quota: float
-
-
-class MeseRow(NamedTuple):
-    mese: date  # the first day
-    importo: Decimal
-    numero: int
-    quota: float
-
-
-class ClienteRow(NamedTuple):
-    customer_id: UUID
-    ragione_sociale: str
-    importo: Decimal
-    numero: int
-    scaduto: Decimal
-    quota: float
-
-
-class ScadutaRow(NamedTuple):
-    invoice_id: UUID
-    numero: str
-    customer_id: UUID
-    cliente: str
-    data_scadenza: date
-    giorni_di_ritardo: int
-    importo: Decimal
-    solleciti_inviati: int
-    ultimo_sollecito_il: date | None
-
-
-def _quota(value: Decimal, of: Decimal) -> float:
-    """A share of the largest figure, the same rule `AnalyticsService.cash_overview` uses
-    for its months: zero when there is nothing to scale against."""
-    return float(value / of) if of > Decimal("0") else 0.0
-
-
-def invoiced_not_won_predicate() -> tuple[ColumnElement[bool], ...]:
-    """A deal with an issued invoice that is still sitting on an `open` stage (§6.2).
-
-    `tipo = 'open'`, not `tipo <> 'won'`. The drill-through is a list of deals to go and
-    win -- almost always the stage somebody forgot to move -- and an invoiced deal parked
-    on `perso` is a different problem with a different remedy, which this signal must not
-    silently absorb.
-
-    Written as a predicate rather than inlined because slice 6 §6.2's card and its
-    drill-through must be the *same* predicate: `DealRepository.list` filters on this same
-    tuple, so the count on the card and the length of the list behind it cannot drift.
-
-    Public, unlike `_issued_filter` and `_overdue_predicate` beside it, because its second
-    caller lives in another module: `deals/repository.py` imports it for the
-    `fatturato_non_vinto` drill-through. A leading underscore reached across a package
-    boundary is a worse signal than a public name.
-    """
-    return (
-        *_issued_filter(),
-        Deal.deleted_at.is_(None),
-        PipelineStage.tipo == "open",
-    )
+def _open_receivables(
+    rows: Sequence[Row[Invoice, Decimal, date | None]],
+) -> list[OpenReceivable]:
+    """The statements behind it all `WHERE` a due date, so it is never `None` here."""
+    return [
+        OpenReceivable(invoice, Decimal(remaining), cast(date, due))
+        for invoice, remaining, due in rows
+    ]
 
 
 class InvoiceRepository:
@@ -173,6 +67,26 @@ class InvoiceRepository:
 
     def get(self, invoice_id: UUID, *, include_deleted: bool = False) -> Invoice | None:
         invoice = self.session.get(Invoice, invoice_id)
+        if invoice is None:
+            return None
+        if invoice.deleted_at is not None and not include_deleted:
+            return None
+        return invoice
+
+    def get_for_update(self, invoice_id: UUID, *, include_deleted: bool = False) -> Invoice | None:
+        """`get`, with the row locked until this transaction ends and re-read from the
+        database whatever the identity map held.
+
+        `populate_existing` is the half that matters: a plain `SELECT ... FOR UPDATE`
+        returns the already-loaded object untouched, so the state check that follows
+        would still run against a read taken before the lock and miss the commit the lock
+        just waited for. Lock order is counter first, then the row (see `lock_counter`):
+        only `issue` takes both, and it takes them in that order.
+        """
+        stmt = select(Invoice).where(Invoice.id == invoice_id).with_for_update()
+        invoice = self.session.execute(
+            stmt.execution_options(populate_existing=True)
+        ).scalar_one_or_none()
         if invoice is None:
             return None
         if invoice.deleted_at is not None and not include_deleted:
@@ -188,7 +102,7 @@ class InvoiceRepository:
         stmt = (
             select(InvoiceLine)
             .where(InvoiceLine.invoice_id == invoice_id)
-            .order_by(InvoiceLine.numero_linea)
+            .order_by(InvoiceLine.line_number)
         )
         return list(self.session.execute(stmt).scalars())
 
@@ -198,7 +112,7 @@ class InvoiceRepository:
         Bulk replacement rather than a per-line diff, for the reason spec 11 gives: it
         is the natural shape of a line editor. It was also, until task 4B-1 closed A14,
         the only way to clear an optional numeric column at all -- there was no spelling
-        of `InvoiceLineIn` that meant "set `sconto_importo` back to nothing". That is no
+        of `InvoiceLineIn` that meant "set `discount_amount` back to nothing". That is no
         longer the reason it exists, and lines still have no `Update` schema of their
         own: a line's totals are recomputed from the whole list, so patching one line in
         place would leave the invoice's totals to be reconciled separately.
@@ -224,18 +138,18 @@ class InvoiceRepository:
             self.session.execute(text(f"SELECT nextval('{PROFORMA_SEQUENCE_NAME}')")).scalar_one()
         )
 
-    def lock_counter(self, azienda_id: UUID, anno: int) -> InvoiceCounter:
-        """The azienda's counter row for the year, locked for the rest of this
+    def lock_counter(self, legal_entity_id: UUID, year: int) -> InvoiceCounter:
+        """The legal entity's counter row for the year, locked for the rest of this
         transaction.
 
         Two statements, in this order and for these reasons:
 
-        1. `INSERT ... ON CONFLICT (azienda_id, anno) DO NOTHING` -- two concurrent
+        1. `INSERT ... ON CONFLICT (legal_entity_id, year) DO NOTHING` -- two concurrent
            first-invoices-of-the-year: one inserts, the other does nothing, both carry
            on. Without `ON CONFLICT` the loser would take a `UniqueViolation` and have
            to be retried by the caller.
         2. `SELECT ... FOR UPDATE` -- from here on every other emission for the same
-           azienda and year waits, and no other azienda's does (REB-619): the row is
+           legal entity and year waits, and no other legal entity's does (REB-619): the row is
            the lock, and there is one per register. This is deliberately **the first
            row lock the emission transaction takes**, and no later statement in that
            transaction takes a lock a concurrent emission could already hold, so two
@@ -253,70 +167,71 @@ class InvoiceRepository:
         """
         self.session.execute(
             text(
-                "INSERT INTO invoice_counters (azienda_id, anno, ultimo_numero) "
-                "VALUES (:azienda_id, :anno, 0) ON CONFLICT (azienda_id, anno) DO NOTHING"
+                "INSERT INTO invoice_counters (legal_entity_id, year, last_number) "
+                "VALUES (:legal_entity_id, :year, 0) ON CONFLICT (legal_entity_id, year) DO NOTHING"
             ),
-            {"azienda_id": azienda_id, "anno": anno},
+            {"legal_entity_id": legal_entity_id, "year": year},
         )
         stmt = (
             select(InvoiceCounter)
-            .where(InvoiceCounter.azienda_id == azienda_id, InvoiceCounter.anno == anno)
+            .where(InvoiceCounter.legal_entity_id == legal_entity_id, InvoiceCounter.year == year)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return self.session.execute(stmt).scalars().one()
 
-    def last_issued_date(self, azienda_id: UUID, anno: int) -> date | None:
-        """The `data_emissione` of the azienda's highest-numbered invoice of `anno`.
+    def last_issued_date(self, legal_entity_id: UUID, year: int) -> date | None:
+        """The `issue_date` of the legal entity's highest-numbered invoice of `year`.
 
         Safe to read only *after* `lock_counter` has run, which is the one place it is
         called from: without the lock, a concurrent emission could commit a later
         number between this read and the write that depends on it. Includes
-        `annullata` rows on purpose -- an annulled invoice keeps its number and its
+        `cancelled` rows on purpose -- an annulled invoice keeps its number and its
         place in the chronological order, which is what makes the register monotonic
         rather than merely gap-free.
         """
         stmt = (
-            select(Invoice.data_emissione)
-            .where(*self._register(azienda_id, anno))
-            .order_by(Invoice.numero.desc())
+            select(Invoice.issue_date)
+            .where(*self._register(legal_entity_id, year))
+            .order_by(Invoice.number.desc())
             .limit(1)
         )
         return self.session.execute(stmt).scalars().first()
 
     @staticmethod
-    def _register(azienda_id: UUID, anno: int) -> tuple[ColumnElement[bool], ...]:
-        """The numbered rows of one register: one azienda, one year (REB-619). Every
-        read below starts from this, so none can forget the azienda and answer with
+    def _register(legal_entity_id: UUID, year: int) -> tuple[ColumnElement[bool], ...]:
+        """The numbered rows of one register: one legal entity, one year (REB-619). Every
+        read below starts from this, so none can forget the legal entity and answer with
         another register's numbers."""
         return (
-            Invoice.azienda_id == azienda_id,
-            Invoice.anno == anno,
-            Invoice.numero.is_not(None),
+            Invoice.legal_entity_id == legal_entity_id,
+            Invoice.year == year,
+            Invoice.number.is_not(None),
         )
 
     # --- slice 9's import queries -------------------------------------------------
 
     def neighbour_dates(
-        self, azienda_id: UUID, anno: int, numero: int
+        self, legal_entity_id: UUID, year: int, number: int
     ) -> tuple[date | None, date | None]:
-        """The dates on either side of `numero` in the azienda's register of `anno`.
+        """The dates on either side of `number` in the legal entity's register of `year`.
 
         `last_issued_date` answers "what came last"; an import inserts *between*
         existing numbers, so monotonicity has to be checked against the nearest lower
         and the nearest higher number, whatever their states -- an annulled row keeps
         its place in the order exactly as it does for `last_issued_date`.
         """
-        register = self._register(azienda_id, anno)
+        register = self._register(legal_entity_id, year)
         before = (
-            select(Invoice.data_emissione)
-            .where(*register, Invoice.numero < numero)
-            .order_by(Invoice.numero.desc())
+            select(Invoice.issue_date)
+            .where(*register, Invoice.number < number)
+            .order_by(Invoice.number.desc())
             .limit(1)
         )
         after = (
-            select(Invoice.data_emissione)
-            .where(*register, Invoice.numero > numero)
-            .order_by(Invoice.numero.asc())
+            select(Invoice.issue_date)
+            .where(*register, Invoice.number > number)
+            .order_by(Invoice.number.asc())
             .limit(1)
         )
         return (
@@ -324,48 +239,53 @@ class InvoiceRepository:
             self.session.execute(after).scalars().first(),
         )
 
-    def numbers_present(self, azienda_id: UUID, anno: int) -> set[int]:
-        stmt = select(Invoice.numero).where(*self._register(azienda_id, anno))
-        # `Invoice.numero` is `Mapped[int | None]` at the column-type level; the
+    def numbers_present(self, legal_entity_id: UUID, year: int) -> set[int]:
+        stmt = select(Invoice.number).where(*self._register(legal_entity_id, year))
+        # `Invoice.number` is `Mapped[int | None]` at the column-type level; the
         # `is_not(None)` clause above is what the database enforces, and this cast is
         # what tells mypy the same thing rather than re-filtering `None` at runtime.
         return cast(set[int], set(self.session.execute(stmt).scalars().all()))
 
-    def first_native_number(self, azienda_id: UUID, anno: int) -> int | None:
-        """The lowest number this CRM itself issued for the azienda in `anno` (§3.2
+    def first_native_number(self, legal_entity_id: UUID, year: int) -> int | None:
+        """The lowest number this CRM itself issued for the legal entity in `year` (§3.2
         rule 6)."""
-        stmt = select(func.min(Invoice.numero)).where(
-            *self._register(azienda_id, anno), Invoice.importata_da.is_(None)
+        stmt = select(func.min(Invoice.number)).where(
+            *self._register(legal_entity_id, year), Invoice.imported_from.is_(None)
         )
         return self.session.execute(stmt).scalar_one()
 
-    def declared_gaps(self, azienda_id: UUID, anno: int) -> set[int]:
-        stmt = select(InvoiceRegisterGap.numero).where(
-            InvoiceRegisterGap.azienda_id == azienda_id, InvoiceRegisterGap.anno == anno
+    def declared_gaps(self, legal_entity_id: UUID, year: int) -> set[int]:
+        stmt = select(InvoiceRegisterGap.number).where(
+            InvoiceRegisterGap.legal_entity_id == legal_entity_id, InvoiceRegisterGap.year == year
         )
         return set(self.session.execute(stmt).scalars().all())
 
-    def existing_by_number(self, azienda_id: UUID, anno: int, numero: int) -> Invoice | None:
-        """The invoice already on the azienda's register at `(anno, numero)`, if any
+    def existing_by_number(self, legal_entity_id: UUID, year: int, number: int) -> Invoice | None:
+        """The invoice already on the legal entity's register at `(anno, numero)`, if any
         -- the same set `numbers_present` answers, read one row at a time for
         REB-364's duplicate check, which needs the row itself (specifically its
         `xml_hash_sha256`), not merely whether the number is taken.
 
-        Not scoped by `importata_da`: `uq_invoices_azienda_anno_numero` allows exactly
+        Not scoped by `imported_from`: `uq_invoices_legal_entity_year_number` allows exactly
         one row per `(azienda_id, anno, numero)` regardless of provenance, so a
         re-import of a natively-issued number is exactly as much a duplicate as a
         re-import of a previously-imported one.
         """
         stmt = select(Invoice).where(
-            Invoice.azienda_id == azienda_id, Invoice.anno == anno, Invoice.numero == numero
+            Invoice.legal_entity_id == legal_entity_id,
+            Invoice.year == year,
+            Invoice.number == number,
         )
         return self.session.execute(stmt).scalars().first()
 
-    def gaps(self, azienda_id: UUID, anno: int) -> list[InvoiceRegisterGap]:
+    def gaps(self, legal_entity_id: UUID, year: int) -> list[InvoiceRegisterGap]:
         stmt = (
             select(InvoiceRegisterGap)
-            .where(InvoiceRegisterGap.azienda_id == azienda_id, InvoiceRegisterGap.anno == anno)
-            .order_by(InvoiceRegisterGap.numero)
+            .where(
+                InvoiceRegisterGap.legal_entity_id == legal_entity_id,
+                InvoiceRegisterGap.year == year,
+            )
+            .order_by(InvoiceRegisterGap.number)
         )
         return list(self.session.execute(stmt).scalars().all())
 
@@ -376,13 +296,15 @@ class InvoiceRepository:
 
     # --- slice 6's dashboard aggregates ------------------------------------------
 
-    def sum_da_incassare(self, azienda_id: UUID | None = None) -> Decimal:
-        """`Σ totale` over issued, unpaid, non-deleted invoices.
+    def sum_unpaid(self, legal_entity_id: UUID | None = None) -> Decimal:
+        """What is still owed on issued, non-deleted invoices: `Σ` of their due items'
+        remaining amounts (spec 2026-11-09, § 1.1), so a partly paid invoice counts for what
+        is left and the six buckets, which read the same rows, add up to this figure.
 
-        **`totale`, not `imponibile`, and that is not an inconsistency with the revenue
-        figure.** Revenue is `Σ imponibile` (slice 4 §7.1, and this slice introduces no
+        **The gross amount, not `taxable_amount`, and that is not an inconsistency with the
+        revenue figure.** Revenue is `Σ imponibile` (slice 4 §7.1, and this slice introduces no
         third meaning); a receivable is what must arrive in the bank, which includes VAT --
-        money collected on the State's behalf. Under the forfettario regime the two
+        money collected on the State's behalf. Under the flat-rate regime regime the two
         coincide and the difference is unobservable, which is exactly why it is written
         down now: the same condition, and the same answer, as slice 4 §7.1.
 
@@ -393,94 +315,100 @@ class InvoiceRepository:
         while every other money field reaches it as `"0.00"`.
         """
         total = self.session.execute(
-            select(func.coalesce(func.sum(Invoice.totale), 0)).where(
-                *_receivable_filter(), *_azienda_filter(azienda_id)
+            join_sales_item(select(func.coalesce(func.sum(remaining_amount()), 0))).where(
+                *_receivable_filter(), *_legal_entity_filter(legal_entity_id)
             )
         ).scalar_one()
         return round_money(Decimal(total))
 
-    def sum_scaduto(self, azienda_id: UUID | None = None) -> Decimal:
-        """The subset of `sum_da_incassare` past its due date.
+    def sum_expired(self, legal_entity_id: UUID | None = None) -> Decimal:
+        """The subset of `sum_unpaid` past its due date.
 
         A **subset**, and rendered as one -- indented beneath it, never as a second addable
         line (§5.2). The predicate is literally `_receivable_filter()` plus two clauses, so
         the containment is structural rather than a property somebody has to remember.
         """
         total = self.session.execute(
-            select(func.coalesce(func.sum(Invoice.totale), 0)).where(
-                *_overdue_predicate(), *_azienda_filter(azienda_id)
+            join_sales_item(select(func.coalesce(func.sum(remaining_amount()), 0))).where(
+                *_overdue_predicate(), *_legal_entity_filter(legal_entity_id)
             )
         ).scalar_one()
         return round_money(Decimal(total))
 
-    def count_emesse_in_periodo(self, da: date, a: date, azienda_id: UUID | None = None) -> int:
+    def count_issued_in_period(
+        self, date_from: date, date_to: date, legal_entity_id: UUID | None = None
+    ) -> int:
         """A `COUNT` on the same predicate the revenue figure uses, so the two cannot
         describe different sets -- "6 fatture emesse" beside a revenue total that included
         a seventh, or a proforma, is the shape of that defect.
 
-        Attributed to the period by `data_emissione`, its own date, exactly as revenue is
+        Attributed to the period by `issue_date`, its own date, exactly as revenue is
         (slice 4 §7.4).
         """
         return int(
             self.session.execute(
                 select(func.count(Invoice.id)).where(
                     *_issued_filter(),
-                    *_azienda_filter(azienda_id),
-                    Invoice.data_emissione.is_not(None),
-                    Invoice.data_emissione >= da,
-                    Invoice.data_emissione <= a,
+                    *_legal_entity_filter(legal_entity_id),
+                    Invoice.issue_date.is_not(None),
+                    Invoice.issue_date >= date_from,
+                    Invoice.issue_date <= date_to,
                 )
             ).scalar_one()
         )
 
-    def list_emesse_in_periodo(self, da: date, a: date) -> list[Invoice]:
+    def list_issued_in_period(self, date_from: date, date_to: date) -> list[Invoice]:
         """Issued invoices whose own date falls in the window, oldest first: the rows the
         weekly report lists under «Emesse questa settimana» (spec 2026-09-16 §3.1, §3.2).
 
-        Shares `_issued_filter()` with `count_emesse_in_periodo`, whose count this list's
+        Shares `_issued_filter()` with `count_issued_in_period`, whose count this list's
         length must always equal -- a report whose number and rows describe different
         sets is exactly the defect `test_count_emesse_in_periodo_counts_the_same_set_revenue_sums`
         already guards against for the count, and this list must not reopen it.
         """
         stmt = (
             select(Invoice)
-            .where(*_issued_filter(), Invoice.data_emissione >= da, Invoice.data_emissione <= a)
-            .order_by(Invoice.data_emissione, Invoice.numero)
+            .where(
+                *_issued_filter(), Invoice.issue_date >= date_from, Invoice.issue_date <= date_to
+            )
+            .order_by(Invoice.issue_date, Invoice.number)
         )
         return list(self.session.execute(stmt).scalars())
 
-    def list_incassate_in_periodo(self, da: date, a: date) -> list[Invoice]:
-        """Issued, collected invoices whose `data_incasso` falls in the window, in payment
-        order: the rows behind «Incassate questa settimana» (spec 2026-09-16 §3.1, §3.2).
+    def list_paid_in_period(self, date_from: date, date_to: date) -> list[Payment]:
+        """The payments received in the window, one row per settlement, in settlement order:
+        the rows behind «Incassate questa settimana» (spec 2026-09-16 §3.1, §3.2).
 
-        Attributed to `data_incasso`, not `data_emissione` -- an invoice issued weeks ago
-        and paid this week belongs here and not in `list_emesse_in_periodo`, which is the
-        whole reason the report carries the two sections separately.
+        Attributed to the settlement's own date and amount (spec 2026-11-09, § 1.1), not to
+        the invoice's `payment_date` and `total` -- an invoice issued weeks ago and paid this
+        week belongs here and not in `list_issued_in_period`, which is the whole reason the
+        report carries the two sections separately, and an invoice paid in two instalments is
+        two lines, each for what arrived.
         """
-        stmt = (
-            select(Invoice)
+        rows = self.session.execute(
+            join_sales_item(select(Invoice, DueItemSettlement.amount, DueItemSettlement.settled_on))
+            .join(DueItemSettlement, DueItemSettlement.due_item_id == DueItem.id)
             .where(
                 *_issued_filter(),
-                Invoice.stato_pagamento == "incassato",
-                Invoice.data_incasso.is_not(None),
-                Invoice.data_incasso >= da,
-                Invoice.data_incasso <= a,
+                DueItemSettlement.reversed_at.is_(None),
+                DueItemSettlement.settled_on >= date_from,
+                DueItemSettlement.settled_on <= date_to,
             )
-            .order_by(Invoice.data_incasso)
-        )
-        return list(self.session.execute(stmt).scalars())
+            .order_by(DueItemSettlement.settled_on, Invoice.number, DueItemSettlement.id)
+        ).all()
+        return [Payment(invoice, Decimal(amount), on) for invoice, amount, on in rows]
 
-    def list_scadute(self, oggi: date) -> list[Invoice]:
-        """Receivables due on or before `oggi`, worst first: the «scadute» half of §3.1's
+    def list_overdue(self, today: date) -> list[OpenReceivable]:
+        """Receivables due on or before `today`, worst first: the «scadute» half of §3.1's
         «Da incassare» (spec 2026-09-16).
 
-        Not `SollecitiService.candidates`, which the weekly report used to read: that list
+        Not `PaymentRemindersService.candidates`, which the weekly report used to read: that list
         answers «which invoices may I legitimately chase», so it drops anything inside the
         grace period, anything chased in the last few days and anything already at the
         reminder ceiling. Those are properties of a reminder, not of a debt, and a report
         that took them for the debt left out money that is owed today.
 
-        `oggi` is a parameter rather than a `today_local()` read here, unlike
+        `today` is a parameter rather than a `today_local()` read here, unlike
         `_overdue_predicate()` above: the report resolves the space's own settings and
         therefore its own timezone, and a repository reading the platform's default would
         answer a different day for exactly the installation whose zone differs.
@@ -492,56 +420,56 @@ class InvoiceRepository:
         non incassato» signal counts, and a shared helper would have to pick one of the
         two meanings for both.
 
-        Ascending `data_scadenza`: the oldest debt first, which is the order somebody works
-        the list in and the order `list_in_scadenza` beside it already answers in.
+        Ascending `due_date`: the oldest debt first, which is the order somebody works
+        the list in and the order `list_in_due_date` beside it already answers in.
         """
         stmt = (
-            select(Invoice)
+            join_sales_item(select(Invoice, remaining_amount(), DueItem.due_date))
             .where(
                 *_receivable_filter(),
-                Invoice.data_scadenza.is_not(None),
-                Invoice.data_scadenza <= oggi,
+                DueItem.due_date.is_not(None),
+                DueItem.due_date <= today,
             )
-            .order_by(Invoice.data_scadenza, Invoice.numero)
+            .order_by(DueItem.due_date, Invoice.number)
         )
-        return list(self.session.execute(stmt).scalars())
+        return _open_receivables(self.session.execute(stmt).all())
 
-    def list_in_scadenza(self, da: date, a: date) -> list[Invoice]:
+    def list_in_due_date(self, date_from: date, date_to: date) -> list[OpenReceivable]:
         """Receivables due within the window, soonest first: the «in scadenza nei prossimi
         sette giorni» half of §3.1's «Da incassare» section, once the caller passes that
         window instead of the register's whole horizon.
 
         `_receivable_filter()`, not `_overdue_predicate()`: a due date inside the window can
         be in the future, which `_overdue_predicate()`'s `< today_local()` clause would
-        exclude. The already-overdue half of the same section comes from `sum_scaduto` and
-        `count_scadute_non_incassate` instead, which this method leaves untouched.
+        exclude. The already-overdue half of the same section comes from `sum_expired` and
+        `count_overdue_not_paid` instead, which this method leaves untouched.
         """
         stmt = (
-            select(Invoice)
+            join_sales_item(select(Invoice, remaining_amount(), DueItem.due_date))
             .where(
                 *_receivable_filter(),
-                Invoice.data_scadenza.is_not(None),
-                Invoice.data_scadenza >= da,
-                Invoice.data_scadenza <= a,
+                DueItem.due_date.is_not(None),
+                DueItem.due_date >= date_from,
+                DueItem.due_date <= date_to,
             )
-            .order_by(Invoice.data_scadenza)
+            .order_by(DueItem.due_date, Invoice.number)
         )
-        return list(self.session.execute(stmt).scalars())
+        return _open_receivables(self.session.execute(stmt).all())
 
-    def sum_emesse_in_periodo(self, da: date, a: date) -> Decimal:
-        """`Σ totale` over `list_emesse_in_periodo`'s own predicate: the total the weekly
+    def sum_issued_in_period(self, date_from: date, date_to: date) -> Decimal:
+        """`Σ totale` over `list_issued_in_period`'s own predicate: the total the weekly
         report prints beside «Emesse questa settimana», and the same call `DigestService`
         reuses unchanged for the running month and the one before it (spec 2026-09-16
         §3.2), only with a different window.
         """
         total = self.session.execute(
-            select(func.coalesce(func.sum(Invoice.totale), 0)).where(
-                *_issued_filter(), Invoice.data_emissione >= da, Invoice.data_emissione <= a
+            select(func.coalesce(func.sum(Invoice.total), 0)).where(
+                *_issued_filter(), Invoice.issue_date >= date_from, Invoice.issue_date <= date_to
             )
         ).scalar_one()
         return round_money(Decimal(total))
 
-    def count_deals_invoiced_not_won(self, azienda_id: UUID | None = None) -> int:
+    def count_deals_invoiced_not_won(self, legal_entity_id: UUID | None = None) -> int:
         """§6.2's second signal: how many deals have an issued invoice and an open stage.
 
         Counts **deals**, not invoices: the drill-through lists deals, so two invoices on
@@ -558,41 +486,45 @@ class InvoiceRepository:
                 .select_from(Invoice)
                 .join(Deal, Deal.id == Invoice.deal_id)
                 .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
-                # The deal's azienda, not the invoice's: this counts deals and its
-                # drill-through (`DealRepository.list`, `?fatturato_non_vinto=true`)
-                # narrows by `Deal.azienda_id`, so the card and the list must read the
-                # same column or an invoice imported onto another azienda than its
+                # The deal's legal entity, not the invoice's: this counts deals and its
+                # drill-through (`DealRepository.list`, `?invoiced_unwon=true`)
+                # narrows by `Deal.legal_entity_id`, so the card and the list must read the
+                # same column or an invoice imported onto another legal entity than its
                 # deal's would make them disagree (criterion 2).
                 .where(
                     *invoiced_not_won_predicate(),
-                    *(() if azienda_id is None else (Deal.azienda_id == azienda_id,)),
+                    *(
+                        ()
+                        if legal_entity_id is None
+                        else (Deal.legal_entity_id == legal_entity_id,)
+                    ),
                 )
             ).scalar_one()
         )
 
-    def count_scadute_non_incassate(self, azienda_id: UUID | None = None) -> int:
+    def count_overdue_not_paid(self, legal_entity_id: UUID | None = None) -> int:
         """§6.2's fourth signal: the candidate list of slice 5 §7.1's payment reminders,
         counted. The count **sends nothing** -- and saying so here is the point, because a
-        count next to a list of overdue customers is exactly the place someone later adds a
+        count next to a list of overdue organizations is exactly the place someone later adds a
         "send all" button.
 
-        The same `_overdue_predicate()` `sum_scaduto` uses, so the count and the sum can
+        The same `_overdue_predicate()` `sum_expired` uses, so the count and the sum can
         never describe different rows.
         """
         return int(
             self.session.execute(
-                select(func.count(Invoice.id)).where(
-                    *_overdue_predicate(), *_azienda_filter(azienda_id)
+                join_sales_item(select(func.count(Invoice.id))).where(
+                    *_overdue_predicate(), *_legal_entity_filter(legal_entity_id)
                 )
             ).scalar_one()
         )
 
-    def unpaid_for_customer(self, customer_id: UUID, limit: int) -> list[Invoice]:
+    def unpaid_for_customer(self, customer_id: UUID, limit: int) -> list[UnpaidInvoice]:
         """One customer's issued, unpaid invoices, oldest deadline first.
 
-        The rows behind `sum_da_incassare` restricted to one customer, sharing
+        The rows behind `sum_unpaid` restricted to one customer, sharing
         `_receivable_filter()` literally rather than restating it: the total on the economic
-        dashboard and the list in the `stato-cliente` briefing describe the same set, and a
+        dashboard and the list in the `organization-status` briefing describe the same set, and a
         briefing that listed a different set from the figure beside it is the divergence
         §7.2 exists to make impossible.
 
@@ -605,168 +537,190 @@ class InvoiceRepository:
         cost is paid in the model's context window on every render, so the caller has to
         say how much of it that window is worth -- a default here is a budget nobody
         decided.
-        """
-        return list(
-            self.session.execute(
-                select(Invoice)
-                .where(*_receivable_filter(), Invoice.customer_id == customer_id)
-                .order_by(Invoice.data_scadenza.asc().nulls_last(), Invoice.id.asc())
-                .limit(limit)
-            ).scalars()
-        )
 
-    def ageing_receivables(self, oggi: date, azienda_id: UUID | None = None) -> list[FasciaRow]:
+        Each row carries what its due item still has to collect and its due date, which a
+        partly paid invoice's `total` and the frozen `due_date` column are not (spec
+        2026-11-09, § 1.1).
+        """
+        rows = self.session.execute(
+            join_sales_item(select(Invoice, remaining_amount(), DueItem.due_date))
+            .where(*_receivable_filter(), Invoice.customer_id == customer_id)
+            .order_by(DueItem.due_date.asc().nulls_last(), Invoice.id.asc())
+            .limit(limit)
+        ).all()
+        return [UnpaidInvoice(invoice, Decimal(left), due) for invoice, left, due in rows]
+
+    def ageing_receivables(self, today: date, legal_entity_id: UUID | None = None) -> list[BandRow]:
         """The receivables in the six buckets of slice 8 §2.1, each with its sum and count,
         in the page's order and always all six -- an empty bucket is a row at zero, since a
         bucket that vanishes when empty is a chart that changes shape.
 
-        One statement: a `CASE` on `data_scadenza` against the four bounds, grouped, over
+        One statement: a `CASE` on `due_date` against the four bounds, grouped, over
         `_receivable_filter()` imported and not restated (§2.2 and criterion 3), so the
-        six sums add up to `sum_da_incassare` by construction and not by care. `oggi` is a
-        parameter for the reason `list_scadute` gives; «scaduto» is strictly before it, as
+        six sums add up to `sum_unpaid` by construction and not by care. `today` is a
+        parameter for the reason `list_overdue` gives; «scaduto» is strictly before it, as
         `_overdue_predicate` reads it, and «entro 30» starts on it.
         """
         bounds = {
-            "entro_30": (oggi, oggi + timedelta(days=30)),
-            "da_31_a_60": (oggi + timedelta(days=31), oggi + timedelta(days=60)),
-            "da_61_a_90": (oggi + timedelta(days=61), oggi + timedelta(days=90)),
+            "entro_30": (today, today + timedelta(days=30)),
+            "da_31_a_60": (today + timedelta(days=31), today + timedelta(days=60)),
+            "da_61_a_90": (today + timedelta(days=61), today + timedelta(days=90)),
         }
-        fascia = case(
-            (Invoice.data_scadenza.is_(None), "senza_scadenza"),
-            (Invoice.data_scadenza < oggi, "scaduto"),
-            (Invoice.data_scadenza <= bounds["entro_30"][1], "entro_30"),
-            (Invoice.data_scadenza <= bounds["da_31_a_60"][1], "da_31_a_60"),
-            (Invoice.data_scadenza <= bounds["da_61_a_90"][1], "da_61_a_90"),
+        band = case(
+            (DueItem.due_date.is_(None), "without_due_date"),
+            (DueItem.due_date < today, "expired"),
+            (DueItem.due_date <= bounds["entro_30"][1], "entro_30"),
+            (DueItem.due_date <= bounds["da_31_a_60"][1], "da_31_a_60"),
+            (DueItem.due_date <= bounds["da_61_a_90"][1], "da_61_a_90"),
             else_="oltre_90",
         ).label("fascia")
         rows = self.session.execute(
-            select(fascia, func.coalesce(func.sum(Invoice.totale), 0), func.count(Invoice.id))
-            .where(*_receivable_filter(), *_azienda_filter(azienda_id))
-            .group_by(fascia)
+            join_sales_item(
+                select(band, func.coalesce(func.sum(remaining_amount()), 0), func.count(Invoice.id))
+            )
+            .where(*_receivable_filter(), *_legal_entity_filter(legal_entity_id))
+            .group_by(band)
         ).all()
         found = {row[0]: (round_money(Decimal(row[1])), int(row[2])) for row in rows}
         zero = (Decimal("0.00"), 0)
-        largest = max((found.get(c, zero)[0] for c in FASCE_SCADENZIARIO), default=Decimal("0"))
-        out: list[FasciaRow] = []
-        for codice in FASCE_SCADENZIARIO:
-            importo, numero = found.get(codice, zero)
-            da, a = bounds.get(codice, (None, None))
-            if codice == "oltre_90":
-                da = bounds["da_61_a_90"][1] + timedelta(days=1)
-            out.append(FasciaRow(codice, da, a, importo, numero, _quota(importo, largest)))
+        largest = max((found.get(c, zero)[0] for c in BANDS_RECEIVABLES), default=Decimal("0"))
+        out: list[BandRow] = []
+        for code in BANDS_RECEIVABLES:
+            amount, number = found.get(code, zero)
+            date_from, date_to = bounds.get(code, (None, None))
+            if code == "oltre_90":
+                date_from = bounds["da_61_a_90"][1] + timedelta(days=1)
+            out.append(BandRow(code, date_from, date_to, amount, number, share(amount, largest)))
         return out
 
-    def receivables_by_due_month(self, azienda_id: UUID | None = None) -> list[MeseRow]:
-        """What is owed, month by month of `data_scadenza`, oldest first: the cash a person
+    def receivables_by_due_month(self, legal_entity_id: UUID | None = None) -> list[MonthRow]:
+        """What is owed, month by month of `due_date`, oldest first: the cash a person
         can expect, told by when it is due rather than by when the work was done (the
         economic charts' reading). Rows without a due date are not here: they are the sixth
         bucket of `ageing_receivables`, and a month cannot hold a date that does not exist.
         """
-        mese = func.date_trunc("month", Invoice.data_scadenza).label("mese")
+        month = func.date_trunc("month", DueItem.due_date).label("month")
         rows = self.session.execute(
-            select(mese, func.coalesce(func.sum(Invoice.totale), 0), func.count(Invoice.id))
+            join_sales_item(
+                select(
+                    month, func.coalesce(func.sum(remaining_amount()), 0), func.count(Invoice.id)
+                )
+            )
             .where(
                 *_receivable_filter(),
-                *_azienda_filter(azienda_id),
-                Invoice.data_scadenza.is_not(None),
+                *_legal_entity_filter(legal_entity_id),
+                DueItem.due_date.is_not(None),
             )
-            .group_by(mese)
-            .order_by(mese)
+            .group_by(month)
+            .order_by(month)
         ).all()
-        importi = [round_money(Decimal(row[1])) for row in rows]
-        largest = max(importi, default=Decimal("0"))
+        amounts = [round_money(Decimal(row[1])) for row in rows]
+        largest = max(amounts, default=Decimal("0"))
         return [
-            MeseRow(
-                mese=row[0].date() if hasattr(row[0], "date") else row[0],
-                importo=importo,
-                numero=int(row[2]),
-                quota=_quota(importo, largest),
+            MonthRow(
+                month=row[0].date() if hasattr(row[0], "date") else row[0],
+                amount=amount,
+                number=int(row[2]),
+                share=share(amount, largest),
             )
-            for row, importo in zip(rows, importi, strict=True)
+            for row, amount in zip(rows, amounts, strict=True)
         ]
 
     def receivables_by_customer(
-        self, oggi: date, limit: int, azienda_id: UUID | None = None
-    ) -> list[ClienteRow]:
+        self, today: date, limit: int, legal_entity_id: UUID | None = None
+    ) -> list[OrganizationRow]:
         """Who owes what, largest exposure first, with the overdue part of each: the
-        `unpaid_for_customer` reading turned around, over the same predicate. `oggi`
+        `unpaid_for_customer` reading turned around, over the same predicate. `today`
         splits the overdue share the way `_overdue_predicate` does, strictly before."""
-        scaduto = func.coalesce(
-            func.sum(case((Invoice.data_scadenza < oggi, Invoice.totale), else_=0)), 0
+        expired = func.coalesce(
+            func.sum(case((DueItem.due_date < today, remaining_amount()), else_=0)), 0
         )
-        totale = func.coalesce(func.sum(Invoice.totale), 0)
+        total = func.coalesce(func.sum(remaining_amount()), 0)
         rows = self.session.execute(
-            select(Customer.id, Customer.ragione_sociale, totale, func.count(Invoice.id), scaduto)
-            .join(Customer, Customer.id == Invoice.customer_id)
-            .where(*_receivable_filter(), *_azienda_filter(azienda_id))
-            .group_by(Customer.id, Customer.ragione_sociale)
-            .order_by(totale.desc(), Customer.ragione_sociale)
+            join_sales_item(
+                select(
+                    Organization.id, Organization.legal_name, total, func.count(Invoice.id), expired
+                )
+            )
+            .join(Organization, Organization.id == Invoice.customer_id)
+            .where(*_receivable_filter(), *_legal_entity_filter(legal_entity_id))
+            .group_by(Organization.id, Organization.legal_name)
+            .order_by(total.desc(), Organization.legal_name)
             .limit(limit)
         ).all()
-        importi = [round_money(Decimal(row[2])) for row in rows]
-        largest = max(importi, default=Decimal("0"))
+        amounts = [round_money(Decimal(row[2])) for row in rows]
+        largest = max(amounts, default=Decimal("0"))
         return [
-            ClienteRow(
+            OrganizationRow(
                 customer_id=row[0],
-                ragione_sociale=row[1],
-                importo=importo,
-                numero=int(row[3]),
-                scaduto=round_money(Decimal(row[4])),
-                quota=_quota(importo, largest),
+                legal_name=row[1],
+                amount=amount,
+                number=int(row[3]),
+                expired=round_money(Decimal(row[4])),
+                share=share(amount, largest),
             )
-            for row, importo in zip(rows, importi, strict=True)
+            for row, amount in zip(rows, amounts, strict=True)
         ]
 
     def overdue_with_reminders(
-        self, oggi: date, limit: int, azienda_id: UUID | None = None
-    ) -> list[ScadutaRow]:
+        self, today: date, limit: int, legal_entity_id: UUID | None = None
+    ) -> list[OverdueRow]:
         """The overdue rows worst first, each with how many reminders actually left and
         when the last one did. Sent reminders are rows with `sent_at` (a prepared draft
         is not a letter the customer received, `PaymentReminder`'s own docstring), counted
-        in a correlated subquery so the invoice row stays one row. Strictly before `oggi`,
+        in a correlated subquery so the invoice row stays one row. Strictly before `today`,
         as the «scaduto» bucket and `_overdue_predicate` read it."""
-        inviati = (
+        sent = (
             select(func.count(PaymentReminder.id))
             .where(PaymentReminder.invoice_id == Invoice.id, PaymentReminder.sent_at.is_not(None))
             .scalar_subquery()
         )
-        ultimo = (
+        last_sent = (
             select(func.max(PaymentReminder.sent_at))
             .where(PaymentReminder.invoice_id == Invoice.id, PaymentReminder.sent_at.is_not(None))
             .scalar_subquery()
         )
         rows = self.session.execute(
-            select(Invoice, Customer.ragione_sociale, inviati, ultimo)
-            .join(Customer, Customer.id == Invoice.customer_id)
+            join_sales_item(
+                select(
+                    Invoice,
+                    Organization.legal_name,
+                    sent,
+                    last_sent,
+                    remaining_amount(),
+                    DueItem.due_date,
+                )
+            )
+            .join(Organization, Organization.id == Invoice.customer_id)
             .where(
                 *_receivable_filter(),
-                *_azienda_filter(azienda_id),
-                Invoice.data_scadenza.is_not(None),
-                Invoice.data_scadenza < oggi,
+                *_legal_entity_filter(legal_entity_id),
+                DueItem.due_date.is_not(None),
+                DueItem.due_date < today,
             )
-            .order_by(Invoice.data_scadenza, Invoice.numero)
+            .order_by(DueItem.due_date, Invoice.number)
             .limit(limit)
         ).all()
-        out: list[ScadutaRow] = []
-        for invoice, cliente, count, last in rows:
-            scadenza = cast(date, invoice.data_scadenza)
+        out: list[OverdueRow] = []
+        for invoice, customer, count, last, remaining, item_due_date in rows:
+            due_date = cast(date, item_due_date)
             out.append(
-                ScadutaRow(
+                OverdueRow(
                     invoice_id=invoice.id,
-                    numero=numero_completo(cast(int, invoice.anno), cast(int, invoice.numero)),
+                    number=number_complete(cast(int, invoice.year), cast(int, invoice.number)),
                     customer_id=invoice.customer_id,
-                    cliente=cliente,
-                    data_scadenza=scadenza,
-                    giorni_di_ritardo=(oggi - scadenza).days,
-                    importo=round_money(Decimal(invoice.totale)),
-                    solleciti_inviati=int(count or 0),
-                    ultimo_sollecito_il=last.date() if last is not None else None,
+                    customer=customer,
+                    due_date=due_date,
+                    days_of_delay=(today - due_date).days,
+                    amount=round_money(Decimal(remaining)),
+                    sent_payment_reminders=int(count or 0),
+                    last_payment_reminder_at=last.date() if last is not None else None,
                 )
             )
         return out
 
     def customer_names(self, customer_ids: Collection[UUID]) -> dict[UUID, str]:
-        """The `ragione_sociale` of each given customer, in one query.
+        """The `legal_name` of each given customer, in one query.
 
         The same method, for the same reason, as `DealRepository.customer_names`: one
         statement for a whole page rather than one per row, so a 50-row invoice list costs
@@ -774,7 +728,7 @@ class InvoiceRepository:
         the limit.
 
         No `deleted_at` filter, deliberately, and here it matters more than for deals: an
-        issued invoice outlives the customer relationship, and `CustomerService.soft_delete`
+        issued invoice outlives the customer relationship, and `OrganizationService.soft_delete`
         may archive a customer whose invoices stay in the register. An archived customer's
         name is still the name on those invoices; filtering it out would print a dash on
         rows that have a perfectly good one.
@@ -784,7 +738,9 @@ class InvoiceRepository:
         if not customer_ids:
             return {}
         rows = self.session.execute(
-            select(Customer.id, Customer.ragione_sociale).where(Customer.id.in_(customer_ids))
+            select(Organization.id, Organization.legal_name).where(
+                Organization.id.in_(customer_ids)
+            )
         ).all()
         return {row[0]: row[1] for row in rows}
 
@@ -796,9 +752,9 @@ class InvoiceRepository:
         if not customer_ids:
             return {}
         rows = self.session.execute(
-            select(Customer.id, Customer.giorni_pagamento, Customer.pagamento_fine_mese).where(
-                Customer.id.in_(customer_ids)
-            )
+            select(
+                Organization.id, Organization.payment_days, Organization.payment_end_of_month
+            ).where(Organization.id.in_(customer_ids))
         ).all()
         return {row[0]: (row[1], row[2]) for row in rows}
 
@@ -813,36 +769,36 @@ class InvoiceRepository:
             stmt = stmt.where(Invoice.customer_id == query.customer_id)
         if query.deal_id:
             stmt = stmt.where(Invoice.deal_id == query.deal_id)
-        if query.azienda_id:
-            stmt = stmt.where(Invoice.azienda_id == query.azienda_id)
-        if query.tipo:
-            stmt = stmt.where(Invoice.tipo == query.tipo)
-        if query.stato:
-            stmt = stmt.where(Invoice.stato == query.stato)
-        if query.anno:
-            stmt = stmt.where(Invoice.anno == query.anno)
-        if query.stato_pagamento == "da_incassare":
-            # «Da incassare» is the dashboard's word, so it is the dashboard's predicate
-            # (`_receivable_filter`, §5.2): an issued fattura nobody has paid. A plain
-            # equality on the column listed every draft and every proforma as unpaid,
-            # since a row is born `da_incassare` (REB-325). `incassato` below stays an
-            # equality: `set_payment_state` refuses any row that is not an issued fattura
-            # and the table's check constraint agrees, so the two spellings coincide.
-            stmt = stmt.where(*_receivable_filter())
-        elif query.stato_pagamento:
-            stmt = stmt.where(Invoice.stato_pagamento == query.stato_pagamento)
-        if query.origine_proforma_id:
-            stmt = stmt.where(Invoice.origine_proforma_id == query.origine_proforma_id)
-        if query.escludi_consumate:
-            stmt = stmt.where(Invoice.stato != "consumata")
-        if query.scadute:
+        if query.legal_entity_id:
+            stmt = stmt.where(Invoice.legal_entity_id == query.legal_entity_id)
+        if query.type:
+            stmt = stmt.where(Invoice.type == query.type)
+        if query.status:
+            stmt = stmt.where(Invoice.status == query.status)
+        if query.year:
+            stmt = stmt.where(Invoice.year == query.year)
+        if query.payment_status == "unpaid":
+            # «Da incassare» is the dashboard's word: an issued invoice nobody has paid. A
+            # plain equality on the column listed every draft and every proforma as unpaid,
+            # since a row is born `unpaid` (REB-325). The filter reads the projected column
+            # (spec 2026-11-09, § 1.1); `paid` below stays an equality: `set_payment_state`
+            # refuses any row that is not an issued fattura and the table's check constraint
+            # agrees, so the two spellings coincide.
+            stmt = stmt.where(*_issued_filter(), Invoice.payment_status == "unpaid")
+        elif query.payment_status:
+            stmt = stmt.where(Invoice.payment_status == query.payment_status)
+        if query.origin_proforma_id:
+            stmt = stmt.where(Invoice.origin_proforma_id == query.origin_proforma_id)
+        if query.exclude_consumed:
+            stmt = stmt.where(Invoice.status != "consumed")
+        if query.overdue:
             # The drill-through of §6.2's "scaduto e non incassato" card, sharing its
             # predicate literally rather than restating it -- see `_overdue_predicate`,
-            # which `count_scadute_non_incassate` also calls. An **additional** predicate on
+            # which `count_overdue_not_paid` also calls. An **additional** predicate on
             # the statement built above, never a replacement for it: a drill-through that
-            # silently dropped the caller's own `stato` or `customer_id` would be answering
+            # silently dropped the caller's own `status` or `customer_id` would be answering
             # a different question from the one asked.
-            stmt = stmt.where(*_overdue_predicate())
+            stmt = join_sales_item(stmt).where(*_overdue_predicate())
         if query.cursor:
             stmt = stmt.where(Invoice.id < query.cursor)
         # Keyset pagination on a UUIDv7 id: ordered by creation, stable under inserts.

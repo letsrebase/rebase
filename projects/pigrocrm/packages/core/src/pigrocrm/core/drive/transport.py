@@ -26,8 +26,6 @@ provider has a generated `repr` that would print its own credential (which is wh
 
 import json
 import time
-import urllib.error
-import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -36,14 +34,15 @@ from uuid import UUID
 
 import jwt
 
-from pigrocrm.core.config import Settings, decode_google_token_key
-from pigrocrm.core.drive.errors import DriveCredentialRevoked, drive_unavailable
+from pigrocrm.core.config import Settings
+from pigrocrm.core.drive.errors import DriveCredentialRevoked, DriveUnavailable
 from pigrocrm.core.drive.models import GoogleDriveAccount
 from pigrocrm.core.errors import Conflict
-from pigrocrm.core.gmail.crypto import unseal
 from pigrocrm.core.gmail.errors import CredentialRevoked, GmailUnavailable
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.google.credential import open_refresh_token
+from pigrocrm.core.http import HttpCall, SleepFn, call_with_retry, urllib_call
 
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 # Not "drive.file". That narrower scope only grants visibility into files the app
@@ -62,32 +61,17 @@ DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 # instead: share only PIGROCRM_GDRIVE_ROOT_FOLDER_ID (and nothing else) with this
 # service account's address, and never reuse the same service account for any other
 # integration. A `UserTokens` installation has no such note to read: its scopes are
-# the ones the titolare granted on the consent screen (`DRIVE_REQUESTED_SCOPES`).
+# the ones the owner granted on the consent screen (`DRIVE_REQUESTED_SCOPES`).
 TOKEN_LIFETIME_SECONDS = 3600
 # Refresh a minute early rather than discovering expiry mid-upload.
 TOKEN_REFRESH_MARGIN_SECONDS = 60
-HTTP_TIMEOUT_SECONDS = 30
-
-# A synthetic status for "no HTTP response was ever received" (DNS failure,
-# connection refused, a timeout) -- the "network connect timeout" code some proxies
-# use for exactly this shape, chosen so `_call`'s retry logic and `_decode`'s error
-# reporting can treat it exactly like any server-issued status, rather than needing a
-# second failure channel only `_urllib_call` knows about.
-NETWORK_ERROR_STATUS = 599
-# 429 (rate limited) and 5xx (transient server-side failure) are worth retrying;
-# anything else -- a 4xx other than 429 in particular -- is a client error that will
-# not go away on its own, so retrying it only delays reporting a failure.
-_RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504, NETWORK_ERROR_STATUS})
-# First attempt plus up to three retries. Exponential: 0.5s, 1s, 2s between them.
-_MAX_HTTP_ATTEMPTS = 4
-_RETRY_BASE_DELAY_SECONDS = 0.5
 # The entity name a failure of this transport is reported under *by default*, which is
 # the storage's subject: `GDriveStorage` reaches Drive for the bytes of a document, and
 # the API and the MCP adapter both render `Conflict.details["entity"]`, so changing this
 # would change what a user reads for a Google outage during an upload or a download.
 #
 # It is no longer the only subject. Slice 9C reaches the same transport for a file the
-# titolare *named*, where "document_blob" is wrong twice over -- there is no CRM document
+# owner *named*, where "document_blob" is wrong twice over -- there is no CRM document
 # involved, and an adapter routing on the entity would point at the wrong thing. The
 # reader owns that correction rather than this module: it re-stamps exactly this entity
 # on its way out (`reader.py::_guarded`), so the rule holds for any transport it was
@@ -96,80 +80,7 @@ _RETRY_BASE_DELAY_SECONDS = 0.5
 TRANSPORT_ENTITY = "document_blob"
 
 
-def _retry_delay_seconds(attempt: int) -> float:
-    # `1 << attempt`, not `2**attempt`: typeshed types `int.__pow__` as returning
-    # `Any` (to accommodate a negative exponent producing a float), which would make
-    # this whole expression -- and this function's return value -- `Any` under mypy
-    # strict mode. A left shift has no such escape hatch and stays a plain `int`.
-    return _RETRY_BASE_DELAY_SECONDS * (1 << attempt)
-
-
-# (method, url, headers, body) -> (status, body). Injected in tests; the default is
-# `_urllib_call` below. Nothing above this seam knows what a socket is.
-#
-# Deliberately does not carry response headers: Google's real `Retry-After` header on
-# a 429 cannot be read through this seam, so `_call`'s backoff below is a fixed
-# exponential schedule, not one driven by the server's own hint. Widening this type to
-# `tuple[int, bytes, dict[str, str]]` would fix that properly, but it is an interface
-# every test and the fake transport already depend on; changing it is out of scope for
-# a fix that has to land without breaking the contract the rest of this module was
-# reviewed against. (`gmail/transport.py` made the wider choice for its own, newer
-# seam, and says so.)
-HttpCall = Callable[[str, str, dict[str, str], bytes | None], tuple[int, bytes]]
 SignAssertion = Callable[[dict[str, Any]], str]
-SleepFn = Callable[[float], None]
-
-
-def _urllib_call(
-    method: str, url: str, headers: dict[str, str], body: bytes | None
-) -> tuple[int, bytes]:
-    request = urllib.request.Request(url, data=body, headers=headers, method=method)
-    try:
-        with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
-            return int(response.status), response.read()
-    except urllib.error.HTTPError as exc:
-        return int(exc.code), exc.read()
-    except (urllib.error.URLError, OSError) as exc:
-        # No HTTP response was ever received, so there is no real status code to
-        # report -- `URLError` wraps DNS failure and connection-refused, and a bare
-        # `OSError`/`TimeoutError` covers the rest. `str(exc)` names the failure
-        # reason (and possibly the target host, always a googleapis.com address, never
-        # sensitive) but never the request's headers or body, so no bearer token or
-        # key material can reach it.
-        return NETWORK_ERROR_STATUS, json.dumps({"error": {"message": str(exc)}}).encode()
-
-
-def _call(
-    http: HttpCall,
-    sleep: SleepFn,
-    method: str,
-    url: str,
-    headers: dict[str, str],
-    body: bytes | None,
-) -> tuple[int, bytes]:
-    """Every HTTP call this module makes goes through here, not through `http`
-    directly, so retry-with-backoff applies uniformly instead of being
-    reimplemented -- or forgotten -- at each call site.
-
-    Retries a `429` or a transient `5xx` (`_RETRYABLE_STATUSES`) with exponential
-    backoff, up to `_MAX_HTTP_ATTEMPTS` attempts total, then returns whatever the
-    last attempt got so the caller's own error handling (`_decode`) reports it.
-    Anything else -- including a network failure normalised to
-    `NETWORK_ERROR_STATUS` by `_urllib_call` -- is retried the same way, since it is
-    just as transient; anything *not* in that set is returned immediately.
-
-    A module-level function rather than a `DriveTransport` method because
-    `ServiceAccountTokens` needs the identical loop for the token endpoint and cannot
-    reach it through a `DriveTransport`: the transport is the thing that depends on a
-    token provider, not the other way round. One loop, two callers, no duplication.
-    """
-    status, payload = http(method, url, headers, body)
-    for attempt in range(_MAX_HTTP_ATTEMPTS - 1):
-        if status not in _RETRYABLE_STATUSES:
-            break
-        sleep(_retry_delay_seconds(attempt))
-        status, payload = http(method, url, headers, body)
-    return status, payload
 
 
 def _decode(status: int, payload: bytes, what: str) -> dict[str, Any]:
@@ -196,7 +107,7 @@ def _decode(status: int, payload: bytes, what: str) -> dict[str, Any]:
         raise Conflict(
             TRANSPORT_ENTITY,
             f"{what} fallita ({status}){': ' + detail if detail else ''}",
-            status=status,
+            upstream_status=status,
             what=what,
         )
     return json.loads(payload.decode()) if payload else {}
@@ -235,7 +146,7 @@ class ServiceAccountTokens:
         sleep: SleepFn | None = None,
     ) -> None:
         self._credentials: dict[str, Any] = json.loads(service_account_json)
-        self._http: HttpCall = http or _urllib_call
+        self._http: HttpCall = http or urllib_call
         # Injectable so tests can prove the rest of this module -- URL building, query
         # escaping, multipart framing, error handling -- without a real RSA key ever
         # existing in this repository.
@@ -265,7 +176,7 @@ class ServiceAccountTokens:
         body = urlencode(
             {"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer", "assertion": assertion}
         ).encode()
-        status, payload = _call(
+        status, payload, _ = call_with_retry(
             self._http,
             self._sleep,
             "POST",
@@ -338,7 +249,9 @@ class UserTokens:
         except CredentialRevoked as revoked:
             raise DriveCredentialRevoked(self.account_id, self.email_address) from revoked
         except GmailUnavailable as unavailable:
-            raise drive_unavailable(int(unavailable.details.get("status", 0))) from unavailable
+            raise DriveUnavailable(
+                int(unavailable.details.get("upstream_status", 0))
+            ) from unavailable
 
     def forget(self) -> None:
         self.tokens.forget(self.account_id)
@@ -360,34 +273,47 @@ class DriveTransport:
         sleep: SleepFn | None = None,
     ) -> None:
         self._tokens = tokens
-        self._http: HttpCall = http or _urllib_call
+        self._http: HttpCall = http or urllib_call
         self._sleep: SleepFn = sleep or time.sleep
 
     def _attempt(
-        self, method: str, url: str, body: bytes | None, content_type: str | None
+        self,
+        method: str,
+        url: str,
+        body: bytes | None,
+        content_type: str | None,
+        max_bytes: int | None,
     ) -> tuple[int, bytes]:
         headers = {"Authorization": f"Bearer {self._tokens.access_token()}"}
         if content_type:
             headers["Content-Type"] = content_type
-        return _call(self._http, self._sleep, method, url, headers, body)
+        status, payload, _ = call_with_retry(
+            self._http, self._sleep, method, url, headers, body, max_bytes=max_bytes
+        )
+        return status, payload
 
     def _send(
-        self, method: str, url: str, body: bytes | None, content_type: str | None
+        self,
+        method: str,
+        url: str,
+        body: bytes | None,
+        content_type: str | None,
+        max_bytes: int | None = None,
     ) -> tuple[int, bytes]:
         """One attempt, plus exactly one more if Drive answered 401.
 
         A 401 is the one failure a *fresh* token fixes: the cached one was minted
-        before a revocation, a re-consent, or a scope change, and `_call`'s retry loop
+        before a revocation, a re-consent, or a scope change, and `call_with_retry`
         deliberately does not touch it because repeating the same request with the same
         stale token cannot succeed. So the provider is told to drop it and the request
         is made once more -- once, not in a loop: a grant that is genuinely revoked
         answers 401 to every attempt, and spinning against Google would replace a clear
         `Conflict` with an outage.
         """
-        status, payload = self._attempt(method, url, body, content_type)
+        status, payload = self._attempt(method, url, body, content_type, max_bytes)
         if status == 401:
             self._tokens.forget()
-            status, payload = self._attempt(method, url, body, content_type)
+            status, payload = self._attempt(method, url, body, content_type, max_bytes)
         return status, payload
 
     def json(
@@ -411,13 +337,18 @@ class DriveTransport:
     # exists to catch. Hence the order: `json` first, `bytes` last, nothing after it.
     # The names are worth it: `transport.json(...)` / `transport.bytes(...)` is what the
     # call site means, and `gmail/transport.py` already reads that way.
-    def bytes(self, method: str, url: str, *, what: str) -> bytes:
+    def bytes(self, method: str, url: str, *, what: str, max_bytes: int | None = None) -> bytes:
         """The response body itself, undecoded: a media download is a PDF, not JSON.
+
+        `max_bytes` caps what is read off the socket at `max_bytes + 1` bytes, so a caller
+        that refuses anything over `max_bytes` can tell an oversized answer from one that
+        fits without the whole of it ever being buffered; the caller's own length check
+        is what refuses it.
 
         A failure is still reported through `_decode`, which raises before returning,
         so the success path here is only ever reached with real bytes in hand.
         """
-        status, payload = self._send(method, url, None, None)
+        status, payload = self._send(method, url, None, None, max_bytes)
         if status >= 400:
             _decode(status, payload, what)
         return payload
@@ -452,10 +383,8 @@ def user_transport_for(
     resolution is valid, so that client's per-account cache is what stops one upload
     from becoming one OAuth round-trip per Drive call.
     """
-    refresh_token = unseal(
-        account.refresh_token_ciphertext,
-        account.refresh_token_nonce,
-        decode_google_token_key(settings),
+    refresh_token = open_refresh_token(
+        account.refresh_token_ciphertext, account.refresh_token_nonce, settings
     )
     return DriveTransport(
         tokens=UserTokens(

@@ -6,17 +6,17 @@ import { LoadMoreInvoices } from './LoadMoreInvoices'
 import { useInvoicesForOwner, type InvoiceOwner } from './queries'
 
 /**
- * The Fatture tab on a customer's or a deal's detail page.
+ * The Invoices tab on a customer's or a deal's detail page.
  *
  * It reads through `useInvoicesForOwner`, which is a thin wrapper over the same hook
  * the list page uses, so both share one cache entry and one query-key shape: an invoice
  * issued from here appears on the list page without a second round trip, and the two
  * screens cannot drift into disagreeing about the same rows.
  *
- * `actions` is the tab's own top-right slot -- where a customer page puts «Nuova
- * fattura». It lives here and not in the page header because the header is shared by
- * every tab: a button that creates an invoice would be offered from Panoramica, from
- * Timeline and from Documenti too, next to the verbs that really do belong to the whole
+ * `actions` is the tab's own top-right slot -- where a customer page puts «New
+ * invoice». It lives here and not in the page header because the header is shared by
+ * every tab: a button that creates an invoice would be offered from Overview, from
+ * Timeline and from Documents too, next to the verbs that really do belong to the whole
  * record. The tab knows nothing about what it is given; it only reserves the row.
  */
 export function InvoicesTab({ owner, actions }: { owner: InvoiceOwner; actions?: ReactNode }) {
@@ -26,6 +26,7 @@ export function InvoicesTab({ owner, actions }: { owner: InvoiceOwner; actions?:
   const table = (
     <>
       <DataTable
+        label="Fatture"
         columns={buildInvoiceColumns()}
         data={invoices.items}
         isLoading={invoices.isLoading}

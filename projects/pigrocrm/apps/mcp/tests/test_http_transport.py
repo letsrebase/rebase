@@ -7,6 +7,7 @@ the MCP suite's container; Task 5 adds spaces provisioned on the same server.
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -19,7 +20,7 @@ import pytest
 import pytest_asyncio
 from mcp.client.session import ClientSession
 from mcp.client.streamable_http import streamable_http_client
-from sqlalchemy import Engine, create_engine, delete, select, text
+from sqlalchemy import Engine, create_engine, delete, select, text, update
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
@@ -32,9 +33,10 @@ from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import drop_database
-from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.errors import Conflict
 from pigrocrm.core.fiscal.models import FiscalProfile
+from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.space_settings import SpaceSettingsService, SpaceSettingsUpdate
 from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
@@ -56,12 +58,10 @@ def root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
     """A collaboratore in the root database and a PAT of theirs; both removed after."""
     with session_factory(mcp_engine)() as session:
         user = UserService(session).create(
-            UserCreate(
-                email=EMAIL, password="lunghissima1", nome="Trasporto", ruolo="collaboratore"
-            ),
+            UserCreate(email=EMAIL, password="lunghissima1", name="Trasporto", role="collaborator"),
             Actor.system(),
         )
-        actor = Actor(id=user.id, type="user", role="collaboratore")
+        actor = Actor(id=user.id, type="user", role="collaborator")
         _, raw = PatService(session, settings=Settings(_env_file=None)).create("prova", actor)  # type: ignore[call-arg]
         session.commit()
         user_id = user.id
@@ -73,12 +73,19 @@ def root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
             session.execute(
                 delete(PersonalAccessToken).where(PersonalAccessToken.user_id == user_id)
             )
+            # A customer the test's agent created is owned by the token's user (REB-773),
+            # and a user a customer points at cannot go: the customer stays, ownerless.
+            session.execute(
+                update(Organization).where(Organization.owner_id == user_id).values(owner_id=None)
+            )
             session.execute(delete(User).where(User.id == user_id))
             session.commit()
 
 
 @pytest_asyncio.fixture
 async def served(http_settings: Settings) -> AsyncIterator[tuple[McpHttpApp, httpx2.AsyncClient]]:
+    # The registry database is the boot's to create; the server only reads it.
+    ensure_tenants_database(http_settings).dispose()
     app = create_app(http_settings, overrides_ttl=0.0)
     async with app.lifespan():
         transport = httpx2.ASGITransport(app=app)
@@ -177,14 +184,30 @@ async def test_without_a_valid_pat_the_answer_is_one_uniform_401(
 
 
 @pytest.mark.asyncio
+async def test_a_refused_bearer_is_logged_once_and_never_with_the_token(
+    served: tuple[McpHttpApp, httpx2.AsyncClient], caplog: pytest.LogCaptureFixture
+) -> None:
+    """PMCP-08: a guessing run against the endpoint leaves a trace the operator can count,
+    and the trace carries neither the credential nor anything the caller typed."""
+    _, client = served
+    secret = "pgc_a-secret-nobody-should-read-in-a-log"
+    with caplog.at_level(logging.WARNING, logger="pigrocrm_mcp.http"):
+        response = await client.post("/mcp", json=INITIALIZE, headers={**ACCEPT, **_bearer(secret)})
+    assert response.status_code == 401
+    refused = [r for r in caplog.records if r.name == "pigrocrm_mcp.http"]
+    assert len(refused) == 1 and refused[0].levelno == logging.WARNING
+    assert secret not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_a_revoked_token_is_indistinguishable_from_an_unknown_one(
     served: tuple[McpHttpApp, httpx2.AsyncClient], root_token: tuple[str, UUID], mcp_engine: Engine
 ) -> None:
     raw, user_id = root_token
     with session_factory(mcp_engine)() as session:
         service = PatService(session, settings=Settings(_env_file=None))  # type: ignore[call-arg]
-        [record] = service.list(Actor(id=user_id, type="user", role="collaboratore"))
-        service.revoke(record.id, Actor(id=user_id, type="user", role="collaboratore"))
+        [record] = service.list_own(Actor(id=user_id, type="user", role="collaborator"))
+        service.revoke(record.id, Actor(id=user_id, type="user", role="collaborator"))
         session.commit()
     _, client = served
     response = await client.post("/mcp", json=INITIALIZE, headers={**ACCEPT, **_bearer(raw)})
@@ -198,7 +221,7 @@ async def test_only_the_bare_mcp_path_is_served(
 ) -> None:
     raw, _ = root_token
     _, client = served
-    for path in ["/mcp/app", "/api/customers", "/", "/mcpx"]:
+    for path in ["/mcp/app", "/api/organizations", "/", "/mcpx"]:
         response = await client.post(path, json=INITIALIZE, headers={**ACCEPT, **_bearer(raw)})
         assert response.status_code == 404, path
         assert response.json() == {"detail": "non trovato"}
@@ -212,7 +235,7 @@ async def test_a_valid_pat_initialises_and_lists_the_tools(
     app, _ = served
     names = await _tool_names(app, "http://prova/mcp", raw)
     assert "describe_schema" in names
-    assert "create_customer" in names
+    assert "create_organization" in names
     # The root's environment has mcp_full_access false: the fiscal tools are not there.
     assert "issue_invoice" not in names
 
@@ -224,7 +247,7 @@ async def test_a_write_is_recorded_against_the_token_owner_as_an_agent(
     raw, user_id = root_token
     app, _ = served
     created = await _call_tool(
-        app, "http://prova/mcp", raw, "create_customer", {"ragione_sociale": "Cliente via HTTP"}
+        app, "http://prova/mcp", raw, "create_organization", {"legal_name": "Cliente via HTTP"}
     )
     with session_factory(mcp_engine)() as session:
         activity = session.scalars(
@@ -243,7 +266,7 @@ async def test_the_token_use_is_stamped(
     app, _ = served
     await _tool_names(app, "http://prova/mcp", raw)
     with session_factory(mcp_engine)() as session:
-        [record] = PatService(session).list(Actor(id=user_id, type="user", role="collaboratore"))
+        [record] = PatService(session).list_own(Actor(id=user_id, type="user", role="collaborator"))
     assert record.last_used_at is not None
 
 
@@ -347,10 +370,10 @@ async def test_a_build_that_fails_is_this_applications_own_500(
     raw, _ = root_token
     _, client = served
 
-    async def esplode(*args: Any, **kwargs: Any) -> Any:
+    async def explodes(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("il build esplode")
 
-    monkeypatch.setattr(McpHttpApp, "_build", esplode)
+    monkeypatch.setattr(McpHttpApp, "_build", explodes)
     response = await client.post("/mcp", json=INITIALIZE, headers={**ACCEPT, **_bearer(raw)})
     assert response.status_code == 500
     assert response.json() == {"detail": "errore interno"}
@@ -367,10 +390,10 @@ async def test_a_domain_error_that_is_not_about_the_token_is_a_500_not_a_401(
     """
     _, client = served
 
-    def conflitto(*args: Any, **kwargs: Any) -> Any:
+    def conflict(*args: Any, **kwargs: Any) -> Any:
         raise Conflict("token", "qualcosa di inatteso")
 
-    monkeypatch.setattr(McpHttpApp, "_authenticate", conflitto)
+    monkeypatch.setattr(McpHttpApp, "_authenticate", conflict)
     response = await client.post(
         "/mcp", json=INITIALIZE, headers={**ACCEPT, **_bearer("pgc_qualsiasi")}
     )
@@ -407,7 +430,7 @@ def _space_token(http_settings: Settings, slug: str) -> tuple[str, UUID]:
             # account that never proved its address may not mint a token. Here the first
             # link by mail has been used, which is the state anybody reaching «Collega un
             # agente» is in.
-            user.email_verificata_il = datetime.now(UTC)
+            user.email_verified_at = datetime.now(UTC)
             session.flush()
             actor = Actor(id=user.id, type="user", role="admin")
             _, raw = PatService(session, settings=http_settings).create("prova", actor)
@@ -426,7 +449,7 @@ def spaces(http_settings: Settings) -> Iterator[dict[str, tuple[str, UUID]]]:
         with session_factory(registry)() as session:
             for slug in SPACES:
                 TenantService(session, http_settings).provision(
-                    TenantSignup(slug=slug, nome="Ada", email=f"ada@{slug}.it")
+                    TenantSignup(first_name="Ada", slug=slug, name="Ada", email=f"ada@{slug}.it")
                 )
         for slug in SPACES:
             tokens[slug] = _space_token(http_settings, slug)
@@ -477,10 +500,12 @@ async def test_a_space_token_opens_neither_the_root_nor_another_space(
     The root and the other space each resolve it on their own `personal_access_tokens`,
     where its hash is not, so both answer the same 401 as an invented token.
     """
-    uno = spaces["spazio-uno"][0]
+    first_space = spaces["spazio-uno"][0]
     _, client = served
     for path in ["/mcp", "/spazio-due/mcp"]:
-        response = await client.post(path, json=INITIALIZE, headers={**ACCEPT, **_bearer(uno)})
+        response = await client.post(
+            path, json=INITIALIZE, headers={**ACCEPT, **_bearer(first_space)}
+        )
         assert response.status_code == 401, path
         assert response.json() == {"detail": "Token non valido"}
 
@@ -490,30 +515,40 @@ async def test_two_spaces_do_not_see_each_other(
     served: tuple[McpHttpApp, httpx2.AsyncClient], spaces: dict[str, tuple[str, UUID]]
 ) -> None:
     app, _ = served
-    uno, due = spaces["spazio-uno"][0], spaces["spazio-due"][0]
+    first_space, second_space = spaces["spazio-uno"][0], spaces["spazio-due"][0]
     await _call_tool(
         app,
         "http://prova/spazio-uno/mcp",
-        uno,
-        "create_customer",
-        {"ragione_sociale": "Solo in uno"},
+        first_space,
+        "create_organization",
+        {"legal_name": "Solo in uno"},
     )
-    found_in_uno = await _call_tool(
-        app, "http://prova/spazio-uno/mcp", uno, "search_customers", {"search": "Solo in uno"}
+    found_in_first = await _call_tool(
+        app,
+        "http://prova/spazio-uno/mcp",
+        first_space,
+        "search_organizations",
+        {"search": "Solo in uno"},
     )
     found_in_due = await _call_tool(
-        app, "http://prova/spazio-due/mcp", due, "search_customers", {"search": "Solo in uno"}
+        app,
+        "http://prova/spazio-due/mcp",
+        second_space,
+        "search_organizations",
+        {"search": "Solo in uno"},
     )
-    assert len(found_in_uno["items"]) == 1
+    assert len(found_in_first["items"]) == 1
     assert len(found_in_due["items"]) == 0
 
 
 @pytest.mark.asyncio
-async def test_the_space_setting_decides_the_privileged_tools_and_a_change_rebuilds_the_server(
+async def test_the_space_setting_is_the_ceiling_and_a_change_rebuilds_the_server(
     served: tuple[McpHttpApp, httpx2.AsyncClient],
     spaces: dict[str, tuple[str, UUID]],
     http_settings: Settings,
 ) -> None:
+    """Opening the space's switch gives a token nothing by itself (REB-810): the privileged
+    tools are there for the token its owner opened, and only for it."""
     app, _ = served
     raw, user_id = spaces["spazio-uno"]
     url = "http://prova/spazio-uno/mcp"
@@ -527,19 +562,78 @@ async def test_the_space_setting_decides_the_privileged_tools_and_a_change_rebui
             SpaceSettingsService(session, http_settings).update(
                 SpaceSettingsUpdate(mcp_full_access=True),
                 Actor(id=user_id, type="user", role="admin"),
-                spazio="spazio-uno",
+                space="spazio-uno",
             )
             session.commit()
     finally:
         engine.dispose()
 
     # `overrides_ttl=0.0` in the `served` fixture: the next request re-reads the rows,
-    # sees they changed, and rebuilds this space's server with the privileged tools.
-    assert "issue_invoice" in await _tool_names(app, url, raw)
+    # sees they changed, and rebuilds this space's server with the privileged tools
+    # registered. The token made before the switch opened is unchanged: closed.
+    assert "issue_invoice" not in await _tool_names(app, url, raw)
     # The other space is untouched.
     assert "issue_invoice" not in await _tool_names(
         app, "http://prova/spazio-due/mcp", spaces["spazio-due"][0]
     )
+
+
+@pytest.mark.asyncio
+async def test_two_tokens_of_one_admin_on_an_open_space_list_different_tools(
+    served: tuple[McpHttpApp, httpx2.AsyncClient],
+    spaces: dict[str, tuple[str, UUID]],
+    http_settings: Settings,
+) -> None:
+    """REB-810, the card's own check, over the wire: one admin, one space whose switch is
+    open, two tokens. The one given the flag lists the invoice and period-lock tools; the
+    other lists the ordinary surface and is told «Unknown tool» when it asks for one by
+    name. The flag is changed afterwards, and the very next call of the SAME app and the
+    SAME cached space server follows it, in both directions."""
+    app, _ = served
+    closed_token, user_id = spaces["spazio-uno"]
+    url = "http://prova/spazio-uno/mcp"
+    opened = http_settings.model_copy(update={"mcp_full_access": True})
+    engine = create_engine(
+        tenant_database_url(http_settings, tenant_database_name("spazio-uno")), future=True
+    )
+    try:
+        with session_factory(engine)() as session:
+            SpaceSettingsService(session, http_settings).update(
+                SpaceSettingsUpdate(mcp_full_access=True),
+                Actor(id=user_id, type="user", role="admin"),
+                space="spazio-uno",
+            )
+            service = PatService(session, settings=opened)
+            admin = Actor(id=user_id, type="user", role="admin")
+            full, open_token = service.create("fatturazione", admin, full_access=True)
+            session.commit()
+    finally:
+        engine.dispose()
+
+    closed = await _tool_names(app, url, closed_token)
+    open_ = await _tool_names(app, url, open_token)
+    assert not {"issue_invoice", "close_period", "update_user_rates"} & set(closed)
+    assert {"issue_invoice", "close_period", "update_user_rates"} <= set(open_)
+    assert set(closed) < set(open_), "the ordinary surface is the same, the open one adds"
+
+    refused = await _call_tool_result(
+        app, url, closed_token, "close_period", {"year": 2026, "month": 1}
+    )
+    assert refused.is_error
+    assert "Unknown tool: close_period" in refused.content[0].text
+
+    # Closing the flag takes the tools away at the next call, with nobody reconnecting.
+    engine = create_engine(
+        tenant_database_url(http_settings, tenant_database_name("spazio-uno")), future=True
+    )
+    try:
+        with session_factory(engine)() as session:
+            PatService(session, settings=opened).set_full_access(
+                full.id, False, Actor(id=user_id, type="user", role="admin")
+            )
+    finally:
+        engine.dispose()
+    assert "issue_invoice" not in await _tool_names(app, url, open_token)
 
 
 # --- REB-295: the credential answers with the owner's CURRENT state -----------------
@@ -557,7 +651,7 @@ async def test_the_space_setting_decides_the_privileged_tools_and_a_change_rebui
 ADMIN_EMAIL = "reb295-admin@prova.it"
 SURVIVOR_EMAIL = "reb295-superstite@prova.it"
 
-FISCAL_DATI = {"codice_regime": "RF19"}
+FISCAL_DATA = {"regime_code": "RF19"}
 
 
 @pytest.fixture
@@ -569,15 +663,15 @@ def admin_root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
     with session_factory(mcp_engine)() as session:
         users = UserService(session)
         admin = users.create(
-            UserCreate(email=ADMIN_EMAIL, password="lunghissima1", nome="Admin PAT", ruolo="admin"),
+            UserCreate(email=ADMIN_EMAIL, password="lunghissima1", name="Admin PAT", role="admin"),
             Actor.system(),
         )
         survivor = users.create(
             UserCreate(
                 email=SURVIVOR_EMAIL,
                 password="lunghissima1",
-                nome="Superstite",
-                ruolo="admin",
+                name="Superstite",
+                role="admin",
             ),
             Actor.system(),
         )
@@ -589,10 +683,10 @@ def admin_root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
         # (`conftest.py`'s engine fixture); a database without one gets a row here,
         # and the teardown below removes only what is not the default.
         if (
-            session.execute(select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))).first()
+            session.execute(select(LegalEntity.id).where(LegalEntity.is_default.is_(True))).first()
             is None
         ):
-            session.add(LegalEntity(nome="Radice", ragione_sociale="Radice", predefinita=True))
+            session.add(LegalEntity(name="Radice", legal_name="Radice", is_default=True))
         session.commit()
         admin_id = admin.id
     try:
@@ -605,7 +699,10 @@ def admin_root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
             )
             session.execute(delete(PersonalAccessToken).where(PersonalAccessToken.user_id.in_(ids)))
             session.execute(delete(FiscalProfile))
-            session.execute(delete(LegalEntity).where(LegalEntity.predefinita.is_(False)))
+            session.execute(delete(LegalEntity).where(LegalEntity.is_default.is_(False)))
+            session.execute(
+                update(Organization).where(Organization.owner_id.in_(ids)).values(owner_id=None)
+            )
             session.execute(delete(User).where(User.id.in_(ids)))
             session.commit()
 
@@ -629,7 +726,7 @@ async def test_a_deactivated_owner_is_401_and_their_token_is_revoked(
     assert first.status_code == 200
 
     with session_factory(mcp_engine)() as session:
-        UserService(session).update(admin_id, UserUpdate(attivo=False), Actor.system())
+        UserService(session).update(admin_id, UserUpdate(active=False), Actor.system())
 
     second = await client.post("/mcp", json=INITIALIZE, headers={**ACCEPT, **_bearer(raw)})
     assert second.status_code == 401
@@ -654,7 +751,7 @@ async def test_a_demoted_admins_agent_loses_the_admin_tools_on_its_next_call(
     through `require_admin`, and on the default surface since ORB-188); the demotion
     goes through `UserService.update` in a session of its own; the very next call on
     the SAME app (no restart, same cached space server) must be refused, and the
-    refusal must name the new role -- proof the request carried `collaboratore`, not
+    refusal must name the new role -- proof the request carried `collaborator`, not
     the role the token was minted under.
 
     Honest difference from hub (its `test_a_demoted_owner_fails_a_resolve` answers
@@ -666,22 +763,22 @@ async def test_a_demoted_admins_agent_loses_the_admin_tools_on_its_next_call(
     app, _ = served
     url = "http://prova/mcp"
 
-    written = await _call_tool(app, url, raw, "update_fiscal_profile", {"dati": FISCAL_DATI})
-    assert written["codice_regime"] == "RF19"
+    written = await _call_tool(app, url, raw, "update_fiscal_profile", {"data": FISCAL_DATA})
+    assert written["regime_code"] == "RF19"
 
     with session_factory(mcp_engine)() as session:
-        UserService(session).update(admin_id, UserUpdate(ruolo="collaboratore"), Actor.system())
+        UserService(session).update(admin_id, UserUpdate(role="collaborator"), Actor.system())
 
-    refused = await _call_tool_result(app, url, raw, "update_fiscal_profile", {"dati": FISCAL_DATI})
+    refused = await _call_tool_result(app, url, raw, "update_fiscal_profile", {"data": FISCAL_DATA})
     assert refused.is_error
     message = refused.content[0].text  # type: ignore[union-attr]
-    assert "collaboratore" in message, (
+    assert "collaborator" in message, (
         "the guidance must name the role the request actually carried, not the one "
         "the token was minted under"
     )
     # The credential itself survives: a demotion moves the ceiling, it does not end
     # the account (the deactivation test above is the one that ends it).
     still_works = await _call_tool(
-        app, url, raw, "create_customer", {"ragione_sociale": "Cliente post-demotione"}
+        app, url, raw, "create_organization", {"legal_name": "Cliente post-demotione"}
     )
-    assert still_works["ragione_sociale"] == "Cliente post-demotione"
+    assert still_works["legal_name"] == "Cliente post-demotione"

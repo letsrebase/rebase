@@ -95,6 +95,9 @@ def _guarded_getaddrinfo(host: Any, port: Any, *args: Any, **kwargs: Any) -> Any
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    from fakes.hand_built_invoices import install
+
+    install()
     socket.socket.connect = _guarded_connect  # type: ignore[method-assign]
     socket.socket.connect_ex = _guarded_connect_ex  # type: ignore[method-assign]
     socket.getaddrinfo = _guarded_getaddrinfo  # type: ignore[assignment]
@@ -113,29 +116,63 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 _TEMPLATE = "pigrocrm_template"
 
 
-# The revisions whose DDL `create_all` cannot express and the template applies after it,
-# in the order Alembic runs them: the policies of 0048 (REB-633), then 0049's rewrite of
-# the through-the-parent ones with the «tutte» fast path first (REB-656).
-_AZIENDA_SCOPE_REVISIONS = ("0048_azienda_scope.py", "0049_azienda_scope_fast_path.py")
-
-
-def _azienda_scope_statements() -> list[str]:
-    """`statements()` of each revision above, loaded from the file: a revision is a
-    script in `versions/`, not a module on the path."""
+def _legal_entity_scope_statements() -> list[str]:
+    """`statements()` of revisions 0068 (REB-898), 0070, 0073 to 0076, 0078 to 0081,
+    loaded from the files: a revision is a script in `versions/`, not a module on the path. It
+    carries the final functions, the policies, `ENABLE`/`FORCE` and the hardening of the definer
+    functions, so the template and production cannot disagree on a predicate; the earlier
+    revisions' own versions of them are replaced by it."""
     import importlib.util
     from pathlib import Path
 
     versions = Path(__file__).resolve().parent / "packages/core/migrations/versions"
+    # REB-969: those revisions speak of `customers`; the revision that renamed the table
+    # says the same statements in the new names through its `rewrite()`.
+    (renaming,) = versions.glob("*_organizations.py")
+    renaming_spec = importlib.util.spec_from_file_location(
+        "pigrocrm_migration_organizations", renaming
+    )
+    assert renaming_spec is not None and renaming_spec.loader is not None
+    renaming_module = importlib.util.module_from_spec(renaming_spec)
+    renaming_spec.loader.exec_module(renaming_module)
     out: list[str] = []
-    for filename in _AZIENDA_SCOPE_REVISIONS:
-        spec = importlib.util.spec_from_file_location(
-            f"pigrocrm_migration_{filename[:4]}", versions / filename
-        )
+    # 0068 carries the final functions and policies; later revisions that add a table add
+    # their own policy statements after it.
+    for name, file in (
+        ("pigrocrm_migration_0068", "0068_english_names.py"),
+        ("pigrocrm_migration_0070", "0070_deal_value_lines.py"),
+        ("pigrocrm_migration_0073", "0073_contact_points.py"),
+        ("pigrocrm_migration_0074", "0074_inbox_items.py"),
+        ("pigrocrm_migration_0075", "0075_tax_year_readings.py"),
+        ("pigrocrm_migration_0076", "0076_due_items.py"),
+        ("pigrocrm_migration_0078", "0078_organization_roles.py"),
+        ("pigrocrm_migration_0079", "0079_staff_members.py"),
+        ("pigrocrm_migration_0080", "0080_inbox_classification.py"),
+        ("pigrocrm_migration_0081", "0081_collaborators.py"),
+    ):
+        spec = importlib.util.spec_from_file_location(name, versions / file)
         assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        out.extend(module.statements())
+        out.extend(renaming_module.rewrite(statement) for statement in module.statements())
     return out
+
+
+# Test-only DDL, never a migration: a test that builds an issued invoice as a row gets its due item
+# from `fakes/hand_built_invoices.py`, and the many tests that clean up by deleting their invoices
+# by hand would otherwise leave the item behind and block the deletion of its organization
+# (REB-968). Production never deletes an issued invoice.
+_DROP_INVOICE_DUE_ITEMS_SQL = """
+CREATE FUNCTION test_drop_invoice_due_items() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    DELETE FROM due_item_settlements WHERE due_item_id IN (
+        SELECT id FROM due_items WHERE source_kind = 'sales_invoice' AND source_id = OLD.id);
+    DELETE FROM due_items WHERE source_kind = 'sales_invoice' AND source_id = OLD.id;
+    RETURN OLD;
+END $$;
+CREATE TRIGGER test_drop_invoice_due_items AFTER DELETE ON invoices
+    FOR EACH ROW EXECUTE FUNCTION test_drop_invoice_due_items();
+"""
 
 
 @pytest.fixture(scope="session")
@@ -175,14 +212,16 @@ def pigrocrm_postgres(postgres_per_worker: Any) -> Any:
         with engine.begin() as connection:
             connection.execute(text(WORK_UNIT_TRIGGER_SQL))
             connection.execute(text(CONTRACT_EXPENSE_TRIGGER_SQL))
-            # The row-level policies of 0048 (REB-633) and 0049's fast path on them
-            # (REB-656), the other DDL `create_all` cannot express: read from the
+            # The row-level policies of 0048 (REB-633) as 0068 leaves them (REB-898, with
+            # 0049's fast path), the other DDL `create_all` cannot express: read from the
             # revisions themselves, so the template and production cannot disagree on a
             # predicate. The suite's user is a superuser, which
             # Postgres keeps outside every policy, so no existing test sees them; the
             # scope tests connect as the application role the boot creates and do.
-            for statement in _azienda_scope_statements():
+            for statement in _legal_entity_scope_statements():
                 connection.execute(text(statement))
+        with engine.begin() as connection:
+            connection.execute(text(_DROP_INVOICE_DUE_ITEMS_SQL))
         # A template must have no session connected while it is copied.
         engine.dispose()
 

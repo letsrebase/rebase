@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "The squared system every rebase application renders on: the tokens, the nineteen primitives, and the gallery that shows them.",
+  "description": "The squared system every rebase application renders on: the tokens, the seventeen primitives, and the gallery that shows them.",
   "exports": {
     "./tokens.css": "./tokens.css",
     "./before-tailwind.css": "./before-tailwind.css",
@@ -20,14 +20,16 @@
     "./sheet": "./sheet.tsx",
     "./dropdown-menu": "./dropdown-menu.tsx",
     "./popover": "./popover.tsx",
-    "./tooltip": "./tooltip.tsx",
     "./tabs": "./tabs.tsx",
     "./table": "./table.tsx",
-    "./separator": "./separator.tsx",
     "./skeleton": "./skeleton.tsx",
     "./loader": "./loader.tsx",
     "./sonner": "./sonner.tsx",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./brand-mark": "./brand-mark.tsx",
+    "./use-media-query": "./use-media-query.ts",
+    "./test-setup": "./test-setup.ts",
+    "./format": "./format.ts"
   },
   "files": [
     "tokens.css",
@@ -45,13 +47,15 @@
     "sheet.tsx",
     "dropdown-menu.tsx",
     "popover.tsx",
-    "tooltip.tsx",
     "tabs.tsx",
     "table.tsx",
-    "separator.tsx",
     "skeleton.tsx",
     "loader.tsx",
-    "sonner.tsx"
+    "sonner.tsx",
+    "brand-mark.tsx",
+    "use-media-query.ts",
+    "test-setup.ts",
+    "format.ts"
   ],
   "scripts": {
     "dev": "vite",
@@ -65,7 +69,7 @@
     "@axe-core/playwright": "catalog:",
     "@eslint/js": "catalog:",
     "@playwright/test": "catalog:",
-    "@tailwindcss/vite": "4.3.3",
+    "@tailwindcss/vite": "4.3.4",
     "@testing-library/jest-dom": "catalog:",
     "@testing-library/react": "catalog:",
     "@types/node": "catalog:",
@@ -77,10 +81,10 @@
     "eslint-plugin-react-refresh": "catalog:",
     "globals": "catalog:",
     "jsdom": "catalog:",
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0",
-    "shadcn": "^4.21.0",
-    "tailwindcss": "4.3.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "shadcn": "^4.23.0",
+    "tailwindcss": "4.3.4",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
     "vite": "catalog:",
@@ -90,14 +94,14 @@
     "@rebase/brand": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "lucide-react": "^1.48.0",
-    "radix-ui": "^1.6.7",
+    "lucide-react": "^1.67.0",
+    "radix-ui": "^1.8.1",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.7.0",
     "tw-animate-css": "^1.4.0"
   },
   "peerDependencies": {
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   }
 }

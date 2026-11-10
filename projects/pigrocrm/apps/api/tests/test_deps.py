@@ -48,7 +48,7 @@ def test_get_session_builds_the_engine_exactly_once_under_concurrent_cold_start(
     errors: list[BaseException] = []
 
     # A root request: no space prefix, so `get_session` takes the shared root engine.
-    request = Request({"type": "http", "path": "/api/customers", "headers": [], "state": {}})
+    request = Request({"type": "http", "path": "/api/organizations", "headers": [], "state": {}})
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
 
     def worker() -> None:

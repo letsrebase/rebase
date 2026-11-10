@@ -25,8 +25,8 @@
 # can't own at all.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-cd "$REPO_ROOT"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+cd "$PROJECT_ROOT"
 
 # Sourced here too, not only inside e2e-setup.sh's own process: e2e/resilience.spec.ts
 # deliberately kills the API mid-suite and relaunches it itself, which means the
@@ -36,21 +36,21 @@ cd "$REPO_ROOT"
 # starts, is what makes them inherited rather than merely local to e2e-setup.sh's own
 # short-lived subprocess.
 # shellcheck source=./e2e-env.sh
-source "$REPO_ROOT/apps/web/scripts/e2e-env.sh"
+source "$PROJECT_ROOT/apps/web/scripts/e2e-env.sh"
 
 cleanup() {
-  "$REPO_ROOT/apps/web/scripts/e2e-teardown.sh"
+  "$PROJECT_ROOT/apps/web/scripts/e2e-teardown.sh"
 }
 trap cleanup EXIT
 
 # Before the database comes up, so a build that fails costs nothing to tear down.
 echo "== pigrocrm e2e: building the SPA =="
-(cd "$REPO_ROOT/apps/web" && pnpm exec vite build)
+(cd "$PROJECT_ROOT/apps/web" && pnpm exec vite build)
 
-"$REPO_ROOT/apps/web/scripts/e2e-setup.sh"
+"$PROJECT_ROOT/apps/web/scripts/e2e-setup.sh"
 
 set +e
-(cd "$REPO_ROOT/apps/web" && pnpm exec playwright test "$@")
+(cd "$PROJECT_ROOT/apps/web" && pnpm exec playwright test "$@")
 status=$?
 set -e
 

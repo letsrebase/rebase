@@ -1,6 +1,17 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// REB-788: the panels read the role (the estimate is an administrator's), so the tests
+// say which role is signed in; the default is the one that may read everything.
+const session = vi.hoisted(() => ({ role: 'admin' as 'admin' | 'collaborator' | 'readonly' }))
+vi.mock('@/lib/auth', async () => {
+  const { can } = await import('@/lib/permissions')
+  return {
+    useAuth: () => ({ user: { role: session.role } }),
+    useCan: (action: Parameters<typeof can>[1]) => can(session.role, action),
+  }
+})
 import { api } from '@/lib/api'
 import { FiscalPanel } from './FiscalPanel'
 
@@ -19,21 +30,21 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }))
 
-const AVVERTENZA =
+const WARNING =
   'Stima indicativa. Non tiene conto del minimale e del massimale contributivo, di altri redditi, degli acconti già versati né di deduzioni e detrazioni. Per la dichiarazione fai riferimento al tuo commercialista.'
 
 const estimate = (overrides: Record<string, unknown> = {}) => ({
-  anno: 2026,
-  stima: true,
-  avvertenza: AVVERTENZA,
-  ricavi: '100000.00',
-  coefficiente_redditivita: '67.00',
-  imponibile: '67000.00',
-  aliquota_imposta_sostitutiva: '5.00',
-  imposta_sostitutiva: '3350.00',
-  aliquota_inps: '26.07',
-  contributi: '16593.56',
-  reddito_netto_stimato: '80056.44',
+  year: 2026,
+  estimate: true,
+  warning: WARNING,
+  revenue: '100000.00',
+  profitability_coefficient: '67.00',
+  taxable_amount: '67000.00',
+  substitute_tax_rate: '5.00',
+  substitute_tax: '3350.00',
+  social_security_rate: '26.07',
+  contributions: '16593.56',
+  estimated_net_income: '80056.44',
   ...overrides,
 })
 
@@ -45,16 +56,17 @@ function failed(error: unknown, status: number) {
   return Promise.resolve({ error, response: new Response(null, { status }) }) as never
 }
 
-function renderPanel(anno = 2026) {
+function renderPanel(year = 2026) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <FiscalPanel anno={anno} />
+      <FiscalPanel year={year} />
     </QueryClientProvider>,
   )
 }
 
 beforeEach(() => {
+  session.role = 'admin'
   vi.mocked(api.GET).mockReset()
 })
 
@@ -81,7 +93,7 @@ describe('FiscalPanel', () => {
 
     // The sentence is the backend's, verbatim: which caveats apply is a fiscal question,
     // not a copywriting one, and shortening it here would drop whichever one matters.
-    expect(await screen.findByRole('note')).toHaveTextContent(AVVERTENZA)
+    expect(await screen.findByRole('note')).toHaveTextContent(WARNING)
   })
 
   it('shows every computed line, rates included', async () => {
@@ -102,15 +114,15 @@ describe('FiscalPanel', () => {
     vi.mocked(api.GET).mockImplementation(() =>
       ok(
         estimate({
-          avvertenza: 'Stima indicativa.',
-          ricavi: '1000.00',
-          coefficiente_redditivita: null,
-          imponibile: null,
-          aliquota_imposta_sostitutiva: null,
-          imposta_sostitutiva: null,
-          aliquota_inps: null,
-          contributi: null,
-          reddito_netto_stimato: null,
+          warning: 'Stima indicativa.',
+          revenue: '1000.00',
+          profitability_coefficient: null,
+          taxable_amount: null,
+          substitute_tax_rate: null,
+          substitute_tax: null,
+          social_security_rate: null,
+          contributions: null,
+          estimated_net_income: null,
         }),
       ),
     )
@@ -160,7 +172,7 @@ describe('FiscalPanel', () => {
           detail: 'get_fiscal_estimate requires one of [admin], actor has collaboratore',
           code: 'permission_denied',
           required_roles: ['admin'],
-          actual_role: 'collaboratore',
+          actual_role: 'collaborator',
         },
         403,
       ),
@@ -175,31 +187,42 @@ describe('FiscalPanel', () => {
     expect(screen.queryByText(/reddito netto/i)).not.toBeInTheDocument()
   })
 
+  it('does not ask a collaboratore for the estimate at all (REB-788)', async () => {
+    session.role = 'collaborator'
+    vi.mocked(api.GET).mockImplementation(() => ok(estimate()))
+    renderPanel()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /ruolo in questo spazio è «collaboratore»: la stima fiscale è riservata a «amministratore»/,
+    )
+    expect(api.GET).not.toHaveBeenCalled()
+  })
+
   it('asks for the year it was given, never for the one on the clock', async () => {
     // The year is the caller's, since this card lives in Home under a period picker: the
     // estimate a reader is looking at has to be the one the period on screen names, and a
     // panel that read the clock instead would answer a question nobody asked while the
     // cards above it answered another.
-    vi.mocked(api.GET).mockImplementation(() => ok(estimate({ anno: 2025 })))
+    vi.mocked(api.GET).mockImplementation(() => ok(estimate({ year: 2025 })))
     renderPanel(2025)
 
     await screen.findByRole('note')
     const [path, options] = vi.mocked(api.GET).mock.calls[0] as unknown as [
       string,
-      { params: { query: { anno: number } } },
+      { params: { query: { year: number } } },
     ]
     expect(path).toBe('/api/analytics/fiscal')
-    expect(options.params.query.anno).toBe(2025)
+    expect(options.params.query.year).toBe(2025)
   })
 })
 
 // -- one card per azienda in «tutte» (REB-632) --------------------------------------------
 
-function renderQuiet(aziendaId: string) {
+function renderQuiet(legalEntityId: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <FiscalPanel anno={2026} aziendaId={aziendaId} titolo="humancraft" quiet />
+      <FiscalPanel year={2026} legalEntityId={legalEntityId} title="humancraft" quiet />
     </QueryClientProvider>,
   )
 }
@@ -212,7 +235,7 @@ describe('FiscalPanel, quiet and by azienda', () => {
       await screen.findByRole('heading', { name: 'Stima fiscale 2026 · humancraft' }),
     ).toBeInTheDocument()
     expect(api.GET).toHaveBeenCalledWith('/api/analytics/fiscal', {
-      params: { query: { anno: 2026, azienda_id: 'a-1' } },
+      params: { query: { year: 2026, legal_entity_id: 'a-1' } },
     })
   })
 
@@ -223,14 +246,14 @@ describe('FiscalPanel, quiet and by azienda', () => {
     await waitFor(() => expect(container).toBeEmptyDOMElement())
     unmount()
 
-    vi.mocked(api.GET).mockReturnValue(ok(estimate({ coefficiente_redditivita: null })))
+    vi.mocked(api.GET).mockReturnValue(ok(estimate({ profitability_coefficient: null })))
     const second = renderQuiet('a-3')
     await waitFor(() => expect(api.GET).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(second.container).toBeEmptyDOMElement())
     second.unmount()
 
     // Any of the three: a card with one line «non calcolabile» is not an estimate.
-    vi.mocked(api.GET).mockReturnValue(ok(estimate({ aliquota_inps: null })))
+    vi.mocked(api.GET).mockReturnValue(ok(estimate({ social_security_rate: null })))
     const third = renderQuiet('a-4')
     await waitFor(() => expect(api.GET).toHaveBeenCalledTimes(3))
     await waitFor(() => expect(third.container).toBeEmptyDOMElement())

@@ -1,6 +1,6 @@
 # @rebase/ui
 
-The squared system every rebase application renders on: the tokens, the nineteen
+The squared system every rebase application renders on: the tokens, the seventeen
 primitives that read them, the class merger they compose with, and a gallery that shows
 the lot on one page. Each SPA imports this package instead of keeping a copy of its
 own.
@@ -51,10 +51,15 @@ of letting a visitor's OS apply them.
   expands: `tw-animate-css` for their enter and exit transitions and
   `shadcn/tailwind.css` for the `data-open`/`data-checked` custom variants their class
   names use. Its own header explains why they cannot live in `tokens.css`.
-- **Nineteen primitives**, flat beside this file, one export path each
+- **Seventeen primitives**, flat beside this file, one export path each
   (`@rebase/ui/button`): button, input, textarea, select, checkbox, label, badge,
-  card, dialog, sheet, dropdown-menu, popover, tooltip, tabs, table, separator,
-  skeleton, loader and the sonner toaster.
+  card, dialog, sheet, dropdown-menu, popover, tabs, table, skeleton,
+  loader and the sonner toaster.
+- **`brand-mark.tsx`**, the four-tile mark that stands before the product's name
+  (`BrandMark`), **`use-media-query.ts`** (`useMediaQuery`, for a shell that is a drawer
+  below `lg`) and **`test-setup.ts`**, the jsdom setup both applications name in their
+  vitest `setupFiles` (`@rebase/ui/test-setup`): Testing Library's cleanup and timeout,
+  and the polyfills Radix needs where jsdom has none.
 - **`cn.ts`**, the class merger they compose with and the applications import for their
   own components (`@rebase/ui/cn`).
 - **`gallery/`**, every primitive in every variant and state on one page.
@@ -78,7 +83,8 @@ They import what they need from here, which is what makes the boundary visible: 
 under `projects/pigrocrm/apps/web/src/components/ui/` that imports `@rebase/ui/button`
 is CRM-only on purpose. The day the hub needs one, it moves.
 
-Five stayed when the eighteen moved (REB-300). `calendar` and `sidebar` were two of
+Five stayed when the eighteen moved (REB-300). `tooltip` and `separator` came with them and
+had no consumer in either application, so they were deleted (generate one here when something renders it). `calendar` and `sidebar` were two of
 them and had no importer in the CRM at all, so REB-304 deleted them, along with
 `react-day-picker` and the `use-mobile` hook that existed only for those two files. A
 date picker or a second shell is generated here when something actually renders one.
@@ -94,7 +100,7 @@ with a green build: `@rebase/ui/sonner` exports both, and the CRM's callers impo
 `toast` from there.
 
 `components.json` here is the generator's own configuration, and since REB-304 it is
-the only one in the repository: a twentieth primitive generated from shadcn's
+the only one in the repository: a new primitive generated from shadcn's
 registry is added in this package
 (`pnpm --filter @rebase/ui exec shadcn add <name>`) and never in an application,
 which is what the CRM's own `components.json` quietly invited for as long as it
@@ -178,7 +184,7 @@ in full, because the obvious reading of it is wrong twice over (REB-308). Radix 
 that is not on the path to the open surface, sparing every `[aria-live]` region and its
 ancestors. Sonner's toaster is one of those and sits inside `<main>`, so the marks land
 on `<main>`'s own children rather than stopping at `#root`, and the reported nodes are
-five sections of this gallery, never the trigger. Radix does trap Tab inside the
+six sections of this gallery (the sixth is the scrolling table, a real tab stop), never the trigger. Radix does trap Tab inside the
 surface, so nothing outside is reachable in practice, but axe reads the static DOM and
 cannot see a focus trap; the remedy it accepts is `inert` on the background, which radix
 does not use. A dialog and a sheet put the identical attributes on the identical

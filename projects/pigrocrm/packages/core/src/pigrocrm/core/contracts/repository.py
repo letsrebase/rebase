@@ -20,18 +20,39 @@ class ContractRepository:
             return None
         return contract
 
-    def list_active(self) -> list[Contract]:
+    def get_locked(self, contract_id: UUID, *, shared: bool = False) -> Contract | None:
+        """`get`, holding a row lock until the transaction ends. A write to the contract
+        takes it exclusively and a write to one of its expenses takes it shared, so a
+        policy change and an expense write on the same contract run one after the
+        other: the expense trigger never reads a policy that is about to change, and
+        the re-evaluation of a changed policy never misses an expense in flight."""
+        stmt = select(Contract).where(Contract.id == contract_id).with_for_update(read=shared)
+        contract = self.session.execute(stmt).scalars().first()
+        if contract is None or contract.deleted_at is not None:
+            return None
+        return contract
+
+    def list_active(self, legal_entity_id: UUID | None = None) -> list[Contract]:
         """Every non-deleted contract, unpaginated -- read by REB-352 §1.6's cash
         calendar overlay, which needs every contract's own dates, and by REB-352
-        §1.5's concentration cap indirectly through `get`. A contract's own `stato`
-        stays out of this filter: no state-transition endpoint exists yet
-        (`ContractCreate`'s own docstring), so every row today is `bozza` and a
-        `stato` filter would either show nothing or exclude nothing -- an assumption
-        this method refuses to invent ahead of the transition that would give it
-        meaning. Never enough contracts in one practice to need keyset pagination,
-        the same reasoning `RateCardRepository.list_for_contract` gives.
+        §1.5's concentration cap indirectly through `get`. A contract's own `status`
+        stays out of this filter: a contract that is not `active` still has dates the
+        calendar overlay reads, and which states count is that overlay's decision, not
+        this list's. `legal_entity_id` narrows it in SQL to one legal entity's contracts. Never
+        enough contracts in one practice to need keyset pagination, the same
+        reasoning `RateCardRepository.list_for_contract` gives.
         """
         stmt = select(Contract).where(Contract.deleted_at.is_(None))
+        if legal_entity_id is not None:
+            stmt = stmt.where(Contract.legal_entity_id == legal_entity_id)
+        return list(self.session.execute(stmt).scalars())
+
+    def list_for_customer(self, customer_id: UUID) -> list[Contract]:
+        """Every non-deleted contract of one customer, unpaginated, whatever its `status`
+        (same reasoning as `list_active`)."""
+        stmt = select(Contract).where(
+            Contract.deleted_at.is_(None), Contract.customer_id == customer_id
+        )
         return list(self.session.execute(stmt).scalars())
 
     def add(self, contract: Contract) -> Contract:
@@ -46,10 +67,10 @@ class ContractRepository:
         stmt = select(Contract).where(Contract.deleted_at.is_(None))
         if query.customer_id:
             stmt = stmt.where(Contract.customer_id == query.customer_id)
-        if query.azienda_id:
-            stmt = stmt.where(Contract.azienda_id == query.azienda_id)
-        if query.stato:
-            stmt = stmt.where(Contract.stato == query.stato)
+        if query.legal_entity_id:
+            stmt = stmt.where(Contract.legal_entity_id == query.legal_entity_id)
+        if query.status:
+            stmt = stmt.where(Contract.status == query.status)
 
         # Residuo R9: keyset pagination over a whitelisted column, ordered
         # `col <dir>, id <dir>`.
@@ -83,7 +104,7 @@ class RateCardRepository:
         stmt = (
             select(RateCard)
             .where(RateCard.contract_id == contract_id)
-            .order_by(RateCard.valido_da.asc(), RateCard.id.asc())
+            .order_by(RateCard.valid_from.asc(), RateCard.id.asc())
         )
         return list(self.session.execute(stmt).scalars())
 

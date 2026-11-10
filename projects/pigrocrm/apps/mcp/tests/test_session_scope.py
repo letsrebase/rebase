@@ -1,6 +1,6 @@
 """R1, reproduced and then closed.
 
-The slice 1A reviewer measured 10 concurrent `create_customer` calls against one
+The slice 1A reviewer measured 10 concurrent `create_organization` calls against one
 shared Session as 0 successes and 0 rows. `log_time` (slice 4) is a write tool and
 the centre of this slice's agentic surface, so that measurement is the exact
 behaviour this test refuses to ship.
@@ -17,9 +17,9 @@ from uuid import uuid4
 from sqlalchemy import Engine, text
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.schemas import CustomerCreate
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db import session_factory
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.context import McpContext, ScopedSessionProvider
 
@@ -35,12 +35,12 @@ def test_twenty_concurrent_writes_all_succeed(
     barrier = threading.Barrier(CONCURRENCY)
     names = [f"Concorrente {uuid4()}" for _ in range(CONCURRENCY)]
 
-    def write(nome: str) -> str:
+    def write(name: str) -> str:
         barrier.wait(timeout=30)
         with provider.scope():
             return str(
-                CustomerService(context.session)
-                .create(CustomerCreate(ragione_sociale=nome), context.actor)
+                OrganizationService(context.session)
+                .create(OrganizationCreate(legal_name=name), context.actor)
                 .id
             )
 
@@ -50,7 +50,7 @@ def test_twenty_concurrent_writes_all_succeed(
     assert len(set(ids)) == CONCURRENCY
     with session_factory(mcp_engine)() as check:
         stored = check.execute(
-            text("SELECT count(*) FROM customers WHERE ragione_sociale = ANY(:names)"),
+            text("SELECT count(*) FROM organizations WHERE legal_name = ANY(:names)"),
             {"names": names},
         ).scalar_one()
     assert stored == CONCURRENCY

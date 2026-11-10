@@ -1,14 +1,17 @@
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import {
   useAutomations,
   useUpdateAutomationConfig,
   type AutomationConfigUpdate,
 } from '@/features/dashboard/queries'
 import { cn } from '@rebase/ui/cn'
+import { Input } from '@rebase/ui/input'
+import { ruleLabel } from './labels'
+import { useState } from 'react'
 
 /**
- * §9.5's third observability surface: the two rules, their switch, and the last executions
+ * §9.5's third observability surface: the rules, their switch, and the last executions
  * with their outcome -- a query over `activities` by `kind`, never a new table.
  *
  * The non-executions are the reason this page earns its place. Without them, "it did not
@@ -16,23 +19,31 @@ import { cn } from '@rebase/ui/cn'
  */
 
 const REASONS: Record<string, string> = {
-  stage_bersaglio_assente: 'lo stato bersaglio non esiste',
+  target_stage_missing: 'lo stato bersaglio non esiste',
   // "c'è più di uno", not "ci sono più di uno": the subject is «uno».
-  stage_bersaglio_ambiguo: 'c’è più di uno stato «vinto»: l’automazione non indovina',
-  gia_nello_stato: 'il deal era già nello stato bersaglio',
-  regola_disattivata: 'la regola è disattivata',
+  target_stage_ambiguous: 'c’è più di uno stato «vinto»: l’automazione non indovina',
+  already_in_state: 'il deal era già nello stato bersaglio',
+  rule_disabled: 'la regola è disattivata',
 }
 
 const KINDS: Record<string, string> = {
-  'automazione.stage_spostato': 'Deal spostato',
-  'automazione.non_eseguita': 'Non eseguita',
-  'automazione.configurazione_modificata': 'Configurazione modificata',
+  'automation.stage_moved': 'Deal spostato',
+  'automation.not_executed': 'Non eseguita',
+  'automation.config_changed': 'Configurazione modificata',
+  'automation.task_opened': 'Attività aperta',
 }
 
 const FIELD_BY_RULE: Record<string, keyof AutomationConfigUpdate> = {
-  A1: 'a1_offerta_accettata_vince_deal',
-  A2: 'a2_offerta_inviata_avanza_deal',
+  A1: 'a1_wins_accepted_offer_deal',
+  A2: 'a2_advances_sent_offer_deal',
+  // The three rules of the daily pass (REB-727, REB-728), named by the `rule` they write.
+  sent_offer_follow_up: 'a3_sent_offer_follow_up',
+  stalled_deal: 'a4_stalled_deal',
+  overdue_invoice: 'a5_overdue_invoice',
 }
+
+const StalledDealMinDays = 1
+const StalledDealMaxDays = 365
 
 const timestamp = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' })
 
@@ -78,6 +89,53 @@ function RuleSwitch({
   )
 }
 
+/**
+ * The one threshold: how many days a deal stays in its stage before `stalled_deal` opens an
+ * attività. Kept as the text being typed (`draft`) and sent when the box loses focus, so a
+ * refetch cannot overwrite a number half typed; `null` means «show the server's».
+ */
+function DaysThreshold({
+  value,
+  disabled,
+  onCommit,
+}: {
+  value: number
+  disabled: boolean
+  onCommit: (days: number, settled: () => void) => void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const days = draft === null ? null : Number(draft)
+  const valid =
+    days !== null && Number.isInteger(days) && days >= StalledDealMinDays && days <= StalledDealMaxDays
+  return (
+    <label className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+      Giorni nello stesso stato
+      <Input
+        type="number"
+        min={StalledDealMinDays}
+        max={StalledDealMaxDays}
+        aria-label="Giorni di un deal fermo"
+        aria-invalid={draft !== null && !valid}
+        disabled={disabled}
+        value={draft ?? String(value)}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          // A valid change is sent and the typed number stays until the answer is in, so
+          // the box never shows the old value in between; anything else is dropped.
+          if (draft !== null && valid && days !== value) onCommit(days, () => setDraft(null))
+          else if (valid || draft === '') setDraft(null)
+        }}
+        className="w-20"
+      />
+      {draft !== null && !valid && (
+        <span role="status" className="text-destructive">
+          Da {StalledDealMinDays} a {StalledDealMaxDays} giorni
+        </span>
+      )}
+    </label>
+  )
+}
+
 export function AutomationsPanel() {
   const query = useAutomations()
   const update = useUpdateAutomationConfig()
@@ -86,7 +144,7 @@ export function AutomationsPanel() {
   // `data` is still undefined, so a single `isPending || !data` guard would answer a failed
   // read with a spinner that never resolves.
   if (query.isError) return <QueryErrorBanner error={query.error} />
-  if (query.isPending || !query.data) return <Skeleton className="h-64 w-full" />
+  if (query.isPending || !query.data) return <LoadingState />
 
   const data = query.data
 
@@ -98,13 +156,13 @@ export function AutomationsPanel() {
             error set into state and never cleared prints a refusal under the next success,
             a defect this codebase has fixed twice. */}
         {update.isError && <QueryErrorBanner error={update.error} />}
-        {data.regole.map((rule) => {
-          const field = FIELD_BY_RULE[rule.codice]
+        {data.rules.map((rule) => {
+          const field = FIELD_BY_RULE[rule.code]
           return (
-            <div key={rule.codice} className="flex items-start gap-4 border p-4">
+            <div key={rule.code} className="flex items-start gap-4 border p-4">
               <RuleSwitch
-                label={rule.titolo}
-                checked={rule.attiva}
+                label={rule.title}
+                checked={rule.active}
                 // A rule the client has no field for cannot be switched from here. Better a
                 // disabled control than a PUT with an `undefined` key, which `extra="forbid"`
                 // would reject anyway -- and better a visible one than a rule silently
@@ -119,8 +177,17 @@ export function AutomationsPanel() {
                 }}
               />
               <div className="min-w-0">
-                <p className="text-sm font-medium">{rule.titolo}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{rule.descrizione}</p>
+                <p className="text-sm font-medium">{rule.title}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{rule.description}</p>
+                {rule.code === 'stalled_deal' && (
+                  <DaysThreshold
+                    value={data.configuration.a4_stalled_deal_days}
+                    disabled={update.isPending}
+                    onCommit={(days, settled) =>
+                      update.mutate({ a4_stalled_deal_days: days }, { onSuccess: settled })
+                    }
+                  />
+                )}
               </div>
             </div>
           )
@@ -129,19 +196,22 @@ export function AutomationsPanel() {
 
       <section>
         <h2 className="text-lg font-semibold">Ultime esecuzioni</h2>
-        {data.esecuzioni.length === 0 ? (
+        {data.runs.length === 0 ? (
           <p className="mt-2 text-sm text-muted-foreground">Nessuna esecuzione registrata.</p>
         ) : (
           <ul className="mt-2 divide-y text-sm">
-            {data.esecuzioni.map((run, index) => (
+            {data.runs.map((run, index) => (
               <li key={`${run.occurred_at}-${index}`} className="py-2">
                 {/* An unknown `kind` shows its raw value rather than nothing: `activities.kind`
                     is an open value by project, so this map will fall behind the backend one
                     day and a blank line would hide the run entirely. */}
                 <span className="font-medium">{KINDS[run.kind] ?? run.kind}</span>
-                {run.regola && <span className="text-muted-foreground"> · {run.regola}</span>}
-                {run.motivo && (
-                  <span className="text-muted-foreground"> · {REASONS[run.motivo] ?? run.motivo}</span>
+                {run.rule && <span className="text-muted-foreground"> · {ruleLabel(run.rule)}</span>}
+                {typeof run.payload.title === 'string' && (
+                  <span className="text-muted-foreground"> · {run.payload.title}</span>
+                )}
+                {run.reason && (
+                  <span className="text-muted-foreground"> · {REASONS[run.reason] ?? run.reason}</span>
                 )}
                 <span className="ml-2 text-xs text-muted-foreground">
                   {timestamp.format(new Date(run.occurred_at))}

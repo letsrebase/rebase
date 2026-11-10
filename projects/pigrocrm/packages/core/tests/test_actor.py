@@ -4,7 +4,7 @@ engagements door (spec 2026-09-25 § 2.5, REB-490).
 Milestone A opens a service-token door through which the hub sets up a freelancer's
 space, customer and deal for a signed engagement. Every write it makes through that
 door needs an actor to record in the timeline, and it must be an actor that can write
-and administer without tripping the agent ban in `AGENT_FORBIDDEN_ACTIONS`
+and administer without tripping the agent ban in `FULL_ACCESS_ACTIONS`
 (`actor.py`): `rebase` is not an agent working on someone's behalf, it is the hub
 itself, so `require_write`/`require_admin` must treat it exactly as they treat a human
 admin.
@@ -30,17 +30,17 @@ def test_an_unscoped_admin_passes_the_space_level_gate_and_a_scoped_one_does_not
     Actor(id=uuid4(), type="user", role="admin").require_unscoped_admin("update_space_settings")
     Actor.system().require_unscoped_admin("seed_pipeline")
     with pytest.raises(ScopedAdmin) as scoped:
-        Actor(id=uuid4(), type="user", role="admin", aziende=(uuid4(),)).require_unscoped_admin(
-            "update_space_settings"
-        )
+        Actor(
+            id=uuid4(), type="user", role="admin", legal_entities=(uuid4(),)
+        ).require_unscoped_admin("update_space_settings")
     assert scoped.value.code == "permission_denied"
     # A scoped admin with no azienda left is still scoped, and still an admin elsewhere.
-    empty = Actor(id=uuid4(), type="user", role="admin", aziende=())
+    empty = Actor(id=uuid4(), type="user", role="admin", legal_entities=())
     assert empty.scoped is True and empty.can_administer is True
     with pytest.raises(ScopedAdmin):
         empty.require_unscoped_admin("invite_user")
     # The role comes first: a collaboratore is told about the role, not the scope.
     with pytest.raises(PermissionDenied):
-        Actor(id=uuid4(), type="user", role="collaboratore", aziende=None).require_unscoped_admin(
-            "invite_user"
-        )
+        Actor(
+            id=uuid4(), type="user", role="collaborator", legal_entities=None
+        ).require_unscoped_admin("invite_user")

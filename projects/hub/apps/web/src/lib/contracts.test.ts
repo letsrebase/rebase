@@ -1,40 +1,40 @@
 import { describe, expect, it } from 'vitest'
-import { LETTERA_TEXT_KEYS, type LetteraDraft } from './api'
+import { LETTER_TEXT_KEYS, type LetterDraft } from './api'
 import {
-  ALTRE_CONDIZIONI_GROUPS,
+  OTHER_TERMS_GROUPS,
   amountForm,
-  CONDIZIONI_FIELDS,
+  TERMS_FIELDS,
   cancelDescription,
   closeDescription,
-  clienteComplete,
-  clienteLine,
-  compensoHint,
+  customerComplete,
+  customerLine,
+  feeHint,
   draftFromFiscal,
   FISCAL_EMPTY,
   fiscalLine,
   fiscalToSave,
-  giorniPrevistiToSend,
-  LETTERA_EMPTY,
-  LETTERA_GROUPS,
-  LETTERA_LABELS,
-  LETTERA_REQUIRED,
-  letteraForm,
+  expectedDaysToSend,
+  LETTER_EMPTY,
+  LETTER_GROUPS,
+  LETTER_LABELS,
+  LETTER_REQUIRED,
+  letterForm,
   olderFiscal,
-  letteraToSend,
+  letterToSend,
   newerFiscal,
   matchOf,
   objectOf,
   payModeOf,
   previewLabels,
-  quadroHeadingId,
+  frameworkHeadingId,
   refillFiscal,
   REGIME_OPTIONS,
   sendLabel,
   sendReportMessage,
   switchPayMode,
-  toCliente,
+  toCustomer,
   toFiscalData,
-  toLettera,
+  toLetter,
   typedAfterSave,
   typedFiscalFields,
   whatOf,
@@ -43,76 +43,89 @@ import {
 
 describe('the letter form (REB-387)', () => {
   it('shows every field of the letter exactly once, in a group', () => {
-    const grouped = LETTERA_GROUPS.flatMap((group) => group.fields)
+    const grouped = LETTER_GROUPS.flatMap((group) => group.fields)
     expect(new Set(grouped).size).toBe(grouped.length)
-    expect(new Set(grouped)).toEqual(new Set(Object.keys(LETTERA_LABELS)))
-    expect(grouped).toHaveLength(LETTERA_TEXT_KEYS.length + 6)
+    expect(new Set(grouped)).toEqual(new Set(Object.keys(LETTER_LABELS)))
+    expect(grouped).toHaveLength(LETTER_TEXT_KEYS.length + 7)
   })
 
   it('sends an empty box as null, a comma decimal with a dot, and numbers as numbers', () => {
-    const lettera = toLettera({
-      ...LETTERA_EMPTY,
-      ruolo: ' Backend developer ',
-      attivita: 'Le API',
-      data_inizio: '2026-10-01',
-      compenso: '450,50',
-      giorni_pagamento: '30',
-      fine_mese: true,
+    const letter = toLetter({
+      ...LETTER_EMPTY,
+      role: ' Backend developer ',
+      activities: 'Le API',
+      start_date: '2026-10-01',
+      fee: '450,50',
+      payment_days: '30',
+      month_end: true,
     })
-    expect(lettera.ruolo).toBe('Backend developer')
-    expect(lettera.risultati).toBeNull()
-    expect(lettera.data_fine).toBeNull()
-    expect(lettera.compenso).toBe('450.50')
-    expect(lettera.giorni_pagamento).toBe(30)
-    expect(lettera.giorni_preavviso).toBeNull()
+    expect(letter.role).toBe('Backend developer')
+    expect(letter.results).toBeNull()
+    expect(letter.end_date).toBeNull()
+    expect(letter.fee).toBe('450.50')
+    expect(letter.payment_days).toBe(30)
+    expect(letter.notice_days).toBeNull()
+  })
+
+  it('sends the days to wait for the client as a number, and an empty box as null (REB-979)', () => {
+    expect(toLetter({ ...LETTER_EMPTY, collection_days: ' 15 ' }).collection_days).toBe(15)
+    expect(toLetter(LETTER_EMPTY).collection_days).toBeNull()
+    expect(toLetter({ ...LETTER_EMPTY, collection_days: '  ' }).collection_days).toBeNull()
+  })
+
+  it('shows the days a prefill carries, and none when it carries none', () => {
+    const keys = [...LETTER_TEXT_KEYS, 'start_date', 'end_date', 'fee', 'payment_days', 'month_end', 'notice_days']
+    const empty = Object.fromEntries(keys.map((key) => [key, null]))
+    expect(letterForm({ ...empty, collection_days: 15 } as unknown as LetterDraft).collection_days).toBe('15')
+    expect(letterForm({ ...empty, collection_days: null } as unknown as LetterDraft).collection_days).toBe('')
   })
 
   it('reads a prefill with no fee as an empty box, not the word null', () => {
-    const keys = [...LETTERA_TEXT_KEYS, 'data_inizio', 'data_fine', 'compenso', 'giorni_pagamento', 'fine_mese', 'giorni_preavviso']
-    const draft = Object.fromEntries(keys.map((key) => [key, null])) as unknown as LetteraDraft
-    const form = letteraForm(draft)
-    expect(form.compenso).toBe('')
-    expect(form.giorni_pagamento).toBe('')
-    expect(form.fine_mese).toBe(false)
+    const keys = [...LETTER_TEXT_KEYS, 'start_date', 'end_date', 'fee', 'payment_days', 'month_end', 'collection_days', 'notice_days']
+    const draft = Object.fromEntries(keys.map((key) => [key, null])) as unknown as LetterDraft
+    const form = letterForm(draft)
+    expect(form.fee).toBe('')
+    expect(form.payment_days).toBe('')
+    expect(form.month_end).toBe(false)
   })
 
   it('sends the expected days as a number beside the letter, and an empty box as null (REB-502)', () => {
-    expect(giorniPrevistiToSend('40')).toBe(40)
-    expect(giorniPrevistiToSend(' 40 ')).toBe(40)
-    expect(giorniPrevistiToSend('')).toBeNull()
-    expect(giorniPrevistiToSend('   ')).toBeNull()
+    expect(expectedDaysToSend('40')).toBe(40)
+    expect(expectedDaysToSend(' 40 ')).toBe(40)
+    expect(expectedDaysToSend('')).toBeNull()
+    expect(expectedDaysToSend('   ')).toBeNull()
     // What JSON would send for it anyway, so «Controlla e invia» never prints «NaN».
-    expect(giorniPrevistiToSend('quaranta')).toBeNull()
+    expect(expectedDaysToSend('quaranta')).toBeNull()
     // The letter's own form has no such field, so the letter the API takes has no such key.
-    expect(toLettera(LETTERA_EMPTY)).not.toHaveProperty('giorni_previsti')
+    expect(toLetter(LETTER_EMPTY)).not.toHaveProperty('expected_days')
   })
 
   it('trims the client data', () => {
-    expect(toCliente({ cliente_ragione_sociale: ' ACME S.r.l. ', cliente_piva: ' 01234567890', cliente_sede: 'Milano ' })).toEqual({
-      cliente_ragione_sociale: 'ACME S.r.l.',
-      cliente_piva: '01234567890',
-      cliente_sede: 'Milano',
+    expect(toCustomer({ customer_legal_name: ' ACME S.r.l. ', customer_vat_number: ' 01234567890', customer_registered_office: 'Milano ' })).toEqual({
+      customer_legal_name: 'ACME S.r.l.',
+      customer_vat_number: '01234567890',
+      customer_registered_office: 'Milano',
     })
   })
 })
 
 describe('«Crea match» in three steps (REB-476)', () => {
   it('asks each field of the letter once: on «Condizioni» or in «Altre condizioni»', () => {
-    const altre = ALTRE_CONDIZIONI_GROUPS.flatMap((group) => group.fields)
-    expect(new Set(altre).size).toBe(altre.length)
-    expect(altre.filter((field) => CONDIZIONI_FIELDS.has(field))).toEqual([])
-    expect(new Set([...CONDIZIONI_FIELDS, ...altre])).toEqual(new Set(Object.keys(LETTERA_LABELS)))
-    expect(altre.filter((field) => LETTERA_REQUIRED.has(field))).toEqual([])
+    const other = OTHER_TERMS_GROUPS.flatMap((group) => group.fields)
+    expect(new Set(other).size).toBe(other.length)
+    expect(other.filter((field) => TERMS_FIELDS.has(field))).toEqual([])
+    expect(new Set([...TERMS_FIELDS, ...other])).toEqual(new Set(Object.keys(LETTER_LABELS)))
+    expect(other.filter((field) => LETTER_REQUIRED.has(field))).toEqual([])
   })
 
   it('keeps the letter’s sections in «Altre condizioni», with the fields left alone in one «Altro»', () => {
-    expect(ALTRE_CONDIZIONI_GROUPS.every((group) => group.fields.length > 1)).toBe(true)
-    expect(ALTRE_CONDIZIONI_GROUPS.at(-1)).toEqual({
+    expect(OTHER_TERMS_GROUPS.every((group) => group.fields.length > 1)).toBe(true)
+    expect(OTHER_TERMS_GROUPS.at(-1)).toEqual({
       title: 'Altro',
-      fields: ['periodo_verifica', 'giorni_preavviso', 'rapporti_precedenti'],
+      fields: ['review_period', 'notice_days', 'previous_reports'],
     })
-    const order = LETTERA_GROUPS.flatMap((group) => group.fields)
-    for (const group of ALTRE_CONDIZIONI_GROUPS) {
+    const order = LETTER_GROUPS.flatMap((group) => group.fields)
+    for (const group of OTHER_TERMS_GROUPS) {
       expect([...group.fields].sort((a, b) => order.indexOf(a) - order.indexOf(b))).toEqual(group.fields)
     }
   })
@@ -123,125 +136,125 @@ describe('«Crea match» in three steps (REB-476)', () => {
     expect(amountForm('480.50')).toBe('480,50')
     expect(amountForm('480.5')).toBe('480,50')
     expect(amountForm('480.05')).toBe('480,05')
-    expect(toLettera({ ...LETTERA_EMPTY, compenso: amountForm('480.50') }).compenso).toBe('480.50')
+    expect(toLetter({ ...LETTER_EMPTY, fee: amountForm('480.50') }).fee).toBe('480.50')
   })
 
   it('reads a fee the Italian way, through the parser every amount field shares (lib/amount.ts)', () => {
-    expect(toLettera({ ...LETTERA_EMPTY, compenso: '12.000' }).compenso).toBe('12000.00')
-    expect(toLettera({ ...LETTERA_EMPTY, compenso: '1.234,50' }).compenso).toBe('1234.50')
+    expect(toLetter({ ...LETTER_EMPTY, fee: '12.000' }).fee).toBe('12000.00')
+    expect(toLetter({ ...LETTER_EMPTY, fee: '1.234,50' }).fee).toBe('1234.50')
   })
 
   it('compares the fee with the day rate after reading both the Italian way', () => {
-    const daily = withPayMode({ ...LETTERA_EMPTY, compenso: '1.500' }, 'a giornata')
-    expect(switchPayMode(daily, 'a corpo', '1500').compenso).toBe('')
-    expect(switchPayMode({ ...daily, compenso: '1.500,00' }, 'a corpo', '1500').compenso).toBe('')
-    expect(switchPayMode({ ...daily, compenso: '1,5' }, 'a corpo', '1500').compenso).toBe('1,5')
+    const daily = withPayMode({ ...LETTER_EMPTY, fee: '1.500' }, 'to_work_unit')
+    expect(switchPayMode(daily, 'lump_sum', '1500').fee).toBe('')
+    expect(switchPayMode({ ...daily, fee: '1.500,00' }, 'lump_sum', '1500').fee).toBe('')
+    expect(switchPayMode({ ...daily, fee: '1,5' }, 'lump_sum', '1500').fee).toBe('1,5')
   })
 
   it('does not take the day rate for a lump sum, and puts it back for an empty day-rate fee', () => {
-    const daily = withPayMode({ ...LETTERA_EMPTY, compenso: '480' }, 'a giornata')
-    expect(switchPayMode(daily, 'a corpo', '480')).toMatchObject({ modalita: 'a corpo', unita: 'a corpo', compenso: '' })
-    expect(switchPayMode({ ...daily, compenso: '480,00' }, 'a corpo', '480').compenso).toBe('')
-    expect(switchPayMode({ ...daily, compenso: '500' }, 'a corpo', '480').compenso).toBe('500')
-    const lump = withPayMode({ ...LETTERA_EMPTY, compenso: '' }, 'a corpo')
-    expect(switchPayMode(lump, 'a giornata', '480')).toMatchObject({ modalita: 'a giornata', compenso: '480' })
-    expect(switchPayMode({ ...lump, compenso: '12000' }, 'a giornata', '480').compenso).toBe('12000')
-    expect(switchPayMode(daily, 'a corpo', '').compenso).toBe('480')
+    const daily = withPayMode({ ...LETTER_EMPTY, fee: '480' }, 'to_work_unit')
+    expect(switchPayMode(daily, 'lump_sum', '480')).toMatchObject({ mode: 'lump_sum', unit: 'a corpo', fee: '' })
+    expect(switchPayMode({ ...daily, fee: '480,00' }, 'lump_sum', '480').fee).toBe('')
+    expect(switchPayMode({ ...daily, fee: '500' }, 'lump_sum', '480').fee).toBe('500')
+    const lump = withPayMode({ ...LETTER_EMPTY, fee: '' }, 'lump_sum')
+    expect(switchPayMode(lump, 'to_work_unit', '480')).toMatchObject({ mode: 'to_work_unit', fee: '480' })
+    expect(switchPayMode({ ...lump, fee: '12000' }, 'to_work_unit', '480').fee).toBe('12000')
+    expect(switchPayMode(daily, 'lump_sum', '').fee).toBe('480')
   })
 
   it('sets modalità and unità together, and reads anything but «a corpo» as a day rate', () => {
-    const corpo = withPayMode(LETTERA_EMPTY, 'a corpo')
-    expect(corpo).toMatchObject({ modalita: 'a corpo', unita: 'a corpo' })
-    expect(payModeOf(corpo)).toBe('a corpo')
-    expect(payModeOf(LETTERA_EMPTY)).toBe('a giornata')
+    const body = withPayMode(LETTER_EMPTY, 'lump_sum')
+    expect(body).toMatchObject({ mode: 'lump_sum', unit: 'a corpo' })
+    expect(payModeOf(body)).toBe('lump_sum')
+    expect(payModeOf(LETTER_EMPTY)).toBe('to_work_unit')
   })
 
   it('leaves out the fixed-price fields of a day-rate letter, and keeps them a corpo', () => {
     const form = {
-      ...LETTERA_EMPTY,
-      data_inizio: '2026-10-01',
-      compenso: '450',
-      giorni_pagamento: '30',
-      risultati: 'Il modulo',
-      accettazione: 'Collaudo',
-      scadenze_fatturazione: 'A consegna',
+      ...LETTER_EMPTY,
+      start_date: '2026-10-01',
+      fee: '450',
+      payment_days: '30',
+      results: 'Il modulo',
+      acceptance: 'Collaudo',
+      billing_deadlines: 'A consegna',
     }
-    expect(letteraToSend(withPayMode(form, 'a giornata'))).toMatchObject({
-      risultati: null,
-      accettazione: null,
-      scadenze_fatturazione: null,
+    expect(letterToSend(withPayMode(form, 'to_work_unit'))).toMatchObject({
+      results: null,
+      acceptance: null,
+      billing_deadlines: null,
     })
-    expect(letteraToSend(withPayMode(form, 'a corpo'))).toMatchObject({
-      risultati: 'Il modulo',
-      accettazione: 'Collaudo',
-      scadenze_fatturazione: 'A consegna',
+    expect(letterToSend(withPayMode(form, 'lump_sum'))).toMatchObject({
+      results: 'Il modulo',
+      acceptance: 'Collaudo',
+      billing_deadlines: 'A consegna',
     })
   })
 
   it('writes a client as one line only when all three are filled', () => {
-    const client = { cliente_ragione_sociale: 'ACME S.r.l.', cliente_piva: '01234567890', cliente_sede: 'Milano' }
-    expect(clienteComplete(client)).toBe(true)
-    expect(clienteLine(client)).toBe('ACME S.r.l. · P.IVA 01234567890 · Milano')
-    expect(clienteComplete({ ...client, cliente_sede: '  ' })).toBe(false)
+    const client = { customer_legal_name: 'ACME S.r.l.', customer_vat_number: '01234567890', customer_registered_office: 'Milano' }
+    expect(customerComplete(client)).toBe(true)
+    expect(customerLine(client)).toBe('ACME S.r.l. · P.IVA 01234567890 · Milano')
+    expect(customerComplete({ ...client, customer_registered_office: '  ' })).toBe(false)
   })
 
   it('saves tax data only when they were missing, or opened and changed', () => {
-    const saved = { codice_fiscale: 'LVLDAA85T50H501Z', partita_iva: '01234567890', domicilio: 'Milano', pec: null }
+    const saved = { tax_code: 'LVLDAA85T50H501Z', vat_number: '01234567890', domicile: 'Milano', certified_email: null }
     const draft = {
-      codice_fiscale: 'LVLDAA85T50H501Z',
-      partita_iva: '01234567890',
-      domicilio: 'Milano',
-      pec: '',
-      senza_partita_iva: false,
+      tax_code: 'LVLDAA85T50H501Z',
+      vat_number: '01234567890',
+      domicile: 'Milano',
+      certified_email: '',
+      without_vat_number: false,
     }
     expect(fiscalLine(saved)).toBe('Salvati: CF LVLDAA85T50H501Z · P.IVA 01234567890')
     expect(fiscalToSave(saved, draft, false)).toBeNull()
-    expect(fiscalToSave(saved, { ...draft, domicilio: ' Milano ' }, true)).toBeNull()
-    expect(fiscalToSave(saved, { ...draft, domicilio: 'Torino' }, true)).toEqual({ ...saved, domicilio: 'Torino' })
-    expect(fiscalToSave(null, { ...FISCAL_EMPTY, codice_fiscale: 'X' }, true)).toEqual({
-      codice_fiscale: 'X',
-      partita_iva: '',
-      domicilio: '',
-      pec: null,
+    expect(fiscalToSave(saved, { ...draft, domicile: ' Milano ' }, true)).toBeNull()
+    expect(fiscalToSave(saved, { ...draft, domicile: 'Torino' }, true)).toEqual({ ...saved, domicile: 'Torino' })
+    expect(fiscalToSave(null, { ...FISCAL_EMPTY, tax_code: 'X' }, true)).toEqual({
+      tax_code: 'X',
+      vat_number: '',
+      domicile: '',
+      certified_email: null,
     })
   })
 
   it('refills tax fields from a newer record, except the ones typed in', () => {
     const before = {
-      codice_fiscale: 'LVLDAA85T50H501Z',
-      partita_iva: '01234567890',
-      domicilio: 'Milano',
-      pec: '',
-      senza_partita_iva: false,
+      tax_code: 'LVLDAA85T50H501Z',
+      vat_number: '01234567890',
+      domicile: 'Milano',
+      certified_email: '',
+      without_vat_number: false,
     }
-    const after = { ...before, domicilio: 'Bari' }
-    expect(typedFiscalFields(before, after)).toEqual(['domicilio'])
+    const after = { ...before, domicile: 'Bari' }
+    expect(typedFiscalFields(before, after)).toEqual(['domicile'])
     const newer = {
       freelancer_id: 'f1',
-      codice_fiscale: 'LVLDAA85T50H501Z',
-      partita_iva: '01234567899',
-      domicilio: 'Torino',
-      pec: 'ada@pec.it',
+      tax_code: 'LVLDAA85T50H501Z',
+      vat_number: '01234567899',
+      domicile: 'Torino',
+      certified_email: 'ada@pec.it',
       updated_by: 'a1',
       updated_at: '2026-09-25T09:00:00Z',
     }
-    expect(refillFiscal(after, newer, new Set(['domicilio'] as const))).toEqual({
-      codice_fiscale: 'LVLDAA85T50H501Z',
-      partita_iva: '01234567899',
-      domicilio: 'Bari',
-      pec: 'ada@pec.it',
-      senza_partita_iva: false,
+    expect(refillFiscal(after, newer, new Set(['domicile'] as const))).toEqual({
+      tax_code: 'LVLDAA85T50H501Z',
+      vat_number: '01234567899',
+      domicile: 'Bari',
+      certified_email: 'ada@pec.it',
+      without_vat_number: false,
     })
-    expect(refillFiscal(after, newer, new Set())).toMatchObject({ domicilio: 'Torino' })
+    expect(refillFiscal(after, newer, new Set())).toMatchObject({ domicile: 'Torino' })
   })
 
   it('tells a tax record read before the one the page holds', () => {
     const record = (updated_at: string) => ({
       freelancer_id: 'f1',
-      codice_fiscale: 'LVLDAA85T50H501Z',
-      partita_iva: '01234567890',
-      domicilio: 'Milano',
-      pec: null,
+      tax_code: 'LVLDAA85T50H501Z',
+      vat_number: '01234567890',
+      domicile: 'Milano',
+      certified_email: null,
       updated_by: 'a1',
       updated_at,
     })
@@ -261,16 +274,16 @@ describe('«Crea match» in three steps (REB-476)', () => {
   })
 
   it('keeps typed only the fields changed after the save was sent', () => {
-    const sent = { codice_fiscale: 'LVLDAA85T50H501Z', partita_iva: '01234567890', domicilio: 'Bari', pec: null }
+    const sent = { tax_code: 'LVLDAA85T50H501Z', vat_number: '01234567890', domicile: 'Bari', certified_email: null }
     const draft = {
-      codice_fiscale: 'LVLDAA85T50H501Z ',
-      partita_iva: '01234567890',
-      domicilio: 'Bari centro',
-      pec: '',
-      senza_partita_iva: false,
+      tax_code: 'LVLDAA85T50H501Z ',
+      vat_number: '01234567890',
+      domicile: 'Bari centro',
+      certified_email: '',
+      without_vat_number: false,
     }
-    const typed = new Set(['codice_fiscale', 'domicilio', 'pec'] as const)
-    expect(typedAfterSave(draft, typed, sent)).toEqual(new Set(['domicilio']))
+    const typed = new Set(['tax_code', 'domicile', 'certified_email'] as const)
+    expect(typedAfterSave(draft, typed, sent)).toEqual(new Set(['domicile']))
   })
 
   it('names the freelancer on the send button, with «ad» before an a', () => {
@@ -281,20 +294,20 @@ describe('«Crea match» in three steps (REB-476)', () => {
 })
 
 describe('sendReportMessage (REB-390)', () => {
-  const match = { lettera: { numero: '2026-001' } } as never
+  const match = { letter: { number: '2026-001' } } as never
   it('says which document left and which waits', () => {
-    expect(sendReportMessage({ match, inviato: 'quadro', mail_inviata: true })).toBe(
+    expect(sendReportMessage({ match, sent: 'framework', mail_sent: true })).toBe(
       'Partito il contratto quadro: la lettera n. 2026-001 partirà da sola dopo la sua firma.',
     )
-    expect(sendReportMessage({ match, inviato: 'lettera', mail_inviata: true })).toBe(
+    expect(sendReportMessage({ match, sent: 'letter', mail_sent: true })).toBe(
       'Partita la lettera di incarico n. 2026-001.',
     )
-    expect(sendReportMessage({ match, inviato: null, mail_inviata: null })).toBe(
+    expect(sendReportMessage({ match, sent: null, mail_sent: null })).toBe(
       'La lettera n. 2026-001 aspetta il contratto quadro già in firma e partirà da sola dopo.',
     )
   })
   it('says when the mail did not leave, and what to do', () => {
-    expect(sendReportMessage({ match, inviato: 'lettera', mail_inviata: false })).toBe(
+    expect(sendReportMessage({ match, sent: 'letter', mail_sent: false })).toBe(
       'Partita la lettera di incarico n. 2026-001. La mail però non è partita: usa «Reinvia email».',
     )
   })
@@ -302,27 +315,27 @@ describe('sendReportMessage (REB-390)', () => {
 
 describe('whatOf (REB-407)', () => {
   it('names a framework agreement and a letter by its own number', () => {
-    expect(whatOf({ kind: 'quadro', numero: null } as never)).toBe('del contratto quadro')
-    expect(whatOf({ kind: 'lettera', numero: '2026-001' } as never)).toBe('della lettera n. 2026-001')
+    expect(whatOf({ kind: 'framework', number: null } as never)).toBe('del contratto quadro')
+    expect(whatOf({ kind: 'letter', number: '2026-001' } as never)).toBe('della lettera n. 2026-001')
   })
 })
 
 describe('cancelDescription (REB-407)', () => {
-  const match = { nome_azienda: 'Rossi Studio', lettera: { numero: '2026-001', stato: 'generato' } } as never
+  const match = { company_name: 'Rossi Studio', letter: { number: '2026-001', status: 'generated' } } as never
   it('names the match and the letter, and that the framework agreement stays', () => {
     expect(cancelDescription(match)).toBe(
       'Il match con Rossi Studio e la lettera n. 2026-001 diventano annullati, e il numero non si riusa. Il contratto quadro resta com’è.',
     )
   })
   it('warns that a letter already out for signature is cancelled on the signing site too', () => {
-    const sent = { nome_azienda: 'Rossi Studio', lettera: { numero: '2026-001', stato: 'inviato' } } as never
+    const sent = { company_name: 'Rossi Studio', letter: { number: '2026-001', status: 'sent' } } as never
     expect(cancelDescription(sent)).toContain('il link ricevuto dal freelance smette di funzionare')
   })
 })
 
 describe('matchOf', () => {
   it('names a match by its company and its role, which tell two matches with one company apart', () => {
-    expect(matchOf({ nome_azienda: 'Rossi Studio', figura_richiesta: 'Designer' })).toBe(
+    expect(matchOf({ company_name: 'Rossi Studio', requested_role: 'Designer' })).toBe(
       'il match con Rossi Studio come Designer',
     )
   })
@@ -331,9 +344,9 @@ describe('matchOf', () => {
 describe('closeDescription', () => {
   it('says the match ends as «Concluso» and that its letter and the framework agreement stay', () => {
     const match = {
-      nome_azienda: 'Rossi Studio',
-      figura_richiesta: 'Designer',
-      lettera: { numero: '2026-001' },
+      company_name: 'Rossi Studio',
+      requested_role: 'Designer',
+      letter: { number: '2026-001' },
     } as never
     expect(closeDescription(match)).toBe(
       'Il match con Rossi Studio come Designer diventa «Concluso»: l’incarico è finito, e dalla pagina non si riapre. La lettera n. 2026-001 e il contratto quadro restano come sono.',
@@ -344,20 +357,20 @@ describe('closeDescription', () => {
 describe('tax data without a partita IVA (REB-687)', () => {
   const record = {
     freelancer_id: 'f1',
-    codice_fiscale: 'LVLDAA85T50H501Z',
-    partita_iva: null,
-    domicilio: 'Milano',
-    pec: null,
+    tax_code: 'LVLDAA85T50H501Z',
+    vat_number: null,
+    domicile: 'Milano',
+    certified_email: null,
     updated_by: 'a1',
     updated_at: '2026-10-12T09:00:00Z',
   }
 
   it('reads a saved NULL as the ticked box, and sends the ticked box as NULL', () => {
     const draft = draftFromFiscal(record)
-    expect(draft).toMatchObject({ partita_iva: '', senza_partita_iva: true })
-    expect(toFiscalData({ ...draft, partita_iva: '0123' })).toMatchObject({ partita_iva: null })
-    expect(toFiscalData({ ...draft, senza_partita_iva: false, partita_iva: ' 01234567890 ' })).toMatchObject({
-      partita_iva: '01234567890',
+    expect(draft).toMatchObject({ vat_number: '', without_vat_number: true })
+    expect(toFiscalData({ ...draft, vat_number: '0123' })).toMatchObject({ vat_number: null })
+    expect(toFiscalData({ ...draft, without_vat_number: false, vat_number: ' 01234567890 ' })).toMatchObject({
+      vat_number: '01234567890',
     })
   })
 
@@ -368,55 +381,55 @@ describe('tax data without a partita IVA (REB-687)', () => {
   it('saves nothing again for a NULL shown as the ticked box, and treats an empty field as NULL', () => {
     const draft = draftFromFiscal(record)
     expect(fiscalToSave(record, draft, true)).toBeNull()
-    expect(fiscalToSave(record, { ...draft, senza_partita_iva: false }, true)).toBeNull()
-    expect(fiscalToSave(record, { ...draft, senza_partita_iva: false, partita_iva: '01234567890' }, true)).toEqual({
-      codice_fiscale: 'LVLDAA85T50H501Z',
-      partita_iva: '01234567890',
-      domicilio: 'Milano',
-      pec: null,
+    expect(fiscalToSave(record, { ...draft, without_vat_number: false }, true)).toBeNull()
+    expect(fiscalToSave(record, { ...draft, without_vat_number: false, vat_number: '01234567890' }, true)).toEqual({
+      tax_code: 'LVLDAA85T50H501Z',
+      vat_number: '01234567890',
+      domicile: 'Milano',
+      certified_email: null,
     })
   })
 
   it('counts the box as typed only while the save carried another partita IVA', () => {
-    const sent = { codice_fiscale: 'X', partita_iva: null, domicilio: 'Bari', pec: null }
-    const draft = { codice_fiscale: 'X', partita_iva: '', domicilio: 'Bari', pec: '', senza_partita_iva: true }
-    const typed = new Set(['senza_partita_iva'] as const)
+    const sent = { tax_code: 'X', vat_number: null, domicile: 'Bari', certified_email: null }
+    const draft = { tax_code: 'X', vat_number: '', domicile: 'Bari', certified_email: '', without_vat_number: true }
+    const typed = new Set(['without_vat_number'] as const)
     expect(typedAfterSave(draft, typed, sent)).toEqual(new Set())
-    expect(typedAfterSave({ ...draft, senza_partita_iva: false }, typed, sent)).toEqual(new Set(['senza_partita_iva']))
+    expect(typedAfterSave({ ...draft, without_vat_number: false }, typed, sent)).toEqual(new Set(['without_vat_number']))
   })
 })
 
 describe('the letter type (REB-687)', () => {
   it('offers the two types in the order step 1 shows them', () => {
     expect(REGIME_OPTIONS).toEqual([
-      { regime: 'partita_iva', label: 'Incarico con partita IVA' },
-      { regime: 'occasionale', label: 'Prestazione occasionale' },
+      { regime: 'vat_registered', label: 'Incarico con partita IVA' },
+      { regime: 'occasional', label: 'Prestazione occasionale' },
     ])
   })
 
   it('hints the fee as net of VAT or gross, by type', () => {
-    expect(compensoHint('partita_iva')).toBe('IVA esclusa')
-    expect(compensoHint('occasionale')).toBe('lordo, senza IVA')
+    expect(feeHint('vat_registered')).toBe('IVA esclusa')
+    expect(feeHint('occasional')).toBe('lordo, senza IVA')
   })
 
   it('names the previews by type', () => {
-    expect(previewLabels('partita_iva')).toEqual({ lettera: 'Apri la lettera (PDF)', quadro: 'Apri il contratto quadro (PDF)' })
-    expect(previewLabels('occasionale')).toEqual({
-      lettera: 'Apri la lettera occasionale (PDF)',
-      quadro: 'Apri il contratto quadro per prestazioni occasionali (PDF)',
+    expect(previewLabels('vat_registered')).toEqual({ letter: 'Apri la lettera (PDF)', framework: 'Apri il contratto quadro (PDF)' })
+    expect(previewLabels('occasional')).toEqual({
+      letter: 'Apri la lettera occasionale (PDF)',
+      framework: 'Apri il contratto quadro per prestazioni occasionali (PDF)',
     })
   })
 
   it('names each framework agreement by its type, as complement and as object', () => {
-    const occasionale = { kind: 'quadro', numero: null, regime: 'occasionale' } as const
-    const ordinario = { kind: 'quadro', numero: null, regime: 'partita_iva' } as const
-    const lettera = { kind: 'lettera', numero: '2026-001', regime: 'occasionale' } as const
-    expect(whatOf(occasionale)).toBe('del contratto quadro per prestazioni occasionali')
-    expect(whatOf(ordinario)).toBe('del contratto quadro')
-    expect(objectOf(occasionale)).toBe('il contratto quadro per prestazioni occasionali')
-    expect(objectOf(ordinario)).toBe('il contratto quadro')
-    expect(objectOf(lettera)).toBe('la lettera n. 2026-001')
-    expect(quadroHeadingId('partita_iva')).toBe('contratti-quadro')
-    expect(quadroHeadingId('occasionale')).toBe('contratti-quadro-occasionale')
+    const occasional = { kind: 'framework', number: null, regime: 'occasional' } as const
+    const ordinary = { kind: 'framework', number: null, regime: 'vat_registered' } as const
+    const letter = { kind: 'letter', number: '2026-001', regime: 'occasional' } as const
+    expect(whatOf(occasional)).toBe('del contratto quadro per prestazioni occasionali')
+    expect(whatOf(ordinary)).toBe('del contratto quadro')
+    expect(objectOf(occasional)).toBe('il contratto quadro per prestazioni occasionali')
+    expect(objectOf(ordinary)).toBe('il contratto quadro')
+    expect(objectOf(letter)).toBe('la lettera n. 2026-001')
+    expect(frameworkHeadingId('vat_registered')).toBe('framework-contracts')
+    expect(frameworkHeadingId('occasional')).toBe('framework-contracts-occasional')
   })
 })

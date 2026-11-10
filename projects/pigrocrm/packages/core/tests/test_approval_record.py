@@ -1,0 +1,346 @@
+"""`ApprovalService.record` (REB-747): a person records a client's approval and the days it
+covers, in one transaction.
+
+What is proved here is the part a screen cannot see: that a proposed day becomes approved
+and a day worked without approval is recovered, that a day that cannot use an approval
+refuses the whole recording and leaves nothing behind, that a synced email is filed as a
+document of the contract with its provenance, and that an agent credential is refused.
+"""
+
+from datetime import UTC, date, datetime
+from decimal import Decimal
+from uuid import UUID, uuid4
+
+import pytest
+from fakes.gmail_fixtures import MAILBOX, connected_account
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from pigrocrm.core.actor import Actor
+from pigrocrm.core.contracts.models import Contract
+from pigrocrm.core.documents.models import Document, DocumentVersion
+from pigrocrm.core.errors import (
+    AgentForbidden,
+    Conflict,
+    NotFound,
+    PermissionDenied,
+    ValidationFailed,
+)
+from pigrocrm.core.gmail.models import GmailMessage, GmailMessageLink
+from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.storage.local import LocalFileStorage
+from pigrocrm.core.work_units.models import Approval
+from pigrocrm.core.work_units.schemas import ApprovalRecord, WorkUnitCreate
+from pigrocrm.core.work_units.service import ApprovalService, WorkUnitService
+
+WRITER = Actor(id=uuid4(), type="user", role="collaborator")
+AGENT = Actor(id=uuid4(), type="mcp", role="admin")
+READER = Actor(id=None, type="user", role="readonly")
+
+
+def _contract(session: Session, *, requires_prior_approval: bool = True) -> Contract:
+    customer = Organization(legal_name=f"ACME {uuid4()}")
+    session.add(customer)
+    session.flush()
+    contract = Contract(
+        customer_id=customer.id,
+        title="Consulenza",
+        start=date(2026, 1, 1),
+        renewal_type="none",
+        termination_notice_days=30,
+        billing_cadence="monthly",
+        expense_policy={"kind": "not_reimbursable"},
+        requires_prior_approval=requires_prior_approval,
+    )
+    session.add(contract)
+    session.flush()
+    return contract
+
+
+def _day(session: Session, contract: Contract, day: date, status: str) -> UUID:
+    return (
+        WorkUnitService(session)
+        .create(
+            WorkUnitCreate(
+                contract_id=contract.id,
+                date=day,
+                quantity=Decimal("1.00"),
+                description="Giornata",
+                status=status,  # type: ignore[arg-type]
+            ),
+            WRITER,
+        )
+        .id
+    )
+
+
+def _document(session: Session, contract: Contract, *, filed: bool = True) -> Document:
+    """A document of the contract; `filed` gives it the one version an archived original has."""
+    document = Document(
+        contract_id=contract.id,
+        type="document",
+        title="Mail di conferma",
+        current_version=1 if filed else 0,
+    )
+    session.add(document)
+    session.flush()
+    if filed:
+        session.add(
+            DocumentVersion(
+                document_id=document.id,
+                number=1,
+                storage_key=f"test/{document.id}",
+                content_type="text/plain",
+                size=1,
+                hash_sha256="0" * 64,
+            )
+        )
+        session.flush()
+    return document
+
+
+def _record(contract: Contract, days: list[UUID], **extra: object) -> ApprovalRecord:
+    return ApprovalRecord(
+        contract_id=contract.id,
+        channel="email",
+        sender="giulia@cliente.example",
+        received_at=datetime(2026, 3, 1, 9, 0, tzinfo=UTC),
+        excerpt="Confermo le giornate.",
+        work_unit_ids=days,
+        **extra,  # type: ignore[arg-type]
+    )
+
+
+def test_a_proposed_day_becomes_approved_and_a_flagged_one_is_recovered(
+    db_session: Session,
+) -> None:
+    contract = _contract(db_session)
+    proposed = _day(db_session, contract, date(2026, 3, 2), "proposed")
+    flagged = _day(db_session, contract, date(2026, 3, 3), "worked")
+    assert WorkUnitService(db_session).get(flagged).status == "worked_without_approval"
+    document = _document(db_session, contract)
+
+    recorded = ApprovalService(db_session).record(
+        _record(contract, [proposed, flagged], document_id=document.id), WRITER
+    )
+
+    assert {day.id: day.status for day in recorded.work_units} == {
+        proposed: "approved",
+        flagged: "worked",
+    }
+    assert all(day.approval_id == recorded.approval.id for day in recorded.work_units)
+    assert recorded.approval.title_document == "Mail di conferma"
+    assert recorded.approval.origin == {"kind": "manual"}
+    # The log says who moved them and that an approval was recorded; the sender is on the approval.
+    steps = WorkUnitService(db_session).transitions_for(proposed)
+    assert steps[-1].new_status == "approved"
+    assert steps[-1].actor == {"kind": "human", "id": str(WRITER.id)}
+    assert steps[-1].reason == "Approvazione registrata"
+
+
+def test_one_day_that_cannot_use_the_approval_refuses_all_and_writes_nothing(
+    db_session: Session,
+) -> None:
+    contract = _contract(db_session)
+    end = _day(db_session, contract, date(2026, 3, 2), "proposed")
+    worked = _day(db_session, contract, date(2026, 3, 3), "approved")
+    document = _document(db_session, contract)
+
+    with pytest.raises(Conflict) as refused:
+        ApprovalService(db_session).record(
+            _record(contract, [end, worked], document_id=document.id), WRITER
+        )
+    assert refused.value.details["work_units"] == ["2026-03-03 (approvato)"]
+
+    assert WorkUnitService(db_session).get(end).status == "proposed"
+    assert db_session.scalars(select(Approval)).all() == []
+
+
+def test_a_day_of_another_contract_is_not_found(db_session: Session) -> None:
+    contract = _contract(db_session)
+    other = _contract(db_session)
+    foreign = _day(db_session, other, date(2026, 3, 2), "proposed")
+    document = _document(db_session, contract)
+
+    with pytest.raises(NotFound):
+        ApprovalService(db_session).record(
+            _record(contract, [foreign], document_id=document.id), WRITER
+        )
+
+
+def test_a_document_with_no_archived_file_cannot_be_the_proof(db_session: Session) -> None:
+    contract = _contract(db_session)
+    day = _day(db_session, contract, date(2026, 3, 2), "proposed")
+    empty = _document(db_session, contract, filed=False)
+
+    with pytest.raises(ValidationFailed) as refused:
+        ApprovalService(db_session).record(_record(contract, [day], document_id=empty.id), WRITER)
+    assert refused.value.details["field"] == "document_id"
+
+    assert WorkUnitService(db_session).get(day).status == "proposed"
+    assert db_session.scalars(select(Approval)).all() == []
+
+
+def test_a_document_of_another_customer_is_refused(db_session: Session) -> None:
+    contract = _contract(db_session)
+    other = _contract(db_session)
+    day = _day(db_session, contract, date(2026, 3, 2), "proposed")
+
+    with pytest.raises(ValidationFailed) as refused:
+        ApprovalService(db_session).record(
+            _record(contract, [day], document_id=_document(db_session, other).id), WRITER
+        )
+    assert refused.value.details["field"] == "document_id"
+
+
+def test_the_proof_is_exactly_one_of_a_document_and_a_message() -> None:
+    contract_id = uuid4()
+    base = {
+        "contract_id": contract_id,
+        "channel": "email",
+        "sender": "a@b.example",
+        "received_at": datetime(2026, 3, 1, tzinfo=UTC),
+        "excerpt": "ok",
+        "work_unit_ids": [uuid4()],
+    }
+    with pytest.raises(ValueError, match="una sola prova"):
+        ApprovalRecord(**base)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="una sola prova"):
+        ApprovalRecord(**base, document_id=uuid4(), gmail_message_id=uuid4())  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="due volte"):
+        day = uuid4()
+        ApprovalRecord(**{**base, "work_unit_ids": [day, day]}, document_id=uuid4())  # type: ignore[arg-type]
+
+
+def test_a_synced_email_is_filed_as_a_document_of_the_contract(
+    db_session: Session, tmp_path
+) -> None:
+    contract = _contract(db_session)
+    day = _day(db_session, contract, date(2026, 3, 2), "proposed")
+    account = connected_account(db_session)
+    message = GmailMessage(
+        google_account_id=account.id,
+        gmail_message_id="g1",
+        gmail_thread_id="t1",
+        message_id_header="<abc@cliente.example>",
+        direction="inbound",
+        from_address="giulia@cliente.example",
+        to_addresses=[MAILBOX],
+        cc_addresses=[],
+        subject="Re: giornate di marzo",
+        snippet="",
+        internal_date=datetime(2026, 3, 1, 9, 0, tzinfo=UTC),
+        body_text="Buongiorno, confermo la giornata del 2 marzo.",
+        attachments=[],
+    )
+    db_session.add(message)
+    db_session.flush()
+    db_session.add(
+        GmailMessageLink(
+            gmail_message_id=message.id, entity_type="organization", entity_id=contract.customer_id
+        )
+    )
+    db_session.flush()
+    storage = LocalFileStorage(str(tmp_path / "documents"))
+    # A real user: the filed version records who created it.
+    person = Actor(id=account.user_id, type="user", role="collaborator")
+
+    recorded = ApprovalService(db_session, storage).record(
+        _record(contract, [day], gmail_message_id=message.id), person
+    )
+
+    approval = db_session.get(Approval, recorded.approval.id)
+    assert approval is not None
+    assert approval.message_id == "<abc@cliente.example>"
+    document = db_session.get(Document, approval.document_id)
+    assert document is not None
+    assert document.contract_id == contract.id
+    assert document.title == "Email di giulia@cliente.example: Re: giornate di marzo"
+    assert recorded.work_units[0].status == "approved"
+    # The log keeps the fact, not the sender's address: that is on the approval.
+    assert WorkUnitService(db_session).transitions_for(day)[-1].reason == "Approvazione registrata"
+
+
+def test_an_email_of_another_customer_cannot_be_the_proof(db_session: Session, tmp_path) -> None:
+    contract = _contract(db_session)
+    other = _contract(db_session)
+    day = _day(db_session, contract, date(2026, 3, 2), "proposed")
+    account = connected_account(db_session)
+    message = GmailMessage(
+        google_account_id=account.id,
+        gmail_message_id="g3",
+        gmail_thread_id="t3",
+        direction="inbound",
+        from_address="altro@cliente.example",
+        to_addresses=[MAILBOX],
+        cc_addresses=[],
+        subject="Altro cliente",
+        snippet="",
+        internal_date=datetime(2026, 3, 1, tzinfo=UTC),
+        body_text="Confermo.",
+        attachments=[],
+    )
+    db_session.add(message)
+    db_session.flush()
+    db_session.add(
+        GmailMessageLink(
+            gmail_message_id=message.id, entity_type="organization", entity_id=other.customer_id
+        )
+    )
+    db_session.flush()
+
+    with pytest.raises(ValidationFailed) as refused:
+        ApprovalService(db_session, LocalFileStorage(str(tmp_path / "d"))).record(
+            _record(contract, [day], gmail_message_id=message.id), WRITER
+        )
+    assert refused.value.details["field"] == "gmail_message_id"
+
+
+def test_an_email_whose_body_was_not_stored_cannot_be_the_proof(
+    db_session: Session, tmp_path
+) -> None:
+    contract = _contract(db_session)
+    day = _day(db_session, contract, date(2026, 3, 2), "proposed")
+    account = connected_account(db_session)
+    message = GmailMessage(
+        google_account_id=account.id,
+        gmail_message_id="g2",
+        gmail_thread_id="t2",
+        direction="inbound",
+        from_address="giulia@cliente.example",
+        to_addresses=[MAILBOX],
+        cc_addresses=[],
+        subject="Re",
+        snippet="",
+        internal_date=datetime(2026, 3, 1, tzinfo=UTC),
+        body_text="",
+        attachments=[],
+    )
+    db_session.add(message)
+    db_session.flush()
+    db_session.add(
+        GmailMessageLink(
+            gmail_message_id=message.id, entity_type="organization", entity_id=contract.customer_id
+        )
+    )
+    db_session.flush()
+
+    with pytest.raises(ValidationFailed) as refused:
+        ApprovalService(db_session, LocalFileStorage(str(tmp_path / "d"))).record(
+            _record(contract, [day], gmail_message_id=message.id), WRITER
+        )
+    assert refused.value.details["field"] == "gmail_message_id"
+
+
+def test_an_agent_credential_and_a_reader_cannot_record_an_approval(
+    db_session: Session,
+) -> None:
+    contract = _contract(db_session)
+    day = _day(db_session, contract, date(2026, 3, 2), "proposed")
+    document = _document(db_session, contract)
+    body = _record(contract, [day], document_id=document.id)
+
+    with pytest.raises(AgentForbidden):
+        ApprovalService(db_session).record(body, AGENT)
+    with pytest.raises(PermissionDenied):
+        ApprovalService(db_session).record(body, READER)

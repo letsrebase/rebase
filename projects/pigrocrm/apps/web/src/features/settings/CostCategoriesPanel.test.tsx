@@ -30,27 +30,27 @@ const TIMES = { created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:0
 
 const SOFTWARE = {
   id: 'cat-2',
-  nome: 'Software e licenze',
-  posizione: 1,
-  code: 'software_licenze',
-  archiviata: false,
+  name: 'Software e licenze',
+  position: 1,
+  code: 'software_licenses',
+  archived: false,
   ...TIMES,
 }
-const CONSULENZA = {
+const CONSULTING = {
   id: 'cat-1',
-  nome: 'Consulenza esterna',
-  posizione: 0,
-  code: 'consulenza_esterna',
-  archiviata: false,
+  name: 'Consulenza esterna',
+  position: 0,
+  code: 'external_consulting',
+  archived: false,
   ...TIMES,
 }
 /** No `code`: created by hand from this very panel, and archived later. */
-const VECCHIA = {
+const OLD = {
   id: 'cat-9',
-  nome: 'Vecchia voce',
-  posizione: 7,
+  name: 'Vecchia voce',
+  position: 7,
   code: null,
-  archiviata: true,
+  archived: true,
   ...TIMES,
 }
 
@@ -80,17 +80,17 @@ function renderPanel() {
 /** The `<li>` a named category lives in, reached through its own name input: the row
  *  has no test id and no heading, and every assertion about it is really an assertion
  *  about that row rather than about the list. */
-function rowFor(nome: string) {
-  const input = screen.getByLabelText(`Nome della categoria ${nome}`)
+function rowFor(name: string) {
+  const input = screen.getByLabelText(`Nome della categoria ${name}`)
   const row = input.closest('li')
-  if (!row) throw new Error(`no row for ${nome}`)
+  if (!row) throw new Error(`no row for ${name}`)
   return row
 }
 
 /** The row's actions live behind the «⋯» menu since the 2026-09-08 revision (design
  *  spec §4); the trigger is labelled per category so a list of them stays unambiguous. */
-async function openRowMenu(nome: string) {
-  await userEvent.click(await screen.findByRole('button', { name: `Azioni per ${nome}` }))
+async function openRowMenu(name: string) {
+  await userEvent.click(await screen.findByRole('button', { name: `Azioni per ${name}` }))
 }
 
 beforeEach(() => {
@@ -102,15 +102,15 @@ beforeEach(() => {
 
 describe('CostCategoriesPanel', () => {
   it('lists the categories by stored position, with the code beside each name', async () => {
-    // Deliberately handed back out of order: `posizione` is the order, not arrival.
-    respond([SOFTWARE, CONSULENZA])
+    // Deliberately handed back out of order: `position` is the order, not arrival.
+    respond([SOFTWARE, CONSULTING])
     renderPanel()
 
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2))
     const [first, second] = screen.getAllByRole('listitem')
     expect(within(first as HTMLElement).getByRole('textbox')).toHaveValue('Consulenza esterna')
     expect(within(second as HTMLElement).getByRole('textbox')).toHaveValue('Software e licenze')
-    expect(screen.getByText('consulenza_esterna')).toBeInTheDocument()
+    expect(screen.getByText('Consulenza esterna')).toBeInTheDocument()
   })
 
   /**
@@ -119,7 +119,7 @@ describe('CostCategoriesPanel', () => {
    * is the difference between "no code" and "a code nobody rendered".
    */
   it('shows a dash for a category that has no code, and offers no control for it', async () => {
-    respond([], [VECCHIA])
+    respond([], [OLD])
     renderPanel()
     await userEvent.click(await screen.findByRole('checkbox', { name: 'Includi archiviate' }))
 
@@ -146,7 +146,7 @@ describe('CostCategoriesPanel', () => {
    * into a permanent fixture of the toolbar.
    */
   it('offers the default taxonomy only while there is nothing configured', async () => {
-    respond([CONSULENZA])
+    respond([CONSULTING])
     renderPanel()
 
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1))
@@ -155,7 +155,7 @@ describe('CostCategoriesPanel', () => {
 
   it('seeds the default taxonomy from the empty state', async () => {
     respond([])
-    vi.mocked(api.POST).mockImplementation(() => ok([CONSULENZA, SOFTWARE], 201))
+    vi.mocked(api.POST).mockImplementation(() => ok([CONSULTING, SOFTWARE], 201))
     renderPanel()
 
     await userEvent.click(await screen.findByRole('button', { name: /categorie predefinite/i }))
@@ -171,7 +171,7 @@ describe('CostCategoriesPanel', () => {
   })
 
   it('creates a category at the position after the last one', async () => {
-    respond([CONSULENZA, SOFTWARE])
+    respond([CONSULTING, SOFTWARE])
     vi.mocked(api.POST).mockImplementation(() => ok({ ...SOFTWARE, id: 'cat-3' }, 201))
     renderPanel()
 
@@ -181,7 +181,7 @@ describe('CostCategoriesPanel', () => {
 
     await waitFor(() =>
       expect(api.POST).toHaveBeenCalledWith('/api/cost-categories', {
-        body: { nome: 'Formazione', posizione: 2 },
+        body: { name: 'Formazione', position: 2 },
       }),
     )
   })
@@ -200,7 +200,7 @@ describe('CostCategoriesPanel', () => {
           title: 'Dati non validi',
           status: 422,
           entity: 'cost_category',
-          field: 'nome',
+          field: 'name',
           reason: 'nome vuoto',
           expected: 'un nome non vuoto',
           detail: 'nome vuoto',
@@ -225,7 +225,7 @@ describe('CostCategoriesPanel', () => {
    * dialog must stay open with what was typed still in it.
    */
   it('reports a refused create inside the dialog, which stays open', async () => {
-    respond([CONSULENZA])
+    respond([CONSULTING])
     vi.mocked(api.POST).mockImplementation(() =>
       failed(
         {
@@ -259,8 +259,8 @@ describe('CostCategoriesPanel', () => {
    * "simplifies" this button into a delete, this fails.
    */
   it('archives through the archive endpoint and never deletes', async () => {
-    respond([CONSULENZA])
-    vi.mocked(api.POST).mockImplementation(() => ok({ ...CONSULENZA, archiviata: true }))
+    respond([CONSULTING])
+    vi.mocked(api.POST).mockImplementation(() => ok({ ...CONSULTING, archived: true }))
     renderPanel()
 
     await openRowMenu('Consulenza esterna')
@@ -281,7 +281,7 @@ describe('CostCategoriesPanel', () => {
    * offers "Ripristina", never "Archivia" again.
    */
   it('keeps an archived category readable and restorable behind the checkbox', async () => {
-    respond([CONSULENZA], [VECCHIA])
+    respond([CONSULTING], [OLD])
     renderPanel()
 
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(1))
@@ -304,8 +304,8 @@ describe('CostCategoriesPanel', () => {
   })
 
   it('restores an archived category through the unarchive endpoint', async () => {
-    respond([], [VECCHIA])
-    vi.mocked(api.POST).mockImplementation(() => ok({ ...VECCHIA, archiviata: false }))
+    respond([], [OLD])
+    vi.mocked(api.POST).mockImplementation(() => ok({ ...OLD, archived: false }))
     renderPanel()
 
     await userEvent.click(await screen.findByRole('checkbox', { name: 'Includi archiviate' }))
@@ -322,11 +322,11 @@ describe('CostCategoriesPanel', () => {
   /**
    * The rename sends the name and nothing else. Sending `code` back -- even unchanged
    * -- would make the one field a report keys on look editable from here, and sending
-   * `posizione` would let a rename silently reorder the list.
+   * `position` would let a rename silently reorder the list.
    */
   it('renames with the trimmed name alone, never the code or the position', async () => {
-    respond([CONSULENZA])
-    vi.mocked(api.PATCH).mockImplementation(() => ok({ ...CONSULENZA, nome: 'Consulenze' }))
+    respond([CONSULTING])
+    vi.mocked(api.PATCH).mockImplementation(() => ok({ ...CONSULTING, name: 'Consulenze' }))
     renderPanel()
 
     const input = await screen.findByLabelText('Nome della categoria Consulenza esterna')
@@ -338,7 +338,7 @@ describe('CostCategoriesPanel', () => {
     await waitFor(() =>
       expect(api.PATCH).toHaveBeenCalledWith('/api/cost-categories/{category_id}', {
         params: { path: { category_id: 'cat-1' } },
-        body: { nome: 'Consulenze' },
+        body: { name: 'Consulenze' },
       }),
     )
   })
@@ -351,7 +351,7 @@ describe('CostCategoriesPanel', () => {
    * that there is nothing to save yet.
    */
   it('disables the save item on a row nobody has edited, and enables it once edited', async () => {
-    respond([CONSULENZA])
+    respond([CONSULTING])
     renderPanel()
 
     await openRowMenu('Consulenza esterna')
@@ -373,7 +373,7 @@ describe('CostCategoriesPanel', () => {
    * contradictory statements about the same click.
    */
   it('clears the previous failure when the retry succeeds', async () => {
-    respond([CONSULENZA])
+    respond([CONSULTING])
     vi.mocked(api.POST).mockImplementationOnce(() =>
       failed(
         {
@@ -392,7 +392,7 @@ describe('CostCategoriesPanel', () => {
     await userEvent.click(screen.getByRole('menuitem', { name: 'Archivia' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(/requires one of/)
 
-    vi.mocked(api.POST).mockImplementation(() => ok({ ...CONSULENZA, archiviata: true }))
+    vi.mocked(api.POST).mockImplementation(() => ok({ ...CONSULTING, archived: true }))
     await openRowMenu('Consulenza esterna')
     await userEvent.click(screen.getByRole('menuitem', { name: 'Archivia' }))
 

@@ -25,23 +25,26 @@ from collections.abc import Iterator
 from urllib.parse import parse_qs
 
 import pytest
-from fakes.azienda_fixtures import committed_default_azienda
+from fakes.contacts import points
 from fakes.fake_gmail import TOKEN_HOST, FakeGmail
 from fakes.gmail_fixtures import TOKEN_KEY, gmail_settings
+from fakes.legal_entity_fixtures import committed_default_legal_entity
 from sqlalchemy import Engine, create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 import pigrocrm.core.cli as cli
+import pigrocrm.core.cli.gmail as gmail_cli
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.crypto import seal
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import create_database_if_missing, drop_database
-from pigrocrm.core.gmail.crypto import seal
 from pigrocrm.core.gmail.models import GoogleAccount
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.reminders.run import ROOT_LABEL
 from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm.core.tenants.google import space_token_key
@@ -95,7 +98,12 @@ def spaces(settings: Settings) -> Iterator[None]:
         service = TenantService(session, settings)
         for slug in SPACES:
             service.provision(
-                TenantSignup(slug=slug, nome=f"Studio {slug}", email=f"owner@{slug}.example")
+                TenantSignup(
+                    first_name="Ada",
+                    slug=slug,
+                    name=f"Studio {slug}",
+                    email=f"owner@{slug}.example",
+                )
             )
         yield
     finally:
@@ -122,7 +130,8 @@ def _no_mailbox_left(settings: Settings, spaces: None) -> Iterator[None]:
                 )
                 connection.execute(text("delete from gmail_known_addresses"))
                 connection.execute(text("delete from google_accounts"))
-                connection.execute(text("delete from customers where ragione_sociale like 'CLI %'"))
+                connection.execute(text("delete from reminder_job_run"))
+                connection.execute(text("delete from organizations where legal_name like 'CLI %'"))
         finally:
             engine.dispose()
 
@@ -133,7 +142,7 @@ def cron(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> FakeGmail:
     fake = FakeGmail()
     monkeypatch.setattr(cli, "get_settings", lambda: settings)
     monkeypatch.setattr(
-        cli, "GmailTransport", lambda: GmailTransport(http=fake, sleep=lambda _: None)
+        gmail_cli, "GmailTransport", lambda: GmailTransport(http=fake, sleep=lambda _: None)
     )
     return fake
 
@@ -165,10 +174,10 @@ def _connect(settings: Settings, slug: str | None, *, status: str = "active") ->
     try:
         with session_factory(engine)() as session:
             owner = session.scalars(
-                select(User).where(User.ruolo == "admin").order_by(User.created_at)
+                select(User).where(User.role == "admin").order_by(User.created_at)
             ).first()
             if owner is None:
-                owner = User(email=ROOT_OWNER, nome="Owner", ruolo="admin", attivo=True)
+                owner = User(email=ROOT_OWNER, name="Owner", role="admin", active=True)
                 session.add(owner)
                 session.flush()
             ciphertext, nonce = seal(refresh_token, _key(settings, slug))
@@ -183,10 +192,12 @@ def _connect(settings: Settings, slug: str | None, *, status: str = "active") ->
                     status=status,
                 )
             )
-            # The azienda the customer is billed by (REB-623): a root seeded by hand has
+            # The legal entity the customer is billed by (REB-623): a root seeded by hand has
             # none until somebody writes it, as `createadmin` does on a real one.
-            committed_default_azienda(session, nome="Radice")
-            session.add(Customer(ragione_sociale="CLI Acme", email="info@acme.it"))
+            committed_default_legal_entity(session, name="Radice")
+            session.add(
+                Organization(legal_name="CLI Acme", contact_points=points(email="info@acme.it"))
+            )
             session.commit()
     finally:
         engine.dispose()
@@ -203,6 +214,26 @@ def _watermark(settings: Settings, slug: str | None) -> object:
         engine.dispose()
 
 
+def _clock(settings: Settings, slug: str | None) -> tuple[bool, str | None] | None:
+    """The space's `gmail-sync` row as `(it has run, its failure)`, `None` for no row: what
+    Settings → Runs reads (REB-764)."""
+    engine = _engine(settings, slug)
+    try:
+        with engine.connect() as connection:
+            row = connection.execute(
+                text(
+                    "select ran_at, failed_at, failure from reminder_job_run "
+                    "where job = 'gmail-sync'"
+                )
+            ).one_or_none()
+    finally:
+        engine.dispose()
+    if row is None:
+        return None
+    assert (row.failed_at is None) == (row.failure is None)
+    return row.ran_at is not None, row.failure
+
+
 def _refresh_tokens(fake: FakeGmail) -> set[str]:
     """The refresh tokens Google was shown: one per mailbox whose token was opened."""
     return {
@@ -213,7 +244,8 @@ def _refresh_tokens(fake: FakeGmail) -> set[str]:
 
 
 def _line(label: str, slug: str | None) -> str:
-    return f"gmail-sync {label} {MAILBOXES[slug][0]}: "
+    # The account id follows the label, never the address (B-16).
+    return f"gmail-sync {label} "
 
 
 def _run(*args: str) -> int:
@@ -238,10 +270,10 @@ def test_one_run_synchronises_the_root_and_every_space_one_line_each(
     assert captured.err == ""
     lines = captured.out.strip().splitlines()
     assert len(lines) == 3
-    assert _line(cli.ROOT_LABEL, None) in lines[0]
+    assert _line(ROOT_LABEL, None) in lines[0]
     assert _line(ONE, ONE) in lines[1]
     assert _line(TWO, TWO) in lines[2]
-    assert all("messaggi nuovi" in line for line in lines)
+    assert all("new messages" in line for line in lines)
     for slug in (None, *SPACES):
         assert _watermark(settings, slug) is not None
     # Each installation's token was opened with its own key, which only its own
@@ -303,7 +335,7 @@ def test_a_space_whose_schema_lags_is_skipped_on_its_own_line(
 ) -> None:
     """A space migrates only when the API boots (`ensure-space-defaults`), and this
     command migrates nothing, like the digest. A space whose schema is behind the image
-    is one `saltato` line naming the exception's type and never its text (a psycopg
+    is one `skipped` line naming the exception's type and never its text (a psycopg
     error can carry the URL), and the space after it is synchronised all the same.
 
     The frames of its traceback follow the line, for whoever has to find which read broke:
@@ -325,9 +357,9 @@ def test_a_space_whose_schema_lags_is_skipped_on_its_own_line(
 
     captured = capsys.readouterr()
     skipped = (
-        f"gmail-sync {ONE}: saltato (ProgrammingError)"
+        f"gmail-sync {ONE}: skipped (ProgrammingError)"
         if where == "space"
-        else f"{_line(ONE, ONE)}saltato (ProgrammingError)"
+        else f"{_line(ONE, ONE)}"
     )
     assert skipped in captured.err
     # The frames follow the line in both places, and they name the read that failed:
@@ -350,7 +382,7 @@ def test_a_space_whose_database_is_gone_does_not_take_the_others_with_it(
     """The digest's own test, for the same contract: `tenant_database_url` is patched on
     the module the command resolves it from, so the space's row names a database that
     was never created, and this file's own `_engine` still reaches the real ones."""
-    import pigrocrm.core.tenants.database as tenants_database
+    import pigrocrm.core.cli.spaces_walk as tenants_database
 
     _connect(settings, ONE)
     _connect(settings, TWO)
@@ -367,7 +399,7 @@ def test_a_space_whose_database_is_gone_does_not_take_the_others_with_it(
     assert _run() == 1
 
     captured = capsys.readouterr()
-    assert f"gmail-sync {ONE}: saltato (OperationalError)" in captured.err
+    assert f"gmail-sync {ONE}: skipped (OperationalError)" in captured.err
     assert 'File "' in captured.err
     assert _line(TWO, TWO) in captured.out
     assert _watermark(settings, TWO) is not None
@@ -381,22 +413,19 @@ def test_an_unreachable_registry_still_synchronises_the_root(
 ) -> None:
     """The root is not in the registry, so a registry that does not answer is one line
     and the root's mailbox is synchronised all the same, as the digest still sends it."""
-    import pigrocrm.core.tenants as tenants
 
     def unreachable(_settings: Settings) -> Engine:
         raise RuntimeError("postgres://user:hunter2@elsewhere/pigrocrm_tenants")
 
     _connect(settings, None)
-    monkeypatch.setattr(tenants, "ensure_tenants_database", unreachable)
+    monkeypatch.setattr("pigrocrm.core.cli.spaces_walk.ensure_tenants_database", unreachable)
 
     assert _run() == 1
 
     captured = capsys.readouterr()
-    assert captured.err.strip().endswith(
-        "gmail-sync: registro degli spazi non raggiungibile (RuntimeError)"
-    )
+    assert captured.err.strip().endswith("gmail-sync: space registry unreachable (RuntimeError)")
     assert "hunter2" not in captured.err
-    assert _line(cli.ROOT_LABEL, None) in captured.out
+    assert _line(ROOT_LABEL, None) in captured.out
 
 
 def test_email_names_one_mailbox_wherever_it_is(
@@ -425,18 +454,17 @@ def test_no_mailbox_is_not_claimed_while_a_space_could_not_be_read(
     capsys: pytest.CaptureFixture[str],
     unread: str,
 ) -> None:
-    """«nessuna casella Google collegata» is a claim about every installation, and a run
+    """«no Google mailbox connected» is a claim about every installation, and a run
     that could not read the registry, or one space, cannot make it: the mailbox may be
     in the part it did not read. Its own line has said what went wrong already."""
-    import pigrocrm.core.tenants as tenants
-    import pigrocrm.core.tenants.database as tenants_database
+    import pigrocrm.core.cli.spaces_walk as tenants_database
 
     if unread == "registry":
 
         def unreachable(_settings: Settings) -> Engine:
             raise RuntimeError("the registry does not answer")
 
-        monkeypatch.setattr(tenants, "ensure_tenants_database", unreachable)
+        monkeypatch.setattr("pigrocrm.core.cli.spaces_walk.ensure_tenants_database", unreachable)
     else:
         real = tenants_database.tenant_database_url
         monkeypatch.setattr(
@@ -454,7 +482,7 @@ def test_no_mailbox_is_not_claimed_while_a_space_could_not_be_read(
     assert captured.out == ""
     # One line of log; a space's read that failed is followed by its frames.
     assert len([line for line in captured.err.splitlines() if "gmail-sync" in line]) == 1
-    assert "nessuna casella" not in captured.err
+    assert "no Google mailbox connected" not in captured.err
 
 
 def test_an_unmatched_email_says_the_match_may_be_incomplete(
@@ -463,9 +491,9 @@ def test_an_unmatched_email_says_the_match_may_be_incomplete(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """The same claim, narrowed to one address: with a space unread, «non è una casella
-    collegata» would be a guess. The line names what was read and says a space was not."""
-    import pigrocrm.core.tenants.database as tenants_database
+    """The same claim, narrowed to one address: with a space unread, the claim that no mailbox
+    is connected would be a guess. The line names what was read and says a space was not."""
+    import pigrocrm.core.cli.spaces_walk as tenants_database
 
     _connect(settings, TWO)
     real = tenants_database.tenant_database_url
@@ -483,7 +511,156 @@ def test_an_unmatched_email_says_the_match_may_be_incomplete(
     captured = capsys.readouterr()
     last = captured.err.strip().splitlines()[-1]
     assert "nobody@example.it" in last
-    assert MAILBOXES[TWO][0] in last
-    assert "non è stato letto" in last
-    assert "non è una casella collegata" not in last
+    assert "1 connected" in last
+    assert "was not read" in last
+    assert "is not a connected mailbox" not in last
     assert _watermark(settings, TWO) is None
+
+
+# --- the space's clock (REB-764) -----------------------------------------------------
+
+
+def test_every_space_with_a_mailbox_has_its_clock_moved_and_one_without_has_none(
+    settings: Settings, cron: FakeGmail
+) -> None:
+    """A space with no mailbox prints nothing and records nothing: Esecuzioni says «non
+    configurata» there rather than a time that never happened."""
+    _connect(settings, None)
+    _connect(settings, ONE)
+
+    assert _run() == 0
+
+    assert _clock(settings, None) == (True, None)
+    assert _clock(settings, ONE) == (True, None)
+    assert _clock(settings, TWO) is None
+
+
+def test_a_revoked_mailbox_is_the_spaces_failure_and_the_next_good_run_clears_it(
+    settings: Settings, cron: FakeGmail
+) -> None:
+    _connect(settings, ONE, status="revoked")
+    _connect(settings, TWO)
+
+    assert _run() == 1
+
+    # The class and not the sentence, which names the mailbox: the clock is read by every
+    # admin and by agents.
+    assert _clock(settings, ONE) == (False, "CredentialRevoked")
+    assert _clock(settings, TWO) == (True, None)
+
+    engine = _engine(settings, ONE)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("update google_accounts set status = 'active'"))
+    finally:
+        engine.dispose()
+    assert _run() == 0
+    assert _clock(settings, ONE) == (True, None)
+
+
+def test_a_space_whose_mailboxes_cannot_be_read_records_the_exception_type(
+    settings: Settings, cron: FakeGmail
+) -> None:
+    _connect(settings, ONE)
+    engine = _engine(settings, ONE)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("alter table gmail_known_addresses rename to gka_future"))
+        try:
+            assert _run() == 1
+        finally:
+            with engine.begin() as connection:
+                connection.execute(text("alter table gka_future rename to gmail_known_addresses"))
+    finally:
+        engine.dispose()
+
+    assert _clock(settings, ONE) == (False, "ProgrammingError")
+
+
+def test_a_run_narrowed_to_one_address_does_not_touch_the_clock(
+    settings: Settings, cron: FakeGmail
+) -> None:
+    """It did not visit the space's other mailboxes, so it cannot say the space's sync ran
+    (or clear a failure of a mailbox it skipped)."""
+    _connect(settings, ONE)
+
+    assert _run("--email", MAILBOXES[ONE][0]) == 0
+
+    assert _clock(settings, ONE) is None
+
+
+def test_a_space_with_a_good_and_a_refused_mailbox_records_the_refusal_and_keeps_its_last_run(
+    settings: Settings, cron: FakeGmail
+) -> None:
+    """One mailbox of two refusing is the space's failure: the row says so, and the time of
+    the last good run stays where it was until a cycle ends with every mailbox through."""
+    from datetime import UTC, datetime
+
+    _connect(settings, ONE)
+    engine = _engine(settings, ONE)
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "insert into reminder_job_run (id, job, ran_at) "
+                    "values (gen_random_uuid(), 'gmail-sync', :at)"
+                ),
+                {"at": datetime(2026, 10, 1, tzinfo=UTC)},
+            )
+        with session_factory(engine)() as session:
+            second = User(email="seconda@one.example", name="Seconda", role="admin", active=True)
+            session.add(second)
+            session.flush()
+            ciphertext, nonce = seal(MAILBOXES[ONE][1], _key(settings, ONE))
+            session.add(
+                GoogleAccount(
+                    user_id=second.id,
+                    google_sub="sub-second",
+                    email_address="seconda@one.example",
+                    refresh_token_ciphertext=ciphertext,
+                    refresh_token_nonce=nonce,
+                    scopes_granted=list(REQUESTED_SCOPES),
+                    status="revoked",
+                )
+            )
+            session.commit()
+    finally:
+        engine.dispose()
+
+    assert _run() == 1
+
+    engine = _engine(settings, ONE)
+    try:
+        with engine.connect() as connection:
+            row = connection.execute(
+                text("select ran_at, failure from reminder_job_run where job = 'gmail-sync'")
+            ).one()
+    finally:
+        engine.dispose()
+    assert row.ran_at == datetime(2026, 10, 1, tzinfo=UTC), "the last good run did not move"
+    assert row.failure == "CredentialRevoked"
+
+
+def test_a_clock_that_cannot_be_written_is_a_line_and_an_exit_status(
+    settings: Settings,
+    cron: FakeGmail,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The cycle worked, and the space's own database refuses the row: the ping should not
+    say the space is fine, and the log says why in one line, by type."""
+    from pigrocrm.core.reminders.jobs import JobClock
+
+    def refuse(self, job, at=None):  # type: ignore[no-untyped-def]
+        raise RuntimeError("postgresql://user:secret@host/db")
+
+    _connect(settings, ONE)
+    monkeypatch.setattr(JobClock, "succeeded", refuse)
+
+    assert _run() == 1
+
+    captured = capsys.readouterr()
+    assert f"{ONE}: clock not written (RuntimeError)" in captured.err
+    assert "secret" not in captured.err + captured.out
+    assert _line(ONE, ONE) in captured.out, "the mailbox did synchronise"
+    assert _clock(settings, ONE) is None

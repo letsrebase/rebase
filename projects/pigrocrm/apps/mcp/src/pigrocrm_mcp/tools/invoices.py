@@ -11,25 +11,29 @@ from datetime import date
 from typing import Any, Final
 from uuid import UUID
 
-from pigrocrm.core.emitter.schemas import (
-    TEMPLATE_EXCLUDED_FIELDS,
-    LegalEntityCreate,
-    LegalEntityRead,
-    LegalEntityUpsert,
-)
-from pigrocrm.core.emitter.service import LegalEntityService
-from pigrocrm.core.errors import Conflict, ValidationFailed
+from pigrocrm.core.errors import Conflict
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.schemas import (
     InvoiceCreate,
     InvoiceLineIn,
     InvoiceListQuery,
+    InvoiceRead,
     InvoiceUpdate,
     PaymentState,
+    PaymentStatus,
 )
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.legal_entities.schemas import (
+    TEMPLATE_EXCLUDED_FIELDS,
+    LegalEntityCreate,
+    LegalEntityRead,
+    LegalEntityUpsert,
+)
+from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.tools.changes import refuse_nothing_given, report
+from pigrocrm_mcp.tools.params import iso_date, literal_arg, parse_legal_entity_id
 
 # Three tables used to live here: which operations are forbidden, which public methods
 # are simply unexposed and why, and which method backs which tool name. They are gone,
@@ -68,15 +72,17 @@ def search(context: McpContext, query: InvoiceListQuery) -> dict[str, Any]:
 
 
 def list_register_gaps(
-    context: McpContext, anno: int, azienda_id: str | None = None
+    context: McpContext, year: int, legal_entity_id: str | None = None
 ) -> list[dict[str, Any]]:
     """Every table row is a fact somebody already declared, never a computation: this
     reads `register_gaps` (the same query `GET /api/invoices/register/{anno}/gaps`
     answers), it writes nothing, and it needs nothing an installation has to open --
     unlike `import_issued_invoice`/`declare_invoice_register_gaps`, which write the
-    register and stay behind `mcp_full_access`. One register per azienda (REB-619):
+    register and stay behind `mcp_full_access`. One register per legal entity (REB-619):
     none named is the default's."""
-    gaps = _invoices(context).register_gaps(anno, context.actor, parse_legal_entity_id(azienda_id))
+    gaps = _invoices(context).register_gaps(
+        year, context.actor, parse_legal_entity_id(legal_entity_id)
+    )
     return [g.model_dump(mode="json") for g in gaps]
 
 
@@ -85,41 +91,44 @@ def get(context: McpContext, invoice_id: str) -> dict[str, Any]:
     invoice = service.get(UUID(invoice_id), context.actor)
     return {
         **invoice.model_dump(mode="json"),
-        "righe": [
+        "lines": [
             line.model_dump(mode="json") for line in service.lines(UUID(invoice_id), context.actor)
         ],
     }
 
 
 def create_proforma(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
-    """`tipo` is forced to `proforma` here rather than taken from the caller: this is
+    """`type` is forced to `proforma` here rather than taken from the caller: this is
     the only creation an agent performs, and letting it choose would put a draft
     invoice -- one button away from a consumed number -- on the agentic surface."""
-    payload = {**data, "tipo": "proforma"}
+    payload = {**data, "type": "proforma"}
     return (
         _invoices(context).create(InvoiceCreate(**payload), context.actor).model_dump(mode="json")
     )
 
 
-def _require_proforma(service: InvoiceService, invoice_id: UUID, context: McpContext) -> None:
+def _require_proforma(
+    service: InvoiceService, invoice_id: UUID, context: McpContext
+) -> InvoiceRead:
     invoice = service.get(invoice_id, context.actor)
-    if invoice.tipo != "proforma":
+    if invoice.type != "proforma":
         raise Conflict(
             "invoice",
-            "da MCP si modificano solo le proforma: una fattura la prepara e la emette una persona",
-            tipo=invoice.tipo,
-            stato=invoice.stato,
+            "over MCP only proformas can be edited: an invoice is prepared and issued by a person",
+            type=invoice.type,
+            status=invoice.status,
         )
+    return invoice
 
 
 def replace_proforma_lines(
-    context: McpContext, invoice_id: str, righe: list[dict[str, Any]]
+    context: McpContext, invoice_id: str, lines: list[dict[str, Any]]
 ) -> dict[str, Any]:
     service = _invoices(context)
     identifier = UUID(invoice_id)
     _require_proforma(service, identifier, context)
     return service.replace_lines(
-        identifier, [InvoiceLineIn(**riga) for riga in righe], context.actor
+        identifier, [InvoiceLineIn(**line_data) for line_data in lines], context.actor
     ).model_dump(mode="json")
 
 
@@ -127,33 +136,52 @@ def update_proforma(
     context: McpContext,
     invoice_id: str,
     *,
-    causale: str | None,
-    data_emissione: date | None,
-    data_scadenza: date | None = None,
-    competenza_da: date | None,
-    competenza_a: date | None,
+    memo: str | None,
+    issue_date: date | None,
+    due_date: date | None = None,
+    accrual_from: date | None,
+    accrual_to: date | None,
+    purchase_order_number: str | None = None,
+    purchase_order_date: date | None = None,
+    purchase_order_tender_code: str | None = None,
+    purchase_order_project_code: str | None = None,
 ) -> dict[str, Any]:
-    """The header of a proforma: causale, document date, due date, accrual period
-    (ORB-61, ORB-63, REB-326).
+    """The header of a proforma: reason, document date, due date, accrual period,
+    purchase order (ORB-61, ORB-63, REB-326, REB-693).
 
     Same guard as `replace_proforma_lines`, and for the same reason: a proforma is the
     only document an agent shapes from here, and the service's own `ImmutableField`
-    refuses a `consumata` one after the guard has let its `tipo` through. `None` means
+    refuses a `consumed` one after the guard has let its `type` through. `None` means
     "not supplied" on this surface, never "clear it": only the keys with a value reach
     `InvoiceUpdate`, so an agent cannot blank a period or a date by omission. Clearing a
     period is the application's, where the two ends are one control.
     """
+    refuse_nothing_given(
+        memo=memo,
+        issue_date=issue_date,
+        due_date=due_date,
+        accrual_from=accrual_from,
+        accrual_to=accrual_to,
+        purchase_order_number=purchase_order_number,
+        purchase_order_date=purchase_order_date,
+        purchase_order_tender_code=purchase_order_tender_code,
+        purchase_order_project_code=purchase_order_project_code,
+    )
     service = _invoices(context)
     identifier = UUID(invoice_id)
-    _require_proforma(service, identifier, context)
+    before = _require_proforma(service, identifier, context)
     supplied: dict[str, Any] = {
         key: value
         for key, value in {
-            "causale": causale,
-            "data_emissione": data_emissione,
-            "data_scadenza": data_scadenza,
-            "competenza_da": competenza_da,
-            "competenza_a": competenza_a,
+            "memo": memo,
+            "issue_date": issue_date,
+            "due_date": due_date,
+            "accrual_from": accrual_from,
+            "accrual_to": accrual_to,
+            "purchase_order_number": purchase_order_number,
+            "purchase_order_date": purchase_order_date,
+            "purchase_order_tender_code": purchase_order_tender_code,
+            "purchase_order_project_code": purchase_order_project_code,
         }.items()
         if value is not None
     }
@@ -162,19 +190,19 @@ def update_proforma(
     # "not passed" from "clear it" -- and a keyword argument defaulted to `None` would be
     # set to `None`, which on this schema means clear.
     changes = InvoiceUpdate.model_validate(supplied)
-    return service.update(identifier, changes, context.actor).model_dump(mode="json")
+    return report(before, service.update(identifier, changes, context.actor))
 
 
 def confirm_proforma(context: McpContext, invoice_id: str) -> dict[str, Any]:
-    """`bozza` -> `confermata` on a proforma (ORB-132): the amount is agreed and the
+    """`draft` -> `confirmed` on a proforma (ORB-132): the amount is agreed and the
     document is ready to be issued, still without touching the register.
 
-    Same guard as `replace_proforma_lines`, so a fattura is refused with the reason before
+    Same guard as `replace_proforma_lines`, so an invoice is refused with the reason before
     the service refuses it for its own. The service then refuses a proforma that is not a
     draft and one without lines, naming the field. On the default surface and not behind
     `mcp_full_access`: confirming consumes nothing and forecloses nothing, since a
     confirmed proforma stays editable (`_is_editable`: `update_proforma`,
-    `replace_proforma_lines`) and discardable. There is no way back to `bozza`, and none
+    `replace_proforma_lines`) and discardable. There is no way back to `draft`, and none
     is needed. `issue_invoice`, which turns the confirmed proforma into a numbered
     document, stays privileged.
     """
@@ -191,7 +219,7 @@ def discard_proforma(context: McpContext, invoice_id: str) -> dict[str, Any]:
     exists` keeps that prefix off the surface, and this is the application's soft delete,
     the row stays. `InvoiceService.soft_delete` refuses on its own anything
     that consumed a number, and the table CHECK behind it refuses again; the guard here
-    only makes the refusal for a fattura say why before either of those is reached.
+    only makes the refusal for an invoice say why before either of those is reached.
 
     One-way, unlike the `archive_*` tools: `InvoiceService` has no restore, and none is
     owed to a document that never took a number and can be recreated from what
@@ -228,27 +256,27 @@ def xml_url(context: McpContext, invoice_id: str) -> dict[str, Any]:
     if invoice.xml_document_id is None:
         raise Conflict(
             "invoice",
-            "questa fattura non ha ancora un file XML: va prodotto dall'applicazione",
-            stato=invoice.stato,
+            "this invoice has no XML file yet: it must be produced by the application",
+            status=invoice.status,
         )
     return {
         "invoice_id": invoice_id,
-        "numero": f"{invoice.anno}/{invoice.numero}",
+        "number": f"{invoice.year}/{invoice.number}",
         "download_url": f"/api/invoices/{invoice_id}/xml",
         "hash_sha256": invoice.xml_hash_sha256,
     }
 
 
 def set_payment_state(
-    context: McpContext, invoice_id: str, stato_pagamento: str, data_incasso: str | None
+    context: McpContext, invoice_id: str, payment_status: str, payment_date: str | None
 ) -> dict[str, Any]:
     return (
         _invoices(context)
         .set_payment_state(
             UUID(invoice_id),
             PaymentState(
-                stato_pagamento=stato_pagamento,  # type: ignore[arg-type]
-                data_incasso=date.fromisoformat(data_incasso) if data_incasso else None,
+                payment_status=literal_arg("payment_status", payment_status, PaymentStatus),
+                payment_date=iso_date(payment_date, "payment_date"),
             ),
             context.actor,
         )
@@ -256,150 +284,143 @@ def set_payment_state(
     )
 
 
-def parse_legal_entity_id(value: str | None) -> UUID | None:
-    """Only an omitted id means the default azienda. A string that is given is an id
-    or a refusal in words: an empty one, or one that is not a UUID, must not fall back
-    to the default and write there in silence."""
-    if value is None:
-        return None
-    try:
-        return UUID(value)
-    except ValueError as exc:
-        raise ValidationFailed(
-            "emitter_profile", "azienda_id", "non e' l'id di un'azienda", expected="un UUID"
-        ) from exc
-
-
-def describe_fiscal_profile(context: McpContext, azienda_id: str | None = None) -> dict[str, Any]:
-    """The fiscal parameters of one azienda; none means the default, which on a space
-    with one azienda is the only one (REB-616, spec 2026-10-03 §7)."""
+def describe_fiscal_profile(
+    context: McpContext, legal_entity_id: str | None = None
+) -> dict[str, Any]:
+    """The fiscal parameters of one legal entity; none means the default, which on a space
+    with one legal entity is the only one (REB-616, spec 2026-10-03 §7)."""
     return FiscalProfileService(context.session).describe(
-        context.actor, parse_legal_entity_id(azienda_id)
+        context.actor, parse_legal_entity_id(legal_entity_id)
     )
 
 
 def update_fiscal_profile(
-    context: McpContext, dati: dict[str, Any], azienda_id: str | None = None
+    context: McpContext, data: dict[str, Any], legal_entity_id: str | None = None
 ) -> dict[str, Any]:
     """The whole profile, replaced (ORB-188). `require_admin` inside the service is the
     only gate, and it is enough: the row is rewritable, issued invoices keep their copy."""
     return (
         FiscalProfileService(context.session)
         .upsert(
-            FiscalProfileUpsert.model_validate(dati),
+            FiscalProfileUpsert.model_validate(data),
             context.actor,
-            parse_legal_entity_id(azienda_id),
+            parse_legal_entity_id(legal_entity_id),
         )
         .model_dump(mode="json")
     )
 
 
-# What an agent needs to pick an azienda, and nothing it does not: the two flags, the
+# What an agent needs to pick a legal entity, and nothing it does not: the two flags, the
 # nation and the three names (REB-616).
-AZIENDA_FIELDS: Final[set[str]] = {
+LEGAL_ENTITY_FIELDS: Final[set[str]] = {
     "id",
-    "nome",
-    "ragione_sociale",
-    "partita_iva",
-    "nazione",
-    "predefinita",
-    "attiva",
+    "name",
+    "legal_name",
+    "vat_number",
+    "country",
+    "is_default",
+    "active",
 }
 
 
-# What `describe_azienda` adds beyond the row and `update_azienda` ignores on the way back.
-READ_ONLY_FLAGS: Final[frozenset[str]] = frozenset({"ha_logo", "ha_firma"})
+# What `describe_legal_entity` adds beyond the row and `update_legal_entity` ignores on the way
+# back.
+READ_ONLY_FLAGS: Final[frozenset[str]] = frozenset({"has_logo", "has_signature"})
 
 
-def propose_azienda(context: McpContext, nazione: str | None) -> dict[str, Any]:
-    """The azienda `LegalEntityService.propose` picks for a customer of `nazione`
-    (REB-624, spec 2026-10-03 §1.6), in the shape `list_aziende` answers."""
-    row = LegalEntityService(context.session).propose(nazione)
-    return LegalEntityRead.model_validate(row).model_dump(mode="json", include=AZIENDA_FIELDS)
+def suggest_legal_entity(context: McpContext, country: str | None) -> dict[str, Any]:
+    """The legal entity `LegalEntityService.propose` picks for a customer of `country`
+    (REB-624, spec 2026-10-03 §1.6), in the shape `list_legal_entities` answers."""
+    row = LegalEntityService(context.session).propose(country)
+    return LegalEntityRead.model_validate(row).model_dump(mode="json", include=LEGAL_ENTITY_FIELDS)
 
 
-def list_aziende(context: McpContext) -> list[dict[str, Any]]:
-    """Every active azienda of the space, the default first: id, short name, ragione
-    sociale, nazione and the two flags, which is what an agent needs to pick one."""
+def list_legal_entities(context: McpContext) -> list[dict[str, Any]]:
+    """Every active legal entity of the space, the default first: id, short name, legal
+    name, country and the two flags, which is what an agent needs to pick one."""
     return [
-        a.model_dump(mode="json", include=AZIENDA_FIELDS)
+        a.model_dump(mode="json", include=LEGAL_ENTITY_FIELDS)
         for a in LegalEntityService(context.session).list(context.actor)
     ]
 
 
-def describe_azienda(context: McpContext, azienda_id: str | None = None) -> dict[str, Any]:
+def describe_legal_entity(
+    context: McpContext, legal_entity_id: str | None = None
+) -> dict[str, Any]:
     """Who the invoices and the documents say they come from.
 
     `LegalEntityService.get` is one of the two reads in this product deliberately left
     un-role-gated at the service layer, because the PDF header needs it for every
     role -- so there is no role for which this is agent-only knowledge. The logo and the
-    signature appear as `ha_logo` and `ha_firma`, since REB-627: the files are uploaded
+    signature appear as `has_logo` and `has_signature`, since REB-627: the files are uploaded
     over the REST API and their keys are the server's. The write on the same row is
-    `update_azienda` (ORB-188). Without `id`, the two state flags, the timestamps and the
+    `update_legal_entity` (ORB-188). Without `id`, the two state flags, the timestamps and the
     two image flags, what this returns can be handed back to the write unchanged:
     `LegalEntityUpsert` forbids extra keys, and the round trip the write's docstring
     prescribes («leggi prima, rimanda indietro l'oggetto») has to be possible.
     """
     profile = LegalEntityService(context.session).get(
-        context.actor, parse_legal_entity_id(azienda_id)
+        context.actor, parse_legal_entity_id(legal_entity_id)
     )
     # Whether the two images are set, never the storage keys (REB-627): the keys are
     # the server's, `LegalEntityUpsert` no longer takes them, and an agent reading this to
-    # hand it back to `update_azienda` must get an object the write accepts.
+    # hand it back to `update_legal_entity` must get an object the write accepts.
     return {
         **profile.model_dump(
-            mode="json", exclude={*TEMPLATE_EXCLUDED_FIELDS, "logo_key", "firma_key"}
+            mode="json", exclude={*TEMPLATE_EXCLUDED_FIELDS, "logo_key", "signature_key"}
         ),
-        "ha_logo": profile.logo_key is not None,
-        "ha_firma": profile.firma_key is not None,
+        "has_logo": profile.logo_key is not None,
+        "has_signature": profile.signature_key is not None,
     }
 
 
-def create_azienda(
-    context: McpContext, dati: dict[str, Any], profilo_fiscale: dict[str, Any]
+def create_legal_entity(
+    context: McpContext, data: dict[str, Any], tax_profile: dict[str, Any]
 ) -> dict[str, Any]:
-    """A second azienda with its fiscal profile, in one call (REB-631, spec 2026-10-03
-    §7): `dati` in `LegalEntityCreate`'s shape, `profilo_fiscale` in `FiscalProfileUpsert`'s,
+    """A second legal entity with its fiscal profile, in one call (REB-631, spec 2026-10-03
+    §7): `data` in `LegalEntityCreate`'s shape, `tax_profile` in `FiscalProfileUpsert`'s,
     the two bodies the REST route takes as one. Admin-only through the service, and
-    agent-allowed like `update_azienda` since ORB-188: setting a space up is not a
-    fiscal act. The two image flags are dropped as `update_azienda` drops them, so an
-    agent that copies `describe_azienda`'s answer as a starting point is not refused."""
-    data = LegalEntityCreate.model_validate(
+    agent-allowed like `update_legal_entity` since ORB-188: setting a space up is not a
+    fiscal act. The two image flags are dropped as `update_legal_entity` drops them, so an
+    agent that copies `describe_legal_entity`'s answer as a starting point is not refused."""
+    payload = LegalEntityCreate.model_validate(
         {
-            **{key: value for key, value in dati.items() if key not in READ_ONLY_FLAGS},
-            "fiscal_profile": profilo_fiscale,
+            **{key: value for key, value in data.items() if key not in READ_ONLY_FLAGS},
+            "fiscal_profile": tax_profile,
         }
     )
-    return LegalEntityService(context.session).create(data, context.actor).model_dump(mode="json")
+    return (
+        LegalEntityService(context.session).create(payload, context.actor).model_dump(mode="json")
+    )
 
 
-def update_azienda(
-    context: McpContext, dati: dict[str, Any], azienda_id: str | None = None
+def update_legal_entity(
+    context: McpContext, data: dict[str, Any], legal_entity_id: str | None = None
 ) -> dict[str, Any]:
-    """One azienda's row, replaced (ORB-188): ragione sociale, partita IVA or codice
-    fiscale, address, PEC, codice SDI, contacts. Admin-only through the service, which
-    also checks the partita IVA and the codice SDI by shape. With no `azienda_id` it is
-    the default azienda, created on the spot when the space has none yet: the first
+    """One legal entity's row, replaced (ORB-188): legal name, VAT number or tax
+    code, address, PEC, SDI code, contacts. Admin-only through the service, which
+    also checks the VAT number and the SDI code by shape. With no `legal_entity_id` it is
+    the default legal entity, created on the spot when the space has none yet: the first
     thing a person asks the assistant they just connected is to set it (REB-188), and
-    a prompt written for a one-azienda space keeps working."""
+    a prompt written for a one-legal entity space keeps working."""
     # Spelled as `LegalEntityService(...)` on each call rather than bound to a local:
-    # `test_mcp_surface_coverage.py` resolves receivers by name across the whole
-    # module, and `service` is the name this file binds to `InvoiceService`.
-    # The two image flags `describe_azienda` answers are read-only facts, not columns:
+    # `test_mcp_surface_coverage.py` resolves receivers per function, so a local would be
+    # read too; this stays as written because it reads the same either way.
+    # The two image flags `describe_legal_entity` answers are read-only facts, not columns:
     # dropped here so the read can be handed back whole, as the tool's own docstring
     # prescribes, without `LegalEntityUpsert` refusing them as extra keys.
-    data = LegalEntityUpsert.model_validate(
-        {key: value for key, value in dati.items() if key not in READ_ONLY_FLAGS}
+    payload = LegalEntityUpsert.model_validate(
+        {key: value for key, value in data.items() if key not in READ_ONLY_FLAGS}
     )
-    target = parse_legal_entity_id(azienda_id)
+    target = parse_legal_entity_id(legal_entity_id)
     if target is None:
         return (
             LegalEntityService(context.session)
-            .upsert_default(data, context.actor)
+            .upsert_default(payload, context.actor)
             .model_dump(mode="json")
         )
     return (
         LegalEntityService(context.session)
-        .update(target, data, context.actor)
+        .update(target, payload, context.actor)
         .model_dump(mode="json")
     )

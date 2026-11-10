@@ -1,4 +1,5 @@
-from datetime import date, datetime
+import datetime as dt
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -26,40 +27,40 @@ from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMi
 class CostCategory(Base, PrimaryKeyMixin, TimestampMixin):
     """User-configurable, like pipeline stages and field definitions.
 
-    `code` is the stable identity of a seeded category, distinct from `nome`, which
+    `code` is the stable identity of a seeded category, distinct from `name`, which
     the user is free to rename -- exactly why `pipeline_stages.code` was added during
     the slice 1 review (residual R11), after `seed_defaults` was found deduplicating
-    on `nome`, the one field the user can change. Categories a user creates have no
+    on `name`, the one field the user can change. Categories a user creates have no
     `code`; Postgres treats every NULL as distinct under a unique index, so any number
     of them coexist.
 
-    `archiviata` rather than deletable, and no `deleted_at`: this is a taxonomy, not a
+    `archived` rather than deletable, and no `deleted_at`: this is a taxonomy, not a
     record. A deleted category with costs still hanging off it produces orphan rows
-    nobody can see (slice 1 §5.6, first of its three rules), and `templates.attivo` is
+    nobody can see (slice 1 §5.6, first of its three rules), and `templates.active` is
     the same shape for the same reason.
     """
 
     __tablename__ = "cost_categories"
 
-    nome: Mapped[str] = mapped_column(String(60), nullable=False)
-    posizione: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     code: Mapped[str | None] = mapped_column(String(30), default=None)
-    archiviata: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         Index("uq_cost_categories_code", "code", unique=True),
         # Case-insensitive identity needs a functional index, not a convention: a
         # plain unique=True on a text column is case-sensitive, and normalising in the
         # service protects only the paths that go through it.
-        Index("uq_cost_categories_nome", func.lower(nome), unique=True),
+        Index("uq_cost_categories_name", func.lower(name), unique=True),
     )
 
 
 class TimeEntry(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     """One hour-logging entry, carrying its own rate.
 
-    `deal_id` is **required**. The budget lives on the deal (`ore_preventivate`,
-    `valore_preventivato`), the revenue arrives from invoices that carry a `deal_id`,
+    `deal_id` is **required**. The budget lives on the deal (`budgeted_hours`,
+    `budgeted_value`), the revenue arrives from invoices that carry a `deal_id`,
     and the P&L is per deal. An hour attached only to a customer would have no
     estimate to compare against and would escape every line of this slice; an hour
     attached to nothing is the ghost row the previous system produces and no export shows
@@ -73,14 +74,14 @@ class TimeEntry(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     type `mcp` carries the id of the PAT's owning user (slice 1 §9), so there is
     always a person to attribute it to.
 
-    `data` is a `Date`, not a timestamp -- §6.3. It is the calendar day the work
+    `date` is a `Date`, not a timestamp -- §6.3. It is the calendar day the work
     belongs to, and that day decides which month, which report and which period it
     lands in. The previous system's `formatIsoDate` used `toISOString()`, so an hour logged at 23:30
     CEST on 31 March was stored as 1 April and went into the wrong monthly export --
     the file attached to an invoice.
 
-    `fatturabile` and `invoice_line_id` are two columns because they answer two
-    questions. `fatturabile` is a property of the **work** (an internal alignment
+    `billable` and `invoice_line_id` are two columns because they answer two
+    questions. `billable` is a property of the **work** (an internal alignment
     meeting is never billed, and that is decided when it is logged);
     `invoice_line_id` is a fact about a **document** (whether a line covering it
     exists). A billable, not-yet-billed hour is the normal state of everything done
@@ -94,10 +95,10 @@ class TimeEntry(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     join the locked transaction of slice 3 §3, the part of the system that least wants
     new participants.
 
-    `tariffa_origine`/`costo_origine` are `String(10)` plus a Pydantic `Literal`, never
+    `rate_source`/`cost_source` are `String(10)` plus a Pydantic `Literal`, never
     a Postgres ENUM: every closed set in this schema is spelled that way
-    (`pipeline_stages.tipo`, `documents.tipo`), and a new value then costs a constant
-    instead of an `ALTER TYPE` migration. `costo_origine` never takes the value
+    (`pipeline_stages.type`, `documents.type`), and a new value then costs a constant
+    instead of an `ALTER TYPE` migration. `cost_source` never takes the value
     `deal`: an hour's cost is a property of who works it, not of the client they work
     it for (§5.1).
     """
@@ -110,7 +111,7 @@ class TimeEntry(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         # unbounded: two 14-hour entries on one day are a likely error but not an
         # impossible one, and refusing the second would refuse a correction in
         # progress.
-        CheckConstraint("ore > 0 AND ore <= 24", name="ck_time_entries_ore_range"),
+        CheckConstraint("hours > 0 AND hours <= 24", name="ck_time_entries_hours_range"),
         # §4.3, and the one rule no write path can go around. Deliberately wider than
         # the service rule -- it forbids deleting any entry bound to a line, draft
         # included -- because a constraint that distinguished invoice state would have
@@ -123,26 +124,26 @@ class TimeEntry(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             name="ck_time_entries_billed_not_deleted",
         ),
         CheckConstraint(
-            "tariffa_origine IN ('manuale', 'deal', 'utente', 'assente')",
-            name="ck_time_entries_tariffa_origine",
+            "rate_source IN ('manual', 'deal', 'user', 'absent')",
+            name="ck_time_entries_rate_source",
         ),
         CheckConstraint(
-            "costo_origine IN ('manuale', 'utente', 'assente')",
-            name="ck_time_entries_costo_origine",
+            "cost_source IN ('manual', 'user', 'absent')",
+            name="ck_time_entries_cost_source",
         ),
         # The shape every query in this slice has, partial on the filter every one of
         # them applies. Residual R7 asks for exactly this in general; the two new
         # tables are simply born with it.
         Index(
-            "ix_time_entries_deal_data",
+            "ix_time_entries_deal_date",
             "deal_id",
-            "data",
+            "date",
             postgresql_where=text("deleted_at IS NULL"),
         ),
         Index(
-            "ix_time_entries_user_data",
+            "ix_time_entries_user_date",
             "user_id",
-            "data",
+            "date",
             postgresql_where=text("deleted_at IS NULL"),
         ),
         Index("ix_time_entries_custom_fields", "custom_fields", postgresql_using="gin"),
@@ -150,18 +151,18 @@ class TimeEntry(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
 
     deal_id: Mapped[UUID] = mapped_column(ForeignKey("deals.id"), nullable=False, index=True)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
-    data: Mapped[date] = mapped_column(Date, nullable=False)
-    ore: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
-    descrizione: Mapped[str] = mapped_column(Text, nullable=False)
-    fatturabile: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    tariffa_applicata: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)
-    costo_applicato: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)
-    tariffa_origine: Mapped[str] = mapped_column(String(10), nullable=False, default="assente")
-    costo_origine: Mapped[str] = mapped_column(String(10), nullable=False, default="assente")
+    date: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    hours: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    billable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    applied_rate: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)
+    applied_cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)
+    rate_source: Mapped[str] = mapped_column(String(10), nullable=False, default="absent")
+    cost_source: Mapped[str] = mapped_column(String(10), nullable=False, default="absent")
     invoice_line_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("invoice_lines.id", ondelete="SET NULL"), default=None, index=True
     )
-    note_interne: Mapped[str | None] = mapped_column(Text, default=None)
+    internal_notes: Mapped[str | None] = mapped_column(Text, default=None)
     custom_fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
 
@@ -190,8 +191,8 @@ class TimeTimer(Base, PrimaryKeyMixin, TimestampMixin):
 
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"), default=None)
-    descrizione: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    fatturabile: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    billable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -203,7 +204,7 @@ class Cost(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     document behind it, while an hour's cost is an internal, notional figure derived
     from a rate you chose yourself; an hour is also *potential revenue* and a cost
     never is; and an hour has a quantity comparable with an estimate
-    (`ore_preventivate`) while a cost has only money. Merging them would leave half
+    (`budgeted_hours`) while a cost has only money. Merging them would leave half
     the columns null on every row and turn "hours recorded" -- the central quantity of
     this slice -- into a filtered aggregate over a table where most rows are not hours.
 
@@ -212,11 +213,11 @@ class Cost(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     -- on revenue, on hours -- has one precise and unacceptable consequence: a deal's
     margin would move when a *different* deal was invoiced.
 
-    `importo` is the **total paid**, VAT included. Under the flat-rate regime input VAT
+    `amount` is the **total paid**, VAT included. Under the flat-rate regime input VAT
     is not deductible, so it is cost in every sense and recording the net would
     understate the cost by 22%. Under an ordinary regime the right choice is the
     opposite one, and the extension path is a second `importo_iva` column read from
-    `fiscal_profile.codice_regime` -- named here as a boundary, not designed (§13).
+    `fiscal_profile.regime_code` -- named here as a boundary, not designed (§13).
 
     `document_id` is the receipt, held in slice 2's document store with its pluggable
     storage, versioning and hash. The previous system kept the attachment as base64 inside the costs
@@ -228,28 +229,28 @@ class Cost(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     __table_args__ = (
         # Zero is refused because it is neither a cost nor a correction; negative is
         # allowed because it is a refund or a credit note received (§4.4).
-        CheckConstraint("importo <> 0", name="ck_costs_importo_non_zero"),
-        Index("ix_costs_deal_data", "deal_id", "data", postgresql_where=text("deleted_at IS NULL")),
+        CheckConstraint("amount <> 0", name="ck_costs_amount_not_zero"),
+        Index("ix_costs_deal_date", "deal_id", "date", postgresql_where=text("deleted_at IS NULL")),
         # The period P&L reads costs by date across every deal *and* the general
         # expenses, where `deal_id` is NULL and the two-column index above cannot help.
-        Index("ix_costs_data", "data", postgresql_where=text("deleted_at IS NULL")),
+        Index("ix_costs_date", "date", postgresql_where=text("deleted_at IS NULL")),
         Index("ix_costs_custom_fields", "custom_fields", postgresql_using="gin"),
     )
 
     deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"), default=None, index=True)
-    # The deal's azienda when the cost has a deal, `NULL` when it has none: a shared
-    # cost («condivisa», REB-623, spec §1.7), which only the view over every azienda
+    # The deal's legal entity when the cost has a deal, `NULL` when it has none: a shared
+    # cost («condivisa», REB-623, spec §1.7), which only the view over every legal entity
     # shows. No column default: `NULL` is a meaning here, not an omission.
-    azienda_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("emitter_profile.id"), default=None, index=True
+    legal_entity_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("legal_entities.id"), default=None, index=True
     )
     category_id: Mapped[UUID] = mapped_column(
         ForeignKey("cost_categories.id"), nullable=False, index=True
     )
-    data: Mapped[date] = mapped_column(Date, nullable=False)
-    importo: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    descrizione: Mapped[str] = mapped_column(Text, nullable=False)
-    fornitore: Mapped[str | None] = mapped_column(String(200), default=None)
+    date: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    supplier: Mapped[str | None] = mapped_column(String(200), default=None)
     document_id: Mapped[UUID | None] = mapped_column(ForeignKey("documents.id"), default=None)
     custom_fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
@@ -259,7 +260,7 @@ class PeriodLock(Base):
 
     No `PrimaryKeyMixin` and no `TimestampMixin`: `(anno, mese)` *is* the identity --
     a month is closed or it is not, and a surrogate id would allow two rows saying so
-    -- and `chiuso_il` *is* the timestamp. This is the only table in the schema without
+    -- and `closed_at` *is* the timestamp. This is the only table in the schema without
     a UUID key, and it is because the natural key is total.
 
     Freezing rates (§5) stops a rate change from rewriting a margin somebody has
@@ -275,9 +276,9 @@ class PeriodLock(Base):
 
     __tablename__ = "period_locks"
 
-    anno: Mapped[int] = mapped_column(Integer, primary_key=True)
-    mese: Mapped[int] = mapped_column(Integer, primary_key=True)
-    chiuso_il: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    chiuso_da: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    year: Mapped[int] = mapped_column(Integer, primary_key=True)
+    month: Mapped[int] = mapped_column(Integer, primary_key=True)
+    closed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    closed_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
 
-    __table_args__ = (CheckConstraint("mese >= 1 AND mese <= 12", name="ck_period_locks_mese"),)
+    __table_args__ = (CheckConstraint("month >= 1 AND month <= 12", name="ck_period_locks_month"),)

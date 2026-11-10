@@ -21,10 +21,11 @@ mattina scrive a chi l'ha chiesto, uno spazio alla volta.
 
 Una riga in `crontab -e` dell'utente che possiede il deploy (quello che può parlare con
 il socket di Docker). `$DEPLOY_PATH` è la directory di deploy configurata
-sull'ambiente (la radice del checkout del repository su quel server):
+sull'ambiente (la radice del checkout del repository su quel server). The line is
+production's; on the preview it is `-p pigrocrm-preview` (the details below say why):
 
 ```
-*/15 * * * * cd $DEPLOY_PATH/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync >> /var/log/pigrocrm-gmail-sync.log 2>&1
+*/15 * * * * cd $DEPLOY_PATH/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync >> /var/log/pigrocrm-gmail-sync.log 2>&1
 ```
 
 Quattro dettagli della riga non sono decorativi:
@@ -35,6 +36,12 @@ Quattro dettagli della riga non sono decorativi:
   accanto al compose file, e compose cerca `.env` nella *propria* directory. Senza
   questo, ogni interpolazione risulta vuota (è lo stesso motivo del commit `84a4c2d`,
   ed è la stessa opzione che serve a ogni altro comando compose su questo server).
+- **`-p pigrocrm`**: the compose project, `pigrocrm` on production and `pigrocrm-preview` on
+  the preview, as the deploy passes it (`_deploy-compose.yml`). Without it compose names the
+  project after the directory, and both checkouts end in `projects/pigrocrm`: a command run
+  from `/opt/pigrocrm-preview` without `-p pigrocrm-preview` acts on production's
+  containers. On 2026-11-10 an `up -d api` run that way recreated production's stack from
+  the preview's files (REB-980). Every compose command on this server names its project.
 - **`exec -T api`**: `exec` e non `run`, perché il container `api` è già in piedi e un
   `run` ne avvierebbe un secondo con la stessa configurazione ogni quarto d'ora. `-T`
   disattiva la pseudo-TTY, che cron non ha.
@@ -51,7 +58,7 @@ synchronised, the registry or a space that could not be read, or no connected ma
 found. Every line is printed either way.
 
 ```
-cd $DEPLOY_PATH/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync; echo "uscita: $?"
+cd $DEPLOY_PATH/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync; echo "uscita: $?"
 ```
 
 Since REB-404 the one line synchronises **every** connected mailbox, of the root
@@ -62,7 +69,7 @@ only that mailbox, wherever it is connected; one line without `--email` replaces
 
 ## 2. Leggere il log
 
-Every run writes **one line per mailbox**, starting with the UTC time in ISO 8601 (cron
+Every run writes **one line per mailbox**, naming it by its account id (`<label> <account-uuid>`, never the address: the file is appended on the host and the log promises counters only), starting with the UTC time in ISO 8601 (cron
 adds none, and a log of sentences with no time cannot answer the first question anyone
 asks it: since when has it stopped working), then the installation, `root` or a space's
 slug (see «Every space» below), then the mailbox.
@@ -70,7 +77,7 @@ slug (see «Every space» below), then the mailbox.
 Ciclo eseguito, su `stdout`, uscita `0`:
 
 ```
-2026-09-09T03:15:02+00:00 gmail-sync root io@example.it: 4 messaggi nuovi, 11 già presenti, 3 conversazioni lette, 6 collegamenti, 0 invii riconciliati (2 query)
+2026-09-09T03:15:02+00:00 gmail-sync root 01a19e3c-72ff-7ca0-89df-3ce108097aff: 4 messaggi nuovi, 11 già presenti, 3 conversazioni lette, 6 collegamenti, 0 invii riconciliati (2 query)
 ```
 
 - **messaggi nuovi / già presenti**: la finestra si sovrappone di proposito a quella del
@@ -88,7 +95,7 @@ Ciclo già in corso (un altro cron, o qualcuno che ha premuto Sincronizza), semp
 `stdout`, uscita **`0`**:
 
 ```
-2026-09-09T03:15:02+00:00 gmail-sync root io@example.it: già in corso da 2026-09-09T03:14:58+00:00
+2026-09-09T03:15:02+00:00 gmail-sync root 01a19e3c-72ff-7ca0-89df-3ce108097aff: già in corso da 2026-09-09T03:14:58+00:00
 ```
 
 Non è un errore: è il lucchetto che fa il suo mestiere, il secondo chiamante non ha
@@ -98,7 +105,7 @@ il modo migliore per insegnare all'operatore a ignorare il log.
 Guasto, su `stderr`, uscita **`1`**:
 
 ```
-2026-09-09T03:15:02+00:00 gmail-sync root io@example.it: il consenso Google per io@example.it è stato revocato: ricollega la casella da Impostazioni → Gmail
+2026-09-09T03:15:02+00:00 gmail-sync root 01a19e3c-72ff-7ca0-89df-3ce108097aff: il consenso Google della casella è stato revocato: ricollega la casella da Impostazioni → Gmail
 ```
 
 Le frasi che si possono leggere qui, e cosa fare:
@@ -134,7 +141,7 @@ where it reaches only your terminal and no file. This is a real cycle: when it s
 it synchronises the mailbox, exactly as the cron would have.
 
 ```
-cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec api uv run --no-sync python
+cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec api uv run --no-sync python
 ```
 
 ```python
@@ -187,8 +194,8 @@ Every line names the installation before the mailbox: `root` for the root instal
 whatever `PIGROCRM_ROOT_SLUG` says, and the slug for a space.
 
 ```
-2026-09-28T15:45:03+00:00 gmail-sync root io@example.it: 0 messaggi nuovi, 4 già presenti, 2 conversazioni lette, 0 collegamenti, 0 invii riconciliati (2 query)
-2026-09-28T15:45:04+00:00 gmail-sync studio-rossi owner@studio-rossi.example: 3 messaggi nuovi, 0 già presenti, 3 conversazioni lette, 3 collegamenti, 0 invii riconciliati (1 query)
+2026-09-28T15:45:03+00:00 gmail-sync root 01a19e3c-72ff-7ca0-89df-3ce108097aff: 0 messaggi nuovi, 4 già presenti, 2 conversazioni lette, 0 collegamenti, 0 invii riconciliati (2 query)
+2026-09-28T15:45:04+00:00 gmail-sync studio-rossi 01a19e3c-7b24-7df2-842a-2685ebd75d4e: 3 messaggi nuovi, 0 già presenti, 3 conversazioni lette, 3 collegamenti, 0 invii riconciliati (1 query)
 ```
 
 A space with no connected mailbox prints nothing: most never connect one, and a line for
@@ -200,18 +207,38 @@ went to `stdout`, `1` when at least one went to `stderr`.
 were read and none had a connected mailbox. When the registry or a space could not be
 read, the mailbox may be in the part that was not, so its own line is all the run says.
 For the same reason an `--email` that matched nothing while a space was unread reads
-`… non è fra le caselle degli spazi letti (…): uno spazio non è stato letto, e potrebbe
-essere lì` rather than `… non è una casella collegata`.
+`… non è fra le caselle degli spazi letti (N collegate): uno spazio non è stato letto, e potrebbe
+essere lì` rather than `… non è una casella collegata (N collegate)` (a count, not the addresses).
 
 | Line, on `stderr` | What happened | What to do |
 | --- | --- | --- |
-| `studio-rossi owner@…: <a sentence from the table above>` | That mailbox, in that space, could not be synchronised, for the reason the sentence gives. The mailboxes after it were | As in the table, in that space: the mailbox's owner reconnects it from «Impostazioni → Gmail» |
+| `studio-rossi <account-uuid>: <a sentence from the table above>` | That mailbox, in that space, could not be synchronised, for the reason the sentence gives. The mailboxes after it were | As in the table, in that space: the mailbox's owner reconnects it from «Impostazioni → Gmail» |
 | `studio-rossi: saltato (ProgrammingError)`, then the frames of its traceback | That space's schema is behind the image. **This command migrates nothing**, like the digest: only `pigrocrm ensure-space-defaults`, in the API image's CMD, migrates a space (ORB-189) | Restart the API, which migrates it, then run the line by hand |
-| `studio-rossi owner@…: saltato (ProgrammingError)`, then the frames of its traceback | The same, noticed inside that mailbox's cycle rather than before it | As above |
+| `studio-rossi <account-uuid>: saltato (ProgrammingError)`, then the frames of its traceback | The same, noticed inside that mailbox's cycle rather than before it | As above |
 | `studio-rossi: saltato (OperationalError)`, then the frames of its traceback | That space's database does not answer. The other spaces were synchronised | Check that database |
-| `studio-rossi owner@…: saltato (…)` with another type, then the frames of its traceback | A failure nobody foresaw, named by its type and never its text (a psycopg error can carry the URL, password included). The frames right below it, in this same log, say where it broke | Read the frames here. The message is withheld from this log on purpose; to read it, use the Python shell above |
+| `studio-rossi <account-uuid>: saltato (…)` with another type, then the frames of its traceback | A failure nobody foresaw, named by its type and never its text (a psycopg error can carry the URL, password included). The frames right below it, in this same log, say where it broke | Read the frames here. The message is withheld from this log on purpose; to read it, use the Python shell above |
 | `registro degli spazi non raggiungibile (…)` | The registry does not answer: no space was visited, the root was | Check the database and the `PIGROCRM_*` of the `.env`, then run the line by hand |
-| `… non è fra le caselle degli spazi letti (…): uno spazio non è stato letto, e potrebbe essere lì` | `--email` matched no mailbox among the installations read, and at least one was not read | Fix what the `saltato` or `registro` line above says, then run the line again |
+| `… non è fra le caselle degli spazi letti (N collegate): uno spazio non è stato letto, e potrebbe essere lì` | `--email` matched no mailbox among the installations read, and at least one was not read | Fix what the `saltato` or `registro` line above says, then run the line again |
+
+### The space's clock (REB-764)
+
+After the mailboxes of a space have each had their cycle, the run writes one row in that
+space's own database, `reminder_job_run`, job `gmail-sync`: the time of the last run that
+ended, or, when a mailbox refused its cycle, the name of the exception that stopped it
+(`CredentialRevoked`, `ConsentExpired`, ...: never the sentence the `stderr` line carries,
+which names the mailbox) and the time of the attempt; the last good time stays where it was. Impostazioni → Esecuzioni
+reads it, and says «Non configurata» for a space with no connected mailbox, which prints
+nothing and records nothing. A run narrowed with `--email` writes nothing, since it did not
+visit the space's other mailboxes. A space the run cannot reach (a database that does not
+answer) cannot be written to: its row simply stops moving and reads «In ritardo» after
+thirty minutes. A cycle that worked but whose row cannot be written is a line on `stderr`
+(`<space>: orologio non scritto (<Type>)`) and exit 1, like any other line there. A stalled sync is raised as the reminder `connection_failing`, which reads
+the mailbox's own `last_sync_at`, and not as `job_late`: one cause, one reminder. To read
+the row by hand:
+
+```
+docker compose -p pigrocrm --env-file ../../.env exec -T db psql -U pigrocrm -d <the space's database> -c "select job, ran_at, failed_at, failure from reminder_job_run"
+```
 
 ## 3. Il banner smette di prevedere
 
@@ -253,7 +280,7 @@ il deploy. Il percorso è scritto per esteso come lo si incolla; se la directory
 di questo server non è `/opt/pigrocrm`, è il `$DEPLOY_PATH` del §1 e va sostituito:
 
 ```
-0 8 * * 1 cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm digest >> /var/log/pigrocrm-digest.log 2>&1
+0 8 * * 1 cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm digest >> /var/log/pigrocrm-digest.log 2>&1
 ```
 
 I quattro dettagli del §1 valgono identici qui (`cd`, `--env-file ../../.env`,
@@ -290,7 +317,7 @@ chiusa da ore, e il contenuto sarebbe identico anche eseguendolo il lunedì sera
 le sezioni, conta i destinatari — e **non manda niente e non scrive niente**:
 
 ```
-cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm digest --dry-run; echo "uscita: $?"
+cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm digest --dry-run; echo "uscita: $?"
 ```
 
 Le righe della prova portano `(prova)` in fondo proprio perché nel log non si confondano
@@ -317,6 +344,19 @@ it to every space as well.
 When the registry cannot be reached, the full run still sends the root:
 `registro degli spazi non raggiungibile (…)` is followed by the `root:` line.
 
+### The space's clock (REB-764)
+
+A real run writes the space's `digest` row in `reminder_job_run` after each space: the time
+of the run when the space ended in `inviato`, `vuoto`, `già inviato` or `nessun destinatario`
+(the run ended, whether or not there was mail to send), and the machine word of the
+`saltato` line (`invio_rifiutato`, `titolare_mancante`, ...) with the time of the attempt when
+it ended in `saltato`, or the exception's type when it failed before that. A rehearsal
+(`--dry-run`) writes nothing. A row that cannot be written is one line on `stderr`
+(`<space>: orologio non scritto (<Type>)`), and the exit status stays 0 as always. Impostazioni → Esecuzioni shows it, and the reminder `job_late`
+is raised for a space whose last good run is older than eight days (Tuesday morning without
+a Monday run), which is what the digest's own table row cannot say: it holds a row only for
+a week that really went out.
+
 ### Rimandare una settimana
 
 Una settimana già inviata non parte una seconda volta: la riga `digests.settimana` è
@@ -326,7 +366,7 @@ tutte e due le opzioni, la data di **un giorno qualsiasi** di quella settimana e
 permesso esplicito di riscriverla:
 
 ```
-docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm digest --slug studio-rossi --forza --data 2026-09-07
+docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm digest --slug studio-rossi --forza --data 2026-09-07
 ```
 
 La riga della settimana non viene duplicata: viene aggiornata con i nuovi destinatari e

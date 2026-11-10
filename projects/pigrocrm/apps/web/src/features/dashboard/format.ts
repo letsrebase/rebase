@@ -12,7 +12,7 @@
  * printed a dash for the same null.
  *
  * A plain module, not a `.tsx`: it exports no component, so there is no
- * `react-refresh/only-export-components` override to buy it -- the same reason `periodo.ts`
+ * `react-refresh/only-export-components` override to buy it -- the same reason `period.ts`
  * sits beside `PeriodPicker.tsx` rather than inside it.
  *
  * **Nothing here parses a number.** `no-browser-arithmetic.test.ts` scans this folder for
@@ -21,30 +21,9 @@
  * value below is formatted as the string the API sent.
  */
 
-const euro = new Intl.NumberFormat('it-IT', {
-  style: 'currency',
-  currency: 'EUR',
-  // Mandatory: it-IT's default withholds the thousands separator until the integer part
-  // has five digits, so 1500.00 would print as "1500,00 €".
-  useGrouping: 'always',
-})
-
-/**
- * A `Numeric(12, 2)` column as Italian currency.
- *
- * The API's decimal string goes into the formatter verbatim. Never `Number(value)`:
- * `Number("0.29") * 100` is 28.999999999999996, and a currency formatter fed a float is
- * how cents disappear. `Intl.NumberFormat.format` accepts a string and parses it with full
- * decimal precision (ES2023.Intl, which this project's tsconfig already declares for
- * `useGrouping: 'always'`).
- *
- * The cast is to `Intl.StringNumericLiteral` -- the template-literal type that signature
- * actually takes, `` `${number}` | "Infinity" | ... `` -- and not to `number`, which would
- * be a lie about what is passed. A `Numeric(12, 2)` column always arrives in that shape.
- */
-export function money(value: string): string {
-  return euro.format(value as Intl.StringNumericLiteral)
-}
+/** A `Numeric(12, 2)` column as Italian currency: the API's decimal string goes into the
+ *  shared formatter verbatim, never through a float. */
+export { formatMoney as money } from '@rebase/ui/format'
 
 /**
  * A percentage, or a dash when there is none.
@@ -71,4 +50,11 @@ export function percent(value: string | null | undefined): string {
  */
 export function hours(value: string): string {
   return `${value.replace('.', ',')} ore`
+}
+
+/** «1.50» as «1,5», «2.00» as «2»: days are quantities of a unit, not money, and a trailing
+ *  «,00» on a count of days reads as a price. A string replace, never a parse. */
+export function days(value: string): string {
+  const trimmed = value.includes('.') ? value.replace(/\.?0+$/, '') : value
+  return trimmed.replace('.', ',')
 }

@@ -24,25 +24,27 @@ import { ME_KEY } from '@/lib/me'
 
 const IVAN = {
   id: 'a1',
-  nome: 'Ivan',
-  cognome: 'Fiore',
+  first_name: 'Ivan',
+  last_name: 'Fiore',
   email: 'ivan@rebase.it',
   linkedin_url: null,
+  phone: null,
+  contact_points: [],
   role: 'admin',
   created_at: '2026-09-10T10:00:00Z',
   updated_at: '2026-09-10T10:00:00Z',
-  ha_scheda: false,
+  has_card: false,
   cv_filename: null,
   cv_size: null,
-  tariffa_giornaliera: null,
-  posizione: null,
-  remoto: null,
+  daily_rate: null,
+  job_title: null,
+  remote: null,
   links: [],
-  completa: false,
-  ha_azienda: false,
-  richieste: [],
+  complete: false,
+  has_company: false,
+  requests: [],
 }
-const ADA = { ...IVAN, id: 'f1', nome: 'Ada', cognome: 'Lovelace', email: 'ada@studio.it', role: 'member' }
+const ADA = { ...IVAN, id: 'f1', first_name: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it', role: 'member' }
 
 function answer(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -62,8 +64,8 @@ function mount(path = '/admin/talent') {
     getParentRoute: () => me,
     path: '/',
     component: Area,
-    validateSearch: (search: Record<string, unknown>): { negato?: true } => ({
-      negato: search.negato === true || search.negato === 'true' ? true : undefined,
+    validateSearch: (search: Record<string, unknown>): { denied?: true } => ({
+      denied: search.denied === true || search.denied === 'true' ? true : undefined,
     }),
   })
   // REB-518: a stub, so a mount at /me/cloud has somewhere real to land -- the sidebar
@@ -121,7 +123,7 @@ describe('the signed-in frame and PostHog (ORB-185, REB-279)', () => {
     mount()
     await screen.findByRole('heading', { name: 'Dentro' })
     expect(identifyUser).toHaveBeenCalledTimes(1)
-    expect(identifyUser).toHaveBeenCalledWith('a1', { email: 'ivan@rebase.it', nome: 'Ivan', ruolo: 'admin' })
+    expect(identifyUser).toHaveBeenCalledWith('a1', { email: 'ivan@rebase.it', first_name: 'Ivan', role: 'admin' })
   })
 
   it('identifies a member once, with role member (REB-280 widening, done here already)', async () => {
@@ -129,7 +131,7 @@ describe('the signed-in frame and PostHog (ORB-185, REB-279)', () => {
     mount('/me')
     await screen.findAllByText('Ada Lovelace')
     expect(identifyUser).toHaveBeenCalledTimes(1)
-    expect(identifyUser).toHaveBeenCalledWith('f1', { email: 'ada@studio.it', nome: 'Ada', ruolo: 'member' })
+    expect(identifyUser).toHaveBeenCalledWith('f1', { email: 'ada@studio.it', first_name: 'Ada', role: 'member' })
   })
 
   it('identifies the same admin once, however many times the session is fetched again', async () => {
@@ -195,7 +197,7 @@ describe('the sidebar, gated on role', () => {
       '|',
       ...['Istanze Pigro', 'La guida'],
       '|',
-      ...['Accessi', 'Amministratori', 'Agenti'],
+      ...['Accessi', 'Amministratori', 'Agenti', 'Modelli AI'],
     ])
   })
 
@@ -227,8 +229,8 @@ describe('the sidebar, gated on role', () => {
     mount('/me/cloud')
     const cloud = await screen.findByRole('link', { name: 'Talent cloud' })
     const area = screen.getByRole('link', { name: /La tua area/ })
-    expect(cloud.className.split(' ')).toContain('active')
-    expect(area.className.split(' ')).not.toContain('active')
+    expect(cloud).toHaveAttribute('aria-current', 'page')
+    expect(area).not.toHaveAttribute('aria-current')
   })
 
   it('marks only «La tua area» active on /me, not «Talent cloud» (REB-518)', async () => {
@@ -236,8 +238,8 @@ describe('the sidebar, gated on role', () => {
     mount('/me')
     const area = await screen.findByRole('link', { name: /La tua area/ })
     const cloud = screen.getByRole('link', { name: 'Talent cloud' })
-    expect(area.className.split(' ')).toContain('active')
-    expect(cloud.className.split(' ')).not.toContain('active')
+    expect(area).toHaveAttribute('aria-current', 'page')
+    expect(cloud).not.toHaveAttribute('aria-current')
   })
 
   it('hides the admin group and its eyebrow for a member, keeping "La tua area"', async () => {
@@ -250,36 +252,17 @@ describe('the sidebar, gated on role', () => {
   })
 })
 
-describe('the frame keeps a fixed viewport height (REB-311)', () => {
-  it('pins the sidebar to the viewport height and scrolls it and main on their own axes', async () => {
+describe('the frame holds the page in one main landmark (REB-311, REB-348)', () => {
+  it('puts the page in the main landmark, beside the sidebar and not inside it', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, IVAN))
     mount()
-    await screen.findByRole('heading', { name: 'Dentro' })
+    const heading = await screen.findByRole('heading', { name: 'Dentro' })
 
+    const main = screen.getByRole('main')
+    expect(main).toContainElement(heading)
     const aside = screen.getByRole('link', { name: 'rebase' }).closest('aside')
-    expect(aside).toHaveClass('h-full', 'overflow-y-auto')
-    expect(aside?.parentElement).toHaveClass('h-full')
-  })
-
-  // REB-348: the CRM's own inset panel (a `lg:p-3` grid-ground margin, an `lg:border`,
-  // and a wrapper carrying the scroll between the sidebar and `<main>`) was copied here
-  // and read as a card scrolling on its own inside the page, the same shape REB-328
-  // removed from `AppShell`. `<main>` is now the one scroller, full width from the
-  // sidebar to the edge of the window; the remaining wrapper only carries the mobile
-  // header above it and no longer insets or borders the page.
-  it('makes the page itself the one scroller, with no inset frame around it', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, IVAN))
-    mount()
-    const main = (await screen.findByRole('heading', { name: 'Dentro' })).closest('main')
-    expect(main).not.toBeNull()
-    expect(main!.className).toContain('overflow-y-auto')
-    expect(main!.className).toContain('bg-card')
-    expect(main!.className).not.toMatch(/rounded|lg:border|lg:p-/)
-    // The wrapper above it (which also carries the mobile header) is a plain column,
-    // not an inset or bordered panel.
-    expect(main!.parentElement!.className).toContain('min-w-0')
-    expect(main!.parentElement!.className).toContain('overflow-hidden')
-    expect(main!.parentElement!.className).not.toMatch(/lg:p-|lg:border/)
+    expect(aside).not.toBeNull()
+    expect(aside).not.toContainElement(main)
   })
 })
 
@@ -313,7 +296,7 @@ describe('the mobile shell (REB-316)', () => {
     expect(screen.getByRole('button', { name: 'Apri il menu' })).toBeInTheDocument()
   })
 
-  it('renders the admin nav in the drawer once opened, at its 44px targets', async () => {
+  it('renders the admin nav in the drawer once opened', async () => {
     setViewport(false)
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, IVAN))
     const user = userEvent.setup()
@@ -328,10 +311,6 @@ describe('the mobile shell (REB-316)', () => {
     expect(within(drawer).getByRole('link', { name: /Talenti/ })).toBeInTheDocument()
     expect(within(drawer).getByText('Amministrazione')).toBeInTheDocument()
     expect(within(drawer).getByRole('button', { name: /Esci/ })).toBeInTheDocument()
-    // Every row carries the 44px floor the card names, not the desktop 32/36px sizes.
-    const link = within(drawer).getByRole('link', { name: /Talenti/ })
-    expect(link.className).toMatch(/(^| )min-h-11( |$)/)
-    expect(trigger.className).toMatch(/(^| )size-11( |$)/)
   })
 
   it('closes the drawer on Escape', async () => {

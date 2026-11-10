@@ -1,13 +1,20 @@
-import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
+import { CalendarDays, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
 import { Loader } from '@rebase/ui/loader'
 import { formatIsoDateItalian } from '@/lib/dates'
+import { formatItalianQuantity } from '@/lib/decimal'
+import { useCanWrite } from '@/lib/auth'
+import { useModules } from '@/lib/modules'
 import { cn } from '@rebase/ui/cn'
+import { TaskDialog } from '@/features/tasks/TaskDialog'
+import { TaskItem } from '@/features/tasks/TaskItem'
+import { CellDays } from '@/features/days/CalendarDays'
+import { cellDaysLabel } from '@/features/days/labels'
 import { DayPanel } from './DayPanel'
-import { monthCells, monthLabel, monthOf, shiftMonth, WEEKDAY_LABELS } from './month'
+import { monthCells, monthLabel, monthOf, shiftMonth, WEEKDAY_LABELS, type MonthCell } from './month'
 import { useCalendarMonth, type CalendarDay } from './queries'
 
 /**
@@ -27,35 +34,50 @@ import { useCalendarMonth, type CalendarDay } from './queries'
  * noise.
  */
 export function CalendarPage({
-  mese,
+  month: yearMonth,
   onMonthChange,
 }: {
-  mese: string
-  onMonthChange: (mese: string) => void
+  month: string
+  onMonthChange: (yearMonth: string) => void
 }) {
-  const month = useCalendarMonth(mese)
+  const month = useCalendarMonth(yearMonth)
   const [openDay, setOpenDay] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const canWrite = useCanWrite()
+  // The month's hours are `time`'s: the total is not drawn with it off (REB-953).
+  const hoursOn = useModules().on('time')
 
-  const cells = useMemo(() => monthCells(mese), [mese])
+  const weeks = useMemo(() => {
+    const cells = monthCells(yearMonth)
+    const rows: MonthCell[][] = []
+    for (let start = 0; start < cells.length; start += 7) rows.push(cells.slice(start, start + 7))
+    return rows
+  }, [yearMonth])
   const byDay = useMemo(() => {
     const map = new Map<string, CalendarDay>()
-    for (const day of month.data?.giorni ?? []) map.set(day.giorno, day)
+    for (const day of month.data?.days ?? []) map.set(day.day, day)
     return map
   }, [month.data])
-  const oggi = month.data?.oggi
+  const today = month.data?.today
 
   const header = (
     <PageHeader
       icon={CalendarDays}
       title="Calendario"
-      description={monthLabel(mese)}
+      description={monthLabel(yearMonth)}
       actions={
         <>
+          {canWrite && (
+            <Button onClick={() => setCreating(true)}>
+              <Plus className="mr-2 size-4" />
+              Nuova attività
+            </Button>
+          )}
           <Button
             variant="outline"
             size="icon"
             aria-label="Mese precedente"
-            onClick={() => onMonthChange(shiftMonth(mese, -1))}
+            onClick={() => onMonthChange(shiftMonth(yearMonth, -1))}
           >
             <ChevronLeft className="size-4" />
           </Button>
@@ -66,7 +88,7 @@ export function CalendarPage({
             variant="outline"
             size="icon"
             aria-label="Mese successivo"
-            onClick={() => onMonthChange(shiftMonth(mese, 1))}
+            onClick={() => onMonthChange(shiftMonth(yearMonth, 1))}
           >
             <ChevronRight className="size-4" />
           </Button>
@@ -89,7 +111,7 @@ export function CalendarPage({
     )
   }
 
-  const senzaScadenza = month.data?.attivita_senza_scadenza ?? []
+  const withoutDueDate = month.data?.task_without_due_date ?? []
 
   return (
     <>
@@ -102,47 +124,66 @@ export function CalendarPage({
           </p>
         ) : (
           <>
+            {/* One column of days below `md` and the seven-column month from there: seven
+                columns on a 318px page leave a cell 36px wide, which is what made «1 g Acme
+                Srl» wrap one letter per line. The structure is the ARIA grid pattern
+                (grid > row > columnheader / gridcell > button): a bare `button` child of a
+                grid is what axe refuses (`aria-required-children`), and `display: contents`
+                on a row lets the CSS grid keep laying out the cells. */}
             <div
-              className="grid grid-cols-7 gap-px overflow-hidden border bg-border"
+              className="grid grid-cols-1 gap-px overflow-hidden border bg-border md:grid-cols-7"
               role="grid"
-              aria-label={`Calendario di ${monthLabel(mese)}`}
+              aria-label={`Calendario di ${monthLabel(yearMonth)}`}
             >
-              {WEEKDAY_LABELS.map((label) => (
-                <div
-                  key={label}
-                  className="bg-muted/40 px-2 py-1 text-center text-xs font-medium text-muted-foreground"
-                >
-                  {label}
+              <div role="row" className="contents max-md:hidden">
+                {WEEKDAY_LABELS.map((label) => (
+                  <div
+                    key={label}
+                    role="columnheader"
+                    className="bg-muted px-2 py-1 text-center text-xs font-medium text-muted-foreground"
+                  >
+                    {label}
+                  </div>
+                ))}
+              </div>
+              {weeks.map((week) => (
+                <div key={week[0]?.iso} role="row" className="contents">
+                  {week.map((cell, column) => (
+                    <DayCell
+                      key={cell.iso}
+                      iso={cell.iso}
+                      day={cell.day}
+                      weekday={WEEKDAY_LABELS[column] ?? ''}
+                      inMonth={cell.inMonth}
+                      isToday={cell.iso === today}
+                      data={byDay.get(cell.iso)}
+                      onOpen={() => setOpenDay(cell.iso)}
+                    />
+                  ))}
                 </div>
-              ))}
-              {cells.map((cell) => (
-                <DayCell
-                  key={cell.iso}
-                  iso={cell.iso}
-                  day={cell.day}
-                  inMonth={cell.inMonth}
-                  isToday={cell.iso === oggi}
-                  data={byDay.get(cell.iso)}
-                  onOpen={() => setOpenDay(cell.iso)}
-                />
               ))}
             </div>
 
-            <p className="text-sm text-muted-foreground">
-              Ore del mese: <span className="font-medium text-foreground">{month.data.ore_totali}</span>
-            </p>
+            {hoursOn && (
+              <p className="text-sm text-muted-foreground">
+                Ore del mese:{' '}
+                <span className="font-medium text-foreground">
+                  {formatItalianQuantity(month.data.total_hours)}
+                </span>
+              </p>
+            )}
 
-            {senzaScadenza.length > 0 && (
-              <section aria-labelledby="senza-scadenza" className="space-y-2">
+            {withoutDueDate.length > 0 && (
+              <section aria-labelledby="no-due-date" className="space-y-2">
                 {/* Outside the grid, and that is the point: a commitment with no date
                     cannot be drawn in a cell, is not late and is not for today. A NULL
                     is not zero days. */}
-                <h2 id="senza-scadenza" className="text-sm font-medium">
+                <h2 id="no-due-date" className="text-sm font-medium">
                   Senza scadenza
                 </h2>
-                <ul className="space-y-1 text-sm text-muted-foreground">
-                  {senzaScadenza.map((item) => (
-                    <li key={item.id}>{item.titolo}</li>
+                <ul className="space-y-2 text-sm">
+                  {withoutDueDate.map((item) => (
+                    <TaskItem key={item.id} task={item} />
                   ))}
                 </ul>
               </section>
@@ -153,11 +194,12 @@ export function CalendarPage({
 
       {openDay !== null && (
         <DayPanel
-          giorno={openDay}
+          day={openDay}
           data={byDay.get(openDay)}
           onClose={() => setOpenDay(null)}
         />
       )}
+      <TaskDialog open={creating} onOpenChange={setCreating} />
     </>
   )
 }
@@ -169,6 +211,7 @@ export function CalendarPage({
 function DayCell({
   iso,
   day,
+  weekday,
   inMonth,
   isToday,
   data,
@@ -176,56 +219,71 @@ function DayCell({
 }: {
   iso: string
   day: number
+  weekday: string
   inMonth: boolean
   isToday: boolean
   data: CalendarDay | undefined
   onOpen: () => void
 }) {
-  const attivita = data?.attivita ?? []
-  const fatture = data?.fatture ?? []
-  const aperte = attivita.filter((item) => item.stato === 'aperta').length
-  const chiuse = attivita.length - aperte
+  const tasks = data?.tasks ?? []
+  const invoices = data?.invoices ?? []
+  const work_units = data?.work_units ?? []
+  const open = tasks.filter((item) => item.status === 'open').length
+  const closed = tasks.length - open
+  const hours = data ? formatItalianQuantity(data.hours) : null
 
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      // The whole date, not the day number: `1` is in the grid twice whenever a month
-      // starts or ends mid-week (September 2026 shows 1 September and 1 October), so a
-      // label of «1: …» named two cells -- unusable for a screen reader and ambiguous
-      // for a test. `aria-current` is what marks today to a reader; the pill marks it
-      // to an eye.
-      aria-label={`${formatIsoDateItalian(iso)}: ${data ? `${data.ore} ore` : 'niente'}`}
-      aria-current={isToday ? 'date' : undefined}
-      className={cn(
-        'flex min-h-24 flex-col gap-1 bg-background p-2 text-left align-top transition-colors hover:bg-muted/50',
-        !inMonth && 'text-muted-foreground/60',
-      )}
+    // The cell is the `gridcell`; the button inside it is what opens the day. On a phone
+    // the neighbouring months' days are not drawn at all: a list of one month's days with
+    // the previous month's tail on top is a list with the wrong first row.
+    <div
+      role="gridcell"
+      className={cn('bg-background', inMonth ? undefined : 'bg-muted max-md:hidden')}
     >
-      <span
+      <button
+        type="button"
+        onClick={onOpen}
+        // The whole date, not the day number: `1` is in the grid twice whenever a month
+        // starts or ends mid-week (September 2026 shows 1 September and 1 October), so a
+        // label of «1: …» named two cells -- unusable for a screen reader and ambiguous
+        // for a test. `aria-current` is what marks today to a reader; the pill marks it
+        // to an eye.
+        aria-label={`${formatIsoDateItalian(iso)}: ${hours !== null ? `${hours} ore` : 'niente'}${cellDaysLabel(work_units)}`}
+        aria-current={isToday ? 'date' : undefined}
         className={cn(
-          'text-xs font-medium',
-          isToday && 'bg-primary px-1.5 py-0.5 text-primary-foreground',
+          'flex size-full min-h-12 flex-row items-start gap-3 p-2 text-left align-top transition-colors hover:bg-muted/50',
+          'md:min-h-24 md:flex-col md:gap-1',
+          !inMonth && 'text-muted-foreground',
         )}
       >
-        {day}
-      </span>
-      {data && data.ore !== '0.00' && (
-        <span className="text-sm font-medium tabular-nums">{data.ore} h</span>
-      )}
-      {aperte > 0 && (
-        <span className="text-xs text-muted-foreground">
-          {aperte} {aperte === 1 ? 'scadenza' : 'scadenze'}
+        <span className="flex w-14 shrink-0 items-baseline gap-1.5 text-xs font-medium md:w-auto">
+          {/* Below `md` the cell is a row of a list, which has no column header above it
+              to say which weekday it is. */}
+          <span className="uppercase tracking-wide text-muted-foreground md:hidden">{weekday}</span>
+          <span className={cn(isToday && 'bg-primary px-1.5 py-0.5 text-primary-foreground')}>
+            {day}
+          </span>
         </span>
-      )}
-      {chiuse > 0 && aperte === 0 && (
-        <span className="text-xs text-muted-foreground line-through">{chiuse} fatte</span>
-      )}
-      {fatture.length > 0 && (
-        <span className="text-xs text-muted-foreground">
-          {fatture.length === 1 ? '1 fattura' : `${fatture.length} fatture`}
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          {hours !== null && data !== undefined && data.hours !== '0.00' && (
+            <span className="text-sm font-medium tabular-nums">{hours} h</span>
+          )}
+          {open > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {open} {open === 1 ? 'scadenza' : 'scadenze'}
+            </span>
+          )}
+          {closed > 0 && open === 0 && (
+            <span className="text-xs text-muted-foreground line-through">{closed} fatte</span>
+          )}
+          {invoices.length > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {invoices.length === 1 ? '1 fattura' : `${invoices.length} fatture`}
+            </span>
+          )}
+          <CellDays days={work_units} />
         </span>
-      )}
-    </button>
+      </button>
+    </div>
   )
 }

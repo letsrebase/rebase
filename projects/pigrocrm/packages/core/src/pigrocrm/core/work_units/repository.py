@@ -1,9 +1,14 @@
+from datetime import date
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.contracts.models import Contract
+from pigrocrm.core.documents.models import Document
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.work_units.models import Approval, WorkUnit, WorkUnitTransition
+from pigrocrm.core.work_units.schemas import WorkUnitListQuery
 
 
 class WorkUnitRepository:
@@ -19,21 +24,56 @@ class WorkUnitRepository:
         return work_unit
 
     def unbilled_for_contract(
-        self, contract_id: UUID, *, stato: str = "lavorato"
+        self,
+        contract_id: UUID,
+        *,
+        status: str = "worked",
+        date_from: date | None = None,
+        date_to: date | None = None,
     ) -> list[WorkUnit]:
-        """Every day in `stato` with no invoice line yet, oldest first -- the same
+        """Every day in `status` with no invoice line yet, oldest first -- the same
         shape `won_with_unbilled_hours_predicate` (`timetracking/repository.py`)
-        already gives `TimeEntry` for its own unbilled figure (spec §9's citation)."""
+        already gives `TimeEntry` for its own unbilled figure (spec §9's citation).
+        `da` and `a`, both inclusive, narrow it to a period: «fattura ottobre»."""
         stmt = (
             select(WorkUnit)
             .where(
                 WorkUnit.contract_id == contract_id,
-                WorkUnit.stato == stato,
+                WorkUnit.status == status,
                 WorkUnit.invoice_line_id.is_(None),
             )
-            .order_by(WorkUnit.data.asc(), WorkUnit.id.asc())
+            .order_by(WorkUnit.date.asc(), WorkUnit.id.asc())
         )
+        if date_from is not None:
+            stmt = stmt.where(WorkUnit.date >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(WorkUnit.date <= date_to)
         return list(self.session.execute(stmt).scalars())
+
+    def labelled(self, work_unit_id: UUID) -> tuple[WorkUnit, Contract, Organization] | None:
+        """A day with its contract and customer, in one read, or `None`. No `deleted_at`
+        filter on the customer, for the reason `CalendarRepository.deal_labels` records:
+        an archived client is still who the work was for."""
+        row = self.session.execute(
+            select(WorkUnit, Contract, Organization)
+            .join(Contract, Contract.id == WorkUnit.contract_id)
+            .join(Organization, Organization.id == Contract.customer_id)
+            .where(WorkUnit.id == work_unit_id)
+        ).first()
+        return None if row is None else (row[0], row[1], row[2])
+
+    def count_without_approval(self, contract_id: UUID) -> int:
+        """Days worked on a contract that requires prior approval and has none: the ones
+        `unbilled_for_contract` leaves out on purpose, so the page can say so."""
+        return int(
+            self.session.execute(
+                select(func.count(WorkUnit.id)).where(
+                    WorkUnit.contract_id == contract_id,
+                    WorkUnit.status == "worked_without_approval",
+                    WorkUnit.invoice_line_id.is_(None),
+                )
+            ).scalar_one()
+        )
 
     # `list` stays the last method in this class -- the unconditional project rule
     # (see `ContractRepository`): a later `def list(...)` rebinds `list` in the class
@@ -42,9 +82,33 @@ class WorkUnitRepository:
         stmt = (
             select(WorkUnit)
             .where(WorkUnit.contract_id == contract_id)
-            .order_by(WorkUnit.data.asc(), WorkUnit.id.asc())
+            .order_by(WorkUnit.date.asc(), WorkUnit.id.asc())
         )
         return list(self.session.execute(stmt).scalars())
+
+    def list_labelled(
+        self, query: WorkUnitListQuery
+    ) -> list[tuple[WorkUnit, Contract, Organization]]:
+        """The newest `query.limit + 1` days matching `query`, newest first, each with its
+        contract and customer. One row more than asked, so the caller can tell a list that
+        was cut from one that merely ended."""
+        stmt = (
+            select(WorkUnit, Contract, Organization)
+            .join(Contract, Contract.id == WorkUnit.contract_id)
+            .join(Organization, Organization.id == Contract.customer_id)
+        )
+        if query.contract_id is not None:
+            stmt = stmt.where(WorkUnit.contract_id == query.contract_id)
+        if query.legal_entity_id is not None:
+            stmt = stmt.where(Contract.legal_entity_id == query.legal_entity_id)
+        if query.date_from is not None:
+            stmt = stmt.where(WorkUnit.date >= query.date_from)
+        if query.date_to is not None:
+            stmt = stmt.where(WorkUnit.date <= query.date_to)
+        if query.status is not None:
+            stmt = stmt.where(WorkUnit.status == query.status)
+        stmt = stmt.order_by(WorkUnit.date.desc(), WorkUnit.id.desc()).limit(query.limit + 1)
+        return [(row[0], row[1], row[2]) for row in self.session.execute(stmt).all()]
 
 
 class WorkUnitTransitionRepository:
@@ -74,3 +138,7 @@ class ApprovalRepository:
         self.session.add(approval)
         self.session.flush()
         return approval
+
+    def document_title(self, document_id: UUID) -> str | None:
+        document = self.session.get(Document, document_id)
+        return None if document is None else document.title

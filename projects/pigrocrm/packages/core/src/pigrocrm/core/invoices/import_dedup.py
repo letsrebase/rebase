@@ -2,7 +2,7 @@
 register (REB-364), ported from mastro's `src/lib/server/import/dedup.ts`.
 
 The natural key itself -- `(anno, numero)` -- is already the register's own unique
-constraint (`uq_invoices_azienda_anno_numero`), and `InvoiceRepository.existing_by_number`
+constraint (`uq_invoices_legal_entity_year_number`), and `InvoiceRepository.existing_by_number`
 is its lookup; nothing here re-derives either. What this module adds is the hash
 comparison mastro's own `naturalInvoiceKey` folds into the same natural-key check:
 given the invoice already on record at that number (or none), and the content of

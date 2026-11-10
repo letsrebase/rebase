@@ -5,7 +5,7 @@ import { DynamicFieldRenderer, renderFieldValue } from './DynamicFieldRenderer'
 import type { FieldDefinition } from '@/lib/schema'
 
 const field = (over: Partial<FieldDefinition>): FieldDefinition => ({
-  key: 'campo',
+  key: 'field',
   label: 'Campo',
   type: 'text',
   required: false,
@@ -47,13 +47,13 @@ describe('DynamicFieldRenderer', () => {
   it('offers every declared option for a select', async () => {
     render(
       <DynamicFieldRenderer
-        field={field({ type: 'select', options: ['attivo', 'sospeso'] })}
+        field={field({ type: 'select', options: ['active', 'sospeso'] })}
         value={null}
         onChange={vi.fn()}
       />,
     )
     await userEvent.click(screen.getByRole('combobox'))
-    expect(screen.getByText('attivo')).toBeInTheDocument()
+    expect(screen.getByText('active')).toBeInTheDocument()
     expect(screen.getByText('sospeso')).toBeInTheDocument()
   })
 
@@ -66,8 +66,8 @@ describe('DynamicFieldRenderer', () => {
     const onChange = vi.fn()
     render(
       <DynamicFieldRenderer
-        field={field({ type: 'select', options: ['attivo', 'sospeso'] })}
-        value="attivo"
+        field={field({ type: 'select', options: ['active', 'sospeso'] })}
+        value="active"
         onChange={onChange}
       />,
     )
@@ -80,7 +80,7 @@ describe('DynamicFieldRenderer', () => {
     const onChange = vi.fn()
     render(
       <DynamicFieldRenderer
-        field={field({ type: 'select', options: ['attivo', 'sospeso'] })}
+        field={field({ type: 'select', options: ['active', 'sospeso'] })}
         value={null}
         onChange={onChange}
       />,

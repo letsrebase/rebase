@@ -18,83 +18,92 @@ from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from pigrocrm.core.dashboard.schemas import (
     CommercialDashboard,
     EconomicDashboard,
     OperationalDashboard,
-    PeriodoQuery,
+    PeriodQuery,
     ReceivablesDashboard,
 )
 from pigrocrm.core.dashboard.service import DashboardService
-from pigrocrm_api.deps import ActorDep, SettingsDep, SnapshotSessionDep
+from pigrocrm.core.modules import enabled_modules
+from pigrocrm_api.deps import ActorDep, SettingsDep, SnapshotSessionDep, get_actor, module_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
-router = APIRouter(prefix="/api/dashboard", tags=["dashboard"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/dashboard",
+    tags=["dashboard"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
-# The sidebar's azienda (REB-630, spec 2026-10-03 §1.9): one more predicate on every
-# figure, never a change in its arithmetic. Omitted, the figures of every azienda add up,
+# The sidebar's legal entity (REB-630, spec 2026-10-03 §1.9): one more predicate on every
+# figure, never a change in its arithmetic. Omitted, the figures of every legal entity add up,
 # which is what «tutte» shows; the answer echoes it, `null` for «tutte».
 LegalEntityQuery = Annotated[
     UUID | None,
     Query(
         description=(
-            "Limita ogni cifra a un'azienda dello spazio; omesso, le cifre di tutte le "
-            "aziende sommate. La risposta lo riporta in `azienda_id`."
+            "Limits every figure to one legal entity of the space; omitted, the figures of all "
+            "legal entities summed. The response reports it in `legal_entity_id`."
         )
     ),
 ]
 
 
-@router.get("/sales", response_model=CommercialDashboard)
-def commerciale(
+@router.get("/sales", response_model=CommercialDashboard, dependencies=[module_guard("deals")])
+def commercial(
     session: SnapshotSessionDep,
     actor: ActorDep,
-    # Both or neither: `PeriodoQuery.resolve` refuses one alone rather than guessing the
+    # Both or neither: `PeriodQuery.resolve` refuses one alone rather than guessing the
     # other, because guessing would silently answer a different question. The default is
     # the current month, and the response always echoes the period back -- a screenshot of
     # a dashboard with no explicit period is a number with no unit (§4).
-    da: Annotated[date | None, Query()] = None,
-    a: Annotated[date | None, Query()] = None,
-    azienda_id: LegalEntityQuery = None,
+    date_from: Annotated[date | None, Query(alias="from")] = None,
+    date_to: Annotated[date | None, Query(alias="to")] = None,
+    legal_entity_id: LegalEntityQuery = None,
 ) -> CommercialDashboard:
     return DashboardService(session).get_commercial_dashboard(
-        PeriodoQuery(da=da, a=a, azienda_id=azienda_id), actor
+        PeriodQuery(date_from=date_from, date_to=date_to, legal_entity_id=legal_entity_id), actor
     )
 
 
 @router.get("/economic", response_model=EconomicDashboard)
-def economica(
+def economic(
     session: SnapshotSessionDep,
     actor: ActorDep,
-    # The same both-or-neither period as `commerciale`, resolved by the same
-    # `PeriodoQuery.resolve`: the route adds no validation of its own and must not lose the
+    settings: SettingsDep,
+    # The same both-or-neither period as `commercial`, resolved by the same
+    # `PeriodQuery.resolve`: the route adds no validation of its own and must not lose the
     # one the service performs, because `field` is what the web client's `fieldErrorFrom`
     # reads to put the message under the right input.
-    da: Annotated[date | None, Query()] = None,
-    a: Annotated[date | None, Query()] = None,
-    azienda_id: LegalEntityQuery = None,
+    date_from: Annotated[date | None, Query(alias="from")] = None,
+    date_to: Annotated[date | None, Query(alias="to")] = None,
+    legal_entity_id: LegalEntityQuery = None,
 ) -> EconomicDashboard:
     return DashboardService(session).get_economic_dashboard(
-        PeriodoQuery(da=da, a=a, azienda_id=azienda_id), actor
+        PeriodQuery(date_from=date_from, date_to=date_to, legal_entity_id=legal_entity_id),
+        actor,
+        enabled_modules(settings),
     )
 
 
 @router.get("/operational", response_model=OperationalDashboard)
-def operativa(
+def operational(
     session: SnapshotSessionDep,
     actor: ActorDep,
     settings: SettingsDep,
-    azienda_id: LegalEntityQuery = None,
+    legal_entity_id: LegalEntityQuery = None,
 ) -> OperationalDashboard:
     """No period parameter, and not an optional one either.
 
     §6: its figures are the current week and a backlog, which are the two things that make
-    no sense in the past. An optional `da`/`a` that the service ignored would be a
+    no sense in the past. An optional `from`/`to` that the service ignored would be a
     parameter the API advertises and does not honour -- worse than not having it, because
     the generated client would offer it and a caller would believe it worked. FastAPI
-    ignores undeclared query parameters, so `?da=2020-01-01` is answered with the current
+    ignores undeclared query parameters, so `?from=2020-01-01` is answered with the current
     week rather than with a period nobody can supply.
 
     `settings` is this request's own effective `Settings` -- the environment with any
@@ -102,14 +111,16 @@ def operativa(
     resolved to authenticate this request -- so the concentration signal (REB-371) reads
     the threshold a space actually configured, not the process's bare environment.
     """
-    return DashboardService(session, settings).get_operational_dashboard(actor, azienda_id)
+    return DashboardService(session, settings).get_operational_dashboard(
+        actor, legal_entity_id, modules=enabled_modules(settings)
+    )
 
 
 @router.get("/receivables", response_model=ReceivablesDashboard)
-def scadenziario(
-    session: SnapshotSessionDep, actor: ActorDep, azienda_id: LegalEntityQuery = None
+def receivables(
+    session: SnapshotSessionDep, actor: ActorDep, legal_entity_id: LegalEntityQuery = None
 ) -> ReceivablesDashboard:
-    """Slice 8 part A (REB-329). No period parameter, for `operativa`'s reason: what is
+    """Slice 8 part A (REB-329). No period parameter, for `operational`'s reason: what is
     owed is owed today, and a `da`/`a` the service ignored would be a parameter the API
     advertises and does not honour."""
-    return DashboardService(session).get_receivables_dashboard(actor, azienda_id)
+    return DashboardService(session).get_receivables_dashboard(actor, legal_entity_id)

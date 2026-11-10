@@ -7,19 +7,19 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
+from legal_entities_helpers import legal_entity_url
 
 FIXTURES = (
     Path(__file__).resolve().parents[3] / "packages" / "core" / "tests" / "fixtures" / "fatturapa"
 )
-CONSULENZA = "fpr12-consulenza-marzo.xml"
+CONSULTING = "fpr-12-march-consulting.xml"
 # The fixture's own CedentePrestatore (fornitore) -- matching this on the emitter
 # profile is what makes it "outgoing" for the account holder.
-FORNITORE_PIVA = "01234567890"
-FORNITORE_CF = "BNCCHR85M41H501Z"
+SUPPLIER_VAT_NUMBER = "01234567890"
+SUPPLIER_CF = "BNCCHR85M41H501Z"
 # Its CessionarioCommittente (cliente).
-CLIENTE_PIVA = "09876543210"
+CUSTOMER_VAT_NUMBER = "09876543210"
 
 
 def _fixture(name: str) -> bytes:
@@ -27,18 +27,18 @@ def _fixture(name: str) -> bytes:
 
 
 @pytest.fixture
-def emitter(logged_in: TestClient) -> dict[str, Any]:
+def legal_entity(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.put(
-        azienda_url(logged_in),
+        legal_entity_url(logged_in),
         json={
-            "ragione_sociale": "Chiara Bianchi",
-            "partita_iva": FORNITORE_PIVA,
-            "codice_fiscale": FORNITORE_CF,
-            "indirizzo": "Via delle Officine 10",
-            "cap": "20121",
-            "comune": "Milano",
-            "provincia": "MI",
-            "nazione": "IT",
+            "legal_name": "Chiara Bianchi",
+            "vat_number": SUPPLIER_VAT_NUMBER,
+            "tax_code": SUPPLIER_CF,
+            "address": "Via delle Officine 10",
+            "postal_code": "20121",
+            "city": "Milano",
+            "province": "MI",
+            "country": "IT",
         },
     )
     assert response.status_code == 200, response.text
@@ -48,15 +48,15 @@ def emitter(logged_in: TestClient) -> dict[str, Any]:
 @pytest.fixture
 def customer(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.post(
-        "/api/customers",
+        "/api/organizations",
         json={
-            "ragione_sociale": "Esempio Servizi S.r.l.",
-            "partita_iva": CLIENTE_PIVA,
-            "indirizzo": "Piazza dei Modelli 4",
-            "cap": "00187",
-            "comune": "Roma",
-            "provincia": "RM",
-            "nazione": "IT",
+            "legal_name": "Esempio Servizi S.r.l.",
+            "vat_number": CUSTOMER_VAT_NUMBER,
+            "address": "Piazza dei Modelli 4",
+            "postal_code": "00187",
+            "city": "Roma",
+            "province": "RM",
+            "country": "IT",
         },
     )
     assert response.status_code == 201, response.text
@@ -65,7 +65,7 @@ def customer(logged_in: TestClient) -> dict[str, Any]:
 
 def _upload(logged_in: TestClient, *, customer_id: str, content: bytes) -> str:
     created = logged_in.post(
-        "/api/documents", json={"customer_id": customer_id, "titolo": "Fattura ricevuta"}
+        "/api/documents", json={"customer_id": customer_id, "title": "Fattura ricevuta"}
     )
     assert created.status_code == 201, created.text
     document_id = created.json()["id"]
@@ -78,9 +78,9 @@ def _upload(logged_in: TestClient, *, customer_id: str, content: bytes) -> str:
 
 
 def test_review_matches_the_customer_and_is_idempotent(
-    logged_in: TestClient, emitter: dict[str, Any], customer: dict[str, Any]
+    logged_in: TestClient, legal_entity: dict[str, Any], customer: dict[str, Any]
 ) -> None:
-    document_id = _upload(logged_in, customer_id=customer["id"], content=_fixture(CONSULENZA))
+    document_id = _upload(logged_in, customer_id=customer["id"], content=_fixture(CONSULTING))
 
     first = logged_in.post("/api/invoices/import/review", json={"document_ids": [document_id]})
     assert first.status_code == 200, first.text
@@ -88,7 +88,7 @@ def test_review_matches_the_customer_and_is_idempotent(
     assert second.status_code == 200, second.text
     assert first.json() == second.json()
 
-    [row] = first.json()["righe"]
+    [row] = first.json()["lines"]
     assert row["outcome"] == "ready"
     assert row["matched_customer_id"] == customer["id"]
 
@@ -99,30 +99,30 @@ def test_review_matches_the_customer_and_is_idempotent(
 
 
 def test_a_document_no_adapter_recognises_is_unclaimed_not_a_500(
-    logged_in: TestClient, emitter: dict[str, Any], customer: dict[str, Any]
+    logged_in: TestClient, legal_entity: dict[str, Any], customer: dict[str, Any]
 ) -> None:
     document_id = _upload(logged_in, customer_id=customer["id"], content=b"not a fattura at all")
     response = logged_in.post("/api/invoices/import/review", json={"document_ids": [document_id]})
     assert response.status_code == 200, response.text
-    [row] = response.json()["righe"]
+    [row] = response.json()["lines"]
     assert row["outcome"] == "unclaimed"
 
 
 def test_a_collaborator_cannot_review(
-    logged_in: TestClient, emitter: dict[str, Any], customer: dict[str, Any]
+    logged_in: TestClient, legal_entity: dict[str, Any], customer: dict[str, Any]
 ) -> None:
     """Mirrors `test_invoices_import_api.py::test_a_collaborator_cannot_import`: a
     fresh session on the same app, never the shared cookie jar `logged_in` already
     holds (see that file's own `_second_actor` for why)."""
-    document_id = _upload(logged_in, customer_id=customer["id"], content=_fixture(CONSULENZA))
+    document_id = _upload(logged_in, customer_id=customer["id"], content=_fixture(CONSULTING))
     email = f"collaboratore-{id(logged_in)}@pigro.it"
     created = logged_in.post(
         "/api/users",
         json={
             "email": email,
             "password": "supersegreta1",
-            "nome": "Test",
-            "ruolo": "collaboratore",
+            "name": "Test",
+            "role": "collaborator",
         },
     )
     assert created.status_code == 201, created.text
@@ -134,6 +134,8 @@ def test_a_collaborator_cannot_review(
     assert response.status_code == 403, response.text
 
 
-def test_document_ids_must_be_non_empty(logged_in: TestClient, emitter: dict[str, Any]) -> None:
+def test_document_ids_must_be_non_empty(
+    logged_in: TestClient, legal_entity: dict[str, Any]
+) -> None:
     response = logged_in.post("/api/invoices/import/review", json={"document_ids": []})
     assert response.status_code == 422, response.text

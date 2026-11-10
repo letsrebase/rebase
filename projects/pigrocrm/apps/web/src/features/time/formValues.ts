@@ -1,27 +1,32 @@
 import { toIsoDate } from '@/lib/dates'
-import { clearedNativeValue, type FieldDefinition } from '@/lib/schema'
+import {
+  toFormValues,
+  toRequestBody as buildRequestBody,
+  type FormValues,
+} from '@/lib/formValues'
+import type { FieldDefinition } from '@/lib/schema'
 import type { TimeEntry } from './queries'
 
 /**
  * The editable native columns, as `FieldDefinition`s so `DynamicFieldRenderer` draws
- * them -- the same idiom `DealForm`/`CustomerForm` use. `deal_id` is absent: it comes
+ * them -- the same idiom `DealForm`/`OrganizationForm` use. `deal_id` is absent: it comes
  * from the route, and reassigning an hour to another deal is not something this screen
  * offers. `user_id` is absent too: it is the logged-in user on create, and reassigning
  * it is an admin operation with no picker control (`FieldType` has no user type).
  */
 export const NATIVE_FIELDS: FieldDefinition[] = [
-  { key: 'data', label: 'Data', type: 'date', required: true, options: [] },
-  { key: 'ore', label: 'Ore', type: 'number', required: true, options: [] },
-  { key: 'descrizione', label: 'Descrizione', type: 'textarea', required: true, options: [] },
-  { key: 'fatturabile', label: 'Fatturabile', type: 'checkbox', required: false, options: [] },
+  { key: 'date', label: 'Data', type: 'date', required: true, options: [] },
+  { key: 'hours', label: 'Ore', type: 'number', required: true, options: [] },
+  { key: 'description', label: 'Descrizione', type: 'textarea', required: true, options: [] },
+  { key: 'billable', label: 'Fatturabile', type: 'checkbox', required: false, options: [] },
   {
-    key: 'tariffa_applicata',
+    key: 'applied_rate',
     label: 'Tariffa (€/h, lascia vuoto per usare quella predefinita)',
     type: 'number',
     required: false,
     options: [],
   },
-  { key: 'note_interne', label: 'Note interne', type: 'textarea', required: false, options: [] },
+  { key: 'internal_notes', label: 'Note interne', type: 'textarea', required: false, options: [] },
 ]
 
 const NATIVE_FIELD_KEYS = NATIVE_FIELDS.map((field) => field.key)
@@ -32,24 +37,15 @@ const NATIVE_FIELD_KEYS = NATIVE_FIELDS.map((field) => field.key)
  *  `ImmutableField` after pressing Salva is a worse explanation than a field that is
  *  simply not there. */
 export const LOCKED_KEYS = new Set([
-  'data',
-  'ore',
-  'descrizione',
-  'fatturabile',
-  'tariffa_applicata',
+  'date',
+  'hours',
+  'description',
+  'billable',
+  'applied_rate',
 ])
 
-/**
- * Two namespaces, decided once at seed time and never re-derived at submit -- copies
- * `DealFormValues` exactly, for the same reason: provenance is structural. A native
- * column clears on the spelling its type calls for (`clearedNativeValue`: `""` for
- * text, `null` for everything else); a custom field clears on `null` and only on
- * `null`; an omitted key clears nothing.
- */
-export interface TimeEntryFormValues {
-  native: Record<string, unknown>
-  custom: Record<string, unknown>
-}
+/** The form's state in the API's two namespaces -- see `FormValues`. */
+export type TimeEntryFormValues = FormValues
 
 /**
  * Today's date, and billable, because that is what somebody opening "Registra ore" is
@@ -61,35 +57,21 @@ export interface TimeEntryFormValues {
  * `formatIsoDateItalian` (@/lib/dates) closes.
  */
 export function defaultFormValues(today: Date = new Date()): TimeEntryFormValues {
-  return { native: { fatturabile: true, data: toIsoDate(today) }, custom: {} }
+  return { native: { billable: true, date: toIsoDate(today) }, custom: {} }
 }
 
 /**
  * Builds the form's starting state from an entry that already exists.
  *
  * Deliberately not `{ ...entry, ...entry.custom_fields }`: a `TimeEntryRead` also
- * carries `id`, `tariffa_origine`, `valore_riga`, `invoice_line_id`, `created_at` and
+ * carries `id`, `rate_source`, `line_value`, `invoice_line_id`, `created_at` and
  * the rest, none of which `TimeEntryUpdate` accepts -- sending them back would 422 on
  * every edit. Walking exactly `NATIVE_FIELD_KEYS` keeps the round trip to what the form
  * is allowed to send; `custom_fields` is copied whole into its own namespace, archived
  * keys included, so `_update_custom_fields` can carry them over untouched.
  */
 export function timeEntryToFormValues(entry: TimeEntry): TimeEntryFormValues {
-  const native: Record<string, unknown> = {}
-  for (const key of NATIVE_FIELD_KEYS) {
-    native[key] = (entry as unknown as Record<string, unknown>)[key]
-  }
-  return { native, custom: { ...entry.custom_fields } }
-}
-
-/** Mirrors `is_blank` in `fields/validator.py` and every other form's own helper:
- *  `null`/`undefined`, a whitespace-only string, or an empty array mean "no value";
- *  `false` and `0` are real values. */
-export function isBlank(value: unknown): boolean {
-  if (value === null || value === undefined) return true
-  if (typeof value === 'string') return value.trim() === ''
-  if (Array.isArray(value)) return value.length === 0
-  return false
+  return toFormValues(entry, NATIVE_FIELD_KEYS)
 }
 
 /**
@@ -108,35 +90,13 @@ export function toRequestBody(
   options: { initial?: TimeEntryFormValues; locked: boolean; isRenderedCustomKey: (key: string) => boolean },
 ): Record<string, unknown> {
   const { initial, locked, isRenderedCustomKey } = options
-
-  const native: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(values.native)) {
-    if (locked && LOCKED_KEYS.has(key)) continue
-    if (!isBlank(value)) {
-      native[key] = value
-    } else if (!isBlank(initial?.native[key])) {
-      // The user cleared a native column that held a value: say so explicitly, or
-      // the old value survives untouched. `clearedNativeValue` picks the spelling
-      // from the column's type -- `descrizione` and `note_interne` clear on `""`,
-      // `data`, `ore` and `tariffa_applicata` on `null`. Clearing a rate is the one
-      // that matters most here: it is a deliberate "this hour has no price", and
-      // `TimeEntryService.update` records it as `origine = "assente"` rather than
-      // letting the deal's rate quietly take over.
-      native[key] = clearedNativeValue(NATIVE_FIELDS, key)
-    }
-  }
-
-  const custom: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(values.custom)) {
-    // A stored value whose definition is archived: omit the key and
-    // `_update_custom_fields` carries it over untouched.
-    if (!isRenderedCustomKey(key)) continue
-    if (!isBlank(value)) {
-      custom[key] = value
-    } else if (!isBlank(initial?.custom[key])) {
-      custom[key] = null
-    }
-  }
-
-  return { ...native, custom_fields: custom }
+  // Clearing a rate is the one native clear that matters most here: it is a deliberate
+  // "this hour has no price", and `TimeEntryService.update` records it as
+  // `origine = "absent"` rather than letting the deal's rate quietly take over.
+  return buildRequestBody(values, {
+    fields: NATIVE_FIELDS,
+    initial,
+    isRenderedCustomKey,
+    skipNative: (key) => locked && LOCKED_KEYS.has(key),
+  })
 }

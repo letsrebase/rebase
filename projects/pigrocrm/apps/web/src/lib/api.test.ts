@@ -10,8 +10,8 @@ const PROBLEM = {
   status: 422,
   detail: 'customer.partita_iva: deve essere di 11 cifre',
   code: 'validation_failed',
-  entity: 'customer',
-  field: 'partita_iva',
+  entity: 'organization',
+  field: 'vat_number',
   reason: 'deve essere di 11 cifre',
   expected: '11 cifre numeriche',
 }
@@ -75,7 +75,7 @@ describe('toProblem', () => {
       {
         detail: 'x requires one of [admin, collaboratore], actor has readonly',
         code: 'permission_denied',
-        required_roles: ['admin', 'collaboratore'],
+        required_roles: ['admin', 'collaborator'],
         actual_role: 'readonly',
       },
       403,
@@ -93,8 +93,8 @@ describe('toProblem', () => {
   })
 
   it('leaves the agent refusal in the server’s Italian, untouched', () => {
-    // `agent_forbidden`'s detail is already written to be read out ("... è un atto che
-    // richiede una persona"); rewriting it would replace the one message the backend
+    // `agent_forbidden`'s detail is already written to be read out (an act that
+    // needs a person); rewriting it would replace the one message the backend
     // worded for this exact screen.
     const problem = toProblem(
       {
@@ -178,7 +178,7 @@ describe('toProblem — authentication is decided by status, never by body shape
 describe('fieldErrorFrom', () => {
   it('extracts the offending field from a domain problem document', () => {
     expect(fieldErrorFrom(toProblem(PROBLEM))).toEqual({
-      field: 'partita_iva',
+      field: 'vat_number',
       message: 'deve essere di 11 cifre (atteso: 11 cifre numeriche)',
     })
   })
@@ -379,15 +379,15 @@ describe('the typed client', () => {
   const ME = {
     id: '11111111-1111-1111-1111-111111111111',
     email: 'titolare@studio.it',
-    nome: 'Titolare',
-    ruolo: 'admin',
-    attivo: true,
+    name: 'Titolare',
+    role: 'admin',
+    active: true,
   }
 
   /** A second, *differently shaped* payload, so a test asserting on the response of
    *  the second call in a burst cannot pass by accident on the first call's. */
-  const CUSTOMERS = {
-    items: [{ id: '22222222-2222-2222-2222-222222222222', ragione_sociale: 'Rossi SRL' }],
+  const ORGANIZATIONS = {
+    items: [{ id: '22222222-2222-2222-2222-222222222222', legal_name: 'Rossi SRL' }],
     next_cursor: null,
   }
 
@@ -424,13 +424,13 @@ describe('the typed client', () => {
         return Promise.resolve(new Response(null, { status: 200 }))
       }
       if (refreshes === 0) return Promise.resolve(unauthenticated())
-      return Promise.resolve(json(url.endsWith('/api/customers') ? CUSTOMERS : ME))
+      return Promise.resolve(json(url.endsWith('/api/organizations') ? ORGANIZATIONS : ME))
     })
     vi.stubGlobal('fetch', fetchMock)
 
     const [a, b] = await Promise.all([
       unwrap(api.GET('/api/auth/me', { baseUrl: BASE })),
-      unwrap(api.GET('/api/customers', { baseUrl: BASE })),
+      unwrap(api.GET('/api/organizations', { baseUrl: BASE })),
     ])
 
     expect(refreshes).toBe(1)
@@ -438,7 +438,7 @@ describe('the typed client', () => {
     // Both callers must get *their own* retried payload, not merely something
     // truthy: a shared refresh that returned the first caller's response to the
     // second would satisfy `toBeTruthy()` and be a bug in every screen at once.
-    expect(b).toMatchObject({ items: [{ ragione_sociale: 'Rossi SRL' }], next_cursor: null })
+    expect(b).toMatchObject({ items: [{ legal_name: 'Rossi SRL' }], next_cursor: null })
   })
 
   it('refreshes once for a burst that mixes the typed client and fetchWithRefresh', async () => {
@@ -548,12 +548,15 @@ describe('the typed client', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const body = {
-      ragione_sociale: 'Rossi SRL',
-      nazione: 'IT',
-      pagamento_fine_mese: false,
+      legal_name: 'Rossi SRL',
+      country: 'IT',
+      payment_end_of_month: false,
+      supplier_payment_end_of_month: false,
+      is_withholding_agent: false,
+      hub_freelancer_id: null,
       custom_fields: {},
     }
-    await unwrap(api.POST('/api/customers', { baseUrl: BASE, body }))
+    await unwrap(api.POST('/api/organizations', { baseUrl: BASE, body }))
 
     const [first, , retried] = fetchMock.mock.calls.map(([input]) => input as Request)
     expect(retried?.method).toBe('POST')
@@ -580,7 +583,7 @@ describe('fetchWithRefresh with a FormData body', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     const form = new FormData()
-    form.append('file', new Blob(['contenuto']), 'contratto.pdf')
+    form.append('file', new Blob(['content']), 'contratto.pdf')
     const response = await fetchWithRefresh('/api/documents/d1/versions', {
       method: 'POST',
       body: form,

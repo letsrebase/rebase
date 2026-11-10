@@ -21,6 +21,8 @@ below pins the fact that it carries nothing more.
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
+import pytest
+from fakes.contacts import points
 from fakes.fake_gmail import FakeGmail, FakeMessage
 from fakes.gmail_fixtures import MAILBOX, actor_for, connected_account, sync_service
 from sqlalchemy import select
@@ -28,11 +30,13 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.errors import AgentForbidden
 from pigrocrm.core.gmail.models import GmailMessage, GmailMessageLink
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.roster import EntityRef
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 
@@ -74,15 +78,20 @@ def _thread(fake: FakeGmail) -> None:
     )
 
 
-def _acme(session: Session) -> Customer:
-    customer = Customer(ragione_sociale="Acme", email=None)
+def _acme(session: Session) -> Organization:
+    customer = Organization(legal_name="Acme", contact_points=points(email=None))
     session.add(customer)
     session.flush()
     return customer
 
 
-def _ada(session: Session, customer: Customer) -> Person:
-    person = Person(nome="Ada", cognome="Byron", email="ada@acme.it", customer_id=customer.id)
+def _ada(session: Session, customer: Organization) -> Person:
+    person = Person(
+        first_name="Ada",
+        last_name="Byron",
+        contact_points=points(email="ada@acme.it"),
+        customer_id=customer.id,
+    )
     session.add(person)
     session.flush()
     return person
@@ -115,7 +124,7 @@ def test_an_email_appears_on_the_person_and_on_her_customer(
     account = connected_account(db_session)
     customer = _acme(db_session)
     person = _ada(db_session, customer)
-    deal = Deal(nome="Rinnovo", customer_id=customer.id, pipeline_stage_id=seeded_open_stage_id)
+    deal = Deal(name="Rinnovo", customer_id=customer.id, pipeline_stage_id=seeded_open_stage_id)
     db_session.add(deal)
     db_session.flush()
 
@@ -126,13 +135,53 @@ def test_an_email_appears_on_the_person_and_on_her_customer(
 
     assert _links_for(db_session, "m1") == {
         ("person", person.id),
-        ("customer", customer.id),
+        ("organization", customer.id),
         ("deal", deal.id),
     }
     # Three refs across the two messages of the thread, counted exactly: a `>=` here
     # would pass just as well if the counter were never decremented for a refused
     # duplicate, which is the number this field exists to report.
     assert report.links_created == 6
+
+
+def test_an_email_from_the_second_address_of_a_person_lands_on_her_and_her_customer(
+    db_session: Session,
+) -> None:
+    """REB-939: the roster knows every email point, so mail from a personal address is filed
+    where mail from the primary one is, and the sync's `q` names it."""
+    account = connected_account(db_session)
+    customer = _acme(db_session)
+    person = _ada(db_session, customer)
+    db_session.add(
+        ContactPoint(
+            person_id=person.id,
+            kind="email",
+            value="Ada.Private@gmail.com",
+            normalized="ada.private@gmail.com",
+            label="personal",
+            is_primary=False,
+            position=1,
+        )
+    )
+    db_session.flush()
+
+    fake = FakeGmail()
+    fake.messages["m9"] = FakeMessage(
+        id="m9",
+        thread_id="t9",
+        headers={
+            "From": "Ada Private <ada.private@gmail.com>",
+            "To": MAILBOX,
+            "Subject": "Da casa",
+            "Message-ID": "<m9@gmail.com>",
+        },
+        body_text="corpo riservato nove",
+        internal_date_ms=_ms(1),
+    )
+    sync_service(db_session, fake).sync(actor_for(account))
+    db_session.commit()
+
+    assert _links_for(db_session, "m9") == {("person", person.id), ("organization", customer.id)}
 
 
 def test_a_sibling_message_from_a_stranger_is_stored_but_linked_through_the_thread(
@@ -152,7 +201,7 @@ def test_a_sibling_message_from_a_stranger_is_stored_but_linked_through_the_thre
 
     assert _links_for(db_session, "m2") == {
         ("person", person.id),
-        ("customer", customer.id),
+        ("organization", customer.id),
     }
 
 
@@ -200,7 +249,7 @@ def test_a_refused_link_does_not_discard_the_rest_of_the_cycle(db_session: Sessi
     assert repo.add_message_if_absent(first) is True
     assert repo.add_message_if_absent(second) is True
 
-    ref = EntityRef("customer", customer.id)
+    ref = EntityRef("organization", customer.id)
     assert repo.add_link(first.id, ref) is True
     assert repo.add_link(second.id, ref) is True
     assert repo.add_link(second.id, ref) is False, "the second insert of a triple is a duplicate"
@@ -219,7 +268,7 @@ def test_the_same_entity_on_two_messages_is_two_links(db_session: Session) -> No
     second = _row(account.id, "m2")
     repo.add_message_if_absent(first)
     repo.add_message_if_absent(second)
-    ref = EntityRef("customer", customer.id)
+    ref = EntityRef("organization", customer.id)
     assert repo.add_link(first.id, ref) is True
     assert repo.add_link(second.id, ref) is True
 
@@ -240,11 +289,11 @@ def test_messages_for_entity_returns_the_conversation_and_honours_the_limit(
     db_session.commit()
 
     repo = GmailRepository(db_session)
-    found = repo.messages_for_entity("customer", customer.id, limit=10)
+    found = repo.messages_for_entity("organization", customer.id, limit=10)
     assert [row.gmail_message_id for row in found] == ["m1", "m2"]
-    assert len(repo.messages_for_entity("customer", customer.id, limit=1)) == 1
+    assert len(repo.messages_for_entity("organization", customer.id, limit=1)) == 1
     # An entity nobody wrote to is not an error, it is an empty conversation.
-    assert repo.messages_for_entity("customer", uuid4(), limit=10) == []
+    assert repo.messages_for_entity("organization", uuid4(), limit=10) == []
 
 
 def test_last_inbound_from_ignores_our_own_replies_and_anything_older(
@@ -299,12 +348,12 @@ def test_a_received_message_writes_a_timeline_entry_on_the_linked_entity(
     db_session.commit()
 
     rows = (
-        db_session.execute(select(Activity).where(Activity.kind == "gmail.messaggio_ricevuto"))
+        db_session.execute(select(Activity).where(Activity.kind == "gmail.message_received"))
         .scalars()
         .all()
     )
     assert rows, "an inbound message must be visible on the timeline it belongs to"
-    assert {row.entity_type for row in rows} <= {"customer", "person", "deal"}
+    assert {row.entity_type for row in rows} <= {"organization", "person", "deal"}
     # activities/sanitize.py's own docstring cites "recording, say, an inbound email's
     # subject line" as the reason a payload is sanitised rather than validated. The
     # extension point was written with this in mind.
@@ -312,7 +361,7 @@ def test_a_received_message_writes_a_timeline_entry_on_the_linked_entity(
 
 
 def test_a_message_we_sent_is_not_announced_as_received(db_session: Session) -> None:
-    """`gmail.messaggio_ricevuto` is a claim about direction. A cycle that recorded one
+    """`gmail.message_received` is a claim about direction. A cycle that recorded one
     for every stored message would tell the user their own reply had arrived, and would
     do it on every outbound message in the thread."""
     account = connected_account(db_session)
@@ -335,7 +384,7 @@ def test_a_message_we_sent_is_not_announced_as_received(db_session: Session) -> 
     db_session.commit()
 
     assert (
-        db_session.execute(select(Activity).where(Activity.kind == "gmail.messaggio_ricevuto"))
+        db_session.execute(select(Activity).where(Activity.kind == "gmail.message_received"))
         .scalars()
         .all()
         == []
@@ -343,7 +392,7 @@ def test_a_message_we_sent_is_not_announced_as_received(db_session: Session) -> 
     # It is stored and linked all the same: what we wrote is half of the conversation.
     assert _links_for(db_session, "m1") == {
         ("person", _ada_id(db_session)),
-        ("customer", customer.id),
+        ("organization", customer.id),
     }
 
 
@@ -370,7 +419,7 @@ def test_the_sync_itself_is_recorded_once_per_cycle(db_session: Session) -> None
     sync_service(db_session, FakeGmail()).sync(actor_for(account))
     db_session.commit()
     rows = (
-        db_session.execute(select(Activity).where(Activity.kind == "gmail.sync_eseguito"))
+        db_session.execute(select(Activity).where(Activity.kind == "gmail.sync_run"))
         .scalars()
         .all()
     )
@@ -379,23 +428,20 @@ def test_the_sync_itself_is_recorded_once_per_cycle(db_session: Session) -> None
     assert rows[0].entity_id == account.id
 
 
-def test_an_mcp_actor_is_recorded_as_mcp(db_session: Session) -> None:
+def test_an_agent_credential_cannot_sync_the_mailbox(db_session: Session) -> None:
+    """Fetching mail spends the owner's quota under the owner's consent: the person's,
+    never a token's, whatever `full_access` says (PAPI-01)."""
     account = connected_account(db_session)
-    sync_service(db_session, FakeGmail()).sync(Actor(id=account.user_id, type="mcp", role="admin"))
-    db_session.commit()
-    row = (
-        db_session.execute(select(Activity).where(Activity.kind == "gmail.sync_eseguito"))
-        .scalars()
-        .one()
-    )
-    assert row.actor_type == "mcp"
+    agent = Actor(id=account.user_id, type="mcp", role="admin", full_access=True)
+    with pytest.raises(AgentForbidden):
+        sync_service(db_session, FakeGmail()).sync(agent)
 
 
 # --- helpers -------------------------------------------------------------------------
 
 
 def _ada_id(session: Session) -> UUID:
-    return session.execute(select(Person.id).where(Person.email == "ada@acme.it")).scalars().one()
+    return session.execute(select(Person.id).where(Person.first_name == "Ada")).scalars().one()
 
 
 def _row(

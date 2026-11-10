@@ -41,6 +41,10 @@ MAX_DOWNLOAD_BYTES = 16 * 1_048_576
 # purpose: there is no retry here, so a `Retry-After` would have nothing to inform.
 HttpCall = Callable[[str, str, dict[str, str], bytes], tuple[int, bytes]]
 
+# The same call for the one client that reads what the answer's headers say (GitHub's rate
+# limit, REB-844): `(status, headers, body)`, header names lower-cased.
+HttpHeadersCall = Callable[[str, str, dict[str, str], bytes], tuple[int, dict[str, str], bytes]]
+
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     """A 3xx stays a 3xx. `urllib` would otherwise follow it and re-send the request,
@@ -64,13 +68,17 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 _OPENER = urllib.request.build_opener(_NoRedirect)
 
 
-def _open(
-    method: str, url: str, headers: dict[str, str], body: bytes, cap: int, timeout: float
-) -> tuple[int, bytes]:
+def _request(method: str, url: str, headers: dict[str, str], body: bytes) -> urllib.request.Request:
     sent = {"User-Agent": USER_AGENT, **headers}
     # `None` rather than `b""` for a bodiless request: with `data=b""` urllib writes
     # `Content-Length: 0` and a form content type on a GET, which some proxies refuse.
-    request = urllib.request.Request(url, data=body or None, headers=sent, method=method)
+    return urllib.request.Request(url, data=body or None, headers=sent, method=method)
+
+
+def _open(
+    method: str, url: str, headers: dict[str, str], body: bytes, cap: int, timeout: float
+) -> tuple[int, bytes]:
+    request = _request(method, url, headers, body)
     try:
         with _OPENER.open(request, timeout=timeout) as response:
             return int(response.status), response.read(cap + 1)
@@ -87,6 +95,28 @@ def urllib_call(method: str, url: str, headers: dict[str, str], body: bytes) -> 
     cap, so the caller can tell "too long" from "exactly the cap".
     """
     return _open(method, url, headers, body, MAX_BODY_BYTES, HTTP_TIMEOUT_SECONDS)
+
+
+def urllib_headers_call(
+    method: str, url: str, headers: dict[str, str], body: bytes
+) -> tuple[int, dict[str, str], bytes]:
+    """`urllib_call` that also answers the response headers, names lower-cased: GitHub's
+    source reads its rate limit from them (REB-844). Same cap, same timeout, same
+    refusal to follow a redirect."""
+    request = _request(method, url, headers, body)
+    try:
+        with _OPENER.open(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
+            return (
+                int(response.status),
+                _lowered(response.headers),
+                response.read(MAX_BODY_BYTES + 1),
+            )
+    except urllib.error.HTTPError as error:
+        return int(error.code), _lowered(error.headers), error.read(MAX_BODY_BYTES + 1)
+
+
+def _lowered(headers: Message) -> dict[str, str]:
+    return {name.lower(): value for name, value in headers.items()}
 
 
 def urllib_download_call(

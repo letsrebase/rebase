@@ -104,44 +104,35 @@ def _escape_each(value: str, specials: frozenset[str]) -> str:
 
 
 def escape_markdown(value: str) -> str:
-    """For a placeholder that lands in ordinary Markdown body text.
+    """For a placeholder that lands in ordinary Markdown body text, or in markup
+    position inside a raw ```{=typst} block (ordinary text, or the content of a
+    `[...]` block): `escape_typst` is this same function.
 
     Escapes every ASCII punctuation character, unconditionally -- see
     `_ASCII_PUNCTUATION`. Collapses every Typst-recognised line terminator to a
-    single space -- see `_NEWLINE_EQUIVALENTS` -- even though this value's
-    *immediate* target is Pandoc, not Typst: it still ends its life as Typst source
-    one stage later, once Pandoc's own writer re-serialises it, and Pandoc's own
-    notion of where a line boundary is is not Typst's.
+    single space -- see `_NEWLINE_EQUIVALENTS` -- because the value always ends its
+    life as Typst source (directly, or one stage later once Pandoc's writer
+    re-serialises it, and Pandoc's notion of where a line boundary is is not Typst's),
+    and lands inside a syntactic unit -- a table cell, a header field -- where a raw
+    line break changes the layout of a document nobody proof-reads before it is sent.
     """
     flattened = _NEWLINE_EQUIVALENTS.sub(" ", _reject_nul(value))
     return _escape_each(flattened, _ASCII_PUNCTUATION)
 
 
-def escape_typst(value: str) -> str:
-    """For a placeholder that lands inside a raw ```{=typst} block, in *markup*
-    position -- as ordinary text, or as the content of a `[...]` block.
-
-    This is not correct for *string-literal* position -- inside `#text("...")`,
-    `#link("...")` and similar, which are common inside a raw typst block. A Typst
-    string literal has its own, much smaller escape grammar (`\\`, `\"`, and a
-    handful of named/unicode escapes); a backslash before any other character is not
-    a recognised escape there, and Typst keeps the backslash as a visible, literal
-    character instead of consuming it (confirmed live: `#text("C\\# dev")` renders as
-    the four characters `C\\# dev`, backslash included). Fix round 1, item 2: a
-    reviewer found this live and unguarded -- `#link("{{u}}")` is an obvious thing
-    for a template author to write, and this escaper turns a working URL into a
-    dead one (`#link("https\\:\\/\\/esempio\\.it")`, confirmed live by reading the
-    compiled PDF's own `/URI` annotation). `escape_typst_string` below is the
-    narrower escaper for that position; `pigrocrm.core.templates.parser` decides,
-    at parse time, which of the two a given placeholder needs.
-
-    Newlines -- and everything else Typst's own lexer treats as one, see
-    `_NEWLINE_EQUIVALENTS` -- collapse to a single space: the value is landing inside
-    a syntactic unit -- a table cell, a header field -- and a raw line break there
-    changes the layout of a document nobody is going to proof-read before it is sent.
-    """
-    flattened = _NEWLINE_EQUIVALENTS.sub(" ", _reject_nul(value))
-    return _escape_each(flattened, _ASCII_PUNCTUATION)
+# The two contexts need the same escaping: Pandoc's Markdown reader and Typst's markup
+# lexer both treat a backslash-escaped ASCII punctuation character as a literal, so one
+# rule closes both. The names stay separate because `RenderContext` selects an escaper
+# per destination, and a destination that ever needs its own rule changes one line here.
+#
+# Neither is correct for *string-literal* position -- inside `#text("...")` or
+# `#link("...")`, common inside a raw typst block. A Typst string literal has a much
+# smaller escape grammar, and a backslash before any other character is kept as a visible
+# literal character (`#text("C\# dev")` renders the four characters `C\# dev`), which
+# turns a working `#link("{{u}}")` into a dead URL. `escape_typst_string` below is the
+# escaper for that position; `pigrocrm.core.templates.parser` decides at parse time which
+# of the two a placeholder needs.
+escape_typst = escape_markdown
 
 
 # Only these two characters are a recognised escape inside a Typst string literal
@@ -208,7 +199,7 @@ def _is_trustworthy_absolute_url(value: str) -> bool:
     treat as opaque data.
 
     Deliberately narrow: `http`/`https` scheme, a non-empty host, and no whitespace
-    or control character anywhere in the value. A customer's own `sito_web` field is
+    or control character anywhere in the value. A customer's own `website` field is
     the case this exists for; a scheme this module has never seen (`javascript:`,
     `data:`, a bare `esempio.it` with no scheme at all) or a value carrying a
     character that has no business in a URL falls through to the opaque path below
@@ -224,7 +215,7 @@ def _is_trustworthy_absolute_url(value: str) -> bool:
 def escape_url(value: str) -> str:
     r"""For a placeholder that lands in a link or image destination.
 
-    A customer's own URL -- `cliente.sito_web`, the case the spec names -- is meant
+    A customer's own URL -- `customer.website`, the case the spec names -- is meant
     to end up as a *working* link, not as inert text: the whole point of putting it
     in `[il sito]({{cliente.sito_web}})` is that "il sito" is clickable. This
     function used to `quote(value, safe="")` unconditionally, which percent-encodes
@@ -325,7 +316,7 @@ def escape_for(context: RenderContext, value: str) -> str:
             # a raw {=typst} one) is not markdown-escape-processed by Pandoc at all,
             # so a backslash this module might add would show up as a literal
             # backslash in the rendered document instead of being consumed as an
-            # escape (fix round 1, items 2-3). The parser never tokenises inside a
+            # escape. The parser never tokenises inside a
             # verbatim segment for exactly this reason -- see
             # pigrocrm.core.templates.parser, where a verbatim Segment's whole text
             # becomes one opaque TextNode and no VariableNode is ever created with

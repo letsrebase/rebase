@@ -9,9 +9,9 @@ ADMIN = Actor(id=None, type="system", role="admin")
 
 
 def test_native_fields_come_from_the_model_not_a_hand_written_list() -> None:
-    fields = native_fields("customer")
-    assert "ragione_sociale" in fields
-    assert "partita_iva" in fields
+    fields = native_fields("organization")
+    assert "legal_name" in fields
+    assert "vat_number" in fields
     assert "custom_fields" not in fields, "custom fields are described separately"
 
 

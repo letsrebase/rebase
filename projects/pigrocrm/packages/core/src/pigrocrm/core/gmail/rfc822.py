@@ -44,6 +44,11 @@ _ADDRESS = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,63}")
 # refuses would fail on the reconciliation path -- the worst place to find out.
 _MESSAGE_ID = re.compile(r"<[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,63}>")
 _CONTROL = re.compile(r"[\r\n\x00]")
+# `type/subtype` and nothing else. `EmailMessage` takes the subtype verbatim, so
+# `pdf; name="evil"` would become a header parameter, and a CRLF in it raises a bare
+# `ValueError` that surfaces as a 500. Types are case-insensitive (RFC 2045 5.1); the
+# value is lower-cased before it is checked and used.
+_MIME_TYPE = re.compile(r"[a-z0-9.+\-]+/[a-z0-9.+\-]+")
 
 
 @dataclass(frozen=True)
@@ -136,7 +141,7 @@ def build_rfc822(
     # itself, which is the other half of what the previous system got wrong -- its subjects were raw
     # UTF-8 in a header field.
     # `formataddr` and not an f-string, and this is not cosmetic. The display name is
-    # `emitter_profile.ragione_sociale`, which is somebody's own business name: an
+    # `legal_entities.legal_name`, which is somebody's own business name: an
     # unquoted `Bianchi, Rossi e Associati <io@example.it>` parses as **two** addresses
     # -- a bare `Bianchi` and then the real one -- because the comma is the address-list
     # separator. `formataddr` quotes the name when it has to, escapes an embedded quote,
@@ -162,11 +167,19 @@ def build_rfc822(
     message.set_content(body_text, subtype="plain", charset="utf-8", cte="quoted-printable")
 
     for attachment in attachments:
-        maintype, _, subtype = attachment.mime.partition("/")
+        mime = attachment.mime.lower()
+        if not _MIME_TYPE.fullmatch(mime):
+            raise ValidationFailed(
+                "email_draft",
+                "attachment_mime",
+                "non è un tipo di file valido",
+                expected="tipo/sottotipo, per esempio application/pdf",
+            )
+        maintype, _, subtype = mime.partition("/")
         message.add_attachment(
             attachment.content,
-            maintype=maintype or "application",
-            subtype=subtype or "octet-stream",
+            maintype=maintype,
+            subtype=subtype,
             filename=_header(attachment.filename, "attachment_filename"),
         )
 

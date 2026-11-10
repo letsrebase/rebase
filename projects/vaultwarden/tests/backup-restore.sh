@@ -10,7 +10,9 @@
 #      alone, a signup without an invitation is refused, the admin page is off, and
 #      opens with a hash (written as README says) and closes again when it is removed;
 #   3. run the `backup` service's script against an S3 gateway, and prove the object in
-#      the bucket is an encrypted envelope that holds none of the plain text;
+#      the bucket is an encrypted envelope that holds none of the plain text; then run
+#      its loop against a stand-in monitor, and prove a backup that finished pings the
+#      check and one that failed pings `<check>/fail`;
 #   4. download it, restore.sh it with the private key into a new directory, start a
 #      scratch server on that directory and read the item back.
 set -euo pipefail
@@ -53,6 +55,8 @@ export VAULTWARDEN_BACKUP_R2_ACCOUNT_ID=drill
 export VAULTWARDEN_BACKUP_BUCKET=drill-bucket
 export VAULTWARDEN_BACKUP_ACCESS_KEY_ID=drillkey
 export VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY=drillsecret
+export VAULTWARDEN_BACKUP_PING_URL=http://ping:8080/drill-check
+export VAULTWARDEN_DRILL_IMAGE="$image"
 
 email=drill@example.test
 password='correct horse battery staple, drill'
@@ -86,6 +90,59 @@ node "$here/drill.mjs" refuse "$base" stranger@example.test
 admin=$(curl -s -o "$tmp/admin.out" -w '%{http_code}' "$base/admin")
 echo "GET /admin: HTTP $admin: $(head -c 200 "$tmp/admin.out" | tr '\n' ' ')"
 grep -qi 'admin panel is disabled' "$tmp/admin.out" || { echo "FAIL: the admin page is not disabled" >&2; exit 1; }
+# The look (REB-688, REB-699): the server took the SCSS template, and `brand-web-vault.sh`
+# built the web vault in the product's name. An image bump that moves either mechanism, or
+# a literal the script looks for, would break this without a word anywhere else.
+curl -s "$base/css/vaultwarden.css" > "$tmp/vaultwarden.css"
+watermelon_deep=$(sed -n 's/^ *--color-watermelon-deep: *\(#[0-9a-fA-F]*\);.*/\1/p' "$project_dir/../../shared/brand/palette.css" | tr 'A-F' 'a-f')
+[ -n "$watermelon_deep" ] || { echo "FAIL: no --color-watermelon-deep in palette.css" >&2; exit 1; }
+grep -q -- "--color-bg-brand: *$watermelon_deep" "$tmp/vaultwarden.css" || { echo "FAIL: the brand colours are not in /css/vaultwarden.css" >&2; exit 1; }
+grep -q 'bit-landing-header header a bit-svg' "$tmp/vaultwarden.css" || { echo "FAIL: the lockup rules are not in /css/vaultwarden.css" >&2; exit 1; }
+grep -q 'data:image/svg+xml;base64' "$tmp/vaultwarden.css" || { echo "FAIL: the lockup is not in /css/vaultwarden.css" >&2; exit 1; }
+# The page, the manifest and the app say the product's name and not upstream's, and every
+# icon the page names is ours under a fingerprinted name (upstream serves them immutable for
+# a week, so a browser would keep the old file under the old name).
+name=$(sed -n 's/^BRAND_NAME=//p' "$project_dir/branding/branding.env")
+[ -n "$name" ] || { echo "FAIL: no BRAND_NAME in branding/branding.env" >&2; exit 1; }
+curl -fsS "$base/" > "$tmp/index.html"
+grep -q "<title page-title>$name</title>" "$tmp/index.html" || { echo "FAIL: the tab does not read «$name» before the app boots" >&2; exit 1; }
+if grep -q Vaultwarden "$tmp/index.html"; then echo "FAIL: index.html still says Vaultwarden" >&2; exit 1; fi
+images=0
+for file in favicon-16x16.png favicon-32x32.png apple-touch-icon.png safari-pinned-tab.svg; do
+  stem=${file%.*}; ext=${file##*.}
+  href=$(grep -o "href=\"images/$stem\.[0-9a-f]\{12\}\.$ext\"" "$tmp/index.html" | head -n 1 | sed 's/^href="//; s/"$//')
+  [ -n "$href" ] || { echo "FAIL: index.html names no fingerprinted $file" >&2; exit 1; }
+  curl -fsS "$base/$href" | cmp - "$project_dir/branding/images/$file" || { echo "FAIL: $href is not branding/images/$file" >&2; exit 1; }
+  images=$((images + 1))
+done
+curl -fsS "$base/favicon.ico" | cmp - "$project_dir/branding/images/favicon.ico" || { echo "FAIL: /favicon.ico is not branding/images/favicon.ico" >&2; exit 1; }
+manifest=$(grep -o 'rel="manifest" href="[^"]*"' "$tmp/index.html" | sed 's/^rel="manifest" href="//; s/"$//')
+curl -fsS "$base/$manifest" > "$tmp/manifest.json"
+grep -q "\"name\": \"$name\"" "$tmp/manifest.json" || { echo "FAIL: the web manifest is not named «$name»" >&2; exit 1; }
+if grep -q Vaultwarden "$tmp/manifest.json"; then echo "FAIL: the web manifest still says Vaultwarden" >&2; exit 1; fi
+for size in 192 512; do
+  src=$(grep -o "images/icons/android-chrome-${size}x${size}\.[0-9a-f]\{12\}\.png" "$tmp/manifest.json" | head -n 1)
+  [ -n "$src" ] || { echo "FAIL: the manifest names no fingerprinted ${size} pixel icon" >&2; exit 1; }
+  curl -fsS "$base/$src" | cmp - "$project_dir/branding/images/icons/android-chrome-${size}x${size}.png" || { echo "FAIL: $src is not ours" >&2; exit 1; }
+  images=$((images + 1))
+done
+main=$(grep -o 'src="app/main\.[^"]*\.js"' "$tmp/index.html" | sed 's/^src="//; s/"$//')
+[ -n "$main" ] || { echo "FAIL: index.html names no app/main.*.js" >&2; exit 1; }
+curl -fsS "$base/$main" > "$tmp/main.js"
+# Every literal the script rewrites, as upstream spells it: any of them left is a miss.
+for left in 'Vaultwarden Web' 'Vaultwarden is not associated' 'for Vaultwarden (an unofficial' '["alt","Vaultwarden"' 'totp/Vaultwarden:' 'issuer=Vaultwarden' '<title>Vaultwarden</title>'; do
+  if grep -qF -- "$left" "$tmp/main.js"; then echo "FAIL: $main still holds «$left»" >&2; exit 1; fi
+done
+grep -qF "let l=\"$name\"" "$tmp/main.js" || { echo "FAIL: the app does not title its pages with «$name»" >&2; exit 1; }
+# The script warns, and does not stop the server, when a literal it looks for is not there.
+if compose logs vaultwarden 2>&1 | grep -q 'brand-web-vault:'; then
+  compose logs vaultwarden 2>&1 | grep 'brand-web-vault:' >&2
+  echo "FAIL: brand-web-vault.sh could not do what it is for" >&2; exit 1
+fi
+curl -s "$base/no-such-page" > "$tmp/404.html"
+grep -q "<title>Page not found | $name</title>" "$tmp/404.html" || { echo "FAIL: the server's 404 page is not ours" >&2; exit 1; }
+if grep -q Vaultwarden "$tmp/404.html"; then echo "FAIL: the 404 page still says Vaultwarden" >&2; exit 1; fi
+echo "the look is served: brand colours and lockup rules in the stylesheet, the name «$name» in the tab, the manifest and the app, $images icons as committed under fingerprinted names"
 [ "$(node "$here/drill.mjs" read "$base" "$email" "$password")" = "$item" ] || { echo "FAIL: item missing before backup" >&2; exit 1; }
 
 step "2b. the admin page opens with a hash and closes when the line is removed"
@@ -164,10 +221,51 @@ openssl cms -decrypt -binary -inform DER -in "$fake_object" -inkey "$tmp/backup.
   || { echo "FAIL: the attachment made during the backup is not in the bundle" >&2; exit 1; }
 echo "the attachment made during the backup is in the bundle"
 
+step "3c. the monitor hears a backup that finished, and one that failed"
+# A ping URL that is not one ends the container instead of running with no alarm, and so
+# does one with a trailing slash, which would send `/fail` to a path nobody watches.
+for bad in not-a-url http://ping:8080/drill-check/; do
+  if refusal=$(compose -f "$here/s3.yml" run --rm --no-deps -T -e VAULTWARDEN_BACKUP_PING_URL="$bad" backup 2>&1); then
+    echo "FAIL: the backup loop accepted the ping URL '$bad'" >&2; exit 1
+  fi
+  grep -q "must be the monitor's http(s) ping URL" <<<"$refusal" \
+    || { echo "FAIL: '$bad' was refused for another reason: $refusal" >&2; exit 1; }
+done
+echo "a ping URL that is not one, or ends in a slash, is refused"
+compose -f "$here/s3.yml" up -d ping
+pings() { compose -f "$here/s3.yml" logs --no-log-prefix ping 2>/dev/null | grep -c "^ping: GET $1 HTTP" || true; }
+wait_ping() {
+  for _ in $(seq 90); do
+    [ "$(pings "$1")" -ge 1 ] && return 0
+    sleep 1
+  done
+  echo "FAIL: the monitor never heard GET $1" >&2
+  exit 1
+}
+loop=$(compose -f "$here/s3.yml" run -d --no-deps -e VAULTWARDEN_BACKUP_FIRST_DELAY=0 backup)
+wait_ping /drill-check
+loop_logs=$(docker logs "$loop" 2>&1)
+docker rm -f "$loop" >/dev/null
+[ "$(pings /drill-check/fail)" -eq 0 ] || { echo "FAIL: a backup that finished was reported as failed" >&2; exit 1; }
+echo "a backup that finished pings the check"
+# A revoked R2 key: the upload is refused, the loop survives and says so to the monitor.
+loop=$(compose -f "$here/s3.yml" run -d --no-deps -e VAULTWARDEN_BACKUP_FIRST_DELAY=0 \
+  -e VAULTWARDEN_BACKUP_SECRET_ACCESS_KEY=revoked backup)
+wait_ping /drill-check/fail
+[ "$(docker inspect -f '{{.State.Running}}' "$loop")" = true ] || { echo "FAIL: a failed backup ended the loop" >&2; exit 1; }
+loop_logs+=$(docker logs "$loop" 2>&1)
+docker rm -f "$loop" >/dev/null
+[ "$(pings /drill-check)" -eq 1 ] || { echo "FAIL: a backup that failed was reported as a success" >&2; exit 1; }
+echo "a backup that failed pings <check>/fail and nothing else"
+# Whoever holds the URL can report a success, so neither run may print it.
+if grep -q drill-check <<<"$loop_logs"; then echo "FAIL: the loop printed the ping URL" >&2; exit 1; fi
+echo "neither run printed the ping URL"
+
 step "4. restore into a new directory, a scratch server on it, the item back"
 mkdir -m 700 "$tmp/restored"
 "$project_dir/scripts/restore.sh" "$tmp/object.cms" "$tmp/backup.key" "$tmp/restored"
 [ "$(stat -c %a "$tmp/restored")" = 700 ] || { echo "FAIL: restore.sh changed the mode of the target directory" >&2; exit 1; }
+[ -z "$(find "$tmp/restored" -maxdepth 1 -name '.restore.*')" ] || { echo "FAIL: restore.sh left its staging directory in the target" >&2; exit 1; }
 # A target the script creates is 0700 as well, whatever the caller's umask.
 (umask 022 && "$project_dir/scripts/restore.sh" "$tmp/object.cms" "$tmp/backup.key" "$tmp/restored-new" >/dev/null)
 [ "$(stat -c %a "$tmp/restored-new")" = 700 ] || { echo "FAIL: restore.sh created its target with the caller's umask" >&2; exit 1; }
@@ -182,4 +280,4 @@ got=$(node "$here/drill.mjs" read "$scratch" "$email" "$password")
 [ "$got" = "$item" ] || { echo "FAIL: restored server returned '$got', expected '$item'" >&2; exit 1; }
 echo "restored server returned the item: $got"
 
-printf '\nOK: backup, encryption, restore and the three refusals all held\n'
+printf '\nOK: backup, encryption, the monitor, restore and every refusal held\n'

@@ -2,7 +2,7 @@ import { Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { LegalEntityPanel } from './LegalEntityPanel'
 import { FiscalPanel } from './FiscalPanel'
@@ -10,26 +10,26 @@ import { NewLegalEntityForm } from './NewLegalEntityForm'
 import { useLegalEntities, type LegalEntityRecord } from './queries'
 
 /**
- * Impostazioni → Aziende (REB-617, spec 2026-10-03 §5): the one page that replaced
- * «Emittente» and «Fiscale» when the emitter profile became one row per azienda.
+ * Settings → Legal entities (REB-617, spec 2026-10-03 §5): the one page that replaced
+ * «Emittente» and «Fiscale» when the emitter profile became one row per legal entity.
  *
- * With one azienda the page opens straight on it and reads as the two panels did: who
- * issues, then how it is taxed. From the second azienda on, a row of buttons picks
+ * With one legal entity the page opens straight on it and reads as the two panels did: who
+ * issues, then how it is taxed. From the second legal entity on, a row of buttons picks
  * which one the two panels show, with the default marked. «Nuova azienda» arrived with
  * milestone 5 (REB-632, spec §9): it waited until the register, the customer chain,
- * the rendering and the per-azienda taxes could serve a second azienda, and it is the
+ * the rendering and the per-legal-entity taxes could serve a second legal entity, and it is the
  * first visible piece of the whole project, since the sidebar's selector appears the
  * moment the list has two.
  */
 export function LegalEntitiesPanel() {
-  const aziende = useLegalEntities()
+  const legal_entities = useLegalEntities()
   const [selected, setSelected] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
-  if (aziende.isError) return <QueryErrorBanner error={aziende.error} />
-  if (aziende.isLoading || !aziende.data) return <Skeleton className="h-64 w-full" />
+  if (legal_entities.isError) return <QueryErrorBanner error={legal_entities.error} />
+  if (legal_entities.isLoading || !legal_entities.data) return <LoadingState />
 
-  const list = aziende.data
+  const list = legal_entities.data
   // The default first, which `GET /api/aziende` already guarantees; a selection that
   // no longer names a listed azienda (deactivated meanwhile) falls back to it.
   const current = list.find((a) => a.id === selected) ?? list[0] ?? null
@@ -67,8 +67,8 @@ export function LegalEntitiesPanel() {
           Nuova azienda
         </Button>
       </div>
-      <LegalEntityPanel azienda={current} />
-      <FiscalPanel aziendaId={current.id} />
+      <LegalEntityPanel legal_entity={current} />
+      <FiscalPanel legalEntityId={current.id} />
     </div>
   )
 }
@@ -84,17 +84,17 @@ function LegalEntityPicker({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Aziende">
-      {list.map((azienda) => (
+      {list.map((legal_entity) => (
         <Button
-          key={azienda.id}
+          key={legal_entity.id}
           role="tab"
-          aria-selected={azienda.id === current.id}
-          variant={azienda.id === current.id ? 'default' : 'outline'}
+          aria-selected={legal_entity.id === current.id}
+          variant={legal_entity.id === current.id ? 'default' : 'outline'}
           size="sm"
-          onClick={() => onPick(azienda.id)}
+          onClick={() => onPick(legal_entity.id)}
         >
-          {azienda.nome}
-          {azienda.predefinita ? (
+          {legal_entity.name}
+          {legal_entity.is_default ? (
             <Badge variant="secondary" className="ml-2">
               predefinita
             </Badge>

@@ -15,7 +15,7 @@ together.
 
 **`POST /{draft_id}/reconcile` is an endpoint of its own, not a branch of send.** The
 send is the one call in the system with no idempotency key, so an unknown outcome
-(`incerto`) is resolved by *asking Gmail* and never by sending again. A UI that offered
+(`uncertain`) is resolved by *asking Gmail* and never by sending again. A UI that offered
 "riprova" on an unknown outcome would be offering the client a second copy of the same
 email; what it offers instead is «verifica», and this is what it calls.
 
@@ -27,7 +27,7 @@ generated OpenAPI document rather than against this file's own route list.
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.config import Settings
@@ -44,11 +44,24 @@ from pigrocrm.core.gmail.schemas import (
 from pigrocrm.core.gmail.send import EmailSendService, reconcile_only
 from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm.core.storage.base import DocumentStorage
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep
+from pigrocrm_api.deps import (
+    ActorDep,
+    SessionDep,
+    SettingsDep,
+    StorageDep,
+    get_actor,
+    off_entity_type_guard,
+    refuse_off_kind,
+)
 from pigrocrm_api.errors import PROBLEM_RESPONSES
-from pigrocrm_api.routers.gmail import token_client
+from pigrocrm_api.google_tokens import token_client
 
-router = APIRouter(prefix="/api/email-drafts", tags=["email-drafts"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/email-drafts",
+    tags=["email-drafts"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 def _drafts(session: Session, settings: Settings) -> EmailDraftService:
@@ -56,10 +69,9 @@ def _drafts(session: Session, settings: Settings) -> EmailDraftService:
 
 
 def _sender(session: Session, settings: Settings, storage: DocumentStorage) -> EmailSendService:
-    """`token_client` is `routers/gmail.py`'s per-process `GoogleTokenClient` cache, reused
-    rather than re-created here. A fresh client per request throws away every cached
-    access token -- an extra OAuth round trip on every send -- and would make
-    `disconnect`'s `forget()` clear a cache nobody was going to read."""
+    """`token_client` is the per-process `GoogleTokenClient` cache (`google_tokens.py`),
+    reused rather than re-created here: a fresh client per request throws away every cached
+    access token -- an extra OAuth round trip on every send."""
     return EmailSendService(
         session,
         settings=settings,
@@ -76,19 +88,20 @@ def create_draft(
     """The row exists before Gmail is called and the `Message-ID` is minted here (spec
     6.2), which is what makes text somebody typed survive a closed tab -- and an unknown
     outcome resolvable by an exact lookup instead of by comparing timestamps."""
+    refuse_off_kind(settings, payload.entity_type)
     return _drafts(session, settings).create(payload, actor)
 
 
-@router.get("", response_model=EmailDraftPage)
+@router.get("", response_model=EmailDraftPage, dependencies=[off_entity_type_guard])
 def list_drafts(
     session: SessionDep,
     actor: ActorDep,
     settings: SettingsDep,
     # Spelled out as query parameters and hand-assembled below, the same shape as
-    # `routers/customers.py`. No `SafeStr` is needed here and its absence is the point:
+    # `routers/organizations.py`. No `SafeStr` is needed here and its absence is the point:
     # every filter on this list is a closed set or an id, so there is no free text on the
     # surface at all -- which is also why nothing here can become a Gmail search string.
-    entity_type: Annotated[Literal["customer", "person", "deal"] | None, Query()] = None,
+    entity_type: Annotated[Literal["organization", "person", "deal"] | None, Query()] = None,
     entity_id: Annotated[UUID | None, Query()] = None,
     send_state: Annotated[SendState | None, Query()] = None,
     unsent: Annotated[bool, Query()] = False,
@@ -119,7 +132,7 @@ def update_draft(
     actor: ActorDep,
     settings: SettingsDep,
 ) -> EmailDraftRead:
-    """A `fallito` draft is editable, and editing returns it to `bozza` with the error
+    """A `failed` draft is editable, and editing returns it to `draft` with the error
     cleared (spec 6.3(a)). The service owns that transition; the composer only has to
     honour the state it gets back."""
     return _drafts(session, settings).update(draft_id, payload, actor)
@@ -158,7 +171,7 @@ def send_draft(
 def reconcile_draft(
     draft_id: UUID, session: SessionDep, actor: ActorDep, settings: SettingsDep
 ) -> EmailDraftRead:
-    """Resolves an `incerto` draft by asking Gmail. Also runs at the start of every sync,
+    """Resolves an `uncertain` draft by asking Gmail. Also runs at the start of every sync,
     so an unresolved outcome does not wait for somebody to remember it.
 
     Built through `reconcile_only`, which supplies a storage backend that refuses every

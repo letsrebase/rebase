@@ -8,7 +8,7 @@ export type GoogleAccountRead = components['schemas']['GoogleAccountRead']
 export type GmailMessageRead = components['schemas']['GmailMessageRead']
 export type SyncReport = components['schemas']['SyncReport']
 
-export type GmailEntityType = 'customer' | 'person' | 'deal'
+export type GmailEntityType = 'organization' | 'person' | 'deal'
 
 /** The scope without which nothing is read at all. Named here rather than in a
  *  component, because both the settings panel and the sync notice have to agree on
@@ -30,11 +30,15 @@ export const GMAIL_OAUTH_START = `${tenantPrefix}/api/gmail/oauth/start`
  * Keyed locally rather than in `lib/query.ts`'s central `queryKeys`, which is where
  * every other feature's keys live. The prefix matters more than the location here:
  * `['gmail', 'messages', ...]` lets a sync invalidate every entity's Email tab at once
- * without enumerating which customers happen to be cached, and that only works if the
+ * without enumerating which organizations happen to be cached, and that only works if the
  * two keys share a root nobody else writes under.
  */
 export const gmailKeys = {
+  /** Everything Gmail: the prefix a space-wide change invalidates. */
+  all: ['gmail'] as const,
   health: ['gmail', 'health'] as const,
+  /** Every entity's messages, for a sync that cannot know which tab is open. */
+  allMessages: ['gmail', 'messages'] as const,
   messages: (entityType: string, entityId: string) =>
     ['gmail', 'messages', entityType, entityId] as const,
 }
@@ -96,7 +100,7 @@ export function useGmailSyncing(): boolean {
  */
 function invalidateAfterSync(queryClient: ReturnType<typeof useQueryClient>) {
   void queryClient.invalidateQueries({ queryKey: gmailKeys.health })
-  void queryClient.invalidateQueries({ queryKey: ['gmail', 'messages'] })
+  void queryClient.invalidateQueries({ queryKey: gmailKeys.allMessages })
 }
 
 export function useSyncGmail() {
@@ -110,17 +114,22 @@ export function useSyncGmail() {
 export function useDisconnectGmail() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ eliminaMessaggi }: { eliminaMessaggi: boolean }) => {
+    mutationFn: async ({ deleteMessages }: { deleteMessages: boolean }) => {
       await unwrap(
         api.DELETE('/api/gmail/account', {
-          params: { query: { elimina_messaggi: eliminaMessaggi } },
+          params: { query: { delete_messages: deleteMessages } },
         }),
       )
     },
     // Both, even when the messages were kept: the account row's `status` changed, and
     // an Email tab rendered from a cache taken before the disconnect would show a
-    // history the panel now says is gone.
-    onSuccess: () => invalidateAfterSync(queryClient),
+    // history the panel now says is gone. The addresses a customer's page found in the old
+    // mailbox are removed, not refetched: they are not the new mailbox's to show, and
+    // reading them again is the owner's Gmail quota (REB-766).
+    onSuccess: () => {
+      invalidateAfterSync(queryClient)
+      queryClient.removeQueries({ queryKey: ['gmail', 'correspondents'] })
+    },
   })
 }
 

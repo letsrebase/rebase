@@ -57,7 +57,7 @@ function attachmentLabel(attachment: EmailDraftAttachment): string {
   // see. «Invia» is off for it (`draftCannotLeave`).
   if (attachment.filename === null)
     return 'Allegato non inviabile: il file non esiste più o il suo tipo non è ammesso'
-  const kb = Math.max(1, Math.round((attachment.dimensione ?? 0) / 1024))
+  const kb = Math.max(1, Math.round((attachment.size ?? 0) / 1024))
   return `${attachment.filename} · ${kb} KB`
 }
 
@@ -93,8 +93,8 @@ export function PendingDrafts({
   // Nothing while pending, rather than «Caricamento…»: the correspondence below has its
   // own, and two spinners for one tab read as two different things going wrong.
   // The server already leaves the sent ones out (`unsent`); a row the cache was just told
-  // is `inviato` (`patchCachedDraft`) leaves the card here, before the list is read again.
-  const pending = (drafts.data?.items ?? []).filter((draft) => draft.send_state !== 'inviato')
+  // is `sent` (`patchCachedDraft`) leaves the card here, before the list is read again.
+  const pending = (drafts.data?.items ?? []).filter((draft) => draft.send_state !== 'sent')
   if (pending.length === 0) return null
 
   return (
@@ -125,8 +125,8 @@ function DraftCard({
   // REB-294: one check per button, each against the string its own service passes to
   // `require_write` (`gmail/send.py`, `gmail/drafts.py`). A readonly person reads the
   // draft and is offered nothing to press.
-  const maySend = useCan("inviare un'email")
-  const mayVerify = useCan("verificare l'esito di un'email")
+  const maySend = useCan('send_email')
+  const mayVerify = useCan('reconcile_email')
   const mayDelete = useCan('delete_email_draft')
   const queryClient = useQueryClient()
   const health = useGmailHealth()
@@ -161,10 +161,10 @@ function DraftCard({
 
   const state = draft.send_state
   const sendable = isSendable(state)
-  // `in_invio` too: a send whose request died after the claim leaves the draft there,
-  // and `reconcile` resolves it exactly as it resolves `incerto` (and answers it
+  // `sending` too: a send whose request died after the claim leaves the draft there,
+  // and `reconcile` resolves it exactly as it resolves `uncertain` (and answers it
   // unchanged while it may still be in flight).
-  const verifiable = state === 'incerto' || state === 'in_invio'
+  const verifiable = state === 'uncertain' || state === 'sending'
   const busy = send.isPending || reconcile.isPending || remove.isPending || rereading
   const from = health.data?.account?.email_address ?? null
   const blocked = draftCannotLeave(draft.attachments) ?? mailboxCannotSend(health.data)
@@ -183,7 +183,7 @@ function DraftCard({
     send.mutate({ id: draft.id, updated_at: confirmingRevision }, {
       onSuccess: (sent) => {
         setConfirmingRevision(null)
-        if (sent.send_state === 'inviato')
+        if (sent.send_state === 'sent')
           toast.success('Email inviata: la trovi nella corrispondenza.')
         patchCachedDraft(queryClient, draft, sent)
       },
@@ -212,7 +212,7 @@ function DraftCard({
     remove.reset()
     reconcile.mutate(draft.id, {
       onSuccess: (checked) => {
-        if (checked.send_state === 'inviato') {
+        if (checked.send_state === 'sent') {
           toast.success('L’email risulta partita: la trovi nella corrispondenza.')
         } else if (checked.send_state === state) {
           // `reconcile` answers the draft unchanged inside the grace window: Gmail's
@@ -220,7 +220,7 @@ function DraftCard({
           // «non è partita» would not be.
           toast.message('Gmail non la mostra ancora. Riprova tra qualche minuto, senza rinviarla.')
         }
-        // `fallito` needs no toast: the card now carries the server's own sentence,
+        // `failed` needs no toast: the card now carries the server's own sentence,
         // which names «Posta inviata» before offering «Invia» again.
         patchCachedDraft(queryClient, draft, checked)
       },
@@ -237,7 +237,7 @@ function DraftCard({
   return (
     <article aria-label={subject} className="space-y-3 border bg-card p-3">
       <header className="flex flex-wrap items-baseline gap-2 text-sm">
-        <Badge variant={state === 'fallito' || state === 'incerto' ? 'destructive' : 'outline'}>
+        <Badge variant={state === 'failed' || state === 'uncertain' ? 'destructive' : 'outline'}>
           {STATE_HEADING[state]}
         </Badge>
         <span className="text-muted-foreground">preparata {formatInstant(draft.created_at)}</span>
@@ -282,9 +282,9 @@ function DraftCard({
 
       {/* The server's own sentence about the last attempt, read off the row, so it goes
           away when the fact does rather than when a component remembers to reset it. Not
-          for `incerto`, whose stored sentence is always the unanswered send's and says
-          what `STATE_HELP.incerto` below already says. */}
-      {draft.last_error && state !== 'incerto' ? (
+          for `uncertain`, whose stored sentence is always the unanswered send's and says
+          what `STATE_HELP.uncertain` below already says. */}
+      {draft.last_error && state !== 'uncertain' ? (
         <p role="status" className="border bg-muted px-3 py-2 text-sm">
           {draft.last_error}
         </p>
@@ -314,7 +314,7 @@ function DraftCard({
 
       <footer className="flex flex-wrap gap-2">
         {/* No «Invia» while the outcome is unknown, and no "riprova" either: `isSendable`
-            is false for `incerto` and `in_invio`, so this condition is the whole rule.
+            is false for `uncertain` and `sending`, so this condition is the whole rule.
             The only way out of «esito da verificare» is to ask. */}
         {sendable && maySend ? (
           <Button

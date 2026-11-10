@@ -8,7 +8,7 @@ asks, with a `MetaData` of its own that `create_all` is the honest size of tool 
 neither of these is the CRM schema.
 """
 
-from sqlalchemy import Engine, MetaData, create_engine, text
+from sqlalchemy import Engine, MetaData, create_engine, inspect, text
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ProgrammingError
 
@@ -91,9 +91,35 @@ def drop_database(settings: Settings, target: URL) -> None:
         admin.dispose()
 
 
+class SidecarSchemaOutdated(RuntimeError):
+    """A side database whose tables lack a column the code declares."""
+
+
+def _assert_columns(engine: Engine, metadata: MetaData) -> None:
+    """`create_all` creates a missing table and never alters an existing one, so a column
+    added to a side table's model would not exist where the table already does, and the
+    first query naming it would fail somewhere far from here (B-31). Said once, at boot,
+    with the table and the column."""
+    inspector = inspect(engine)
+    for table in metadata.sorted_tables:
+        present = {column["name"] for column in inspector.get_columns(table.name)}
+        missing = sorted(column.name for column in table.columns if column.name not in present)
+        if missing:
+            raise SidecarSchemaOutdated(
+                f"{table.name} lacks {', '.join(missing)}: a side database has no migrations, "
+                "add the column by hand (`ALTER TABLE`) before this version runs"
+            )
+
+
 def ensure_sidecar_database(settings: Settings, target: URL, metadata: MetaData) -> Engine:
-    """Idempotent. Returns an engine bound to a database that exists and has the tables."""
+    """Idempotent. Returns an engine bound to a database that exists and has the tables,
+    with every column the code declares (`SidecarSchemaOutdated` otherwise)."""
     create_database_if_missing(settings, target)
     engine = create_engine(target, pool_pre_ping=True, future=True)
-    metadata.create_all(engine)
+    try:
+        metadata.create_all(engine)
+        _assert_columns(engine, metadata)
+    except Exception:
+        engine.dispose()
+        raise
     return engine

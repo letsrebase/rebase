@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from hub_tables import wipe_hub
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
@@ -31,13 +32,24 @@ def hub_engine(hub_postgres: Any) -> Iterator[Engine]:
 
 @pytest.fixture
 def hub_session(hub_engine: Engine) -> Iterator[Session]:
-    """Committed writes, wiped after each test: `SignupService.subscribe` commits on its
-    own, so a rolled-back outer transaction would not isolate anything."""
+    """Committed writes, wiped after each test (`hub_tables.wipe_hub`, every table a test
+    may write): the services commit on their own, so a rolled-back outer transaction would
+    not isolate anything."""
     session = session_factory(hub_engine)()
     try:
         yield session
     finally:
         session.rollback()
-        session.execute(text("DELETE FROM signups"))
-        session.commit()
+        wipe_hub(session)
         session.close()
+
+
+@pytest.fixture
+def clean_hub(hub_session: Session) -> Iterator[Session]:
+    """A session over the worker's database that leaves it empty of people, the way the
+    cards' tests need it: the source switches (seeded, so not wiped) go off again, then
+    everything a card test makes is wiped."""
+    yield hub_session
+    hub_session.rollback()
+    hub_session.execute(text("UPDATE ai_sources SET enabled = false, updated_by = NULL"))
+    wipe_hub(hub_session)

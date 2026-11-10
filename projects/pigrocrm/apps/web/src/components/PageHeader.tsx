@@ -9,9 +9,11 @@ import { cn } from '@rebase/ui/cn'
  * what used to be a breadcrumb repeating the sidebar's own highlight is now the page's
  * title, at the size a title deserves. One `<h1>` per screen lives here.
  *
- * Four slots, in the order they are drawn: the title row (icon, title, description,
- * `actions`), then `tabs` on a row of their own closed by a rule, then `children` for
- * whatever a page needs between its header and its content -- a filter row, most often.
+ * Five slots, in the order they are drawn: the title row (icon, title, description,
+ * `actions`), then `aboveTabs` for something that belongs to the page's first reading and
+ * not to a tab (the Home's «Da fare» band, REB-874), then `tabs` on a row of their own
+ * closed by a rule, then `children` for whatever a page needs between its header and its
+ * content -- a filter row, most often.
  * `actions` is where a page's primary button goes (§5: one strong thing per screen, top
  * right); everything else on the screen is quieter than it.
  */
@@ -20,6 +22,7 @@ export function PageHeader({
   title,
   description,
   actions,
+  aboveTabs,
   tabs,
   children,
   className,
@@ -28,6 +31,7 @@ export function PageHeader({
   title: string
   description?: string
   actions?: ReactNode
+  aboveTabs?: ReactNode
   tabs?: ReactNode
   children?: ReactNode
   className?: string
@@ -64,6 +68,8 @@ export function PageHeader({
           <div className="flex flex-wrap items-center gap-2 md:shrink-0">{actions}</div>
         )}
       </div>
+
+      {aboveTabs}
 
       {/* Scrolls sideways inside the panel: thirteen settings tabs are wider than a
           phone, and the alternative is a page that scrolls horizontally as a whole. */}

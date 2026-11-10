@@ -100,7 +100,7 @@ export function NumberCell({ children }: { children: ReactNode }) {
  * Two, not more: «Prima Società Benefit Srl» reads as `PS`, and a chip of four
  * letters is no longer a chip. Words are split on any run of whitespace so a double
  * space cannot produce an empty initial, and the result is uppercased because a
- * lowercase ragione sociale would otherwise give a chip that looks like a typo.
+ * lowercase legal name would otherwise give a chip that looks like a typo.
  */
 function initialsOf(name: string): string {
   return name
@@ -114,10 +114,9 @@ function initialsOf(name: string): string {
 
 /**
  * The first column of a table when the row *is* somebody: an initials chip on Paper
- * beside the name, with an optional quiet second line (design spec §4, "prima colonna
- * con avatar/iniziali dove c'è un'entità").
+ * beside the name, with an optional quiet second line (design spec §4, "first column with avatar/initials where there is an entity").
  *
- * Initials rather than an image because this product stores no avatars for customers,
+ * Initials rather than an image because this product stores no avatars for organizations,
  * people or deals -- and the chip is `aria-hidden`: the name is right there in words,
  * so announcing "AS ACME Srl" would read the same thing twice, once as nonsense.
  *

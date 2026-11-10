@@ -43,15 +43,15 @@ export function monthOf(value: Date): string {
  * month» from a 31st silently skips a month. Anchoring to the first makes every shift
  * exact.
  */
-export function shiftMonth(mese: string, months: number): string {
-  const first = firstOfMonth(mese)
+export function shiftMonth(month: string, months: number): string {
+  const first = firstOfMonth(month)
   first.setMonth(first.getMonth() + months)
   return toIsoMonth(first)
 }
 
 /** The first day of `AAAA-MM`, at local midnight. */
-export function firstOfMonth(mese: string): Date {
-  const [year, month] = mese.split('-').map(Number)
+export function firstOfMonth(yearMonth: string): Date {
+  const [year, month] = yearMonth.split('-').map(Number)
   if (year === undefined || month === undefined) return new Date()
   if (!Number.isFinite(year) || !Number.isFinite(month)) return new Date()
   return new Date(year, month - 1, 1)
@@ -67,8 +67,8 @@ export function firstOfMonth(mese: string): Date {
  * real days and not blanks, because clicking 1 October from September's last row and
  * getting nothing would be a dead cell.
  */
-export function monthCells(mese: string): MonthCell[] {
-  const first = firstOfMonth(mese)
+export function monthCells(yearMonth: string): MonthCell[] {
+  const first = firstOfMonth(yearMonth)
   const month = first.getMonth()
   // `getDay()` is 0 for Sunday, and this grid starts on Monday: `(day + 6) % 7` maps
   // Monday to 0 and Sunday to 6, which is the offset of the first cell.
@@ -92,8 +92,8 @@ export function monthCells(mese: string): MonthCell[] {
 }
 
 /** `settembre 2026`, for the page's own description. */
-export function monthLabel(mese: string): string {
-  return new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric' }).format(
-    firstOfMonth(mese),
-  )
+const monthLabelFormatter = new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric' })
+
+export function monthLabel(month: string): string {
+  return monthLabelFormatter.format(firstOfMonth(month))
 }

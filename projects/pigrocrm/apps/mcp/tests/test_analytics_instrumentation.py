@@ -3,10 +3,11 @@ call reaches the client with the actor's identity and the space as a group, whil
 tool's own answer to the agent is unchanged and the tools it lists are the same ones
 (REB-642)."""
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from mcp import Client
@@ -95,13 +96,13 @@ def test_the_space_group_is_the_root_slug_or_root() -> None:
 def test_the_identity_is_the_actor_and_the_space() -> None:
     user_id = uuid4()
     identify = analytics.identity_for(
-        lambda: Actor(id=user_id, type="user", role="collaboratore"), "studio"
+        lambda: Actor(id=user_id, type="user", role="collaborator"), "studio"
     )
     identity = identify(None, None)
     assert identity is not None
     assert identity.distinct_id == str(user_id)
-    assert identity.groups == {"spazio": "studio"}
-    assert identity.properties == {"ruolo": "collaboratore", "via": "user"}
+    assert identity.groups == {"space": "studio"}
+    assert identity.properties == {"role": "collaborator", "via": "user"}
     # An actor without an id (the fixtures' admin) stays anonymous rather than sharing
     # one made-up person across every installation.
     assert analytics.identity_for(lambda: NOBODY, "root")(None, None) is None
@@ -138,14 +139,14 @@ async def test_with_a_key_a_tool_call_reaches_posthog_with_the_actor(
 
     async with Client(mcp) as agent:
         tools = await agent.list_tools()
-        await agent.call_tool("describe_schema", {"entity_type": "customer"})
+        await agent.call_tool("describe_schema", {"entity_type": "organization"})
 
     names = [event.get("event") for event in events]
     assert "$mcp_tool_call" in names, names
     call = next(event for event in events if event.get("event") == "$mcp_tool_call")
     assert call["distinct_id"] == str(user_id)
     assert call["properties"]["$mcp_tool_name"] == "describe_schema"
-    assert call["properties"]["$groups"] == {"spazio": "studio"}
+    assert call["properties"]["$groups"] == {"space": "studio"}
     assert call["properties"]["$mcp_is_error"] is False
     # And the schema an agent learns is untouched: no injected `context` argument.
     describe = next(tool for tool in tools.tools if tool.name == "describe_schema")
@@ -171,7 +172,7 @@ async def test_with_a_key_the_tools_are_the_ones_the_server_without_one_advertis
     async def surface(server: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]], Any]:
         async with Client(server) as agent:
             listed = await agent.list_tools()
-            result = await agent.call_tool("describe_schema", {"entity_type": "customer"})
+            result = await agent.call_tool("describe_schema", {"entity_type": "organization"})
         tools = [tool.model_dump(mode="json", by_alias=True) for tool in listed.tools]
         content = [block.model_dump(mode="json", by_alias=True) for block in result.content]
         return tools, content, result.structured_content
@@ -216,7 +217,7 @@ async def test_a_refused_call_keeps_its_message_and_counts_as_an_error(
 
     async def refused(server: Any) -> str:
         async with Client(server) as agent:
-            result = await agent.call_tool("get_customer", {"customer_id": missing})
+            result = await agent.call_tool("get_organization", {"organization_id": missing})
             assert result.is_error
         return " ".join(getattr(block, "text", "") for block in result.content)
 
@@ -236,3 +237,51 @@ async def test_a_refused_call_keeps_its_message_and_counts_as_an_error(
     assert len(calls) == 1
     assert calls[0]["properties"]["$mcp_is_error"] is True
     assert "$exception" not in [e.get("event") for e in events]
+
+
+async def test_no_event_carries_what_the_agent_sent_or_got_back(
+    mcp_session: Session,
+    tmp_path: Path,
+    seeded_user_id: UUID,
+    capture_kept_on_this_machine: list[dict[str, Any]],
+) -> None:
+    """With a key, the adapter would send the tool's arguments, its result and its error
+    sentence to PostHog Cloud: customer names, tax ids, notes, mail bodies (PMCP-01).
+    The events keep the call's shape and lose its content, on the path a deployed CRM
+    runs (`build_server` with a key)."""
+    events = capture_kept_on_this_machine
+    actor = Actor(id=seeded_user_id, type="user", role="admin")
+    name = "Zorblax Industriale Srl"
+    tax_id = "98765432109"
+    missing = str(uuid4())
+    server = build_server(
+        lambda: mcp_session,
+        lambda: actor,
+        LocalFileStorage(tmp_path),
+        _settings(posthog_key=KEY, root_slug="studio"),
+    )
+
+    async with Client(server) as agent:
+        created = await agent.call_tool(
+            "create_organization", {"legal_name": name, "vat_number": tax_id}
+        )
+        customer_id = (created.structured_content or json.loads(created.content[0].text))["id"]
+        await agent.call_tool("get_organization", {"organization_id": customer_id})
+        refused = await agent.call_tool("get_organization", {"organization_id": missing})
+        assert refused.is_error
+
+    calls = [e for e in events if e.get("event") == "$mcp_tool_call"]
+    assert len(calls) == 3
+    for call in calls:
+        properties = call["properties"]
+        assert properties["$groups"] == {"space": "studio"}
+        assert "$mcp_duration_ms" in properties and "$mcp_is_error" in properties
+    assert [c["properties"]["$mcp_tool_name"] for c in calls] == [
+        "create_organization",
+        "get_organization",
+        "get_organization",
+    ]
+    assert calls[2]["properties"]["$mcp_is_error"] is True
+    serialized = json.dumps(events, default=str)
+    for content in (name, tax_id, customer_id, missing):
+        assert content not in serialized

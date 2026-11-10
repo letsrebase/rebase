@@ -103,6 +103,22 @@ class TenantService:
             or 0
         )
 
+    def slugs_for_owner(self, email: str) -> list[str]:
+        """The slugs of the spaces that address opened, newest first. A filtered query, so
+        a lookup by address never loads the whole registry. `owner_email` is stored
+        lowercased by `provision`."""
+        return list(
+            self.session.scalars(
+                select(Tenant.slug)
+                .where(Tenant.owner_email == email.strip().lower())
+                .order_by(Tenant.created_at.desc(), Tenant.id.desc())
+            )
+        )
+
+    def count(self) -> int:
+        """How many spaces the registry holds, for the signup's global ceiling."""
+        return self.session.scalar(select(func.count()).select_from(Tenant)) or 0
+
     def list(self) -> list[TenantRead]:
         """Every space, newest first: what the registry knows, which is who opened it and
         when, never what is inside it (ORB-142)."""
@@ -128,13 +144,11 @@ class TenantService:
     def availability(self, slug: str) -> TenantAvailability:
         reason = self._reason(slug)
         if reason is not None:
-            return TenantAvailability(slug=slug, disponibile=False, motivo=reason)
+            return TenantAvailability(slug=slug, available=False, reason=reason)
         taken = self.session.scalar(select(Tenant.id).where(Tenant.slug == slug)) is not None
         if taken:
-            return TenantAvailability(
-                slug=slug, disponibile=False, motivo="questo nome è già in uso"
-            )
-        return TenantAvailability(slug=slug, disponibile=True)
+            return TenantAvailability(slug=slug, available=False, reason="questo nome è già in uso")
+        return TenantAvailability(slug=slug, available=True)
 
     def provision(self, data: TenantSignup) -> TenantRead:
         """The registry row first, so the unique index decides who gets the name; then
@@ -143,6 +157,15 @@ class TenantService:
         reason = self._reason(data.slug)
         if reason is not None:
             raise ValidationFailed("tenant", "slug", reason)
+        founder = data.founder_name
+        if not founder:
+            # The space's name is the space's, never a person's (REB-822): refused before
+            # the registry row, so nothing is left behind to undo.
+            raise ValidationFailed(
+                "tenant",
+                "first_name",
+                "indica il tuo nome: è quello con cui compari nello spazio",
+            )
         db_name = tenant_database_name(data.slug)
         tenant = Tenant(slug=data.slug, db_name=db_name, owner_email=data.email.lower())
         self.session.add(tenant)
@@ -163,32 +186,29 @@ class TenantService:
             try:
                 with session_factory(engine)() as space:
                     # The owner is inside the policies too (`FORCE ROW LEVEL SECURITY`),
-                    # and the default azienda `ensure_defaults` writes is a policied
+                    # and the default legal entity `ensure_defaults` writes is a policied
                     # row: the system actor's scope, «tutte», is what lets it in.
                     bind_scope(space, Actor.system())
                     UserService(space).create(
                         # No password: the admin enters with a link by mail, and the first
                         # link proves the address (spec 2026-09-12 §6.4).
-                        UserCreate(email=data.email, password=None, nome=data.nome, ruolo="admin"),
+                        UserCreate(email=data.email, password=None, name=founder, role="admin"),
                         Actor.system(),
                     )
                     # Born ready (spec 2026-09-12 §6.5): stages, templates and
-                    # categories, and the one azienda that carries the name and
+                    # categories, and the one legal entity that carries the name and
                     # nothing fiscal (REB-615: `ensure_defaults` writes it, so a space
                     # that somehow lacks one gets it at the next boot too). Inside the
                     # same try: a space that fails here is undone like one whose
-                    # migration failed. `nome` is capped at 200 by `TenantSignup`,
+                    # migration failed. `name` is capped at 200 by `TenantSignup`,
                     # under the emitter's 255; a name that is only spaces would make
                     # an empty header, so the slug stands in for it.
-                    ensure_defaults(space, nome=data.nome.strip() or data.slug)
+                    ensure_defaults(space, name=data.name.strip() or data.slug)
             finally:
                 engine.dispose()
-        except ValidationFailed:
-            # A domain rule refused something about the admin: nothing about the space
-            # is wrong, only the input, and the person will retry. Leave nothing behind.
-            self._undo(tenant, url)
-            raise
         except Exception:
+            # Whatever failed after the row -- a refusal of the admin's input, which the
+            # person will retry, or the space itself -- leaves nothing behind.
             self._undo(tenant, url)
             raise
         return TenantRead.model_validate(tenant)

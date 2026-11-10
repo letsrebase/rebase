@@ -23,14 +23,14 @@ Scope = MutableMapping[str, Any]
 Receive = Callable[[], Awaitable[MutableMapping[str, Any]]]
 Send = Callable[[MutableMapping[str, Any]], Awaitable[None]]
 
-ADA = Actor(id=None, type="mcp", role="collaboratore")
+ADA = Actor(id=None, type="mcp", role="collaborator")
 
 
 def _server(provider: RequestActorProvider) -> MCPServer:
     mcp = MCPServer("prova", middleware=[ActorFromRequest()])
 
     @mcp.tool()
-    def chi_sono() -> str:
+    def who_are() -> str:
         actor = provider()
         return f"{actor.type}:{actor.role}"
 
@@ -56,7 +56,7 @@ async def _call(app: Any, starlette_app: Any) -> str:
             read, write = streams[0], streams[1]
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.call_tool("chi_sono", {})
+                result = await session.call_tool("who_are", {})
                 return result.content[0].text  # type: ignore[union-attr]
 
 
@@ -89,7 +89,7 @@ def _messages(exc: BaseException) -> list[str]:
 async def test_the_actor_stamped_on_the_request_is_what_the_tool_sees() -> None:
     provider = RequestActorProvider()
     starlette = _http_app(_server(provider))
-    assert await _call(_stamping(starlette, ADA), starlette) == "mcp:collaboratore"
+    assert await _call(_stamping(starlette, ADA), starlette) == "mcp:collaborator"
 
 
 @pytest.mark.asyncio
@@ -98,7 +98,7 @@ async def test_a_request_without_an_actor_is_refused_before_the_tool_runs() -> N
     starlette = _http_app(_server(provider))
     with pytest.raises(BaseException) as excinfo:
         await _call(_stamping(starlette, None), starlette)
-    assert any("nessun attore" in message for message in _messages(excinfo.value))
+    assert any("no actor" in message for message in _messages(excinfo.value))
 
 
 def test_the_provider_refuses_outside_a_request() -> None:

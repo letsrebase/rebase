@@ -1,7 +1,7 @@
 """The two routes of the Gmail customer proposals, over real HTTP (REB-223).
 
-`GET /api/gmail/customer-suggestions` asks the connected mailbox, here the core suite's
-`FakeGmail` behind the router's own transport; `POST /api/customers/from-suggestions`
+`GET /api/gmail/organization-suggestions` asks the connected mailbox, here the core suite's
+`FakeGmail` behind the router's own transport; `POST /api/organizations/from-suggestions`
 creates what a person ticked, together or not at all.
 """
 
@@ -21,13 +21,14 @@ from sqlalchemy.orm import Session
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages" / "core" / "tests"))
 from fakes.fake_gmail import FakeGmail, FakeMessage  # noqa: E402
 
+import pigrocrm_api.google_tokens as google_tokens  # noqa: E402
 import pigrocrm_api.routers.gmail as gmail_router  # noqa: E402
 from pigrocrm.core.config import Settings, get_settings  # noqa: E402
-from pigrocrm.core.customers.models import Customer  # noqa: E402
-from pigrocrm.core.gmail.crypto import seal  # noqa: E402
+from pigrocrm.core.crypto import seal  # noqa: E402
 from pigrocrm.core.gmail.models import GoogleAccount  # noqa: E402
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES  # noqa: E402
 from pigrocrm.core.gmail.transport import GmailTransport  # noqa: E402
+from pigrocrm.core.organizations.models import Organization  # noqa: E402
 from pigrocrm.core.people.models import Person  # noqa: E402
 
 TOKEN_KEY = b"k" * 32
@@ -56,14 +57,14 @@ def gmail_ready(client: TestClient) -> Iterator[TestClient]:
 
 @pytest.fixture
 def google(monkeypatch: pytest.MonkeyPatch) -> FakeGmail:
-    """The router builds its transport and its token client from the module's own
-    `GmailTransport`: pointed at the fake, with an empty token-client cache so no other
+    """The router and the token-client cache each build their transport from their own
+    `GmailTransport`: both pointed at the fake, with an empty token-client cache so no other
     test's client answers."""
     fake = FakeGmail(access_token="ya29.fake")
-    monkeypatch.setattr(
-        gmail_router, "GmailTransport", lambda: GmailTransport(http=fake, sleep=lambda _: None)
-    )
-    monkeypatch.setattr(gmail_router, "_token_clients", {})
+    transport = lambda: GmailTransport(http=fake, sleep=lambda _: None)  # noqa: E731
+    monkeypatch.setattr(gmail_router, "GmailTransport", transport)
+    monkeypatch.setattr(google_tokens, "GmailTransport", transport)
+    monkeypatch.setattr(google_tokens, "_token_clients", {})
     return fake
 
 
@@ -105,15 +106,15 @@ def test_the_proposals_answer_what_the_mailbox_wrote_to(
     _sent(google, 2, "marco@acme.it", days_ago=10)
     _sent(google, 3, "amico@gmail.com", days_ago=4)
 
-    response = logged_in.get("/api/gmail/customer-suggestions")
+    response = logged_in.get("/api/gmail/organization-suggestions")
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert [proposal["dominio"] for proposal in body] == ["acme.it"]
-    assert body[0]["nome"] == "Acme"
-    assert body[0]["conversazioni"] == 2
-    assert body[0]["persone"] == [
-        {"indirizzo": "marco@acme.it", "nome": "Marco Bianchi", "gia_in_anagrafica": False}
+    assert [proposal["domain"] for proposal in body] == ["acme.it"]
+    assert body[0]["name"] == "Acme"
+    assert body[0]["conversations"] == 2
+    assert body[0]["people"] == [
+        {"address": "marco@acme.it", "name": "Marco Bianchi", "already_in_directory": False}
     ]
     # Headers only, and not a word of what was written.
     assert "riservato" not in response.text
@@ -122,10 +123,10 @@ def test_the_proposals_answer_what_the_mailbox_wrote_to(
 def test_the_proposals_answer_conflict_without_a_mailbox_or_a_client(
     logged_in: TestClient, gmail_ready: TestClient
 ) -> None:
-    response = logged_in.get("/api/gmail/customer-suggestions")
+    response = logged_in.get("/api/gmail/organization-suggestions")
     assert response.status_code == 409, response.text
     gmail_ready.app.dependency_overrides.pop(get_settings, None)  # type: ignore[attr-defined]
-    response = logged_in.get("/api/gmail/customer-suggestions")
+    response = logged_in.get("/api/gmail/organization-suggestions")
     assert response.status_code == 409, response.text
     assert "non è configurato" in response.json()["detail"]
 
@@ -133,8 +134,8 @@ def test_the_proposals_answer_conflict_without_a_mailbox_or_a_client(
 def test_the_period_is_bounded_before_google_is_asked(
     logged_in: TestClient, gmail_ready: TestClient
 ) -> None:
-    for mesi in (0, 25):
-        response = logged_in.get("/api/gmail/customer-suggestions", params={"mesi": mesi})
+    for months in (0, 25):
+        response = logged_in.get("/api/gmail/organization-suggestions", params={"months": months})
         assert response.status_code == 422, response.text
 
 
@@ -142,63 +143,67 @@ def test_ticked_proposals_are_created_with_their_people(
     logged_in: TestClient, api_session: Session
 ) -> None:
     response = logged_in.post(
-        "/api/customers/from-suggestions",
+        "/api/organizations/from-suggestions",
         json={
-            "clienti": [
+            "organizations": [
                 {
-                    "dominio": "acme.it",
-                    "ragione_sociale": "Acme S.r.l.",
-                    "persone": [{"indirizzo": "marco@acme.it", "nome": "Marco Bianchi"}],
+                    "domain": "acme.it",
+                    "legal_name": "Acme S.r.l.",
+                    "people": [{"address": "marco@acme.it", "name": "Marco Bianchi"}],
                 },
-                {"dominio": "studio-rossi.it", "ragione_sociale": "Studio Rossi"},
+                {"domain": "studio-rossi.it", "legal_name": "Studio Rossi"},
             ]
         },
     )
 
     assert response.status_code == 201, response.text
     created = response.json()
-    assert [row["ragione_sociale"] for row in created] == ["Acme S.r.l.", "Studio Rossi"]
-    person = api_session.execute(select(Person).where(Person.email == "marco@acme.it")).scalar_one()
-    assert (person.nome, person.cognome) == ("Marco", "Bianchi")
+    assert [row["legal_name"] for row in created] == ["Acme S.r.l.", "Studio Rossi"]
+    person = api_session.execute(select(Person).where(Person.first_name == "Marco")).scalar_one()
+    assert (person.first_name, person.last_name) == ("Marco", "Bianchi")
     assert str(person.customer_id) == created[0]["id"]
 
 
 def test_a_second_import_of_the_same_domain_is_a_conflict_and_creates_nothing(
     logged_in: TestClient, api_session: Session
 ) -> None:
-    api_session.add(Customer(ragione_sociale="Acme", sito_web="acme.it"))
+    api_session.add(Organization(legal_name="Acme", website="acme.it"))
     api_session.flush()
     response = logged_in.post(
-        "/api/customers/from-suggestions",
+        "/api/organizations/from-suggestions",
         json={
-            "clienti": [
-                {"dominio": "nuovo.it", "ragione_sociale": "Nuovo"},
-                {"dominio": "acme.it", "ragione_sociale": "Acme di nuovo"},
+            "organizations": [
+                {"domain": "nuovo.it", "legal_name": "Nuovo"},
+                {"domain": "acme.it", "legal_name": "Acme di nuovo"},
             ]
         },
     )
     assert response.status_code == 409, response.text
     assert "acme.it" in response.json()["detail"]
     assert (
-        api_session.execute(select(Customer).where(Customer.sito_web == "nuovo.it")).first() is None
+        api_session.execute(select(Organization).where(Organization.website == "nuovo.it")).first()
+        is None
     )
 
 
 def test_an_empty_or_nameless_import_is_refused(logged_in: TestClient) -> None:
     assert (
-        logged_in.post("/api/customers/from-suggestions", json={"clienti": []}).status_code == 422
+        logged_in.post(
+            "/api/organizations/from-suggestions", json={"organizations": []}
+        ).status_code
+        == 422
     )
-    blank = {"clienti": [{"dominio": "acme.it", "ragione_sociale": "   "}]}
-    assert logged_in.post("/api/customers/from-suggestions", json=blank).status_code == 422
+    blank = {"organizations": [{"domain": "acme.it", "legal_name": "   "}]}
+    assert logged_in.post("/api/organizations/from-suggestions", json=blank).status_code == 422
 
 
 def test_a_readonly_person_can_neither_ask_nor_import(
     readonly_client: TestClient, gmail_ready: TestClient
 ) -> None:
     assert readonly_client is gmail_ready
-    assert readonly_client.get("/api/gmail/customer-suggestions").status_code == 403
+    assert readonly_client.get("/api/gmail/organization-suggestions").status_code == 403
     response = readonly_client.post(
-        "/api/customers/from-suggestions",
-        json={"clienti": [{"dominio": "acme.it", "ragione_sociale": "Acme"}]},
+        "/api/organizations/from-suggestions",
+        json={"organizations": [{"domain": "acme.it", "legal_name": "Acme"}]},
     )
     assert response.status_code == 403

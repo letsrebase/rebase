@@ -1,0 +1,408 @@
+"""The space-wide group, part one: `month_not_closed`, `proposal_pending`,
+`connection_failing` and `job_late` (spec 2026-10-26 §3.5). The two fiscal types of the same
+section are `space_fiscal.py`.
+
+**Recipients are admins and nobody else** (§3.5, §4): `Directory.admins()`, and never the
+space's owner as a fallback, so a space with no admin who may read the subject raises
+nothing. A scoped admin is the one question the card leaves open, and it is decided the way
+the rest of the product decides it: a subject of one legal entity goes to the admins whose scope
+covers it (`Person.sees`, the rule of §4), and a subject of the space as a whole, which
+has no legal entity, goes to the unscoped admins, which is exactly who may close a period
+(`PeriodLockService.close_period` requires an unscoped admin) and who may read a connection
+that belongs to nobody's legal entity. `admins_seeing` is that decision, written once.
+
+**Nothing here is stored and nothing is invented.** A job can be late only if something
+records when it last ran: the reminder pass, the automations' daily pass and the weekly
+digest each leave a row in `reminder_job_run` (`reminders/jobs.py`, REB-764), and `job_late`
+watches those three. A job with no row in the space has never run there and is never late:
+no row is invented. The mailbox sync leaves a row too, and is deliberately not watched: it
+also leaves `GoogleAccount.last_sync_at`, which `connection_failing` reads with the
+mailbox's own name and its own ladder, and two reminders about one cause would be noise.
+The other two automations run inside the request that triggers them
+(`automations/runner.py`).
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from datetime import datetime, time, timedelta
+from typing import Final
+from uuid import NAMESPACE_DNS, UUID, uuid5
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import func, select
+
+from pigrocrm.core.contracts.models import Contract
+from pigrocrm.core.db.clock import month_bounds
+from pigrocrm.core.drive.models import GoogleDriveAccount
+from pigrocrm.core.gmail.models import GoogleAccount
+from pigrocrm.core.gmail.schemas import SCOPE_READONLY
+from pigrocrm.core.inbox.models import InboxItem
+from pigrocrm.core.proposals.models import Proposal
+from pigrocrm.core.reminders.catalogue import LADDER_MAX, REMINDER_TYPES
+from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
+from pigrocrm.core.reminders.detectors.text import counted, format_days, format_hours
+from pigrocrm.core.reminders.jobs import JOBS_BY_KEY, REMINDER_PASS_JOB, SCHEDULED_JOBS
+from pigrocrm.core.reminders.models import ReminderJobRun
+from pigrocrm.core.timetracking.locks import period_label
+from pigrocrm.core.timetracking.models import PeriodLock
+
+NOT_CLOSED = REMINDER_TYPES["month_not_closed"]
+PENDING = REMINDER_TYPES["proposal_pending"]
+FAILING = REMINDER_TYPES["connection_failing"]
+LATE = REMINDER_TYPES["job_late"]
+
+
+def admins_seeing(ctx: DetectorContext, legal_entity_id: UUID | None) -> frozenset[UUID]:
+    """The admins who may be told about a subject of this legal entity, or of the space as a
+    whole when `legal_entity_id` is `None` (only an unscoped admin reads that). No fallback to
+    the space's owner: an empty set raises nothing."""
+    directory = ctx.directory
+    return frozenset(
+        user_id for user_id in directory.admins() if directory.people[user_id].sees(legal_entity_id)
+    )
+
+
+# -- month_not_closed ---------------------------------------------------------------------
+
+
+def period_subject(year: int, month: int) -> UUID:
+    """The subject id of a month. `period_locks` has no UUID key (`(anno, mese)` is its
+    identity), a reminder's key needs one, and the web opens a month by its number: so the
+    id carries the month, `anno * 100 + mese` as the integer of the UUID, and
+    `subject_period` reads it back."""
+    return UUID(int=year * 100 + month)
+
+
+def subject_period(subject_id: UUID) -> tuple[int, int]:
+    year, month = divmod(subject_id.int, 100)
+    return year, month
+
+
+def _closes_periods(ctx: DetectorContext) -> bool:
+    """«The space closes periods»: somebody has closed one. Closing is never mandatory
+    (`timetracking/locks.py`), so a space that never did gets nothing."""
+    return ctx.session.scalar(select(PeriodLock.year).limit(1)) is not None
+
+
+def _months_from(first: tuple[int, int]) -> Iterable[tuple[int, int]]:
+    year, month = first
+    while True:
+        yield year, month
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+
+
+def detect_not_closed(ctx: DetectorContext) -> list[Detection]:
+    """Every month from the first one the space closed to the last that ended `bound`
+    days ago, which has no lock. A month before the first lock is not counted: the space
+    began closing later, and the months it never closed are not a ritual it skipped."""
+    closed = {
+        (row.year, row.month)
+        for row in ctx.session.execute(select(PeriodLock.year, PeriodLock.month))
+    }
+    if not closed:
+        return []
+    recipients = admins_seeing(ctx, None)
+    cutoff = ctx.today - timedelta(days=max(ctx.bound(NOT_CLOSED), 1))
+    found: list[Detection] = []
+    for year, month in _months_from(min(closed)):
+        last_day = month_bounds(year, month)[1]
+        if last_day > cutoff:
+            break
+        if (year, month) in closed or not recipients:
+            continue
+        days = (ctx.today - last_day).days
+        subject = period_subject(year, month)
+        found.append(
+            Detection(
+                type="month_not_closed",
+                subject_id=subject,
+                measure=float(days),
+                recipients=recipients,
+                title=f"Mese non chiuso: {period_label(year, month)}",
+                detail=(
+                    f"{period_label(year, month).capitalize()} è finito da "
+                    f"{format_days(days)} e non è "
+                    "stato chiuso: finché è aperto, ore e costi del mese possono ancora cambiare"
+                ),
+                entity="period",
+                entity_id=subject,
+            )
+        )
+    return found
+
+
+# -- proposal_pending ---------------------------------------------------------------------
+
+# One reminder per proposal, oldest first, and no more than this many of them: the queue
+# behind the hundredth is younger than it, so it is never the more severe, and a pass that
+# listed a thousand would bury the list it exists to keep short.
+MAX_PROPOSALS: Final = 100
+
+_WHAT = {
+    "contract": "La bozza di contratto",
+    "work_unit": "La giornata proposta",
+    "supplier_invoice": "La fattura di acquisto letta",
+    "receipt": "La ricevuta letta",
+    "bank_statement": "L'estratto conto letto",
+}
+
+
+def detect_pending(ctx: DetectorContext) -> list[Detection]:
+    """Agent proposals still `pending` that were created `bound` days ago or earlier,
+    counted in the installation's days, oldest first."""
+    zone = ZoneInfo(ctx.timezone)
+    cutoff_day = ctx.today - timedelta(days=max(ctx.bound(PENDING), 1))
+    cutoff = datetime.combine(cutoff_day + timedelta(days=1), time.min, tzinfo=zone)
+    rows = ctx.session.execute(
+        select(
+            Proposal,
+            Contract.title,
+            # A proposal read from the inbox has no contract: its item's legal entity, which
+            # is empty until somebody classifies it, is the space's own.
+            func.coalesce(Contract.legal_entity_id, InboxItem.legal_entity_id),
+            Contract.customer_id,
+        )
+        .outerjoin(Contract, Contract.id == Proposal.contract_id)
+        .outerjoin(InboxItem, InboxItem.id == Proposal.inbox_item_id)
+        .where(Proposal.status == "pending", Proposal.created_at < cutoff)
+        .order_by(Proposal.created_at, Proposal.id)
+        .limit(MAX_PROPOSALS)
+    )
+    found: list[Detection] = []
+    for proposal, contract_title, legal_entity_id, customer_id in rows:
+        if proposal.owner_user_id is not None:
+            # One person's proposal is told to that person and to nobody else, an administrator
+            # included (design 2026-11-09, incoming documents inbox, § 3.5 and § 5).
+            recipients = frozenset({proposal.owner_user_id}) & frozenset(ctx.directory.people)
+        else:
+            recipients = admins_seeing(ctx, legal_entity_id)
+        if not recipients:
+            continue
+        days = (ctx.today - proposal.created_at.astimezone(zone).date()).days
+        what = _WHAT.get(proposal.target_type, "La proposta")
+        about = f" · {contract_title}" if contract_title else ""
+        # Nothing files a document read from the inbox yet: it cannot be accepted, only refused
+        # (and read again), and the sentence does not ask for what cannot be done.
+        ask = (
+            "nessun modulo la archivia ancora, rifiutala per farla rileggere"
+            if proposal.inbox_item_id is not None
+            else "accettala o rifiutala"
+        )
+        found.append(
+            Detection(
+                type="proposal_pending",
+                subject_id=proposal.id,
+                measure=float(days),
+                recipients=recipients,
+                title="Proposta in attesa di una decisione",
+                detail=(f"{what} aspetta da {format_days(days)}: {ask}{about}"),
+                entity="proposal",
+                entity_id=proposal.id,
+                legal_entity_id=legal_entity_id,
+                customer_id=customer_id,
+            )
+        )
+    return found
+
+
+# -- connection_failing -------------------------------------------------------------------
+
+# A credential Google refused, or that lapsed, is broken whatever the clock says. The
+# ladder reads hours, and its critical rung is `LADDER_MAX`, the largest number a ladder
+# may hold (the catalogue row says so): no valid rung is above it, so a broken
+# credential's measure reaches every rung of every ladder, an edited one included, and
+# is critical for anybody who has the type on, while a merely stale sync keeps its honest
+# number of hours and stops at serious.
+BROKEN: Final = float(LADDER_MAX)
+_BROKEN_STATUSES = ("revoked", "expired")
+
+
+def _connected(ctx: DetectorContext) -> bool:
+    """«The space connected it»: a Gmail or Drive row that was not disconnected on purpose."""
+    session = ctx.session
+    return (
+        session.scalar(
+            select(GoogleAccount.id).where(GoogleAccount.status != "disconnected").limit(1)
+        )
+        is not None
+        or session.scalar(
+            select(GoogleDriveAccount.id)
+            .where(GoogleDriveAccount.status != "disconnected")
+            .limit(1)
+        )
+        is not None
+    )
+
+
+def _sync_baseline(account: GoogleAccount) -> datetime:
+    """When this mailbox last proved it works: its last sync, or when it was connected if
+    it has not synchronised yet (a connection that never ran is as stale as it is old)."""
+    moments = [m for m in (account.last_sync_at, account.connected_at) if m is not None]
+    return max(moments)
+
+
+def _hours(since: datetime, now: datetime) -> int:
+    return max(int((now - since).total_seconds() // 3600), 0)
+
+
+def detect_failing(ctx: DetectorContext) -> list[Detection]:
+    """Gmail: a revoked or expired credential, or a sync that last worked `bound` hours
+    ago or more. Drive: a revoked or expired credential; Drive is read when somebody asks
+    and has no clock of its own, so it cannot be stale."""
+    recipients = admins_seeing(ctx, None)
+    if not recipients:
+        return []
+    floor = max(ctx.bound(FAILING), 1)
+    found: list[Detection] = []
+    for account in ctx.session.scalars(
+        select(GoogleAccount)
+        .where(GoogleAccount.status != "disconnected")
+        .order_by(GoogleAccount.connected_at, GoogleAccount.id)
+    ):
+        email = account.email_address
+        if account.status in _BROKEN_STATUSES:
+            measure = BROKEN
+            title = "Gmail scollegato: il consenso Google non vale più"
+            detail = (
+                f"Il consenso Google per {email} è "
+                + ("stato revocato" if account.status == "revoked" else "expired")
+                + ": la sincronizzazione e l'invio sono fermi finché non ricolleghi la casella"
+            )
+        elif SCOPE_READONLY in account.scopes_granted:
+            hours = _hours(_sync_baseline(account), ctx.now)
+            if hours < floor:
+                continue
+            measure = float(hours)
+            title = f"Gmail non si sincronizza da {format_hours(hours)}"
+            detail = (
+                f"L'ultima sincronizzazione della casella {email} è di {format_hours(hours)} fa"
+            )
+        else:
+            # Without `gmail.readonly` the sync is switched off and says so in its own
+            # banner; there is nothing here that failed.
+            continue
+        found.append(
+            Detection(
+                type="connection_failing",
+                subject_id=account.id,
+                measure=measure,
+                recipients=recipients,
+                title=title,
+                detail=detail,
+                entity="google_connection",
+                entity_id=account.id,
+            )
+        )
+    for drive in ctx.session.scalars(
+        select(GoogleDriveAccount)
+        .where(GoogleDriveAccount.status.in_(_BROKEN_STATUSES))
+        .order_by(GoogleDriveAccount.connected_at, GoogleDriveAccount.id)
+    ):
+        found.append(
+            Detection(
+                type="connection_failing",
+                subject_id=drive.id,
+                measure=BROKEN,
+                recipients=recipients,
+                title="Drive scollegato: il consenso Google non vale più",
+                detail=(
+                    f"Il consenso Google per {drive.email_address} è "
+                    + ("stato revocato" if drive.status == "revoked" else "expired")
+                    + ": i file di Drive non sono raggiungibili finché non ricolleghi Drive"
+                ),
+                entity="google_connection",
+                entity_id=drive.id,
+            )
+        )
+    return found
+
+
+# -- job_late -----------------------------------------------------------------------------
+
+# The jobs this type reads, by the name they have in `reminder_job_run`: every job of
+# `SCHEDULED_JOBS` that names a subject for the sentence. The ladder is written for the
+# reminder pass (spec §3.5: serious at twice its quarter of an hour, critical «when the
+# reminder pass itself has not run for 3 hours»), so another job's rungs are the same
+# multiples of its own late point: a job that is late after 26 hours is serious at 26
+# hours and critical at 156, the digest, late after 8 days, at 8 days and 48. The detector
+# normalises the measure to the pass's minutes and the engine reads it against the ladder
+# as it reads every other type. A space that moves the ladder moves every job with it, but
+# only the pass is read as the ladder is written: a rung somebody sets at 10 minutes is the
+# pass's own ten minutes, and would make the daily job «late» nine hours after it ran and the
+# weekly one two days after, while the panel says it is on time. Any other job is raised from
+# its own late point at the earliest, whatever the rungs say.
+_WATCHED = {job.key: job for job in SCHEDULED_JOBS if job.late_label is not None}
+_LADDER_BASE_MINUTES = JOBS_BY_KEY[REMINDER_PASS_JOB].stale_after_minutes
+
+
+def job_subject(job: str) -> UUID:
+    """A job has no id of its own (`reminder_job_run` is keyed by name), so its subject is
+    one derived from the name."""
+    return uuid5(NAMESPACE_DNS, f"{job}.job.pigrocrm")
+
+
+def _last_runs(ctx: DetectorContext) -> dict[str, datetime]:
+    """When each job we can read last ran to the end. The reminder pass writes its own
+    clock at the end of a pass (`JobClock.succeeded`), after the detectors have read, so a
+    pass sees the previous one. A job nothing records, or whose every attempt failed, is
+    not in the answer, and is therefore never late: no row is invented."""
+    return {
+        row.job: row.ran_at
+        for row in ctx.session.scalars(
+            select(ReminderJobRun).where(
+                ReminderJobRun.job.in_(_WATCHED), ReminderJobRun.ran_at.is_not(None)
+            )
+        )
+        if row.ran_at is not None
+    }
+
+
+def detect_late(ctx: DetectorContext) -> list[Detection]:
+    """Jobs whose last run is `bound` of their own minutes old or more."""
+    recipients = admins_seeing(ctx, None)
+    if not recipients:
+        return []
+    floor = max(ctx.bound(LATE), 1)
+    found: list[Detection] = []
+    for job, ran_at in sorted(_last_runs(ctx).items()):
+        scheduled = _WATCHED[job]
+        minutes = max(int((ctx.now - ran_at).total_seconds() // 60), 0)
+        if job != REMINDER_PASS_JOB and minutes < scheduled.stale_after_minutes:
+            continue
+        measure = minutes * _LADDER_BASE_MINUTES / scheduled.stale_after_minutes
+        if measure < floor:
+            continue
+        subject = job_subject(job)
+        found.append(
+            Detection(
+                type="job_late",
+                subject_id=subject,
+                measure=measure,
+                recipients=recipients,
+                title=f"{scheduled.late_label} è in ritardo",
+                detail=(
+                    f"{scheduled.late_label} non parte da {_duration(minutes)}: dovrebbe "
+                    f"girare {scheduled.schedule}"
+                ),
+                entity="job",
+                entity_id=subject,
+            )
+        )
+    return found
+
+
+def _duration(minutes: int) -> str:
+    if minutes < 120:
+        return counted(minutes, "minuto", "minuti")
+    if minutes < 48 * 60:
+        return format_hours(minutes // 60)
+    return format_days(minutes // (24 * 60))
+
+
+DETECTORS = (
+    Detector(NOT_CLOSED, detect_not_closed, _closes_periods),
+    Detector(PENDING, detect_pending),
+    Detector(FAILING, detect_failing, _connected),
+    Detector(LATE, detect_late),
+)

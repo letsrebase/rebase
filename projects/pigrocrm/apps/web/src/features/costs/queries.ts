@@ -2,10 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
+import { asBody } from '@/lib/formValues'
 import { queryKeys } from '@/lib/query'
 
 /** Same rule as `features/time/queries.ts`: the wire shapes come from the generated
- *  OpenAPI schema, and every `Decimal` (`importo` above all) arrives as a `string`. */
+ *  OpenAPI schema, and every `Decimal` (`amount` above all) arrives as a `string`. */
 export type Cost = components['schemas']['CostRead']
 export type CostCategory = components['schemas']['CostCategoryRead']
 
@@ -14,11 +15,11 @@ type CostUpdateBody = components['schemas']['CostUpdate']
 
 export interface CostsListParams {
   deal_id?: string
-  azienda_id?: string
-  solo_generali?: boolean
+  legal_entity_id?: string
+  only_general?: boolean
   category_id?: string
-  da?: string
-  a?: string
+  from?: string
+  to?: string
 }
 
 export function useCosts(params: CostsListParams = {}) {
@@ -58,7 +59,7 @@ export function useCreateCost() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/costs', { body: body as unknown as CostCreateBody })),
+      unwrap(api.POST('/api/costs', { body: asBody<CostCreateBody>(body) })),
     onSuccess: (cost) => invalidateCosts(queryClient, cost.deal_id),
   })
 }
@@ -70,7 +71,7 @@ export function useUpdateCost(costId: string) {
       unwrap(
         api.PATCH('/api/costs/{cost_id}', {
           params: { path: { cost_id: costId } },
-          body: body as unknown as CostUpdateBody,
+          body: asBody<CostUpdateBody>(body),
         }),
       ),
     onSuccess: (cost) => invalidateCosts(queryClient, cost.deal_id),

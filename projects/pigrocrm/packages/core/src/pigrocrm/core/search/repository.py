@@ -6,35 +6,40 @@ the weight set as parameters, which is five dictionaries keyed by entity plus a 
 strictly more code than five explicit methods, and unreadable at the point where a plan
 goes wrong.
 
-`etichetta` and `sottotitolo` are built **here**, from the entity's own columns. Not in
+`label` and `subtitle` are built **here**, from the entity's own columns. Not in
 the browser: composing "nome cognome" client-side is business logic in the frontend, and
 the whole point of the two-adapter architecture is that an MCP agent sees the same label a
 human does.
 
-The floor is applied by repeating the score expression in `WHERE`, not by wrapping the
-query in a subquery. Postgres cannot reference a select alias in `WHERE`, and the extra
-evaluation costs nothing: `matches_any` has already narrowed the row set through the
-trigram index, which is the only place a plan could go wrong.
+Every field of a row is scored **once**, in a subquery (`_matches`): `matches_any` narrows
+the rows there through the trigram index, the subquery's `OFFSET 0` keeps Postgres from
+folding it back into the outer query, where the score would be evaluated again for the
+floor, for the order and for the column that names the best field, and the floor, the
+order and the page are applied outside it over the computed columns.
 
-The count and the hits are two queries over **one** predicate, written once in
-`_predicate` and used by both. A card and its drill-through are the same calculation
+The count and the hits are two queries over **one** set of matches, built once in
+`_matches` and used by both. A card and its drill-through are the same calculation
 (Global Constraints); two hand-copied `where` clauses are how they stop being one.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Select, func, literal, select
-from sqlalchemy.orm import Session
+from sqlalchemy import ColumnElement, Select, Subquery, func, literal, or_, select
+from sqlalchemy.orm import Session, aliased
 
-from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.contact_points.models import ContactPoint
+from pigrocrm.core.contact_points.service import owners_matching
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.labels import DOCUMENT_TYPE, TASK_STATUS, label
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.search.schemas import (
     COUNT_CEILING,
@@ -47,53 +52,118 @@ from pigrocrm.core.search.scoring import (
     SCORE_EXACT,
     SCORE_FLOOR,
     SCORE_SCALE,
-    WEIGHT_CAUSALE,
     WEIGHT_CODE,
     WEIGHT_EMAIL,
     WEIGHT_IDENTIFYING,
+    WEIGHT_MEMO,
     ScoredField,
-    best_field,
+    combine_scores,
+    field_scores,
     matches_any,
-    row_score,
+    pick_field,
 )
+from pigrocrm.core.tasks.models import Task
+
 
 # Spec §8.1's searched surface, one tuple per entity. Declaration order is load-bearing
 # twice over: `best_field` resolves a tie to the earlier field, so the identifying column
 # comes first, and `matches_any` builds its `OR` in this order.
-CUSTOMER_FIELDS: tuple[ScoredField, ...] = (
-    ScoredField("ragione_sociale", Customer.ragione_sociale, WEIGHT_IDENTIFYING),
-    ScoredField("partita_iva", Customer.partita_iva, WEIGHT_CODE),
-    ScoredField("codice_fiscale", Customer.codice_fiscale, WEIGHT_CODE),
-    ScoredField("email", Customer.email, WEIGHT_EMAIL),
+def points_text(owner_id: Any, owner_column: Any, kind: str | None = None) -> ColumnElement[str]:
+    """The contact points of one owner as one string (of one `kind` when it is given), what a
+    contact field of a search is matched against: an address, a number or a profile on any of
+    the owner's points finds it. A correlated subquery rather than a column, since the points
+    live in a table of their own; the palette's tables are small and its `ILIKE` over it is a
+    filter, not a seek."""
+    found = select(func.string_agg(ContactPoint.value, literal(" "))).where(
+        owner_column == owner_id
+    )
+    if kind is not None:
+        found = found.where(ContactPoint.kind == kind)
+    return found.correlate_except(ContactPoint).scalar_subquery()
+
+
+def contact_fields(owner: Any, owner_column: Any) -> tuple[ScoredField, ...]:
+    """One field per kind of contact point, named as the kind (`email`, `phone`, `linkedin`),
+    so a hit says which point answered. A phone also matches by its digits, the way the
+    people and customer lists find it (`owners_matching`): `3888713657` finds
+    `+39 388 871 3657`."""
+    return (
+        ScoredField("email", points_text(owner.id, owner_column, "email"), WEIGHT_EMAIL),
+        ScoredField(
+            "phone",
+            points_text(owner.id, owner_column, "phone"),
+            WEIGHT_EMAIL,
+            also=lambda term: owner.id.in_(owners_matching(owner_column, term, "phone")),
+        ),
+        ScoredField("linkedin", points_text(owner.id, owner_column, "linkedin"), WEIGHT_EMAIL),
+    )
+
+
+ORGANIZATION_FIELDS: tuple[ScoredField, ...] = (
+    ScoredField("legal_name", Organization.legal_name, WEIGHT_IDENTIFYING),
+    ScoredField("vat_number", Organization.vat_number, WEIGHT_CODE),
+    ScoredField("tax_code", Organization.tax_code, WEIGHT_CODE),
+    *contact_fields(Organization, ContactPoint.customer_id),
 )
 PERSON_FIELDS: tuple[ScoredField, ...] = (
-    ScoredField("cognome", Person.cognome, WEIGHT_IDENTIFYING),
-    ScoredField("nome", Person.nome, WEIGHT_IDENTIFYING),
-    ScoredField("email", Person.email, WEIGHT_EMAIL),
+    ScoredField("last_name", Person.last_name, WEIGHT_IDENTIFYING),
+    ScoredField("first_name", Person.first_name, WEIGHT_IDENTIFYING),
+    *contact_fields(Person, ContactPoint.person_id),
 )
-DEAL_FIELDS: tuple[ScoredField, ...] = (ScoredField("nome", Deal.nome, WEIGHT_IDENTIFYING),)
+DEAL_FIELDS: tuple[ScoredField, ...] = (ScoredField("name", Deal.name, WEIGHT_IDENTIFYING),)
 DOCUMENT_FIELDS: tuple[ScoredField, ...] = (
-    ScoredField("titolo", Document.titolo, WEIGHT_IDENTIFYING),
+    ScoredField("title", Document.title, WEIGHT_IDENTIFYING),
 )
-# One field, and `numero` is deliberately not a second one: a fiscal number is matched by
+# What a person reads in place of the number of an invoice that has none yet.
+DRAFT_LABEL = "bozza"
+
+# One field, and `number` is deliberately not a second one: a fiscal number is matched by
 # equality, not by trigram, and a `ScoredField` is by definition the trigram surface. The
 # equality path is `_invoices_by_number` below.
-INVOICE_FIELDS: tuple[ScoredField, ...] = (ScoredField("causale", Invoice.causale, WEIGHT_CAUSALE),)
+INVOICE_FIELDS: tuple[ScoredField, ...] = (ScoredField("memo", Invoice.memo, WEIGHT_MEMO),)
 
-# The five models this repository searches all carry `PrimaryKeyMixin`, `TimestampMixin`
+# §10.9 of slice 7 and REB-723: the sixth branch. The title is what a person typed to name
+# the task and weighs like any identifying column; the notes are prose around it and weigh
+# like an invoice's `memo`, so a task whose *title* has the word is above one that only
+# mentions it.
+TASK_FIELDS: tuple[ScoredField, ...] = (
+    ScoredField("title", Task.title, WEIGHT_IDENTIFYING),
+    ScoredField("note", Task.note, WEIGHT_MEMO),
+)
+
+# The six models this repository searches all carry `PrimaryKeyMixin`, `TimestampMixin`
 # and `SoftDeleteMixin`, which is what lets the shared plumbing name `deleted_at`,
 # `updated_at` and `id` without a per-entity accessor. `Any` rather than a Protocol: the
 # alternative is a structural type that restates three mixins this package does not own.
 _Model = Any
 
 
-# The clauses that narrow a search to one azienda (REB-623): empty for the search over
-# every azienda, the model's own `azienda_id` otherwise.
+# The clauses that narrow a search to one legal entity (REB-623): empty for the search over
+# every legal entity, the model's own `legal_entity_id` otherwise.
 Scope = tuple[ColumnElement[bool], ...]
 
 
-def _own(model: Any, azienda_id: UUID | None) -> Scope:
-    return () if azienda_id is None else (model.azienda_id == azienda_id,)
+def _own(model: Any, legal_entity_id: UUID | None) -> Scope:
+    if legal_entity_id is None:
+        return ()
+    if model is Organization:
+        # An organization shared across the legal entities belongs to each of them (REB-970).
+        return (or_(model.legal_entity_id == legal_entity_id, model.legal_entity_id.is_(None)),)
+    return (model.legal_entity_id == legal_entity_id,)
+
+
+@dataclass(frozen=True)
+class _Matches:
+    """The rows one search finds. `rows` is the entity's columns with one score column per
+    field, `score` the row's score over them and `keep` the floor."""
+
+    rows: Subquery
+    scores: Sequence[ColumnElement[Decimal]]
+    score: ColumnElement[Decimal]
+
+    @property
+    def keep(self) -> ColumnElement[bool]:
+        return self.score >= SCORE_FLOOR
 
 
 class SearchRepository:
@@ -102,29 +172,32 @@ class SearchRepository:
 
     # -- shared plumbing -------------------------------------------------------
 
-    def _predicate(
+    def _matches(
         self,
         model: _Model,
         fields: Sequence[ScoredField],
         term: str,
         scope: Scope = (),
-    ) -> tuple[ColumnElement[bool], ...]:
-        """What a search result *is*, written once.
+    ) -> _Matches:
+        """What a search result *is*, written once, with every field scored once.
 
         Three clauses, and each is load-bearing. `deleted_at IS NULL` because a soft
         delete is a delete as far as a reader is concerned. `matches_any` because it is
         the indexable half -- the one the nine partial trigram indexes serve. The floor
-        because the tail of a trigram match is noise, and a palette that shows noise
-        teaches the user to ignore the palette.
+        (`_Matches.keep`, applied by the caller) because the tail of a trigram match is
+        noise, and a palette that shows noise teaches the user to ignore the palette.
         """
-        # `scope` is the azienda's own clause when a search is narrowed to one (REB-623):
-        # a fourth clause on the same predicate, so the page and the count agree on it.
-        return (
-            model.deleted_at.is_(None),
-            matches_any(fields, term),
-            row_score(fields, term) >= SCORE_FLOOR,
-            *scope,
+        # `scope` is the legal entity's own clause when a search is narrowed to one (REB-623):
+        # a clause of the same set of matches, so the page and the count agree on it.
+        rows = (
+            select(model, *field_scores(fields, term))
+            .where(model.deleted_at.is_(None), matches_any(fields, term), *scope)
+            # The fence: a subquery with an `OFFSET` is not pulled up into its parent.
+            .offset(0)
+            .subquery("matched")
         )
+        scores = [rows.c[f"score_{field.name}"] for field in fields]
+        return _Matches(rows, scores, combine_scores(scores))
 
     def _count(
         self, model: _Model, fields: Sequence[ScoredField], term: str, scope: Scope = ()
@@ -135,10 +208,11 @@ class SearchRepository:
         once it has 201 rows, so the cost is bounded no matter how many rows match, and
         the answer is exact whenever exactness is what is being shown.
         """
+        matches = self._matches(model, fields, term, scope)
         inner = (
             select(literal(1))
-            .select_from(model)
-            .where(*self._predicate(model, fields, term, scope))
+            .select_from(matches.rows)
+            .where(matches.keep)
             .limit(COUNT_CEILING + 1)
             .subquery()
         )
@@ -162,13 +236,15 @@ class SearchRepository:
         checks twenty runs for a byte-identical response. The second key is §8.5's own --
         at equal score, what was touched most recently is more likely what is wanted.
         """
+        matches = self._matches(model, fields, term, scope)
+        found = aliased(model, matches.rows)
         return (
-            select(model, row_score(fields, term), best_field(fields, term))
-            .where(*self._predicate(model, fields, term, scope))
+            select(found, matches.score, pick_field(fields, matches.scores))
+            .where(matches.keep)
             .order_by(
-                row_score(fields, term).desc(),
-                model.updated_at.desc(),
-                model.id.desc(),
+                matches.score.desc(),
+                found.updated_at.desc(),
+                found.id.desc(),
             )
             .limit(limit)
         )
@@ -185,44 +261,46 @@ class SearchRepository:
         scope: Scope = (),
     ) -> SearchGroup:
         rows = self.session.execute(self._scored(model, fields, term, limit, scope)).all()
-        totale, is_minimum = self._count(model, fields, term, scope)
+        total, is_minimum = self._count(model, fields, term, scope)
         hits = [
             SearchHit(
                 entity=entity,
                 id=row[0].id,
-                etichetta=label(row[0]),
-                sottotitolo=subtitle(row[0]),
-                punteggio=row[1],
-                campo=row[2],
+                label=label(row[0]),
+                subtitle=subtitle(row[0]),
+                score=row[1],
+                field=row[2],
             )
             for row in rows
         ]
-        return SearchGroup(entity=entity, hits=hits, totale=totale, totale_e_un_minimo=is_minimum)
+        return SearchGroup(entity=entity, hits=hits, total=total, total_is_minimum=is_minimum)
 
     # -- one branch per entity -------------------------------------------------
 
-    def customers(self, term: str, limit: int, azienda_id: UUID | None = None) -> SearchGroup:
+    def organizations(
+        self, term: str, limit: int, legal_entity_id: UUID | None = None
+    ) -> SearchGroup:
         return self._group(
-            "customer",
-            Customer,
-            CUSTOMER_FIELDS,
+            "organization",
+            Organization,
+            ORGANIZATION_FIELDS,
             term,
             limit,
-            label=lambda row: row.ragione_sociale,
-            subtitle=lambda row: row.partita_iva,
-            scope=_own(Customer, azienda_id),
+            label=lambda row: row.legal_name,
+            subtitle=lambda row: row.vat_number,
+            scope=_own(Organization, legal_entity_id),
         )
 
-    def people(self, term: str, limit: int, azienda_id: UUID | None = None) -> SearchGroup:
-        # `cognome` is nullable, so the label is joined from the parts that exist rather
+    def people(self, term: str, limit: int, legal_entity_id: UUID | None = None) -> SearchGroup:
+        # `last_name` is nullable, so the label is joined from the parts that exist rather
         # than formatted with a placeholder: "Ludovica" and not "Ludovica None".
-        # A person has no azienda of their own: narrowed through their customer, so a
-        # contact with no customer answers only the search over every azienda.
+        # A person has no legal entity of their own: narrowed through their customer, so a
+        # contact with no customer answers only the search over every legal entity.
         scope: Scope = ()
-        if azienda_id is not None:
+        if legal_entity_id is not None:
             scope = (
                 Person.customer_id.in_(
-                    select(Customer.id).where(Customer.azienda_id == azienda_id)
+                    select(Organization.id).where(*_own(Organization, legal_entity_id))
                 ),
             )
         return self._group(
@@ -231,27 +309,27 @@ class SearchRepository:
             PERSON_FIELDS,
             term,
             limit,
-            label=lambda row: " ".join(part for part in (row.nome, row.cognome) if part),
+            label=lambda row: " ".join(part for part in (row.first_name, row.last_name) if part),
             subtitle=lambda row: row.email,
             scope=scope,
         )
 
-    def deals(self, term: str, limit: int, azienda_id: UUID | None = None) -> SearchGroup:
+    def deals(self, term: str, limit: int, legal_entity_id: UUID | None = None) -> SearchGroup:
         group = self._group(
             "deal",
             Deal,
             DEAL_FIELDS,
             term,
             limit,
-            label=lambda row: row.nome,
+            label=lambda row: row.name,
             subtitle=lambda row: None,
-            scope=_own(Deal, azienda_id),
+            scope=_own(Deal, legal_entity_id),
         )
         return SearchGroup(
             entity=group.entity,
             hits=self._with_customer_names(Deal, group.hits),
-            totale=group.totale,
-            totale_e_un_minimo=group.totale_e_un_minimo,
+            total=group.total,
+            total_is_minimum=group.total_is_minimum,
         )
 
     def _with_customer_names(self, model: _Model, hits: list[SearchHit]) -> list[SearchHit]:
@@ -273,27 +351,27 @@ class SearchRepository:
             return hits
         row_ids = [hit.id for hit in hits]
         pairs = self.session.execute(
-            select(model.id, Customer.ragione_sociale)
-            .join(Customer, Customer.id == model.customer_id)
+            select(model.id, Organization.legal_name)
+            .join(Organization, Organization.id == model.customer_id)
             .where(model.id.in_(row_ids))
         ).all()
         names: dict[UUID, str] = {row[0]: row[1] for row in pairs}
-        return [hit.model_copy(update={"sottotitolo": names.get(hit.id)}) for hit in hits]
+        return [hit.model_copy(update={"subtitle": names.get(hit.id)}) for hit in hits]
 
-    def documents(self, term: str, limit: int, azienda_id: UUID | None = None) -> SearchGroup:
+    def documents(self, term: str, limit: int, legal_entity_id: UUID | None = None) -> SearchGroup:
         return self._group(
             "document",
             Document,
             DOCUMENT_FIELDS,
             term,
             limit,
-            label=lambda row: row.titolo,
-            subtitle=lambda row: row.tipo,
-            scope=_own(Document, azienda_id),
+            label=lambda row: row.title,
+            subtitle=lambda row: label(DOCUMENT_TYPE, row.type),
+            scope=_own(Document, legal_entity_id),
         )
 
-    def invoices(self, term: str, limit: int, azienda_id: UUID | None = None) -> SearchGroup:
-        """§8.1's fifth branch: `causale` by trigram, `(anno, numero)` by equality.
+    def invoices(self, term: str, limit: int, legal_entity_id: UUID | None = None) -> SearchGroup:
+        """§8.1's fifth branch: `memo` by trigram, `(anno, numero)` by equality.
 
         The branch `SearchEntity` has promised since Task A7 and nothing delivered until
         now: searching an invoice number answered «Nessun risultato» when the truth was
@@ -301,14 +379,14 @@ class SearchRepository:
         forbid.
 
         The two paths are **exclusive**. When the term parses as a fiscal number the
-        equality path runs alone -- served by `ix_invoices_anno_numero`, the partial index
+        equality path runs alone -- served by `ix_invoices_year_number`, the partial index
         slice 3 §3 already creates, so the number half needs no new index at all.
-        Trigramming `123` over `causale` would return every invoice whose description
+        Trigramming `123` over `memo` would return every invoice whose description
         contains 123 beside the one that *is* 123, and the row the user named would be one
         of a list rather than the answer.
         """
         fiscal = parse_fiscal_number(term)
-        scope = _own(Invoice, azienda_id)
+        scope = _own(Invoice, legal_entity_id)
         if fiscal is not None:
             return self._invoices_by_number(*fiscal, limit=limit, scope=scope)
         group = self._group(
@@ -324,29 +402,56 @@ class SearchRepository:
         return SearchGroup(
             entity=group.entity,
             hits=self._with_customer_names(Invoice, group.hits),
-            totale=group.totale,
-            totale_e_un_minimo=group.totale_e_un_minimo,
+            total=group.total,
+            total_is_minimum=group.total_is_minimum,
         )
+
+    def tasks(self, term: str, limit: int) -> SearchGroup:
+        """§10.9: an task by its title and its notes, whatever state it is in.
+
+        Closed ones are found too, and say so in the subtitle: a search that hid what was
+        done would answer «did I ever do that» with «no». The subtitle is the state, or the
+        deadline for an open one (`gg/mm/aaaa`), which is what tells two tasks of the same
+        name apart on a palette row. There is no legal entity clause: an task has no legal entity
+        of its own (the calendar keeps them whatever legal entity is selected).
+        """
+        return self._group(
+            "task",
+            Task,
+            TASK_FIELDS,
+            term,
+            limit,
+            label=lambda row: row.title,
+            subtitle=self._task_subtitle,
+        )
+
+    @staticmethod
+    def _task_subtitle(row: Any) -> str | None:
+        if row.status != "open":
+            return label(TASK_STATUS, row.status)
+        if row.due_date is None:
+            return "senza scadenza"
+        return str(row.due_date.strftime("%d/%m/%Y"))
 
     @staticmethod
     def _invoice_label(row: Any) -> str:
         """`2026/7 — causale` when numbered, `bozza — causale` when not.
 
-        `anno`/`numero` are NULL until emission, which is what makes "a failed creation
+        `year`/`number` are NULL until emission, which is what makes "a failed creation
         cannot burn a number" true by construction (slice 3). A draft still has to be
         findable and readable, so the state stands in for the number rather than the label
-        rendering "None/None" -- and `stato` is a closed set the user already sees on the
+        rendering "None/None" -- and `status` is a closed set the user already sees on the
         invoice list, so it reads as a fact rather than as a placeholder.
         """
         prefix = (
-            f"{row.anno}/{row.numero}"
-            if row.anno is not None and row.numero is not None
-            else row.stato
+            f"{row.year}/{row.number}"
+            if row.year is not None and row.number is not None
+            else DRAFT_LABEL
         )
-        return f"{prefix} — {row.causale}" if row.causale else prefix
+        return f"{prefix} — {row.memo}" if row.memo else prefix
 
     def _number_predicate(
-        self, anno: int | None, numero: int, scope: Scope = ()
+        self, year: int | None, number: int, scope: Scope = ()
     ) -> tuple[ColumnElement[bool], ...]:
         """What a fiscal-number match *is*, written once and used by both the page and the
         count -- the same discipline `_predicate` follows for the trigram branches, and for
@@ -358,35 +463,35 @@ class SearchRepository:
         """
         clauses: tuple[ColumnElement[bool], ...] = (
             Invoice.deleted_at.is_(None),
-            Invoice.numero == numero,
+            Invoice.number == number,
             *scope,
         )
-        if anno is not None:
-            clauses = (*clauses, Invoice.anno == anno)
+        if year is not None:
+            clauses = (*clauses, Invoice.year == year)
         return clauses
 
     def _invoices_by_number(
-        self, anno: int | None, numero: int, *, limit: int, scope: Scope = ()
+        self, year: int | None, number: int, *, limit: int, scope: Scope = ()
     ) -> SearchGroup:
-        """The equality half. At most one row per year and azienda (REB-619: two aziende
+        """The equality half. At most one row per year and legal entity (REB-619: two legal entities
         of one space each have their own `2026/1`, listed one after the other and told
-        apart by the azienda's name once milestone 3 shows it), so the ceiling is never
+        apart by the legal entity's name once milestone 3 shows it), so the ceiling is never
         reached in practice -- and the bounded count is used anyway, because "in
-        practice" is not a property and this way both paths report `totale` by the same
+        practice" is not a property and this way both paths report `total` by the same
         rule.
 
         `ORDER BY anno DESC` is §8.5's "what was touched most recently is more likely what
         is wanted", expressed in the only ordering a number has. `id DESC` closes it into a
-        total order: since REB-619 two aziende of one space may share `(anno, numero)`,
+        total order: since REB-619 two legal entities of one space may share `(anno, numero)`,
         so it is what orders their rows, and it costs nothing to not depend on a
         constraint in another package for criterion 4's byte-identical guarantee.
         """
-        predicate = self._number_predicate(anno, numero, scope)
+        predicate = self._number_predicate(year, number, scope)
         rows = (
             self.session.execute(
                 select(Invoice)
                 .where(*predicate)
-                .order_by(Invoice.anno.desc(), Invoice.id.desc())
+                .order_by(Invoice.year.desc(), Invoice.id.desc())
                 .limit(limit)
             )
             .scalars()
@@ -404,21 +509,21 @@ class SearchRepository:
             SearchHit(
                 entity="invoice",
                 id=row.id,
-                etichetta=self._invoice_label(row),
-                sottotitolo=None,
-                # An exact fiscal-number match is a code match -- §8.5's own "un match su un
-                # codice è voluto" -- so weight 1.00 and score 1.00, exactly what an exact
-                # `partita_iva` match produces. Quantized to the declared scale because
-                # `SearchHit.punteggio` is `Numeric(6, 4)` and a `Decimal("1.00")` would be
+                label=self._invoice_label(row),
+                subtitle=None,
+                # An exact fiscal-number match is a code match -- §8.5 says a match on a
+                # code is wanted -- so weight 1.00 and score 1.00, exactly what an exact
+                # `vat_number` match produces. Quantized to the declared scale because
+                # `SearchHit.score` is `Numeric(6, 4)` and a `Decimal("1.00")` would be
                 # a different value on the wire from every other exact match in the payload.
-                punteggio=SCORE_EXACT.quantize(Decimal(1).scaleb(-SCORE_SCALE)),
-                campo="numero",
+                score=SCORE_EXACT.quantize(Decimal(1).scaleb(-SCORE_SCALE)),
+                field="number",
             )
             for row in rows
         ]
         return SearchGroup(
             entity="invoice",
             hits=self._with_customer_names(Invoice, hits),
-            totale=min(found, COUNT_CEILING),
-            totale_e_un_minimo=found > COUNT_CEILING,
+            total=min(found, COUNT_CEILING),
+            total_is_minimum=found > COUNT_CEILING,
         )

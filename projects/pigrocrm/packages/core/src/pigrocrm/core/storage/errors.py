@@ -4,7 +4,7 @@ Everything else `DocumentStorage` raises is about a *key* or about Google -- an 
 key is `ValidationFailed` from `storage/base.py`, a missing blob is `NotFound`, a Drive
 outage is a `Conflict` from `drive/transport.py`. These two are about the installation
 rather than the request: `StorageNotConfigured` is the backend chosen (`gdrive`), no
-service account configured, and the titolare not yet having connected Drive and chosen
+service account configured, and the owner not yet having connected Drive and chosen
 a folder -- nothing broken, nothing missing, a setup step not yet done.
 `StorageUnreachable` (REB-562 fix round 3) is the same shape for the state one step
 later: the folder *is* chosen, but the credential behind it just failed, and the caller
@@ -17,13 +17,19 @@ shapes every domain shares; this holds what storage knows how to say about itsel
 never about which Google account it happens to be backed by.
 """
 
-from pigrocrm.core.errors import Conflict
+from pigrocrm.core.errors import Conflict, ValidationFailed
 
 # The entity every failure about a document's bytes is reported under -- the same one
 # `drive/transport.py` uses (`_ENTITY`), because the API and the MCP adapter both
 # render `Conflict.details["entity"]` and an adapter that routed on it would otherwise
 # send the reader to a different place for two failures of the same feature.
 STORAGE_ENTITY = "document_blob"
+
+
+def unusable_storage_key(reason: str, expected: str) -> ValidationFailed:
+    """A key a backend refuses, reported under the one entity every storage failure uses."""
+    return ValidationFailed(STORAGE_ENTITY, "storage_key", reason, expected=expected)
+
 
 # The whole point of the class. An operator setting `PIGROCRM_STORAGE_BACKEND=gdrive`
 # has two ways to finish the job, and this is the one that needs no Google Cloud
@@ -55,8 +61,8 @@ class StorageNotConfigured(Conflict):
 
 
 # The folder *is* configured -- an admin chose it, `DriveRepository.storage_account`
-# finds the row -- but the credential behind it just failed, so "collega Drive e
-# scegli la cartella" (`NOT_CONFIGURED_REASON`) would send the reader to redo a step
+# finds the row -- but the credential behind it just failed, so the "connect Drive and
+# choose the folder" text of `NOT_CONFIGURED_REASON` would send the reader to redo a step
 # that is already done. This names the actual next action instead, and names nobody:
 # see `StorageUnreachable`'s own docstring for why.
 UNREACHABLE_REASON = (
@@ -78,7 +84,7 @@ class StorageUnreachable(Conflict):
     verbatim. That is the right answer on the Drive settings page, where the viewer
     *is* the account owner (`GoogleDriveAccountService.usable`, `set_roots`) and
     reading their own email back is not a leak. It is the wrong answer here: a
-    collaboratore downloading a document they have every right to read has no reason to
+    collaborator downloading a document they have every right to read has no reason to
     learn which admin's Google account the space happens to write through, or that
     admin's address. `_run` logs the email once, server-side, before raising this --
     the fact is not lost, only kept off the wire.

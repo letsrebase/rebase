@@ -26,14 +26,14 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-import pigrocrm_api.routers.gmail as gmail_router
+import pigrocrm_api.google_tokens as google_tokens
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.drive.models import GoogleDriveAccount
 from pigrocrm.core.drive.schemas import DRIVE_REQUESTED_SCOPES
 from pigrocrm.core.drive.transport import DriveTransport
 from pigrocrm.core.gmail.tokens import TokenGrant
 from pigrocrm_api.deps import ACCESS_COOKIE
-from pigrocrm_api.routers.gmail import token_client_key
+from pigrocrm_api.google_tokens import token_client_key
 
 TOKEN_KEY_B64 = "a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s="  # 32 bytes of "k"
 CLIENT_SECRET = "il-segreto-del-client"
@@ -74,7 +74,7 @@ def drive_ready(client: TestClient) -> Iterator[TestClient]:
     client.app.dependency_overrides.pop(get_settings, None)
 
 
-def _second_actor(admin_client: TestClient, ruolo: str) -> TestClient:
+def _second_actor(admin_client: TestClient, role: str) -> TestClient:
     """A genuinely independent session, not `admin_client`'s own cookie jar. See the
     identical helper in `test_invoices_api.py`/`test_costs_api.py`: `logged_in` and a
     second role built on the same `client` fixture share one cookie jar, so requesting
@@ -83,10 +83,10 @@ def _second_actor(admin_client: TestClient, ruolo: str) -> TestClient:
     fix already established there -- a fresh cookie jar over the same ASGI app, and
     therefore the same database session and settings overrides.
     """
-    email = f"{ruolo}-{id(admin_client)}@pigro.it"
+    email = f"{role}-{id(admin_client)}@pigro.it"
     created = admin_client.post(
         "/api/users",
-        json={"email": email, "password": "supersegreta1", "nome": "Test", "ruolo": ruolo},
+        json={"email": email, "password": "supersegreta1", "name": "Test", "role": role},
     )
     assert created.status_code == 201, created.text
     client = TestClient(admin_client.app, base_url="https://testserver")
@@ -168,7 +168,7 @@ def test_a_readonly_actor_cannot_set_roots(logged_in: TestClient, drive_ready: T
     runs before `_present`'s presence check, so the role refusal has to be provable
     even with no row to refuse it over.
 
-    `readonly`, not `collaboratore`: `actor.py`'s `WRITE_ROLES` is `("admin",
+    `readonly`, not `collaborator`: `actor.py`'s `WRITE_ROLES` is `("admin",
     "collaboratore")`, so a collaboratore actually passes this gate -- `readonly` is
     the one role `require_write` refuses, and is the same role
     `test_gmail_router.py`'s own `test_a_readonly_actor_cannot_sync` uses to prove the
@@ -199,7 +199,7 @@ def _agent_client(admin_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> 
         what it claims and pass anyway (`test_mcp_invoice_ban.py` says the same thing
         about its own settings). Patched at the one name that decides it.
     """
-    raw = admin_client.post("/api/tokens", json={"nome": "Claude"})
+    raw = admin_client.post("/api/tokens", json={"name": "Claude"})
     assert raw.status_code == 201, raw.text
     token = raw.json()["token"]
     monkeypatch.setattr(
@@ -218,7 +218,7 @@ def test_an_agent_token_cannot_repoint_the_drive_roots(
     admin_user: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The route half of `AGENT_FORBIDDEN_ACTIONS`' three Drive-configuration entries,
+    """The route half of `FULL_ACCESS_ACTIONS`' three Drive-configuration entries,
     and the reason they are on that list at all.
 
     Every confinement slice 9C's reader enforces is a confinement to
@@ -317,7 +317,7 @@ def test_the_callback_never_renders_the_upstream_error_to_the_browser(
     )
     assert response.status_code == 307
     location = response.headers["location"]
-    assert location.startswith("/app/settings/drive?esito=")
+    assert location.startswith("/app/settings/drive?outcome=")
     assert "access_denied" not in location
 
 
@@ -328,7 +328,7 @@ def test_a_callback_with_a_state_nobody_issued_never_reports_a_connection(
         "/api/drive/oauth/callback?code=abc&state=mai-emesso", follow_redirects=False
     )
     assert response.status_code == 307, response.text
-    assert response.headers["location"] == "/app/settings/drive?esito=errore"
+    assert response.headers["location"] == "/app/settings/drive?outcome=error"
 
 
 # --- a session that ran out on Google's screens (REB-446) -------------------------------
@@ -359,7 +359,7 @@ class _Google:
 @pytest.fixture
 def google(drive_ready: TestClient, monkeypatch: pytest.MonkeyPatch) -> _Google:
     fake = _Google()
-    monkeypatch.setitem(gmail_router._token_clients, token_client_key(_configured()), fake)
+    monkeypatch.setitem(google_tokens._token_clients, token_client_key(_configured()), fake)
     return fake
 
 
@@ -394,7 +394,7 @@ def test_a_consent_that_outlasts_the_access_cookie_still_connects_drive(
     )
 
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/settings/drive?esito=collegato"
+    assert back.headers["location"] == "/app/settings/drive?outcome=connected"
     assert google.codes == ["4/0A-code"]
     # Only read: the SPA renews the pair on landing with the token the callback saw.
     assert logged_in.post("/api/auth/refresh").status_code == 200
@@ -416,7 +416,7 @@ def test_a_drive_consent_with_no_live_session_lands_on_the_settings_page(
     )
 
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/settings/drive?esito=sessione"
+    assert back.headers["location"] == "/app/settings/drive?outcome=session_expired"
     assert google.codes == []
 
 
@@ -426,7 +426,7 @@ def test_another_persons_drive_state_is_refused_on_a_refresh_only_session(
     """The state is redeemed against the id of whoever the refresh cookie names, so the
     admin's consent in a collaboratore's browser connects nothing and reaches no Google."""
     state = _start(logged_in)
-    other = _second_actor(logged_in, "collaboratore")
+    other = _second_actor(logged_in, "collaborator")
     _lose_access_cookie(other)
 
     back = other.get(
@@ -436,7 +436,7 @@ def test_another_persons_drive_state_is_refused_on_a_refresh_only_session(
     )
 
     assert back.status_code == 307, back.text
-    assert back.headers["location"] == "/app/settings/drive?esito=errore"
+    assert back.headers["location"] == "/app/settings/drive?outcome=error"
     assert google.codes == []
     count = api_session.execute(text("select count(*) from google_drive_accounts")).scalar_one()
     assert count == 0
@@ -467,11 +467,15 @@ def _stub_writable_folder(monkeypatch: pytest.MonkeyPatch, folder_id: str) -> No
             pass
 
     def stub_http(
-        method: str, url: str, headers: dict[str, str], body: bytes | None
-    ) -> tuple[int, bytes]:
-        return 200, json.dumps(
-            {"id": folder_id, "mimeType": "application/vnd.google-apps.folder"}
-        ).encode()
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
+    ) -> tuple[int, bytes, dict[str, str]]:
+        payload = {"id": folder_id, "mimeType": "application/vnd.google-apps.folder"}
+        return 200, json.dumps(payload).encode(), {}
 
     def factory(_account: GoogleDriveAccount, _settings: Settings) -> DriveTransport:
         return DriveTransport(tokens=_StubTokens(), http=stub_http, sleep=lambda _: None)
@@ -578,8 +582,8 @@ def test_an_explicit_null_storage_folder_id_clears_it(
     logged_in: TestClient, drive_ready: TestClient, api_session: Session, admin_user: Any
 ) -> None:
     """The other half: `null` was named, so it is written. Clearing the write folder is
-    something a person is allowed to ask for -- "lasciala vuota per non scrivere alcun
-    documento" is what the settings page offers -- and it must stay reachable."""
+    something a person is allowed to ask for -- the option to leave it empty so that no
+    document is written is what the settings page offers -- and it must stay reachable."""
     _connected_account(api_session, admin_user.id, storage_folder_id=STORAGE_ID)
 
     response = logged_in.patch(
@@ -592,7 +596,7 @@ def test_an_explicit_null_storage_folder_id_clears_it(
 
 
 @pytest.mark.parametrize("storage_folder_id", [STORAGE_ID, None])
-def test_a_collaboratore_cannot_name_the_write_folder(
+def test_to_collaborator_cannot_name_the_write_folder(
     logged_in: TestClient,
     drive_ready: TestClient,
     api_session: Session,
@@ -602,7 +606,7 @@ def test_a_collaboratore_cannot_name_the_write_folder(
     """REB-457: the write folder is the space's, so naming it is an admin's act. A
     collaboratore's `PATCH` that names it answers 403 before anything is verified or
     written, the read roots it carried included."""
-    collab = _second_actor(logged_in, "collaboratore")
+    collab = _second_actor(logged_in, "collaborator")
     user_id = collab.get("/api/auth/me").json()["id"]
     account = _connected_account(api_session, user_id, storage_folder_id=OTHER_ROOT_ID)
     account.root_folder_ids = [ROOT_ID]
@@ -621,11 +625,11 @@ def test_a_collaboratore_cannot_name_the_write_folder(
     assert account.storage_folder_id == OTHER_ROOT_ID
 
 
-def test_a_collaboratore_still_sets_their_own_read_roots(
+def test_to_collaborator_still_sets_their_own_read_roots(
     logged_in: TestClient, drive_ready: TestClient, api_session: Session
 ) -> None:
     """What their Drive page sends: the read roots and no write folder."""
-    collab = _second_actor(logged_in, "collaboratore")
+    collab = _second_actor(logged_in, "collaborator")
     user_id = collab.get("/api/auth/me").json()["id"]
     _connected_account(api_session, user_id)
 
@@ -670,7 +674,7 @@ def test_the_account_endpoint_says_no_space_storage_is_in_effect(
     assert response.json()["space_storage"] == {"in_effect": False, "holder": None}
 
 
-def test_the_account_endpoint_names_no_space_storage_to_a_collaboratore(
+def test_the_account_endpoint_names_no_space_storage_to_collaborator(
     logged_in: TestClient, drive_ready: TestClient, api_session: Session
 ) -> None:
     """A collaboratore chooses no write folder (`set_roots`'s own `require_admin`), so
@@ -680,7 +684,7 @@ def test_the_account_endpoint_names_no_space_storage_to_a_collaboratore(
     after a demotion must read as "nothing to show", not as a false "no folder"."""
     admin_id = logged_in.get("/api/auth/me").json()["id"]
     _connected_account(api_session, admin_id, storage_folder_id=STORAGE_ID)
-    collab = _second_actor(logged_in, "collaboratore")
+    collab = _second_actor(logged_in, "collaborator")
 
     response = collab.get("/api/drive/account")
 
@@ -716,21 +720,6 @@ def test_space_storage_survives_a_partially_configured_google_client(
         "in_effect": True,
         "holder": {"name": "Admin", "email": "io@example.it", "reachable": True},
     }
-
-
-# --- one token-client cache for both Google credentials --------------------------------
-
-
-def test_the_drive_router_shares_gmail_s_token_client_cache() -> None:
-    """One Google OAuth client authenticates both credentials, so the access-token cache
-    it keeps is one cache. A second, Drive-only dict would cold-start against tokens a
-    Gmail sync had already warmed, and `forget()` on one would leave the other's copy
-    of the same token live -- which is exactly what `disconnect` calls it to prevent.
-    """
-    from pigrocrm_api.routers import drive, gmail  # noqa: PLC0415
-
-    settings = _configured()
-    assert drive.token_client(settings) is gmail.token_client(settings)
 
 
 # --- disconnecting -----------------------------------------------------------------------

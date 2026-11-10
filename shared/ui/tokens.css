@@ -158,6 +158,10 @@
   --sidebar-foreground: var(--color-paper);
   --sidebar-primary: var(--color-watermelon-strong);
   --sidebar-primary-foreground: #ffffff;
+  /* The wordmark's «CRM» on the sidebar: Watermelon itself is 4.17:1 on Prussian Blue,
+     under AA for 18px text, so the wordmark takes the brand red 20% toward white
+     (5.2:1). A tint of the palette, like the chart hues, never a new colour. */
+  --sidebar-wordmark-accent: color-mix(in oklab, var(--color-watermelon) 80%, #ffffff);
   --sidebar-accent: color-mix(in oklab, #ffffff 10%, var(--color-prussian-blue));
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border: color-mix(in oklab, #ffffff 12%, var(--color-prussian-blue));
@@ -215,6 +219,7 @@
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-wordmark-accent: var(--sidebar-wordmark-accent);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
   --color-ring: var(--ring);

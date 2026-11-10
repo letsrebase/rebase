@@ -1,12 +1,32 @@
 from typing import Any
 from uuid import UUID
 
-from pigrocrm.core.deals.schemas import DealCreate, DealListQuery, DealUpdate
+from pigrocrm.core.deals.schemas import DealCreate, DealListQuery, DealUpdate, ValuePreviewIn
 from pigrocrm.core.deals.service import DealService
+from pigrocrm.core.errors import ValidationFailed
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.tools import notes
+from pigrocrm_mcp.tools.changes import refuse_empty, report
+from pigrocrm_mcp.tools.params import iso_date
+
+
+def _refuse_expected_value(data: dict[str, Any]) -> None:
+    """A deal's value is its lines; the total is derived and nobody sets it."""
+    if "expected_value" in data:
+        raise ValidationFailed(
+            "input",
+            "expected_value",
+            "the deal's value cannot be set directly: it is the total of its `value_lines`",
+            expected=(
+                "`value_lines`, a list of lines, e.g. "
+                '[{"unit": "flat", "delivery_period": "one_off", "unit_price": 20000}]; '
+                "`preview_deal_value` shows the total they give"
+            ),
+        )
 
 
 def create(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
+    _refuse_expected_value(data)
     return (
         DealService(context.session)
         .create(DealCreate(**data), context.actor)
@@ -15,12 +35,32 @@ def create(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
 
 
 def update(context: McpContext, deal_id: str, data: dict[str, Any]) -> dict[str, Any]:
-    result = DealService(context.session).update(UUID(deal_id), DealUpdate(**data), context.actor)
-    return result.model_dump(mode="json")
+    service = DealService(context.session)
+    identifier = UUID(deal_id)
+    notes.refuse_note_in_changes(data, "add_note")
+    _refuse_expected_value(data)
+    changes = DealUpdate(**data)
+    refuse_empty(data)
+    before = service.get(identifier, context.actor)
+    return report(before, service.update(identifier, changes, context.actor))
 
 
 def get(context: McpContext, deal_id: str) -> dict[str, Any]:
-    return DealService(context.session).get(UUID(deal_id), context.actor).model_dump(mode="json")
+    identifier = UUID(deal_id)
+    deal = DealService(context.session).get(identifier, context.actor)
+    return {**deal.model_dump(mode="json"), **notes.thread(context, "deal", identifier)}
+
+
+def preview_value(
+    context: McpContext, value_lines: list[dict[str, Any]] | None, expected_close_date: str | None
+) -> dict[str, Any]:
+    request = ValuePreviewIn.model_validate(
+        {
+            "value_lines": value_lines or [],
+            "expected_close_date": iso_date(expected_close_date, "expected_close_date"),
+        }
+    )
+    return DealService(context.session).preview_value(request).model_dump(mode="json")
 
 
 def search(context: McpContext, query: DealListQuery) -> dict[str, Any]:
@@ -34,8 +74,32 @@ def search(context: McpContext, query: DealListQuery) -> dict[str, Any]:
     }
 
 
-def move(context: McpContext, deal_id: str, stage_id: str) -> dict[str, Any]:
-    result = DealService(context.session).move_stage(UUID(deal_id), UUID(stage_id), context.actor)
+def move(
+    context: McpContext, deal_id: str, stage_id: str | None, pipeline_stage_id: str | None
+) -> dict[str, Any]:
+    """`stage_id` is the tool's name for the destination and `pipeline_stage_id` the deal's
+    own field for it (REB-808): an agent that has just read a deal says the second."""
+    # As UUIDs, so the same identifier spelt twice (case, hyphens) is one stage.
+    given = {UUID(value) for value in (stage_id, pipeline_stage_id) if value}
+    if len(given) > 1:
+        raise ValidationFailed(
+            "input",
+            "stage_id",
+            "`stage_id` and `pipeline_stage_id` name two different stages",
+            expected="only one of the two, or the same identifier in both",
+        )
+    if not given:
+        raise ValidationFailed(
+            "input",
+            "stage_id",
+            "required field missing",
+            expected=(
+                "the identifier of the destination stage, in `stage_id` or "
+                "`pipeline_stage_id`; the stages are in `list_pipeline_stages`"
+            ),
+        )
+    destination = given.pop()
+    result = DealService(context.session).move_stage(UUID(deal_id), destination, context.actor)
     return result.model_dump(mode="json")
 
 

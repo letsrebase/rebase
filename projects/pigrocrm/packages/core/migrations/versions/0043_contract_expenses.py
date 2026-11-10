@@ -11,9 +11,9 @@ forecasting into PigroCRM" (REB-344's signed-off mapping,
 `invoice_line_id` at all, by design -- so this is a genuinely new table, reusing
 `CostCategory` for categorisation exactly as §7 asks.
 
-**The one trigger function**
-(`pigrocrm.core.contract_expenses.triggers.CONTRACT_EXPENSE_TRIGGER_SQL`,
-imported rather than typed out a second time -- see that module's own docstring):
+**The one trigger function** (frozen below as `_CONTRACT_EXPENSE_TRIGGER_SQL`, the text
+`pigrocrm.core.contract_expenses.triggers.CONTRACT_EXPENSE_TRIGGER_SQL` rendered when this
+revision was written, so that a later change to the trigger is a revision of its own):
 `contract_expense_set_rimborsabile` (`BEFORE INSERT OR UPDATE` on `contract_expenses`),
 recomputing `rimborsabile` from `pre_autorizzata` against the owning contract's
 `politica_spese` on every write, never rejecting the write itself.
@@ -24,15 +24,62 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-from pigrocrm.core.contract_expenses.triggers import (
-    CONTRACT_EXPENSE_TRIGGER_SQL,
-    DROP_CONTRACT_EXPENSE_TRIGGER_SQL,
-)
-
 revision: str = "0043"
 down_revision: str | Sequence[str] | None = "0042"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+# Frozen (PCORE-A-19): the SQL this revision created, not an import of what the
+# application says today.
+_CONTRACT_EXPENSE_TRIGGER_SQL = """
+CREATE OR REPLACE FUNCTION contract_expense_set_rimborsabile() RETURNS TRIGGER AS $$
+DECLARE
+    v_politica jsonb;
+    v_kind text;
+    v_richiede_preautorizzazione boolean;
+BEGIN
+    SELECT c.politica_spese INTO v_politica
+    FROM contracts c WHERE c.id = NEW.contract_id;
+
+    IF v_politica IS NULL THEN
+        RAISE EXCEPTION 'contract_expenses.contract_id % does not reference a contract',
+            NEW.contract_id
+            USING ERRCODE = 'foreign_key_violation';
+    END IF;
+
+    v_kind := v_politica ->> 'kind';
+    IF v_kind IS NULL THEN
+        RAISE EXCEPTION
+            'contracts.politica_spese for contract % has no "kind" tag: %',
+            NEW.contract_id, v_politica
+            USING ERRCODE = 'check_violation';
+    END IF;
+    v_richiede_preautorizzazione := COALESCE(
+        (v_politica ->> 'richiede_preautorizzazione')::boolean, false
+    );
+
+    -- mastro's own `expense_set_reimbursable`, translated one for one: never
+    -- reimbursable at all under 'non_rimborsabile', regardless of
+    -- pre-authorisation; otherwise reimbursable unless the policy requires
+    -- pre-authorisation and this expense does not have it -- in which case it is
+    -- still recorded, just flagged, never rejected outright.
+    NEW.rimborsabile := (v_kind <> 'non_rimborsabile')
+        AND (NOT v_richiede_preautorizzazione OR NEW.pre_autorizzata);
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_contract_expenses_set_rimborsabile ON contract_expenses;
+CREATE TRIGGER trg_contract_expenses_set_rimborsabile
+    BEFORE INSERT OR UPDATE ON contract_expenses
+    FOR EACH ROW EXECUTE FUNCTION contract_expense_set_rimborsabile();
+"""
+
+_DROP_CONTRACT_EXPENSE_TRIGGER_SQL = """
+DROP TRIGGER IF EXISTS trg_contract_expenses_set_rimborsabile ON contract_expenses;
+DROP FUNCTION IF EXISTS contract_expense_set_rimborsabile();
+"""
 
 _TIMESTAMPS = (
     sa.Column(
@@ -77,14 +124,12 @@ def upgrade() -> None:
         "ix_contract_expenses_invoice_line_id", "contract_expenses", ["invoice_line_id"]
     )
 
-    # The one trigger function and its CREATE TRIGGER call (§12's own pattern) -- see
-    # `pigrocrm.core.contract_expenses.triggers` for the full text and why it lives
-    # there.
-    op.execute(CONTRACT_EXPENSE_TRIGGER_SQL)
+    # The one trigger function and its CREATE TRIGGER call (§12's own pattern).
+    op.execute(_CONTRACT_EXPENSE_TRIGGER_SQL)
 
 
 def downgrade() -> None:
-    op.execute(DROP_CONTRACT_EXPENSE_TRIGGER_SQL)
+    op.execute(_DROP_CONTRACT_EXPENSE_TRIGGER_SQL)
 
     op.drop_index("ix_contract_expenses_invoice_line_id", "contract_expenses")
     op.drop_index("ix_contract_expenses_category_id", "contract_expenses")

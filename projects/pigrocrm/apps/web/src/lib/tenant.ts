@@ -21,18 +21,17 @@ export const RESERVED_SLUGS = new Set([
   'assets',
   'privacy',
   'termini',
-  'orbiters',
   'pigrocrm',
   'pigro',
   'login',
   'www',
   'admin',
   'static',
-  'registrati',
+  'register',
   'mcp',
 ])
 
-/** `"/studio"` for `/studio/app/customers`, `""` for `/app/customers` or anything else. */
+/** `"/studio"` for `/studio/app/organizations`, `""` for `/app/organizations` or anything else. */
 export function tenantPrefixFrom(pathname: string): string {
   const match = /^\/([a-z0-9][a-z0-9-]{1,30}[a-z0-9])\/app(?:\/|$)/.exec(pathname)
   if (!match) return ''
@@ -43,8 +42,8 @@ export function tenantPrefixFrom(pathname: string): string {
 /** Same rule as `pigrocrm.core.tenants.schemas.slugify`, so the page's preview is what
  *  the server will accept: accents stripped, runs of anything else become one hyphen,
  *  trimmed, lowercased, cut to 32. */
-export function slugify(nome: string): string {
-  const ascii = nome
+export function slugify(name: string): string {
+  const ascii = name
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^\u0020-\u007e]/g, '')
@@ -69,12 +68,6 @@ export function slugProblem(slug: string): string | null {
 
 export const tenantPrefix: string =
   typeof window === 'undefined' ? '' : tenantPrefixFrom(window.location.pathname)
-
-/** Where a space logs in, as a full-page destination: a different basepath is a
- *  different application instance, so it is a navigation, not a router push. */
-export function spaceLoginUrl(slug: string): string {
-  return `/${slug}/app/login`
-}
 
 /** The four pages a visitor reaches under `/app` without a session (routes/app.tsx's
  *  guard never bounces them): the login, the signup that makes a space (spec

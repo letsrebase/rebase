@@ -45,16 +45,16 @@
     </header>
 
     <main class="wrap section">
-      <p class="kicker">Ultimo aggiornamento <time datetime="2026-09-29">29 settembre 2026</time></p>
+      <p class="kicker">Ultimo aggiornamento <time datetime="2026-11-02">2 novembre 2026</time></p>
       <h1 class="measure">Informativa sulla privacy</h1>
 
       <div class="measure" style="display: grid; gap: 1.25rem; margin-top: 2rem">
         <h2>Chi tratta i dati</h2>
         <p>
           Il titolare del trattamento è <strong>Humancraft di Ivan Sala</strong>, partita IVA
-          14518240966, <a class="quiet-link" href="https://humancraft.tech/">humancraft.tech</a>.
+          14518240966.
           Per qualunque richiesta su questa informativa e sui tuoi dati scrivi a
-          <a class="quiet-link" href="mailto:ivansala@humancraft.tech">ivansala@humancraft.tech</a>.
+          <a class="quiet-link" href="mailto:ciao@letsrebase.com">ciao@letsrebase.com</a>.
           Questa informativa vale per letsrebase.com, per pigro.letsrebase.com e per gli spazi
           PigroCRM che ospitiamo lì.
         </p>
@@ -78,27 +78,87 @@
 
         <h2>La tua scheda e il team builder</h2>
         <p>
-          Da settembre 2026, se hai una scheda freelance, il testo del tuo CV viene inviato
-          all'API di Anthropic per scrivere una descrizione anonima del profilo (ruolo,
-          seniority, competenze, settori, lingue): succede ogni volta che il CV cambia, o
-          quando un amministratore la richiede di nuovo. La descrizione che un visitatore
-          scrive nel team builder viene inviata alla stessa API insieme alle descrizioni
-          anonime di tutti i profili, per proporre una squadra. Ogni descrizione anonima che parte
-          così porta con sé anche la città o la regione che il CV indica, il modo in cui lavori (da
-          remoto, ibrido o in sede) e una fascia di prezzo ricavata dalla tua tariffa, mai la
-          tariffa stessa; i contatti che un'azienda lascia con «Assumi team» restano invece nella
-          richiesta che arriva a noi, e ad Anthropic non vanno. Anthropic tratta questi dati per
-          conto nostro, secondo i suoi termini sul trattamento dei dati, e
-          <strong>non li usa per addestrare i propri modelli</strong>. La sua informativa è su
+          Se hai una scheda freelance, scriviamo una descrizione anonima del tuo profilo (ruolo,
+          seniority, competenze, settori, lingue). Per scriverla leggiamo il testo del tuo CV, il
+          ruolo che hai indicato nel profilo, il tuo profilo GitHub e i repository pubblici che hai
+          su GitHub, le pagine pubbliche dei link che ci hai indicato nel profilo (un sito
+          personale, un portfolio, una pagina di Behance, di Dribbble, di Stack Overflow e simili)
+          e quello che rebase già sa del tuo lavoro: i progetti che hai fatto passando da noi
+          (ruolo, durata, esito, senza il nome del cliente) e la seniority che un amministratore ha
+          eventualmente fissato. La tariffa e il modo in cui lavori non servono a scriverla.
+          <strong>Non leggiamo LinkedIn</strong>: il tuo profilo LinkedIn resta un contatto, non
+          una fonte per la scheda. Non leggiamo nemmeno nulla che stia dietro un accesso, né pagine
+          che non hai indicato tu. La descrizione si scrive quando carichi un CV nuovo o quando un
+          amministratore la richiede di nuovo; se un link cambia o lo togli, aggiorniamo quello
+          che abbiamo letto, e la descrizione si riscrive alla prima occasione.
+        </p>
+        <p>
+          Quel testo, cioè il CV, il ruolo, quello che abbiamo letto da GitHub e dalle pagine dei
+          tuoi link e i dati di rebase sul tuo lavoro, viene inviato all'API di Anthropic, che lo
+          elabora per scrivere la descrizione. La descrizione che un visitatore
+          scrive nel team builder viene inviata alla stessa API insieme alle descrizioni anonime di
+          tutti i profili, per proporre una squadra. Ogni descrizione anonima che parte così porta
+          con sé anche la città o la regione che il CV indica, il modo in cui lavori (da remoto,
+          ibrido o in sede) e una fascia di prezzo ricavata dalla tua tariffa, mai la tariffa
+          stessa; i contatti che un'azienda lascia con «Assumi team» restano invece nella richiesta
+          che arriva a noi, e ad Anthropic non vanno. Anthropic tratta questi dati per conto
+          nostro, come responsabile del trattamento, secondo il suo accordo sul trattamento dei
+          dati (DPA), e <strong>non li usa per addestrare i propri modelli</strong>. I dati possono
+          uscire dall'Unione Europea e dallo Spazio economico europeo: Anthropic li elabora anche
+          fuori da lì, per esempio negli Stati Uniti, e il trasferimento si regge sulle clausole
+          contrattuali standard della Commissione europea (modulo due, da titolare a responsabile)
+          che il suo DPA incorpora. Il DPA è su
+          <a class="quiet-link" href="https://www.anthropic.com/legal/data-processing-addendum"
+            >www.anthropic.com/legal/data-processing-addendum</a
+          >
+          e la sua informativa su
           <a class="quiet-link" href="https://www.anthropic.com/privacy"
             >www.anthropic.com/privacy</a
-          >.
+          >. Non mandiamo questi dati a nessun altro fornitore di modelli.
+        </p>
+        <p>
+          Quello che leggiamo da GitHub e dalle pagine dei tuoi link lo conserviamo, nel testo
+          letto e in un'impronta (hash) che ci dice se è cambiato, e lo rileggiamo una volta a
+          settimana. Lo teniamo finché il link resta nel tuo profilo: lo cancelliamo quando lo togli,
+          quando cancelli il profilo, o quando ce lo chiedi. Base giuridica: il nostro interesse
+          legittimo a descrivere con precisione chi sei alle aziende che cercano un freelance, su
+          informazioni che hai reso pubbliche tu. Ti puoi opporre in ogni momento e chiederci di
+          togliere una fonte o di cancellare la tua descrizione, scrivendo a
+          <a class="quiet-link" href="mailto:ciao@letsrebase.com">ciao@letsrebase.com</a>.
         </p>
         <p>
           Chi visita la pagina pubblica del team builder vede la descrizione senza il tuo nome.
           Un'azienda che rebase ammette al talent cloud vede invece il profilo con il nome, il CV e
           i link che contiene: il CV riporta quello che tu ci hai scritto dentro. Per chiedere la
           cancellazione della descrizione scrivi all'indirizzo che questa pagina già indica.
+        </p>
+
+        <h2>La richiesta di un'azienda</h2>
+        <p>
+          Quando un'azienda ci chiede delle persone dal modulo di richiesta di letsrebase.com,
+          conserviamo quello che scrive: il nome dell'azienda, il suo referente (nome, cognome,
+          email, telefono e, se li dà, il profilo LinkedIn), la figura cercata, il progetto, la
+          durata, il periodo di inizio, il budget giornaliero, il modo di lavorare e quante
+          persone servono. Li usiamo per rispondere e per proporre le persone giuste. Base
+          giuridica: l'esecuzione di quanto l'azienda ci chiede. Ogni richiesta completata viene
+          registrata anche nel CRM di rebase, in uno spazio nostro su pigro.letsrebase.com, come
+          cliente, contatto e trattativa, così chi la segue non deve scriverla due volte.
+        </p>
+        <p>
+          Per preparare la bozza di quella trattativa inviamo all'API di Anthropic soltanto la
+          figura richiesta, la descrizione del progetto, la durata e il periodo di inizio:
+          <strong>mai il nome dell'azienda, i dati del referente o il budget</strong>. Anthropic
+          risponde con un ruolo, i giorni a settimana, la durata in settimane, le competenze e
+          una breve sintesi, che una persona di rebase rivede prima di usarli. Valgono le stesse
+          condizioni descritte sopra: Anthropic tratta questi dati per conto nostro, secondo il
+          suo DPA, e non li usa per addestrare i propri modelli.
+        </p>
+        <p>
+          Mentre compili la richiesta per entrare come freelance o come azienda, le risposte che
+          hai già dato (nome, email, telefono, tariffa e il resto, escluso il CV) restano nella
+          memoria di questo browser per sette giorni, così se chiudi la pagina puoi riprendere da
+          dove eri. Non arrivano a noi finché non invii la richiesta, e spariscono dal browser
+          appena la invii o se scegli di ricominciare.
         </p>
 
         <h2>Il tuo spazio PigroCRM</h2>
@@ -166,8 +226,12 @@
           script di OpenAI o di PostHog, nessun cookie, nessuna richiesta: l'avviso non è una
           notifica di quello che sta già succedendo. Se dici no, non succede, e non te lo
           richiediamo più. Se cambi idea,
-          <a class="quiet-link" href="/privacy" data-consent-withdraw>ritira il consenso</a> e l'avviso
-          torna. In ogni caso non cambia niente né sull'iscrizione né sul CRM. Per i suoi dati
+          <a class="quiet-link" href="/privacy" data-consent-withdraw>ritira il consenso</a>: l'avviso
+          torna e togliamo anche i cookie e i dati che PostHog e il pixel avevano salvato nel tuo
+          browser. La tua scelta vale pure per le pagine pubbliche di rebase che si aprono dal
+          sito, come il percorso per cercare un team in <code>letsrebase.com/hub</code>: lì la
+          misurazione parte solo se hai detto sì qui, mentre dopo l'accesso resta quella descritta
+          sopra, senza avviso. In ogni caso non cambia niente né sull'iscrizione né sul CRM. Per i suoi dati
           OpenAI è titolare autonomo: la sua informativa è su
           <a class="quiet-link" href="https://openai.com/policies/privacy-policy"
             >openai.com/policies/privacy-policy</a
@@ -330,11 +394,29 @@
 
         <h2>I tuoi diritti</h2>
         <p>
-          Puoi chiederci in ogni momento di accedere ai tuoi dati, correggerli, riceverli in un
-          formato leggibile da una macchina, o cancellarli insieme allo spazio. Puoi anche
-          rivolgerti al Garante per la protezione dei dati personali. Scrivi a
-          <a class="quiet-link" href="mailto:ivansala@humancraft.tech">ivansala@humancraft.tech</a>:
+          Puoi chiederci in ogni momento di accedere ai tuoi dati, correggerli e riceverli in un
+          formato leggibile da una macchina. Dove la base giuridica è il nostro interesse
+          legittimo, come per la tua scheda e per la misurazione dentro il CRM, puoi anche opporti
+          al trattamento. Per esercitare questi diritti scrivi a
+          <a class="quiet-link" href="mailto:ciao@letsrebase.com">ciao@letsrebase.com</a>:
           rispondiamo entro trenta giorni.
+        </p>
+        <p>
+          Se sei iscritto a rebase su letsrebase.com, puoi chiederci di cancellare il tuo CV, e
+          con lui la descrizione anonima che ne abbiamo scritto, oppure di togliere un link dal
+          profilo, e con lui il testo che ne abbiamo letto. Puoi anche chiederci di togliere il
+          tuo profilo: esce dagli elenchi e dalle ricerche e cancelliamo il testo letto dalle
+          fonti, ma il resto resta archiviato, CV e descrizione compresi, perché un amministratore
+          possa annullare un errore. Se non vuoi che resti, chiedici di cancellare anche il CV.
+          Queste operazioni le fa un amministratore, su tua richiesta.
+        </p>
+        <p>
+          Se hai uno spazio PigroCRM, i dati dentro lo spazio sono tuoi, e chiudere lo spazio li
+          cancella: eliminiamo il suo database e i suoi documenti entro trenta giorni, backup
+          compresi al loro ciclo naturale, come dice la sezione sul tuo spazio.
+        </p>
+        <p>
+          Puoi anche rivolgerti al Garante per la protezione dei dati personali.
         </p>
 
         <h2>Se lo installi tu</h2>
@@ -360,29 +442,10 @@
 
     <!-- The cookie-notice script never loads on this page, because it carries no
       tracker to gate (pixel.test.ts holds that, down to the string that names the
-      script, so it is spelled out here only in words). Withdrawing is the same two
-      steps that script's own `window.__consent.withdraw` performs -- clear a stored
-      yes, reload -- reimplemented here against the same key rather than the same
-      function, since that function lives in a script this page does not load. Only a
-      granted decision, never a denied one: a refusal has to stay final, the same rule
-      that script's own STORAGE_KEY comment states, or this link would put the notice
-      back in front of a visitor who already said no. The literal below has to stay in
-      lockstep with that script's own storage key; pixel.test.ts holds the two equal. -->
-    <script type="module">
-      document.querySelectorAll('[data-consent-withdraw]').forEach(function (link) {
-        link.addEventListener('click', function (event) {
-          event.preventDefault()
-          try {
-            if (window.localStorage.getItem('orbiters.consent') === 'granted') {
-              window.localStorage.removeItem('orbiters.consent')
-            }
-          } catch {
-            /* Niente da fare: la scelta resta finché dura la sessione. */
-          }
-          window.location.reload()
-        })
-      })
-    </script>
+      script, so it is spelled out here only in words). The withdraw links are wired by
+      their own script, which clears a stored yes and what the trackers left after it;
+      consent.test.ts holds its keys equal to the notice's. -->
+    <script type="module" src="./consent-withdraw.js"></script>
     <!-- session.js loads last, after the whole page, so pixel.test.ts's own "no
       pixel script here" check -- reading the page for a script tag with the ads
       SDK's name anywhere after it -- has nothing preceding it to trip over: this

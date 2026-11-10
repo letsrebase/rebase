@@ -18,7 +18,7 @@ expression comes back as a `Decimal` at the declared scale. (`sqlalchemy.cast` a
 `func.cast` compile identically here -- SQLAlchemy special-cases the name -- so the
 spelling is a matter of reading, not of behaviour; verified, not assumed.)
 
-**The substring arm is `word_similarity(termine, campo)`, not `similarity(campo, termine)`,
+**The substring arm is `word_similarity(term, field)`, not `similarity(field, term)`,
 and that is the one place this module departs from §8.5 as written.** The ladder's third
 rung is about a term occurring *inside* a field, and `similarity()` does not measure that:
 it compares whole strings, so it penalises a field for the text it carries besides the
@@ -51,7 +51,7 @@ make the `*_trgm` indexes unusable by the `ILIKE` this module emits (spec §8.2)
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -76,11 +76,11 @@ WEIGHT_IDENTIFYING = Decimal("1.00")
 # exactly what they are looking for.
 WEIGHT_CODE = Decimal("1.00")
 WEIGHT_EMAIL = Decimal("0.90")
-WEIGHT_CAUSALE = Decimal("0.80")
+WEIGHT_MEMO = Decimal("0.80")
 
 # Precision 6 leaves room the formula cannot actually use (its ceiling is 1.0000) and
 # costs nothing; the scale is the one that matters, and it is the same number the
-# `SearchHit.punteggio` field declares.
+# `SearchHit.score` field declares.
 _NUMERIC = Numeric(6, SCORE_SCALE)
 _ZERO = literal(Decimal("0.0000"), type_=_NUMERIC)
 
@@ -98,8 +98,12 @@ class ScoredField:
     # `Any` as the attribute's own type parameter: the searched columns are `str` and
     # `str | None` across five entities, and pinning either here would make the other an
     # error at every declaration site in task A8's repository.
-    column: InstrumentedAttribute[Any]
+    column: InstrumentedAttribute[Any] | ColumnElement[Any]
     weight: Decimal
+    # A second way the field matches, as a predicate on the term: what the text of the column
+    # cannot say. A phone typed as digits finds `+39 388 871 3657`, which `ILIKE` over the
+    # number as written would not. A row it finds scores like a prefix match on the field.
+    also: Callable[[str], ColumnElement[bool]] | None = None
 
 
 def _like_prefix(term: str) -> str:
@@ -127,6 +131,11 @@ def field_score(field: ScoredField, term: str) -> ColumnElement[Decimal]:
                 func.lower(column).like(_like_prefix(term), escape="\\"),
                 literal(SCORE_PREFIX, type_=_NUMERIC),
             ),
+            *(
+                [(field.also(term), literal(SCORE_PREFIX, type_=_NUMERIC))]
+                if field.also is not None
+                else []
+            ),
             # `word_similarity(term, column)`, in that argument order: the first
             # argument is the needle whose trigrams are matched against an extent of
             # the second. Reversed, it would answer a different question -- how well
@@ -143,22 +152,31 @@ def field_score(field: ScoredField, term: str) -> ColumnElement[Decimal]:
     ).label(f"score_{field.name}")
 
 
-def row_score(fields: Sequence[ScoredField], term: str) -> ColumnElement[Decimal]:
+def field_scores(fields: Sequence[ScoredField], term: str) -> list[ColumnElement[Decimal]]:
+    """One score per field, in the order of `fields`: the only place `word_similarity` is
+    evaluated. A caller that needs the row's score, its best field and a filter on it
+    computes these once (in a subquery) and combines them with `combine_scores` and
+    `pick_field`, rather than asking each of those to compute every field again."""
+    return [field_score(field, term) for field in fields]
+
+
+def combine_scores(scores: Sequence[ColumnElement[Decimal]]) -> ColumnElement[Decimal]:
     """`max(peso × punteggio_campo)` over the fields that matched.
 
     The maximum and not the sum: summing would let two mediocre matches outrank one exact
     one, and would rank a row higher merely for having more populated columns -- an order
     no user could explain to themselves.
     """
-    scores = [field_score(field, term) for field in fields]
     if len(scores) == 1:
         # `greatest` of one argument is legal in Postgres, but writing it would put a
         # function call around every single-field entity's score for nothing.
-        return func.round(scores[0], SCORE_SCALE).label("punteggio")
-    return func.round(func.greatest(*scores), SCORE_SCALE).label("punteggio")
+        return func.round(scores[0], SCORE_SCALE).label("score")
+    return func.round(func.greatest(*scores), SCORE_SCALE).label("score")
 
 
-def best_field(fields: Sequence[ScoredField], term: str) -> ColumnElement[str]:
+def pick_field(
+    fields: Sequence[ScoredField], scores: Sequence[ColumnElement[Decimal]]
+) -> ColumnElement[str]:
     """The name of the field that produced the row score.
 
     Declared in the same order as `fields`, so ties resolve to the earlier field -- which
@@ -166,12 +184,22 @@ def best_field(fields: Sequence[ScoredField], term: str) -> ColumnElement[str]:
     (criterion 4). `CASE` evaluates its arms in written order, which is what makes that a
     guarantee rather than a habit of the planner.
     """
-    top = row_score(fields, term)
+    top = combine_scores(scores)
     branches = [
-        (func.round(field_score(field, term), SCORE_SCALE) == top, literal(field.name))
-        for field in fields
+        (func.round(score, SCORE_SCALE) == top, literal(field.name))
+        for field, score in zip(fields, scores, strict=True)
     ]
-    return case(*branches, else_=literal(fields[0].name)).label("campo")
+    return case(*branches, else_=literal(fields[0].name)).label("field")
+
+
+def row_score(fields: Sequence[ScoredField], term: str) -> ColumnElement[Decimal]:
+    """The score of a row over its own columns, for a caller that needs it once."""
+    return combine_scores(field_scores(fields, term))
+
+
+def best_field(fields: Sequence[ScoredField], term: str) -> ColumnElement[str]:
+    """The name of the field that produced `row_score`, over the row's own columns."""
+    return pick_field(fields, field_scores(fields, term))
 
 
 def matches_any(fields: Sequence[ScoredField], term: str) -> ColumnElement[bool]:
@@ -184,4 +212,7 @@ def matches_any(fields: Sequence[ScoredField], term: str) -> ColumnElement[bool]
     expression.
     """
     pattern = _like_anywhere(term)
-    return or_(*(field.column.ilike(pattern, escape="\\") for field in fields))
+    return or_(
+        *(field.column.ilike(pattern, escape="\\") for field in fields),
+        *(field.also(term) for field in fields if field.also is not None),
+    )

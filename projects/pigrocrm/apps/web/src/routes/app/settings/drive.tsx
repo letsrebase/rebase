@@ -1,35 +1,35 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { DrivePanel } from '@/features/drive/DrivePanel'
 import { ConsentOutcome } from '@/components/ConsentOutcome'
-import { messaggioEsito, riprovaEsito } from '@/features/drive/esito'
+import { consentOutcome } from '@/features/consent/outcome'
 
 /**
  * Where `GET /api/drive/oauth/callback` lands the browser after a consent flow --
  * the Drive twin of `routes/app/settings/gmail.tsx`, same reasoning throughout:
- * `validateSearch` narrows `?esito=` to a string or nothing, and `messaggioEsito` looks
+ * `validateSearch` narrows `?outcome=` to a string or nothing, and `consentOutcome` looks
  * it up in a fixed table rather than rendering it, so a link somebody else crafted
  * cannot put a sentence of their choosing on this page.
  *
- * An admin and a collaboratore both land here (REB-457): the Drive credential is per CRM
- * user, so a collaboratore reads their own consent's outcome above their own panel.
+ * An admin and a collaborator both land here (REB-457): the Drive credential is per CRM
+ * user, so a collaborator reads their own consent's outcome above their own panel.
  *
  * Exports nothing but `Route`, on purpose: a route file that exports anything else opts
  * that route out of the router plugin's automatic code splitting, with a
  * `routeTree.gen.ts` warning as the only sign.
  */
 function DriveSettingsRoute() {
-  const { esito } = Route.useSearch()
+  const { outcome } = Route.useSearch()
   return (
     <div className="space-y-4">
-      <ConsentOutcome messaggio={messaggioEsito(esito)} riprova={riprovaEsito(esito)} />
+      <ConsentOutcome {...consentOutcome('drive', outcome)} />
       <DrivePanel />
     </div>
   )
 }
 
 export const Route = createFileRoute('/app/settings/drive')({
-  validateSearch: (search: Record<string, unknown>): { esito?: string } => ({
-    esito: typeof search.esito === 'string' ? search.esito : undefined,
+  validateSearch: (search: Record<string, unknown>): { outcome?: string } => ({
+    outcome: typeof search.outcome === 'string' ? search.outcome : undefined,
   }),
   component: DriveSettingsRoute,
 })

@@ -17,7 +17,7 @@ class Invitation(Base, PrimaryKeyMixin, TimestampMixin):
     of this table opens nothing.
 
     `accepted_at` and `revoked_at` staying on the row (never deleted) is what makes the
-    three dead states of a spent link -- scaduto, revocato, già usato -- tellable apart
+    three dead states of a spent link -- expired, revoked, already used -- tellable apart
     after the fact; both being `NULL` is the one property that makes a row "pending"
     for every other check. Expiry is not a column state, it is `expires_at < now()`, so
     an expired row is still inside the unique index below and still claims the address;
@@ -28,8 +28,8 @@ class Invitation(Base, PrimaryKeyMixin, TimestampMixin):
     __tablename__ = "invitations"
 
     email: Mapped[str] = mapped_column(String(320), index=True, nullable=False)
-    nome: Mapped[str | None] = mapped_column(String(200), default=None)
-    ruolo: Mapped[str] = mapped_column(String(20), nullable=False)
+    name: Mapped[str | None] = mapped_column(String(200), default=None)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
     invited_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -39,8 +39,17 @@ class Invitation(Base, PrimaryKeyMixin, TimestampMixin):
     # every invitation is until milestone 6 writes a list. An array and not a join
     # table, because an invitation is spent once and its rows would be orphans the
     # moment it is accepted or revoked; it carries no foreign key, so accepting drops
-    # any id that no longer names an active azienda.
-    aziende: Mapped[list[UUID] | None] = mapped_column(ARRAY(Uuid()), default=None)
+    # any id that no longer names an active legal entity.
+    legal_entities: Mapped[list[UUID] | None] = mapped_column(ARRAY(Uuid()), default=None)
+    # What became of the mail that carries this invitation (REB-678). A provider's 2xx is
+    # only «I took it»: the mail can still bounce, and the Team panel is the one place an
+    # admin can learn the address was wrong. `mail_id` is the provider's handle for the
+    # latest send, `mail_status` one of `pigrocrm.core.mail.MailState`, `mail_sent_at`
+    # when that send was handed over. Every send rewrites all three, and a row that was
+    # written before this existed holds `NULL`, which the panel reads as «unknown».
+    mail_id: Mapped[str | None] = mapped_column(String(64), default=None)
+    mail_status: Mapped[str | None] = mapped_column(String(12), default=None)
+    mail_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     __table_args__ = (
         # Same functional-index shape as `uq_users_email_lower`, with a partial

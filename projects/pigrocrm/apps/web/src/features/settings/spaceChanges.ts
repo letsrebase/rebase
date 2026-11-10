@@ -19,7 +19,7 @@ export interface Draft {
  *  client of its own (REB-394). */
 export function switchingFromShared(saved: SpaceSettings, draft: Draft): boolean {
   return (
-    saved.google_client_condiviso &&
+    saved.google_client_shared &&
     draft.google_client_id !== '' &&
     draft.google_client_id !== saved.google_client_id
   )
@@ -32,7 +32,7 @@ export function draftFrom(settings: SpaceSettings): Draft {
     // While the space borrows the platform's client, the «Testing» switch belongs to the
     // client the person may be about to bring, and every new OAuth client starts in
     // Testing on Google's side: so it starts ticked, and travels with the switch.
-    google_app_unverified: settings.google_client_condiviso ? true : settings.google_app_unverified,
+    google_app_unverified: settings.google_client_shared ? true : settings.google_app_unverified,
     storage_backend: settings.storage_backend === 'gdrive' ? 'gdrive' : 'local',
     mcp_full_access: settings.mcp_full_access,
     gmail_backfill_days: String(settings.gmail_backfill_days),
@@ -50,7 +50,7 @@ export function changesBetween(saved: SpaceSettings, draft: Draft): SpaceSetting
   // the server reads the platform's value for the borrowed client, not for theirs.
   if (
     switchingFromShared(saved, draft) ||
-    (!saved.google_client_condiviso && draft.google_app_unverified !== saved.google_app_unverified)
+    (!saved.google_client_shared && draft.google_app_unverified !== saved.google_app_unverified)
   ) {
     changes.google_app_unverified = draft.google_app_unverified
   }

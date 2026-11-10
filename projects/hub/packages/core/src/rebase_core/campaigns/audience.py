@@ -12,10 +12,12 @@ from pydantic import TypeAdapter
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
-from rebase_core.campaigns.actions import done_at
-from rebase_core.campaigns.schemas import AziendeFiltri, Filtri, TalentiFiltri
+from rebase_core.campaigns.actions import done_at_many
+from rebase_core.campaigns.confirmation import unconfirmed_emails
+from rebase_core.campaigns.schemas import CompaniesFilters, Filters, TalentsFilters
 from rebase_core.campaigns.states import Candidate, candidates_for_state, display_name
 from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyRead
 from rebase_core.models import (
     Campaign,
     CampaignOptout,
@@ -24,14 +26,17 @@ from rebase_core.models import (
     Freelancer,
     User,
 )
-from rebase_core.schemas import CompanyRead, TalentoRead
-from rebase_core.talenti import LIST_LIMIT_MAX, TalentiService
+from rebase_core.talent_schemas import TalentRead
+from rebase_core.talents import LIST_LIMIT_MAX, TalentsService
 
 ROME = ZoneInfo("Europe/Rome")
 REASON_ADMIN = "amministratore"
 REASON_NEVER = "«Non scrivere mai»"
 REASON_OPTOUT = "si è disiscritto"
 REASON_BOUNCED = "indirizzo rimbalzato"
+# REB-911: nobody proved the address (no login, no confirmation link), so a campaign
+# leaves it out until somebody does; `confirmation.request` asks for the one mail.
+REASON_UNCONFIRMED = "indirizzo non confermato"
 REASON_RECENT = "ha ricevuto un'altra campagna il {data}"
 REASON_DONE = "ha già fatto l'azione"
 REASON_NOT_LISTED = "non più in lista"
@@ -39,21 +44,21 @@ REASON_CANCELLED = "campagna annullata"
 # REB-524, Ivan's decision (DECISIONS.md, 2026-09-28): a card an admin turned down.
 REASON_DISCARDED = "scheda scartata"
 
-_FILTRI: TypeAdapter[TalentiFiltri | AziendeFiltri] = TypeAdapter(Filtri)
+_FILTERS: TypeAdapter[TalentsFilters | CompaniesFilters] = TypeAdapter(Filters)
 _log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
 class AudienceRow:
     candidate: Candidate
-    escluso: str | None
+    excluded: str | None
 
 
 def candidates(session: Session, campaign: Campaign) -> list[Candidate]:
-    if campaign.fonte == "stato":
-        found = candidates_for_state(session, campaign.stato_percorso or "")
-    elif campaign.fonte == "filtri":
-        found = _filtered(session, campaign.filtri or {})
+    if campaign.source == "status":
+        found = candidates_for_state(session, campaign.journey_status or "")
+    elif campaign.source == "filters":
+        found = _filtered(session, campaign.filters or {})
     else:
         found = _not_done(session, campaign)
     seen: set[str] = set()
@@ -69,19 +74,19 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
     """The parent's sent rows with no stamped action whose person is still in the hub
     and whose action has not happened live (spec § 4.3), less the rows whose mail
     bounced or drew a complaint (REB-524). Read live, not from
-    `azione_at` alone: the tick stamps once a minute and only for 30 days after a mail,
+    `action_at` alone: the tick stamps once a minute and only for 30 days after a mail,
     and whoever acted since must not be written to again (Review Focus 2), nor counted
     as still waiting (`follow_up`'s own check, Greptile P1). Each person keeps the
     snapshot links the earlier row froze: their user, card, lead and open requests. A
     row is also dropped, not shown with a reason, when the person it named is gone from
     the hub -- a soft-deleted card, or a referente whose every open request's company is
-    soft-deleted -- the same way `candidates_for_state` never lists them for a `stato`
-    or `filtri` campaign; a lead row stays, since a lead who made a card since is caught
+    soft-deleted -- the same way `candidates_for_state` never lists them for a `status`
+    or `filters` campaign; a lead row stays, since a lead who made a card since is caught
     by `done_at`.
 
-    A row whose own snapshot is broken -- `prima` or `prima["richieste"]` of the wrong
-    shape (a list, a string), a `richieste` key that is not a UUID, a `richieste` value
-    (or `prima["t"]`) that `datetime.fromisoformat` cannot parse, or parses as a naive
+    A row whose own snapshot is broken -- `before` or `before["requests"]` of the wrong
+    shape (a list, a string), a `requests` key that is not a UUID, a `requests` value
+    (or `before["t"]`) that `datetime.fromisoformat` cannot parse, or parses as a naive
     datetime (a date-only string such as `"2026-09-28"` parses cleanly as midnight with
     no `tzinfo`, which then raises `TypeError` where `done_at` compares it in plain
     Python against a timezone-aware database timestamp, Greptile, PR #444, round 4) --
@@ -101,13 +106,13 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
         select(CampaignRecipient)
         .where(
             CampaignRecipient.campaign_id == parent.id,
-            CampaignRecipient.stato == "inviata",
-            CampaignRecipient.azione_at.is_(None),
+            CampaignRecipient.status == "sent",
+            CampaignRecipient.action_at.is_(None),
             # A mail that bounced never reached anyone, and a complaint is a «never
             # again» (REB-524): the follow-up's audience excludes both addresses anyway,
             # so a row kept here only made «Riscrivi» draft a list of nobody.
-            CampaignRecipient.rimbalzata_at.is_(None),
-            CampaignRecipient.reclamo_at.is_(None),
+            CampaignRecipient.bounced_at.is_(None),
+            CampaignRecipient.complaint_at.is_(None),
         )
         .order_by(CampaignRecipient.email)
     ).all()
@@ -123,31 +128,31 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
         if freelancer_ids
         else set()
     )
-    richieste_by_row: dict[UUID, tuple[UUID, ...]] = {}
+    requests_by_row: dict[UUID, tuple[UUID, ...]] = {}
     for row in rows:
-        # The shape is checked explicitly, not folded into the `except` below: `prima`
-        # or `richieste` of the wrong shape (a list, a string) must not raise inside a
+        # The shape is checked explicitly, not folded into the `except` below: `before`
+        # or `requests` of the wrong shape (a list, a string) must not raise inside a
         # broadened `except`, which would also swallow a real bug elsewhere
-        # (CodeRabbit Major on PR #444). `prima` is a dict or `None`; `richieste`, once
+        # (CodeRabbit Major on PR #444). `before` is a dict or `None`; `requests`, once
         # defaulted, is a dict whose keys are strings -- anything else leaves the row
         # out the same way a key `UUID` cannot parse does.
-        prima = row.prima
-        if prima is not None and not isinstance(prima, dict):
+        before = row.before
+        if before is not None and not isinstance(before, dict):
             _log.error("waiting row %s left out: prima is not a dict", row.id)
             continue
-        prima = prima or {}
-        richieste = prima.get("richieste", {})
-        if not isinstance(richieste, dict) or not all(isinstance(key, str) for key in richieste):
-            _log.error("waiting row %s left out: richieste is not a string-keyed dict", row.id)
+        before = before or {}
+        requests = before.get("requests", {})
+        if not isinstance(requests, dict) or not all(isinstance(key, str) for key in requests):
+            _log.error("waiting row %s left out: requests is not a string-keyed dict", row.id)
             continue
         try:
-            parsed_keys = tuple(UUID(key) for key in richieste)
+            parsed_keys = tuple(UUID(key) for key in requests)
             # `done_at` (`actions.py`) parses two snapshot values with
             # `datetime.fromisoformat`, then compares each in plain Python (never SQL)
-            # against a timezone-aware database timestamp: every `richieste` value,
-            # against `Company.updated_at`, when `parent.azione` is
-            # `richiesta_aggiornata`, and `prima["t"]`, against `card.created_at` for
-            # `profilo_creato`, only when `since` -- always `row.inviata_at` below -- is
+            # against a timezone-aware database timestamp: every `requests` value,
+            # against `Company.updated_at`, when `parent.action` is
+            # `request_updated`, and `before["t"]`, against `card.created_at` for
+            # `profile_created`, only when `since` -- always `row.sent_at` below -- is
             # `None`. `fromisoformat` accepts a date-only string as naive midnight,
             # which parses cleanly and then raises `TypeError` at the comparison
             # (Greptile, PR #444, round 4) -- so a parsed value only passes here with a
@@ -155,17 +160,17 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
             # checked here, up front, inside the one `try` the key parsing above
             # already needs, so `done_at` itself can be called below with no `try`
             # around it at all (CodeRabbit's adversarial pass, PR #444, round 3).
-            if parent.azione == "richiesta_aggiornata":
-                for was in richieste.values():
+            if parent.action == "request_updated":
+                for was in requests.values():
                     if datetime.fromisoformat(was).tzinfo is None:
-                        raise ValueError("richieste value has no timezone")
-            if row.inviata_at is None and datetime.fromisoformat(prima["t"]).tzinfo is None:
+                        raise ValueError("requests value has no timezone")
+            if row.sent_at is None and datetime.fromisoformat(before["t"]).tzinfo is None:
                 raise ValueError("prima['t'] has no timezone")
         except (TypeError, ValueError, KeyError) as exc:
             _log.error("waiting row %s left out: %s", row.id, type(exc).__name__)
             continue
-        richieste_by_row[row.id] = parsed_keys
-    company_ids = {cid for ids in richieste_by_row.values() for cid in ids}
+        requests_by_row[row.id] = parsed_keys
+    company_ids = {cid for ids in requests_by_row.values() for cid in ids}
     alive_companies = (
         set(
             session.scalars(
@@ -175,36 +180,36 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
         if company_ids
         else set()
     )
-    found: list[CampaignRecipient] = []
+    open_rows: list[CampaignRecipient] = []
     for row in rows:
-        if row.id not in richieste_by_row:
+        if row.id not in requests_by_row:
             continue  # its own snapshot was already unreadable, and logged above
         if row.freelancer_id is not None and row.freelancer_id not in alive_freelancers:
             continue
-        richieste = richieste_by_row[row.id]
-        if richieste and not any(cid in alive_companies for cid in richieste):
+        requests = requests_by_row[row.id]
+        if requests and not any(cid in alive_companies for cid in requests):
             continue
-        if done_at(session, row, parent.azione, since=row.inviata_at) is not None:
-            continue
-        found.append(row)
-    return found
+        open_rows.append(row)
+    # One read per kind of fact for the whole list, not up to three per person.
+    done = done_at_many(session, open_rows, parent.action, since=lambda row: row.sent_at)
+    return [row for row in open_rows if done[row.id] is None]
 
 
 def _not_done(session: Session, campaign: Campaign) -> list[Candidate]:
-    """A `lista` (spec § 4.3): whom the earlier campaign reached and who has not done its
+    """A `list` (spec § 4.3): whom the earlier campaign reached and who has not done its
     action, mapped from `waiting_rows`, each row's own snapshot links carried over."""
-    parent = session.get(Campaign, campaign.segue_id) if campaign.segue_id else None
+    parent = session.get(Campaign, campaign.follows_id) if campaign.follows_id else None
     if parent is None:
         return []
     return [
         Candidate(
             email=row.email,
-            nome=row.nome,
-            tipo=row.tipo,
+            name=row.name,
+            kind=row.kind,
             user_id=row.user_id,
             freelancer_id=row.freelancer_id,
             signup_id=row.signup_id,
-            company_ids=tuple(UUID(key) for key in (row.prima or {}).get("richieste", {})),
+            company_ids=tuple(UUID(key) for key in (row.before or {}).get("requests", {})),
             pigro_slugs=tuple(row.pigro_slugs),
         )
         for row in waiting_rows(session, parent)
@@ -212,16 +217,16 @@ def _not_done(session: Session, campaign: Campaign) -> list[Candidate]:
 
 
 def _filtered(session: Session, raw: dict[str, Any]) -> list[Candidate]:
-    filtri = _FILTRI.validate_python(raw)
-    params = filtri.model_dump(exclude={"lista"}, exclude_none=True)
-    if isinstance(filtri, TalentiFiltri):
-        return _from_talenti(session, params)
-    return _from_aziende(session, params)
+    filters = _FILTERS.validate_python(raw)
+    params = filters.model_dump(exclude={"list"}, exclude_none=True)
+    if isinstance(filters, TalentsFilters):
+        return _from_talents(session, params)
+    return _from_companies(session, params)
 
 
-def _from_talenti(session: Session, params: dict[str, Any]) -> list[Candidate]:
-    service = TalentiService(session)
-    rows: list[TalentoRead] = []
+def _from_talents(session: Session, params: dict[str, Any]) -> list[Candidate]:
+    service = TalentsService(session)
+    rows: list[TalentRead] = []
     cursor: str | None = None
     while True:
         page = service.list_recent(limit=LIST_LIMIT_MAX, cursor=cursor, **params)
@@ -229,7 +234,7 @@ def _from_talenti(session: Session, params: dict[str, Any]) -> list[Candidate]:
         cursor = page.next_cursor
         if cursor is None:
             break
-    card_ids = [row.id for row in rows if row.stato != "lead"]
+    card_ids = [row.id for row in rows if row.status != "lead"]
     users: dict[UUID, User] = {}
     if card_ids:
         card_rows = session.execute(
@@ -240,12 +245,12 @@ def _from_talenti(session: Session, params: dict[str, Any]) -> list[Candidate]:
         users = {freelancer_id: user for freelancer_id, user in card_rows}
     found: list[Candidate] = []
     for row in rows:
-        if row.stato == "lead":
+        if row.status == "lead":
             found.append(
                 Candidate(
                     email=row.email.lower(),
-                    nome=display_name(row.nome),
-                    tipo="lead",
+                    name=display_name(row.first_name),
+                    kind="lead",
                     signup_id=row.id,
                 )
             )
@@ -254,8 +259,8 @@ def _from_talenti(session: Session, params: dict[str, Any]) -> list[Candidate]:
             found.append(
                 Candidate(
                     email=user.email.lower(),
-                    nome=display_name(user.nome),
-                    tipo="freelancer",
+                    name=display_name(user.first_name),
+                    kind="freelancer",
                     user_id=user.id,
                     freelancer_id=row.id,
                 )
@@ -263,7 +268,7 @@ def _from_talenti(session: Session, params: dict[str, Any]) -> list[Candidate]:
     return found
 
 
-def _from_aziende(session: Session, params: dict[str, Any]) -> list[Candidate]:
+def _from_companies(session: Session, params: dict[str, Any]) -> list[Candidate]:
     service = CompanyService(session)
     rows: list[CompanyRead] = []
     cursor: str | None = None
@@ -285,10 +290,11 @@ def _from_aziende(session: Session, params: dict[str, Any]) -> list[Candidate]:
         known = by_email.get(email)
         by_email[email] = Candidate(
             email=email,
-            # `CompanyRead.referente` is `f"{user.nome} {user.cognome}"` (`companies.py`'s
+            # `CompanyRead.contact_person` is `f"{user.first_name} {user.cognome}"`
+            # (`companies.py`'s
             # `_to_read`), always «Nome Cognome»: the first token is the first name.
-            nome=display_name(row.referente.split(" ")[0] if row.referente else None),
-            tipo="azienda",
+            name=display_name(row.contact_person.split(" ")[0] if row.contact_person else None),
+            kind="company",
             user_id=owners.get(row.id),
             company_ids=(*(known.company_ids if known else ()), row.id),
         )
@@ -319,26 +325,27 @@ def exclusions(
         session.scalars(
             select(user_email)
             .join(Freelancer, Freelancer.user_id == User.id)
-            .where(Freelancer.stato == "scartato", user_email.in_(emails))
+            .where(Freelancer.status == "discarded", user_email.in_(emails))
         )
     )
     optout_rows = session.execute(
-        select(CampaignOptout.email, CampaignOptout.fonte).where(CampaignOptout.email.in_(emails))
+        select(CampaignOptout.email, CampaignOptout.source).where(CampaignOptout.email.in_(emails))
     ).all()
-    optouts: dict[str, str] = {email: fonte for email, fonte in optout_rows}
+    optouts: dict[str, str] = {email: source for email, source in optout_rows}
     bounced = set(
         session.scalars(
             select(CampaignRecipient.email).where(
-                CampaignRecipient.email.in_(emails), CampaignRecipient.rimbalzata_at.is_not(None)
+                CampaignRecipient.email.in_(emails), CampaignRecipient.bounced_at.is_not(None)
             )
         )
     )
+    unconfirmed = unconfirmed_emails(session, emails)
     recent_q = (
-        select(CampaignRecipient.email, func.max(CampaignRecipient.inviata_at))
+        select(CampaignRecipient.email, func.max(CampaignRecipient.sent_at))
         .where(
             CampaignRecipient.email.in_(emails),
-            CampaignRecipient.stato == "inviata",
-            CampaignRecipient.inviata_at >= now - timedelta(days=gap_days),
+            CampaignRecipient.status == "sent",
+            CampaignRecipient.sent_at >= now - timedelta(days=gap_days),
         )
         .group_by(CampaignRecipient.email)
     )
@@ -357,6 +364,8 @@ def exclusions(
             reasons[email] = REASON_NEVER if optouts[email] == "admin" else REASON_OPTOUT
         elif email in bounced:
             reasons[email] = REASON_BOUNCED
+        elif email in unconfirmed:
+            reasons[email] = REASON_UNCONFIRMED
         elif email in recent:
             data = recent[email].astimezone(ROME).strftime("%d/%m")
             reasons[email] = REASON_RECENT.format(data=data)

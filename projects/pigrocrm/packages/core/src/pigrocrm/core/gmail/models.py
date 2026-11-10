@@ -100,8 +100,8 @@ class GoogleOAuthState(Base, PrimaryKeyMixin, TimestampMixin):
     NULL`, which Postgres serialises on the row lock, so two simultaneous callbacks
     produce exactly one winner. A read-then-write pair over a boolean would not.
 
-    Expired rows are pruned on each sync cycle -- unlike `refresh_tokens`, which
-    residuo R8 records as never pruned at all.
+    Expired rows are pruned whenever a flow starts a consent (`google/states.py`) --
+    unlike `refresh_tokens`, which residuo R8 records as never pruned at all.
 
     `purpose` is what spec 9 §5.2 adds for the Drive credential: one in-flight
     authorisation registry serves both flows, so the callback for one cannot be replayed
@@ -170,7 +170,7 @@ class GmailMessage(Base, PrimaryKeyMixin, TimestampMixin):
     internal_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     body_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
     body_truncated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    body_html_scartato: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    body_html_discarded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # name, mime, size. No bytes, ever (spec 5.4).
     attachments: Mapped[list[dict[str, object]]] = mapped_column(
         JSONB, nullable=False, default=list
@@ -214,7 +214,7 @@ class GmailKnownAddress(Base, PrimaryKeyMixin, TimestampMixin):
     the same client, and each mailbox has to be searched back over that address once on
     its own. A global register would give whichever mailbox synced second nothing.
 
-    Deliberately not a column on `people` or `customers`. A CRM row is not the place to
+    Deliberately not a column on `people` or `organizations`. A CRM row is not the place to
     record what one particular Google mailbox has been asked; putting it there would
     also mean a customer's address could only ever be backfilled for one user, and it
     would make the address book carry Gmail's bookkeeping into every other feature.
@@ -272,10 +272,10 @@ class EmailDraft(Base, PrimaryKeyMixin, TimestampMixin):
     # column's whole job is to say whose outcome an unresolved send is.
     #
     # It exists because of a defect B2-6 could mitigate and not remove. `reconcile_all`
-    # walks every draft in `incerto`/`in_invio`, and it runs inside each user's own sync
+    # walks every draft in `uncertain`/`sending`, and it runs inside each user's own sync
     # cycle -- so on a multi-user install, user A's cycle would pick up user B's
     # unresolved draft, look for it in *A's* mailbox, find nothing, and past the grace
-    # window write `fallito` on a message sitting in B's client's inbox. Telling somebody
+    # window write `failed` on a message sitting in B's client's inbox. Telling somebody
     # an email failed when it was delivered is the one outcome in this slice that cannot
     # be walked back, because the reply to it is to send the message again.
     #
@@ -303,7 +303,7 @@ class EmailDraft(Base, PrimaryKeyMixin, TimestampMixin):
     in_reply_to_message_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("gmail_messages.id", ondelete="SET NULL"), default=None
     )
-    send_state: Mapped[str] = mapped_column(String(10), nullable=False, default="bozza")
+    send_state: Mapped[str] = mapped_column(String(10), nullable=False, default="draft")
     send_attempted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
@@ -375,5 +375,5 @@ class PaymentReminder(Base, PrimaryKeyMixin, TimestampMixin):
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     email_draft_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("email_drafts.id", ondelete="SET NULL"), default=None
+        ForeignKey("email_drafts.id", ondelete="SET NULL"), default=None, index=True
     )

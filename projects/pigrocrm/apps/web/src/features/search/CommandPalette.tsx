@@ -10,6 +10,7 @@ import {
   CommandList,
   CommandSeparator,
 } from '@/components/ui/command'
+import { useModules } from '@/lib/modules'
 import {
   ENTITY_LABELS,
   MIN_TERM_LENGTH,
@@ -49,6 +50,7 @@ export function CommandPalette({
   const [term, setTerm] = useState('')
   const navigate = useNavigate()
   const search = useGlobalSearch(term)
+  const modules = useModules()
 
   // Cmd/Ctrl+K from anywhere. Either modifier is accepted regardless of platform: a user
   // on a Mac keyboard plugged into Linux should not have to know which one this build
@@ -79,8 +81,8 @@ export function CommandPalette({
   function openHit(hit: SearchHit) {
     close()
     switch (hit.entity) {
-      case 'customer':
-        return void navigate({ to: '/app/customers/$customerId', params: { customerId: hit.id } })
+      case 'organization':
+        return void navigate({ to: '/app/organizations/$organizationId', params: { organizationId: hit.id } })
       case 'person':
         return void navigate({ to: '/app/people/$personId', params: { personId: hit.id } })
       case 'deal':
@@ -89,6 +91,10 @@ export function CommandPalette({
         return void navigate({ to: '/app/documents/$documentId', params: { documentId: hit.id } })
       case 'invoice':
         return void navigate({ to: '/app/invoices/$invoiceId', params: { invoiceId: hit.id } })
+      // No page of its own: the tasks opens in its dialog, over the Tasks page
+      // (`?open=`), which is where every other screen opens one from.
+      case 'task':
+        return void navigate({ to: '/app/activities', search: { open: hit.id } })
     }
   }
 
@@ -101,8 +107,8 @@ export function CommandPalette({
    */
   function seeAll(entity: SearchEntity, term: string): (() => void) | null {
     switch (entity) {
-      case 'customer':
-        return () => void navigate({ to: '/app/customers', search: { search: term } })
+      case 'organization':
+        return () => void navigate({ to: '/app/organizations', search: { search: term } })
       case 'person':
         return () => void navigate({ to: '/app/people', search: { search: term } })
       case 'deal':
@@ -117,17 +123,23 @@ export function CommandPalette({
       // question from the one the palette was asked.
       case 'invoice':
         return null
+      // A task has no list of its own to filter by a term: the page has its own
+      // filters, not a free-text one, so «vedi tutti» would land on a different question.
+      case 'task':
+        return null
     }
   }
 
   const tooShort = search.debounced.length < MIN_TERM_LENGTH
-  const groups: SearchGroup[] = (search.data?.gruppi ?? []).filter(
-    (group) => group.hits.length > 0,
+  // The API leaves a switched-off module's group empty; a deal hit that a cache from before
+  // the switch still holds would open a page that is not there (REB-953), so it goes too.
+  const groups: SearchGroup[] = (search.data?.groups ?? []).filter(
+    (group) => group.hits.length > 0 && (group.entity !== 'deal' || modules.on('deals')),
   )
 
   /** "5 di 500" and "5 di 5" are different answers; «oltre» is how the ceiling is said. */
   function count(group: SearchGroup): string {
-    return group.totale_e_un_minimo ? `oltre ${group.totale}` : String(group.totale)
+    return group.total_is_minimum ? `oltre ${group.total}` : String(group.total)
   }
 
   return (
@@ -135,13 +147,13 @@ export function CommandPalette({
       open={open}
       onOpenChange={onOpenChange}
       title="Ricerca globale"
-      description="Cerca clienti, persone, deal e documenti"
+      description="Cerca clienti, persone, deal, documenti e attività"
     >
       <Command shouldFilter={false}>
         <CommandInput
           value={term}
           onValueChange={setTerm}
-          placeholder="Cerca clienti, persone, deal, documenti…"
+          placeholder="Cerca clienti, persone, deal, documenti, attività…"
           aria-label="Cerca in tutto il CRM"
         />
 
@@ -181,15 +193,15 @@ export function CommandPalette({
                     <CommandGroup heading={`${ENTITY_LABELS[group.entity]} · ${count(group)}`}>
                       {group.hits.map((hit) => (
                         <CommandItem key={hit.id} value={hit.id} onSelect={() => openHit(hit)}>
-                          <span className="truncate">{hit.etichetta}</span>
-                          {hit.sottotitolo && (
+                          <span className="truncate">{hit.label}</span>
+                          {hit.subtitle && (
                             <span className="ml-2 truncate text-xs text-muted-foreground">
-                              {hit.sottotitolo}
+                              {hit.subtitle}
                             </span>
                           )}
                         </CommandItem>
                       ))}
-                      {group.hits.length < group.totale && goToList !== null && (
+                      {group.hits.length < group.total && goToList !== null && (
                         <CommandItem
                           value={`vedi-tutti-${group.entity}`}
                           onSelect={() => {

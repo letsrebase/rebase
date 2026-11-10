@@ -2,8 +2,11 @@
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# What the campaign reserve keeps free for mails nobody counts: the test mails, the logins.
+RESERVE_TEST_ROOM = 5
 
 
 class Settings(BaseSettings):
@@ -59,7 +62,7 @@ class Settings(BaseSettings):
     # lives in the server's `.env` only (`.env.example`).
     resend_api_key: str = ""
     mail_from: str = "Rebase <ciao@letsrebase.com>"
-    # Where the SPA answers, for the link in the mail: `{hub_url}/entra?t=...`. Local
+    # Where the SPA answers, for the link in the mail: `{hub_url}/verify?t=...`. Local
     # development points it at the Vite dev server.
     hub_url: str = "https://letsrebase.com/hub"
     magic_link_minutes: int = 15
@@ -80,7 +83,7 @@ class Settings(BaseSettings):
     # The CRM's door for rebase's engagements (REB-498): an active match is linked to a
     # deal in its freelancer's space, and the hub reads that deal's hours, with the
     # value PigroCRM reads as `PIGROCRM_ENGAGEMENTS_TOKEN`, never the registry's. Empty
-    # means the link is skipped (the match waits as `da_collegare`) and the report and
+    # means the link is skipped (the match waits as `to_link`) and the report and
     # «Riprova» answer 503 with a sentence, as signing does without Documenso.
     pigro_engagements_token: str = ""
 
@@ -116,20 +119,43 @@ class Settings(BaseSettings):
     # Nobody gets two campaigns closer than this many days (spec § 5.3). It also makes a
     # wave of several campaigns scheduled for the same minute one mail per person.
     campaign_gap_days: int = 3
+    # Mails Resend lets this key send in a day: 100 on the free plan (REB-779). The
+    # campaigns tick counts the rows sent since midnight in Rome across every campaign
+    # and holds the rest for the next day, so a long list never reaches Resend's 429.
+    resend_daily_quota: int = Field(default=100, ge=1)
+    # Of that quota, what a campaign never spends: the magic links, the member area's
+    # mails and the campaign test mails (not rows, so not counted) all share the key. A
+    # campaign may send `resend_daily_quota - campaign_daily_reserve` a day.
+    campaign_daily_reserve: int = Field(default=25, ge=0)
+    # What the wizard's unsolicited «you already have a card» mails may spend of that
+    # reserve in a day, one token row each, counted since midnight in Rome: a stranger
+    # typing other people's addresses could otherwise burn the whole key. Once spent the
+    # wizard sends no such mail until tomorrow and logs it. Sign-in is never closed by
+    # it: a login link is asked for by its owner and capped per person
+    # (`magic_link_daily_per_user`). It must fit the reserve.
+    public_mail_daily_budget: int = Field(default=10, ge=1)
+    # The confirmation mails (REB-911) a campaign's tick may attempt in a Rome day, one per
+    # address that was left out of a campaign for not being confirmed, and how long the
+    # link in them works. They spend the same reserve as the wizard's mails.
+    confirmation_mail_daily_budget: int = Field(default=5, ge=1)
+    confirmation_link_days: int = Field(default=30, ge=1)
+    # Login links one person may ask for in a Rome day, from the login page or the wizard
+    # (an admin is never refused, and an admin's promotion or the command line are not
+    # counted). Past it the request is answered like any other and no mail is sent.
+    magic_link_daily_per_user: int = Field(default=5, ge=1)
+    # The wizard's applications that carry a CV, the whole world together, in the last
+    # hour (`Freelancer.created_at`): each one stores up to 5 MB and may start a model
+    # call, and the per-client speed bump alone is no ceiling against many addresses.
+    # Beyond it the wizard answers 429 and the person tries again later.
+    applications_with_cv_per_hour: int = Field(default=30, ge=1)
     # The `whsec_` secret Resend shows for this environment's webhook (spec § 6.1).
     # Empty: the webhook answers 503 and delivery, bounces and complaints are not read.
     resend_webhook_secret: str = ""
-    # --- Claude: the team builder's seam (`llm.py`, REB-508) --------------------------
-    # `AnthropicCall`'s key, for its two callers: the anonymous card (spec § 5.1) and the
-    # team proposal (spec § 3.4). Empty: `call_from_settings` answers `None` and each
-    # caller refuses with its own sentence, the same shape as `resend_api_key` and
-    # `documenso_api_token`. `repr=False` so the key never shows up in a logged
-    # `Settings()` or a stack trace, unlike the other secrets above -- this one is new
-    # enough to start the habit the rest never had.
-    anthropic_api_key: str = Field(default="", repr=False)
-    team_builder_model: str = "claude-opus-5"
-    # Off switches the feature without touching the key above: the two callers read it,
-    # this file only declares it.
+    # --- The team builder (`team_builder.py`, REB-508) --------------------------------
+    # Which model answers, and its key, are not settings: they live in «Modelli AI»
+    # (`ai_config.py`, `llm.py`), saved by an admin and read from the database per call.
+    # Off switches the feature without touching the model configuration: the two callers
+    # read it, this file only declares it.
     team_builder_enabled: bool = True
     # How many proposals the API process runs at once (spec § 5): the next one answers
     # 503 «Troppe richieste» at once rather than queue on the thread pool the member
@@ -139,6 +165,57 @@ class Settings(BaseSettings):
     # midnight in Rome (`team_caps.py`); once reached, the same 503 until tomorrow. A
     # proposal that asked no model (an empty catalogue) cost nothing and does not count.
     team_builder_daily_cap: int = Field(default=300, ge=1)
+    # What one client of the public page may ask of that cap in a rolling day, refused asks
+    # included (`team_slots.py`, REB-889): without it a single address at the speed bump's
+    # five a minute spends the whole cap in about an hour and closes the builder for
+    # everybody. The cloud's asks are not counted per client: they are grant-gated.
+    team_builder_client_daily_cap: int = Field(default=30, ge=1)
+
+    # --- writing cards in bulk (REB-853) -------------------------------------------------
+    # How many cards `cards-refresh` and an admin's regeneration write at once, each worker
+    # on a session of its own and each card claimed per person, so none is paid twice. It
+    # bounds the provider calls in flight, and the database connections the pool takes.
+    cards_workers: int = Field(default=5, ge=1, le=8)
+    # From how many cards a regeneration goes through Anthropic's Message Batches API
+    # (half price, asynchronous) instead of the workers. A single «Rigenera scheda» and
+    # `cards-refresh` never do; a provider other than Anthropic never does either.
+    cards_batch_threshold: int = Field(default=10, ge=1)
+
+    # --- the model providers' keys at rest, and GitHub (REB-829) -----------------------
+    # `secrets_key`: 32 bytes in base64, the AES-256-GCM key (`secrets.py`) under which
+    # «Modelli AI» stores each provider's API key. Empty or malformed: the app refuses to
+    # save or use a provider key and says so, never a plain-text fallback. It lives in
+    # the server's `.env`, outside the database, so a backup does not carry a key that
+    # opens it. `github_token`: a read-only token for the GitHub source of the card
+    # (public data only); empty means unauthenticated calls with the lower rate limit.
+    # `repr=False`, so neither shows in a logged `Settings()` or a stack trace.
+    secrets_key: str = Field(default="", repr=False)
+    github_token: str = Field(default="", repr=False)
+
+    @model_validator(mode="after")
+    def _reserve_leaves_room(self) -> "Settings":
+        # A reserve that eats the whole quota would hold every campaign for good while
+        # the page kept promising tomorrow (REB-779).
+        if self.campaign_daily_reserve >= self.resend_daily_quota:
+            raise ValueError(
+                "REBASE_CAMPAIGN_DAILY_RESERVE must be below REBASE_RESEND_DAILY_QUOTA"
+            )
+        if self.public_mail_daily_budget > self.campaign_daily_reserve:
+            raise ValueError(
+                "REBASE_PUBLIC_MAIL_DAILY_BUDGET must fit REBASE_CAMPAIGN_DAILY_RESERVE"
+            )
+        # The reserve is shared by the magic links, the member mails and the campaign test
+        # mails too: the two budgets that spend it unasked leave `RESERVE_TEST_ROOM` of it
+        # (REB-911).
+        if (
+            self.public_mail_daily_budget + self.confirmation_mail_daily_budget + RESERVE_TEST_ROOM
+            > self.campaign_daily_reserve
+        ):
+            raise ValueError(
+                "REBASE_PUBLIC_MAIL_DAILY_BUDGET plus REBASE_CONFIRMATION_MAIL_DAILY_BUDGET "
+                f"must leave {RESERVE_TEST_ROOM} of REBASE_CAMPAIGN_DAILY_RESERVE free"
+            )
+        return self
 
 
 @lru_cache(maxsize=1)

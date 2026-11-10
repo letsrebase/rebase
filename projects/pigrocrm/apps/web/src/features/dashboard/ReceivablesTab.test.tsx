@@ -29,54 +29,54 @@ function failed(error: unknown, status: number) {
   return { error, response: new Response(null, { status }) } as never
 }
 
-const fascia = (codice: string, etichetta: string, importo: string, numero: number) => ({
-  codice,
-  etichetta,
-  da: null,
-  a: null,
-  importo,
-  numero,
-  quota: 0.5,
-  collegamento: codice === 'scaduto' ? '/app/invoices?scadute=true' : null,
+const band = (code: string, label: string, amount: string, number: number) => ({
+  code,
+  label,
+  from: null,
+  to: null,
+  amount,
+  number,
+  share: 0.5,
+  link: code === 'expired' ? '/app/invoices?overdue=true' : null,
 })
 
 const RESPONSE = {
-  calcolato_alle: '2026-09-22T10:00:00Z',
-  oggi: '2026-09-22',
-  totale: '2100.00',
-  fasce: [
-    fascia('scaduto', 'Scaduto', '100.00', 1),
-    fascia('entro_30', 'Entro 30 giorni', '200.00', 1),
-    fascia('da_31_a_60', 'Da 31 a 60 giorni', '300.00', 1),
-    fascia('da_61_a_90', 'Da 61 a 90 giorni', '400.00', 1),
-    fascia('oltre_90', 'Oltre 90 giorni', '500.00', 1),
-    fascia('senza_scadenza', 'Senza scadenza', '600.00', 1),
+  calculated_at: '2026-09-22T10:00:00Z',
+  today: '2026-09-22',
+  total: '2100.00',
+  bands: [
+    band('expired', 'Scaduto', '100.00', 1),
+    band('entro_30', 'Entro 30 giorni', '200.00', 1),
+    band('da_31_a_60', 'Da 31 a 60 giorni', '300.00', 1),
+    band('da_61_a_90', 'Da 61 a 90 giorni', '400.00', 1),
+    band('oltre_90', 'Oltre 90 giorni', '500.00', 1),
+    band('without_due_date', 'Senza scadenza', '600.00', 1),
   ],
-  per_mese: [{ mese: '2026-10-01', importo: '900.00', numero: 2, quota: 1 }],
-  per_cliente: [
+  by_month: [{ month: '2026-10-01', amount: '900.00', number: 2, share: 1 }],
+  by_customer: [
     {
       customer_id: 'c-beta',
-      ragione_sociale: 'Beta S.r.l.',
-      importo: '1300.00',
-      numero: 3,
-      scaduto: '0.00',
-      quota: 1,
+      legal_name: 'Beta S.r.l.',
+      amount: '1300.00',
+      number: 3,
+      expired: '0.00',
+      share: 1,
     },
   ],
-  scadute: [
+  overdue: [
     {
       invoice_id: 'f-1',
-      numero: '2026/1',
+      number: '2026/1',
       customer_id: 'c-acme',
-      cliente: 'Acme S.r.l.',
-      data_scadenza: '2026-08-13',
-      giorni_di_ritardo: 40,
-      importo: '100.00',
-      solleciti_inviati: 1,
-      ultimo_sollecito_il: '2026-09-15',
+      customer: 'Acme S.r.l.',
+      due_date: '2026-08-13',
+      days_of_delay: 40,
+      amount: '100.00',
+      sent_payment_reminders: 1,
+      last_payment_reminder_at: '2026-09-15',
     },
   ],
-  scadute_totale: 1,
+  total_overdue: 1,
 }
 
 function renderTab() {
@@ -155,10 +155,10 @@ describe('ReceivablesTab, with an azienda selected', () => {
   it('sends the selection as the one parameter the page takes', async () => {
     vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
     const value: LegalEntityValue = {
-      aziende: [],
+      legal_entities: [],
       selected: 'a-2',
       select: vi.fn(),
-      several: true, scoped: false, pinned: false,
+      several: true, scoped: false, pinned: false, loaded: true,
       byId: () => undefined,
     }
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -171,7 +171,7 @@ describe('ReceivablesTab, with an azienda selected', () => {
     )
     await waitFor(() => expect(api.GET).toHaveBeenCalled())
     expect(api.GET).toHaveBeenCalledWith('/api/dashboard/receivables', {
-      params: { query: { azienda_id: 'a-2' } },
+      params: { query: { legal_entity_id: 'a-2' } },
     })
   })
 })

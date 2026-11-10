@@ -6,7 +6,7 @@ both arguments constant, constant folding should produce a constant pattern that
 trigram index can serve. "Should" is not a measurement, so this file is the measurement.
 
 Two tests that used to close this file asserted the *free* planner's choice at REFERENCE
-scale, a `Seq Scan on customers` and its disappearance once the choice was taken away: the
+scale, a `Seq Scan on organizations` and its disappearance once the choice was taken away: the
 planner corpus's family, removed here as its last members (REB-597, after
 REB-580). Every plan below is
 forced with `enable_seqscan = off` and asks whether the repositories' own SQL *can* use an
@@ -20,15 +20,15 @@ removed anywhere.
 The evidence, on `postgres:17-alpine`, after `ANALYZE`, on the REFERENCE corpus. The same
 query twice, once with the clause and once without:
 
-    SELECT id FROM customers
-     WHERE deleted_at IS NULL AND ragione_sociale ILIKE '%zzqqxxww%' [ESCAPE '\']
+    SELECT id FROM organizations
+     WHERE deleted_at IS NULL AND legal_name ILIKE '%zzqqxxww%' [ESCAPE '\']
 
-    Bitmap Heap Scan on customers  (cost=170.85..174.86 rows=1 width=16)
-      Recheck Cond: (((ragione_sociale)::text ~~* '%zzqqxxww%'::text)
+    Bitmap Heap Scan on organizations  (cost=170.85..174.86 rows=1 width=16)
+      Recheck Cond: (((legal_name)::text ~~* '%zzqqxxww%'::text)
                      AND (deleted_at IS NULL))
-      ->  Bitmap Index Scan on ix_customers_ragione_sociale_trgm
+      ->  Bitmap Index Scan on ix_organizations_legal_name_trgm
             (cost=0.00..170.85 rows=1 width=0)
-            Index Cond: ((ragione_sociale)::text ~~* '%zzqqxxww%'::text)
+            Index Cond: ((legal_name)::text ~~* '%zzqqxxww%'::text)
 
 Identical, node for node and cost for cost, with the clause and without. The `Index Cond`
 that comes out the other side carries no trace of the escape: constant folding does
@@ -37,24 +37,24 @@ predicate would have degraded to a `Filter` above a heap scan -- which is exactl
 negative control below does show, for a predicate that genuinely cannot use the index.
 
 All nine indexes were measured the same way, and all nine are chosen with their own
-`Index Cond` (costs at REFERENCE scale): customers.ragione_sociale 170.85,
-customers.partita_iva 73.10, customers.email 175.10, customers.codice_fiscale 77.35,
-people.nome 94.35, people.cognome 81.60, people.email 221.85, deals.nome 608.60,
-documents.titolo 294.10.
+`Index Cond` (costs at REFERENCE scale): organizations.legal_name 170.85,
+organizations.vat_number 73.10, organizations.email 175.10, organizations.tax_code 77.35,
+people.first_name 94.35, people.last_name 81.60, people.email 221.85, deals.name 608.60,
+documents.title 294.10.
 
 **Two deviations from the brief, both forced by what the planner actually does.**
 
 *First:* `SET LOCAL enable_seqscan = off` **is** used, which the brief forbade as turning
 a measurement into a tautology. It is not one here, and the brief's instrument could not
 answer its own question. With the planner entirely free, at the brief's own REFERENCE
-scale and again at the former INFLATED scale of 50 000 customers, Postgres chooses a
+scale and again at the former INFLATED scale of 50 000 organizations, Postgres chooses a
 sequential scan for a
 trigram predicate either way:
 
-      500 customers:  Seq Scan  cost=0.00..17.25    (trigram bitmap scan:   20.01)
-   50 000 customers:  Seq Scan  cost=0.00..1683.00  (trigram bitmap scan: 2026.18)
+      500 organizations:  Seq Scan  cost=0.00..17.25    (trigram bitmap scan:   20.01)
+   50 000 organizations:  Seq Scan  cost=0.00..1683.00  (trigram bitmap scan: 2026.18)
 
-and it is right to: `customers` is a narrow table, so a full scan of 50 000 rows is
+and it is right to: `organizations` is a narrow table, so a full scan of 50 000 rows is
 cheaper than pg_trgm's large constant GIN start-up cost. That is a fact about this table's
 width, not about the `ESCAPE` clause, and a test asserting "the index appears in the plan"
 would have gone red at every scale this suite can afford while measuring nothing it was
@@ -65,11 +65,12 @@ index it cannot use, which is what makes the answer informative, and the negativ
 below proves exactly that.
 
 *Second:* each plan is measured inside a savepoint in which the **sibling** trigram
-indexes of the same table have been dropped. With sequential scans disabled, every partial
+indexes of the same table (and its partial `lower(email)` index) have been dropped.
+With sequential scans disabled, every partial
 index on `deleted_at IS NULL` becomes a cheap way to enumerate the live rows, so the
 planner will scan an unrelated trigram index whole and filter -- on `people.email` it
-prefers `ix_people_cognome_trgm` at 653.12 to the correct index at 221.85, and on
-`customers` it prefers one full partial-index scan at 613.38 to a BitmapOr of the four.
+prefers `ix_people_last_name_trgm` at 653.12 to the correct index at 221.85, and on
+`organizations` it prefers one full partial-index scan at 613.38 to a BitmapOr of the four.
 Neither is a statement about the column under test. Removing the siblings for the duration
 of one `EXPLAIN` removes the confound; `begin_nested()` puts them back.
 
@@ -86,25 +87,28 @@ from corpus import SMALL, build_corpus
 from sqlalchemy import ColumnElement, or_, select, text
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
-from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.db import escape_like
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 # The nine indexes this slice declares. Named here rather than derived from the models,
 # so that deleting one from `__table_args__` fails this file instead of quietly agreeing
 # with it.
 TRGM_INDEXES = (
-    "ix_customers_ragione_sociale_trgm",
-    "ix_customers_partita_iva_trgm",
-    "ix_customers_codice_fiscale_trgm",
-    "ix_customers_email_trgm",
-    "ix_people_nome_trgm",
-    "ix_people_cognome_trgm",
-    "ix_people_email_trgm",
-    "ix_deals_nome_trgm",
-    "ix_documents_titolo_trgm",
+    "ix_organizations_legal_name_trgm",
+    "ix_organizations_vat_number_trgm",
+    "ix_organizations_tax_code_trgm",
+    "ix_people_name_trgm",
+    "ix_people_last_name_trgm",
+    "ix_deals_name_trgm",
+    "ix_documents_title_trgm",
+    # REB-940: the email ones moved to the contact points, which every search reads for an
+    # address, a number or a profile of a person or a customer.
+    "ix_contact_points_value_trgm",
+    "ix_contact_points_normalized_trgm",
 )
 
 # A term that matches nothing, used throughout: what is being measured is whether the
@@ -118,22 +122,27 @@ _NEEDLE = "zzqqxxww"
 # fails `test_every_column_every_repository_searches_has_a_usable_trigram_index` by name.
 _SEARCHED: tuple[tuple[str, tuple[InstrumentedAttribute[Any], ...], tuple[str, ...]], ...] = (
     (
-        "customers",
-        (Customer.ragione_sociale, Customer.partita_iva, Customer.email, Customer.codice_fiscale),
+        "organizations",
+        (Organization.legal_name, Organization.vat_number, Organization.tax_code),
         (
-            "ix_customers_ragione_sociale_trgm",
-            "ix_customers_partita_iva_trgm",
-            "ix_customers_email_trgm",
-            "ix_customers_codice_fiscale_trgm",
+            "ix_organizations_legal_name_trgm",
+            "ix_organizations_vat_number_trgm",
+            "ix_organizations_tax_code_trgm",
         ),
     ),
     (
         "people",
-        (Person.nome, Person.cognome, Person.email),
-        ("ix_people_nome_trgm", "ix_people_cognome_trgm", "ix_people_email_trgm"),
+        (Person.first_name, Person.last_name),
+        ("ix_people_name_trgm", "ix_people_last_name_trgm"),
     ),
-    ("deals", (Deal.nome,), ("ix_deals_nome_trgm",)),
-    ("documents", (Document.titolo,), ("ix_documents_titolo_trgm",)),
+    ("deals", (Deal.name,), ("ix_deals_name_trgm",)),
+    ("documents", (Document.title,), ("ix_documents_title_trgm",)),
+    # The two columns the people and organizations searches read through `owners_matching`.
+    (
+        "contact_points",
+        (ContactPoint.value, ContactPoint.normalized),
+        ("ix_contact_points_value_trgm", "ix_contact_points_normalized_trgm"),
+    ),
 )
 
 _SIBLINGS: dict[str, tuple[str, ...]] = {
@@ -164,9 +173,24 @@ def _isolated_plan(session: Session, index_name: str, predicate: str, table: str
     try:
         for sibling in _SIBLINGS[index_name]:
             session.execute(text(f"DROP INDEX {sibling}"))
+        if table in ("contact_points", "organizations"):
+            # Every other index of the table is one more way to enumerate its rows: the
+            # foreign keys and the unique ones of `contact_points` (it has no `deleted_at`),
+            # and on `organizations` the partial unique index on the VAT number, which a
+            # `vat_number ILIKE` predicate satisfies (REB-970) and which then wins as a whole
+            # index scan the planner finds cheaper than the trigram index being measured.
+            for other in session.scalars(
+                text(
+                    "SELECT indexname FROM pg_indexes WHERE tablename = :table "
+                    "AND indexname NOT LIKE '%_pkey' AND indexname <> :name"
+                ),
+                {"table": table, "name": index_name},
+            ).all():
+                session.execute(text(f"DROP INDEX {other}"))
         session.execute(text("SET LOCAL enable_seqscan = off"))
+        live = "deleted_at IS NULL AND " if table != "contact_points" else ""
         rows = session.execute(
-            text(f"EXPLAIN SELECT id FROM {table} WHERE deleted_at IS NULL AND {predicate}")
+            text(f"EXPLAIN SELECT id FROM {table} WHERE {live}{predicate}")
         ).all()
         return "\n".join(str(row[0]) for row in rows)
     finally:
@@ -174,7 +198,7 @@ def _isolated_plan(session: Session, index_name: str, predicate: str, table: str
         savepoint.rollback()
 
 
-def test_the_trigram_extension_and_the_nine_indexes_exist(db_session: Session) -> None:
+def test_the_trigram_extension_and_its_indexes_exist(db_session: Session) -> None:
     installed = db_session.scalar(
         text("SELECT count(*) FROM pg_extension WHERE extname = 'pg_trgm'")
     )
@@ -196,11 +220,11 @@ def test_ilike_with_an_explicit_escape_uses_the_trigram_index(db_session: Sessio
 
     plan = _isolated_plan(
         db_session,
-        "ix_customers_ragione_sociale_trgm",
-        rf"ragione_sociale ILIKE '%{_NEEDLE}%' ESCAPE '\'",
-        "customers",
+        "ix_organizations_legal_name_trgm",
+        rf"legal_name ILIKE '%{_NEEDLE}%' ESCAPE '\'",
+        "organizations",
     )
-    assert "Bitmap Index Scan on ix_customers_ragione_sociale_trgm" in plan, (
+    assert "Bitmap Index Scan on ix_organizations_legal_name_trgm" in plan, (
         "the ESCAPE clause defeated the trigram index; apply the spec's one-line "
         f"fallback and remove `escape=` from every repository.\nPlan was:\n{plan}"
     )
@@ -214,11 +238,11 @@ def test_the_same_predicate_without_escape_also_uses_the_index(db_session: Sessi
 
     plan = _isolated_plan(
         db_session,
-        "ix_customers_ragione_sociale_trgm",
-        f"ragione_sociale ILIKE '%{_NEEDLE}%'",
-        "customers",
+        "ix_organizations_legal_name_trgm",
+        f"legal_name ILIKE '%{_NEEDLE}%'",
+        "organizations",
     )
-    assert "Bitmap Index Scan on ix_customers_ragione_sociale_trgm" in plan, f"plan was:\n{plan}"
+    assert "Bitmap Index Scan on ix_organizations_legal_name_trgm" in plan, f"plan was:\n{plan}"
 
 
 def test_the_escape_clause_changes_the_plan_in_no_way_at_all(db_session: Session) -> None:
@@ -278,7 +302,7 @@ def test_the_repositories_really_do_emit_the_clause_this_file_measures(
 ) -> None:
     """The plans above are measured on hand-written SQL, which would be worth nothing if
     SQLAlchemy rendered `escape="\\\\"` as something else. This compiles the four-way
-    `or_()` `CustomerRepository.list` builds and reads the SQL back.
+    `or_()` `OrganizationRepository.list` builds and reads the SQL back.
 
     Hand-written SQL is used for the plans on purpose -- `gincostestimate` cannot count
     the matching trigrams of a bound parameter, so an ORM-compiled statement measures the
@@ -289,7 +313,7 @@ def test_the_repositories_really_do_emit_the_clause_this_file_measures(
     branches: list[ColumnElement[bool]] = [
         column.ilike(like, escape="\\") for column in _SEARCHED[0][1]
     ]
-    stmt = select(Customer.id).where(Customer.deleted_at.is_(None)).where(or_(*branches))
+    stmt = select(Organization.id).where(Organization.deleted_at.is_(None)).where(or_(*branches))
     sql = str(stmt.compile(db_session.get_bind()))
 
     assert sql.count("ESCAPE") == len(branches), sql
@@ -301,7 +325,7 @@ def test_a_lowered_column_cannot_use_the_index_even_with_seqscan_disabled(
     """The negative control that makes `enable_seqscan = off` an instrument rather than a
     tautology, and spec §8.2's note pinned at the same time.
 
-    `lower(ragione_sociale) LIKE ...` cannot be served by an index on the raw column, and
+    `lower(legal_name) LIKE ...` cannot be served by an index on the raw column, and
     forcing the planner's hand does not change that -- it falls back to a `Filter`. Which
     is also why no index expression in this slice wraps its column in `lower()`: doing so
     would make the ILIKE the repositories actually emit unable to use the index, trading
@@ -311,9 +335,9 @@ def test_a_lowered_column_cannot_use_the_index_even_with_seqscan_disabled(
 
     plan = _isolated_plan(
         db_session,
-        "ix_customers_ragione_sociale_trgm",
-        f"lower(ragione_sociale) LIKE '%{_NEEDLE}%'",
-        "customers",
+        "ix_organizations_legal_name_trgm",
+        f"lower(legal_name) LIKE '%{_NEEDLE}%'",
+        "organizations",
     )
     assert "Index Cond" not in plan, f"plan was:\n{plan}"
     assert "Filter: (lower(" in plan, f"plan was:\n{plan}"
@@ -341,11 +365,13 @@ def test_a_two_character_pattern_degrades_the_index_to_a_full_scan(db_session: S
     def _index_cost(pattern: str) -> float:
         plan = _isolated_plan(
             db_session,
-            "ix_customers_ragione_sociale_trgm",
-            f"ragione_sociale ILIKE '{pattern}'",
-            "customers",
+            "ix_organizations_legal_name_trgm",
+            f"legal_name ILIKE '{pattern}'",
+            "organizations",
         )
-        line = next(row for row in plan.splitlines() if "Bitmap Index Scan on ix_customers" in row)
+        line = next(
+            row for row in plan.splitlines() if "Bitmap Index Scan on ix_organizations" in row
+        )
         return float(line.rsplit("cost=", 1)[1].split("..", 1)[1].split(" ", 1)[0])
 
     two_characters = _index_cost("%zz%")

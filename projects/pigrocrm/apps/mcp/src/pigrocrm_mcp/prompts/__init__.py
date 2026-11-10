@@ -29,44 +29,58 @@ from typing import Any
 
 from mcp.server import MCPServer
 
+from pigrocrm.core.config import Settings
 from pigrocrm_mcp.context import McpContext
-from pigrocrm_mcp.prompts import customer as customer_prompts
+from pigrocrm_mcp.modules import prompt_available
 from pigrocrm_mcp.prompts import dashboards as dashboard_prompts
+from pigrocrm_mcp.prompts import organization as organization_prompts
 
 
-def register_prompts(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:
+def register_prompts(
+    mcp: MCPServer, context: McpContext, guard: Callable[..., Any], settings: Settings
+) -> None:
     """`guard` is typed `Callable[..., Any]`, exactly as `register_entity_tools` types it.
 
     A single `[T: Callable[..., Any]]` on this function would bind one `T` for all four
     registrations, so the second signature it met would be an error -- and the honest
     alternative, a `Protocol` with a generic `__call__`, would describe `_guard` no better
     than this does while adding a type nobody else in this package needs.
+
+    A prompt of a module the space has switched off is not registered (`modules.py`).
     """
 
-    @mcp.prompt(name="revisione-pipeline")
-    @guard
-    def revisione_pipeline(da: str | None = None, a: str | None = None) -> list[dict[str, Any]]:
-        """La revisione settimanale della pipeline commerciale, con i deal fermi e le
-        offerte in attesa. `da` e `a` sono date ISO opzionali: senza, il mese in corso."""
-        return dashboard_prompts.revisione_pipeline(context, da, a)
+    def prompt(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+        if not prompt_available(name, settings):
+            return lambda fn: fn
+        decorator: Callable[[Callable[..., Any]], Callable[..., Any]] = mcp.prompt(name=name)
+        return decorator
 
-    @mcp.prompt(name="chiusura-mese")
+    @prompt("pipeline-review")
     @guard
-    def chiusura_mese(anno: int, mese: int) -> list[dict[str, Any]]:
-        """La lista di cose da fare prima di chiudere un mese: conto economico del periodo,
-        ore non fatturate, fatture scadute, e se il periodo è già chiuso."""
-        return dashboard_prompts.chiusura_mese(context, anno, mese)
+    def review_pipeline(
+        date_from: str | None = None, date_to: str | None = None
+    ) -> list[dict[str, Any]]:
+        """The weekly review of the sales pipeline, with stalled deals and pending offers.
+        `date_from` and `date_to` are optional ISO dates: without them, the current month."""
+        return dashboard_prompts.review_pipeline(context, date_from, date_to)
 
-    @mcp.prompt(name="ore-da-registrare")
+    @prompt("month-close")
     @guard
-    def ore_da_registrare(settimana: str | None = None) -> list[dict[str, Any]]:
-        """I giorni della settimana corrente senza nessuna ora registrata, con i deal su
-        cui si è lavorato di recente."""
-        return dashboard_prompts.ore_da_registrare(context, settimana)
+    def closing_month(year: int, month: int) -> list[dict[str, Any]]:
+        """The to-do list before closing a month: the period's profit and loss, unbilled
+        hours, overdue invoices, and whether the period is already closed."""
+        return dashboard_prompts.closing_month(context, year, month)
 
-    @mcp.prompt(name="stato-cliente")
+    @prompt("hours-to-log")
     @guard
-    def stato_cliente(customer_id: str) -> list[dict[str, Any]]:
-        """Il briefing prima di una telefonata: fatture non incassate, e la scheda completa
-        del cliente allegata come risorsa."""
-        return customer_prompts.stato_cliente(context, customer_id)
+    def hours_to_log(week: str | None = None) -> list[dict[str, Any]]:
+        """The days of the current week with no hours logged, with the deals worked on
+        recently."""
+        return dashboard_prompts.hours_to_log(context, week)
+
+    @prompt("organization-status")
+    @guard
+    def status_organization(organization_id: str) -> list[dict[str, Any]]:
+        """The briefing before a phone call: unpaid invoices, and the customer's full record
+        attached as a resource."""
+        return organization_prompts.status_organization(context, organization_id)

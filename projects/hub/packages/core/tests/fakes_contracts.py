@@ -20,7 +20,7 @@ _LETTER_BLANKS = [
     SignatureBlank("data firma", 2, 165.811, 647.241, 85.039, 6.660),
     SignatureBlank("firma professionista", 2, 303.638, 707.281, 155.906, 22.660),
 ]
-_QUADRO_BLANKS = [
+_FRAMEWORK_BLANKS = [
     SignatureBlank("data firma", 5, 165.811, 520.0, 85.039, 6.660),
     SignatureBlank("firma professionista", 5, 303.638, 580.0, 155.906, 22.660),
     SignatureBlank("firma professionista", 6, 303.638, 300.0, 155.906, 22.660),
@@ -29,10 +29,10 @@ _QUADRO_BLANKS = [
 # for the framework agreement's three: what `signature_blanks` answers without Typst. An
 # occasional text has its ordinary twin's blanks (REB-687).
 FAKE_BLANKS: dict[str, list[SignatureBlank]] = {
-    "lettera-di-incarico": _LETTER_BLANKS,
-    "lettera-di-incarico-occasionale": _LETTER_BLANKS,
-    "contratto-quadro": _QUADRO_BLANKS,
-    "contratto-quadro-occasionale": _QUADRO_BLANKS,
+    "engagement-letter": _LETTER_BLANKS,
+    "engagement-letter-occasional": _LETTER_BLANKS,
+    "framework-agreement": _FRAMEWORK_BLANKS,
+    "framework-agreement-occasional": _FRAMEWORK_BLANKS,
 }
 
 

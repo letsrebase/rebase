@@ -27,10 +27,10 @@ class ContractExpenseRepository:
             select(ContractExpense)
             .where(
                 ContractExpense.contract_id == contract_id,
-                ContractExpense.rimborsabile.is_(True),
+                ContractExpense.reimbursable.is_(True),
                 ContractExpense.invoice_line_id.is_(None),
             )
-            .order_by(ContractExpense.data.asc(), ContractExpense.id.asc())
+            .order_by(ContractExpense.date.asc(), ContractExpense.id.asc())
         )
         return list(self.session.execute(stmt).scalars())
 
@@ -41,6 +41,6 @@ class ContractExpenseRepository:
         stmt = (
             select(ContractExpense)
             .where(ContractExpense.contract_id == contract_id)
-            .order_by(ContractExpense.data.asc(), ContractExpense.id.asc())
+            .order_by(ContractExpense.date.asc(), ContractExpense.id.asc())
         )
         return list(self.session.execute(stmt).scalars())

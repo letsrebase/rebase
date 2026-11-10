@@ -20,23 +20,22 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.invoices.fatturapa_import import parse
 from pigrocrm.core.invoices.import_classification import classify_parsed_invoice
 from pigrocrm.core.invoices.import_dedup import check_invoice_duplicate
 from pigrocrm.core.invoices.import_direction import (
     classify_direction,
-    classify_invoice_direction,
-    match_azienda,
+    match_legal_entity,
 )
 from pigrocrm.core.invoices.import_schemas import ParsedInvoiceParty
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.repository import InvoiceRepository
+from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 
 FIXTURES = Path(__file__).parent / "fixtures" / "fatturapa"
-CONSULENZA = "fpr12-consulenza-marzo.xml"
+CONSULTING = "fpr-12-march-consulting.xml"
 
 
 def _fixture(name: str) -> bytes:
@@ -47,12 +46,12 @@ def _digest(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
-def _emitter(**overrides: object) -> LegalEntity:
+def _legal_entity(**overrides: object) -> LegalEntity:
     base: dict[str, object] = {
-        "ragione_sociale": "Studio Rossi",
-        "partita_iva": "01234567890",
-        "codice_fiscale": "HMCRFT00A01H501K",
-        "nazione": "IT",
+        "legal_name": "Studio Rossi",
+        "vat_number": "01234567890",
+        "tax_code": "HMCRFT00A01H501K",
+        "country": "IT",
     }
     base.update(overrides)
     return LegalEntity(**base)
@@ -60,14 +59,14 @@ def _emitter(**overrides: object) -> LegalEntity:
 
 def _party(**overrides: object) -> ParsedInvoiceParty:
     base: dict[str, object] = {
-        "ragione_sociale": "Chiara Bianchi",
-        "partita_iva": "IT01234567890",
-        "codice_fiscale": "BNCCHR85M41H501Z",
-        "indirizzo": "Via delle Officine 10",
-        "cap": "20121",
-        "comune": "Milano",
-        "provincia": "MI",
-        "nazione": "IT",
+        "legal_name": "Chiara Bianchi",
+        "vat_number": "IT01234567890",
+        "tax_code": "BNCCHR85M41H501Z",
+        "address": "Via delle Officine 10",
+        "postal_code": "20121",
+        "city": "Milano",
+        "province": "MI",
+        "country": "IT",
     }
     base.update(overrides)
     return ParsedInvoiceParty(**base)
@@ -76,84 +75,82 @@ def _party(**overrides: object) -> ParsedInvoiceParty:
 # --- classify_direction: the low-level party-vs-emitter comparison ----------------
 
 
-def test_a_matching_partita_iva_is_outgoing_case_and_prefix_insensitive() -> None:
-    fornitore = _party(partita_iva="it 01234567890")
-    emitter = _emitter(partita_iva="01234567890")
-    assert classify_direction(fornitore, [emitter]) == "outgoing"
+def test_to_matching_vat_number_is_outgoing_case_and_prefix_insensitive() -> None:
+    supplier = _party(vat_number="it 01234567890")
+    legal_entity = _legal_entity(vat_number="01234567890")
+    assert classify_direction(supplier, [legal_entity]) == "outgoing"
 
 
-def test_a_matching_codice_fiscale_is_outgoing_when_the_partita_iva_channel_misses() -> None:
-    fornitore = _party(partita_iva="IT99999999999", codice_fiscale="hmcrft00a01h501k")
-    emitter = _emitter(partita_iva="01234567890", codice_fiscale="HMCRFT00A01H501K")
-    assert classify_direction(fornitore, [emitter]) == "outgoing"
+def test_to_matching_tax_code_is_outgoing_when_the_vat_number_channel_misses() -> None:
+    supplier = _party(vat_number="IT99999999999", tax_code="hmcrft00a01h501k")
+    legal_entity = _legal_entity(vat_number="01234567890", tax_code="HMCRFT00A01H501K")
+    assert classify_direction(supplier, [legal_entity]) == "outgoing"
 
 
 def test_neither_identifier_matching_is_incoming() -> None:
-    fornitore = _party(partita_iva="IT99999999999", codice_fiscale="ZZZZZZ00A01H501Z")
-    emitter = _emitter()
-    assert classify_direction(fornitore, [emitter]) == "incoming"
+    supplier = _party(vat_number="IT99999999999", tax_code="ZZZZZZ00A01H501Z")
+    legal_entity = _legal_entity()
+    assert classify_direction(supplier, [legal_entity]) == "incoming"
 
 
 def test_a_supplier_with_no_recognisable_identifier_is_incoming_not_a_crash() -> None:
-    fornitore = _party(partita_iva=None, codice_fiscale=None)
-    emitter = _emitter()
-    assert classify_direction(fornitore, [emitter]) == "incoming"
+    supplier = _party(vat_number=None, tax_code=None)
+    legal_entity = _legal_entity()
+    assert classify_direction(supplier, [legal_entity]) == "incoming"
 
 
-def test_an_unconfigured_emitter_profile_refuses_to_classify_at_all() -> None:
-    fornitore = _party()
-    emitter = _emitter(partita_iva=None, codice_fiscale=None)
+def test_an_unconfigured_legal_entities_refuses_to_classify_at_all() -> None:
+    supplier = _party()
+    legal_entity = _legal_entity(vat_number=None, tax_code=None)
     with pytest.raises(ValidationFailed) as caught:
-        classify_direction(fornitore, [emitter])
-    assert caught.value.details["entity"] == "emitter_profile"
+        classify_direction(supplier, [legal_entity])
+    assert caught.value.details["entity"] == "legal_entity"
 
 
-def test_the_file_lands_on_the_azienda_whose_identifier_matches_among_several() -> None:
-    """REB-619, spec §1.5: a space with two aziende, the supplier names the second."""
-    humancraft = _emitter(partita_iva="01234567890", codice_fiscale="HMCRFT00A01H501K")
-    rebase = _emitter(
-        ragione_sociale="Rebase S.r.l.", partita_iva="09876543210", codice_fiscale=None
-    )
-    fornitore = _party(partita_iva="IT09876543210", codice_fiscale=None)
-    assert match_azienda(fornitore, [humancraft, rebase]) is rebase
-    assert classify_direction(fornitore, [humancraft, rebase]) == "outgoing"
-    stranger = _party(partita_iva="IT11111111111", codice_fiscale=None)
-    assert match_azienda(stranger, [humancraft, rebase]) is None
+def test_the_file_lands_on_the_legal_entity_whose_identifier_matches_among_several() -> None:
+    """REB-619, spec §1.5: a space with two legal entities, the supplier names the second."""
+    humancraft = _legal_entity(vat_number="01234567890", tax_code="HMCRFT00A01H501K")
+    rebase = _legal_entity(legal_name="Rebase S.r.l.", vat_number="09876543210", tax_code=None)
+    supplier = _party(vat_number="IT09876543210", tax_code=None)
+    assert match_legal_entity(supplier, [humancraft, rebase]) is rebase
+    assert classify_direction(supplier, [humancraft, rebase]) == "outgoing"
+    stranger = _party(vat_number="IT11111111111", tax_code=None)
+    assert match_legal_entity(stranger, [humancraft, rebase]) is None
 
 
-def test_a_supplier_matching_two_aziende_by_different_channels_is_refused() -> None:
+def test_to_supplier_matching_two_legal_entities_by_different_channels_is_refused() -> None:
     """The one ambiguity the two unique indexes cannot rule out (spec §1.5): X by
     P.IVA, Y by codice fiscale. Nothing is classified, the configuration is named."""
-    by_piva = _emitter(partita_iva="01234567890", codice_fiscale=None)
-    by_cf = _emitter(partita_iva="09876543210", codice_fiscale="HMCRFT00A01H501K")
-    fornitore = _party(partita_iva="IT01234567890", codice_fiscale="HMCRFT00A01H501K")
+    by_vat_number = _legal_entity(vat_number="01234567890", tax_code=None)
+    by_cf = _legal_entity(vat_number="09876543210", tax_code="HMCRFT00A01H501K")
+    supplier = _party(vat_number="IT01234567890", tax_code="HMCRFT00A01H501K")
     with pytest.raises(ValidationFailed) as caught:
-        match_azienda(fornitore, [by_piva, by_cf])
-    assert caught.value.details["entity"] == "emitter_profile"
-    assert caught.value.details["field"] == "codice_fiscale"
+        match_legal_entity(supplier, [by_vat_number, by_cf])
+    assert caught.value.details["entity"] == "legal_entity"
+    assert caught.value.details["field"] == "tax_code"
 
 
-def test_only_an_azienda_with_an_identifier_counts_as_configured() -> None:
+def test_only_an_legal_entity_with_an_identifier_counts_as_configured() -> None:
     """One azienda with ids beside one without: there is a fact to compare against."""
-    fornitore = _party(partita_iva="IT01234567890")
-    configured = _emitter(partita_iva="01234567890")
-    bare = _emitter(partita_iva=None, codice_fiscale=None)
-    assert match_azienda(fornitore, [bare, configured]) is configured
+    supplier = _party(vat_number="IT01234567890")
+    configured = _legal_entity(vat_number="01234567890")
+    bare = _legal_entity(vat_number=None, tax_code=None)
+    assert match_legal_entity(supplier, [bare, configured]) is configured
 
 
-# --- classify_invoice_direction: the same check against a real parsed document ----
+# --- classify_direction: the same check against a real parsed document's supplier ---
 
 
 def test_the_fixtures_own_issuer_classifies_as_outgoing_against_her_own_profile() -> None:
-    [invoice] = parse(_fixture(CONSULENZA))
-    emitter = _emitter(partita_iva="01234567890", codice_fiscale="BNCCHR85M41H501Z")
-    assert classify_invoice_direction(invoice, [emitter]) == "outgoing"
+    [invoice] = parse(_fixture(CONSULTING))
+    legal_entity = _legal_entity(vat_number="01234567890", tax_code="BNCCHR85M41H501Z")
+    assert classify_direction(invoice.supplier, [legal_entity]) == "outgoing"
 
 
 def test_the_same_document_is_incoming_against_a_different_accounts_profile() -> None:
-    [invoice] = parse(_fixture(CONSULENZA))
-    emitter = _emitter(partita_iva="09876543210", codice_fiscale="RSSMRA80A01H501U")
-    assert classify_invoice_direction(invoice, [emitter]) == "incoming"
+    [invoice] = parse(_fixture(CONSULTING))
+    legal_entity = _legal_entity(vat_number="09876543210", tax_code="RSSMRA80A01H501U")
+    assert classify_direction(invoice.supplier, [legal_entity]) == "incoming"
 
 
 # --- check_invoice_duplicate: the hash comparison, including the NULL-hash rule ---
@@ -175,7 +172,7 @@ def test_a_different_stored_hash_is_conflict_not_already_present() -> None:
 
 
 def test_a_numbered_invoice_with_no_stored_hash_is_always_conflict_never_already_present() -> None:
-    """The rule the issue names explicitly: an `esterno`-imported (or lotto-batch)
+    """The rule the issue names explicitly: an `external`-imported (or lotto-batch)
     row has `xml_hash_sha256 = NULL` by construction (spec 2026-09-04 §3.1), and a
     re-import of the same number must never be waved through as identical to
     something nobody ever hashed, however innocuous the incoming bytes look."""
@@ -186,14 +183,14 @@ def test_a_numbered_invoice_with_no_stored_hash_is_always_conflict_never_already
 # --- InvoiceRepository.existing_by_number: the natural-key lookup the check needs -
 
 
-def _customer(session: Session) -> Customer:
-    customer = Customer(
-        ragione_sociale=f"Acme {uuid4()}",
-        indirizzo="Corso Italia 5",
-        cap="00100",
-        comune="Roma",
-        provincia="RM",
-        nazione="IT",
+def _customer(session: Session) -> Organization:
+    customer = Organization(
+        legal_name=f"Acme {uuid4()}",
+        address="Corso Italia 5",
+        postal_code="00100",
+        city="Roma",
+        province="RM",
+        country="IT",
     )
     session.add(customer)
     session.flush()
@@ -205,29 +202,29 @@ def test_existing_by_number_finds_the_row_at_that_natural_key_and_nothing_else(
 ) -> None:
     row = Invoice(
         customer_id=_customer(db_session).id,
-        tipo="fattura",
-        stato="emessa",
-        anno=2026,
-        numero=6,
-        data_emissione=date(2026, 3, 15),
-        importata_da="fatturapa",
+        type="invoice",
+        status="issued",
+        year=2026,
+        number=6,
+        issue_date=date(2026, 3, 15),
+        imported_from="fatturapa",
         xml_hash_sha256="deadbeef",
-        imponibile=Decimal("1000.00"),
-        imposta=Decimal("0.00"),
-        bollo=Decimal("2.00"),
-        totale=Decimal("1000.00"),
+        taxable_amount=Decimal("1000.00"),
+        vat_amount=Decimal("0.00"),
+        stamp_duty=Decimal("2.00"),
+        total=Decimal("1000.00"),
     )
     db_session.add(row)
     db_session.flush()
 
     repo = InvoiceRepository(db_session)
-    azienda_id = row.azienda_id  # the default azienda, by the column's own default
-    found = repo.existing_by_number(azienda_id, 2026, 6)
+    legal_entity_id = row.legal_entity_id  # the default azienda, by the column's own default
+    found = repo.existing_by_number(legal_entity_id, 2026, 6)
     assert found is not None
     assert found.id == row.id
     assert found.xml_hash_sha256 == "deadbeef"
-    assert repo.existing_by_number(azienda_id, 2026, 7) is None
-    assert repo.existing_by_number(azienda_id, 2025, 6) is None
+    assert repo.existing_by_number(legal_entity_id, 2026, 7) is None
+    assert repo.existing_by_number(legal_entity_id, 2025, 6) is None
     # Another azienda's register does not carry it (REB-619).
     assert repo.existing_by_number(uuid4(), 2026, 6) is None
 
@@ -236,52 +233,52 @@ def test_existing_by_number_finds_the_row_at_that_natural_key_and_nothing_else(
 
 
 def test_incoming_reports_incoming_skipped_whatever_the_register_holds() -> None:
-    [invoice] = parse(_fixture(CONSULENZA))
-    emitter = _emitter(partita_iva="09876543210", codice_fiscale="RSSMRA80A01H501U")
-    outcome, azienda = classify_parsed_invoice(
+    [invoice] = parse(_fixture(CONSULTING))
+    legal_entity = _legal_entity(vat_number="09876543210", tax_code="RSSMRA80A01H501U")
+    outcome, matched = classify_parsed_invoice(
         invoice,
-        [emitter],
+        [legal_entity],
         existing_for=lambda _a: Invoice(xml_hash_sha256="irrelevant, never reached"),
         content=b"irrelevant",
     )
-    assert (outcome, azienda) == ("incoming_skipped", None)
+    assert (outcome, matched) == ("incoming_skipped", None)
 
 
 def test_an_outgoing_invoice_not_on_record_is_ready() -> None:
-    [invoice] = parse(_fixture(CONSULENZA))
-    emitter = _emitter(partita_iva="01234567890", codice_fiscale="BNCCHR85M41H501Z")
-    outcome, azienda = classify_parsed_invoice(
-        invoice, [emitter], existing_for=lambda _a: None, content=_fixture(CONSULENZA)
+    [invoice] = parse(_fixture(CONSULTING))
+    legal_entity = _legal_entity(vat_number="01234567890", tax_code="BNCCHR85M41H501Z")
+    outcome, matched = classify_parsed_invoice(
+        invoice, [legal_entity], existing_for=lambda _a: None, content=_fixture(CONSULTING)
     )
-    assert (outcome, azienda) == ("ready", emitter)
+    assert (outcome, matched) == ("ready", legal_entity)
 
 
 def test_an_outgoing_invoice_with_a_matching_stored_hash_is_already_present() -> None:
-    [invoice] = parse(_fixture(CONSULENZA))
-    emitter = _emitter(partita_iva="01234567890", codice_fiscale="BNCCHR85M41H501Z")
-    content = _fixture(CONSULENZA)
+    [invoice] = parse(_fixture(CONSULTING))
+    legal_entity = _legal_entity(vat_number="01234567890", tax_code="BNCCHR85M41H501Z")
+    content = _fixture(CONSULTING)
     existing = Invoice(xml_hash_sha256=_digest(content))
-    outcome, azienda = classify_parsed_invoice(
-        invoice, [emitter], existing_for=lambda _a: existing, content=content
+    outcome, matched = classify_parsed_invoice(
+        invoice, [legal_entity], existing_for=lambda _a: existing, content=content
     )
-    assert (outcome, azienda) == ("already_present", emitter)
+    assert (outcome, matched) == ("already_present", legal_entity)
 
 
 def test_an_outgoing_invoice_with_a_different_stored_hash_is_conflict() -> None:
-    [invoice] = parse(_fixture(CONSULENZA))
-    emitter = _emitter(partita_iva="01234567890", codice_fiscale="BNCCHR85M41H501Z")
+    [invoice] = parse(_fixture(CONSULTING))
+    legal_entity = _legal_entity(vat_number="01234567890", tax_code="BNCCHR85M41H501Z")
     existing = Invoice(xml_hash_sha256=_digest(b"a different document entirely"))
     outcome, _ = classify_parsed_invoice(
-        invoice, [emitter], existing_for=lambda _a: existing, content=_fixture(CONSULENZA)
+        invoice, [legal_entity], existing_for=lambda _a: existing, content=_fixture(CONSULTING)
     )
     assert outcome == "conflict"
 
 
 def test_an_outgoing_invoice_with_no_stored_hash_is_conflict_not_already_present() -> None:
-    [invoice] = parse(_fixture(CONSULENZA))
-    emitter = _emitter(partita_iva="01234567890", codice_fiscale="BNCCHR85M41H501Z")
+    [invoice] = parse(_fixture(CONSULTING))
+    legal_entity = _legal_entity(vat_number="01234567890", tax_code="BNCCHR85M41H501Z")
     existing = Invoice(xml_hash_sha256=None)
     outcome, _ = classify_parsed_invoice(
-        invoice, [emitter], existing_for=lambda _a: existing, content=_fixture(CONSULENZA)
+        invoice, [legal_entity], existing_for=lambda _a: existing, content=_fixture(CONSULTING)
     )
     assert outcome == "conflict"

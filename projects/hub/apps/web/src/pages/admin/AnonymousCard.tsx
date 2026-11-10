@@ -1,0 +1,389 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useId, useState, type FormEvent, type ReactNode } from 'react'
+import { Badge } from '@rebase/ui/badge'
+import { Button } from '@rebase/ui/button'
+import { Input } from '@rebase/ui/input'
+import { Label } from '@rebase/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
+import {
+  admin,
+  ApiError,
+  type CardConflict,
+  type CardProvenance,
+  type FreelancerCard,
+  type Card,
+} from '@/lib/api'
+import { LoadingState } from './list-kit'
+import { useFreelancerCard } from '@/hooks/use-freelancer-card'
+import { bandLabel } from '@/lib/bands'
+import { REMOTE_LABELS, SENIORITY_LABELS, formatDateTime, formatExperience } from '@/lib/format'
+
+export function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words">{children}</dd>
+    </>
+  )
+}
+
+/** A list the card keeps as words, or an empty mark when it has none. */
+function words(items: string[]): string {
+  return items.length ? items.join(', ') : '—'
+}
+
+const NO_CORRECTION = 'nessuna'
+
+/**
+ * The level an admin sets over Claude's reading (REB-799): a seniority and a number of
+ * years, each optional, saved through the talent's override, which keeps it across a
+ * «Rigenera scheda» and records it in the audit trail. «Togli la correzione» puts
+ * Claude's own reading back.
+ */
+function LevelEditor({ freelancerId, read }: { freelancerId: string; read: FreelancerCard }) {
+  const client = useQueryClient()
+  const id = useId()
+  const [seniority, setSeniority] = useState<string>(read.seniority_admin ?? NO_CORRECTION)
+  const [experience_years, setExperienceYears] = useState<string>(read.experience_years_admin == null ? '' : String(read.experience_years_admin))
+  const save = useMutation({
+    mutationFn: (data: { seniority_admin: Card['seniority'] | null; experience_years_admin: number | null }) =>
+      admin.overrideFreelancer(freelancerId, data),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['freelancer-card', freelancerId] })
+      void client.invalidateQueries({ queryKey: ['freelancer', freelancerId] })
+      void client.invalidateQueries({ queryKey: ['audit', 'freelancers', freelancerId] })
+      void client.invalidateQueries({ queryKey: ['talents'] })
+    },
+  })
+  const years = experience_years.trim() === '' ? null : Number(experience_years)
+  const invalid = years !== null && (!Number.isInteger(years) || years < 0 || years > 60)
+  const corrected = read.seniority_admin != null || read.experience_years_admin != null
+  function submit(event: FormEvent) {
+    event.preventDefault()
+    if (invalid) return
+    save.mutate({
+      seniority_admin: seniority === NO_CORRECTION ? null : (seniority as Card['seniority']),
+      experience_years_admin: years,
+    })
+  }
+  // The two fields are `flex-col gap-1`, not `space-y-1`: Radix renders a hidden native
+  // `<select>` after the trigger inside a form, so the trigger is never the last child and
+  // `space-y-1` would give it a bottom margin the number input does not have (REB-857).
+  // Every control is the admin's standard 36px (`h-9`: Input, SelectTrigger, a default
+  // Button), bottom-aligned, and each label stays on one line.
+  return (
+    <form onSubmit={submit} className="space-y-2 rounded-md border p-3 text-sm">
+      <p className="font-medium">Correggi il livello</p>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`${id}-seniority`} className="whitespace-nowrap">
+            Seniority dell’admin
+          </Label>
+          <Select value={seniority} onValueChange={setSeniority}>
+            <SelectTrigger id={`${id}-seniority`} className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_CORRECTION}>Come la scheda</SelectItem>
+              {Object.entries(SENIORITY_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`${id}-anni`} className="whitespace-nowrap">
+            Anni dell’admin
+          </Label>
+          <Input
+            id={`${id}-anni`}
+            type="number"
+            min={0}
+            max={60}
+            className="w-28"
+            value={experience_years}
+            onChange={(event) => setExperienceYears(event.target.value)}
+            aria-invalid={invalid}
+          />
+        </div>
+        <Button type="submit" disabled={save.isPending || invalid}>
+          {save.isPending ? 'Salvo…' : 'Salva il livello'}
+        </Button>
+        {corrected && (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={save.isPending}
+            onClick={() => {
+              setSeniority(NO_CORRECTION)
+              setExperienceYears('')
+              save.mutate({ seniority_admin: null, experience_years_admin: null })
+            }}
+          >
+            Togli la correzione
+          </Button>
+        )}
+      </div>
+      {invalid && <p className="text-destructive">Gli anni sono un numero intero da 0 a 60.</p>}
+      {save.isError && (
+        <p role="alert" className="text-destructive">
+          {save.error instanceof ApiError ? save.error.message : 'Non riesco a salvare il livello.'}
+        </p>
+      )}
+    </form>
+  )
+}
+
+const STALE_SENTENCES: Record<string, string> = {
+  cv: 'Il CV è cambiato: la scheda si rigenera da sola',
+  source: 'Da aggiornare: le fonti o i dati della hub sono cambiati dopo che la scheda è stata scritta',
+  prompt: 'Da aggiornare: esiste una versione più recente del prompt',
+}
+// The card's own order, which a stored `field_sources` (a JSONB object, keys sorted by length) does not keep.
+const FIELD_LABELS: Record<string, string> = {
+  role: 'Ruolo',
+  experience_years: 'Esperienza',
+  seniority: 'Seniority',
+  skills: 'Competenze',
+  industries: 'Settori',
+  languages: 'Lingue',
+  location: 'Luogo',
+  profile_summary: 'Sintesi',
+}
+const PROVIDER_LABELS: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', google: 'Google' }
+
+/** `cv` -> «CV», `link:2` -> «Link 2»: the keys the model cites, in the page's words. */
+function sourceLabel(key: string): string {
+  if (key === 'cv') return 'CV'
+  if (key === 'github') return 'GitHub'
+  if (key === 'hub') return 'Dati della hub'
+  const link = /^link:(\d+)$/.exec(key)
+  return link ? `Link ${link[1]}` : key
+}
+
+function conflictSentence(conflict: CardConflict): string {
+  if (conflict.kind === 'different_experience_years') {
+    return `Gli incarichi completati in hub fanno ${conflict.experience_years_hub} anni, la scheda ne dichiara ${conflict.experience_years_card} (date del CV)`
+  }
+  return `Anni scartati: ${conflict.experience_years_card}, venivano solo da fonti senza date professionali`
+}
+
+function Provenance({ provenance }: { provenance: CardProvenance }) {
+  const written = Object.keys(provenance.sources).length > 0
+  const fields = Object.keys(FIELD_LABELS).filter((field) => field in provenance.field_sources)
+  return (
+    <div className="space-y-2 rounded-md border p-3 text-sm">
+      <p className="font-medium">Da dove viene la scheda</p>
+      {provenance.stale && <p className="text-muted-foreground">{STALE_SENTENCES[provenance.stale]}</p>}
+      <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-[10rem_1fr]">
+        <Field label="Scritta da">
+          {provenance.provider ? (PROVIDER_LABELS[provenance.provider] ?? provenance.provider) : 'modello non registrato'}{' '}
+          · Prompt v{provenance.prompt_version}
+        </Field>
+        <Field label="Fonti, secondo il modello">
+          {written ? (
+            <ul>
+              {fields.map((field) => {
+                const keys = provenance.field_sources[field] ?? []
+                return (
+                  <li key={field}>
+                    {FIELD_LABELS[field]}: {keys.length ? keys.map(sourceLabel).join(', ') : 'nessuna'}
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            'Scheda scritta prima della registrazione delle fonti'
+          )}
+        </Field>
+        <Field label="Fonti salvate">
+          {provenance.sources.length ? (
+            <ul>
+              {provenance.sources.map((source) => (
+                <li key={source.key}>
+                  {sourceLabel(source.key)}: {source.ref}, letta il{' '}
+                  {formatDateTime(source.fetched_at)}
+                  {source.status !== 'ok' && ` (${source.status})`}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            'Nessuna'
+          )}
+        </Field>
+        {provenance.conflicts.length > 0 && (
+          <Field label="Discordanze">
+            <ul>
+              {provenance.conflicts.map((conflict, index) => (
+                <li key={`${index}-${conflict.kind}`}>{conflictSentence(conflict)}</li>
+              ))}
+            </ul>
+          </Field>
+        )}
+      </dl>
+    </div>
+  )
+}
+
+/** The card's role, seniority, years and skills rows. */
+function CardRows({ read }: { read: FreelancerCard }) {
+  const { card } = read
+  if (!card) return null
+  return (
+    <>
+      <Field label="Ruolo">{card.role}</Field>
+      <Field label="Seniority">
+        <span className="flex flex-wrap items-center gap-1.5">
+          {SENIORITY_LABELS[card.seniority] ?? card.seniority}
+          {card.seniority_uncertain && <Badge variant="outline">Da verificare</Badge>}
+          {read.seniority_admin != null && <Badge variant="outline">Corretta dall’admin</Badge>}
+        </span>
+      </Field>
+      <Field label="Esperienza">
+        <span className="flex flex-wrap items-center gap-1.5">
+          {formatExperience(card.experience_years)}
+          {read.experience_years_admin != null && <Badge variant="outline">Corretta dall’admin</Badge>}
+        </span>
+      </Field>
+      <Field label="Competenze">
+        {card.skills.length ? (
+          <span className="flex flex-wrap gap-1.5">
+            {card.skills.map((skill, index) => (
+              <Badge key={`${index}-${skill}`} variant="outline">
+                {skill}
+              </Badge>
+            ))}
+          </span>
+        ) : (
+          '—'
+        )}
+      </Field>
+    </>
+  )
+}
+
+function Written({ read }: { read: FreelancerCard }) {
+  const { card } = read
+  if (!card) return null
+  return (
+    <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[10rem_1fr]">
+      <CardRows read={read} />
+      <Field label="Settori">{words(card.industries)}</Field>
+      <Field label="Lingue">{words(card.languages)}</Field>
+      <Field label="Luogo">{card.location ?? '—'}</Field>
+      <Field label="Sintesi">{card.profile_summary}</Field>
+      <Field label="Modalità">{read.mode ? (REMOTE_LABELS[read.mode] ?? read.mode) : '—'}</Field>
+      <Field label="Fascia cliente">{read.band ? bandLabel(read.band) : 'Tariffa da definire'}</Field>
+      <Field label="Scritta">
+        {read.generated_at ? `${formatDateTime(read.generated_at)} · ${read.model ?? '—'}` : '—'}
+      </Field>
+      {read.error && <Field label="Ultimo errore">{read.error}</Field>}
+    </dl>
+  )
+}
+
+/**
+ * «Scheda anonima» on the admin's talent page (REB-514, spec § 2.1, § 5.1): the card
+ * Claude wrote from the CV, which is all the team builder reads of this person, with
+ * the work mode from the profile and the band a company would read, both of which core
+ * reads from the profile when the card is shown, so an edited rate or mode shows at
+ * once and the page computes no band of its own. Without a card, the
+ * sentence the writer left, or that there is none. «Rigenera scheda» writes it again
+ * from the current CV even when that CV failed before; a failure comes back as the
+ * card's own `error`, and the API's sentence is shown when it refuses outright (the
+ * builder off, a 503). The admin reads everything here, `location` included. The level
+ * (seniority and years) is Claude's reading unless an admin corrected it, which the
+ * section says and lets them do (REB-799).
+ */
+export function AnonymousCard({ freelancerId, hasCv }: { freelancerId: string; hasCv: boolean }) {
+  const headingId = useId()
+  const client = useQueryClient()
+  // `AdminFreelancerDetail` invalidates this key after «Rimuovi CV», «Modifica scheda»,
+  // «Elimina» and «Ripristina», since each changes what the section reads (the card,
+  // the mode, the band from the rate).
+  const key = ['freelancer-card', freelancerId] as const
+  const read = useFreelancerCard(freelancerId)
+  const regenerate = useMutation({
+    mutationFn: () => admin.regenerateFreelancerCard(freelancerId),
+    onSuccess: (updated) => client.setQueryData<FreelancerCard>(key, updated),
+  })
+  const download = useMutation({
+    mutationFn: () => admin.downloadAnonymousCv(freelancerId),
+    onSuccess: ({ blob, filename }) => {
+      // The browser saves a link it is told to download. The URL goes a second later, not
+      // at once: Firefox and Safari read it after `click` returns.
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      // The download adds a line to the trail.
+      void client.invalidateQueries({ queryKey: ['audit', 'freelancers', freelancerId] })
+    },
+  })
+  let body: ReactNode
+  if (read.isError) body = <p className="text-sm text-muted-foreground">Non riesco a leggere la scheda anonima.</p>
+  else if (read.isPending) body = <LoadingState label="Caricamento…" className="justify-start p-0" />
+  else if (read.data.card) {
+    body = (
+      <div className="space-y-4">
+        <Written read={read.data} />
+        {read.data.provenance && <Provenance provenance={read.data.provenance} />}
+        <LevelEditor key={`${read.data.seniority_admin}-${read.data.experience_years_admin}`} freelancerId={freelancerId} read={read.data} />
+      </div>
+    )
+  }
+  else if (read.data.error) body = <p className="text-sm">{read.data.error}</p>
+  else {
+    body = (
+      <p className="text-sm text-muted-foreground">{hasCv ? 'Nessuna scheda ancora.' : 'Nessuna scheda: manca il CV.'}</p>
+    )
+  }
+  return (
+    <section aria-labelledby={headingId} className="space-y-3 px-6 pb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id={headingId} className="text-sm font-medium">
+          Scheda anonima
+        </h2>
+        {hasCv && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => download.mutate()}
+              disabled={download.isPending}
+            >
+              {download.isPending ? 'Preparo il CV…' : 'Scarica CV anonimo'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => regenerate.mutate()}
+              disabled={regenerate.isPending}
+            >
+              {regenerate.isPending ? 'Rigenero…' : 'Rigenera scheda'}
+            </Button>
+          </div>
+        )}
+      </div>
+      {download.isError && (
+        <p role="alert" className="text-sm text-destructive">
+          {download.error instanceof ApiError ? download.error.message : 'Non riesco a preparare il CV anonimo.'}
+        </p>
+      )}
+      {regenerate.isError && (
+        <p role="alert" className="text-sm text-destructive">
+          {regenerate.error instanceof ApiError ? regenerate.error.message : 'Non riesco a rigenerare la scheda.'}
+        </p>
+      )}
+      {body}
+    </section>
+  )
+}

@@ -20,56 +20,79 @@ from __future__ import annotations
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
 
+# The `SECURITY DEFINER` helpers of migration 0048 that migration 0066 closed to PUBLIC.
+DEFINER_FUNCTIONS = (
+    "payment_reminder_of_message(uuid, text)",
+    "invoice_type_of_pdf(uuid)",
+    "active_deals_of_organization(uuid)",
+    "organization_archived(uuid)",
+)
+
 # The role name and the password travel as transaction-local settings into one plpgsql
 # block, which quotes them with `format('%I')` and `format('%L')`: a role or a password
 # with a quote in it is then an identifier and a literal, never a piece of SQL.
 _ENSURE_ROLE = """
 DO $$
 DECLARE
-    ruolo text := current_setting('pigrocrm.app_role');
-    parola text := current_setting('pigrocrm.app_password');
+    role_name text := current_setting('pigrocrm.app_role');
+    role_password text := current_setting('pigrocrm.app_password');
+    function_list text := current_setting('pigrocrm.definer_functions');
+    function_name text;
 BEGIN
     BEGIN
-        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = ruolo) THEN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = role_name) THEN
             -- The attributes go on CREATE, which a CREATEROLE owner may say; an ALTER
             -- that mentions SUPERUSER or BYPASSRLS, even to deny them, is refused to
             -- anybody but a superuser, and a managed Postgres hands out no superuser.
             EXECUTE format(
-                'CREATE ROLE %I LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE', ruolo
+                'CREATE ROLE %I LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE', role_name
             );
         END IF;
     EXCEPTION WHEN duplicate_object THEN
         NULL;  -- two boots at once: the other one made it a moment ago
     END;
-    IF parola = '' THEN
-        EXECUTE format('ALTER ROLE %I WITH LOGIN NOCREATEDB NOCREATEROLE', ruolo);
+    IF role_password = '' THEN
+        EXECUTE format('ALTER ROLE %I WITH LOGIN NOCREATEDB NOCREATEROLE', role_name);
     ELSE
         EXECUTE format(
-            'ALTER ROLE %I WITH LOGIN NOCREATEDB NOCREATEROLE PASSWORD %L', ruolo, parola
+            'ALTER ROLE %I WITH LOGIN NOCREATEDB NOCREATEROLE PASSWORD %L', role_name, role_password
         );
     END IF;
     -- A role somebody made a superuser by hand would bypass every policy: refused,
     -- loudly, rather than granted and served.
     IF EXISTS (
-        SELECT 1 FROM pg_roles WHERE rolname = ruolo AND (rolsuper OR rolbypassrls)
+        SELECT 1 FROM pg_roles WHERE rolname = role_name AND (rolsuper OR rolbypassrls)
     ) THEN
-        RAISE EXCEPTION 'the application role % is a superuser or bypasses RLS', ruolo
+        RAISE EXCEPTION 'the application role % is a superuser or bypasses RLS', role_name
             USING ERRCODE = 'invalid_parameter_value';
     END IF;
-    EXECUTE format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), ruolo);
-    EXECUTE format('GRANT USAGE ON SCHEMA public TO %I', ruolo);
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), role_name);
+    EXECUTE format('GRANT USAGE ON SCHEMA public TO %I', role_name);
     EXECUTE format(
-        'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %I', ruolo
+        'GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO %I', role_name
     );
-    EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO %I', ruolo);
+    EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO %I', role_name);
+    -- The schema's version is the owner's: the application role has no business moving it.
+    IF to_regclass('public.alembic_version') IS NOT NULL THEN
+        EXECUTE format('REVOKE INSERT, UPDATE, DELETE ON alembic_version FROM %I', role_name);
+    END IF;
+    -- The four SECURITY DEFINER helpers the row policies call (migration 0066 took
+    -- EXECUTE away from PUBLIC): the role that evaluates the policies needs it back, and
+    -- the role's name is only known here.
+    FOR function_name IN SELECT unnest(string_to_array(function_list, ';'))
+    LOOP
+        IF to_regprocedure(function_name) IS NOT NULL THEN
+            EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO %I', function_name, role_name);
+        END IF;
+    END LOOP;
     EXECUTE format(
         'ALTER DEFAULT PRIVILEGES IN SCHEMA public '
         'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO %I',
-        ruolo
+        role_name
     );
     EXECUTE format(
         'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO %I',
-        ruolo
+        role_name
     );
 END $$
 """
@@ -102,9 +125,10 @@ def ensure_application_role(owner_url: str | URL, app_url: str | URL) -> bool:
             connection.execute(
                 text(
                     "SELECT set_config('pigrocrm.app_role', :name, true), "
-                    "set_config('pigrocrm.app_password', :password, true)"
+                    "set_config('pigrocrm.app_password', :password, true), "
+                    "set_config('pigrocrm.definer_functions', :functions, true)"
                 ),
-                {"name": name, "password": password},
+                {"name": name, "password": password, "functions": ";".join(DEFINER_FUNCTIONS)},
             )
             connection.execute(text(_ENSURE_ROLE))
     finally:

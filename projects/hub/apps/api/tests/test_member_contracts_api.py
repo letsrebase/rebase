@@ -9,9 +9,9 @@ from datetime import UTC, datetime
 import pytest
 from contract_flow import (
     ADMIN_EMAIL,
-    CLIENTE,
+    CUSTOMER,
     FREELANCER_EMAIL,
-    LETTERA,
+    LETTER,
     PDF,
     SIGNER,
     TABLES,
@@ -25,7 +25,6 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_documenso, get_renderer, get_session_opener
-from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.config import Settings, get_settings
 from rebase_core.mail import RecordingSender
 from rebase_core.models import ContractDocument, User
@@ -51,7 +50,7 @@ def admin(client: TestClient, api_session: Session) -> Iterator[None]:
         _env_file=None, signer_json=json.dumps(SIGNER), documenso_webhook_secret=SECRET
     )
     client.app.dependency_overrides[get_settings] = lambda: settings  # type: ignore[attr-defined]
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     yield
     api_session.rollback()
@@ -60,9 +59,11 @@ def admin(client: TestClient, api_session: Session) -> Iterator[None]:
     api_session.commit()
 
 
-def _quadro(session: Session) -> ContractDocument:
+def _framework(session: Session) -> ContractDocument:
     session.expire_all()
-    return session.scalars(select(ContractDocument).where(ContractDocument.kind == "quadro")).one()
+    return session.scalars(
+        select(ContractDocument).where(ContractDocument.kind == "framework")
+    ).one()
 
 
 def test_without_the_cookie_the_contracts_are_a_401(client: TestClient, admin: None) -> None:
@@ -80,19 +81,18 @@ def test_a_freelancer_reads_their_contracts_and_downloads_the_signed_copy(
 ) -> None:
     match = draft_match(client, sender)
     assert client.post(f"/api/hub/matches/{match['id']}/send").status_code == 200
-    reset_rate_limit()
     enter(client, sender, FREELANCER_EMAIL)
 
     mine = client.get("/api/hub/me/contracts")
 
     assert mine.status_code == 200, mine.text
     body = mine.json()
-    assert body["quadro"]["stato"] == "inviato"
-    assert body["quadro"]["signing_url"].startswith(f"{SIGNING_HOST}/sign/")
-    assert [lettera["stato"] for lettera in body["lettere"]] == ["in_attesa"]
+    assert body["framework"]["status"] == "sent"
+    assert body["framework"]["signing_url"].startswith(f"{SIGNING_HOST}/sign/")
+    assert [letter["status"] for letter in body["letters"]] == ["pending"]
     assert "777.77" not in mine.text
 
-    envelope = _quadro(api_session).documenso_id
+    envelope = _framework(api_session).documenso_id
     assert envelope is not None
     documenso.sign(envelope, SIGNED_AT)
     delivered = client.post(
@@ -101,12 +101,12 @@ def test_a_freelancer_reads_their_contracts_and_downloads_the_signed_copy(
         headers={"X-Documenso-Secret": SECRET},
     )
     assert delivered.status_code == 200
-    quadro_id = body["quadro"]["id"]
-    copy = client.get(f"/api/hub/me/contracts/{quadro_id}/pdf")
+    framework_id = body["framework"]["id"]
+    copy = client.get(f"/api/hub/me/contracts/{framework_id}/pdf")
     assert copy.status_code == 200
     assert copy.content == documenso.signed_pdf(envelope)
     assert copy.headers["content-type"].startswith("application/pdf")
-    assert client.get("/api/hub/me/contracts").json()["quadro"]["signing_url"] is None
+    assert client.get("/api/hub/me/contracts").json()["framework"]["signing_url"] is None
 
 
 def test_a_previous_signed_framework_stays_visible_under_a_new_one(
@@ -118,7 +118,7 @@ def test_a_previous_signed_framework_stays_visible_under_a_new_one(
 ) -> None:
     """REB-392: a notice on the first framework agreement, then a second one signed for
     a new match. The person's «Contratti» still offers the first's signed copy, moved
-    under the current one in `quadri_precedenti`, rather than losing it."""
+    under the current one in `previous_frameworks`, rather than losing it."""
     first_match = draft_match(client, sender)
     freelancer_id, company_id = first_match["freelancer_id"], first_match["company_id"]
     assert client.post(f"/api/hub/matches/{first_match['id']}/send").status_code == 200
@@ -130,8 +130,8 @@ def test_a_previous_signed_framework_stays_visible_under_a_new_one(
         headers={"X-Documenso-Secret": SECRET},
     )
     assert delivered.status_code == 200
-    first_quadro_id = _quadro(api_session).id
-    noticed = client.post(f"/api/hub/contract-documents/{first_quadro_id}/notice")
+    first_framework_id = _framework(api_session).id
+    noticed = client.post(f"/api/hub/contract-documents/{first_framework_id}/notice")
     assert noticed.status_code == 200, noticed.text
     # The webhook's own background `finish` already released the first match's letter,
     # dispatching it too: the second framework's envelope is whichever one is new from
@@ -140,7 +140,7 @@ def test_a_previous_signed_framework_stays_visible_under_a_new_one(
 
     second_match = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     ).json()
     assert client.post(f"/api/hub/matches/{second_match['id']}/send").status_code == 200
     [second_envelope_id] = set(documenso.envelopes) - envelopes_so_far
@@ -152,17 +152,16 @@ def test_a_previous_signed_framework_stays_visible_under_a_new_one(
     )
     assert delivered_again.status_code == 200
 
-    reset_rate_limit()
     enter(client, sender, FREELANCER_EMAIL)
     mine = client.get("/api/hub/me/contracts")
 
     assert mine.status_code == 200, mine.text
     body = mine.json()
-    assert body["quadro"]["id"] != str(first_quadro_id)
-    assert [q["id"] for q in body["quadri_precedenti"]] == [str(first_quadro_id)]
-    assert body["quadri_precedenti"][0]["stato"] == "disdetto"
-    assert body["quadri_precedenti"][0]["ha_pdf_firmato"] is True
-    copy = client.get(f"/api/hub/me/contracts/{first_quadro_id}/pdf")
+    assert body["framework"]["id"] != str(first_framework_id)
+    assert [q["id"] for q in body["previous_frameworks"]] == [str(first_framework_id)]
+    assert body["previous_frameworks"][0]["status"] == "notice_served"
+    assert body["previous_frameworks"][0]["has_pdf_signed"] is True
+    copy = client.get(f"/api/hub/me/contracts/{first_framework_id}/pdf")
     assert copy.status_code == 200
     assert copy.content == documenso.signed_pdf(first_envelope.id)
 
@@ -176,27 +175,26 @@ def test_someone_elses_document_is_a_404_never_a_403(
 ) -> None:
     match = draft_match(client, sender)
     assert client.post(f"/api/hub/matches/{match['id']}/send").status_code == 200
-    ada_quadro = _quadro(api_session)
-    reset_rate_limit()
+    ada_framework = _framework(api_session)
     applied = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Grace",
-            "cognome": "Hopper",
+            "first_name": "Grace",
+            "last_name": "Hopper",
             "email": "grace@studio.it",
-            "tariffa_giornaliera": "500",
-            "posizione": "Backend developer",
-            "remoto": "remoto",
+            "daily_rate": "500",
+            "job_title": "Backend developer",
+            "remote": "remote",
         },
         files={"cv": ("Grace CV.pdf", PDF, "application/pdf")},
     )
     assert applied.status_code == 201, applied.text
     enter(client, sender, "grace@studio.it")
 
-    assert client.get(f"/api/hub/me/contracts/{ada_quadro.id}/pdf").status_code == 404
+    assert client.get(f"/api/hub/me/contracts/{ada_framework.id}/pdf").status_code == 404
     assert client.get("/api/hub/me/contracts").json() == {
-        "quadro": None,
-        "quadro_occasionale": None,
-        "quadri_precedenti": [],
-        "lettere": [],
+        "framework": None,
+        "occasional_framework": None,
+        "previous_frameworks": [],
+        "letters": [],
     }

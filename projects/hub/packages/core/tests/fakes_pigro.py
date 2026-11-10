@@ -34,7 +34,7 @@ class RecordedPigro:
         return answer
 
 
-def linked_body(*, spazio_creato: bool = True, creato: bool = True) -> bytes:
+def linked_body(*, space_created: bool = True, created: bool = True) -> bytes:
     """The door's answer to a `PUT` that linked the match: Ada's space and its deal."""
     return json.dumps(
         {
@@ -43,7 +43,7 @@ def linked_body(*, spazio_creato: bool = True, creato: bool = True) -> bytes:
             "customer_id": str(CUSTOMER),
             "deal_id": str(DEAL),
             "deal_url": DEAL_URL,
-            "spazio_creato": spazio_creato,
-            "creato": creato,
+            "space_created": space_created,
+            "creato": created,
         }
     ).encode()

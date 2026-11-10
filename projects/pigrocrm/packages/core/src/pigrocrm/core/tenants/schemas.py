@@ -9,9 +9,15 @@ from pigrocrm.core.validation import SafeStr
 
 # Lowercase, 3 to 32 characters, letters, digits and hyphens, never a hyphen at either
 # end. Doubles as a Postgres identifier after `-` -> `_`, and as a URL segment as is.
-SLUG_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])$")
+# Unanchored on purpose: always `fullmatch`, because `$` accepts a trailing newline and a
+# slug `abc\n` would then name a database no request can route to (B-03).
+SLUG_PATTERN = re.compile(r"[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])")
 SLUG_MIN = 3
 SLUG_MAX = 32
+# One half of a person's name, the people's and the hub's own bound; the two together are
+# cut to `UserCreate.name`'s 200 in `TenantSignup.founder_name`.
+FOUNDER_NAME_PART_MAX = 120
+FOUNDER_NAME_MAX = 200
 
 # Already paths of the site (deploy/nginx/spa.conf, the landing, the SPA), so a space
 # with one of these names would shadow them or be shadowed by them. `root` is not a path:
@@ -26,23 +32,22 @@ RESERVED_SLUGS = frozenset(
         "assets",
         "privacy",
         "termini",
-        "orbiters",
         "pigrocrm",
         "pigro",
         "login",
         "www",
         "admin",
         "static",
-        "registrati",
+        "register",
         "mcp",
     }
 )
 
 
-def slugify(nome: str) -> str:
+def slugify(name: str) -> str:
     """What the page proposes from the name a person types: accents stripped, anything
     that is not a letter or digit turned into one hyphen, trimmed, lowercased."""
-    ascii_only = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode("ascii")
+    ascii_only = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
     hyphenated = re.sub(r"[^a-z0-9]+", "-", ascii_only.lower()).strip("-")
     return hyphenated[:SLUG_MAX].rstrip("-")
 
@@ -54,7 +59,7 @@ def validate_slug(slug: str) -> str | None:
         return f"il nome deve avere almeno {SLUG_MIN} caratteri"
     if len(slug) > SLUG_MAX:
         return f"il nome può avere al massimo {SLUG_MAX} caratteri"
-    if not SLUG_PATTERN.match(slug):
+    if not SLUG_PATTERN.fullmatch(slug):
         return "solo lettere minuscole, cifre e trattini, senza trattini all'inizio o alla fine"
     if slug in RESERVED_SLUGS:
         return "questo nome è riservato"
@@ -63,7 +68,7 @@ def validate_slug(slug: str) -> str | None:
 
 class TenantSignup(BaseModel):
     slug: str = Field(min_length=SLUG_MIN, max_length=SLUG_MAX)
-    nome: SafeStr = Field(min_length=1, max_length=200)
+    name: SafeStr = Field(min_length=1, max_length=200)
     email: EmailStr
     # No password (spec 2026-09-12 §6.4): a space's first admin enters with a link by
     # mail, and a password chosen by whoever typed somebody else's address would outlive
@@ -71,9 +76,24 @@ class TenantSignup(BaseModel):
     # still sends one hears about it.
     # What the wizard learned from the hub about this address: decides whether the
     # welcome mail tells the person about rebase. Never trusted for anything else.
-    membro: bool = False
+    member: bool = False
+    # The founder's own name, never the space's (REB-822). Optional on the wire because
+    # the signup route fills them from the hub when the person did not type them;
+    # `TenantService.provision` refuses a signup that still has no first name, so no
+    # space is ever created with a founder named after it.
+    first_name: SafeStr | None = Field(default=None, max_length=FOUNDER_NAME_PART_MAX)
+    last_name: SafeStr | None = Field(default=None, max_length=FOUNDER_NAME_PART_MAX)
 
     model_config = ConfigDict(extra="forbid")
+
+    @property
+    def founder_name(self) -> str:
+        """`Ada Lovelace`: what the founder's account is called, empty when the signup
+        carries no first name."""
+        first = (self.first_name or "").strip()
+        if not first:
+            return ""
+        return f"{first} {(self.last_name or '').strip()}".strip()[:FOUNDER_NAME_MAX]
 
     @field_validator("slug")
     @classmethod
@@ -95,6 +115,6 @@ class TenantRead(BaseModel):
 
 class TenantAvailability(BaseModel):
     slug: str
-    disponibile: bool
+    available: bool
     # Why not, when not: a reserved word, a taken name, a malformed one.
-    motivo: str | None = None
+    reason: str | None = None

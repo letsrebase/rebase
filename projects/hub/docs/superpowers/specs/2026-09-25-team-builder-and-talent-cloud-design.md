@@ -193,7 +193,14 @@ those at the API's boot:
 }
 ```
 
-`seniority` is one of `junior`, `mid`, `senior`, `lead`; `luogo` is the city or region
+`seniority` is one of `junior`, `mid`, `senior`, `lead`, and since REB-799 it follows
+`anni`, which counts only roles the CV dates and is null (required in the schema, null
+and not absent) when it dates none: junior under 3 years, mid 3 to 5, senior 6 and up,
+lead only with 8 years and a leadership the CV states. The parser enforces the bands
+(`card_level.banded`); a card with `anni` null keeps Claude's reading of the
+responsibility, never lead, and every read says its seniority is uncertain. An admin's
+own seniority and years (`freelancers.seniority_admin`, `anni_admin`) are read over the
+card's, wherever it is read, and survive a regenerate. `luogo` is the city or region
 the CV names, or null, required in the schema (null, not absent) and never rendered
 on the public page (the admin's talent page and the cloud, which shows the CV itself,
 may carry it); `sintesi` is two sentences at most, Italian, with no
@@ -310,8 +317,8 @@ sends without JavaScript. The landing's own side is `projects/website` (REB-676)
 ### 3.3 The proposal
 
 `TeamProposalRead`: `id`, `descrizione`, `persone` (REB-675), `riassunto`, `luogo`, `team: [{posizione, ruolo, motivazione,
-giorni_settimana, scheda: {ruolo, seniority, anni, competenze, settori, lingue,
-sintesi}, modalita, fascia: {min, max}}]`, `economia: {giorno: {min, max}, mese: {min,
+giorni_settimana, scheda: {ruolo, seniority, anni, seniority_incerta, competenze,
+settori, lingue, sintesi}, modalita, fascia: {min, max}}]`, `economia: {giorno: {min, max}, mese: {min,
 max}, giorni_mese: 22}`, `previous_id`, `created_at`. `posizione` is the person's
 index in this proposal (1, 2, 3); the public read carries no freelancer id at all, so a
 visitor cannot follow one talent across proposals or rebuild the catalogue; the admin's
@@ -331,8 +338,8 @@ now=utcnow)` with `propose(data, *, origine, user_id) -> TeamProposalRead` and
 `get(proposal_id, *, public: bool)`. The catalogue is every live freelancer
 (`deleted_at IS NULL`, `stato != 'scartato'`) with a card, sorted by the freelancer's
 id so the text is the same for every visitor (the cache prefix), rendered as one JSON
-line each: `{"id": "t1", "ruolo", "seniority", "anni", "competenze", "settori",
-"lingue", "luogo", "modalita", "fascia": "400–500"}`, where `t1`, `t2`… is the line's
+line each: `{"id": "t1", "ruolo", "seniority", "anni", "seniority_incerta",
+"competenze", "settori", "lingue", "luogo", "modalita", "fascia": "400–500"}`, where `t1`, `t2`… is the line's
 position in that order (a slice of the UUIDv7 would collide within a minute of
 signups) and the service keeps the map from position to freelancer for this call;
 `sintesi` is left out of the catalogue, the structured fields are what the engine
@@ -514,11 +521,11 @@ refusal, a bad shape or a provider error on a replaced CV retires the card of th
 CV; only a provider error leaves no hash, so the next run (the `cards` service, within
 the hour) retries it. A valid card whose Italian gives the person's gender away (a
 feminine role, «lei», a participle only where the person is its noun) is asked for once
-more in the same conversation with a correction, the tokens of both calls added up, and
-is then written whatever the answer, never failed, since a parked row would take the
-person out of the catalogue for a hint: the rewrite when it is a card, the first card
-otherwise, counted as «con avviso di genere» when still gendered, and an outage on
-the rewrite stops a batch as any outage does (REB-574). It runs
+more in the same conversation with a correction. The rewrite when it is a card is the
+card; a card still gendered after it is failed, not written (REB-802, which replaces
+REB-574's «written whatever the answer»: an admin read the first rule's output as clean
+because `error` was null), with the failed CV's hash kept and an error sentence on the
+row, and an outage on the rewrite stops a batch as any outage does. It runs
 after the response, in a session of its own (`SessionOpenerDep`, as the Documenso
 webhook's follow-up does), where a CV arrives or changes: the public wizard
 (`FreelancerService.apply`) and the member's `replace_cv`; `FreelancerService.clear_cv`

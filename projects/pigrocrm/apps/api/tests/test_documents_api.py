@@ -1,6 +1,7 @@
 import sys
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -13,18 +14,21 @@ from fastapi.testclient import TestClient
 # duplicated into a second pair of fakes that would be a second place for the two to
 # disagree about what Google does.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages" / "core" / "tests"))
-from aziende_helpers import azienda_url
 from fakes.fake_drive import FOLDER_MIME, FakeDrive  # noqa: E402
 from fakes.fake_gmail import FakeGmail  # noqa: E402
 from fakes.gmail_fixtures import TOKEN_KEY, gmail_settings  # noqa: E402
+from legal_entities_helpers import legal_entity_url
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 
+import pigrocrm.core.documents.service as document_service  # noqa: E402
+import pigrocrm.core.documents.uploads as document_uploads  # noqa: E402
 import pigrocrm_api.deps as deps  # noqa: E402
+import pigrocrm_api.routers.documents as documents_router  # noqa: E402
 from pigrocrm.core.auth.models import User  # noqa: E402
 from pigrocrm.core.config import Settings, get_settings  # noqa: E402
+from pigrocrm.core.crypto import seal  # noqa: E402
 from pigrocrm.core.drive.models import GoogleDriveAccount  # noqa: E402
 from pigrocrm.core.drive.schemas import DRIVE_SCOPE_FILE, DRIVE_SCOPE_READONLY  # noqa: E402
-from pigrocrm.core.gmail.crypto import seal  # noqa: E402
 from pigrocrm.core.gmail.tokens import GoogleTokenClient  # noqa: E402
 from pigrocrm.core.gmail.transport import GmailTransport  # noqa: E402
 from pigrocrm.core.storage import lazy_drive  # noqa: E402
@@ -33,14 +37,14 @@ from pigrocrm.core.tenants import SpaceRegistry  # noqa: E402
 from pigrocrm_api.deps import get_storage  # noqa: E402
 
 PDF = b"%PDF-1.7\nfinto\n"
-# A Drive file id of the shape the titolare types into Impostazioni → Drive.
+# A Drive file id of the shape the owner types into Settings → Drive.
 STORAGE_FOLDER = "1CartellaScritturaAPI"
 REFRESH_TOKEN = "1//0gApiDriveStorageRefresh"
 DRIVE_MAILBOX = "titolare@example.it"
 
 
 def _customer(client: TestClient) -> str:
-    response = client.post("/api/customers", json={"ragione_sociale": "ACME S.r.l."})
+    response = client.post("/api/organizations", json={"legal_name": "ACME S.r.l."})
     assert response.status_code == 201, response.text
     return str(response.json()["id"])
 
@@ -49,14 +53,14 @@ def test_create_a_document_on_a_customer(logged_in: TestClient) -> None:
     customer_id = _customer(logged_in)
     response = logged_in.post(
         "/api/documents",
-        json={"customer_id": customer_id, "tipo": "offerta", "titolo": "Offerta 1"},
+        json={"customer_id": customer_id, "type": "offer", "title": "Offerta 1"},
     )
     assert response.status_code == 201, response.text
-    assert response.json()["stato"] == "bozza"
+    assert response.json()["status"] == "draft"
 
 
 def test_a_document_with_neither_owner_is_a_422_problem_document(logged_in: TestClient) -> None:
-    response = logged_in.post("/api/documents", json={"tipo": "documento", "titolo": "X"})
+    response = logged_in.post("/api/documents", json={"type": "document", "title": "X"})
     assert response.status_code == 422
     assert response.headers["content-type"].startswith("application/problem+json")
     assert response.json()["code"] == "validation_failed"
@@ -65,7 +69,7 @@ def test_a_document_with_neither_owner_is_a_422_problem_document(logged_in: Test
 def test_an_unknown_customer_is_a_404_problem_document(logged_in: TestClient) -> None:
     response = logged_in.post(
         "/api/documents",
-        json={"customer_id": str(uuid4()), "tipo": "documento", "titolo": "X"},
+        json={"customer_id": str(uuid4()), "type": "document", "title": "X"},
     )
     assert response.status_code == 404
     assert response.json()["code"] == "not_found"
@@ -74,11 +78,11 @@ def test_an_unknown_customer_is_a_404_problem_document(logged_in: TestClient) ->
 def test_list_filters_by_customer(logged_in: TestClient) -> None:
     customer_id = _customer(logged_in)
     logged_in.post(
-        "/api/documents", json={"customer_id": customer_id, "tipo": "documento", "titolo": "A"}
+        "/api/documents", json={"customer_id": customer_id, "type": "document", "title": "A"}
     )
     response = logged_in.get("/api/documents", params={"customer_id": customer_id})
     assert response.status_code == 200
-    assert [d["titolo"] for d in response.json()["items"]] == ["A"]
+    assert [d["title"] for d in response.json()["items"]] == ["A"]
 
 
 def test_a_limit_over_the_ceiling_is_refused(logged_in: TestClient) -> None:
@@ -88,7 +92,7 @@ def test_a_limit_over_the_ceiling_is_refused(logged_in: TestClient) -> None:
 def test_upload_a_version_and_download_it_back(logged_in: TestClient) -> None:
     customer_id = _customer(logged_in)
     document_id = logged_in.post(
-        "/api/documents", json={"customer_id": customer_id, "tipo": "documento", "titolo": "Doc"}
+        "/api/documents", json={"customer_id": customer_id, "type": "document", "title": "Doc"}
     ).json()["id"]
 
     upload = logged_in.post(
@@ -96,7 +100,7 @@ def test_upload_a_version_and_download_it_back(logged_in: TestClient) -> None:
         files={"file": ("scansione.pdf", b"%PDF-1.7\nfinto\n", "application/pdf")},
     )
     assert upload.status_code == 201, upload.text
-    assert upload.json()["numero"] == 1
+    assert upload.json()["number"] == 1
 
     download = logged_in.get(f"/api/documents/{document_id}/download")
     assert download.status_code == 200
@@ -105,10 +109,56 @@ def test_upload_a_version_and_download_it_back(logged_in: TestClient) -> None:
     assert "attachment" in download.headers["content-disposition"]
 
 
+def test_a_readonly_actor_is_refused_before_the_upload_is_read(
+    readonly_client: TestClient,
+) -> None:
+    """The role is checked ahead of the multipart parser, so a caller who may not write
+    cannot make the server spool a body: a body that is not multipart at all still
+    answers 403, where a parser that ran first would answer 400."""
+    response = readonly_client.post(
+        "/api/documents/00000000-0000-0000-0000-000000000000/versions",
+        content=b"not multipart",
+        headers={"content-type": "multipart/form-data; boundary=x"},
+    )
+    assert response.status_code == 403
+
+
+def test_an_upload_is_read_one_byte_past_the_limit_and_no_more(
+    logged_in: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The service refuses a file over `SIZE_MAX` with its own sentence, so the
+    route reads `DIMENSIONE_MAX + 1` bytes of it -- enough to see it is too big, never
+    the whole body."""
+    limit = 1024
+    monkeypatch.setattr(documents_router, "SIZE_MAX", limit)
+    monkeypatch.setattr(document_uploads, "SIZE_MAX", limit)
+    seen: list[int] = []
+    add_version = document_service.DocumentService.add_version
+
+    def spy(self: Any, document_id: Any, data: bytes, *args: Any, **kwargs: Any) -> Any:
+        seen.append(len(data))
+        return add_version(self, document_id, data, *args, **kwargs)
+
+    monkeypatch.setattr(document_service.DocumentService, "add_version", spy)
+    customer_id = _customer(logged_in)
+    document_id = logged_in.post(
+        "/api/documents", json={"customer_id": customer_id, "type": "document", "title": "Doc"}
+    ).json()["id"]
+
+    response = logged_in.post(
+        f"/api/documents/{document_id}/versions",
+        files={"file": ("grande.pdf", b"%PDF-1.7\n" + b"0" * 10 * limit, "application/pdf")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation_failed"
+    assert seen == [limit + 1]
+
+
 def test_an_unallowed_upload_type_is_refused(logged_in: TestClient) -> None:
     customer_id = _customer(logged_in)
     document_id = logged_in.post(
-        "/api/documents", json={"customer_id": customer_id, "tipo": "documento", "titolo": "Doc"}
+        "/api/documents", json={"customer_id": customer_id, "type": "document", "title": "Doc"}
     ).json()["id"]
     response = logged_in.post(
         f"/api/documents/{document_id}/versions",
@@ -122,7 +172,7 @@ def test_the_download_filename_cannot_inject_a_header(logged_in: TestClient) -> 
     customer_id = _customer(logged_in)
     document_id = logged_in.post(
         "/api/documents",
-        json={"customer_id": customer_id, "tipo": "documento", "titolo": 'a"\r\nX-Evil: 1'},
+        json={"customer_id": customer_id, "type": "document", "title": 'a"\r\nX-Evil: 1'},
     ).json()["id"]
     logged_in.post(
         f"/api/documents/{document_id}/versions",
@@ -136,25 +186,25 @@ def test_the_download_filename_cannot_inject_a_header(logged_in: TestClient) -> 
 def test_set_offer_state_and_refuse_an_undeclared_transition(logged_in: TestClient) -> None:
     customer_id = _customer(logged_in)
     document_id = logged_in.post(
-        "/api/documents", json={"customer_id": customer_id, "tipo": "offerta", "titolo": "O"}
+        "/api/documents", json={"customer_id": customer_id, "type": "offer", "title": "O"}
     ).json()["id"]
     assert (
-        logged_in.post(f"/api/documents/{document_id}/status", json={"stato": "inviata"}).json()[
-            "stato"
+        logged_in.post(f"/api/documents/{document_id}/status", json={"status": "sent"}).json()[
+            "status"
         ]
-        == "inviata"
+        == "sent"
     )
-    conflict = logged_in.post(f"/api/documents/{document_id}/status", json={"stato": "bozza"})
-    assert conflict.status_code == 200  # inviata -> bozza is allowed
+    conflict = logged_in.post(f"/api/documents/{document_id}/status", json={"status": "draft"})
+    assert conflict.status_code == 200  # sent -> draft is allowed
     # Now back in "bozza", whose only legal exit is "inviata": "accettata" is refused.
-    forbidden = logged_in.post(f"/api/documents/{document_id}/status", json={"stato": "accettata"})
+    forbidden = logged_in.post(f"/api/documents/{document_id}/status", json={"status": "accepted"})
     assert forbidden.status_code == 409
     assert forbidden.json()["code"] == "conflict"
 
 
 def test_a_readonly_actor_cannot_create_a_document(readonly_client: TestClient) -> None:
     response = readonly_client.post(
-        "/api/documents", json={"customer_id": str(uuid4()), "tipo": "documento", "titolo": "X"}
+        "/api/documents", json={"customer_id": str(uuid4()), "type": "document", "title": "X"}
     )
     assert response.status_code == 403
 
@@ -163,11 +213,11 @@ def test_templates_crud_and_describe(logged_in: TestClient) -> None:
     created = logged_in.post(
         "/api/templates",
         json={
-            "nome": "Consulenza CTO",
-            "tipo": "offerta",
-            "corpo_markdown": "Spett.le {{cliente.ragione_sociale}} — {{oggetto}}",
-            "variabili_dichiarate": [
-                {"nome": "oggetto", "etichetta": "Oggetto", "tipo": "text", "obbligatoria": True}
+            "name": "Consulenza CTO",
+            "type": "offer",
+            "body_markdown": "Spett.le {{cliente.ragione_sociale}} — {{oggetto}}",
+            "declared_variables": [
+                {"name": "oggetto", "label": "Oggetto", "type": "text", "required": True}
             ],
         },
     )
@@ -176,11 +226,11 @@ def test_templates_crud_and_describe(logged_in: TestClient) -> None:
 
     described = logged_in.get(f"/api/templates/{template_id}/describe")
     assert described.status_code == 200
-    assert [v["nome"] for v in described.json()["variabili"]] == ["oggetto"]
+    assert [v["name"] for v in described.json()["variables"]] == ["oggetto"]
 
     preview = logged_in.post(
         f"/api/templates/{template_id}/preview",
-        json={"variabili": {"cliente": {"ragione_sociale": "ACME"}, "oggetto": "Advisory"}},
+        json={"variables": {"cliente": {"ragione_sociale": "ACME"}, "oggetto": "Advisory"}},
     )
     assert preview.status_code == 200
     assert preview.json()["markdown"] == "Spett.le ACME — Advisory"
@@ -188,7 +238,7 @@ def test_templates_crud_and_describe(logged_in: TestClient) -> None:
 
 def test_a_template_body_that_does_not_parse_is_a_422(logged_in: TestClient) -> None:
     response = logged_in.post(
-        "/api/templates", json={"nome": "Rotto", "tipo": "offerta", "corpo_markdown": "{{#if x}}"}
+        "/api/templates", json={"name": "Rotto", "type": "offer", "body_markdown": "{{#if x}}"}
     )
     assert response.status_code == 422
     assert "riga 1" in response.json()["reason"]
@@ -197,21 +247,21 @@ def test_a_template_body_that_does_not_parse_is_a_422(logged_in: TestClient) -> 
 def test_a_template_can_be_deactivated_and_reactivated(logged_in: TestClient) -> None:
     created = logged_in.post(
         "/api/templates",
-        json={"nome": "Da disattivare", "tipo": "offerta", "corpo_markdown": "Ciao"},
+        json={"name": "Da disattivare", "type": "offer", "body_markdown": "Ciao"},
     )
     template_id = created.json()["id"]
     deactivated = logged_in.delete(f"/api/templates/{template_id}")
     assert deactivated.status_code == 200
-    assert deactivated.json()["attivo"] is False
+    assert deactivated.json()["active"] is False
     reactivated = logged_in.post(f"/api/templates/{template_id}/activate")
     assert reactivated.status_code == 200
-    assert reactivated.json()["attivo"] is True
+    assert reactivated.json()["active"] is True
 
 
 def test_template_list_hides_inactive_ones_by_default(logged_in: TestClient) -> None:
     created = logged_in.post(
         "/api/templates",
-        json={"nome": "Nascosto", "tipo": "offerta", "corpo_markdown": "Ciao"},
+        json={"name": "Nascosto", "type": "offer", "body_markdown": "Ciao"},
     )
     template_id = created.json()["id"]
     logged_in.delete(f"/api/templates/{template_id}")
@@ -221,23 +271,23 @@ def test_template_list_hides_inactive_ones_by_default(logged_in: TestClient) -> 
     assert template_id in [t["id"] for t in shown.json()["items"]]
 
 
-def test_an_unknown_azienda_is_404_and_the_default_is_writable_then_readable(
+def test_an_unknown_legal_entity_is_404_and_the_default_is_writable_then_readable(
     logged_in: TestClient,
 ) -> None:
     from uuid import uuid4
 
-    assert logged_in.get(f"/api/aziende/{uuid4()}").status_code == 404
+    assert logged_in.get(f"/api/legal-entities/{uuid4()}").status_code == 404
     saved = logged_in.put(
-        azienda_url(logged_in),
-        json={"ragione_sociale": "Studio Rossi", "partita_iva": "01234567890"},
+        legal_entity_url(logged_in),
+        json={"legal_name": "Studio Rossi", "vat_number": "01234567890"},
     )
     assert saved.status_code == 200, saved.text
-    assert logged_in.get(azienda_url(logged_in)).json()["partita_iva"] == "01234567890"
+    assert logged_in.get(legal_entity_url(logged_in)).json()["vat_number"] == "01234567890"
 
 
-def test_a_non_admin_cannot_write_the_emitter_profile(collaborator_client: TestClient) -> None:
+def test_to_not_admin_cannot_write_the_legal_entities(collaborator_client: TestClient) -> None:
     response = collaborator_client.put(
-        azienda_url(collaborator_client), json={"ragione_sociale": "X"}
+        legal_entity_url(collaborator_client), json={"legal_name": "X"}
     )
     assert response.status_code == 403
 
@@ -248,7 +298,7 @@ def test_read_the_text_of_an_uploaded_file(logged_in: TestClient) -> None:
     preview panel) that cannot open a PDF."""
     customer_id = _customer(logged_in)
     document_id = logged_in.post(
-        "/api/documents", json={"customer_id": customer_id, "tipo": "documento", "titolo": "Doc"}
+        "/api/documents", json={"customer_id": customer_id, "type": "document", "title": "Doc"}
     ).json()["id"]
     logged_in.post(
         f"/api/documents/{document_id}/versions",
@@ -259,17 +309,17 @@ def test_read_the_text_of_an_uploaded_file(logged_in: TestClient) -> None:
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert "ABCDEFG" in body["testo"]
-    assert body["numero"] == 1
-    assert body["troncato"] is False
+    assert "ABCDEFG" in body["text"]
+    assert body["number"] == 1
+    assert body["truncated"] is False
     # The sentence that says whose words those are travels in the body, always.
-    assert "istruzione" in body["provenienza"]
+    assert "istruzione" in body["provenance"]
 
 
 def test_reading_the_text_of_a_version_nobody_uploaded_is_a_404(logged_in: TestClient) -> None:
     customer_id = _customer(logged_in)
     document_id = logged_in.post(
-        "/api/documents", json={"customer_id": customer_id, "tipo": "documento", "titolo": "Doc"}
+        "/api/documents", json={"customer_id": customer_id, "type": "document", "title": "Doc"}
     ).json()["id"]
 
     assert logged_in.get(f"/api/documents/{document_id}/text").status_code == 404
@@ -283,7 +333,7 @@ def test_the_openapi_document_declares_the_new_routes(logged_in: TestClient) -> 
         "/api/documents/{document_id}/download",
         "/api/documents/{document_id}/text",
         "/api/templates/{template_id}/describe",
-        "/api/aziende",
+        "/api/legal-entities",
     ):
         assert path in paths, path
 
@@ -308,7 +358,7 @@ def test_an_upload_before_drive_is_connected_is_a_409_that_says_what_to_do(
     )
     customer_id = _customer(logged_in)
     document_id = logged_in.post(
-        "/api/documents", json={"customer_id": customer_id, "tipo": "documento", "titolo": "Doc"}
+        "/api/documents", json={"customer_id": customer_id, "type": "document", "title": "Doc"}
     ).json()["id"]
 
     response = logged_in.post(
@@ -335,10 +385,10 @@ def _connected_drive(session: Session) -> GoogleDriveAccount:
     """
     user = User(
         email=f"titolare-{uuid4().hex[:8]}@example.it",
-        nome="Titolare",
+        name="Titolare",
         password_hash="x",
-        ruolo="admin",
-        attivo=True,
+        role="admin",
+        active=True,
     )
     session.add(user)
     session.flush()
@@ -467,7 +517,7 @@ def test_an_upload_goes_to_the_titolares_own_drive_and_downloads_back_identical(
 
     customer_id = _customer(logged_in)
     document_id = logged_in.post(
-        "/api/documents", json={"customer_id": customer_id, "tipo": "documento", "titolo": "Doc"}
+        "/api/documents", json={"customer_id": customer_id, "type": "document", "title": "Doc"}
     ).json()["id"]
 
     uploaded = logged_in.post(
@@ -491,7 +541,7 @@ def test_an_upload_goes_to_the_titolares_own_drive_and_downloads_back_identical(
     assert gmail.token_requests == 1
 
 
-def _second_actor(admin_client: TestClient, ruolo: str) -> TestClient:
+def _second_actor(admin_client: TestClient, role: str) -> TestClient:
     """A genuinely independent session, not `admin_client`'s own cookie jar -- the same
     helper `test_drive_api.py` uses and for the same reason: `logged_in` and a second
     role built through `_client_as` share one cookie jar (it is the same `client`
@@ -500,10 +550,10 @@ def _second_actor(admin_client: TestClient, ruolo: str) -> TestClient:
     app)` is the fix -- a fresh cookie jar over the same ASGI app, and therefore the
     same database session and settings overrides this test already installed on
     `admin_client`."""
-    email = f"{ruolo}-{uuid4().hex[:8]}@pigro.it"
+    email = f"{role}-{uuid4().hex[:8]}@pigro.it"
     created = admin_client.post(
         "/api/users",
-        json={"email": email, "password": "supersegreta1", "nome": "Test", "ruolo": ruolo},
+        json={"email": email, "password": "supersegreta1", "name": "Test", "role": role},
     )
     assert created.status_code == 201, created.text
     client = TestClient(admin_client.app, base_url="https://testserver")
@@ -542,7 +592,7 @@ def test_a_collaboratores_download_never_names_the_revoked_storage_holder(
 
     customer_id = _customer(logged_in)
     document_id = logged_in.post(
-        "/api/documents", json={"customer_id": customer_id, "tipo": "documento", "titolo": "Doc"}
+        "/api/documents", json={"customer_id": customer_id, "type": "document", "title": "Doc"}
     ).json()["id"]
     uploaded = logged_in.post(
         f"/api/documents/{document_id}/versions",
@@ -552,7 +602,7 @@ def test_a_collaboratores_download_never_names_the_revoked_storage_holder(
 
     tokens.forget(account.id)
     gmail.revoked = True
-    collab = _second_actor(logged_in, "collaboratore")
+    collab = _second_actor(logged_in, "collaborator")
 
     response = collab.get(f"/api/documents/{document_id}/download")
 
@@ -584,7 +634,7 @@ def test_the_api_builds_one_storage_for_the_whole_process_and_opens_nothing_to_d
     engine, without a connection and without the `google_drive_accounts` row that may
     not exist yet -- which is the entire reason this storage resolves late. The registry
     staying unbuilt is that, asserted: `_fresh_session` would have to run to reach
-    `_get_session_factory`, and nothing here ever calls it.
+    `space_session_factory`, and nothing here ever calls it.
 
     The storage cache is cleared through the module's own `reset_storage_cache`
     (`fresh_storage_cache`, above); `_registry` is still monkeypatched, which `pytest`

@@ -34,7 +34,7 @@ def welcome(
     owner_email: str,
     slug: str,
     *,
-    membro: bool,
+    member: bool,
 ) -> Mail | None:
     """The welcome mail ready to send, or None when nothing can be sent (no sender, no
     origin): the caller decides whether to send it in the background or at once."""
@@ -44,4 +44,4 @@ def welcome(
     if link is None:
         return None
     origin = settings.public_url.strip().rstrip("/")
-    return welcome_mail(owner_email, link, f"{origin}/{slug}/app/login", membro=membro)
+    return welcome_mail(owner_email, link, f"{origin}/{slug}/app/login", member=member)

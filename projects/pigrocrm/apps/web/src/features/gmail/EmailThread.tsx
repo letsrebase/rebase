@@ -17,6 +17,12 @@ function attachmentLabel(attachment: Record<string, unknown>): string {
   return parts.filter(Boolean).join(' · ')
 }
 
+function gmailMessageUrl(messageId: string, accountEmail: string | undefined): string {
+  const account =
+    accountEmail === undefined ? 'u/0/' : `?authuser=${encodeURIComponent(accountEmail)}`
+  return `https://mail.google.com/mail/${account}#all/${messageId}`
+}
+
 /**
  * One Gmail thread, oldest message first, as the CRM stored it.
  *
@@ -25,7 +31,15 @@ function attachmentLabel(attachment: Record<string, unknown>): string {
  * box -- there is Gmail, which every message deep-links into by its own id. Building a
  * second, worse Gmail inside a CRM is how this feature would grow without bound.
  */
-export function EmailThread({ messages }: { messages: GmailMessageRead[] }) {
+export function EmailThread({
+  messages,
+  accountEmail,
+}: {
+  messages: GmailMessageRead[]
+  /** The mailbox the CRM synced: Gmail opens the message in that account, not in the
+   *  browser's first signed-in one. */
+  accountEmail?: string
+}) {
   const first = messages[0]
   if (!first) return null
   const subject = first.subject || '(senza oggetto)'
@@ -46,7 +60,7 @@ export function EmailThread({ messages }: { messages: GmailMessageRead[] }) {
             <span className="text-muted-foreground">{formatInstant(message.internal_date)}</span>
             <a
               className="ml-auto underline underline-offset-2"
-              href={`https://mail.google.com/mail/u/0/#all/${message.gmail_message_id}`}
+              href={gmailMessageUrl(message.gmail_message_id, accountEmail)}
               target="_blank"
               rel="noreferrer"
             >
@@ -75,7 +89,7 @@ export function EmailThread({ messages }: { messages: GmailMessageRead[] }) {
               L&apos;originale è in Gmail.
             </p>
           ) : null}
-          {message.body_html_scartato ? (
+          {message.body_html_discarded ? (
             <p className="text-xs text-muted-foreground">
               Il messaggio era solo HTML: qui è conservata la conversione in testo. L&apos;HTML
               non viene mostrato perché porta con sé pixel di tracciamento e CSS remoto.

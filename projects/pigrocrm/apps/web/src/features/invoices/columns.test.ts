@@ -5,39 +5,39 @@ import { buildInvoiceColumns, type InvoiceColumnOptions } from './columns'
 import type { Invoice } from './queries'
 
 const ISSUED = {
-  anno: 2026,
-  numero: 7,
-  riferimento: null,
-  tipo: 'fattura',
-  stato: 'emessa',
-  stato_pagamento: 'da_incassare',
-  data_emissione: '2026-08-20',
-  totale: '1500.00',
+  year: 2026,
+  number: 7,
+  reference: null,
+  type: 'invoice',
+  status: 'issued',
+  payment_status: 'unpaid',
+  issue_date: '2026-08-20',
+  total: '1500.00',
 } as unknown as Invoice
 
 const PROFORMA = {
-  anno: null,
-  numero: null,
-  riferimento: 'PROV-2026-0007',
-  tipo: 'proforma',
-  stato: 'confermata',
-  stato_pagamento: 'da_incassare',
-  data_emissione: null,
-  totale: '500.00',
+  year: null,
+  number: null,
+  reference: 'PROV-2026-0007',
+  type: 'proforma',
+  status: 'confirmed',
+  payment_status: 'unpaid',
+  issue_date: null,
+  total: '500.00',
 } as unknown as Invoice
 
-const WITH_CUSTOMER = { ...ISSUED, customer_ragione_sociale: 'ACME S.r.l.' } as Invoice
+const WITH_CUSTOMER = { ...ISSUED, customer_legal_name: 'ACME S.r.l.' } as Invoice
 
-const LONG_CAUSALE =
+const LONG_MEMO =
   'Consulenza tecnica e sviluppo software per il progetto di migrazione della piattaforma, ' +
   'comprensiva di analisi, implementazione, test e supporto al rilascio in produzione'
 
-const WITH_CAUSALE = { ...ISSUED, causale: 'Consulenza agosto' } as Invoice
+const WITH_MEMO = { ...ISSUED, memo: 'Consulenza agosto' } as Invoice
 
 const WITH_PERIOD = {
   ...ISSUED,
-  competenza_da: '2026-08-01',
-  competenza_a: '2026-08-31',
+  accrual_from: '2026-08-01',
+  accrual_to: '2026-08-31',
 } as Invoice
 
 function accessor(id: string, row: Invoice, options?: InvoiceColumnOptions): unknown {
@@ -50,23 +50,23 @@ function accessor(id: string, row: Invoice, options?: InvoiceColumnOptions): unk
 
 describe('buildInvoiceColumns', () => {
   it('shows the fiscal number for an invoice and the reference for a proforma', () => {
-    expect(accessor('numero', ISSUED)).toBe('2026/7')
-    expect(accessor('numero', PROFORMA)).toBe('PROV-2026-0007')
+    expect(accessor('number', ISSUED)).toBe('2026/7')
+    expect(accessor('number', PROFORMA)).toBe('PROV-2026-0007')
   })
 
   it('formats the total as grouped euros', () => {
-    expect(String(accessor('totale', ISSUED))).toContain('1.500,00')
+    expect(String(accessor('total', ISSUED))).toContain('1.500,00')
   })
 
   it('shows an em dash where a proforma has no issue date', () => {
-    expect(accessor('data_emissione', PROFORMA)).toBe('—')
+    expect(accessor('issue_date', PROFORMA)).toBe('—')
   })
 
   it('does not offer a payment column value for a proforma', () => {
     // A proforma is never collected: showing "Da incassare" next to something nobody
     // owes is the kind of small lie a fiscal list should not tell.
-    expect(accessor('stato_pagamento', PROFORMA)).toBe('—')
-    expect(accessor('stato_pagamento', ISSUED)).toBe('Da incassare')
+    expect(accessor('payment_status', PROFORMA)).toBe('—')
+    expect(accessor('payment_status', ISSUED)).toBe('Da incassare')
   })
 })
 
@@ -95,13 +95,13 @@ function column(id: string, options?: InvoiceColumnOptions) {
 
 describe('how an invoice row reads', () => {
   it('puts a calendar icon before the issue date', () => {
-    const { container } = renderCell('data_emissione', ISSUED)
+    const { container } = renderCell('issue_date', ISSUED)
     expect(screen.getByText('20/08/2026')).toBeInTheDocument()
     expect(container.querySelector('svg')).not.toBeNull()
   })
 
   it('shows no date and no calendar icon for a proforma that has not been issued', () => {
-    const { container } = renderCell('data_emissione', PROFORMA)
+    const { container } = renderCell('issue_date', PROFORMA)
     expect(screen.getByText('—')).toBeInTheDocument()
     expect(container.querySelector('svg')).toBeNull()
   })
@@ -109,22 +109,22 @@ describe('how an invoice row reads', () => {
   /** The header has to sit over the digits it labels, which only the column can say --
    *  a cell that right-aligned itself would leave its own header on the left. */
   it('declares the total a right-aligned column, not merely a right-aligned cell', () => {
-    expect(column('totale').meta).toEqual({ align: 'right' })
+    expect(column('total').meta).toEqual({ align: 'right' })
   })
 
   it('right-aligns the total inside its cell too', () => {
-    renderCell('totale', ISSUED)
+    renderCell('total', ISSUED)
     expect(screen.getByText(/1\.500,00/).className).toContain('text-right')
   })
 
   it('shows the fiscal state as a pill, tinted by what the state means', () => {
-    renderCell('stato', ISSUED)
+    renderCell('status', ISSUED)
     const pill = screen.getByText('Emessa').closest('[data-slot="badge"]')
     expect(pill).toHaveAttribute('data-tone', 'ink')
   })
 
   it('shows an annulled invoice as a warning, because it keeps its number and stays in the register', () => {
-    renderCell('stato', { ...ISSUED, stato: 'annullata' })
+    renderCell('status', { ...ISSUED, status: 'cancelled' })
     expect(screen.getByText('Annullata').closest('[data-slot="badge"]')).toHaveAttribute(
       'data-tone',
       'danger',
@@ -132,7 +132,7 @@ describe('how an invoice row reads', () => {
   })
 
   it('shows money still owed in the waiting-on-somebody tone', () => {
-    renderCell('stato_pagamento', ISSUED)
+    renderCell('payment_status', ISSUED)
     expect(screen.getByText('Da incassare').closest('[data-slot="badge"]')).toHaveAttribute(
       'data-tone',
       'gold',
@@ -140,7 +140,7 @@ describe('how an invoice row reads', () => {
   })
 
   it('shows a collected invoice as settled, not as waiting', () => {
-    renderCell('stato_pagamento', { ...ISSUED, stato_pagamento: 'incassato' })
+    renderCell('payment_status', { ...ISSUED, payment_status: 'paid' })
     expect(screen.getByText('Incassato').closest('[data-slot="badge"]')).toHaveAttribute(
       'data-tone',
       'ink',
@@ -150,7 +150,7 @@ describe('how an invoice row reads', () => {
   /** A pill is a claim about a state, and a proforma has no collection state to claim:
    *  it reads as the plain dash the accessor already returns, never as a pill. */
   it('shows the payment column of a proforma as a plain dash, with no pill at all', () => {
-    const { container } = renderCell('stato_pagamento', PROFORMA)
+    const { container } = renderCell('payment_status', PROFORMA)
     expect(screen.getByText('—')).toBeInTheDocument()
     expect(container.querySelector('[data-slot="badge"]')).toBeNull()
   })
@@ -160,47 +160,47 @@ describe('how an invoice row reads', () => {
  * The «Cliente» column (ORB-98). Opt-in, because the same columns draw the Fatture tab
  * inside a customer's page, where every row belongs to the customer named in the title:
  * a column repeating it on each line would be noise there and information only on the
- * list page, which is the one screen that mixes customers.
+ * list page, which is the one screen that mixes organizations.
  */
 describe('the customer column', () => {
-  const CLIENTE = { cliente: true }
+  const CUSTOMER = { customer: true }
 
   function ids(options?: InvoiceColumnOptions): string[] {
     return buildInvoiceColumns(options).map((candidate) => candidate.id ?? '')
   }
 
   it('is not part of the default columns', () => {
-    expect(ids()).not.toContain('cliente')
+    expect(ids()).not.toContain('customer')
   })
 
   it('sits right after the number when asked for', () => {
-    const columns = ids(CLIENTE)
-    expect(columns.indexOf('cliente')).toBe(columns.indexOf('numero') + 1)
+    const columns = ids(CUSTOMER)
+    expect(columns.indexOf('customer')).toBe(columns.indexOf('number') + 1)
   })
 
   it('reads the ragione sociale the API resolved for the row', () => {
-    expect(column('cliente', CLIENTE).header).toBe('Cliente')
-    expect(accessor('cliente', WITH_CUSTOMER, CLIENTE)).toBe('ACME S.r.l.')
+    expect(column('customer', CUSTOMER).header).toBe('Cliente')
+    expect(accessor('customer', WITH_CUSTOMER, CUSTOMER)).toBe('ACME S.r.l.')
   })
 
-  /** `customer_ragione_sociale` is `str | None` on the server: the association always
+  /** `customer_legal_name` is `str | None` on the server: the association always
    *  exists, the name may fail to resolve. That reads as the same dash every other
    *  empty cell shows, never as an empty string a reader could mistake for a customer
-   *  with no name -- and `''`, which `ragione_sociale` can legitimately hold, reads the
+   *  with no name -- and `''`, which `legal_name` can legitimately hold, reads the
    *  same way. */
   it('shows the em dash when the name did not resolve or is empty', () => {
-    const unresolved = { ...ISSUED, customer_ragione_sociale: null } as Invoice
-    const blank = { ...ISSUED, customer_ragione_sociale: '' } as Invoice
-    expect(accessor('cliente', unresolved, CLIENTE)).toBe('—')
-    expect(accessor('cliente', blank, CLIENTE)).toBe('—')
-    expect(accessor('cliente', ISSUED, CLIENTE)).toBe('—')
+    const unresolved = { ...ISSUED, customer_legal_name: null } as Invoice
+    const blank = { ...ISSUED, customer_legal_name: '' } as Invoice
+    expect(accessor('customer', unresolved, CUSTOMER)).toBe('—')
+    expect(accessor('customer', blank, CUSTOMER)).toBe('—')
+    expect(accessor('customer', ISSUED, CUSTOMER)).toBe('—')
   })
 
   it('renders the name as plain text and the missing name as a quiet dash', () => {
-    renderCell('cliente', WITH_CUSTOMER, CLIENTE)
+    renderCell('customer', WITH_CUSTOMER, CUSTOMER)
     expect(screen.getByText('ACME S.r.l.')).toBeInTheDocument()
 
-    renderCell('cliente', ISSUED, CLIENTE)
+    renderCell('customer', ISSUED, CUSTOMER)
     expect(screen.getByText('—').className).toContain('text-muted-foreground')
   })
 })
@@ -213,53 +213,53 @@ describe('the customer column', () => {
  */
 describe('the accrual period column', () => {
   it('sits right after the date, with and without the customer column', () => {
-    for (const options of [undefined, { cliente: true }]) {
+    for (const options of [undefined, { customer: true }]) {
       const ids = buildInvoiceColumns(options).map((candidate) => candidate.id ?? '')
-      expect(ids.indexOf('competenza')).toBe(ids.indexOf('data_emissione') + 1)
+      expect(ids.indexOf('accrual')).toBe(ids.indexOf('issue_date') + 1)
     }
-    expect(column('competenza').header).toBe('Competenza')
+    expect(column('accrual').header).toBe('Competenza')
   })
 
   it('reads the period the way the detail page states it', () => {
-    expect(accessor('competenza', WITH_PERIOD)).toBe('01/08/2026 - 31/08/2026')
+    expect(accessor('accrual', WITH_PERIOD)).toBe('01/08/2026 - 31/08/2026')
   })
 
   it('shows the em dash when the document declares no period', () => {
-    expect(accessor('competenza', ISSUED)).toBe('—')
+    expect(accessor('accrual', ISSUED)).toBe('—')
   })
 
   /** The emission date is the one column with a calendar: a second icon two columns
    *  over would make the two read as the same kind of value, and they are not. */
   it('renders as plain text, with no calendar icon, and the dash quietly', () => {
-    const { container } = renderCell('competenza', WITH_PERIOD)
+    const { container } = renderCell('accrual', WITH_PERIOD)
     expect(screen.getByText('01/08/2026 - 31/08/2026')).toBeInTheDocument()
     expect(container.querySelector('svg')).toBeNull()
 
-    renderCell('competenza', ISSUED)
+    renderCell('accrual', ISSUED)
     expect(screen.getByText('—').className).toContain('text-muted-foreground')
   })
 })
 
 /**
- * The «Descrizione» column (ORB-130): the causale, which until now the list never
- * showed. A causale can be 200 characters long, so the cell is the one place in this
+ * The «Descrizione» column (ORB-130): the reason line, which until now the list never
+ * showed. A reason line can be 200 characters long, so the cell is the one place in this
  * table that truncates: the column takes what the others leave, down to a floor, and the
- * text clips there with the whole causale as the cell's title, rather than a column that
+ * text clips there with the whole reason line as the cell's title, rather than a column that
  * widens the table to fit the longest row.
  */
 describe('the description column', () => {
   it('sits right after the customer when the list shows one, and after the number otherwise', () => {
-    const withCustomer = buildInvoiceColumns({ cliente: true }).map((c) => c.id ?? '')
-    expect(withCustomer.indexOf('descrizione')).toBe(withCustomer.indexOf('cliente') + 1)
+    const withOrganization = buildInvoiceColumns({ customer: true }).map((c) => c.id ?? '')
+    expect(withOrganization.indexOf('description')).toBe(withOrganization.indexOf('customer') + 1)
     const plain = buildInvoiceColumns().map((c) => c.id ?? '')
-    expect(plain.indexOf('descrizione')).toBe(plain.indexOf('numero') + 1)
-    expect(column('descrizione').header).toBe('Descrizione')
+    expect(plain.indexOf('description')).toBe(plain.indexOf('number') + 1)
+    expect(column('description').header).toBe('Descrizione')
   })
 
   it('reads the causale, or the em dash when there is none', () => {
-    expect(accessor('descrizione', WITH_CAUSALE)).toBe('Consulenza agosto')
-    expect(accessor('descrizione', { ...ISSUED, causale: null } as Invoice)).toBe('—')
-    expect(accessor('descrizione', { ...ISSUED, causale: '' } as Invoice)).toBe('—')
+    expect(accessor('description', WITH_MEMO)).toBe('Consulenza agosto')
+    expect(accessor('description', { ...ISSUED, memo: null } as Invoice)).toBe('—')
+    expect(accessor('description', { ...ISSUED, memo: '' } as Invoice)).toBe('—')
   })
 
   /** The column takes what the others leave (`width: 100%` on the header) and the span
@@ -267,17 +267,17 @@ describe('the description column', () => {
    *  less than 12rem), so the text truncates at the column's width instead of widening
    *  the table, and the column cannot shrink to its header on a narrow screen. */
   it('truncates a long causale at the width the column gets and keeps the whole text as the title', () => {
-    expect(column('descrizione').meta).toEqual({ width: '100%' })
-    renderCell('descrizione', { ...ISSUED, causale: LONG_CAUSALE } as Invoice)
-    const cell = screen.getByTitle(LONG_CAUSALE)
-    expect(cell).toHaveTextContent(LONG_CAUSALE)
+    expect(column('description').meta).toEqual({ width: '100%' })
+    renderCell('description', { ...ISSUED, memo: LONG_MEMO } as Invoice)
+    const cell = screen.getByTitle(LONG_MEMO)
+    expect(cell).toHaveTextContent(LONG_MEMO)
     for (const cls of ['block', 'w-0', 'min-w-[max(100%,12rem)]', 'truncate']) {
       expect(cell.className).toContain(cls)
     }
   })
 
   it('shows the missing causale as a quiet dash', () => {
-    renderCell('descrizione', { ...ISSUED, causale: null } as Invoice)
+    renderCell('description', { ...ISSUED, memo: null } as Invoice)
     expect(screen.getByText('—').className).toContain('text-muted-foreground')
   })
 })
@@ -290,20 +290,20 @@ describe('the description column', () => {
  */
 describe('the state column and an imported invoice', () => {
   it('shows the state and not the provenance', () => {
-    renderCell('stato', { ...ISSUED, importata_da: 'esterno' } as Invoice)
+    renderCell('status', { ...ISSUED, imported_from: 'external' } as Invoice)
     expect(screen.getByText('Emessa')).toBeInTheDocument()
     expect(screen.queryByText(/^importata$/i)).toBeNull()
   })
 })
 
 describe('the azienda beside the number (REB-625)', () => {
-  const AZIENDE = [
-    { id: 'a1', nome: 'humancraft' },
-    { id: 'a2', nome: 'rebase' },
-  ] as InvoiceColumnOptions['aziende']
+  const LEGAL_ENTITIES = [
+    { id: 'a1', name: 'humancraft' },
+    { id: 'a2', name: 'rebase' },
+  ] as InvoiceColumnOptions['legal_entities']
 
   function renderNumber(row: Invoice, options?: InvoiceColumnOptions) {
-    const column = buildInvoiceColumns(options).find((candidate) => candidate.id === 'numero')
+    const column = buildInvoiceColumns(options).find((candidate) => candidate.id === 'number')
     if (column === undefined || typeof column.cell !== 'function') {
       throw new Error('the «Numero» column has no cell renderer')
     }
@@ -311,16 +311,16 @@ describe('the azienda beside the number (REB-625)', () => {
   }
 
   it('names the azienda under «tutte» and keeps the bare number as the sortable value', () => {
-    const row = { ...ISSUED, azienda_id: 'a2' } as Invoice
-    const { container } = renderNumber(row, { aziende: AZIENDE })
+    const row = { ...ISSUED, legal_entity_id: 'a2' } as Invoice
+    const { container } = renderNumber(row, { legal_entities: LEGAL_ENTITIES })
     expect(container).toHaveTextContent('2026/7 · rebase')
-    expect(accessor('numero', row, { aziende: AZIENDE })).toBe('2026/7')
+    expect(accessor('number', row, { legal_entities: LEGAL_ENTITIES })).toBe('2026/7')
   })
 
   it('draws the bare number with one azienda, with one selected, and for an azienda no longer active', () => {
-    const row = { ...ISSUED, azienda_id: 'a2' } as Invoice
+    const row = { ...ISSUED, legal_entity_id: 'a2' } as Invoice
     expect(renderNumber(row).container).toHaveTextContent(/^2026\/7$/)
-    expect(renderNumber({ ...row, azienda_id: 'gone' } as Invoice, { aziende: AZIENDE }).container)
+    expect(renderNumber({ ...row, legal_entity_id: 'gone' } as Invoice, { legal_entities: LEGAL_ENTITIES }).container)
       .toHaveTextContent(/^2026\/7$/)
   })
 })

@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { SITE_HOST } from './path-map-plugin'
+import { LOGO_PATH, SITE_HOST } from './path-map-plugin'
+import { faq } from './site-text'
 
 const PAGES = ['index.html', 'pigrocrm.html', 'privacy.html', 'terms.html'] as const
 const html = Object.fromEntries(
@@ -56,11 +57,8 @@ describe.each(PAGES)('%s', (name) => {
     // Policy, which Google's verification requires. Allowed as an `<a href>` the reader
     // clicks and nothing else: the same host as a `src`, or as a `<link>`, still fails
     // the allowlist below.
-    // REB-605: the landing's events link the rebase house's own Luma page the same
-    // way, an `<a href>` a reader clicks and nothing else: `luma.com` is not in the
-    // allowlist below, so a Luma `src` or `<link>` still fails it.
     const hrefOnlyLinks = new Set(
-      [...page.matchAll(/<a\b[^>]*\bhref="(https:\/\/(?:developers\.google\.com|luma\.com)\/[^"]*)"/g)].map(
+      [...page.matchAll(/<a\b[^>]*\bhref="(https:\/\/developers\.google\.com\/[^"]*)"/g)].map(
         (anchor) => anchor[1]!,
       ),
     )
@@ -70,12 +68,9 @@ describe.each(PAGES)('%s', (name) => {
       if (hrefOnlyLinks.has(url) && !page.includes(`src="${url}"`)) continue
       // An href the reader clicks -- the repository, the hosted signup, or OpenAI's
       // own privacy policy, which the cookie section has to point at -- is fine; a
-      // subresource is not. `humancraft.tech` is in the list because Italian law
-      // requires the privacy and terms pages to name the titolare del trattamento and
-      // link to it, so those two pages carry a real company's site and this test has to
-      // allow the origin; since ORB-116 index.html's footer links the same studio,
-      // restored to what production served before website-v0.4.0. It is the only real
-      // identity left anywhere in this repository.
+      // subresource is not. `humancraft.tech` left this list with REB-704 (2026-10-20):
+      // the policy pages still name Humancraft di Ivan Sala as titolare, as the law asks,
+      // but no page links its site any more.
       // `www.linkedin.com` since ORB-151: the four voices' avatars link to their public
       // profiles. An href, never a src: the photos themselves are served from here.
       // `posthog.com` since ORB-183: the cookie section links PostHog's policy the way
@@ -87,7 +82,7 @@ describe.each(PAGES)('%s', (name) => {
       // (that call is the hub's, over `rebase_core/llm.py`): this host only ever appears
       // as an `<a href>` a reader clicks.
       expect(url, 'external subresource').toMatch(
-        /^https:\/\/(?:github\.com|pigro\.letsrebase\.com|openai\.com|posthog\.com|humancraft\.tech|www\.linkedin\.com|www\.anthropic\.com)\//,
+        /^https:\/\/(?:github\.com|pigro\.letsrebase\.com|openai\.com|posthog\.com|www\.linkedin\.com|www\.anthropic\.com)\//,
       )
     }
     expect(page).not.toMatch(/fonts\.googleapis\.com|fonts\.gstatic\.com/)
@@ -180,7 +175,7 @@ describe('index.html', () => {
     // keeps its claim, its lead, its two doors and its fine print, and between the lead
     // and the doors sits the builder: one line, the composer with «Proponi il team»
     // inside it, the four examples. The form is a plain GET to the hub's page, which
-    // fills its box from `?descrizione=`, so a visitor without JavaScript still gets a
+    // fills its box from `?description=`, so a visitor without JavaScript still gets a
     // team one page later; team.js turns the same form into a call to the hub's API.
     const hero = page.match(/<section class="hero">([\s\S]*?)<\/section>/)?.[1] ?? ''
     const order = ['<h1 class="measure-tight">', '<p class="lead measure">', '<form class="team-form', '<div class="team-result', '<p class="actions">', 'Sei già dentro?']
@@ -190,23 +185,23 @@ describe('index.html', () => {
     expect(hero).toMatch(/<form class="team-form ph-no-capture" action="\/hub\/team" method="get" data-team data-result="#team-result">/)
     expect(hero).toContain('<p class="team-claim">Hai un progetto? Descrivilo: <span class="accent">ti proponiamo il team.</span></p>')
     // The hub page's own four examples, each a description the API takes as it stands.
-    expect(hero.match(/<button type="button" class="chip" data-example="[^"]{40,}" data-persone="[1-9]">[^<]+<\/button>/g)).toHaveLength(4)
+    expect(hero.match(/<button type="button" class="chip" data-example="[^"]{40,}" data-people="[1-9]">[^<]+<\/button>/g)).toHaveLength(4)
     expect(hero).toContain('>Web app per una fintech</button>')
     expect(hero).toContain('>Un FDE nel team di un cliente</button>')
     // The box: the hub's placeholder, its own label for a screen reader, and the
     // lengths the API takes, which is what a browser enforces without the script.
-    expect(hero).toMatch(/<label class="sr-only" for="team-descrizione">Descrizione del progetto<\/label>/)
+    expect(hero).toMatch(/<label class="sr-only" for="team-description">Descrizione del progetto<\/label>/)
     expect(hero).toMatch(
-      /<textarea id="team-descrizione" name="descrizione" rows="3" required minlength="40" maxlength="4000" placeholder="Descrivi il progetto: cosa va fatto, per quanto tempo, dove, con che tecnologie"><\/textarea>/,
+      /<textarea id="team-description" name="description" rows="3" required minlength="40" maxlength="4000" placeholder="Descrivi il progetto: cosa va fatto, per quanto tempo, dove, con che tecnologie"><\/textarea>/,
     )
     expect(hero).toMatch(/<p class="team-error" id="team-error" role="alert"><\/p>/)
     // The headcount beside the button, as the hub's page asks it: ten options, one selected.
-    expect(hero).toMatch(/<label class="composer-count">\s*<span>Quante persone<\/span>\s*<select name="persone">/)
+    expect(hero).toMatch(/<label class="composer-count">\s*<span>Quante persone<\/span>\s*<select name="people">/)
     expect(hero.match(/<option value="(\d+)"/g)).toHaveLength(10)
     expect(hero).toContain('<option value="1" selected>1 persona</option>')
     expect(hero).toContain('<option value="10">10 persone</option>')
     // Each example says how many people its own text implies, like the hub's.
-    expect(hero.match(/data-persone="[1-9]"/g)).toHaveLength(4)
+    expect(hero.match(/data-people="[1-9]"/g)).toHaveLength(4)
     // The button sits inside the composer, under the box, so the two read as one control.
     expect(hero).toMatch(/<div class="composer">[\s\S]*?<textarea[\s\S]*?<div class="composer-bar">[\s\S]*?<button class="cta" type="submit">Proponi il team<\/button>\s*<\/div>\s*<\/div>/)
     // Where the result lands: empty and hidden until the script fills it, which then
@@ -229,7 +224,7 @@ describe('index.html', () => {
     const hero = page.match(/<section class="hero">([\s\S]*?)<\/section>/)?.[1] ?? ''
     const actions = hero.match(/<p class="actions">([\s\S]*?)<\/p>/)?.[1] ?? ''
     expect(actions).toMatch(/<a class="cta" href="\/hub\/freelance">Entra come talento<\/a>/)
-    expect(actions).toMatch(/<a class="cta secondary" href="\/hub\/aziende">[^<]+<\/a>/)
+    expect(actions).toMatch(/<a class="cta secondary" href="\/hub\/companies">[^<]+<\/a>/)
     expect(actions.match(/<a class="cta[^"]*" href="\/hub\//g)).toHaveLength(2)
     // The third door of REB-608 is gone: the builder itself sits where it pointed, and
     // the services band still carries one (checked further down).
@@ -244,7 +239,7 @@ describe('index.html', () => {
     // No invented plan or trial: the one price is "be in the community". The services
     // band is the one place a subscription is real, the talent cloud's (REB-681), so the
     // guard reads the page without it.
-    expect(page.replace(section('aziende'), '')).not.toMatch(/Prova gratis|abbonamento|piano (Pro|Business)/i)
+    expect(page.replace(section('companies'), '')).not.toMatch(/Prova gratis|abbonamento|piano (Pro|Business)/i)
   })
 
   it('explains itself in three steps and says what is inside', () => {
@@ -270,14 +265,25 @@ describe('index.html', () => {
       'Cosa trovi dentro',
       'La selezione',
       'Per le aziende',
+      'Porta qualcuno',
       'Hanno lavorato con noi',
       'Gli eventi',
       'Le domande',
       'I perk',
       'PigroCRM',
     ])
-    const bands = [...page.matchAll(/<section class="band( dark)?/g)].map((m) => (m[1] ? 'dark' : 'light'))
-    for (let index = 1; index < bands.length; index += 1) expect(bands[index], `band ${index}`).not.toBe(bands[index - 1])
+    const bands = [...page.matchAll(/<section class="band( dark| referral)?/g)].map((m) => (m[1] === ' dark' ? 'dark' : m[1] ? 'referral' : 'light'))
+    // The bands alternate, with one exception on purpose: «Porta qualcuno» (REB-711) is a
+    // light band of its own between «Per le aziende» and the ink of «Hanno lavorato con noi».
+    const alternating = bands.map((band) => (band === 'referral' ? 'light' : band))
+    for (let index = 1; index < bands.length; index += 1) {
+      if (bands[index] === 'referral') {
+        expect(bands[index - 1], 'before the referral band').toBe('light')
+        expect(bands[index + 1], 'after the referral band').toBe('dark')
+        continue
+      }
+      expect(alternating[index], `band ${index}`).not.toBe(alternating[index - 1])
+    }
     // The three cards sell what REB-681 settled (the deck's slide still carries its own
     // wording, REB-682), and «top 1%» enters through the selection, nowhere else: the
     // hero is unchanged.
@@ -285,7 +291,7 @@ describe('index.html', () => {
     expect(page).toContain('Il top 1% di chi fa software')
     expect(page.match(/top 1%/g)).toHaveLength(1)
     expect(page.indexOf('top 1%')).toBeGreaterThan(page.indexOf('>La selezione<'))
-    const cards = section('aziende').match(/<article[\s\S]*?<\/article>/g) ?? []
+    const cards = section('companies').match(/<article[\s\S]*?<\/article>/g) ?? []
     expect(cards).toHaveLength(3)
     for (const [name, price] of [
       ['Team guidato', 'Pensiamo a tutto noi, prezzo su misura.'],
@@ -295,17 +301,17 @@ describe('index.html', () => {
       const card = cards.find((c) => c.includes(`<h3>${name}</h3>`)) ?? ''
       expect(card, name).toContain(`<p class="price">${price}</p>`)
     }
-    expect(section('aziende')).toContain('Ricerca continua: apri una posizione')
-    expect(section('aziende')).not.toContain('<h3>Ricerca</h3>')
+    expect(section('companies')).toContain('Ricerca continua: apri una posizione')
+    expect(section('companies')).not.toContain('<h3>Ricerca</h3>')
     // Seven roles, and the line that keeps the door open for an eighth.
     expect(page.match(/<ul class="roles"[\s\S]*?<\/ul>/)?.[0]?.match(/<li>/g)).toHaveLength(7)
     expect(page).toContain('Candidati lo stesso')
-    // The events are the roadmap's, the rebase house the only one with a link, on Luma.
-    // SFSCon (roadmap #295) is a maybe until the end of October: not on the page until
-    // it is decided.
-    for (const event of ['Milano Digital Week', 'rebase house', 'Wave by Vento', 'Codemotion']) expect(page).toContain(`<h3>${event}</h3>`)
-    expect(section('eventi').match(/<a /g)).toHaveLength(1)
-    expect(section('eventi')).toMatch(/<a class="quiet-link" href="https:\/\/luma\.com\/2n8qng2x">/)
+    // The events are the roadmap's, and only the ones still ahead: REB-703 took off the
+    // three that had passed by 2026-10-20. SFSCon (roadmap #295) is a maybe until the
+    // end of October: not on the page until it is decided.
+    const events = [...section('eventi').matchAll(/<h3>([^<]+)<\/h3>/g)].map((m) => m[1])
+    expect(events).toEqual(['Codemotion'])
+    expect(section('eventi')).not.toContain('<a ')
     expect(page).not.toContain('SFSCon')
     // Eight questions, each followed by its answer, in the same words the page uses
     // elsewhere.
@@ -319,7 +325,7 @@ describe('index.html', () => {
     // of the page outside the client quotes (REB-686).
     expect(faq).toContain('Con Team guidato, due o tre nomi giusti entro 48 ore.')
     expect(faq).toContain("Con Team guidato c'è un CTO di rebase dentro dal primo giorno")
-    expect(section('aziende')).toContain('entro 48 ore ti portiamo due o tre')
+    expect(section('companies')).toContain('entro 48 ore ti portiamo due o tre')
     expect(page.replace(/<figure class="testimonial"[\s\S]*?<\/figure>/g, '')).not.toMatch(/sette giorni|7 giorni|una settimana/i)
     // The two company doors under the services are hub links, so utm.js carries the
     // campaign into them like the hero's.
@@ -391,9 +397,10 @@ describe('index.html', () => {
   })
 
   it('carries WebSite and Organization structured data, with nothing invented', () => {
-    // REB-113: one block, on this page only (links.test.ts checks the other five carry
-    // none). The legal entity, its VAT number and its contact address are the ones
-    // privacy.html and terms.html already state.
+    // REB-113, extended by REB-701: one hand-written block here (the FAQPage is added at
+    // build time from the page's own questions, site-text.test.ts). The legal entity,
+    // its VAT number and its contact address are the ones privacy.html and terms.html
+    // already state.
     const scripts = [...page.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)]
     expect(scripts).toHaveLength(1)
     const data = JSON.parse(scripts[0]![1]!)
@@ -404,31 +411,39 @@ describe('index.html', () => {
     // toMatchObject alone would not fail on an extra, invented property (a postal
     // address, say); the exact key set is checked too, so the "nothing invented" rule
     // this test's name promises actually holds.
-    expect(Object.keys(website).sort()).toEqual(['@type', 'name', 'url'].sort())
-    expect(website).toMatchObject({ name: 'rebase', url: 'https://letsrebase.com/' })
+    expect(Object.keys(website).sort()).toEqual(['@type', '@id', 'name', 'url', 'inLanguage', 'publisher'].sort())
+    expect(website).toMatchObject({
+      name: 'rebase',
+      url: 'https://letsrebase.com/',
+      publisher: { '@id': organization['@id'] },
+    })
     expect(Object.keys(organization).sort()).toEqual(
-      ['@type', 'name', 'legalName', 'url', 'logo', 'vatID', 'email'].sort(),
+      ['@type', '@id', 'name', 'legalName', 'url', 'logo', 'description', 'vatID', 'email', 'sameAs'].sort(),
     )
     expect(organization).toMatchObject({
       name: 'rebase',
       legalName: 'Humancraft di Ivan Sala',
       url: 'https://letsrebase.com/',
       vatID: '14518240966',
-      email: 'ivansala@humancraft.tech',
+      email: 'ciao@letsrebase.com',
+      sameAs: ['https://github.com/letsrebase'],
     })
-    // The logo is checked against the page's own og:image rather than a second
-    // hardcoded literal, so a future redraw (the numbered file REB-205 already owns)
-    // cannot update one and silently leave the other stale.
-    expect(organization.logo).toBe(meta(page, 'og:image'))
+    // Checked against what the page and the build already say rather than a second
+    // literal: the description is the og:description, the logo the fixed-name copy of
+    // the favicon's mark, and the one profile the organisation the FAQ links into.
+    expect(organization.description).toBe(meta(page, 'og:description'))
+    expect(organization.logo).toBe(`${SITE_HOST}${LOGO_PATH}`)
+    expect(page).toMatch(/<link rel="icon" type="image\/svg\+xml" href="\.\/rebase-logo\.svg" \/>/)
+    expect(page).toContain('href="https://github.com/letsrebase/rebase"')
   })
 
-  it('signs its footer with the studio behind the site, never with a fixture', () => {
-    // ORB-116: the pre-publication sanitisation swapped this link for «Studio Rossi» at
-    // example.com, the suite's stock customer, and website-v0.4.0 shipped it. The studio
-    // is the same entity the two policy pages name as titolare, so the footer says what
-    // they say; a fixture host on a public page fails here and in links.test.ts.
+  it('signs its footer with the site alone, never with a fixture', () => {
+    // ORB-116 put the studio behind the site in this footer; REB-704 (2026-10-20) took
+    // it off: the legal entity is named where the law needs it, in privacy.html and
+    // terms.html, and nowhere else. A fixture host on a public page still fails here
+    // and in links.test.ts.
     const footer = page.match(/<footer[\s\S]*?<\/footer>/)?.[0] ?? ''
-    expect(footer).toMatch(/<a[^>]*\bhref="https:\/\/humancraft\.tech\/"[^>]*>Humancraft<\/a>/)
+    expect(footer).not.toMatch(/humancraft/i)
     expect(page).not.toMatch(/Studio Rossi|example\.com/)
   })
 
@@ -596,5 +611,57 @@ describe('terms.html', () => {
       expect(page.toLowerCase()).toContain(claim)
     }
     expect(page).not.toMatch(/abbonamento|canone|SLA/i)
+  })
+})
+
+describe('pigrocrm.html structured data (REB-701)', () => {
+  const page = html['pigrocrm.html']
+
+  it('describes the CRM as a SoftwareApplication, with only what the site already says', () => {
+    const scripts = [...page.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)]
+    expect(scripts).toHaveLength(1)
+    const app = JSON.parse(scripts[0]![1]!)
+    expect(Object.keys(app).sort()).toEqual(
+      [
+        '@context', '@type', '@id', 'name', 'url', 'description', 'applicationCategory', 'inLanguage',
+        'featureList', 'offers', 'isAccessibleForFree', 'publisher',
+      ].sort(),
+    )
+    expect(app).toMatchObject({
+      '@type': 'SoftwareApplication',
+      name: 'PigroCRM',
+      url: `${SITE_HOST}/pigrocrm`,
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' },
+    })
+    // The publisher is the home's own Organization: same @id, name and url.
+    const home = JSON.parse(html['index.html'].match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)![1]!)
+    const organization = home['@graph'].find((node: { '@type': string }) => node['@type'] === 'Organization')
+    expect(app.publisher).toEqual({
+      '@type': 'Organization',
+      '@id': organization['@id'],
+      name: organization.name,
+      url: organization.url,
+    })
+    expect(app.description).toBe(meta(page, 'description'))
+    // The four features are the four card titles of «Cosa c'è dentro», read off the page.
+    for (const feature of app.featureList as string[]) expect(page).toContain(`<h3>${feature}</h3>`)
+    // Free is what the home's FAQ answers to «Quanto costa entrare?».
+    const cost = faq(html['index.html']).find((q) => q.question === 'Quanto costa entrare?')
+    expect(cost?.answerHtml).toMatch(/^Niente\./)
+  })
+})
+
+describe('who to write to, and who stands behind the site (REB-704)', () => {
+  it('names the legal entity and its VAT number on the two policy pages, with ciao@ as the address', () => {
+    for (const name of ['privacy.html', 'terms.html'] as const) {
+      expect(html[name], name).toMatch(/<strong>Humancraft di Ivan Sala<\/strong>, partita IVA\s+14518240966\./)
+      expect(html[name], name).toContain('href="mailto:ciao@letsrebase.com"')
+    }
+  })
+
+  it('carries no personal address and no link to the studio on any public page', () => {
+    for (const name of PAGES) {
+      expect(html[name], name).not.toMatch(/ivansala@|humancraft\.tech/)
+    }
   })
 })

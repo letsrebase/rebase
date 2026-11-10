@@ -27,7 +27,7 @@ COMPOSE = Path(__file__).resolve().parents[3] / "docker-compose.yml"
 PREFIX = "PIGROCRM_"
 
 # Fields that are deliberately **not** in the shared `x-api-environment` anchor block
-# (docker-compose.yml, consumed by both the `api` and `mcp` services), each with the
+# (docker-compose.yml, consumed by the `api` and `migrate` services), each with the
 # reason. Two kinds only: a value the compose file computes itself, and a value that must
 # not be configurable in a container.
 NOT_FORWARDED: dict[str, str] = {
@@ -50,13 +50,16 @@ NOT_FORWARDED: dict[str, str] = {
     "gmail_body_max_bytes": "quanto corpo si conserva: default",
     "gmail_attachment_max_bytes": "peso massimo di un allegato: default",
     "gmail_send_grace_minutes": "finestra di annullo di un invio: default",
-    "gmail_reconcile_by_message_id": "strategia di riconciliazione: default, vedi la nota",
+    "gmail_reconcile_by_message_id": "reconciliation strategy: default, see the note",
     "drive_text_max_bytes": "quanto testo torna da un file Drive: default",
     "document_text_max_bytes": "quanto testo torna da un documento archiviato: default",
     "storage_local_root": "percorso dentro l'immagine, montato dal volume",
     "tenants_database_url": "vuoto significa lo stesso server del CRM, che e' cio' che serve",
     "tenants_alembic_ini": "vuoto risolve all'alembic.ini che l'immagine contiene",
     "gmail_sync_address_batch_size": "quante query per ciclo: default",
+    # A ceiling on the public signup's total, not an installation's choice: the default is
+    # generous for a single-owner server.
+    "max_spaces": "the ceiling on spaces: the default holds on every deploy",
     # Paths inside the image. The Dockerfile installs both under these names, so a
     # deployment able to change them could only break rendering.
     "pandoc_binary": "il nome con cui l'immagine installa Pandoc",
@@ -65,18 +68,35 @@ NOT_FORWARDED: dict[str, str] = {
     # they decide whether chasing somebody is legitimate and finite, they already carry
     # `ge`/`le` in `config.py` for that reason, and an operator who wants a different
     # grace period is asking for a product decision rather than an environment variable.
-    "solleciti_grace_days": "quando un sollecito e' legittimo: non una scelta di deploy",
-    "solleciti_min_interval_days": "come sopra",
-    "solleciti_max_reminders": "come sopra, e il tetto e' il numero di registri del template",
+    "payment_reminders_grace_days": "quando un sollecito e' legittimo: non una scelta di deploy",
+    "payment_reminders_min_interval_days": "come sopra",
+    "payment_reminders_max_reminders": (
+        "come sopra, e il tetto e' il numero di registri del template"
+    ),
     # The preferred-share concentration threshold (REB-371): a practitioner's own
     # preference about their client mix, not a deployment choice, exactly the same
-    # reasoning as the three `solleciti_*` thresholds just above -- and, like them,
+    # reasoning as the three `payment_reminders_*` thresholds just above -- and, like them,
     # reachable per space through `space_settings` instead.
-    "concentrazione_soglia_preferita": "quota preferita di un cliente: scelta del praticante",
+    "preferred_concentration_threshold": "quota preferita di un cliente: scelta del praticante",
+    # The space's profile and module switches (spec 2026-11-09): a space decides them in
+    # its own database through two admin actions, never an installation's environment.
+    "space_profile": "decided per space by `set_space_profile`, never by the environment",
+    "onboarding_skipped": "decided per space by `skip_space_onboarding`, never by the environment",
+    "module_deals": "decided per space by `set_space_modules`, never by the environment",
+    "module_contracts": "decided per space by `set_space_modules`, never by the environment",
+    "module_time": "decided per space by `set_space_modules`, never by the environment",
+    "module_costs": "decided per space by `set_space_modules`, never by the environment",
+    "module_taxes": "decided per space by `set_space_modules`, never by the environment",
+    "module_staff": "decided per space by `set_space_modules`, never by the environment",
+    "module_collaborators": "decided per space by `set_space_modules`, never by the environment",
     # Computed per space by `space_base_settings` while the root lends its Google client
     # (REB-394), empty for the root: never an installation's choice.
     "google_callback_base_url": "calcolato da space_base_settings, mai dall'ambiente",
     "google_oauth_state_prefix": "calcolato da space_base_settings, mai dall'ambiente",
+    # The same for Slack (REB-739): a space borrows the root's app, so its callback and its
+    # state's prefix are computed per space and empty for the root.
+    "slack_callback_base_url": "computed by space_base_settings, never from the environment",
+    "slack_oauth_state_prefix": "computed by space_base_settings, never from the environment",
 }
 
 
@@ -215,9 +235,51 @@ def test_refresh_token_days_is_forwarded_with_its_documented_default() -> None:
     assert _shared_environment()[variable] == f"${{{variable}:-{default}}}"
 
 
-def test_both_python_services_share_the_one_environment_block() -> None:
-    """One block, two consumers: `api` and `mcp` must both resolve `environment:` to
-    the same anchor, so the forwarded set checked above is checked once and holds
-    for both containers."""
-    for name in ("api", "mcp"):
+def _mcp_environment() -> dict[str, str]:
+    """The `PIGROCRM_*` lines of the `x-mcp-environment` block, which is what the `mcp`
+    service reads: a subset of the api's, so the container that parses agent-supplied
+    input holds no registry or engagements bearer, mail key or push key."""
+    text = COMPOSE.read_text()
+    block = text[text.index("\nx-mcp-environment:") + 1 :]
+    after_header = block.index("\n") + 1
+    end = re.search(r"^[a-z][a-z0-9_-]*:", block[after_header:], re.MULTILINE)
+    block = block[: after_header + end.start()] if end else block
+    return {match.group(1): match.group(2) for match in _LINE.finditer(block)}
+
+
+def test_api_and_migrate_read_the_full_environment_block_and_mcp_its_own() -> None:
+    """`api` and `migrate` (the one-shot that migrates every space before `api` starts)
+    resolve `environment:` to the full anchor, so the forwarded set checked above holds
+    for both; `mcp` resolves to its own, smaller one."""
+    for name in ("api", "migrate"):
         assert "environment: *api-environment" in _service_block(name), name
+    assert "environment: *mcp-environment" in _service_block("mcp")
+
+
+def test_the_mcp_environment_is_a_subset_of_the_api_one_with_the_same_lines() -> None:
+    mcp = _mcp_environment()
+    assert mcp, "the x-mcp-environment block is not being read"
+    api = _shared_environment()
+    assert set(mcp) <= set(api), sorted(set(mcp) - set(api))
+    assert {key: value for key, value in mcp.items() if api[key] != value} == {}
+
+
+def test_the_mcp_environment_holds_none_of_the_apis_own_secrets() -> None:
+    """The point of a block of its own (PMCP-03): none of these is read by the MCP
+    server, and each would be a credential in a container that handles agent input."""
+    assert not set(_mcp_environment()) & {
+        f"{PREFIX}{name}"
+        for name in (
+            "REGISTRY_TOKEN",
+            "ENGAGEMENTS_TOKEN",
+            "RESEND_API_KEY",
+            "VAPID_PRIVATE_KEY",
+        )
+    }
+
+
+def test_the_mcp_environment_requires_the_jwt_secret() -> None:
+    """The MCP server unseals a space's own Google client with a key derived from the
+    JWT secret, and its boot refuses the published placeholder: without the line the
+    container restarts forever (the first preview deploy of REB-894 did exactly that)."""
+    assert "?" in str(_mcp_environment().get(f"{PREFIX}JWT_SECRET", ""))

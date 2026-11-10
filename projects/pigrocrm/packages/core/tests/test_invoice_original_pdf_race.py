@@ -1,10 +1,10 @@
 """An import links a document as an invoice's PDF while a version that is not a PDF is
 uploaded onto that same document (REB-480).
 
-`DocumentService._check_invoice_pdf` refuses a non-PDF version on a document an invoice
+`DocumentUploads.check_invoice_pdf` refuses a non-PDF version on a document an invoice
 names as its PDF, and to do that it reads the link. `import_issued` writes the link only
-at its commit, after `_validate_original_pdf` has read the document's current version
-among its pure checks. With nothing between them both reads pass: the upload sees no
+at its commit, after `OriginalPdfResolver._validate_document` has read the document's
+current version among its pure checks. With nothing between them both reads pass: the upload sees no
 link, the import sees a PDF, and the invoice ends up naming a document whose current
 version is XML. Greptile found it on PR #420. Both paths now lock the document's row
 before they read, so whichever comes second waits for the first to commit.
@@ -27,17 +27,18 @@ from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
-from pigrocrm.core.invoices.schemas import InvoiceImport, InvoiceLineImport, PdfSorgente
+from pigrocrm.core.invoices.original_pdf import OriginalPdfResolver
+from pigrocrm.core.invoices.schemas import InvoiceImport, InvoiceLineImport, PdfSource
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="user", role="admin")
@@ -48,29 +49,29 @@ XHTML = b'<html xmlns="http://www.w3.org/1999/xhtml"><body>ciao</body></html>'
 def _configure(session: Session) -> UUID:
     LegalEntityService(session).upsert_default(
         LegalEntityUpsert(
-            ragione_sociale="Studio Rossi",
-            partita_iva="01234567890",
-            codice_fiscale="HMCRFT00A01H501K",
-            indirizzo="Via Vittorio Veneto 12",
-            cap="20124",
-            comune="Milano",
-            provincia="MI",
-            nazione="IT",
+            legal_name="Studio Rossi",
+            vat_number="01234567890",
+            tax_code="HMCRFT00A01H501K",
+            address="Via Vittorio Veneto 12",
+            postal_code="20124",
+            city="Milano",
+            province="MI",
+            country="IT",
             email="mario@example.com",
         ),
         ADMIN,
     )
     # After the azienda, which the profile belongs to since REB-615.
-    FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
-    customer = Customer(
-        ragione_sociale="Acme S.r.l.",
-        partita_iva="12345678901",
-        codice_sdi="ABCDEFG",
-        indirizzo="Corso Italia 5",
-        cap="00100",
-        comune="Roma",
-        provincia="RM",
-        nazione="IT",
+    FiscalProfileService(session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
+    customer = Organization(
+        legal_name="Acme S.r.l.",
+        vat_number="12345678901",
+        sdi_code="ABCDEFG",
+        address="Corso Italia 5",
+        postal_code="00100",
+        city="Roma",
+        province="RM",
+        country="IT",
     )
     session.add(customer)
     session.flush()
@@ -79,26 +80,26 @@ def _configure(session: Session) -> UUID:
 
 def _import_payload(customer_id: UUID, document_id: UUID) -> InvoiceImport:
     return InvoiceImport(
-        anno=2026,
-        numero=7,
-        data_emissione=date(2026, 5, 5),
+        year=2026,
+        number=7,
+        issue_date=date(2026, 5, 5),
         customer_id=customer_id,
-        causale="Consulenza",
-        righe=[
+        memo="Consulenza",
+        lines=[
             InvoiceLineImport(
-                descrizione="Consulenza",
-                quantita=Decimal("1"),
-                prezzo_unitario=Decimal("100"),
-                prezzo_totale=Decimal("100.00"),
-                aliquota_iva=Decimal("0"),
-                natura="N2.2",
+                description="Consulenza",
+                quantity=Decimal("1"),
+                unit_price=Decimal("100"),
+                total_price=Decimal("100.00"),
+                vat_rate=Decimal("0"),
+                vat_nature="N2.2",
             )
         ],
-        imponibile=Decimal("100.00"),
-        imposta=Decimal("0.00"),
-        bollo=Decimal("0.00"),
-        totale=Decimal("100.00"),
-        pdf_sorgente=PdfSorgente(document_id=document_id),
+        taxable_amount=Decimal("100.00"),
+        vat_amount=Decimal("0.00"),
+        stamp_duty=Decimal("0.00"),
+        total=Decimal("100.00"),
+        pdf_source=PdfSource(document_id=document_id),
     )
 
 
@@ -138,8 +139,8 @@ def _cleanup(factory: sessionmaker[Session], customer_id: UUID | None) -> None:
         cleaner.execute(text("DELETE FROM documents WHERE customer_id = :customer"), params)
         cleaner.execute(text("DELETE FROM invoice_counters"))
         cleaner.execute(text("DELETE FROM fiscal_profile"))
-        cleaner.execute(text("DELETE FROM emitter_profile WHERE NOT predefinita"))
-        cleaner.execute(text("DELETE FROM customers WHERE id = :customer"), params)
+        cleaner.execute(text("DELETE FROM legal_entities WHERE NOT is_default"))
+        cleaner.execute(text("DELETE FROM organizations WHERE id = :customer"), params)
         cleaner.commit()
 
 
@@ -151,8 +152,8 @@ def test_an_xml_upload_during_an_import_of_the_same_pdf_waits_and_is_refused(
     import does, and once the import commits it must be refused, leaving the invoice's
     PDF a PDF.
 
-    `_validate_original_pdf` is wrapped to hold the import there, right after its read,
-    until the upload has had two seconds to get through. Without the lock the upload
+    `OriginalPdfResolver._validate_document` is wrapped to hold the import there, right
+    after its read, until the upload has had two seconds to get through. Without the lock the upload
     needs a few milliseconds and comes back with a new version: the `not done` assertion
     fails first, and the refusal assertion after it."""
     factory = session_factory(db_engine)
@@ -163,7 +164,7 @@ def test_an_xml_upload_during_an_import_of_the_same_pdf_waits_and_is_refused(
             customer_id = _configure(setup)
             documents = DocumentService(setup, storage)
             document = documents.create(
-                DocumentCreate(customer_id=customer_id, tipo="fattura", titolo="Originale"),
+                DocumentCreate(customer_id=customer_id, type="invoice", title="Originale"),
                 ADMIN,
             )
             documents.add_version(document.id, ORIGINAL_PDF, "application/pdf", ADMIN)
@@ -171,15 +172,17 @@ def test_an_xml_upload_during_an_import_of_the_same_pdf_waits_and_is_refused(
 
         validated = Event()
         release = Event()
-        original: Callable[..., UUID] = InvoiceService._validate_original_pdf
+        original: Callable[..., UUID] = OriginalPdfResolver._validate_document
 
-        def held_after_the_read(self: InvoiceService, customer: UUID, document_id: UUID) -> UUID:
+        def held_after_the_read(
+            self: OriginalPdfResolver, customer: UUID, document_id: UUID
+        ) -> UUID:
             result = original(self, customer, document_id)
             validated.set()
             release.wait(timeout=30)
             return result
 
-        monkeypatch.setattr(InvoiceService, "_validate_original_pdf", held_after_the_read)
+        monkeypatch.setattr(OriginalPdfResolver, "_validate_document", held_after_the_read)
 
         def import_it() -> UUID:
             with factory() as session:

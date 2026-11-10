@@ -1,4 +1,5 @@
 import { cn } from '@rebase/ui/cn'
+import { ScrollRegion } from '@rebase/ui/table'
 
 /**
  * Four shapes, no charting library: big numbers, horizontal bars as CSS widths, one
@@ -96,6 +97,46 @@ function EmptyChart({ caption }: { caption: string }) {
   )
 }
 
+/**
+ * One horizontal bar, as a CSS width: the track and its fill, decoration over a figure
+ * the caller prints as text. Both ends square since the squared system: the fill grows
+ * from the baseline, and the edge that moves is the only shape left to read. Shared by
+ * `BarRows` and by the ceilings' own rows, so both draw a ratio the same way.
+ */
+export function Meter({
+  ratio,
+  tone = 1,
+  color,
+  mark,
+}: {
+  /** 0..1, computed by the server. Clamped here, never derived here. */
+  ratio: number
+  tone?: number
+  color?: string
+  /** 0..1, computed by the server: a hairline across the track where a limit sits, for a
+   *  bar whose own scale is a share and not a use of that limit. */
+  mark?: number
+}) {
+  return (
+    <div className="relative h-2 min-w-24 flex-1 bg-muted">
+      <div
+        data-testid="bar-fill"
+        aria-hidden="true"
+        className="h-2"
+        style={{ width: widthPercent(ratio), backgroundColor: color ?? toneColor(tone) }}
+      />
+      {mark !== undefined && (
+        <div
+          data-testid="bar-mark"
+          aria-hidden="true"
+          className="absolute -inset-y-1 w-0.5 bg-foreground"
+          style={{ left: widthPercent(mark) }}
+        />
+      )}
+    </div>
+  )
+}
+
 export type BarRow = {
   label: string
   value: string
@@ -121,7 +162,7 @@ export type BarRow = {
 export function BarRows({ caption, rows }: { caption: string; rows: BarRow[] }) {
   if (rows.length === 0) return <EmptyChart caption={caption} />
   return (
-    <div className="overflow-x-auto border bg-card p-4">
+    <ScrollRegion label={caption} className="border bg-card p-4">
       <table className="w-full text-sm">
         <caption className="mb-2 text-left text-sm font-medium">{caption}</caption>
         {/* The header names the two columns for a screen reader and would be pure noise on
@@ -144,19 +185,7 @@ export function BarRows({ caption, rows }: { caption: string; rows: BarRow[] }) 
               </th>
               <td className="py-1">
                 <div className="flex items-center gap-2">
-                  <div className="h-2 min-w-24 flex-1 bg-muted">
-                    {/* Both ends square since the squared system: the fill grows from the
-                        baseline, and the edge that moves is the only shape left to read. */}
-                    <div
-                      data-testid="bar-fill"
-                      aria-hidden="true"
-                      className="h-2"
-                      style={{
-                        width: widthPercent(row.ratio),
-                        backgroundColor: row.color ?? toneColor(row.tone),
-                      }}
-                    />
-                  </div>
+                  <Meter ratio={row.ratio} tone={row.tone} color={row.color} />
                   <span className="shrink-0 tabular-nums">{row.value}</span>
                 </div>
               </td>
@@ -164,80 +193,6 @@ export function BarRows({ caption, rows }: { caption: string; rows: BarRow[] }) 
           ))}
         </tbody>
       </table>
-    </div>
-  )
-}
-
-export type SparkPoint = {
-  label: string
-  value: string
-  /** 0..1, computed by the server. */
-  ratio: number
-}
-
-const SPARK_WIDTH = 240
-const SPARK_HEIGHT = 48
-
-export function Sparkline({ caption, points }: { caption: string; points: SparkPoint[] }) {
-  if (points.length === 0) return <EmptyChart caption={caption} />
-
-  // `points.length - 1` is a subtraction on an array length, not on an API value, and it
-  // is guarded against a single point -- which would otherwise divide by zero and produce
-  // `NaN` coordinates that render as an invisible line rather than as an error.
-  const step = points.length > 1 ? SPARK_WIDTH / (points.length - 1) : 0
-  const path = points
-    .map((point, index) => {
-      const x = index * step
-      const y = SPARK_HEIGHT - Math.max(0, Math.min(1, point.ratio)) * SPARK_HEIGHT
-      return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
-    })
-    .join(' ')
-
-  return (
-    <div className="overflow-x-auto border bg-card p-4">
-      <svg
-        data-testid="sparkline-svg"
-        aria-hidden="true"
-        viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`}
-        className="h-12 w-full"
-        preserveAspectRatio="none"
-      >
-        {/* `preserveAspectRatio="none"` stretches the box to the card's width, which is
-            what lets a fixed viewBox serve any number of points -- but it stretches the
-            stroke with it, so a 2px line renders thin on the verticals and thick on the
-            horizontals. `vector-effect` is what keeps the stroke 2px in device pixels
-            while the geometry still scales. */}
-        <path
-          d={path}
-          fill="none"
-          stroke="var(--chart-2)"
-          strokeWidth={2}
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
-      <table className="mt-2 w-full text-sm">
-        <caption className="mb-2 text-left text-sm font-medium">{caption}</caption>
-        <thead>
-          <tr>
-            {points.map((point) => (
-              <th key={point.label} scope="col" className="font-normal text-muted-foreground">
-                {point.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            {points.map((point) => (
-              <td key={point.label} className="tabular-nums">
-                {point.value}
-              </td>
-            ))}
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    </ScrollRegion>
   )
 }

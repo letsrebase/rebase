@@ -55,7 +55,7 @@ type OnProblem = (message: string | null) => void
  * One row's own error handling.
  *
  * A rate row has two inputs and the page has one banner, at the top, above every other
- * row: a 422 naming `costo_orario_default` put there is true and useless, because it
+ * row: a 422 naming `default_hourly_cost` put there is true and useless, because it
  * never says which of the dozens of identical inputs on this screen it is about. So
  * anything the server attributed to a field stays on the row and marks that input;
  * anything it did not (a 403, a network failure) goes to the page banner, which is the
@@ -89,25 +89,25 @@ function FieldMessage({ text }: { text: string }) {
  * variable order.
  */
 function UserRateRow({ user, onProblem }: { user: UserRecord; onProblem: OnProblem }) {
-  const [tariffa, setTariffa] = useState(user.tariffa_oraria_default ?? '')
-  const [costo, setCosto] = useState(user.costo_orario_default ?? '')
+  const [rate, setRate] = useState(user.default_hourly_rate ?? '')
+  const [cost, setCost] = useState(user.default_hourly_cost ?? '')
   const save = useSetUserRates(user.id)
   const { fieldError, begin, fail } = useRowProblem(onProblem)
 
   return (
     <TableRow>
-      <TableCell>{user.nome}</TableCell>
+      <TableCell>{user.name}</TableCell>
       <TableCell>
         <Input
           type="number"
           step="0.000001"
-          aria-label={`Tariffa oraria di ${user.nome}`}
-          aria-invalid={fieldError?.field === 'tariffa_oraria_default'}
-          value={tariffa}
-          onChange={(event) => setTariffa(event.target.value)}
+          aria-label={`Tariffa oraria di ${user.name}`}
+          aria-invalid={fieldError?.field === 'default_hourly_rate'}
+          value={rate}
+          onChange={(event) => setRate(event.target.value)}
           className="w-32"
         />
-        {fieldError?.field === 'tariffa_oraria_default' && (
+        {fieldError?.field === 'default_hourly_rate' && (
           <FieldMessage text={fieldError.message} />
         )}
       </TableCell>
@@ -115,13 +115,13 @@ function UserRateRow({ user, onProblem }: { user: UserRecord; onProblem: OnProbl
         <Input
           type="number"
           step="0.000001"
-          aria-label={`Costo orario di ${user.nome}`}
-          aria-invalid={fieldError?.field === 'costo_orario_default'}
-          value={costo}
-          onChange={(event) => setCosto(event.target.value)}
+          aria-label={`Costo orario di ${user.name}`}
+          aria-invalid={fieldError?.field === 'default_hourly_cost'}
+          value={cost}
+          onChange={(event) => setCost(event.target.value)}
           className="w-32"
         />
-        {fieldError?.field === 'costo_orario_default' && (
+        {fieldError?.field === 'default_hourly_cost' && (
           <FieldMessage text={fieldError.message} />
         )}
       </TableCell>
@@ -138,8 +138,8 @@ function UserRateRow({ user, onProblem }: { user: UserRecord; onProblem: OnProbl
             // and only a key present with `null` can clear a rate.
             save.mutate(
               {
-                tariffa_oraria_default: rateBody(tariffa),
-                costo_orario_default: rateBody(costo),
+                default_hourly_rate: rateBody(rate),
+                default_hourly_cost: rateBody(cost),
               },
               { onSuccess: () => toast.success('Tariffe aggiornate'), onError: fail },
             )
@@ -153,24 +153,24 @@ function UserRateRow({ user, onProblem }: { user: UserRecord; onProblem: OnProbl
 }
 
 function DealRateRow({ deal, onProblem }: { deal: Deal; onProblem: OnProblem }) {
-  const [tariffa, setTariffa] = useState(deal.tariffa_oraria ?? '')
+  const [rate, setRate] = useState(deal.hourly_rate ?? '')
   const save = useSetDealRate(deal.id)
   const { fieldError, begin, fail } = useRowProblem(onProblem)
 
   return (
     <TableRow>
-      <TableCell>{deal.nome}</TableCell>
+      <TableCell>{deal.name}</TableCell>
       <TableCell>
         <Input
           type="number"
           step="0.000001"
-          aria-label={`Tariffa oraria del deal ${deal.nome}`}
-          aria-invalid={fieldError?.field === 'tariffa_oraria'}
-          value={tariffa}
-          onChange={(event) => setTariffa(event.target.value)}
+          aria-label={`Tariffa oraria del deal ${deal.name}`}
+          aria-invalid={fieldError?.field === 'hourly_rate'}
+          value={rate}
+          onChange={(event) => setRate(event.target.value)}
           className="w-32"
         />
-        {fieldError?.field === 'tariffa_oraria' && <FieldMessage text={fieldError.message} />}
+        {fieldError?.field === 'hourly_rate' && <FieldMessage text={fieldError.message} />}
       </TableCell>
       <TableCell>
         <Button
@@ -181,7 +181,7 @@ function DealRateRow({ deal, onProblem }: { deal: Deal; onProblem: OnProblem }) 
             // The deal's own rate, on the deal's own endpoint: it overrides the
             // person's rate for hours on this deal and never writes to the person.
             save.mutate(
-              { tariffa_oraria: rateBody(tariffa) },
+              { hourly_rate: rateBody(rate) },
               { onSuccess: () => toast.success('Tariffa del deal aggiornata'), onError: fail },
             )
           }}
@@ -197,9 +197,9 @@ export function RatesPanel() {
   const users = useUsers()
   const deals = useDeals()
   const [problem, setProblem] = useState<string | null>(null)
-  const [nuovoDeal, setNuovoDeal] = useState('')
-  const [nuovaTariffa, setNuovaTariffa] = useState('')
-  const addRate = useSetDealRate(nuovoDeal)
+  const [newDeal, setNewDeal] = useState('')
+  const [newRate, setNewRate] = useState('')
+  const addRate = useSetDealRate(newDeal)
 
   if (users.isError) return <QueryErrorBanner error={users.error} />
   if (deals.isError) return <QueryErrorBanner error={deals.error} />
@@ -208,8 +208,8 @@ export function RatesPanel() {
   // Split on the stored value, not on a truthiness test: `"0.000000"` is a real deal
   // rate meaning "these hours are not billed", and it belongs in the table, not in the
   // "no rate yet" picker.
-  const withRate = allDeals.filter((deal) => deal.tariffa_oraria !== null)
-  const withoutRate = allDeals.filter((deal) => deal.tariffa_oraria === null)
+  const withRate = allDeals.filter((deal) => deal.hourly_rate !== null)
+  const withoutRate = allDeals.filter((deal) => deal.hourly_rate === null)
 
   return (
     <div className="space-y-8">
@@ -230,7 +230,7 @@ export function RatesPanel() {
           all&apos;azienda, e serve solo al margine. Lasciare un campo vuoto significa
           «nessuna tariffa», che non è la stessa cosa di zero.
         </p>
-        <Table>
+        <Table scrollLabel="Tariffe delle persone">
           <TableHeader>
             <TableRow>
               <TableHead>Persona</TableHead>
@@ -256,7 +256,7 @@ export function RatesPanel() {
           La tariffa del deal vince su quella della persona: è la regola che permette di
           concordare un prezzo con un cliente senza toccare le tariffe di nessuno.
         </p>
-        <Table>
+        <Table scrollLabel="Tariffe dei deal">
           <TableHeader>
             <TableRow>
               <TableHead>Deal</TableHead>
@@ -278,42 +278,42 @@ export function RatesPanel() {
 
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-2">
-            <Label htmlFor="nuovo-deal-tariffa">Aggiungi una tariffa a un deal</Label>
-            <Select value={nuovoDeal} onValueChange={setNuovoDeal}>
-              <SelectTrigger id="nuovo-deal-tariffa" className="w-72">
+            <Label htmlFor="new-deal-rate">Aggiungi una tariffa a un deal</Label>
+            <Select value={newDeal} onValueChange={setNewDeal}>
+              <SelectTrigger id="new-deal-rate" className="w-72">
                 <SelectValue placeholder="Seleziona un deal…" />
               </SelectTrigger>
               <SelectContent>
                 {withoutRate.map((deal) => (
                   <SelectItem key={deal.id} value={deal.id}>
-                    {deal.nome}
+                    {deal.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="nuova-tariffa">Tariffa (€/h)</Label>
+            <Label htmlFor="new-rate">Tariffa (€/h)</Label>
             <Input
-              id="nuova-tariffa"
+              id="new-rate"
               type="number"
               step="0.000001"
-              value={nuovaTariffa}
-              onChange={(event) => setNuovaTariffa(event.target.value)}
+              value={newRate}
+              onChange={(event) => setNewRate(event.target.value)}
               className="w-32"
             />
           </div>
           <Button
-            disabled={nuovoDeal === '' || nuovaTariffa.trim() === '' || addRate.isPending}
+            disabled={newDeal === '' || newRate.trim() === '' || addRate.isPending}
             onClick={() => {
               setProblem(null)
               addRate.mutate(
-                { tariffa_oraria: rateBody(nuovaTariffa) },
+                { hourly_rate: rateBody(newRate) },
                 {
                   onSuccess: () => {
                     toast.success('Tariffa del deal impostata')
-                    setNuovoDeal('')
-                    setNuovaTariffa('')
+                    setNewDeal('')
+                    setNewRate('')
                   },
                   onError: (error) => setProblem(toProblem(error).detail),
                 },

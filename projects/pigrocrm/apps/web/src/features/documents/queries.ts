@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, fetchWithRefresh, isMissingFile, toProblem, unwrap } from '@/lib/api'
+import { downloadFromApi } from '@/lib/download'
 import type { StatusTone } from '@/components/StatusPill'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
@@ -13,7 +14,7 @@ export type TemplateDescription = components['schemas']['TemplateDescription']
 export type TemplateVariable = components['schemas']['TemplateVariable']
 export type LegalEntity = components['schemas']['LegalEntityRead']
 
-export type OfferState = 'bozza' | 'inviata' | 'accettata' | 'rifiutata'
+export type OfferState = 'draft' | 'sent' | 'accepted' | 'rejected'
 
 /**
  * A document belongs to a customer **or** to a deal, never both -- so the hooks take
@@ -30,17 +31,17 @@ export type DocumentOwner = { customerId: string } | { dealId: string }
  * own 409 message, which is what the user sees.
  */
 export const OFFER_TRANSITIONS: Record<OfferState, OfferState[]> = {
-  bozza: ['inviata'],
-  inviata: ['accettata', 'rifiutata', 'bozza'],
-  accettata: [],
-  rifiutata: [],
+  draft: ['sent'],
+  sent: ['accepted', 'rejected', 'draft'],
+  accepted: [],
+  rejected: [],
 }
 
 export const OFFER_STATE_LABELS: Record<OfferState, string> = {
-  bozza: 'Bozza',
-  inviata: 'Inviata',
-  accettata: 'Accettata',
-  rifiutata: 'Rifiutata',
+  draft: 'Bozza',
+  sent: 'Inviata',
+  accepted: 'Accettata',
+  rejected: 'Rifiutata',
 }
 
 /**
@@ -49,25 +50,55 @@ export const OFFER_STATE_LABELS: Record<OfferState, string> = {
  * means the compile breaks when that hand-written union is widened, not when the server
  * grows a state.
  *
- * `accettata` is `ink`, not gold: an accepted offer is the settled, ordinary outcome --
+ * `accepted` is `ink`, not gold: an accepted offer is the settled, ordinary outcome --
  * the thing every offer is trying to become -- and gold in this product means "waiting
- * on somebody", which an accepted offer no longer is. `inviata` is also `ink` because
+ * on somebody", which an accepted offer no longer is. `sent` is also `ink` because
  * it is a real, correct state and a table of sent offers must not read as a table of
- * warnings; `bozza` claims nothing yet, and `rifiutata` is the one that has gone the
+ * warnings; `draft` claims nothing yet, and `rejected` is the one that has gone the
  * wrong way.
  */
 export const OFFER_STATE_TONE: Record<OfferState, StatusTone> = {
-  bozza: 'muted',
-  inviata: 'ink',
-  accettata: 'ink',
-  rifiutata: 'danger',
+  draft: 'muted',
+  sent: 'ink',
+  accepted: 'ink',
+  rejected: 'danger',
 }
 
+/** What a `documents.type` is (`DocumentRead.type`), the types the server's `DOCUMENT_TYPES` accepts. */
+export type DocumentType = Document['type']
+
+/**
+ * One word for every `documents.type` the API stores, the invoice side included: the
+ * customer's Documenti tab lists the generated invoice PDF, its FatturaPA XML and the
+ * proforma beside the offers, and a code without a word printed the English enum raw. A
+ * `Record` over the API's own union, so a type added there is a compile error here.
+ */
+const DOCUMENT_TYPE_WORDS: Record<DocumentType, string> = {
+  offer: 'Offerta',
+  contract: 'Contratto',
+  minutes: 'Verbale',
+  document: 'Documento',
+  invoice: 'Fattura',
+  invoice_xml: 'Fattura XML',
+  proforma: 'Proforma',
+  hours_report: 'Rapporto ore',
+}
+
+/** The two template types no document can be (`TemplateType` in `templates/schemas.py`). */
+const TEMPLATE_ONLY_WORDS = { email: 'Email', payment_reminder: 'Sollecito' }
+
+/** A word for every type a document or a template can have. */
 export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
-  offerta: 'Offerta',
-  contratto: 'Contratto',
-  verbale: 'Verbale',
-  documento: 'Documento',
+  ...DOCUMENT_TYPE_WORDS,
+  ...TEMPLATE_ONLY_WORDS,
+}
+
+/**
+ * Whether a template of this type can make a document: the server refuses any other
+ * (`DocumentTemplating.require_template`), so the picker does not offer it.
+ */
+export function canMakeDocument(templateType: string): templateType is DocumentType {
+  return Object.hasOwn(DOCUMENT_TYPE_WORDS, templateType)
 }
 
 function ownerQuery(owner: DocumentOwner): { customer_id?: string; deal_id?: string } {
@@ -130,8 +161,8 @@ export function useCreateFromTemplate(owner: DocumentOwner) {
   return useMutation({
     mutationFn: (body: {
       template_id: string
-      titolo: string
-      variabili: Record<string, unknown>
+      title: string
+      variables: Record<string, unknown>
     }) =>
       unwrap(
         api.POST('/api/documents/from-template', {
@@ -159,7 +190,7 @@ export function useCreateFromTemplate(owner: DocumentOwner) {
  * installation. No `Content-Type` is set by hand, because the browser must append its
  * own multipart boundary.
  */
-async function putVersion(documentId: string, file: File): Promise<DocumentVersion> {
+export async function putVersion(documentId: string, file: File): Promise<DocumentVersion> {
   const body = new FormData()
   body.append('file', file)
   const response = await fetchWithRefresh(`/api/documents/${documentId}/versions`, {
@@ -186,7 +217,7 @@ export function useUploadVersion() {
   return useMutation({
     mutationFn: (args: { documentId: string; file: File }) =>
       putVersion(args.documentId, args.file),
-    onSuccess: (_data, variables) => {
+    onSuccess: (_date, variables) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.documents() })
       void queryClient.invalidateQueries({ queryKey: queryKeys.document(variables.documentId) })
       void queryClient.invalidateQueries({
@@ -199,11 +230,11 @@ export function useUploadVersion() {
 export function useSetOfferState(documentId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (stato: OfferState) =>
+    mutationFn: (status: OfferState) =>
       unwrap(
         api.POST('/api/documents/{document_id}/status', {
           params: { path: { document_id: documentId } },
-          body: { stato },
+          body: { status },
         }),
       ),
     onSuccess: () => {
@@ -214,7 +245,7 @@ export function useSetOfferState(documentId: string) {
       // closures and the "offerta accettata, deal non vinto" signal. By the ['dashboard']
       // prefix rather than an exact key: this mutation cannot know which period the user is
       // looking at, and the prefix covers every cached period and every tab.
-      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardAll })
     },
   })
 }
@@ -222,10 +253,10 @@ export function useSetOfferState(documentId: string) {
 export function useRegenerateVersion(documentId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (numero: number) =>
+    mutationFn: (number: number) =>
       unwrap(
-        api.POST('/api/documents/{document_id}/versions/{numero}/regenerate', {
-          params: { path: { document_id: documentId, numero } },
+        api.POST('/api/documents/{document_id}/versions/{number}/regenerate', {
+          params: { path: { document_id: documentId, number } },
         }),
       ),
     onSuccess: () => {
@@ -248,7 +279,7 @@ export function useDeleteDocument(owner: DocumentOwner) {
       // The owner-scoped key first (the exact list this tab is looking at), then the
       // wildcard (`queryKeys.documents()`, an empty-object filter that partially
       // matches every cached owner) as defense in depth -- the same belt-and-braces
-      // pattern `useUpdateCustomer` already uses for its own single-record key plus
+      // pattern `useUpdateOrganization` already uses for its own single-record key plus
       // the list wildcard.
       void queryClient.invalidateQueries({ queryKey: queryKeys.documents(owner) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.documents() })
@@ -283,11 +314,11 @@ export function useTemplateDescription(templateId: string | null) {
 
 export function useTemplatePreview() {
   return useMutation({
-    mutationFn: (args: { templateId: string; variabili: Record<string, unknown> }) =>
+    mutationFn: (args: { templateId: string; variables: Record<string, unknown> }) =>
       unwrap(
         api.POST('/api/templates/{template_id}/preview', {
           params: { path: { template_id: args.templateId } },
-          body: { variabili: args.variabili },
+          body: { variables: args.variables },
         }),
       ),
   })
@@ -295,37 +326,11 @@ export function useTemplatePreview() {
 
 /**
  * Downloads through the API, which is the only place authorisation exists on either
- * storage backend. The `Content-Disposition` the server sets is what names the file;
- * this only has to hand the blob to the browser and release the object URL, or the
- * page leaks one per download for as long as it stays open.
+ * storage backend. The `Content-Disposition` the server sets is what names the file.
  */
-export async function downloadDocument(documentId: string, numero?: number): Promise<void> {
-  const search = numero === undefined ? '' : `?numero=${numero}`
-  // `fetchWithRefresh`, not a bare `fetch`: this call is outside the typed client
-  // because of the *response type*, and that used to silently also put it outside the
-  // session handling every other request gets -- so a download attempted more than
-  // fifteen minutes after the last request failed with «Autenticazione richiesta»
-  // while a valid refresh cookie sat in the jar. See `lib/api.ts`.
-  const response = await fetchWithRefresh(`/api/documents/${documentId}/download${search}`)
-  if (!response.ok) {
-    const payload: unknown = await response.json().catch(() => null)
-    throw toProblem(payload, response.status)
-  }
-  const blob = await response.blob()
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  // Empty `download` keeps the server's own Content-Disposition filename, which is
-  // already slugified server-side; naming it here would re-derive a name the server
-  // already decided.
-  anchor.download = ''
-  // Snyk Code javascript/DOMXSS here is a false positive: the href is a blob: URL made
-  // just above, never a script URL, and `download` makes the click save the file
-  // whatever its type, so nothing it holds is ever rendered.
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-  URL.revokeObjectURL(url)
+export function downloadDocument(documentId: string, number?: number): Promise<void> {
+  const search = number === undefined ? '' : `?number=${number}`
+  return downloadFromApi(`/api/documents/${documentId}/download${search}`)
 }
 
 /**
@@ -348,7 +353,7 @@ export async function downloadDocument(documentId: string, numero?: number): Pro
  * through unchanged from the server's problem document (`domain_error_handler` spreads
  * `NotFound`'s `entity`/`identifier` at the top level), so this reads it rather than
  * guessing from `fileName`. `fileName` is the name shown in the row the person clicked
- * -- the document's `titolo`, or that title with its version number -- so either
+ * -- the document's `title`, or that title with its version number -- so either
  * sentence names what they were after instead of the identifier the server logged. Any
  * other failure keeps the server's own `detail`, as every other action on these two
  * tabs does.

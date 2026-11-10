@@ -9,8 +9,10 @@
  *
  * A plain module, not a `.tsx`: it exports no component, so there is no
  * `react-refresh/only-export-components` override to buy it. That is the same reason
- * `lib/dates.ts` and `features/dashboard/periodo.ts` exist as modules of their own.
+ * `lib/dates.ts` and `features/dashboard/period.ts` exist as modules of their own.
  */
+
+import { KIND_FALLBACK_LABELS, PAYLOAD_KEY_LABELS, PAYLOAD_VALUE_LABELS } from './payloadLabels'
 
 const KIND_LABELS: Record<string, string> = {
   created: 'Creato',
@@ -18,31 +20,101 @@ const KIND_LABELS: Record<string, string> = {
   deleted: 'Archiviato',
   restored: 'Ripristinato',
   stage_changed: 'Cambio stato',
+  state_changed: 'Cambio stato',
   // Slice 9's invoice import. Named here rather than left to `humanize`, which would
   // render the English "Imported" on an Italian timeline, and phrased as what happened
   // to the document -- it was issued elsewhere and registered here -- without naming the
   // tool it came out of: the provenance value is the CRM's own record, not copy (see
-  // `invoices/models.py::Invoice.importata_da`).
+  // `invoices/models.py::Invoice.imported_from`).
   imported: 'Fattura importata',
-}
-
-/**
- * The entity an activity is about, in the words the rest of the interface uses.
- *
- * Only the dashboard needs this: the timeline is already inside the entity it belongs to,
- * so there is nothing there for it to say. Unknown values fall through to `humanize` for
- * the reason given below -- `activities/models.py` promises new `entity_type` values will
- * arrive without a migration.
- */
-const ENTITY_LABELS: Record<string, string> = {
-  customer: 'Cliente',
-  person: 'Persona',
-  deal: 'Deal',
-  document: 'Documento',
-  invoice: 'Fattura',
-  time_entry: 'Ore',
-  cost: 'Costo',
-  email_draft: 'Email',
+  // A contract's own history (REB-741..744): what each write on its page records.
+  rate_card_added: 'Tariffa aggiunta',
+  renewed: 'Contratto rinnovato',
+  converted_to_contract: 'Convertito in contratto',
+  clause_note_added: 'Nota su una clausola aggiunta',
+  clause_note_updated: 'Nota su una clausola modificata',
+  rate_card_updated: 'Tariffa modificata',
+  expense_added: 'Spesa registrata',
+  expense_updated: 'Spesa modificata',
+  renewal_assumption_set: 'Assunzione di rinnovo salvata',
+  // A contract's day ledger (REB-781): who recorded the client's approval of days, and who
+  // linked one to a day that did not change state, which the day's own ledger does not show.
+  approval_added: 'Approvazione aggiunta',
+  approval_recorded: 'Approvazione registrata',
+  approval_linked: 'Approvazione collegata a una giornata',
+  // The notes thread of a deal, a customer or a person (REB-879): the text itself stays in
+  // the thread, the timeline only says that it moved.
+  note_added: 'Nota aggiunta',
+  note_edited: 'Nota modificata',
+  note_deleted: 'Nota eliminata',
+  // The mail drafts of a record and the Slack settings, the other writes that used to leave
+  // no row at all. `gmail.message_sent` and its siblings fall to `humanize`, as before.
+  'gmail.draft_created': 'Bozza di email creata',
+  'gmail.draft_edited': 'Bozza di email modificata',
+  'gmail.draft_deleted': 'Bozza di email eliminata',
+  // A token's full access opened or closed (REB-810), recorded on its owner's account.
+  pat_full_access_changed: 'Accesso completo di un token modificato',
+  'slack.manual_match': 'Utente Slack abbinato a mano',
+  'slack.match_removed': 'Abbinamento Slack rimosso',
+  'slack.matches_rebuilt': 'Abbinamenti Slack rifatti',
+  'slack.channel_set': 'Canale Slack impostato',
+  'slack.channel_removed': 'Canale Slack tolto',
+  'slack.workspace_connected': 'Workspace Slack collegato',
+  'slack.workspace_disconnected': 'Workspace Slack scollegato',
+  // A contract's days (REB-781): the day's own ledger keeps the transitions by id, and these
+  // are the same moves with the member's name and the channel.
+  // «In arrivo» (REB-984): what a person or an agent said about a file that arrived.
+  discarded: 'Documento scartato',
+  marked_duplicate: 'Documento segnato come doppione',
+  kind_set: 'Tipo del documento indicato',
+  day_created: 'Giornata registrata',
+  day_state_changed: 'Giornata cambiata di stato',
+  // The hub's company requests (REB-866): a request filed as a new deal, and one linked by
+  // an admin to a deal the CRM already had.
+  'hub.request_received': "Richiesta dall'hub ricevuta",
+  'hub.request_linked': "Collegata la richiesta dall'hub",
+  // The space's reminder defaults, the only part of the reminder settings that is not one
+  // person's own.
+  defaults_updated: 'Promemoria: valori predefiniti modificati',
+  defaults_reset: 'Promemoria: valori predefiniti ripristinati',
+  // The rest of what the core records, named for the same reason (REB-901).
+  opened: 'Invito aperto',
+  accepted: 'Accettata',
+  rejected: 'Rifiutata',
+  archived: 'Archiviato',
+  unarchived: 'Ripristinato',
+  activated: 'Attivato',
+  deactivated: 'Disattivato',
+  closed: 'Mese chiuso',
+  created_from_template: 'Creato da un template',
+  day_approved: 'Giornata approvata',
+  email_template_saved: 'Modello di email salvato',
+  gap_declared: 'Numero mancante dichiarato',
+  invited: 'Invitato',
+  resent: 'Invito rinviato',
+  revoked: 'Invito revocato',
+  password_reset: 'Password reimpostata',
+  pat_created: 'Token creato',
+  staff_member_created: "Persona dell'azienda aggiunta",
+  staff_member_updated: "Persona dell'azienda modificata",
+  payroll_pay_day_set: 'Giorno di paga impostato',
+  pat_first_used: 'Token usato per la prima volta',
+  pat_revoked: 'Token revocato',
+  pat_used_after_revocation: 'Token usato dopo la revoca',
+  rate_updated: 'Tariffa del deal modificata',
+  rates_updated: 'Tariffe modificate',
+  rates_recalculated: 'Tariffe ricalcolate',
+  time_logged_on_closed_deal: 'Ore registrate su un deal chiuso',
+  version_added: 'Versione aggiunta',
+  // An invoice's own history: what each step from draft to register records. Named here
+  // because `humanize` would print the English word on an Italian timeline.
+  lines_replaced: 'Righe sostituite',
+  confirmed: 'Confermata',
+  issued: 'Emessa',
+  annulled: 'Annullata',
+  payment_state_changed: 'Stato di pagamento cambiato',
+  transmitted_externally: 'Trasmessa esternamente',
+  time_bound_to_invoice: 'Ore collegate a una fattura',
 }
 
 /**
@@ -62,16 +134,38 @@ export function humanize(value: string): string {
 }
 
 export function labelForKind(kind: string): string {
-  return KIND_LABELS[kind] ?? humanize(kind)
+  return KIND_LABELS[kind] ?? KIND_FALLBACK_LABELS[kind] ?? humanize(kind)
 }
 
-export function labelForEntityType(entityType: string): string {
-  return ENTITY_LABELS[entityType] ?? humanize(entityType)
+/** A payload key (or a field name in `changed`) in the Italian word it was stored as before the rename. */
+export function labelForPayloadKey(key: string): string {
+  return Object.hasOwn(PAYLOAD_KEY_LABELS, key) ? PAYLOAD_KEY_LABELS[key]! : humanize(key)
+}
+
+/**
+ * A payload value as the timeline prints it: a coded value goes back to its Italian word, any
+ * other as it is. A list (the `keys` of a settings change) is read item by item and joined the
+ * way `String(list)` always joined it.
+ */
+export function labelForPayloadValue(kind: string, key: string, value: unknown): string {
+  const table = Object.hasOwn(PAYLOAD_VALUE_LABELS, kind) ? PAYLOAD_VALUE_LABELS[kind]![key] : undefined
+  const word = (item: unknown): string => {
+    const text = String(item)
+    return table !== undefined && Object.hasOwn(table, text) ? table[text]! : text
+  }
+  return Array.isArray(value) ? value.map(word).join(',') : word(value)
 }
 
 const dateTimeFormatter = new Intl.DateTimeFormat('it-IT', {
   dateStyle: 'medium',
   timeStyle: 'short',
+})
+
+// The timeline answers «when exactly did this member change it», which a minute does not
+// when two members edit the same record in one sitting: seconds on top of `dateTimeFormatter`.
+const exactDateTimeFormatter = new Intl.DateTimeFormat('it-IT', {
+  dateStyle: 'medium',
+  timeStyle: 'medium',
 })
 
 /**
@@ -84,4 +178,9 @@ const dateTimeFormatter = new Intl.DateTimeFormat('it-IT', {
  */
 export function formatOccurredAt(occurredAt: string): string {
   return dateTimeFormatter.format(new Date(occurredAt))
+}
+
+/** `formatOccurredAt` with the seconds, for the one screen that is about the exact moment. */
+export function formatOccurredAtExact(occurredAt: string): string {
+  return exactDateTimeFormatter.format(new Date(occurredAt))
 }

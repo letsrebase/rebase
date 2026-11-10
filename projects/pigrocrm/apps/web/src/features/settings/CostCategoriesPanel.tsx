@@ -24,6 +24,7 @@ import {
   useUnarchiveCostCategory,
   useUpdateCostCategory,
 } from './queries.timetracking'
+import { costCategoryCodeLabel } from './labels'
 
 /**
  * One row, its own component, because the rename mutation is built from the category's
@@ -40,11 +41,11 @@ function CategoryRow({
   // the parent and outlives this row's own mutation.
   onProblem: (message: string | null) => void
 }) {
-  const [nome, setNome] = useState(category.nome)
+  const [name, setName] = useState(category.name)
   const rename = useUpdateCostCategory(category.id)
   const archive = useArchiveCostCategory()
   const unarchive = useUnarchiveCostCategory()
-  const dirty = nome.trim() !== category.nome
+  const dirty = name.trim() !== category.name
 
   /* Behind the «⋯» like every other row action (§4). «Salva» is *disabled* rather than
      absent when there is nothing to save, which is `RowActions`' own rule: an item that
@@ -64,7 +65,7 @@ function CategoryRow({
       // folder already does exactly this.
       onProblem(null)
       rename.mutate(
-        { nome: nome.trim() },
+        { name: name.trim() },
         {
           onSuccess: () => toast.success('Categoria rinominata'),
           onError: (error) => onProblem(toProblem(error).detail),
@@ -72,7 +73,7 @@ function CategoryRow({
       )
     },
   }
-  const toggle: RowAction = category.archiviata
+  const toggle: RowAction = category.archived
     ? {
         label: 'Ripristina',
         disabled: unarchive.isPending,
@@ -100,23 +101,23 @@ function CategoryRow({
   return (
     <li className="flex flex-wrap items-center gap-3 p-3">
       <Input
-        aria-label={`Nome della categoria ${category.nome}`}
-        value={nome}
-        onChange={(event) => setNome(event.target.value)}
+        aria-label={`Nome della categoria ${category.name}`}
+        value={name}
+        onChange={(event) => setName(event.target.value)}
         className="max-w-xs"
       />
       {/* The code, beside the name and never in a control: it is the category's
           identity, the thing a report or an import keys on, and the reason renaming is
           safe at all. A seeded category has one; one created here does not. */}
-      <code className="text-xs text-muted-foreground">{category.code ?? '—'}</code>
+      <code className="text-xs text-muted-foreground">{category.code ? costCategoryCodeLabel(category.code) : '—'}</code>
       {/* The state through the one pill every state in the product goes through
           (design spec §4): `muted`, because archiving claims nothing and the other
           half of the pair is one click away in the row's own menu. Only on an archived
           row -- «attiva» is what a configured category is, and a list where every row
           repeats it says nothing while costing a line of noise on each one. */}
-      {category.archiviata && <StatusPill tone="muted">Archiviata</StatusPill>}
+      {category.archived && <StatusPill tone="muted">Archiviata</StatusPill>}
       <div className="ml-auto">
-        <RowActions label={`Azioni per ${category.nome}`} items={items} />
+        <RowActions label={`Azioni per ${category.name}`} items={items} />
       </div>
     </li>
   )
@@ -125,19 +126,19 @@ function CategoryRow({
 export function CostCategoriesPanel() {
   const [includeArchived, setIncludeArchived] = useState(false)
   const [open, setOpen] = useState(false)
-  const [nome, setNome] = useState('')
+  const [name, setName] = useState('')
   const [problem, setProblem] = useState<string | null>(null)
   // Separate from `problem` on purpose: the list banner sits behind the dialog overlay,
   // so a create that fails there would report itself somewhere nobody can see. Kept as
-  // the whole problem document, not just its `detail`, because a 422 naming `nome`
+  // the whole problem document, not just its `detail`, because a 422 naming `name`
   // belongs on the input the person typed into -- the shape `PipelinePanel`'s own
-  // create dialog already uses for the identical `ValidationFailed(entity, "nome", ...)`.
+  // create dialog already uses for the identical `ValidationFailed(entity, "name", ...)`.
   const [dialogProblem, setDialogProblem] = useState<ProblemDetail | null>(null)
   const dialogFieldError = dialogProblem ? fieldErrorFrom(dialogProblem) : null
   // Only what no control can show: a 409 on a duplicate name carries no `field` at
   // all, and swallowing it would leave the dialog silent after a refused create.
   const dialogBanner =
-    dialogProblem && dialogFieldError?.field !== 'nome' ? dialogProblem.detail : null
+    dialogProblem && dialogFieldError?.field !== 'name' ? dialogProblem.detail : null
 
   const categories = useCostCategories(includeArchived)
   const create = useCreateCostCategory()
@@ -145,7 +146,7 @@ export function CostCategoriesPanel() {
 
   if (categories.isError) return <QueryErrorBanner error={categories.error} />
 
-  const rows = [...(categories.data ?? [])].sort((a, b) => a.posizione - b.posizione)
+  const rows = [...(categories.data ?? [])].sort((a, b) => a.position - b.position)
   const empty = rows.length === 0 && !categories.isLoading
 
   return (
@@ -183,7 +184,7 @@ export function CostCategoriesPanel() {
           <Button
             onClick={() => {
               setDialogProblem(null)
-              setNome('')
+              setName('')
               setOpen(true)
             }}
           >
@@ -204,11 +205,11 @@ export function CostCategoriesPanel() {
 
       <div className="flex items-center gap-2">
         <Checkbox
-          id="includi-archiviate"
+          id="include-archived"
           checked={includeArchived}
           onCheckedChange={(checked) => setIncludeArchived(checked === true)}
         />
-        <Label htmlFor="includi-archiviate" className="font-normal">
+        <Label htmlFor="include-archived" className="font-normal">
           Includi archiviate
         </Label>
       </div>
@@ -236,14 +237,14 @@ export function CostCategoriesPanel() {
             </p>
           )}
           <div className="space-y-2">
-            <Label htmlFor="categoria-nome">Nome</Label>
+            <Label htmlFor="category-name">Nome</Label>
             <Input
-              id="categoria-nome"
-              aria-invalid={dialogFieldError?.field === 'nome'}
-              value={nome}
-              onChange={(event) => setNome(event.target.value)}
+              id="category-name"
+              aria-invalid={dialogFieldError?.field === 'name'}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
             />
-            {dialogFieldError?.field === 'nome' ? (
+            {dialogFieldError?.field === 'name' ? (
               <p className="text-sm text-destructive">{dialogFieldError.message}</p>
             ) : null}
             <p className="text-xs text-muted-foreground">
@@ -260,7 +261,7 @@ export function CostCategoriesPanel() {
               onClick={() => {
                 setDialogProblem(null)
                 create.mutate(
-                  { nome, posizione: rows.length },
+                  { name: name, position: rows.length },
                   {
                     onSuccess: () => {
                       toast.success('Categoria creata')

@@ -1,15 +1,18 @@
 /**
- * The hub's HTTP client: plain `fetch`, same origin, cookies included. The API is a
- * handful of routes and three shapes, so a generated client would be more machinery
- * than code.
+ * The hub's HTTP client: `openapi-fetch` over the types generated from the API's own
+ * OpenAPI document (`api-types.ts`, `pnpm generate:api`), same origin, cookies included.
  *
  * Every failure becomes an `ApiError` carrying the status and, for a 422, the field
  * names FastAPI put in `detail[].loc`, which is what a wizard needs to point at the
  * right question rather than blame the whole form.
  */
 
+import createClient from 'openapi-fetch'
+import type { components, paths } from './api-types'
 import { linkedinProfile } from './linkedin'
 import type { Utm } from './utm'
+
+type Schemas = components['schemas']
 
 export class ApiError extends Error {
   constructor(
@@ -26,60 +29,143 @@ interface ValidationItem {
   msg?: string
 }
 
-async function fail(response: Response): Promise<never> {
-  let detail: unknown
-  try {
-    detail = (await response.json())?.detail
-  } catch {
-    detail = null
-  }
+/** The `detail` of an error body, whatever shape the body came in. */
+function detailOf(body: unknown): unknown {
+  return typeof body === 'object' && body !== null && 'detail' in body ? body.detail : null
+}
+
+function failWith(status: number, detail: unknown): never {
   if (Array.isArray(detail)) {
     const items = detail as ValidationItem[]
     const fields = items.map((item) => String(item.loc?.at(-1) ?? '')).filter(Boolean)
     const message = items.map((item) => item.msg).filter(Boolean).join(' · ') || 'Dati non validi.'
-    throw new ApiError(response.status, message, fields)
+    throw new ApiError(status, message, fields)
   }
-  if (response.status === 429) {
+  // The API's own sentence says what ran out and when to come back (the CV applications'
+  // hourly cap, the day's sign-in links); the generic one is for a limiter that names none.
+  if (status === 429 && typeof detail !== 'string') {
     throw new ApiError(429, 'Troppe richieste da qui. Riprova tra un minuto.')
   }
   throw new ApiError(
-    response.status,
-    typeof detail === 'string' ? detail : `Qualcosa è andato storto (${response.status}).`,
+    status,
+    typeof detail === 'string' ? detail : `Qualcosa è andato storto (${status}).`,
   )
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, { credentials: 'same-origin', ...init })
-  if (!response.ok) await fail(response)
-  if (response.status === 204) return undefined as T
-  return (await response.json()) as T
+async function fail(response: Response): Promise<never> {
+  let body: unknown
+  try {
+    body = await response.json()
+  } catch {
+    body = null
+  }
+  return failWith(response.status, detailOf(body))
 }
 
-/** A file the API answers, a preview PDF: the same error handling as `request`. */
-async function requestBlob(path: string, init: RequestInit = {}): Promise<Blob> {
-  const response = await fetch(path, { credentials: 'same-origin', ...init })
-  if (!response.ok) await fail(response)
-  return response.blob()
-}
-
-const json = (body: unknown): RequestInit => ({
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(body),
+/** The page's own origin: `openapi-fetch` builds a `Request`, which wants an absolute URL. */
+const client = createClient<paths>({
+  baseUrl: globalThis.location.origin,
+  credentials: 'same-origin',
+  // Every request goes out through the global `fetch` as a path and an init, the way the
+  // rest of the app (and every page test) reads it, not as the `Request` object
+  // `openapi-fetch` would hand over.
+  fetch: async (request) => {
+    const { pathname, search } = new URL(request.url)
+    return fetch(pathname + search, {
+      method: request.method,
+      headers: request.headers,
+      credentials: request.credentials,
+      body: request.body === null ? undefined : await request.text(),
+    })
+  },
 })
+
+/** The body a call through `client` answers on success: `openapi-fetch` types a result
+ *  as either `{ data }` or `{ error }`, never both. */
+type Success<R> = R extends { data: infer D; error?: never } ? D : never
+
+/** `T` with some fields narrowed. The API declares closed vocabularies (a state, a work
+ *  mode) as plain `str`, defaulted lists as optional and a few objects as free-form
+ *  dicts; the pages read the narrower shape, so each type below that uses this says
+ *  which fields it narrows. */
+type Narrow<T, N> = Omit<T, keyof N> & N
+
+/** Names the narrower type a response is read as, for `unwrap`: `reading<Match>()`. */
+const reading = <T>(): { type?: T } => ({})
+
+/** The success body of a call, or the `ApiError` its failure became. `reading` narrows
+ *  it to a type the pages use (a `Narrow`), which must stay assignable to what the
+ *  schema says: a field the API renamed or retyped fails to compile there. */
+async function unwrap<R extends { data?: unknown; error?: unknown; response: Response }, T extends Success<R> = Success<R>>(
+  call: Promise<R>,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- it only carries `T`
+  _reading?: { type?: T },
+): Promise<T> {
+  const { data, error, response } = await call
+  if (!response.ok || error !== undefined) return failWith(response.status, detailOf(error))
+  // No error on an ok response: the success branch of the union, which a destructured
+  // generic cannot show TypeScript.
+  return data as T
+}
+
+/** A multipart upload, which the typed client has no way to express. */
+async function sendForm<D>(method: 'POST' | 'PUT', path: string, form: FormData): Promise<D> {
+  const response = await fetch(path, { credentials: 'same-origin', method, body: form })
+  if (!response.ok) await fail(response)
+  return response.json()
+}
+
+/** The name the API gives a download: `filename*=UTF-8''…` first, then `filename="…"`.
+ *  Never a path or a control character, which a decoded `%2F` or `%0A` would otherwise
+ *  hand the browser: they are dropped, and a name left empty is `fallback`. */
+function dispositionFilename(header: string | null, fallback: string): string {
+  if (!header) return fallback
+  const star = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header)
+  if (star?.[1]) {
+    try {
+      return safeFilename(decodeURIComponent(star[1].trim())) || fallback
+    } catch {
+      // A malformed escape: fall through to the plain name.
+    }
+  }
+  const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(header)
+  return safeFilename(plain?.[1] ?? '') || fallback
+}
+
+function safeFilename(name: string): string {
+  return [...name]
+    .filter((c) => c !== '/' && c !== '\\' && c.charCodeAt(0) >= 0x20 && c.charCodeAt(0) !== 0x7f)
+    .join('')
+    .trim()
+}
+
+/** A form value sent as the form holds it. The body type wants the narrower one (a work
+ *  mode, a number), the wizards validate before they send, and the API names a bad field
+ *  in its own 422, which is the message the page shows. */
+function asSent<T>(value: unknown): T {
+  return value as T
+}
+
+/** `params` without what is `undefined` or `""`: the list endpoints send exactly the
+ *  filters an admin actually set. */
+function filled<T extends object>(params: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== ''),
+  ) as Partial<T>
+}
 
 // ---- the two wizards ------------------------------------------------------------------
 
-export type Remoto = 'remoto' | 'ibrido' | 'in_sede'
+export type Remote = 'remote' | 'hybrid' | 'on_site'
 
 export interface FreelancerApplication {
-  nome: string
-  cognome: string
+  first_name: string
+  last_name: string
   email: string
   linkedin_url: string
-  tariffa_giornaliera: string
-  posizione: string
-  remoto: Remoto | ''
+  daily_rate: string
+  job_title: string
+  remote: Remote | ''
   links: string[]
   cv: File | null
 }
@@ -90,1165 +176,389 @@ export function applyAsFreelancer(
   data: FreelancerApplication,
   utm: Utm,
   distinctId: string | null = null,
-  rif: string | null = null,
-): Promise<{ ok: true }> {
+  ref: string | null = null,
+): Promise<Schemas['Ack']> {
   const form = new FormData()
   // The browser's PostHog id, when the page is measured: the API sends the completion
   // event itself (REB-215), and this is what puts it on the same person as the steps.
   if (distinctId) form.set('distinct_id', distinctId)
-  if (rif) form.set('rif', rif)
-  form.set('nome', data.nome)
-  form.set('cognome', data.cognome)
+  if (ref) form.set('ref', ref)
+  form.set('first_name', data.first_name)
+  form.set('last_name', data.last_name)
   form.set('email', data.email)
-  form.set('tariffa_giornaliera', data.tariffa_giornaliera)
-  form.set('posizione', data.posizione)
-  form.set('remoto', data.remoto)
+  form.set('daily_rate', data.daily_rate)
+  form.set('job_title', data.job_title)
+  form.set('remote', data.remote)
   const linkedin = linkedinProfile(data.linkedin_url)
   if (linkedin) form.set('linkedin_url', linkedin)
   for (const link of data.links) if (link.trim()) form.append('links', link.trim())
   for (const [key, value] of Object.entries(utm)) if (value) form.set(key, value)
   if (data.cv) form.set('cv', data.cv, data.cv.name)
-  return request('/api/hub/freelancers', { method: 'POST', body: form })
+  return sendForm('POST', '/api/hub/freelancers', form)
 }
 
 export interface CompanyRequest {
-  nome_azienda: string
-  figura_richiesta: string
-  referente_nome: string
-  referente_cognome: string
+  company_name: string
+  requested_role: string
+  contact_first_name: string
+  contact_last_name: string
   email: string
-  telefono: string
-  progetto: string
-  periodo_da: string
-  durata: string
-  budget_giornaliero: string
-  remoto: Remoto | ''
-  giorni_presenza: string
-  numero_risorse: string
+  phone: string
+  project: string
+  period_from: string
+  duration: string
+  daily_budget: string
+  remote: Remote | ''
+  onsite_days: string
+  headcount: string
+}
+
+/** What «Nuova richiesta» collects: the wizard's answers, and the CRM deal when it has one. */
+export interface AdminCompanyRequest extends CompanyRequest {
+  deal_id?: string
 }
 
 export function requestPeople(
   data: CompanyRequest,
   utm: Utm,
   distinctId: string | null = null,
-  rif: string | null = null,
-): Promise<{ ok: true }> {
-  return request(
-    '/api/hub/companies',
-    json({
-      ...data,
-      // `''` means "not ibrido, never asked": the API's own `giorni_presenza` is
-      // `int | None`, which a blank string does not coerce to.
-      giorni_presenza: data.giorni_presenza ? Number(data.giorni_presenza) : null,
-      utm: Object.keys(utm).length ? utm : null,
-      ...(distinctId ? { distinct_id: distinctId } : {}),
-      ...(rif ? { rif } : {}),
+  ref: string | null = null,
+): Promise<Schemas['Ack']> {
+  return unwrap(
+    client.POST('/api/hub/companies', {
+      body: {
+        ...data,
+        remote: asSent<Remote>(data.remote),
+        // `''` means "not ibrido, never asked": the API's own `onsite_days` is
+        // `int | None`, which a blank string does not coerce to.
+        onsite_days: data.onsite_days ? Number(data.onsite_days) : null,
+        headcount: asSent<number>(data.headcount),
+        utm: Object.keys(utm).length ? utm : null,
+        ...(distinctId ? { distinct_id: distinctId } : {}),
+        ...(ref ? { ref } : {}),
+      },
     }),
   )
 }
 
 // ---- the team builder, public (P-REB-43, spec § 3.2, § 3.3) --------------------------------
 
-/** A client's price band in whole euro, per day or per month: the freelancer's rate
- *  plus 40%, never the rate itself. `max` is `null` for the band with no top («oltre»). */
-export interface Band {
-  min: number
-  max: number | null
-}
+export type Band = Schemas['Band']
+export type Card = Schemas['CardRead']
 
-/** A talent's anonymous card (spec § 2.1): no name, no link, no employer. `luogo` is
- *  `null` on the public read; only the engine and the admin read it. */
-export interface Scheda {
-  ruolo: string
-  seniority: 'junior' | 'mid' | 'senior' | 'lead'
-  anni: number
-  competenze: string[]
-  settori: string[]
-  lingue: string[]
-  luogo: string | null
-  sintesi: string
-}
+/** One person of a proposed team. The public read has no `freelancer_id` (a visitor
+ *  cannot follow a talent across proposals), nor a name. */
+export type TeamMember = Schemas['TeamMemberRead']
 
-/** One person of a proposed team, as the public read gives them: `posizione` (1, 2, 3)
- *  is the only handle, and there is no `freelancer_id` at all, so a visitor cannot
- *  follow a talent across proposals. `fascia` is `null` for a talent with no rate
- *  («tariffa da definire»), `modalita` for one who never said. */
-export interface TeamMember {
-  posizione: number
-  ruolo: string
-  motivazione: string
-  giorni_settimana: number | null
-  scheda: Scheda
-  modalita: Remoto | null
-  fascia: Band | null
-}
-
-/** The team's bands: the sum of its people's, per day and per month at `giorni_mese`
+/** The team's bands: the sum of its people's, per day and per month at `days_month`
  *  (22) days; both `null` when somebody has no band, or nobody is proposed. */
-export interface TeamEconomia {
-  giorno: Band | null
-  mese: Band | null
-  giorni_mese: number
+export type TeamEconomics = {
+  day: Band | null
+  month: Band | null
+  days_month: number
 }
 
-/** `POST /api/hub/team/proposals`'s answer. `id` is the proposal's capability: «Rigenera»
- *  sends it back as `previous_id`, «Assumi team» as `proposal_id`. An empty `team` comes
- *  with the hub's sentence in `riassunto`: nobody fits. `luogo` is what the engine read
- *  in the visitor's own description about place. */
-export interface TeamProposal {
-  id: string
-  /** What the proposal was asked with (REB-675): a page opened on it by its id fills
-   *  the box from these and sends them back on «Rigenera». `persone` is `null` when the
-   *  caller let the API size the team from the description, as the landing does. */
-  descrizione: string
-  persone: number | null
-  riassunto: string
-  luogo: { locale: boolean; dove: string | null }
-  team: TeamMember[]
-  economia: TeamEconomia
-  previous_id: string | null
-  created_at: string
-}
+/** `location` is what the engine read in the visitor's own description about place. */
+export type TeamProposal = Schemas['TeamProposalRead']
 
-/** A description, and on «Rigenera» the proposal it replaces and a note on it. */
-export interface TeamProposalCreate {
-  descrizione: string
-  /** How many people the company wants, 1 to 10 (REB-591). The page always sends it,
-   *  1 unless the visitor picks more; the API sizes the team from the description
-   *  alone when it is left out, which is what the MCP tool does. */
-  persone?: number
-  nota?: string
-  previous_id?: string
-}
-
-/** «Assumi team» from the public page: the three contacts, all required. */
-export interface TeamRequestCreate {
-  proposal_id: string
-  azienda: string
-  email: string
-  telefono: string
-  /** The visitor's `?rif=` (REB-600), left out when they came without one. */
-  rif?: string
-}
-
-/** What the answer page posts on «Conferma» (D1, spec § 3.2): the mail's token and the
- *  answer its link carried. */
-export interface TeamAvailabilityAnswer {
-  t: string
-  risposta: TalentAnswer
-}
+export type TeamProposalCreate = Schemas['TeamProposalCreate']
+export type TeamRequestCreate = Schemas['TeamRequestCreate']
+export type TeamAvailabilityAnswer = Schemas['TeamAvailabilityAnswer']
 
 /** The answer recorded, or `invalid` for a link unknown, spent or expired alike. */
-export type TeamAvailabilityOutcome = TalentAnswer | 'invalid'
+export type TeamAvailabilityOutcome = Schemas['TeamAvailabilityOutcome']['outcome']
 
 export const team = {
   /** 503 when the builder is off or too busy, 502 when Claude does not answer, 422 on
    *  the description or a `previous_id` that is not a live public proposal: each with
    *  the API's own sentence. */
-  propose: (body: TeamProposalCreate) => request<TeamProposal>('/api/hub/team/proposals', json(body)),
-  /** The public read of a proposal by its id (REB-675, `/hub/team?proposta=`): a 404
+  propose: (body: TeamProposalCreate) =>
+    unwrap(client.POST('/api/hub/team/proposals', { body }), reading<TeamProposal>()),
+  /** The public read of a proposal by its id (REB-675, `/hub/team?proposal=`): a 404
    *  for one older than a day, a cloud's, an attempt or an unknown id alike. */
-  get: (id: string) => request<TeamProposal>(`/api/hub/team/proposals/${encodeURIComponent(id)}`),
+  get: (id: string) =>
+    unwrap(
+      client.GET('/api/hub/team/proposals/{proposal_id}', { params: { path: { proposal_id: id } } }),
+      reading<TeamProposal>(),
+    ),
   /** 201; 409 when the proposal is already requested, 422 when it is gone. */
-  request: (body: TeamRequestCreate) => request<{ id: string }>('/api/hub/team/requests', json(body)),
+  request: (body: TeamRequestCreate) => unwrap(client.POST('/api/hub/team/requests', { body })),
   /** A talent's «Conferma»: 200 with the outcome, whatever the token; 429 past the
    *  wizards' speed bump. */
   answer: (body: TeamAvailabilityAnswer) =>
-    request<{ esito: TeamAvailabilityOutcome }>('/api/hub/team/availability', json(body)),
+    unwrap(client.POST('/api/hub/team/availability', { body })),
 }
 
 // ---- the team builder, in the admin area (P-REB-43, spec § 2.1, § 3.5, § 5.1) --------------
 
-export type TeamRequestStato = 'nuova' | 'contattata' | 'chiusa'
-export type TeamRequestOrigine = 'pubblico' | 'cloud'
+export type TeamRequestStatus = 'new' | 'contacted' | 'closed'
+export type TeamRequestOrigin = 'public' | 'cloud'
 /** A talent's answer to the availability mail (D1): `null` until they give one. */
-export type TalentAnswer = 'si' | 'no'
+export type TalentAnswer = 'yes' | 'no'
 
-/** One person of a proposal as the admin reads it: the public shape, plus who it is. */
-export interface AdminTeamMember extends TeamMember {
-  freelancer_id: string
-}
-
-/** The admin's read of a proposal: ids kept, and the card's `luogo` with them. */
-export interface AdminTeamProposal extends Omit<TeamProposal, 'team'> {
-  team: AdminTeamMember[]
-  origine: string
-}
-
-/** One talent of a request: the name, the role proposed, their own rate and the
- *  client's band from it, and the availability mail's progress, all `null` until D1's
- *  first send. `contattabile` is false for a talent whose card was deleted or turned
- *  down: the availability mail skips them. */
-export interface TeamRequestTalent {
-  freelancer_id: string
-  nome: string
-  cognome: string
-  ruolo: string
-  tariffa_giornaliera: string | null
-  fascia: Band | null
-  mail_sent_at: string | null
-  risposta: TalentAnswer | null
-  risposta_at: string | null
-  contattabile: boolean
-}
-
-/** A request's page in «Richieste team» (§ 3.5). `proposal`, `riassunto` and
- *  `descrizione` are `null` for a request of one talent from the cloud, which has no
- *  proposal; `riassunto` is the copy the admin edits before the talents read it. */
-export interface TeamRequest {
-  id: string
-  proposal: AdminTeamProposal | null
-  riassunto: string | null
-  descrizione: string | null
-  origine: TeamRequestOrigine
-  azienda: string
-  email: string
-  telefono: string | null
-  user_id: string | null
-  company_id: string | null
-  stato: TeamRequestStato
-  note: string | null
-  talenti: TeamRequestTalent[]
-  contacted_at: string | null
-  closed_at: string | null
-  created_at: string
-}
-
-/** One row of «Richieste team»: who, from where, when, where it stands, and how many of
- *  the talents asked said yes. */
-export interface TeamRequestListItem {
-  id: string
-  azienda: string
-  origine: TeamRequestOrigine
-  stato: TeamRequestStato
-  created_at: string
-  contacted_at: string | null
-  talenti_totale: number
-  talenti_si: number
-}
-
-/** `GET /api/hub/team/requests`: newest first, `next_cursor` `null` on the last page. */
-export interface TeamRequestList {
-  items: TeamRequestListItem[]
-  next_cursor: string | null
-}
+export type TeamRequestTalent = Schemas['TeamRequestTalentRead']
+export type TeamRequest = Schemas['TeamRequestRead']
+export type TeamRequestListItem = Schemas['TeamRequestListItem']
+export type TeamProposalListMember = Schemas['TeamProposalListMember']
+/** The refusal an attempt row keeps: Claude did not answer, or every slot or the day's
+ *  proposals were spent. */
+export type TeamProposalError = 'llm_unavailable' | 'team_builder_busy'
+export type TeamProposalListItem = Schemas['TeamProposalListItem']
 
 /** What the list takes beside `cursor`/`limit`, and what `/admin/team` carries in its
- *  URL: a state of `TeamRequestStato`, which the API checks. */
+ *  URL: a state of `TeamRequestStatus`, which the API checks. */
 export interface TeamRequestsFilters {
-  stato?: string
+  status?: string
 }
 
-/** The refusal an attempt row keeps (core's `TEAM_PROPOSAL_ERRORS`): Claude did not
- *  answer, or every slot or the day's proposals were spent. */
-export type TeamProposalErrore = 'llm_unavailable' | 'team_builder_busy'
-
-/** One person a listed proposal held (REB-607): their index in it, the role proposed,
- *  and who they are, so the row can link their profile. `nome` and `cognome` are
- *  `null`, together, for a talent removed with «Elimina» since, whose admin page no
- *  longer opens; the row keeps them by id. */
-export interface TeamProposalListMember {
-  posizione: number
-  freelancer_id: string
-  ruolo: string
-  nome: string | null
-  cognome: string | null
-}
-
-/** One «Proponi il team» as «Proposte» reads it (0028): what was asked, by whom, when,
- *  and what came of it. `errore` is `null` on a proposal that answered and `riassunto`
- *  what it said, `null` on an attempt; `membri` is how many people it held, 0 on an
- *  attempt and on a team nobody fit, and `team` names each of them in the proposal's
- *  order (REB-607); `request_id` is the «Assumi team» filed on it, `null` while there
- *  is none. */
-export interface TeamProposalListItem {
-  id: string
-  descrizione: string
-  persone: number | null
-  nota: string | null
-  previous_id: string | null
-  origine: 'pubblico' | 'cloud' | 'admin'
-  user_id: string | null
-  errore: TeamProposalErrore | null
-  riassunto: string | null
-  membri: number
-  team: TeamProposalListMember[]
-  request_id: string | null
-  created_at: string
-}
-
-/** `GET /api/hub/team/proposals`: newest first, `next_cursor` `null` on the last page. */
-export interface TeamProposalList {
-  items: TeamProposalListItem[]
-  next_cursor: string | null
-}
-
-/** What «Proposte» takes beside `cursor`/`limit`, and what `/admin/team/proposte`
- *  carries in its URL: `esito` is `ok` or `errore`, checked by the API. The API and
- *  the MCP tool filter by `origine` too; the page has no control for it yet, so the
+/** What «Proposte» takes beside `cursor`/`limit`, and what `/admin/team/proposals`
+ *  carries in its URL: `outcome` is `ok` or `error`, checked by the API. The API and
+ *  the MCP tool filter by `origin` too; the page has no control for it yet, so the
  *  URL does not carry one. */
 export interface TeamProposalsFilters {
-  esito?: string
+  outcome?: string
 }
 
-/** A talent's anonymous card as the admin reads it (§ 5.1): the last card written and
- *  when, from which model, and the last failure, which may sit beside an older card.
- *  `card` is `null` until a CV produces one; `modalita` is the profile's own and
- *  `fascia` the client's band of the rate on file, both read now by core, `null`
- *  without a mode or a rate. */
-export interface FreelancerCard {
-  freelancer_id: string
-  card: Scheda | null
-  modalita: Remoto | null
-  fascia: Band | null
-  cv_sha256: string | null
-  model: string | null
-  generated_at: string | null
-  error: string | null
-}
+export type FreelancerCard = Schemas['FreelancerCardAdminRead']
+export type CardPerson = Schemas['CardPersonRead']
+export type PersonDifference = Schemas['PersonDifference']
+export type PersonDifferenceField = PersonDifference['field']
+export type CardConflict = Schemas['ConflictRead']
+export type CardProvenance = Schemas['CardProvenance']
 
 // ---- the admin area -------------------------------------------------------------------
 
 export type Role = 'member' | 'admin'
 
-export interface Admin {
-  id: string
-  email: string
-  nome: string
-  attivo: boolean
-  created_at: string
-}
+export type Admin = Schemas['AdminRead']
+export type Freelancer = Schemas['FreelancerDetail']
+export type TalentCloudGrant = Schemas['TalentCloudGrantRead']
+export type Company = Schemas['CompanyRead']
 
-/** `GET /api/hub/admins`'s shape since REB-313: oldest first with no `q`, so the page
- *  still reads as a history (ORB-123), best-match first once `q` narrows it. */
-export interface AdminList {
-  items: Admin[]
-  next_cursor: string | null
-}
+/** Where a note came from (REB-856). `null` is a note that predates the tracking. */
+export type NoteSource = 'web' | 'mcp' | 'person' | 'system'
 
-/** What `POST /admins/promote` sends: an email, and `nome`/`cognome` for an address
- *  with no `users` row yet -- ignored, harmlessly, when one already exists. */
-export interface PromoteRequest {
-  email: string
-  nome?: string
-  cognome?: string
-}
+/** The door a trail entry came through: a note's (`NoteSource`) or, for a regeneration of
+ *  the cards, `cli` too (REB-861). */
+export type ActionSource = NoteSource | 'cli'
 
-export interface Freelancer {
-  id: string
-  nome: string
-  cognome: string
-  email: string
-  linkedin_url: string | null
-  /** Null on a card an admin wrote from a signup, until the person adds them (ORB-155). */
-  cv_filename: string | null
-  cv_size: number | null
-  tariffa_giornaliera: string | null
-  posizione: string | null
-  remoto: Remoto | null
-  links: string[]
-  stato: 'nuovo' | 'contattato' | 'attivo' | 'scartato'
-  note: string | null
-  /** The page of the site the person started from, `home` or `pigrocrm` (ORB-167). */
-  origine: string | null
-  utm_source: string | null
-  utm_campaign: string | null
-  created_at: string
-  /** Who wrote the answers last: the person, through the wizard or the member area, or
-   *  an admin from research. */
-  compilata_da: 'persona' | 'admin'
-  /** CV, rate, position and remote preference all present. */
-  completa: boolean
-  /** The thread, newest first. The detail carries it; the list leaves it empty. */
-  commenti: Comment[]
-  /** How many times the person came in through the magic link (ORB-158). */
-  accessi: number
-  /** Where the lead came from (ORB-161): «form» when the address is also among the
-   *  signups («Iscrizioni»), «landing» otherwise. */
-  provenienza: 'form' | 'landing'
-  /** When they last did, null if never. */
-  ultimo_accesso: string | null
-  /** `null` while the card is live; a moment once an admin soft-deletes it (REB-347),
-   *  reversed by `restoreFreelancer` (REB-355). */
-  deleted_at: string | null
-  /** When an admin marked the talent «Verificato» (REB-518), `null` otherwise. */
-  vetted_at: string | null
-}
-
-export interface Company {
-  id: string
-  nome_azienda: string
-  referente: string
-  email: string
-  telefono: string | null
-  figura_richiesta: string
-  progetto: string
-  periodo_da: string
-  durata: string
-  budget_giornaliero: string
-  remoto: Remoto
-  giorni_presenza: number | null
-  numero_risorse: number
-  stato: 'nuovo' | 'contattato' | 'in_corso' | 'chiuso'
-  note: string | null
-  /** The page of the site the person started from, `home` or `pigrocrm` (ORB-167). */
-  origine: string | null
-  utm_source: string | null
-  created_at: string
-  commenti: Comment[]
-  /** Same soft-delete as `Freelancer.deleted_at`. */
-  deleted_at: string | null
-  /** The talent cloud open for this request's referente (REB-518): the detail carries
-   *  it while it is live, the list leaves it `null`. */
-  talent_cloud_grant: TalentCloudGrant | null
-}
-
-/** A grant of the talent cloud (REB-518, spec § 4.1): the request it was opened from,
- *  the referente by name, who opened it and when; `revoked_at` is `null` while live. */
-export interface TalentCloudGrant {
-  id: string
-  user_id: string
-  company_id: string
-  azienda: string
-  referente: string
-  email: string
-  granted_by: string
-  granted_by_nome: string | null
-  granted_at: string
-  revoked_by: string | null
-  revoked_by_nome: string | null
-  revoked_at: string | null
-}
-
-/** One remark in a row's thread: appended, signed and dated, never edited. */
-export interface Comment {
-  id: string
-  entity_type: 'freelancer' | 'company'
-  entity_id: string
-  testo: string
-  autore: string
-  created_at: string
-}
+export type Note = Schemas['NoteRead']
 
 /** The two rows a thread can hang on, as the API paths name them. */
-export type CommentKind = 'freelancers' | 'companies'
+export type ThreadKind = 'freelancers' | 'companies'
 
-/** One space of PigroCRM as the registry knows it, plus the hub member who opened it
- *  when the address is one the wizard has seen (ORB-142). */
-export interface PigroSpace {
-  slug: string
-  owner_email: string
-  created_at: string
-  url: string
-  membro: { id: string; nome: string; cognome: string } | null
-}
+export type AdminActionKind = Schemas['AdminActionRead']['kind']
 
-/** One entry of the override/clear/delete/restore/revert trail (REB-347), as an admin
- *  reads it (REB-355): who, when, which kind, and the diff for an `overridden`/
- *  `cleared` entry -- `changed`/`before`/`after` are absent on a `deleted`/`restored`
- *  entry, whose kind is the whole story. */
-export interface AdminAction {
-  id: string
-  entity_type: string
-  entity_id: string
-  kind:
-    | 'overridden'
-    | 'cleared'
-    | 'deleted'
-    | 'restored'
-    /** A framework agreement's own actions (REB-407), recorded on entity `freelancer`. */
-    | 'mail_resent'
-    | 'document_cancelled'
-    | 'notice_recorded'
-    /** «Segna come verificato» / «Togli la verifica» (REB-518): `payload.vetted` says which. */
-    | 'vetted'
-    /** «Riprova su Pigro» (REB-498), recorded on entity `match`. */
-    | 'pigro_link'
-  admin_id: string
-  admin_nome: string
-  payload: {
-    changed?: string[]
-    before?: Record<string, unknown>
-    after?: Record<string, unknown>
-    vetted?: boolean
-    /** A `pigro_link` entry's: the state the link reached, and the CRM's sentence. */
-    esito?: PigroStato
-    errore?: string | null
-  }
-  created_at: string
-}
+export type AdminAction = Schemas['AdminActionRead']
 
-/** What an admin may set or clear on a `Freelancer` beyond `stato`/`note` (REB-347),
- *  mirroring `FreelancerOverride` on the server one for one: a key present and `null`
- *  clears a nullable field, a key left out of the body leaves it alone. `links` and
- *  `nome`/`cognome` are never nullable columns, so those are only ever a value. */
-export interface FreelancerOverride {
-  nome?: string
-  cognome?: string
-  linkedin_url?: string | null
-  tariffa_giornaliera?: string | null
-  posizione?: string | null
-  remoto?: Remoto | null
-  links?: string[]
-  compilata_da?: 'persona' | 'admin'
-}
+export type FreelancerOverride = Schemas['FreelancerOverride']
+export type CompanyOverride = Schemas['CompanyOverride']
+/** A point of a person's contact list as a page reads it (REB-944): the sign-in address is
+ *  the entry with no `id`. */
+export type ContactPoint = Schemas['ContactPointRead']
+/** A point as the list a write sends holds it. */
+export type ContactPointWrite = Schemas['ContactPointInput']
+export type LoginStats = Schemas['LoginStats']
+/** `freelancer_id` is what the page links each download by; the API's `GuideDownloadRead`
+ *  has no such field yet (HubBackend adds it, `null` for a company contact), so until the
+ *  types are regenerated this is the page's own reading. */
+export type GuideStats = Schemas['GuideStats']
+export type Talent = Schemas['TalentRead']
+export type TalentList = Schemas['TalentList']
 
-/** Same contract as `FreelancerOverride`, for a `Company` request's own fields beyond
- *  `stato`/`note`: the eight project answers (REB-314; REB-380 adds the last four),
- *  the company's own name, and the referente's identity on the linked `users` row --
- *  admin-only even for a self-edit. `giorni_presenza` is the one nullable addition,
- *  the same as `FreelancerOverride.remoto`; `remoto`/`numero_risorse`/
- *  `figura_richiesta` are never cleared, like `nome_azienda`. */
-export interface CompanyOverride {
-  nome?: string
-  cognome?: string
-  linkedin_url?: string | null
-  nome_azienda?: string
-  figura_richiesta?: string
-  progetto?: string
-  periodo_da?: string
-  durata?: string
-  budget_giornaliero?: string
-  remoto?: Remoto
-  giorni_presenza?: number | null
-  numero_risorse?: number
-}
+/** Why two cards look like one person (REB-800): the same LinkedIn profile, the same name
+ *  or the same telephone number. Only the first is a reason to merge. */
+export type DuplicateSignal = 'linkedin' | 'first_name' | 'phone' | 'email'
 
-/** The guide's numbers for the admin area (ORB-156), as `GET /api/hub/perks/guide` answers. */
-export interface GuideStats {
-  totale: number
-  membri: number
-  membri_totali: number
-  ultimi_7_giorni: number
-  recenti: GuideDownload[]
-}
-
-export interface GuideDownload {
-  id: string
-  freelancer_id: string
-  nome: string
-  cognome: string
-  email: string
-  downloaded_at: string
-}
-
-/** The logins for the admin area (ORB-158), as `GET /api/hub/logins` answers. The four
- *  counters read the whole table, unaffected by `q`; `recenti` is the searched,
- *  cursor-paginated part, no longer capped at 20 (REB-313). */
-export interface LoginStats {
-  totale: number
-  membri: number
-  membri_totali: number
-  ultimi_7_giorni: number
-  recenti: LoginRead[]
-  next_cursor: string | null
-}
-
-export interface LoginRead {
-  id: string
-  user_id: string
-  nome: string
-  cognome: string
-  email: string
-  logged_at: string
-  /** The campaign the login page was opened from (REB-426); `null` when it had none. */
-  origine: string | null
-  utm_source: string | null
-  utm_medium: string | null
-  utm_campaign: string | null
-  utm_content: string | null
-  utm_term: string | null
-  utm_id: string | null
-}
-
-/** One row of `talenti` (REB-282/283): every freelancer card and every bare sign-up
- *  as one row, `stato` `lead` for the bare ones and the freelancer's own state
- *  otherwise, as `GET /api/hub/talenti` answers -- the single list that replaced
- *  «Developer e CTO» and «Iscrizioni». `origine` names how the row came to be:
- *  `form` for a bare sign-up, `wizard` for a card the person filled in themselves,
- *  `admin` for one an admin drafted from research (ORB-155). */
-export interface Talento {
-  id: string
-  nome: string | null
-  cognome: string | null
-  email: string
-  linkedin_url: string | null
-  stato: string
-  origine: 'form' | 'wizard' | 'admin'
-  utm_source: string | null
-  created_at: string
-  /** A card's own day rate and work mode (REB-558); `null` for a bare lead, which has
-   *  neither. `remoto` is `str | None` on `TalentoRead`, not narrowed to `Remoto`:
-   *  the database column allows any string, so the web reads it as one too and falls
-   *  back rather than assuming every stored value is one of the three known ones. */
-  tariffa_giornaliera: string | null
-  remoto: string | null
-  /** REB-518: the «Verificato» pill's date, and whether Claude's anonymous card exists;
-   *  a bare sign-up has neither. */
-  vetted_at: string | null
-  ha_scheda_anonima: boolean
-}
-
-/** What an admin found about a signup on the public web (ORB-155): a name, maybe a
- *  LinkedIn profile, a position, some links, and at least one source, since a card
- *  written from research with no source is a card nobody can check. The body
- *  `POST /api/hub/signups/{id}/card` expects -- the same `draft_from_signup` the
- *  MCP tool `create_freelancer_from_signup` calls. */
-export interface FreelancerDraft {
-  nome: string
-  cognome: string
-  linkedin_url?: string
-  posizione?: string
-  tariffa_giornaliera?: string
-  remoto?: Remoto
-  links?: string[]
-  fonti: string[]
-}
-
-/** A personal token of the admin, as `GET /api/hub/tokens` lists it (REB-213): never the value. */
-export interface AdminToken {
-  id: string
-  nome: string
-  prefix: string
-  created_at: string
-  last_used_at: string | null
-  revoked_at: string | null
-}
-
-/** The `POST` answer: the one place the value appears, shown once. */
-export interface CreatedToken extends AdminToken {
-  token: string
-}
+export type DuplicatePerson = Schemas['PersonRead']
+export type DuplicatePair = Schemas['DuplicatePairRead']
+export type DuplicateList = Schemas['DuplicateListRead']
+export type MergeResult = Schemas['MergeRead']
+export type FreelancerDraft = Schemas['FreelancerDraft']
+export type AdminToken = Schemas['AdminTokenRead']
+export type CreatedToken = Schemas['CreatedToken']
 
 /** What `GET /api/hub/talent` takes beside `limit` (REB-285/286): `q` searches
  *  name/surname/email/`posizione`, trigram-ordered when present; every other field
  *  narrows the merged list of cards and bare sign-ups the same way the state pills
- *  always have. Mirrors `list_talenti`'s own parameters in
- *  `apps/api/src/rebase_api/routers/admin.py` one for one -- this is also the shape
- *  `/admin/talent`'s own `validateSearch` carries in the URL (`router.tsx`). */
-export interface TalentiFilters {
-  stato?: string
+ *  always have. This is also the shape `/admin/talent`'s own `validateSearch` carries in
+ *  the URL (`router.tsx`). */
+export interface TalentsFilters {
+  status?: string
   q?: string
-  posizione?: string
-  remoto?: Remoto
-  tariffa_min?: string
-  tariffa_max?: string
-  origine?: string
+  job_title?: string
+  remote?: Remote
+  min_rate?: string
+  max_rate?: string
+  /** The page of the site the person started from (`home`, `pigrocrm`); `origin`,
+   *  the channel a row shows (`form`, `wizard`, `admin`), has no control on the page. */
+  origin_page?: string
   utm_source?: string
   has_cv?: boolean
-  con_accessi?: boolean
-  creato_da?: string
-  creato_a?: string
+  with_logins?: boolean
+  created_from?: string
+  created_to?: string
+  /** REB-823, what the card says (the fields MCP's `list_talents` takes). `skills`,
+   *  `industries` and `languages` are what an admin types, terms split by commas, and
+   *  every term must be named; `seniority` is one level (`junior`, `mid`, `senior`,
+   *  `lead`); the years are whole numbers; `card` is `present`, `failed` or `absent`;
+   *  `sort` is `rate_asc`, `rate_desc`, `experience_years_asc` or `experience_years_desc`,
+   *  newest first when left out. */
+  skills?: string
+  location?: string
+  seniority?: string
+  min_years?: string
+  max_years?: string
+  industries?: string
+  languages?: string
+  card?: string
+  sort?: string
 }
 
-export interface TalentoList {
-  totale: number
-  items: Talento[]
-  per_stato: Record<string, number>
-  next_cursor: string | null
+/** The comma-separated terms an admin typed, as the list the API takes: blanks dropped,
+ *  `undefined` when nothing is left. */
+export function terms(value: string | undefined): string[] | undefined {
+  const list = (value ?? '').split(',').map((term) => term.trim()).filter(Boolean)
+  return list.length > 0 ? list : undefined
 }
 
-/** What `GET /api/hub/companies` takes beside `limit` (REB-285/286), mirroring
- *  `list_companies`'s own parameters -- the shape `/admin/companies`'s own
- *  `validateSearch` carries in the URL. */
+/** A whole number of years as typed, or `undefined` for anything else: a filter the API
+ *  cannot take narrows nothing. */
+export function yearsFilter(value: string | undefined): number | undefined {
+  return value !== undefined && /^[0-9]{1,2}$/.test(value.trim()) ? Number(value) : undefined
+}
+
+/** What `GET /api/hub/companies` takes beside `limit` (REB-285/286): the shape
+ *  `/admin/companies`'s own `validateSearch` carries in the URL. */
 export interface CompaniesFilters {
-  stato?: string
+  status?: string
   q?: string
   budget_min?: string
   budget_max?: string
-  periodo_da?: string
-  origine?: string
-  creato_da?: string
-  creato_a?: string
-}
-
-export interface CompanyList {
-  totale: number
-  items: Company[]
-  per_stato: Record<string, number>
-  next_cursor: string | null
+  period_from?: string
+  origin?: string
+  created_from?: string
+  created_to?: string
 }
 
 /** REB-387: a match's state, and a contract document's. */
-export type MatchStato = 'bozza' | 'in_firma' | 'attivo' | 'concluso' | 'annullato'
-export type DocumentStato = 'generato' | 'in_attesa' | 'inviato' | 'firmato' | 'annullato' | 'disdetto'
+export type MatchStatus = 'draft' | 'awaiting_signature' | 'active' | 'concluded' | 'cancelled'
+export type DocumentStatus = 'generated' | 'pending' | 'sent' | 'signed' | 'cancelled' | 'notice_served'
 /** Where an active match's link to its deal on Pigro stands (REB-497): `null` until the
- *  match turns `attivo`. */
-export type PigroStato = 'da_collegare' | 'collegato' | 'errore' | 'rifiutato'
+ *  match turns `active`. */
+export type PigroStatus = 'to_link' | 'linked' | 'error' | 'rejected'
 /** REB-687: a contract document's family, the letter type a match is made with. */
-export type Regime = 'partita_iva' | 'occasionale'
+export type Regime = Schemas['MatchCheck']['regime']
+/** What an admin can do next on a document or a match (REB-477): the page maps each to
+ *  its button and its API call. */
+export type Action = NonNullable<Schemas['ContractDocumentRead']['next_action']>
 
-/** What an admin can do next on a document or a match (REB-477), as the core's
- *  `match_words` names it: the page maps each to its button and its API call. */
-export type Action =
-  | 'invia'
-  | 'reinvia_email'
-  | 'aggiorna_stato'
-  | 'annulla'
-  | 'chiudi'
-  | 'registra_disdetta'
-  | 'riprova_pigro'
-
-/** A freelancer's tax data, as the contracts print them. `partita_iva` is `null` for a
- *  member who works without one, paid as a prestazione occasionale (REB-687). */
-export interface FiscalData {
-  codice_fiscale: string
-  partita_iva: string | null
-  domicilio: string
-  pec: string | null
-}
-
-export interface Fiscal extends FiscalData {
-  freelancer_id: string
-  updated_by: string
-  updated_at: string
-}
-
-/** A generated contract as the pages read it: never its bytes, which are a link. */
-export interface ContractDocument {
-  id: string
-  kind: 'quadro' | 'lettera'
-  /** Its family, and its type as the pages name it (REB-687): «Contratto quadro per
-   *  prestazioni occasionali», «Lettera di incarico occasionale». */
-  regime: Regime
-  tipo: string
-  freelancer_id: string
-  match_id: string | null
-  numero: string | null
-  text_version: string
-  testo_bozza: boolean
-  stato: DocumentStato
-  created_at: string
-  created_by: string
-  sent_at: string | null
-  signed_at: string | null
-  notice_at: string | null
-  /** Why it was cancelled: the freelancer's own reason when they refused it, or who
-   *  cancelled it (REB-407). */
-  cancel_reason: string | null
-  ha_pdf_firmato: boolean
-  attivo: boolean
-  rinnovo: string | null
-  ultimo_giorno_disdetta: string | null
-  nuova_versione: boolean
-  /** What happened and what comes next, in a sentence (REB-477). */
-  situazione: string
-  prossima_azione: Action | null
-  altre_azioni: Action[]
-}
-
-export interface Match {
-  id: string
-  freelancer_id: string
-  company_id: string
-  nome_azienda: string
-  figura_richiesta: string
-  cliente_ragione_sociale: string
-  cliente_piva: string
-  cliente_sede: string
-  stato: MatchStato
-  created_at: string
-  created_by: string
-  cancelled_at: string | null
-  updated_at: string
-  lettera: ContractDocument
-  /** Same as the document's: the match's sentence and its actions (REB-477). */
-  situazione: string
-  prossima_azione: Action | null
-  altre_azioni: Action[]
-  /** The admin's estimate of the billable days, for the hours report (REB-497). */
-  giorni_previsti: number | null
-  /** What the letter said when the match was written: ISO dates, the daily fee as the
-   *  API's decimal string. `null` for a match written before REB-497. */
-  lettera_data_inizio: string | null
-  lettera_data_fine: string | null
-  lettera_compenso: string | null
-  /** The link to the match's deal on Pigro (REB-497): `pigro_url` is the deal's page,
-   *  `pigro_errore` the CRM's sentence for the last failure or refusal. */
-  pigro_stato: PigroStato | null
-  pigro_slug: string | null
-  pigro_deal_id: string | null
-  pigro_url: string | null
-  pigro_linked_at: string | null
-  pigro_attempted_at: string | null
-  pigro_errore: string | null
-  pigro_mail_sent_at: string | null
-}
-
-/** One row of the admin's «Match» list (REB-413): never a tax field and never
- *  `budget_giornaliero`, the same rule `Match` and `ContractDocument` already keep.
- *  `lettera_*` is `null` together, only were a match somehow to have no letter. */
-export interface MatchListItem {
-  id: string
-  freelancer_id: string
-  /** The company request's id (REB-609), for the link to its page, unless it was
-   *  deleted: a deleted request's page answers not found. */
-  company_id: string
-  company_deleted: boolean
-  freelancer_nome: string
-  freelancer_cognome: string
-  freelancer_email: string
-  nome_azienda: string
-  figura_richiesta: string
-  stato: MatchStato
-  lettera_numero: string | null
-  lettera_stato: DocumentStato | null
-  lettera_data_inizio: string | null
-  lettera_data_fine: string | null
-  /** The letter's fee as it printed it (REB-609) and its unit, `a giornata` or `a corpo`. */
-  lettera_compenso: string | null
-  lettera_unita: string | null
-  created_at: string
-  created_by_nome: string
-  created_by_email: string
-  /** The match's sentence, the one `Match` carries (REB-477). */
-  situazione: string
-  /** `Match`'s own (REB-497), the row's share of them. */
-  giorni_previsti: number | null
-  pigro_stato: PigroStato | null
-  pigro_url: string | null
-  /** One entry per referred side, freelancer first (REB-609); `[]` when neither side of
-   *  the match was referred. */
-  referrals: MatchReferral[]
-}
-
+export type FiscalData = Narrow<Schemas['FiscalData'], { vat_number: string | null; certified_email: string | null }>
+export type Fiscal = Schemas['FiscalRead']
+export type ContractDocument = Schemas['ContractDocumentRead']
+export type Match = Schemas['MatchRead']
 /** `previsto` while the first letter is not signed (a projection), the reward's own
- *  state after, `gia_maturato` when the referral already paid on another match, and
- *  `da_verificare` for a company whose referente has not logged in yet: nothing it
- *  could sign earns anything until then (REB-658). */
-export type MatchReferralStato = 'previsto' | 'gia_maturato' | 'da_verificare' | RewardStato
+ *  state after, `already_accrued` when the referral already paid on another match, and
+ *  `to_verify` for a company whose referente has not logged in yet (REB-658). */
+export type MatchReferralStatus = 'expected' | 'already_accrued' | 'to_verify' | RewardStatus
+export type MatchReferral = Schemas['MatchReferral']
+export type MatchListItem = Schemas['MatchListItem']
 
-/** One referred side of a match (REB-609). `rate` and `amount` are the projection for
- *  `previsto` (`amount` `null` when there is nothing to project) and the reward's own
- *  figures otherwise; both `null` for `gia_maturato`. `referrer_freelancer_id` is the
- *  referrer's own card, when he has one. */
-export interface MatchReferral {
-  kind: 'freelancer' | 'company'
-  referrer_nome: string
-  referrer_freelancer_id: string | null
-  rate: string | null
-  amount: string | null
-  stato: MatchReferralStato
-  reward_id: string | null
-}
-
-/** `GET /api/hub/matches`'s shape (REB-413): newest first, `totale` counting every
- *  row the filters select, not just the page returned. */
-export interface MatchList {
-  totale: number
-  items: MatchListItem[]
-}
-
-/** What `GET /api/hub/matches` takes beside `limit`/`offset` (REB-413): `stato` one of
- *  `MatchStato`, `q` matching the freelancer's name, surname or email and the
+/** What `GET /api/hub/matches` takes beside `limit`/`offset` (REB-413): `status` one of
+ *  `MatchStatus`, `q` matching the freelancer's name, surname or email and the
  *  company's name. */
 export interface MatchesFilters {
-  stato?: string
+  status?: string
   q?: string
 }
 
 // ---- campaigns (P-REB-41) -------------------------------------------------------------
 
-export type CampaignStato = 'bozza' | 'programmata' | 'in_invio' | 'inviata' | 'annullata'
-export type CampaignAzione =
-  | 'entrato'
-  | 'cv'
-  | 'scheda_completa'
-  | 'profilo_creato'
-  | 'richiesta_aggiornata'
-  | 'pigro_cliente'
-  | 'clic'
-export type CampaignMeta = 'area' | 'wizard' | 'pigro' | 'richiesta' | 'link'
-export type RecipientStato = 'in_coda' | 'inviata' | 'saltata' | 'fallita'
+export type CampaignStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'cancelled'
+export type CampaignAction = Schemas['CampaignDraft']['action']
+export type CampaignMeta = Schemas['CampaignDraft']['button_meta']
+export type RecipientStatus = 'queued' | 'sent' | 'skipped' | 'failed'
 
-export interface Campaign {
-  id: string
-  nome: string
-  slug: string
-  fonte: 'stato' | 'filtri' | 'lista'
-  stato_percorso: string | null
-  filtri: Record<string, unknown> | null
-  segue_id: string | null
-  oggetto: string
-  testo: string
-  bottone_testo: string
-  bottone_meta: CampaignMeta
-  /** Where «Un link» leads (REB-530); `null` for every other destination. */
-  bottone_url: string | null
-  azione: CampaignAzione
-  stato: CampaignStato
-  contenuto_at: string
-  programmata_per: string | null
-  prova_inviata_at: string | null
-  inviata_at: string | null
-  created_at: string
-  /** Since when and why the send is stopped (REB-524): a key Resend refuses, a list the
-   *  tick cannot read. Both `null` once a mail leaves. */
-  fermo_at: string | null
-  fermo_motivo: string | null
-  /** A test has left since the last edit: «Invia» is enabled only then. */
-  pronta: boolean
-}
+export type Campaign = Schemas['CampaignRead']
+export type CampaignCounts = Schemas['CampaignCounts']
+export type CampaignListItem = Schemas['CampaignListItem']
+export type CampaignRecipient = Schemas['RecipientRead']
+export type AudienceRow = Schemas['AudienceRowRead']
+export type AudiencePreview = Schemas['AudiencePreview']
+export type CampaignTemplate = Schemas['TemplateRead']
+/** The form builds `filters` and the API validates it by `list`, so the form's own
+ *  reading is the looser one, narrowed back to the schema's where a body is sent. */
+export type CampaignDraft = Narrow<Schemas['CampaignDraft'], { filters?: Record<string, unknown> | null }>
 
-export interface CampaignCounts {
-  destinatari: number
-  in_coda: number
-  inviate: number
-  saltate: number
-  fallite: number
-  consegnate: number
-  rimbalzate: number
-  cliccate: number
-  entrate: number
-  azioni: number
-}
+export type MatchReport = Schemas['MatchReport']
+export type ReportDayInvoice = Schemas['ReportDayInvoice']
+export type ReportDay = Schemas['ReportDay']
+export type ReportWeek = Schemas['ReportWeek']
+export type ReportMonth = Schemas['ReportMonth']
+export type ReportInvoice = Schemas['ReportInvoice']
+export type SendReport = Schemas['SendReport']
+export type MemberContract = Schemas['MemberContract']
+export type MemberContracts = Schemas['MemberContracts']
+export type FreelancerContracts = Schemas['FreelancerContracts']
+export type MatchPrefill = Narrow<
+  Schemas['MatchPrefill'],
+  {
+    tax: Fiscal | null
+    customer: CustomerDraft
+    letter: LetterDraft
+    active_framework: ContractDocument | null
+  }
+>
 
-export interface CampaignListItem extends Campaign {
-  conteggi: CampaignCounts
-}
-
-export interface CampaignList {
-  items: CampaignListItem[]
-}
-
-export interface CampaignRecipient {
-  id: string
-  email: string
-  nome: string | null
-  tipo: string
-  stato: RecipientStato
-  motivo: string | null
-  inviata_at: string | null
-  consegnata_at: string | null
-  rimbalzata_at: string | null
-  primo_clic_at: string | null
-  reclamo_at: string | null
-  entrato_at: string | null
-  azione_at: string | null
-  entrato_dalla_mail: boolean
-  azione_dalla_mail: boolean
-}
-
-export interface CampaignDetail {
-  campagna: Campaign
-  conteggi: CampaignCounts
-  destinatari: CampaignRecipient[]
-}
-
-export interface AudienceRow {
-  email: string
-  nome: string | null
-  tipo: string
-  escluso: string | null
-}
-
-export interface AudiencePreview {
-  righe: AudienceRow[]
-  incluse: number
-  escluse: number
-}
-
-export interface CampaignTemplate {
-  stato_percorso: string
-  etichetta: string
-  oggetto: string
-  testo: string
-  bottone_testo: string
-  bottone_meta: CampaignMeta
-  azione: CampaignAzione
-}
-
-export interface CampaignDraft {
-  nome: string
-  fonte: 'stato' | 'filtri'
-  stato_percorso?: string | null
-  filtri?: Record<string, unknown> | null
-  oggetto: string
-  testo: string
-  bottone_testo: string
-  bottone_meta: CampaignMeta
-  /** Sent with «Un link» only: left out, the server drops the address with the link. */
-  bottone_url?: string | null
-  azione: CampaignAzione
-}
-
-export interface ScheduleRequest {
-  giorno?: string | null
-  ora?: string | null
-  esclusi: string[]
-}
-
-/** «Match e contratti»: the framework agreements at the top, one per regime (REB-687):
- *  `quadro` the ordinary one, `quadro_occasionale` the occasional one; every one of them,
- *  the matches newest first, and the tax data the page edits. */
-export interface FreelancerContracts {
-  freelancer_id: string
-  quadro: ContractDocument | null
-  quadro_occasionale: ContractDocument | null
-  quadri: ContractDocument[]
-  matches: Match[]
-  fiscale: Fiscal | null
-}
-
-/** What «Invia per la firma» did (REB-390): the document that left now, none when the
- *  letter waits for a framework agreement already out for signature, and whether its
- *  mail left too. */
-export interface SendReport {
-  match: Match
-  inviato: 'quadro' | 'lettera' | null
-  mail_inviata: boolean | null
-}
-
-/** A day's hours on one invoice (REB-505), the invoice named by `numero` and `tipo` as
- *  `ReportInvoice` names it. */
-export interface ReportDayInvoice {
-  numero: string
-  tipo: string
-  ore: string
-}
-
-/** One day of hours on the match's deal (REB-498): `fatture` names each invoice they
- *  sit on once, empty while none does, and `ore_per_fattura` gives each of them its own
- *  share of the day, the hours on none left out (REB-505). Hours are the API's decimal
- *  strings, two places. */
-export interface ReportDay {
-  data: string
-  ore: string
-  descrizioni: string[]
-  fatture: string[]
-  ore_per_fattura: ReportDayInvoice[]
-}
-
-/** An ISO week, «2026-W40», from its Monday to its Sunday. */
-export interface ReportWeek {
-  settimana: string
-  da: string
-  a: string
-  ore: string
-}
-
-export interface ReportMonth {
-  mese: string
-  ore: string
-}
-
-/** An invoice the hours sit on, «senza numero» for one not numbered yet, with how many
- *  of the hours. */
-export interface ReportInvoice {
-  numero: string
-  tipo: string
-  data: string | null
-  stato: string
-  stato_pagamento: string
-  ore: string
-}
-
-/** «Consuntivo» (REB-498): `GET /api/hub/matches/{id}/report`, read from the CRM on every
- *  request and stored nowhere. Every `Decimal` of the server's `MatchReport` is a string
- *  here, as the API sends it; `ore_previste` and `avanzamento` are `null` without
- *  `giorni_previsti`. */
-export interface MatchReport {
-  match_id: string
-  pigro_url: string | null
-  pigro_stato: PigroStato | null
-  giorni_previsti: number | null
-  ore_previste: string | null
-  totale_ore: string
-  giorni_equivalenti: string
-  avanzamento: string | null
-  ore_fatturate: string
-  ore_non_fatturate: string
-  per_giorno: ReportDay[]
-  per_settimana: ReportWeek[]
-  per_mese: ReportMonth[]
-  fatture: ReportInvoice[]
-}
-
-/** A contract as its freelancer reads it in «Contratti» (REB-392): the signing link only
- *  while the document waits for the signature. */
-export interface MemberContract {
-  id: string
-  kind: 'quadro' | 'lettera'
-  /** Its family, and its type as the pages name it (REB-687): «Contratto quadro per
-   *  prestazioni occasionali», «Lettera di incarico occasionale». */
-  regime: Regime
-  tipo: string
-  numero: string | null
-  stato: DocumentStato
-  cliente: string | null
-  inizio: string | null
-  fine: string | null
-  sent_at: string | null
-  signed_at: string | null
-  signing_url: string | null
-  ha_pdf_firmato: boolean
-  attivo: boolean
-  rinnovo: string | null
-  ultimo_giorno_disdetta: string | null
-  /** A letter's deal on Pigro, only once its match is linked there (REB-498): «Le tue
-   *  ore su Pigro» opens it. */
-  pigro_url: string | null
-}
-
-/** `quadro` and `quadro_occasionale` (REB-687): the framework agreement of each regime.
- *  `quadri_precedenti` (REB-392): the freelancer's other framework agreements that were
- *  signed, newest first, excluding the two on top -- a notice, or a newer one replacing
- *  it, moves the older one here rather than off the page. */
-export interface MemberContracts {
-  quadro: MemberContract | null
-  quadro_occasionale: MemberContract | null
-  quadri_precedenti: MemberContract[]
-  lettere: MemberContract[]
-}
-
-/** The letter's text fields, in the order `lettera-di-incarico.md` asks for them and the
- *  server's `LETTERA_TEXT_FIELDS` lists them. */
-export const LETTERA_TEXT_KEYS = [
-  'ruolo',
-  'attivita',
-  'risultati',
-  'accettazione',
-  'impegno',
-  'periodo_verifica',
-  'luogo',
-  'coordinamento',
-  'referente_cliente',
-  'referente_rebase',
-  'modalita',
-  'unita',
-  'lavoro_extra',
-  'spese',
-  'scadenze_fatturazione',
-  'dati_personali',
-  'dati_finalita',
-  'dati_categorie',
-  'dati_interessati',
-  'dati_autorizzazione',
-  'esclusiva',
+/** The letter's text fields, in the order `engagement-letter.md` asks for them and the
+ *  server's `LETTER_TEXT_FIELDS` lists them. */
+export const LETTER_TEXT_KEYS = [
+  'role',
+  'activities',
+  'results',
+  'acceptance',
+  'commitment',
+  'review_period',
+  'location',
+  'coordination',
+  'customer_contact',
+  'rebase_contact',
+  'mode',
+  'unit',
+  'extra_work',
+  'expenses',
+  'billing_deadlines',
+  'personal_data',
+  'purpose_data',
+  'category_data',
+  'data_subjects',
+  'authorization_data',
+  'exclusivity',
   'portfolio',
-  'assicurazione',
-  'altre_condizioni',
-  'rapporti_precedenti',
+  'insurance',
+  'other_terms',
+  'previous_reports',
 ] as const
-export type LetteraTextKey = (typeof LETTERA_TEXT_KEYS)[number]
+export type LetterTextKey = (typeof LETTER_TEXT_KEYS)[number]
 
-/** What `LetteraFields` takes: an empty text field is `null` and prints a blank line. */
-export type Lettera = Record<LetteraTextKey, string | null> & {
-  data_inizio: string
-  data_fine: string | null
-  compenso: string
-  giorni_pagamento: number
-  fine_mese: boolean
-  giorni_preavviso: number | null
+/** What `LetterFields` takes, as the wizard sends it: an empty text field is `null` and
+ *  prints a blank line, and a missing required one is the API's 422 naming the field, so
+ *  this is wider than the schema's own type (see `matchBody`). */
+export type Letter = Record<LetterTextKey, string | null> & {
+  start_date: string
+  end_date: string | null
+  fee: string
+  payment_days: number
+  month_end: boolean
+  collection_days: number | null
+  notice_days: number | null
 }
-export type LetteraDraft = { [K in keyof Lettera]: Lettera[K] | null }
-
-export interface Cliente {
-  cliente_ragione_sociale: string
-  cliente_piva: string
-  cliente_sede: string
-}
-export type ClienteDraft = { [K in keyof Cliente]: string | null }
+export type LetterDraft = Narrow<
+  { [K in keyof Letter]: Letter[K] | null },
+  { mode: 'to_work_unit' | 'lump_sum' | null }
+>
+export type Customer = Schemas['CustomerDate']
+export type CustomerDraft = { [K in keyof Customer]: string | null }
 
 /** `id` is optional and client-generated (REB-406): one per wizard run, sent with both
  *  «Salva senza inviare» and «Invia per la firma», so a retry after the response is lost
@@ -1256,55 +566,27 @@ export type ClienteDraft = { [K in keyof Cliente]: string | null }
 export interface MatchCreate {
   id?: string
   company_id: string
-  /** REB-687: the letter type, `partita_iva` or `occasionale`. */
+  /** REB-687: the letter type, `vat_number` or `occasional`. */
   regime: Regime
-  cliente: Cliente
-  lettera: Lettera
-  /** «Giorni previsti» (REB-497): beside the letter, never inside it, since `LetteraFields`
+  customer: Customer
+  letter: Letter
+  /** «Giorni previsti» (REB-497): beside the letter, never inside it, since `LetterFields`
    *  refuses a key it does not know and the letter's text does not change with it. */
-  giorni_previsti: number | null
+  expected_days: number | null
 }
 
-/** What saving a match would do, in sentences, with nothing written (REB-476):
- *  «Controlla e invia» shows `riepilogo` and `cosa_succede` as they come. */
-export interface MatchCheck {
-  riepilogo: string[]
-  cosa_succede: string
-  quadro_necessario: boolean
-  dati_fiscali_mancanti: boolean
-  /** REB-687: the letter type, `partita_iva` or `occasionale`. */
-  regime: Regime
-}
+/** The wizard's body for the schema's: the same fields, the letter's nulls left for the
+ *  API to refuse by field name. */
+const matchBody = (body: MatchCreate) => body as Schemas['MatchCreate']
 
-export interface MatchPrefill {
-  fiscale: Fiscal | null
-  cliente: ClienteDraft
-  lettera: LetteraDraft
-  /** REB-687: the letter type, `partita_iva` or `occasionale`. */
-  regime: Regime
-  quadro_attivo: ContractDocument | null
-  quadro_necessario: boolean
-  lettera_in_attesa: boolean
-}
+export type MatchCheck = Schemas['MatchCheck']
 
-/** Every value in `params` that is not `undefined` or `""`, as a query string: the two
- *  list endpoints below send exactly the filters an admin actually set, rather than
- *  the fixed `limit=500` that fetched everything in one page before REB-285/286 gave
- *  both a cursor. */
-function filterQuery(params: object): string {
-  const search = new URLSearchParams()
-  for (const [key, value] of Object.entries(params) as [string, string | number | boolean | undefined][]) {
-    if (value !== undefined && value !== '') search.set(key, String(value))
-  }
-  return search.toString()
-}
-
-/** `GET /api/hub/tokens`'s shape since REB-313: the same search-and-cursor page beside
- *  the newest-first order this list already had. */
-export interface AdminTokenList {
-  items: AdminToken[]
-  next_cursor: string | null
-}
+export type CompanyList = Schemas['CompanyList']
+export type MatchList = Schemas['MatchList']
+export type TeamRequestList = Schemas['TeamRequestList']
+export type TeamProposalList = Schemas['TeamProposalList']
+export type CampaignList = Schemas['CampaignList']
+export type CampaignDetail = Schemas['CampaignDetail']
 
 /** A page of one of the four small admin lists REB-313 adds `q` and `cursor` to
  *  (Amministratori, Agenti, Accessi): a term, a cursor from the previous page's
@@ -1315,489 +597,646 @@ export interface ListPageParams {
   limit?: number
 }
 
-function listQuery({ q, cursor, limit }: ListPageParams): string {
-  const query = new URLSearchParams()
-  if (q) query.set('q', q)
-  if (cursor) query.set('cursor', cursor)
-  if (limit !== undefined) query.set('limit', String(limit))
-  const qs = query.toString()
-  return qs ? `?${qs}` : ''
-}
-
 export const admin = {
-  campaigns: () => request<CampaignList>('/api/hub/campaigns'),
-  campaignTemplates: () => request<CampaignTemplate[]>('/api/hub/campaigns/templates'),
-  campaign: (id: string) => request<CampaignDetail>(`/api/hub/campaigns/${id}`),
-  createCampaign: (data: CampaignDraft) => request<Campaign>('/api/hub/campaigns', json(data)),
-  updateCampaign: (id: string, data: Partial<CampaignDraft>) =>
-    request<Campaign>(`/api/hub/campaigns/${id}`, { ...json(data), method: 'PATCH' }),
-  campaignAudience: (id: string) => request<AudiencePreview>(`/api/hub/campaigns/${id}/audience`),
-  testCampaign: (id: string) => request<Campaign>(`/api/hub/campaigns/${id}/test`, { method: 'POST' }),
-  scheduleCampaign: (id: string, data: ScheduleRequest) =>
-    request<Campaign>(`/api/hub/campaigns/${id}/schedule`, json(data)),
-  campaignToDraft: (id: string) => request<Campaign>(`/api/hub/campaigns/${id}/draft`, { method: 'POST' }),
-  cancelCampaign: (id: string) => request<Campaign>(`/api/hub/campaigns/${id}/cancel`, { method: 'POST' }),
-  deleteCampaign: (id: string) => request<void>(`/api/hub/campaigns/${id}`, { method: 'DELETE' }),
-  followUpCampaign: (id: string) => request<Campaign>(`/api/hub/campaigns/${id}/follow-up`, { method: 'POST' }),
-  neverWrite: (email: string) => request<{ ok: boolean }>('/api/hub/campaigns/never-write', json({ email })),
-  freelancer: (id: string) => request<Freelancer>(`/api/hub/freelancers/${id}`),
-  cvUrl: (id: string) => `/api/hub/freelancers/${id}/cv`,
-  moveFreelancer: (id: string, stato: string, note: string | null) =>
-    request<Freelancer>(`/api/hub/freelancers/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stato, note }),
-    }),
-  /** Sets or clears any field beyond `stato`/`note` (REB-347/355): a key present and
+  campaigns: () => unwrap(client.GET('/api/hub/campaigns'), reading<CampaignList>()),
+  campaignTemplates: () => unwrap(client.GET('/api/hub/campaigns/templates'), reading<CampaignTemplate[]>()),
+  campaign: (id: string) =>
+    unwrap(client.GET('/api/hub/campaigns/{campaign_id}', { params: { path: { campaign_id: id } } }), reading<CampaignDetail>()),
+  createCampaign: (body: CampaignDraft) =>
+    unwrap(client.POST('/api/hub/campaigns', { body: body as Schemas['CampaignDraft'] }), reading<Campaign>()),
+  updateCampaign: (id: string, body: Partial<CampaignDraft>) =>
+    unwrap(
+      client.PATCH('/api/hub/campaigns/{campaign_id}', {
+        params: { path: { campaign_id: id } },
+        body: body as Schemas['CampaignPatch'],
+      }),
+      reading<Campaign>(),
+    ),
+  campaignAudience: (id: string) =>
+    unwrap(
+      client.GET('/api/hub/campaigns/{campaign_id}/audience', { params: { path: { campaign_id: id } } }),
+    ),
+  testCampaign: (id: string) =>
+    unwrap(client.POST('/api/hub/campaigns/{campaign_id}/test', { params: { path: { campaign_id: id } } }), reading<Campaign>()),
+  scheduleCampaign: (id: string, body: Schemas['ScheduleRequest']) =>
+    unwrap(
+      client.POST('/api/hub/campaigns/{campaign_id}/schedule', {
+        params: { path: { campaign_id: id } },
+        body,
+      }),
+      reading<Campaign>(),
+    ),
+  campaignToDraft: (id: string) =>
+    unwrap(client.POST('/api/hub/campaigns/{campaign_id}/draft', { params: { path: { campaign_id: id } } }), reading<Campaign>()),
+  cancelCampaign: (id: string) =>
+    unwrap(client.POST('/api/hub/campaigns/{campaign_id}/cancel', { params: { path: { campaign_id: id } } }), reading<Campaign>()),
+  deleteCampaign: (id: string) =>
+    unwrap(client.DELETE('/api/hub/campaigns/{campaign_id}', { params: { path: { campaign_id: id } } })),
+  followUpCampaign: (id: string) =>
+    unwrap(
+      client.POST('/api/hub/campaigns/{campaign_id}/follow-up', { params: { path: { campaign_id: id } } }),
+      reading<Campaign>(),
+    ),
+  neverWrite: (email: string) => unwrap(client.POST('/api/hub/campaigns/never-write', { body: { email } })),
+  freelancer: (id: string) =>
+    unwrap(
+      client.GET('/api/hub/freelancers/{freelancer_id}', { params: { path: { freelancer_id: id } } }),
+      reading<Freelancer>(),
+    ),
+  cvUrl: (id: string) => `/api/hub/freelancers/${encodeURIComponent(id)}/cv`,
+  moveFreelancer: (id: string, status: string) =>
+    unwrap(
+      client.PATCH('/api/hub/freelancers/{freelancer_id}', {
+        params: { path: { freelancer_id: id } },
+        body: { status },
+      }),
+      reading<Freelancer>(),
+    ),
+  /** Sets or clears any field beyond `status` (REB-347/355): a key present and
    *  `null` clears it, a key left out of `data` leaves it alone. */
-  overrideFreelancer: (id: string, data: FreelancerOverride) =>
-    request<Freelancer>(`/api/hub/freelancers/${id}/override`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    }),
+  overrideFreelancer: (id: string, body: FreelancerOverride) =>
+    unwrap(
+      client.PATCH('/api/hub/freelancers/{freelancer_id}/override', {
+        params: { path: { freelancer_id: id } },
+        body,
+      }),
+      reading<Freelancer>(),
+    ),
   /** Drops the stored CV; the file itself never leaves the audit trail (REB-347/355). */
-  clearFreelancerCv: (id: string) => request<Freelancer>(`/api/hub/freelancers/${id}/cv`, { method: 'DELETE' }),
+  clearFreelancerCv: (id: string) =>
+    unwrap(
+      client.DELETE('/api/hub/freelancers/{freelancer_id}/cv', { params: { path: { freelancer_id: id } } }),
+      reading<Freelancer>(),
+    ),
   /** Soft-deletes the card: it drops off `GET /freelancers` and `GET /talent`, and
    *  `restoreFreelancer` reverses it. Never a hard delete (REB-347/355). */
-  deleteFreelancer: (id: string) => request<Freelancer>(`/api/hub/freelancers/${id}`, { method: 'DELETE' }),
+  deleteFreelancer: (id: string) =>
+    unwrap(
+      client.DELETE('/api/hub/freelancers/{freelancer_id}', { params: { path: { freelancer_id: id } } }),
+      reading<Freelancer>(),
+    ),
   restoreFreelancer: (id: string) =>
-    request<Freelancer>(`/api/hub/freelancers/${id}/restore`, { method: 'POST' }),
+    unwrap(
+      client.POST('/api/hub/freelancers/{freelancer_id}/restore', {
+        params: { path: { freelancer_id: id } },
+      }),
+      reading<Freelancer>(),
+    ),
   /** «Segna come verificato» (`true`) and «Togli la verifica» (`false`), REB-518. */
   setVetted: (id: string, vetted: boolean) =>
-    request<Freelancer>(`/api/hub/freelancers/${id}/vetted`, json({ vetted })),
+    unwrap(
+      client.POST('/api/hub/freelancers/{freelancer_id}/vetted', {
+        params: { path: { freelancer_id: id } },
+        body: { vetted },
+      }),
+      reading<Freelancer>(),
+    ),
   /** The anonymous card Claude wrote from the CV (REB-510), with the last failure. */
-  freelancerCard: (id: string) => request<FreelancerCard>(`/api/hub/freelancers/${id}/card`),
+  freelancerCard: (id: string) =>
+    unwrap(
+      client.GET('/api/hub/freelancers/{freelancer_id}/card', { params: { path: { freelancer_id: id } } }),
+      reading<FreelancerCard>(),
+    ),
   /** «Rigenera scheda»: the card written again from the current CV, now. A failure is
    *  a 200 with `error`; 503 with the API's sentence when the builder is off. */
   regenerateFreelancerCard: (id: string) =>
-    request<FreelancerCard>(`/api/hub/freelancers/${id}/card`, { method: 'POST' }),
+    unwrap(
+      client.POST('/api/hub/freelancers/{freelancer_id}/card', { params: { path: { freelancer_id: id } } }),
+      reading<FreelancerCard>(),
+    ),
+  /** «Scarica CV anonimo» (REB-862): the CV rewritten without the person's name, contacts
+   *  or links, as a PDF. The first press can take minutes (a model call of up to 150
+   *  seconds, and one rewrite at most); the API's sentence comes back as an `ApiError` (no
+   *  CV, a leak that survived, the task off). */
+  downloadAnonymousCv: async (id: string): Promise<{ blob: Blob; filename: string }> => {
+    const { data, error, response } = await client.POST('/api/hub/freelancers/{freelancer_id}/anonymous-cv', {
+      params: { path: { freelancer_id: id } },
+      parseAs: 'blob',
+    })
+    if (!response.ok) return failWith(response.status, detailOf(error))
+    return {
+      // An empty body comes back as no data at all: an empty file, as it always did.
+      blob: data ?? new Blob([]),
+      filename: dispositionFilename(response.headers.get('Content-Disposition'), 'cv-anonimo.pdf'),
+    }
+  },
   /** «Richieste team» (REB-512): newest first, a page at a time by cursor. */
-  teamRequests: (filters: TeamRequestsFilters & { cursor?: string; limit?: number } = {}) => {
-    const qs = filterQuery(filters)
-    return request<TeamRequestList>(`/api/hub/team/requests${qs ? `?${qs}` : ''}`)
-  },
-  teamRequest: (id: string) => request<TeamRequest>(`/api/hub/team/requests/${id}`),
+  teamRequests: (filters: TeamRequestsFilters & { cursor?: string; limit?: number } = {}) =>
+    unwrap(client.GET('/api/hub/team/requests', { params: { query: filled(filters) } }), reading<TeamRequestList>()),
+  teamRequest: (id: string) =>
+    unwrap(client.GET('/api/hub/team/requests/{request_id}', { params: { path: { request_id: id } } }), reading<TeamRequest>()),
   /** «Proposte» (0028): every «Proponi il team», newest first, a page at a time. */
-  teamProposals: (filters: TeamProposalsFilters & { cursor?: string; limit?: number } = {}) => {
-    const qs = filterQuery(filters)
-    return request<TeamProposalList>(`/api/hub/team/proposals${qs ? `?${qs}` : ''}`)
-  },
+  teamProposals: (filters: TeamProposalsFilters & { cursor?: string; limit?: number } = {}) =>
+    unwrap(client.GET('/api/hub/team/proposals', { params: { query: filled(filters) } }), reading<TeamProposalList>()),
   /** «Segna come contattata», «Chiudi», «Riapri». */
-  setTeamRequestStatus: (id: string, stato: TeamRequestStato) =>
-    request<TeamRequest>(`/api/hub/team/requests/${id}/status`, json({ stato })),
+  setTeamRequestStatus: (id: string, status: TeamRequestStatus) =>
+    unwrap(
+      client.POST('/api/hub/team/requests/{request_id}/status', {
+        params: { path: { request_id: id } },
+        body: { status },
+      }),
+      reading<TeamRequest>(),
+    ),
   /** «Salva la nota»: `null` clears it. */
   setTeamRequestNote: (id: string, note: string | null) =>
-    request<TeamRequest>(`/api/hub/team/requests/${id}/note`, { ...json({ note }), method: 'PATCH' }),
+    unwrap(
+      client.PATCH('/api/hub/team/requests/{request_id}/note', {
+        params: { path: { request_id: id } },
+        body: { note },
+      }),
+      reading<TeamRequest>(),
+    ),
   /** «Salva il riassunto»: what the talents will read. */
-  setTeamRequestSummary: (id: string, riassunto: string) =>
-    request<TeamRequest>(`/api/hub/team/requests/${id}/summary`, { ...json({ riassunto }), method: 'PATCH' }),
+  setTeamRequestSummary: (id: string, summary: string) =>
+    unwrap(
+      client.PATCH('/api/hub/team/requests/{request_id}/summary', {
+        params: { path: { request_id: id } },
+        body: { summary },
+      }),
+      reading<TeamRequest>(),
+    ),
   /** «Contatta i talenti», or with `onlySilent` «Rimanda a chi non ha risposto» (D1):
    *  the request with its talents contacted, the mails leaving after the answer; 409
    *  with the API's sentence (a summary that names the company, among others), 503
    *  without a mail key. */
   contactTeamTalents: (id: string, onlySilent: boolean) =>
-    request<TeamRequest>(`/api/hub/team/requests/${id}/contact?only_silent=${onlySilent}`, { method: 'POST' }),
-  companies: (filters: CompaniesFilters & { cursor?: string; limit?: number } = {}) => {
-    const qs = filterQuery(filters)
-    return request<CompanyList>(`/api/hub/companies${qs ? `?${qs}` : ''}`)
-  },
-  company: (id: string) => request<Company>(`/api/hub/companies/${id}`),
-  moveCompany: (id: string, stato: string, note: string | null) =>
-    request<Company>(`/api/hub/companies/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stato, note }),
-    }),
-  /** Sets or clears any field beyond `stato`/`note` (REB-347/355), same contract as
+    unwrap(
+      client.POST('/api/hub/team/requests/{request_id}/contact', {
+        params: { path: { request_id: id }, query: { only_silent: onlySilent } },
+      }),
+      reading<TeamRequest>(),
+    ),
+  companies: (filters: CompaniesFilters & { cursor?: string; limit?: number } = {}) =>
+    unwrap(client.GET('/api/hub/companies', { params: { query: filled(filters) } }), reading<CompanyList>()),
+  company: (id: string) =>
+    unwrap(client.GET('/api/hub/companies/{company_id}', { params: { path: { company_id: id } } }), reading<Company>()),
+  /** «Nuova richiesta» (REB-870): opens a request for a company met directly. No mail goes
+   *  out. With `deal_id` (a deal the CRM already has) the CRM links it and creates nothing,
+   *  and the answer says so; without it the request is filed as a new deal. */
+  createCompany: (data: AdminCompanyRequest) =>
+    unwrap(
+      client.POST('/api/hub/admin/companies', {
+        body: {
+          ...data,
+          remote: asSent<Remote>(data.remote),
+          onsite_days: data.onsite_days ? Number(data.onsite_days) : null,
+          headcount: Number(data.headcount),
+          deal_id: data.deal_id ?? null,
+        },
+      }),
+      reading<Company>(),
+    ),
+  moveCompany: (id: string, status: string) =>
+    unwrap(
+      client.PATCH('/api/hub/companies/{company_id}', {
+        params: { path: { company_id: id } },
+        body: { status },
+      }),
+      reading<Company>(),
+    ),
+  /** Sets or clears any field beyond `status` (REB-347/355), same contract as
    *  `overrideFreelancer`. */
-  overrideCompany: (id: string, data: CompanyOverride) =>
-    request<Company>(`/api/hub/companies/${id}/override`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    }),
+  overrideCompany: (id: string, body: CompanyOverride) =>
+    unwrap(
+      client.PATCH('/api/hub/companies/{company_id}/override', {
+        params: { path: { company_id: id } },
+        body,
+      }),
+      reading<Company>(),
+    ),
   /** Soft-deletes the request: it drops off `GET /companies`, and `restoreCompany`
    *  reverses it. Never a hard delete (REB-347/355). */
-  deleteCompany: (id: string) => request<Company>(`/api/hub/companies/${id}`, { method: 'DELETE' }),
-  restoreCompany: (id: string) => request<Company>(`/api/hub/companies/${id}/restore`, { method: 'POST' }),
+  deleteCompany: (id: string) =>
+    unwrap(client.DELETE('/api/hub/companies/{company_id}', { params: { path: { company_id: id } } }), reading<Company>()),
+  /** «Riprova» (REB-868): the request is filed in rebase's CRM now and comes back as it
+   *  stands. With `dealId`, «Collega a un altro deal»: the CRM links that deal and creates
+   *  nothing; a refusal is a 409 with its sentence. A 503 says this environment has no
+   *  link to the CRM. The CRM may take a while to answer: no timeout here cuts it short. */
+  linkCompanyToCrm: (id: string, dealId?: string) =>
+    unwrap(
+      client.POST('/api/hub/companies/{company_id}/crm/link', {
+        params: { path: { company_id: id } },
+        body: dealId ? { deal_id: dealId } : {},
+      }),
+      reading<Company>(),
+    ),
+  restoreCompany: (id: string) =>
+    unwrap(
+      client.POST('/api/hub/companies/{company_id}/restore', { params: { path: { company_id: id } } }),
+      reading<Company>(),
+    ),
   /** «Apri il talent cloud» (REB-518): the live grant to the request's referente, new
    *  (201, with a mail to them) or already there (200, no mail). */
   openTalentCloud: (companyId: string) =>
-    request<TalentCloudGrant>(`/api/hub/companies/${companyId}/cloud`, { method: 'POST' }),
+    unwrap(
+      client.POST('/api/hub/companies/{company_id}/cloud', { params: { path: { company_id: companyId } } }),
+      reading<TalentCloudGrant>(),
+    ),
   /** «Revoca il talent cloud»: 409 with the API's sentence when nothing is live. */
   revokeTalentCloud: (companyId: string) =>
-    request<TalentCloudGrant>(`/api/hub/companies/${companyId}/cloud`, { method: 'DELETE' }),
+    unwrap(
+      client.DELETE('/api/hub/companies/{company_id}/cloud', {
+        params: { path: { company_id: companyId } },
+      }),
+      reading<TalentCloudGrant>(),
+    ),
   /** Every grant, live and closed, newest first (capped by the API, not paginated). */
-  talentCloudGrants: () => request<TalentCloudGrant[]>('/api/hub/cloud/grants'),
-  /** Every card and every bare sign-up as one list (REB-282/283), `stato` `lead` for
+  talentCloudGrants: () => unwrap(client.GET('/api/hub/cloud/grants'), reading<TalentCloudGrant[]>()),
+  /** Every card and every bare sign-up as one list (REB-282/283), `status` `lead` for
    *  the bare ones alone -- the read model «Talenti» replaced «Developer e CTO» and
-   *  «Iscrizioni» with. `filters` beside `stato` and `cursor` are REB-285's search and
+   *  «Iscrizioni» with. `filters` beside `status` and `cursor` are REB-285's search and
    *  its per-field narrowing, REB-286's own filter row sends straight through; `limit`
-   *  is the one override `AdminTalentoLead` needs to see every lead at once rather
+   *  is the one override `AdminTalentLead` needs to see every lead at once rather
    *  than the server's own default page. */
-  talent: (filters: TalentiFilters & { cursor?: string; limit?: number } = {}) => {
-    const qs = filterQuery(filters)
-    return request<TalentoList>(`/api/hub/talent${qs ? `?${qs}` : ''}`)
+  talent: (filters: TalentsFilters & { cursor?: string; limit?: number } = {}) => {
+    const { skills, seniority, min_years, max_years, industries, languages, ...rest } = filters
+    const query = filled({
+      ...rest,
+      skills: terms(skills),
+      industries: terms(industries),
+      languages: terms(languages),
+      seniority: seniority ? [seniority] : undefined,
+      min_years: yearsFilter(min_years),
+      max_years: yearsFilter(max_years),
+    })
+    return unwrap(client.GET('/api/hub/talent', { params: { query } }), reading<TalentList>())
   },
+  /** Who is on the list twice (REB-800): the pairs that share a LinkedIn profile
+   *  (`mergeable`) and the ones that only share a name or a number (`to_review`). */
+  duplicates: () => unwrap(client.GET('/api/hub/talent/duplicates'), reading<DuplicateList>()),
+  /** «Unisci» (REB-800): the card `absorbedId` into the card `survivorId`. A refusal is a
+   *  409 carrying the API's sentence; the merge is undone from the shell only. */
+  mergeFreelancer: (survivorId: string, absorbedId: string) =>
+    unwrap(
+      client.POST('/api/hub/freelancers/{freelancer_id}/merge', {
+        params: { path: { freelancer_id: survivorId } },
+        body: { da: absorbedId },
+      }),
+      reading<MergeResult>(),
+    ),
+  /** One bare sign-up as the row the Talenti list shows for it: the lead's own page. */
+  signup: (id: string) =>
+    unwrap(
+      client.GET('/api/hub/signups/{signup_id}', { params: { path: { signup_id: id } } }),
+      reading<Talent>(),
+    ),
   /** Drafts a card from a bare sign-up in place (ORB-155): the same `draft_from_signup`
    *  the MCP tool `create_freelancer_from_signup` calls, here behind the admin's
    *  cookie. 201 with the new (incomplete) card, or a 422 naming `email` when the
    *  person has already filled their own. */
-  draftFromSignup: (signupId: string, data: FreelancerDraft) =>
-    request<Freelancer>(`/api/hub/signups/${signupId}/card`, json(data)),
+  draftFromSignup: (signupId: string, body: FreelancerDraft) =>
+    unwrap(
+      client.POST('/api/hub/signups/{signup_id}/card', { params: { path: { signup_id: signupId } }, body }),
+      reading<Freelancer>(),
+    ),
   /** PigroCRM's spaces, read by the hub's API with the token it holds: the browser
    *  never talks to the CRM (ORB-142). A 503 carries the sentence the page shows.
    *  Newest first, `q` matched against the slug or the owner's address, paged with a
    *  cursor (REB-313): the registry itself takes no query parameters, but the hub's
    *  own route filters and slices what it already fetched before answering. */
   pigroSpaces: (params: ListPageParams = {}) =>
-    request<{ totale: number; items: PigroSpace[]; next_cursor: string | null }>(
-      `/api/hub/pigro/instances${listQuery(params)}`,
-    ),
+    unwrap(client.GET('/api/hub/pigro/instances', { params: { query: filled(params) } })),
   /** How the guide is doing: downloads, the members behind them, the latest (ORB-156). */
-  guideStats: () => request<GuideStats>('/api/hub/perks/guide'),
+  guideStats: () => unwrap(client.GET('/api/hub/perks/guide'), reading<GuideStats>()),
   /** Who comes back in: logins, the members behind them, the last week -- unchanged
-   *  aggregate counters. `recenti` is searched and cursor-paginated since REB-313,
+   *  aggregate counters. `recent` is searched and cursor-paginated since REB-313,
    *  no longer a hardcoded top 20 (ORB-158). */
   loginStats: (params: ListPageParams = {}) =>
-    request<LoginStats>(`/api/hub/logins${listQuery(params)}`),
+    unwrap(client.GET('/api/hub/logins', { params: { query: filled(params) } })),
   /** Who reads this area (ORB-123): oldest first with no `q`, so the page still reads
    *  as a history, best-match first once `q` narrows it (REB-313). */
   admins: (params: ListPageParams = {}) =>
-    request<AdminList>(`/api/hub/admins${listQuery(params)}`),
+    unwrap(client.GET('/api/hub/admins', { params: { query: filled(params) } })),
   /** Promotes whatever `users` row already answers to this address, or creates a bare
-   *  one from `nome`/`cognome` when none exists yet (REB-279, no password anywhere). */
-  promote: (data: PromoteRequest) => request<Admin>('/api/hub/admins/promote', json(data)),
+   *  one from `first_name`/`last_name` when none exists yet (REB-279, no password anywhere). */
+  promote: (body: Schemas['PromoteRequest']) => unwrap(client.POST('/api/hub/admins/promote', { body })),
   /** Sets `role = 'member'`, fully reversible since nothing is deleted. */
-  demote: (id: string) => request<Admin>(`/api/hub/admins/${id}/demote`, { method: 'POST' }),
+  demote: (id: string) =>
+    unwrap(client.POST('/api/hub/admins/{user_id}/demote', { params: { path: { user_id: id } } })),
   /** The admin's own tokens for agents (REB-213): newest first with no `q`, revoked
    *  ones included either way; best-match first by name once `q` narrows it, since
    *  REB-313. */
   tokens: (params: ListPageParams = {}) =>
-    request<AdminTokenList>(`/api/hub/tokens${listQuery(params)}`),
-  createToken: (nome: string) => request<CreatedToken>('/api/hub/tokens', json({ nome })),
-  revokeToken: (id: string) => request<void>(`/api/hub/tokens/${id}`, { method: 'DELETE' }),
-  comments: (kind: CommentKind, id: string) =>
-    request<Comment[]>(`/api/hub/${kind}/${id}/comments`),
-  /** The author is the session's, so the body is the text alone. */
-  addComment: (kind: CommentKind, id: string, testo: string) =>
-    request<Comment>(`/api/hub/${kind}/${id}/comments`, json({ testo })),
+    unwrap(client.GET('/api/hub/tokens', { params: { query: filled(params) } })),
+  createToken: (name: string) => unwrap(client.POST('/api/hub/tokens', { body: { name } })),
+  revokeToken: (id: string) =>
+    unwrap(client.DELETE('/api/hub/tokens/{token_id}', { params: { path: { token_id: id } } })),
+  notes: (kind: ThreadKind, id: string) =>
+    kind === 'freelancers'
+      ? unwrap(
+          client.GET('/api/hub/freelancers/{freelancer_id}/notes', { params: { path: { freelancer_id: id } } }),
+      reading<Note[]>(),
+        )
+      : unwrap(client.GET('/api/hub/companies/{company_id}/notes', { params: { path: { company_id: id } } }), reading<Note[]>()),
+  /** The author is the session's and the source is `web`, so the body is the text alone. */
+  addNote: (kind: ThreadKind, id: string, text: string) =>
+    kind === 'freelancers'
+      ? unwrap(
+          client.POST('/api/hub/freelancers/{freelancer_id}/notes', {
+            params: { path: { freelancer_id: id } },
+            body: { text },
+          }),
+      reading<Note>(),
+        )
+      : unwrap(
+          client.POST('/api/hub/companies/{company_id}/notes', {
+            params: { path: { company_id: id } },
+            body: { text },
+          }),
+      reading<Note>(),
+        ),
+  /** Replaces the text of a note an admin may edit; refused for the person's own events. */
+  editNote: (noteId: string, text: string) =>
+    unwrap(
+      client.PATCH('/api/hub/notes/{note_id}', { params: { path: { note_id: noteId } }, body: { text } }),
+      reading<Note>(),
+    ),
+  /** Soft-deletes a note an admin may delete; the trail keeps its text. */
+  deleteNote: (noteId: string) =>
+    unwrap(client.DELETE('/api/hub/notes/{note_id}', { params: { path: { note_id: noteId } } })),
   /** Who overrode, cleared, deleted, restored or reverted this card or request, and
    *  when (REB-355): the same trail shape for either `kind`, newest first. */
-  auditTrail: (kind: CommentKind, id: string) => request<AdminAction[]>(`/api/hub/${kind}/${id}/audit`),
+  auditTrail: (kind: ThreadKind, id: string) =>
+    kind === 'freelancers'
+      ? unwrap(
+          client.GET('/api/hub/freelancers/{freelancer_id}/audit', { params: { path: { freelancer_id: id } } }),
+      reading<AdminAction[]>(),
+        )
+      : unwrap(client.GET('/api/hub/companies/{company_id}/audit', { params: { path: { company_id: id } } }), reading<AdminAction[]>()),
   /** Puts a field back to the value a past `overridden` entry's own `before` names,
    *  itself recorded as a fresh override (REB-355): the response is the plain card or
    *  request, which the caller already reads through its own detail query. */
-  revertAction: (kind: CommentKind, id: string, actionId: string) =>
-    request<unknown>(`/api/hub/${kind}/${id}/audit/${actionId}/revert`, { method: 'POST' }),
-  /** «Match» (REB-413): every match in the admin area, newest first. */
-  matches: (filters: MatchesFilters & { limit?: number; offset?: number } = {}) => {
-    const qs = filterQuery(filters)
-    return request<MatchList>(`/api/hub/matches${qs ? `?${qs}` : ''}`)
+  revertAction: async (kind: ThreadKind, id: string, actionId: string): Promise<void> => {
+    if (kind === 'freelancers') {
+      await unwrap(
+        client.POST('/api/hub/freelancers/{freelancer_id}/audit/{action_id}/revert', {
+          params: { path: { freelancer_id: id, action_id: actionId } },
+        }),
+      )
+    } else {
+      await unwrap(
+        client.POST('/api/hub/companies/{company_id}/audit/{action_id}/revert', {
+          params: { path: { company_id: id, action_id: actionId } },
+        }),
+      )
+    }
   },
+  /** «Match» (REB-413): every match in the admin area, newest first. */
+  matches: (filters: MatchesFilters & { limit?: number; offset?: number } = {}) =>
+    unwrap(client.GET('/api/hub/matches', { params: { query: filled(filters) } }), reading<MatchList>()),
   /** A freelancer's matches and contracts (REB-387). */
   contracts: (freelancerId: string) =>
-    request<FreelancerContracts>(`/api/hub/freelancers/${freelancerId}/matches`),
-  fiscal: (freelancerId: string) => request<Fiscal | null>(`/api/hub/freelancers/${freelancerId}/fiscal`),
-  saveFiscal: (freelancerId: string, data: FiscalData) =>
-    request<Fiscal>(`/api/hub/freelancers/${freelancerId}/fiscal`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    }),
+    unwrap(
+      client.GET('/api/hub/freelancers/{freelancer_id}/matches', {
+        params: { path: { freelancer_id: freelancerId } },
+      }),
+      reading<FreelancerContracts>(),
+    ),
+  fiscal: (freelancerId: string) =>
+    unwrap(
+      client.GET('/api/hub/freelancers/{freelancer_id}/fiscal', {
+        params: { path: { freelancer_id: freelancerId } },
+      }),
+    ),
+  saveFiscal: (freelancerId: string, body: FiscalData) =>
+    unwrap(
+      client.PUT('/api/hub/freelancers/{freelancer_id}/fiscal', {
+        params: { path: { freelancer_id: freelancerId } },
+        body,
+      }),
+    ),
   matchPrefill: (freelancerId: string, companyId: string) =>
-    request<MatchPrefill>(
-      `/api/hub/freelancers/${freelancerId}/matches/prefill?company_id=${encodeURIComponent(companyId)}`,
+    unwrap(
+      client.GET('/api/hub/freelancers/{freelancer_id}/matches/prefill', {
+        params: { path: { freelancer_id: freelancerId }, query: { company_id: companyId } },
+      }),
+      reading<MatchPrefill>(),
     ),
   /** «Controlla e invia»'s sentences (REB-476): a 422 names the field as `createMatch`
    *  would, and nothing is written. */
-  matchCheck: (freelancerId: string, payload: MatchCreate) =>
-    request<MatchCheck>(`/api/hub/freelancers/${freelancerId}/matches/check`, json(payload)),
+  matchCheck: (freelancerId: string, body: MatchCreate) =>
+    unwrap(
+      client.POST('/api/hub/freelancers/{freelancer_id}/matches/check', {
+        params: { path: { freelancer_id: freelancerId } },
+        body: matchBody(body),
+      }),
+    ),
   /** «Controlla e invia»'s previews: a PDF typeset now and saved nowhere. */
-  matchPreview: (freelancerId: string, payload: MatchCreate, documento: 'lettera' | 'quadro') =>
-    requestBlob(`/api/hub/freelancers/${freelancerId}/matches/preview?documento=${documento}`, json(payload)),
+  matchPreview: (freelancerId: string, body: MatchCreate, document: 'letter' | 'framework') =>
+    unwrap(
+      client.POST('/api/hub/freelancers/{freelancer_id}/matches/preview', {
+        params: { path: { freelancer_id: freelancerId }, query: { document } },
+        body: matchBody(body),
+        parseAs: 'blob',
+      }),
+    ),
   /** «Salva senza inviare»: the draft match with its numbered letter. */
-  createMatch: (freelancerId: string, payload: MatchCreate) =>
-    request<Match>(`/api/hub/freelancers/${freelancerId}/matches`, json(payload)),
-  cancelMatch: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}/cancel`, { method: 'POST' }),
-  closeMatch: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}/close`, { method: 'POST' }),
+  createMatch: (freelancerId: string, body: MatchCreate) =>
+    unwrap(
+      client.POST('/api/hub/freelancers/{freelancer_id}/matches', {
+        params: { path: { freelancer_id: freelancerId } },
+        body: matchBody(body),
+      }),
+      reading<Match>(),
+    ),
+  cancelMatch: (matchId: string) =>
+    unwrap(client.POST('/api/hub/matches/{match_id}/cancel', { params: { path: { match_id: matchId } } }), reading<Match>()),
+  closeMatch: (matchId: string) =>
+    unwrap(client.POST('/api/hub/matches/{match_id}/close', { params: { path: { match_id: matchId } } }), reading<Match>()),
   /** «Invia per la firma» (REB-390): the document that can leave now goes to Documenso. */
-  sendMatch: (matchId: string) => request<SendReport>(`/api/hub/matches/${matchId}/send`, { method: 'POST' }),
+  sendMatch: (matchId: string) =>
+    unwrap(client.POST('/api/hub/matches/{match_id}/send', { params: { path: { match_id: matchId } } }), reading<SendReport>()),
   /** «Aggiorna stato» (REB-407): what Documenso says, applied as the webhook would. */
   refreshDocument: (documentId: string) =>
-    request<ContractDocument>(`/api/hub/contract-documents/${documentId}/refresh`, { method: 'POST' }),
+    unwrap(
+      client.POST('/api/hub/contract-documents/{document_id}/refresh', {
+        params: { path: { document_id: documentId } },
+      }),
+      reading<ContractDocument>(),
+    ),
   /** «Reinvia email»: the signing mail again, for a document still waiting. */
   resendDocument: (documentId: string) =>
-    request<ContractDocument>(`/api/hub/contract-documents/${documentId}/resend`, { method: 'POST' }),
+    unwrap(
+      client.POST('/api/hub/contract-documents/{document_id}/resend', {
+        params: { path: { document_id: documentId } },
+      }),
+      reading<ContractDocument>(),
+    ),
   /** «Annulla» on a framework agreement not signed yet. */
   cancelDocument: (documentId: string) =>
-    request<ContractDocument>(`/api/hub/contract-documents/${documentId}/cancel`, { method: 'POST' }),
+    unwrap(
+      client.POST('/api/hub/contract-documents/{document_id}/cancel', {
+        params: { path: { document_id: documentId } },
+      }),
+      reading<ContractDocument>(),
+    ),
   /** «Registra disdetta» on an active framework agreement. */
   recordNotice: (documentId: string) =>
-    request<ContractDocument>(`/api/hub/contract-documents/${documentId}/notice`, { method: 'POST' }),
+    unwrap(
+      client.POST('/api/hub/contract-documents/{document_id}/notice', {
+        params: { path: { document_id: documentId } },
+      }),
+      reading<ContractDocument>(),
+    ),
   /** A plain href, like `cvUrl`: the route answers an attachment behind the cookie. */
-  contractPdfUrl: (documentId: string, firmato = false) =>
-    `/api/hub/contract-documents/${documentId}/pdf${firmato ? '?firmato=true' : ''}`,
+  contractPdfUrl: (documentId: string, signed = false) =>
+    `/api/hub/contract-documents/${encodeURIComponent(documentId)}/pdf${signed ? '?signed=true' : ''}`,
   /** The referral ledger (P-REB-44): every reward, newest first. */
-  referrals: (params: ReferralLedgerParams = {}) => {
-    const qs = filterQuery(params)
-    return request<ReferralLedgerList>(`/api/hub/referrals${qs ? `?${qs}` : ''}`)
-  },
-  /** `da_confermare` to `confermato` to `pagato`, one step at a time. */
-  setReferralState: (id: string, stato: RewardStato) =>
-    request<ReferralLedgerItem>(`/api/hub/referrals/${id}/state`, json({ stato })),
-  /** What an admin prices by hand for a reward left with no figure (an `a corpo`
+  referrals: (params: ReferralLedgerParams = {}) =>
+    unwrap(client.GET('/api/hub/referrals', { params: { query: filled(params) } }), reading<ReferralLedgerList>()),
+  /** `to_confirm` to `confirmed` to `paid`, one step at a time. */
+  setReferralState: (id: string, status: RewardStatus) =>
+    unwrap(
+      client.POST('/api/hub/referrals/{reward_id}/state', {
+        params: { path: { reward_id: id } },
+        body: { status },
+      }),
+      reading<ReferralLedgerItem>(),
+    ),
+  /** What an admin prices by hand for a reward left with no figure (a `lump_sum`
    *  letter with no estimated days). */
   setReferralPrice: (id: string, baseAmount: string, rewardAmount: string) =>
-    request<ReferralLedgerItem>(
-      `/api/hub/referrals/${id}/price`,
-      json({ base_amount: baseAmount, reward_amount: rewardAmount }),
+    unwrap(
+      client.POST('/api/hub/referrals/{reward_id}/price', {
+        params: { path: { reward_id: id } },
+        body: { base_amount: baseAmount, reward_amount: rewardAmount },
+      }),
+      reading<ReferralLedgerItem>(),
     ),
-  referralSettings: () => request<ReferralSettings>('/api/hub/referral-settings'),
+  referralSettings: () => unwrap(client.GET('/api/hub/referral-settings')),
   saveReferralSettings: (rateFreelancer: string, rateCompany: string) =>
-    request<ReferralSettings>('/api/hub/referral-settings', {
-      ...json({ rate_freelancer: rateFreelancer, rate_company: rateCompany }),
-      method: 'PUT',
-    }),
+    unwrap(
+      client.PUT('/api/hub/referral-settings', {
+        body: { rate_freelancer: rateFreelancer, rate_company: rateCompany },
+      }),
+    ),
+  /** «Modelli AI» (REB-833): the providers' keys are write-only, the answer carries the hint. */
+  aiConfig: () => unwrap(client.GET('/api/hub/admin/ai')),
+  /** «Registro» (REB-861): the configuration's trail, newest first. */
+  aiAudit: (limit = 50) => unwrap(client.GET('/api/hub/admin/ai/audit', { params: { query: { limit } } }), reading<AiAuditAction[]>()),
+  aiSaveKey: (provider: string, key: string) =>
+    unwrap(
+      client.PUT('/api/hub/admin/ai/providers/{provider}/key', {
+        params: { path: { provider } },
+        body: { key },
+      }),
+    ),
+  aiSetEnabled: (provider: string, enabled: boolean) =>
+    unwrap(
+      client.PUT('/api/hub/admin/ai/providers/{provider}/enabled', {
+        params: { path: { provider } },
+        body: { enabled },
+      }),
+    ),
+  aiUpdateTask: (task: string, body: Schemas['TaskBody']) =>
+    unwrap(client.PUT('/api/hub/admin/ai/tasks/{task}', { params: { path: { task } }, body })),
+  aiUpsertPrice: (body: Schemas['PriceBody']) => unwrap(client.PUT('/api/hub/admin/ai/prices', { body })),
+  aiSetSourceEnabled: (kind: Schemas['SourceSwitchRead']['kind'], enabled: boolean) =>
+    unwrap(
+      client.PUT('/api/hub/admin/ai/sources/{kind}/enabled', {
+        params: { path: { kind } },
+        body: { enabled },
+      }),
+    ),
+  /** «Schede da aggiornare» (REB-839): the cards a newer prompt or changed sources left behind. */
+  aiStaleCards: () => unwrap(client.GET('/api/hub/admin/ai/cards/stale'), reading<AiStaleCards>()),
+  /** «Avvia rigenerazione»: queues up to `limit` of them; they are written afterwards. */
+  aiRegenerateStale: (limit: number) =>
+    unwrap(client.POST('/api/hub/admin/ai/cards/regenerate-stale', { body: { limit } })),
+  aiTest: (task: string) =>
+    unwrap(client.POST('/api/hub/admin/ai/tasks/{task}/test', { params: { path: { task } } })),
 }
+
+// ---- «Modelli AI» (REB-833) -------------------------------------------------------------
+
+export type AiProvider = Schemas['ProviderRead']
+export type AiTask = Schemas['TaskRead']
+export type AiSourceSwitch = Schemas['SourceSwitchRead']
+export type AiStaleCards = Schemas['StaleCardsRead']
+export type AiConfig = Schemas['AiConfigRead']
+export type AiTest = Schemas['TestRead']
+
+/** One entry of the «Registro» of «Modelli AI» (REB-861): what an admin changed in the
+ *  configuration and every regeneration of the cards, its start and its end. The payloads
+ *  carry counts, costs and the people's ids, never a name or a card's text. */
+export type AiAuditKind = AdminActionKind
+
+export type AiAuditAction = Schemas['AdminActionRead']
 
 /** One match's link to its deal on Pigro and the hours read from there (REB-498), the
  *  admin's: the browser never talks to the CRM, the hub's API does with its own token. */
 export const matches = {
   /** One match as «Match e contratti» reads it: «Consuntivo» names it by its company,
    *  its role and its letter's number (REB-503). */
-  get: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}`),
+  get: (matchId: string) =>
+    unwrap(client.GET('/api/hub/matches/{match_id}', { params: { path: { match_id: matchId } } }), reading<Match>()),
   /** «Riprova su Pigro»: the link runs now and the match comes back as it stands,
-   *  `collegato` or with the CRM's sentence. The first link of a freelancer opens their
+   *  `linked` or with the CRM's sentence. The first link of a freelancer opens their
    *  space and can take the CRM up to 90 seconds: no timeout here cuts it short. A 503
    *  says this environment has no link to the CRM, a 502 that the CRM did not answer. */
-  linkPigro: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}/pigro/link`, { method: 'POST' }),
+  linkPigro: (matchId: string) =>
+    unwrap(client.POST('/api/hub/matches/{match_id}/pigro/link', { params: { path: { match_id: matchId } } }), reading<Match>()),
   /** «Consuntivo»: the hours on the match's deal over the whole engagement. A 409 says,
    *  in the state's sentence, that the match is not linked yet. */
-  report: (matchId: string) => request<MatchReport>(`/api/hub/matches/${matchId}/report`),
+  report: (matchId: string) =>
+    unwrap(client.GET('/api/hub/matches/{match_id}/report', { params: { path: { match_id: matchId } } }), reading<MatchReport>()),
 }
 
 // ---- whoever is signed in --------------------------------------------------------------
 
-/** One request of a company contact as they read it (REB-602): its own id, so the member
- *  area can open that very request for editing, the eight answers and when it was filed.
- *  Never `stato`, `note` or the company's name: what the admin wrote stays the admin's. */
-export interface MemberRequest {
-  id: string
-  figura_richiesta: string
-  progetto: string
-  periodo_da: string
-  durata: string
-  budget_giornaliero: string
-  remoto: Remoto
-  giorni_presenza: number | null
-  numero_risorse: number
-  created_at: string
-}
-
-/** Whoever `orbiters_user` resolves to, member or admin (REB-278/279, replacing
- *  `MemberProfile`): a `users` row is not necessarily an applicant with a card any
- *  more, so `ha_scheda` says whether one exists, and the seven card fields answer
- *  blank -- `null`, `false`, `[]` -- when it does not, the shape a signed-in admin
- *  with no card gets. `richieste` is every request a company contact filed that an
- *  admin has not deleted, newest first (REB-602), and `ha_azienda` is true when it is
- *  not empty: a person can carry a card, requests, both or neither. `telefono`
- *  (REB-380) is a top-level identity field, never blank because of
- *  `ha_scheda`/`ha_azienda`. */
-export interface Me {
-  id: string
-  nome: string
-  cognome: string
-  email: string
-  linkedin_url: string | null
-  telefono: string | null
-  role: Role
-  created_at: string
-  updated_at: string
-  ha_scheda: boolean
-  cv_filename: string | null
-  cv_size: number | null
-  tariffa_giornaliera: string | null
-  posizione: string | null
-  remoto: Remoto | null
-  links: string[]
-  ha_azienda: boolean
-  richieste: MemberRequest[]
-  /** CV, rate, position and remote preference all present. Always `false` without a
-   *  card (`ha_scheda`). */
-  completa: boolean
-  /** Whether a talent cloud grant of theirs is live (REB-518): «Talent cloud» in the nav. */
-  talent_cloud: boolean
-}
-
-/** The seven answers a member may change. The email is not among them. */
-export interface MemberUpdate {
-  nome: string
-  cognome: string
-  linkedin_url: string | null
-  tariffa_giornaliera: string
-  posizione: string
-  remoto: Remoto
-  links: string[]
-}
-
-/** The eight answers a company contact may change about one of their requests
- *  (REB-314; REB-380 adds the last four): never `stato`, `note`, `telefono` or the
- *  company's own identity. */
-export interface CompanyUpdate {
-  progetto: string
-  periodo_da: string
-  durata: string
-  budget_giornaliero: string
-  remoto: Remoto
-  giorni_presenza: number | null
-  numero_risorse: number
-  figura_richiesta: string
-}
+export type MemberRequest = Schemas['MemberRequest']
+export type Me = Schemas['MeRead']
+export type MemberUpdate = Schemas['MemberUpdate']
+export type CompanyUpdate = Schemas['CompanyUpdate']
+export type MemberReferral = Schemas['MemberReferral']
 
 // ---- referrals (P-REB-44) --------------------------------------------------------------
 
-/** `GET /api/hub/me/referral`'s own list: who a member's code brought in. Never a euro
- *  figure of a real engagement -- rebase's own margin is an admin-only number. */
-export interface MemberReferralItem {
-  kind: 'freelancer' | 'company'
-  nome: string
-  created_at: string
-  stato: string | null
-}
-
-/** The member's code, who it brought in, and the two rates in force now (REB-610), as
- *  fractions with four decimals (`"0.1000"`), read live from the admin's settings on
- *  every call: they are percentages of rebase's margin, never a euro figure. */
-export interface MemberReferral {
-  code: string
-  rate_freelancer: string
-  rate_company: string
-  referred: MemberReferralItem[]
-}
-
-export type RewardStato = 'da_confermare' | 'confermato' | 'pagato'
-
-/** Whether the referred person has proved they hold the address the referral was posted
- *  with (REB-658): a referral counts, and has a reward, only once `verificato`. */
-export type ReferralStato = 'da_verificare' | 'verificato'
-
-/** What proved it: a login after the referral was made (`accesso`), a freelancer's own
- *  signature of a letter (`lettera`), or a referral that already counted when the state
- *  was introduced (`storico`). */
-export type ReferralVerifiedVia = 'accesso' | 'lettera' | 'storico'
-
-/** The facts around one attribution, read from rows that already exist (REB-657):
- *  the `rif` code the signup used, when the referred card or request was made, its UTM
- *  source when one was recorded, whether the two email addresses share an organisation's
- *  domain (a shared public provider such as gmail.com never counts) and whether the
- *  referred person ever logged in. */
-export interface ReferralEvidence {
-  code: string
-  signed_up_at: string
-  utm_source: string | null
-  /** `null` for both when the referred card or request was hard-deleted: unknown. */
-  same_email_domain: boolean | null
-  ever_logged_in: boolean | null
-}
-
-/** One row of the admin's referral ledger (`GET /api/hub/referrals`): the referrer,
- *  who was referred, and the reward as it was computed or as an admin priced it.
- *  `reward_id` is `null` until the referred party's first letter is signed -- the
- *  row is on the ledger from the moment the referral itself is made, not only once
- *  a reward exists for it. */
-export interface ReferralLedgerItem {
-  referral_id: string
-  reward_id: string | null
-  kind: 'freelancer' | 'company'
-  /** The freelancer card's or the company's id, by `kind` (REB-609); `referred_deleted`
-   *  when an admin deleted it, and its page answers not found. */
-  referred_id: string
-  referrer_nome: string
-  referrer_email: string
-  /** The referrer's own card, when he has one. */
-  referrer_freelancer_id: string | null
-  referred_nome: string
-  referred_deleted: boolean
-  /** The match that earned the reward, or for a referral with none yet the referred
-   *  side's newest match that can still earn; `null` when there is neither. */
-  match_id: string | null
-  match_freelancer_id: string | null
-  match_freelancer_nome: string | null
-  match_freelancer_deleted: boolean
-  match_nome_azienda: string | null
-  match_figura_richiesta: string | null
-  /** An estimate for a referral without a reward, from that match; `null` otherwise. */
-  projected_rate: string | null
-  projected_amount: string | null
-  rate: string | null
-  base_amount: string | null
-  reward_amount: string | null
-  stato: RewardStato | null
-  /** Pending referrals have no reward, nothing to confirm and, for a company, no
-   *  `match_*` and no projection (REB-658). */
-  referral_stato: ReferralStato
-  verified_at: string | null
-  verified_via: ReferralVerifiedVia | null
-  note: string | null
-  created_at: string
-  confirmed_at: string | null
-  paid_at: string | null
-  evidence: ReferralEvidence
-}
-
-export interface ReferralLedgerList {
-  items: ReferralLedgerItem[]
-  next_cursor: string | null
-}
+export type RewardStatus = 'to_confirm' | 'confirmed' | 'paid'
+export type ReferralStatus = 'to_verify' | 'verified'
+export type ReferralVerifiedVia = 'access' | 'letter' | 'history'
+export type ReferralLedgerItem = Schemas['ReferralLedgerItem']
+export type ReferralLedgerList = Schemas['ReferralLedgerList']
+export type ReferralSettings = Schemas['ReferralSettingsRead']
 
 export interface ReferralLedgerParams {
-  stato?: RewardStato
+  status?: RewardStatus
   cursor?: string
   limit?: number
-}
-
-export interface ReferralSettings {
-  rate_freelancer: string
-  rate_company: string
-  updated_at: string
-  updated_by_nome: string | null
 }
 
 export const member = {
   /** 202 whether the address is known or not; the page says one thing in both cases.
    *  `utm` is the campaign the login page was opened from (REB-426), left out when empty. */
   requestLink: (email: string, utm: Utm = {}) =>
-    request<{ ok: true }>(
-      '/api/hub/auth/link',
-      json(Object.keys(utm).length ? { email, utm } : { email }),
+    unwrap(
+      client.POST('/api/hub/auth/link', {
+        body: Object.keys(utm).length ? { email, utm } : { email },
+      }),
     ),
-  enter: (token: string) => request<Me>('/api/hub/auth/enter', json({ token })),
-  me: () => request<Me>('/api/hub/me'),
-  update: (data: MemberUpdate) =>
-    request<Me>('/api/hub/me', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    }),
+  enter: (token: string) => unwrap(client.POST('/api/hub/auth/enter', { body: { token } }), reading<Me>()),
+  me: () => unwrap(client.GET('/api/hub/me'), reading<Me>()),
+  update: (body: MemberUpdate) => unwrap(client.PATCH('/api/hub/me', { body }), reading<Me>()),
+  /** The caller's whole list of extra contact points, replaced (REB-944). The sign-in address
+   *  is not in it. */
+  updateContactPoints: (contactPoints: ContactPointWrite[]) =>
+    unwrap(client.PUT('/api/hub/me/contact-points', { body: { contact_points: contactPoints } }), reading<Me>()),
   /** One of the caller's own requests by its id (REB-602): the edit page always names the
    *  request it shows, so a new request filed in another tab never changes which one it
    *  saves. The id-less `PATCH /me/company` stays on the API for older links and is not
    *  called from here. */
-  updateCompany: (id: string, data: CompanyUpdate) =>
-    request<Me>(`/api/hub/me/company/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    }),
+  updateCompany: (id: string, body: CompanyUpdate) =>
+    unwrap(
+      client.PATCH('/api/hub/me/company/{company_id}', { params: { path: { company_id: id } }, body }),
+      reading<Me>(),
+    ),
   /** A brand-new request (REB-381), not an edit: the same eight-field shape as
    *  `updateCompany`, since `CompanyFields` is what both accept. */
-  createCompanyRequest: (data: CompanyUpdate) => request<Me>('/api/hub/me/company', json(data)),
+  createCompanyRequest: (body: CompanyUpdate) => unwrap(client.POST('/api/hub/me/company', { body }), reading<Me>()),
   replaceCv: (file: File) => {
     const form = new FormData()
     form.set('cv', file, file.name)
-    return request<Me>('/api/hub/me/cv', { method: 'PUT', body: form })
+    return sendForm<Me>('PUT', '/api/hub/me/cv', form)
   },
   cvUrl: '/api/hub/me/cv',
   /** The guide, the community's second perk. A plain href rather than a fetch: the
@@ -1805,88 +1244,56 @@ export const member = {
    *  the same way it travels with a request. */
   guideUrl: '/api/hub/me/guide',
   /** «Contratti» (REB-392): the caller's own, from the session. */
-  contracts: () => request<MemberContracts>('/api/hub/me/contracts'),
+  contracts: () => unwrap(client.GET('/api/hub/me/contracts'), reading<MemberContracts>()),
   /** A signed copy, a plain href like `cvUrl`: the route answers an attachment. */
-  contractPdfUrl: (documentId: string) => `/api/hub/me/contracts/${documentId}/pdf`,
+  contractPdfUrl: (documentId: string) => `/api/hub/me/contracts/${encodeURIComponent(documentId)}/pdf`,
   /** The member's own link, issued the first time it is asked for (P-REB-44). */
-  referral: () => request<MemberReferral>('/api/hub/me/referral'),
-  logout: () => request<void>('/api/hub/me/logout', { method: 'POST' }),
+  referral: () => unwrap(client.GET('/api/hub/me/referral'), reading<MemberReferral>()),
+  logout: () => unwrap(client.POST('/api/hub/me/logout')),
 }
 
 // ---- the talent cloud (REB-519, spec § 4.2) -------------------------------------------------
 
-/** A talent as a company rebase admitted reads them: the name, the links, whether rebase
- *  vetted them, the anonymous card (`luogo` always `null`: the CV is one click away), the
- *  work mode, the client's band, and whether there is a CV to open. Never the
- *  freelancer's own rate, their state, the admin's notes, their address or phone: the
- *  API has no field for them. */
-export interface CloudTalent {
-  freelancer_id: string
-  nome: string
-  cognome: string
-  linkedin_url: string | null
-  links: string[]
-  vetted: boolean
-  card: Scheda
-  modalita: Remoto | null
-  fascia: Band | null
-  ha_cv: boolean
-}
+export type CloudTalent = Schemas['CloudTalentRead']
+export type CloudTalentList = Schemas['CloudTalentList']
 
-/** `GET /api/hub/me/cloud/talents`: vetted first then by name, at most 200 with
- *  `capped` when there were more, and every role of the cloud's cards for the filter. */
-export interface CloudTalentList {
-  items: CloudTalent[]
-  ruoli: string[]
-  capped: boolean
-}
-
-/** The cloud's filters: a role of `ruoli`, a seniority, one skill, a work mode, and a
+/** The cloud's filters: a role of `roles`, a seniority, one skill, a work mode, and a
  *  band of the client's price per day in whole euro (its bottom and its top). */
 export interface CloudFilters {
-  ruolo?: string
+  role?: string
   seniority?: string
-  competenza?: string
-  modalita?: string
-  fascia_min?: number
-  fascia_max?: number
+  skill?: string
+  mode?: string
+  min_band?: number
+  max_band?: number
 }
 
 /** One person of the builder's proposal in the cloud: the admin's shape and the name,
  *  which the cloud shows (spec § 4.2) and the public read never carries. */
-export interface CloudTeamMember extends AdminTeamMember {
-  nome: string
-  cognome: string
-}
-
-/** The builder's proposal in the cloud: the admin's shape, ids, names and the card's
- *  place kept, since the cloud shows who each person is. */
-export interface CloudTeamProposal extends Omit<AdminTeamProposal, 'team'> {
-  team: CloudTeamMember[]
-}
+export type CloudTeamMember = Narrow<TeamMember, { first_name: string; last_name: string }>
+export type CloudTeamProposal = Narrow<TeamProposal, { team: CloudTeamMember[] }>
 
 export const cloud = {
   /** 403 with the API's sentence when no grant of the caller is live. */
-  talents: (filters: CloudFilters = {}) => {
-    const qs = filterQuery(filters)
-    return request<CloudTalentList>(`/api/hub/me/cloud/talents${qs ? `?${qs}` : ''}`)
-  },
+  talents: (filters: CloudFilters = {}) =>
+    unwrap(client.GET('/api/hub/me/cloud/talents', { params: { query: filled(filters) } }), reading<CloudTalentList>()),
   /** «Apri il CV»: a plain href like `member.cvUrl`, the route answers an attachment. */
-  cvUrl: (freelancerId: string) => `/api/hub/me/cloud/talents/${freelancerId}/cv`,
+  cvUrl: (freelancerId: string) => `/api/hub/me/cloud/talents/${encodeURIComponent(freelancerId)}/cv`,
   /** The builder in the cloud: the public route's answers, with the caller's name on it. */
-  propose: (body: TeamProposalCreate) =>
-    request<CloudTeamProposal>('/api/hub/me/cloud/proposals', json(body)),
+  propose: (body: TeamProposalCreate) => unwrap(client.POST('/api/hub/me/cloud/proposals', { body }), reading<CloudTeamProposal>()),
   /** «Assumi team»: the proposal filed at once, no form; 409 when already requested. */
   hire: (proposalId: string) =>
-    request<{ id: string }>('/api/hub/me/cloud/requests', json({ proposal_id: proposalId })),
+    unwrap(client.POST('/api/hub/me/cloud/requests', { body: { proposal_id: proposalId } })),
   /** «Richiedi» on one card: 404 with the API's sentence for a talent no longer shown. */
   ask: (freelancerId: string) =>
-    request<{ id: string }>('/api/hub/me/cloud/requests', json({ freelancer_id: freelancerId })),
+    unwrap(client.POST('/api/hub/me/cloud/requests', { body: { freelancer_id: freelancerId } })),
 }
 
 // ---- campaigns, the public part -----------------------------------------------------------
 
 export const campaigns = {
   unsubscribe: (t: string) =>
-    request<{ ok: boolean }>(`/api/hub/campagne/disiscrizione?t=${encodeURIComponent(t)}`, { method: 'POST' }),
+    unwrap(client.POST('/api/hub/campaigns/unsubscribe', { params: { query: { t } } })),
+  confirmAddress: (t: string) =>
+    unwrap(client.POST('/api/hub/campaigns/confirm', { params: { query: { t } } })),
 }

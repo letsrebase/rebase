@@ -11,10 +11,12 @@ import { Loader } from '@rebase/ui/loader'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { Toaster, toast } from '@rebase/ui/sonner'
 import { TeamBuilder } from '@/components/TeamBuilder'
-import { SEARCH_DEBOUNCE_MS, useDebounce } from '@/lib/adminList'
+import { ANY, SEARCH_DEBOUNCE_MS, useDebounce } from '@/lib/adminList'
 import { ApiError, cloud, type Band, type CloudFilters, type CloudTalent } from '@/lib/api'
 import { DAY_BANDS, bandLabel } from '@/lib/bands'
-import { CLOUD_VETTED_LABEL, REMOTO_LABELS, SENIORITY_LABELS, formatExperience } from '@/lib/format'
+import { CLOUD_VETTED_LABEL, REMOTE_LABELS, SENIORITY_LABELS, formatLevel } from '@/lib/format'
+import { keys } from '@/lib/query-keys'
+import { isHttpUrl } from '@/lib/url'
 
 /** The builder's own thanks (`TeamBuilder.tsx`): a request from a card is the same
  *  request, and the same people write back. */
@@ -22,13 +24,11 @@ const THANKS = 'Grazie: ti scriviamo entro due giorni lavorativi.'
 /** Core's `cloud.CLOUD_LIST_CAP`: the one page the cloud has, until a later card
  *  paginates it (spec § 4.2). */
 const CAP = 200
-/** A `Select` needs a non-empty value for «no filter»; the query leaves the key out. */
-const ANY = 'tutti'
 
-type SelectFilter = 'ruolo' | 'seniority' | 'modalita' | 'fascia'
+type SelectFilter = 'role' | 'seniority' | 'mode' | 'band'
 type Choices = Record<SelectFilter, string>
 
-const NO_CHOICE: Choices = { ruolo: ANY, seniority: ANY, modalita: ANY, fascia: ANY }
+const NO_CHOICE: Choices = { role: ANY, seniority: ANY, mode: ANY, band: ANY }
 
 /** A band as a `Select` value: `500-650`, `800-` for the one with no top. */
 function bandValue(band: Band): string {
@@ -37,17 +37,17 @@ function bandValue(band: Band): string {
 
 /** The filters as the API takes them: a band becomes its bottom and its top, a blank
  *  skill or «Tutti» nothing at all. */
-function toFilters(choices: Choices, competenza: string): CloudFilters {
+function toFilters(choices: Choices, skill: string): CloudFilters {
   const filters: CloudFilters = {}
-  if (choices.ruolo !== ANY) filters.ruolo = choices.ruolo
+  if (choices.role !== ANY) filters.role = choices.role
   if (choices.seniority !== ANY) filters.seniority = choices.seniority
-  if (choices.modalita !== ANY) filters.modalita = choices.modalita
-  const band = DAY_BANDS.find((candidate) => bandValue(candidate) === choices.fascia)
+  if (choices.mode !== ANY) filters.mode = choices.mode
+  const band = DAY_BANDS.find((candidate) => bandValue(candidate) === choices.band)
   if (band) {
-    filters.fascia_min = band.min
-    if (band.max !== null) filters.fascia_max = band.max
+    filters.min_band = band.min
+    if (band.max !== null) filters.max_band = band.max
   }
-  if (competenza) filters.competenza = competenza
+  if (skill) filters.skill = skill
   return filters
 }
 
@@ -59,13 +59,8 @@ function sentence(error: unknown, fallback: string): string {
 /** A link the freelancer gave, as its host («github.com/ada» reads as «github.com»);
  *  anything that is not http(s) is not a link this page opens. */
 function linkLabel(url: string): string | null {
-  try {
-    const parsed = new URL(url)
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null
-    return parsed.hostname.replace(/^www\./, '')
-  } catch {
-    return null
-  }
+  if (!isHttpUrl(url)) return null
+  return new URL(url).hostname.replace(/^www\./, '')
 }
 
 /**
@@ -85,10 +80,10 @@ export function Cloud() {
   const ids = useId()
   const [choices, setChoices] = useState<Choices>(NO_CHOICE)
   const [skill, setSkill] = useState('')
-  const competenza = useDebounce(skill.trim(), SEARCH_DEBOUNCE_MS)
-  const filters = toFilters(choices, competenza)
+  const skillTerm = useDebounce(skill.trim(), SEARCH_DEBOUNCE_MS)
+  const filters = toFilters(choices, skillTerm)
   const talents = useQuery({
-    queryKey: ['cloud', 'talents', filters],
+    queryKey: keys.cloudTalents(filters),
     queryFn: () => cloud.talents(filters),
     placeholderData: keepPreviousData,
     retry: false,
@@ -116,7 +111,7 @@ export function Cloud() {
     )
   }
 
-  const { items, ruoli, capped } = talents.data
+  const { items, roles, capped } = talents.data
   const filtered = Object.keys(filters).length > 0
   const set = (key: SelectFilter) => (value: string) => setChoices((current) => ({ ...current, [key]: value }))
 
@@ -151,15 +146,15 @@ export function Cloud() {
 
         <div role="group" aria-label="Filtri" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <Filter label="Ruolo" id={`${ids}-ruolo`}>
-            <Select value={choices.ruolo} onValueChange={set('ruolo')}>
+            <Select value={choices.role} onValueChange={set('role')}>
               <SelectTrigger id={`${ids}-ruolo`} className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ANY}>Tutti</SelectItem>
-                {ruoli.map((ruolo) => (
-                  <SelectItem key={ruolo} value={ruolo}>
-                    {ruolo}
+                {roles.map((role) => (
+                  <SelectItem key={role} value={role}>
+                    {role}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -180,9 +175,9 @@ export function Cloud() {
               </SelectContent>
             </Select>
           </Filter>
-          <Filter label="Competenza" id={`${ids}-competenza`}>
+          <Filter label="Competenza" id={`${ids}-skill`}>
             <Input
-              id={`${ids}-competenza`}
+              id={`${ids}-skill`}
               type="search"
               maxLength={100}
               placeholder="Python, Figma, SAP…"
@@ -191,13 +186,13 @@ export function Cloud() {
             />
           </Filter>
           <Filter label="Modalità" id={`${ids}-modalita`}>
-            <Select value={choices.modalita} onValueChange={set('modalita')}>
+            <Select value={choices.mode} onValueChange={set('mode')}>
               <SelectTrigger id={`${ids}-modalita`} className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ANY}>Tutte</SelectItem>
-                {Object.entries(REMOTO_LABELS).map(([value, label]) => (
+                {Object.entries(REMOTE_LABELS).map(([value, label]) => (
                   <SelectItem key={value} value={value}>
                     {label}
                   </SelectItem>
@@ -206,7 +201,7 @@ export function Cloud() {
             </Select>
           </Filter>
           <Filter label="Fascia" id={`${ids}-fascia`}>
-            <Select value={choices.fascia} onValueChange={set('fascia')}>
+            <Select value={choices.band} onValueChange={set('band')}>
               <SelectTrigger id={`${ids}-fascia`} className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -292,7 +287,7 @@ function Closed({ message }: { message: string }) {
 function TalentCard({ talent }: { talent: CloudTalent }) {
   const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle')
   const { card } = talent
-  const name = `${talent.nome} ${talent.cognome}`
+  const name = `${talent.first_name} ${talent.last_name}`
   const links = talent.links
     .map((url) => ({ url, label: linkLabel(url) }))
     .filter((link): link is { url: string; label: string } => link.label !== null)
@@ -316,7 +311,7 @@ function TalentCard({ talent }: { talent: CloudTalent }) {
         <CardTitle>
           <h3>{name}</h3>
         </CardTitle>
-        <CardDescription>{`${card.ruolo}, ${SENIORITY_LABELS[card.seniority] ?? card.seniority}, ${formatExperience(card.anni)}`}</CardDescription>
+        <CardDescription>{`${card.role}, ${formatLevel(card)}`}</CardDescription>
         {talent.vetted && (
           <Badge variant="pill" className="mt-1">
             <BadgeCheck aria-hidden="true" />
@@ -325,17 +320,17 @@ function TalentCard({ talent }: { talent: CloudTalent }) {
         )}
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-3">
-        <p className="text-muted-foreground">{card.sintesi}</p>
-        <Badges label="Competenze" items={card.competenze} variant="outline" />
-        <Badges label="Settori" items={card.settori} variant="secondary" />
-        <Badges label="Lingue" items={card.lingue} variant="secondary" />
+        <p className="text-muted-foreground">{card.profile_summary}</p>
+        <Badges label="Competenze" items={card.skills} variant="outline" />
+        <Badges label="Settori" items={card.industries} variant="secondary" />
+        <Badges label="Lingue" items={card.languages} variant="secondary" />
         <p className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          {talent.modalita && <span className="text-muted-foreground">{REMOTO_LABELS[talent.modalita]}</span>}
-          <span className="font-medium">{talent.fascia ? bandLabel(talent.fascia) : 'Tariffa da definire'}</span>
+          {talent.mode && <span className="text-muted-foreground">{REMOTE_LABELS[talent.mode]}</span>}
+          <span className="font-medium">{talent.band ? bandLabel(talent.band) : 'Tariffa da definire'}</span>
         </p>
-        {(linkedin || links.length > 0 || talent.ha_cv) && (
+        {(linkedin || links.length > 0 || talent.has_cv) && (
           <ul aria-label={`Link di ${name}`} className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-            {talent.ha_cv && (
+            {talent.has_cv && (
               <li>
                 <a
                   href={cloud.cvUrl(talent.freelancer_id)}

@@ -1,7 +1,7 @@
 import { useDraggable } from '@dnd-kit/core'
 import { Card, CardContent } from '@rebase/ui/card'
 import { cn } from '@rebase/ui/cn'
-import { formatMoney } from './columns'
+import { formatDealValue } from './columns'
 import type { Deal } from './queries'
 
 interface Props {
@@ -20,9 +20,11 @@ interface Props {
    * makes it safe to omit this prop or get it wrong.
    */
   canDrag: boolean
+  /** The owner's name, already resolved (REB-780); `null`/absent draws nothing. */
+  ownerName?: string | null
 }
 
-export function KanbanCard({ deal, onOpen, canDrag }: Props) {
+export function KanbanCard({ deal, onOpen, canDrag, ownerName }: Props) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: deal.id,
     disabled: !canDrag,
@@ -46,11 +48,12 @@ export function KanbanCard({ deal, onOpen, canDrag }: Props) {
       )}
     >
       <CardContent className="space-y-1 p-3">
-        <p className="text-sm font-medium">{deal.nome}</p>
+        <p className="text-sm font-medium">{deal.name}</p>
         <div className="flex justify-between text-xs text-muted-foreground">
-          <span>{formatMoney(deal.valore_previsto)}</span>
-          <span>{deal.probabilita}%</span>
+          <span>{formatDealValue(deal)}</span>
+          <span>{deal.probability}%</span>
         </div>
+        {ownerName ? <p className="text-xs text-muted-foreground">{ownerName}</p> : null}
       </CardContent>
     </Card>
   )

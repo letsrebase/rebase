@@ -40,11 +40,9 @@
     <!-- The reveal gate (ORB-145): landing.css hides `[data-reveal]` only under
       `html.js`, so a page whose script never runs shows everything, and the timer is
       the net for a script that loads but fails: whatever happened, after three seconds
-      nothing is hidden. Inline because it has to run before the first paint. -->
-    <script>
-      document.documentElement.classList.add('js')
-      setTimeout(function () { document.documentElement.classList.add('reveal-all') }, 3000)
-    </script>
+      nothing is hidden. A blocking external script, so it still runs before the first paint
+      and the CSP needs no `'unsafe-inline'` for it. -->
+    <script src="/assets/reveal-gate.js"></script>
     <!-- The cookie notice, and with it the two trackers, the ChatGPT Ads measurement
       pixel and PostHog: consent.js shows the notice and injects both SDKs only once
       somebody has said yes, so before a decision this page asks nothing of anyone. Here,
@@ -55,29 +53,39 @@
       server's .env, used only by the API. -->
     <script type="module" src="./consent.js"></script>
     <script type="module" src="./session.js"></script>
-    <!-- REB-113: WebSite and Organization structured data, on this page only, the one
-      a search result attaches to. Every value already appears elsewhere on the site:
-      privacy.html and terms.html name the legal entity, its VAT number and its
-      contact address; og:image above already names the share card this points at as
-      a logo. No FAQPage, no Product, no Review: nothing here that is not true anywhere
-      else on the site. -->
+    <!-- REB-113, extended by REB-701: WebSite and Organization structured data, on this
+      page, the one a search result attaches to; /pigrocrm carries the CRM's own block.
+      Every value already appears elsewhere on the site: privacy.html and terms.html
+      name the legal entity, its VAT number and its contact address; the description is
+      this page's og:description; the logo is the favicon's own mark under the fixed
+      name path-map-plugin.ts copies it to; the one profile in sameAs is the GitHub
+      organisation the questions below link into. The FAQPage for «Le domande» is not
+      written here: site-text.ts builds it from that section's markup at build time, so
+      an answer changes in one place. No Product, no Review, no founders: nothing here
+      that is not true anywhere else on the site. -->
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@graph": [
           {
             "@type": "WebSite",
+            "@id": "https://letsrebase.com/#website",
             "name": "rebase",
-            "url": "https://letsrebase.com/"
+            "url": "https://letsrebase.com/",
+            "inLanguage": "it-IT",
+            "publisher": { "@id": "https://letsrebase.com/#organization" }
           },
           {
             "@type": "Organization",
+            "@id": "https://letsrebase.com/#organization",
             "name": "rebase",
             "legalName": "Humancraft di Ivan Sala",
             "url": "https://letsrebase.com/",
-            "logo": "https://letsrebase.com/assets/share-card-2.png",
+            "logo": "https://letsrebase.com/assets/rebase-logo.svg",
+            "description": "La community di chi fa software in proprio, costruita da chi lo fa: progetti da aziende vere, persone che ci sono passate, strumenti per fatturare e farsi pagare. PigroCRM gratis per chi entra.",
             "vatID": "14518240966",
-            "email": "ivansala@humancraft.tech"
+            "email": "ciao@letsrebase.com",
+            "sameAs": ["https://github.com/letsrebase"]
           }
         ]
       }
@@ -103,9 +111,9 @@
         own POST /api/hub/team/proposals (same origin) and shows the least that says
         whether it is worth a click, the summary, each role with its seniority and day
         band, the team's day band, and one door, «Vedi il team completo», into
-        /hub/team?proposta=<id>, where the hub reads the proposal back (REB-675) and the
+        /hub/team?proposal=<id>, where the hub reads the proposal back (REB-675) and the
         whole page is: the cards, «Rigenera», «Assumi team». Without JavaScript the form
-        is a plain GET to /hub/team, and the hub fills its box from ?descrizione=. The
+        is a plain GET to /hub/team, and the hub fills its box from ?description=. The
         hero's third door of REB-608 went: the builder itself sits where it pointed. -->
       <section class="hero">
         <div class="wrap">
@@ -122,15 +130,15 @@
             <form class="team-form ph-no-capture" action="/hub/team" method="get" data-team data-result="#team-result">
               <p class="team-claim">Hai un progetto? Descrivilo: <span class="accent">ti proponiamo il team.</span></p>
               <div class="composer">
-                <label class="sr-only" for="team-descrizione">Descrizione del progetto</label>
-                <textarea id="team-descrizione" name="descrizione" rows="3" required minlength="40" maxlength="4000" placeholder="Descrivi il progetto: cosa va fatto, per quanto tempo, dove, con che tecnologie"></textarea>
+                <label class="sr-only" for="team-description">Descrizione del progetto</label>
+                <textarea id="team-description" name="description" rows="3" required minlength="40" maxlength="4000" placeholder="Descrivi il progetto: cosa va fatto, per quanto tempo, dove, con che tecnologie"></textarea>
                 <div class="composer-bar">
                   <!-- The headcount, as the hub's page asks it (REB-591): one by default,
                     since most requests are for one person; an example sets the number its
                     own text implies. -->
                   <label class="composer-count">
                     <span>Quante persone</span>
-                    <select name="persone">
+                    <select name="people">
                       <option value="1" selected>1 persona</option>
                       <option value="2">2 persone</option>
                       <option value="3">3 persone</option>
@@ -152,10 +160,10 @@
                 API takes as it stands: forty characters at least. -->
               <div class="team-examples" role="group" aria-labelledby="team-examples">
                 <span class="sr-only" id="team-examples">Qualche esempio, per cominciare</span>
-                <button type="button" class="chip" data-example="Siamo una fintech e ci serve una web app per i nostri clienti: dashboard dei conti, pagamenti e collegamento alle API di open banking. React e TypeScript davanti, Python dietro. Sei mesi, da remoto." data-persone="3">Web app per una fintech</button>
-                <button type="button" class="chip" data-example="Dobbiamo portare gli ordini di tre gestionali in un data warehouse su Google Cloud, con una pipeline affidabile e i report per la direzione. Quattro mesi, in sede a Milano tre giorni a settimana." data-persone="2">Pipeline dati in sede a Milano</button>
-                <button type="button" class="chip" data-example="Vogliamo lanciare un’app per prenotare le lezioni in palestra, su iOS e Android: serve chi la sviluppa, in React Native o Flutter, e un designer che ne curi l’esperienza e l’interfaccia. Tre mesi, da remoto." data-persone="2">App mobile con un designer</button>
-                <button type="button" class="chip" data-example="Siamo una software house e cerchiamo un forward deployed engineer da inserire da un nostro cliente: lavora nel loro team, capisce i processi e porta in produzione le integrazioni con i loro sistemi. Python, Postgres e API dei gestionali. Sei mesi, due giorni a settimana in sede dal cliente." data-persone="1">Un FDE nel team di un cliente</button>
+                <button type="button" class="chip" data-example="Siamo una fintech e ci serve una web app per i nostri clienti: dashboard dei conti, pagamenti e collegamento alle API di open banking. React e TypeScript davanti, Python dietro. Sei mesi, da remoto." data-people="3">Web app per una fintech</button>
+                <button type="button" class="chip" data-example="Dobbiamo portare gli ordini di tre gestionali in un data warehouse su Google Cloud, con una pipeline affidabile e i report per la direzione. Quattro mesi, in sede a Milano tre giorni a settimana." data-people="2">Pipeline dati in sede a Milano</button>
+                <button type="button" class="chip" data-example="Vogliamo lanciare un’app per prenotare le lezioni in palestra, su iOS e Android: serve chi la sviluppa, in React Native o Flutter, e un designer che ne curi l’esperienza e l’interfaccia. Tre mesi, da remoto." data-people="2">App mobile con un designer</button>
+                <button type="button" class="chip" data-example="Siamo una software house e cerchiamo un forward deployed engineer da inserire da un nostro cliente: lavora nel loro team, capisce i processi e porta in produzione le integrazioni con i loro sistemi. Python, Postgres e API dei gestionali. Sei mesi, due giorni a settimana in sede dal cliente." data-people="1">Un FDE nel team di un cliente</button>
               </div>
             </form>
             <!-- The result lands here, a plain section under the composer, no box of its
@@ -164,7 +172,7 @@
             <div class="team-result ph-no-capture" id="team-result" hidden></div>
             <p class="actions">
               <a class="cta" href="/hub/freelance">Entra come talento</a>
-              <a class="cta secondary" href="/hub/aziende">Cerchi persone?</a>
+              <a class="cta secondary" href="/hub/companies">Cerchi persone?</a>
             </p>
             <p class="fine">
               Due minuti, una domanda alla volta. Ti chiediamo il CV e quanto costa una tua
@@ -317,10 +325,10 @@
         continuous search per open position, a monthly subscription from 100 € a day. Two
         doors under the cards: the company wizard and the team builder, both in the hub, so
         utm.js carries the campaign into them too. -->
-      <section class="band" aria-labelledby="aziende">
+      <section class="band" aria-labelledby="companies">
         <div class="wrap section">
           <p class="kicker" data-reveal>Per le aziende</p>
-          <h2 class="statement" id="aziende" data-reveal style="--d: 0.1s">
+          <h2 class="statement" id="companies" data-reveal style="--d: 0.1s">
             Tre modi di lavorare con noi. <span class="accent">Il prezzo lo sai prima.</span>
           </h2>
           <div class="grid-3">
@@ -356,9 +364,65 @@
             </article>
           </div>
           <p class="actions" data-reveal style="--d: 0.4s">
-            <a class="cta" href="/hub/aziende">Ho un progetto</a>
+            <a class="cta" href="/hub/companies">Ho un progetto</a>
             <a class="cta secondary" href="/hub/team">Prova il team builder</a>
           </p>
+        </div>
+      </section>
+
+      <!-- Porta qualcuno (REB-711, REB-645 option B, Lorenzo 2026-10-20): the referral as
+        a split of rebase's margin. The two figures and their bars are not here: no rate is
+        typed into this page, referral.js reads them from /api/hub/referral-rates and a
+        rate it cannot read leaves the row as written below, «una quota del margine di
+        rebase». A light band after a light band on purpose: the next one is the ink. -->
+      <section class="band referral" aria-labelledby="referral" data-referral>
+        <div class="wrap section">
+          <p class="kicker" data-reveal>Porta qualcuno</p>
+          <h2 class="statement" id="referral" data-reveal style="--d: 0.1s">
+            Conosci qualcuno bravo? <span class="accent">Una parte è tua.</span>
+          </h2>
+          <div class="box" data-reveal style="--d: 0.25s">
+            <div class="split-row" data-rate="rate_freelancer">
+              <div class="split-head">
+                <h3>Porti un talento</h3>
+                <span class="figure" data-figure hidden></span>
+              </div>
+              <div class="split" role="img" data-bar hidden>
+                <span class="split-fill talent"></span>
+                <span class="split-rest">il margine di rebase sul primo incarico</span>
+              </div>
+              <p class="terms" data-fallback>
+                Ricevi una quota del margine di rebase sul primo incarico che firma con noi.
+              </p>
+            </div>
+            <div class="split-row" data-rate="rate_company">
+              <div class="split-head">
+                <h3>Porti un'azienda</h3>
+                <span class="figure" data-figure hidden></span>
+              </div>
+              <div class="split" role="img" data-bar hidden>
+                <span class="split-fill company"></span>
+                <span class="split-rest">il margine di rebase sul primo incarico</span>
+              </div>
+              <p class="terms" data-fallback>
+                Ricevi una quota del margine di rebase sul primo incarico che l'azienda firma.
+              </p>
+            </div>
+            <div class="rule lines">
+              <p class="terms">
+                Conta quando la persona che porti ha fatto il suo primo accesso. rebase conferma il
+                compenso e poi te lo paga.
+              </p>
+              <p class="example" data-example hidden>
+                <span class="ex-label">Esempio con numeri inventati</span>
+                <span data-example-text></span>
+              </p>
+            </div>
+            <p class="actions">
+              <a class="cta" href="/hub/freelance">Entra e prendi il tuo link</a>
+              <a class="cta secondary" href="/hub/login">Sono già dentro</a>
+            </p>
+          </div>
         </div>
       </section>
 
@@ -419,7 +483,8 @@
       <!-- REB-605: where to meet us, from the public roadmap («Events and brand»,
         github.com/orgs/letsrebase/projects/1), in date order. Dates go stale by
         themselves: the card that adds an event here is the one that removes the past
-        ones. The rebase house is the only event of our own, and the only link. -->
+        ones. REB-703 (2026-10-20) took off Milano Digital Week, the rebase house and
+        Wave, all past; Codemotion goes too once it is over. -->
       <section class="band" aria-labelledby="eventi">
         <div class="wrap section">
           <p class="kicker" data-reveal>Gli eventi</p>
@@ -428,25 +493,6 @@
           </h2>
           <div class="grid-4">
             <article class="card" data-reveal style="--d: 0.25s">
-              <p class="when">30 settembre – 4 ottobre · Milano</p>
-              <h3>Milano Digital Week</h3>
-              <p>Ci siamo agli incontri che riusciamo a fare. Se ci vedi, fermaci.</p>
-            </article>
-            <article class="card" data-reveal style="--d: 0.4s">
-              <p class="when">7–9 ottobre · Torino</p>
-              <h3>rebase house</h3>
-              <p>
-                Una casa per i builder che vengono a Wave: si dorme lì, si costruisce a un
-                tavolo solo, si va agli altri eventi in gruppo. Dieci posti.
-                <a class="quiet-link" href="https://luma.com/2n8qng2x">Chiedi un posto su Luma</a>.
-              </p>
-            </article>
-            <article class="card" data-reveal style="--d: 0.55s">
-              <p class="when">7–9 ottobre · Torino</p>
-              <h3>Wave by Vento</h3>
-              <p>Tre giorni alle OGR con le startup che cercano persone. Ci siamo, e la sera dell'8 a TSUNAMI.</p>
-            </article>
-            <article class="card" data-reveal style="--d: 0.7s">
               <p class="when">28–29 ottobre · Milano</p>
               <h3>Codemotion</h3>
               <p>Developer e aziende, due giorni al Superstudio Più. Vieni a cercarci.</p>
@@ -514,7 +560,7 @@
               <h3>Come vi contatto?</h3>
               <p>
                 Scrivi a
-                <a class="quiet-link" href="mailto:ivansala@humancraft.tech">ivansala@humancraft.tech</a>,
+                <a class="quiet-link" href="mailto:ciao@letsrebase.com">ciao@letsrebase.com</a>,
                 o vieni a uno degli eventi qui sopra.
               </p>
             </div>
@@ -583,7 +629,7 @@
             <h2 class="measure-tight" id="orbita">Pronto a fare <span class="accent">rebase?</span></h2>
             <p class="actions">
               <a class="cta" href="/hub/freelance">Entra come talento</a>
-              <a class="cta secondary" href="/hub/aziende">Ho un progetto</a>
+              <a class="cta secondary" href="/hub/companies">Ho un progetto</a>
             </p>
             <p class="fine measure">
               Il CV resta nel nostro database, lo leggiamo noi e chi ti proporrà un progetto, e lo
@@ -599,11 +645,11 @@
           <a class="quiet-link" href="/">rebase</a>
           <a class="quiet-link" href="/privacy">Privacy</a>
           <a class="quiet-link" href="/terms">Termini</a>
-          <a class="quiet-link" href="https://humancraft.tech/">Humancraft</a>
         </p>
       </footer>
     </main>
 
+    <script type="module" src="./referral.js"></script>
     <script type="module" src="./utm.js"></script>
     <script type="module" src="./team.js"></script>
     <script type="module" src="./typewriter.js"></script>

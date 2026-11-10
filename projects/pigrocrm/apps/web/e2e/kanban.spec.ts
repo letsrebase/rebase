@@ -32,7 +32,7 @@ test.beforeEach(async ({ page }) => {
  */
 test('a move the server refuses puts the card back in its original column and says why', async ({ page }) => {
   const customerName = `Kanban Reject ${Date.now()}`
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill(customerName)
   await page.getByRole('button', { name: 'Salva' }).click()
@@ -42,7 +42,7 @@ test('a move the server refuses puts the card back in its original column and sa
   // test -- mirrors PipelinePanel.tsx's own `submit` body exactly.
   const stageName = `Rifiuto ${Date.now()}`
   const stageResponse = await page.request.post('/api/pipeline-stages', {
-    data: { nome: stageName, posizione: 99, probabilita_default: 50, tipo: 'open' },
+    data: { name: stageName, position: 99, default_probability: 50, type: 'open' },
   })
   expect(stageResponse.ok()).toBe(true)
   const stage = (await stageResponse.json()) as { id: string }
@@ -50,8 +50,8 @@ test('a move the server refuses puts the card back in its original column and sa
   const dealName = `Deal Reject ${Date.now()}`
   await page.goto('/app/deal')
   await page.getByRole('button', { name: /nuovo deal/i }).click()
-  await page.getByLabel(/^Cliente/).click()
-  await page.getByRole('option', { name: customerName }).click()
+  await page.getByLabel('Cerca un cliente').fill(customerName)
+  await page.getByRole('button', { name: customerName }).click()
   // Anchored regex, not `exact: true`: "Nome" is required, so its real
   // accessible name is "Nome *" (DynamicFieldRenderer's RequiredMark) -- see
   // crm.spec.ts's identical comment for the two ways this can be gotten
@@ -116,7 +116,9 @@ test('a move the server refuses puts the card back in its original column and sa
   // a loose "something failed". The PATCH itself already resolved (this is
   // its own response's toast) while the *follow-up* GET above is still parked,
   // so nothing about the corrective refetch has run yet.
-  await expect(page.getByText(new RegExp(`pipeline_stage ${stage.id} not found`, 'i'))).toBeVisible()
+  await expect(
+    page.getByText(new RegExp(`stato della pipeline ${stage.id} non trovato`, 'i')),
+  ).toBeVisible()
 
   // The immediate rollback, observed while the self-healing refetch is still
   // being held back on purpose: if `onError`'s own cache restore had been
@@ -139,6 +141,6 @@ test('a move the server refuses puts the card back in its original column and sa
   // `move_stage` ever wrote anything.
   const finalDeal = await (await page.request.get(`/api/deals/${deal.id}`)).json()
   const leadStage = await (await page.request.get('/api/pipeline-stages')).json()
-  const leadId = (leadStage as { id: string; nome: string }[]).find((s) => s.nome === 'Lead')?.id
+  const leadId = (leadStage as { id: string; name: string }[]).find((s) => s.name === 'Lead')?.id
   expect(finalDeal.pipeline_stage_id).toBe(leadId)
 })

@@ -31,9 +31,9 @@ Three public flows and the admin area behind them:
   admin area shows who entered and when under «Accessi», and each card carries its
   count and its last login. The link request itself is not counted.
 - A freelancer card can also be born from a signup (ORB-155): an admin writes what the
-  public web says about the person through `POST /api/hub/signups/{id}/scheda` or the
+  public web says about the person through `POST /api/hub/signups/{id}/card` or the
   MCP tool `create_freelancer_from_signup`, «Talenti» links to it, and the card stays
-  «da completare» until the person adds the CV, the rate and the rest from `/hub/io`.
+  «da completare» until the person adds the CV, the rate and the rest from `/hub/me`.
   Research never overwrites a card the person filled. Spec:
   `docs/superpowers/specs/2026-09-11-freelancer-card-from-a-signup-design.md`.
 
@@ -109,7 +109,7 @@ compose file: the deploy passes `--env-file` explicitly and never rsyncs one.
 The first administrator, once the stack is up:
 
 ```
-docker compose -p rebase exec api uv run --no-sync rebase setrole --email you@example.com --role admin --nome Nome --cognome Cognome
+docker compose -p rebase exec api uv run --no-sync rebase setrole --email you@example.com --role admin --first-name Jane --last-name Doe
 ```
 
 Creates the `users` row if none exists yet and sends the same magic link everyone
@@ -121,7 +121,7 @@ The MCP server answers admins only (REB-213). Each admin mints personal tokens f
 «Agenti» in the admin area, or the operator does it for them:
 
 ```
-docker compose -p rebase exec api uv run --no-sync rebase createtoken --email you@example.com --nome "Claude Code"
+docker compose -p rebase exec api uv run --no-sync rebase createtoken --email you@example.com --name "Claude Code"
 ```
 
 The value is printed once and only its hash is kept. A client presents it as a bearer
@@ -137,24 +137,25 @@ one that resolves. An unknown, revoked or deactivated-owner token is one uniform
 The claude.ai and Claude Desktop connectors want OAuth and are not supported, as in the
 CRM.
 
-The tools, as they answer after REB-288's removal pass: `list_talenti` replaced
+The tools, as they answer after REB-288's removal pass: `list_talents` replaced
 `list_signups` and `list_freelancers` (the lead is a row of the talent list),
-`list_aziende` is the renamed `list_companies`, and `get_talento` reads one row by
+`list_companies` is the renamed `list_companies`, and `get_talent` reads one row by
 id, the admin's full detail where a card exists:
 
 | Tool | What it answers |
 |---|---|
-| `list_talenti` | the «Talenti» screen: cards and bare sign-ups as one list, with search, filters, cursor |
-| `get_talento` | one talent by id: the card's detail (state, thread, UTM, logins, downloads, Pigro space) or the bare lead row |
+| `list_talents` | the «Talenti» screen: cards and bare sign-ups as one list, with search, filters (also seniority, years, sectors, languages, card state), a sort by rate or years, a short row (`fields` for more) and a cursor |
+| `get_talent` | one talent by id: the list's row (with the card's fields) over the card's detail (state, thread, UTM, logins, downloads, Pigro space), or the bare lead row |
 | `create_freelancer_from_signup` | a card drafted from public sources, with its sources in the thread |
-| `get_freelancer` | a card by id, `FreelancerRead` with its comments |
+| `get_freelancer` | a card by id, `FreelancerRead` with its notes and the account's phone, and what the CV says of the person (`cv_contacts`, `cv_differences`), for admins only |
 | `read_freelancer_cv` | the CV's text, not its bytes |
 | `set_freelancer_status` | move a candidacy (nuovo / contattato / attivo / scartato) |
-| `add_freelancer_comment` | a dated note on a card's thread |
-| `list_aziende` | the «Aziende» screen, with search, filters, cursor |
-| `get_company` | a company request by id, with its comments |
+| `add_freelancer_note` | a note on a card's thread, signed by the token's admin and marked `mcp` |
+| `update_note`, `delete_note` | edit or soft-delete a note an admin wrote, by id; the person's and the system's notes are refused |
+| `list_companies` | the «Aziende» screen, with search, filters, cursor |
+| `get_company` | a company request by id, with its notes |
 | `set_company_status` | move a request (nuovo / contattato / in_corso / chiuso) |
-| `add_company_comment` | a dated note on a request's thread |
+| `add_company_note` | a note on a request's thread, signed by the token's admin and marked `mcp` |
 | `list_pigro_spaces` | «Istanze Pigro»: the CRM's spaces, read through its API |
 | `guide_stats` | the guide's downloads, totals and latest |
 | `login_stats` | who entered the member area and when |

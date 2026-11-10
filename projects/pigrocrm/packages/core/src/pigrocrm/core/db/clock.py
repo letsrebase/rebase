@@ -17,7 +17,7 @@ problem. This module is about the other kind of column.
 
 `_now` is a module-level function rather than an inline call so a test can freeze it
 without patching the standard library. It is the single freeze point for the whole
-product: `pigrocrm.core.clock.oggi_in_italia()` -- which predates this module and has
+product: `pigrocrm.core.db.clock.today_local()` -- which predates this module and has
 eight fiscal callers -- is now a thin alias over `today_local()`, so freezing `_now`
 freezes both. That delegation is the point of the exercise. Two functions each doing
 their own `datetime.now(...).date()` would be two clocks, and two clocks in one product
@@ -31,6 +31,11 @@ from zoneinfo import ZoneInfo
 
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.errors import ValidationFailed
+
+# The issuer's own calendar, pinned to Rome and not read from `Settings.timezone`: it
+# projects an instant that was already stored (`local_date`), and an invoice's civil date
+# must not move because somebody set `PIGROCRM_TIMEZONE`.
+ITALY_TZ = ZoneInfo("Europe/Rome")
 
 # Days per month, non-leap. February is corrected in `month_bounds`.
 _DAYS_IN_MONTH = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
@@ -51,7 +56,35 @@ def today_local(settings: Settings | None = None) -> date:
     return _now().astimezone(ZoneInfo(resolved.timezone)).date()
 
 
-def month_bounds(anno: int, mese: int) -> tuple[date, date]:
+def local_date(instant: datetime) -> date:
+    """The civil date, in Rome, of an instant already stored (an invoice's `created_at`).
+    A projection of a known instant, not a reading of the clock."""
+    return instant.astimezone(ITALY_TZ).date()
+
+
+def add_months(day: date, months: int) -> date:
+    """`day` moved by whole calendar months, clamped to the target month's last day."""
+    total = day.year * 12 + (day.month - 1) + months
+    year, month = divmod(total, 12)
+    return date(year, month + 1, min(day.day, month_bounds(year, month + 1)[1].day))
+
+
+def stepped_dates(start: date, last: date, step: int) -> list[date]:
+    """`start` and every `step` months after it, up to `last` inclusive. Each date is counted
+    from `start`, never from the previous one: stepping from a clamped date would carry the
+    clamp forward (31 January, then the 28th of every later month). The one stepper a deal's
+    lines and a contract's recurring fees share, so both price a term identically."""
+    days: list[date] = []
+    index = 0
+    day = start
+    while day <= last:
+        days.append(day)
+        index += 1
+        day = add_months(start, index * step)
+    return days
+
+
+def month_bounds(year: int, month: int) -> tuple[date, date]:
     """The first and last day of a month, both inclusive.
 
     Inclusive at both ends because every period filter in this slice and in slice 4 is
@@ -66,12 +99,12 @@ def month_bounds(anno: int, mese: int) -> tuple[date, date]:
     product will plausibly see and wrong for 1900 and 2100. A backfilled historical date
     is not a hypothetical in a CRM that imports.
     """
-    if not 1 <= mese <= 12:
-        raise ValidationFailed("periodo", "mese", "mese fuori intervallo", expected="1-12")
-    last = _DAYS_IN_MONTH[mese - 1]
-    if mese == 2 and (anno % 4 == 0 and (anno % 100 != 0 or anno % 400 == 0)):
+    if not 1 <= month <= 12:
+        raise ValidationFailed("period", "month", "mese fuori intervallo", expected="1-12")
+    last = _DAYS_IN_MONTH[month - 1]
+    if month == 2 and (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)):
         last = 29
-    return date(anno, mese, 1), date(anno, mese, last)
+    return date(year, month, 1), date(year, month, last)
 
 
 def window_from(start: date, days: int) -> tuple[date, date]:

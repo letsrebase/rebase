@@ -19,7 +19,7 @@ import { HOURS_SCALE, sumDecimalStrings } from '@/lib/decimal'
 import type { TimeEntry } from './queries'
 
 export interface WeekDay {
-  /** `YYYY-MM-DD`, the exact shape `time_entries.data` stores and the API expects. */
+  /** `YYYY-MM-DD`, the exact shape `time_entries.date` stores and the API expects. */
   iso: string
   /** `lunedì 9 marzo` -- the accessible label for the column, and for each cell in it. */
   label: string
@@ -29,7 +29,7 @@ export interface WeekDay {
 
 export interface GridCell {
   entryId: string | null
-  ore: string | null
+  hours: string | null
 }
 
 const LONG = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })
@@ -79,39 +79,39 @@ export function buildGrid(
   const wanted = new Set(days.map((day) => day.iso))
   const grid = new Map<string, Map<string, GridCell>>()
   for (const entry of entries) {
-    if (!wanted.has(entry.data)) continue
+    if (!wanted.has(entry.date)) continue
     let row = grid.get(entry.deal_id)
     if (row === undefined) {
-      row = new Map(days.map((day) => [day.iso, { entryId: null, ore: null }]))
+      row = new Map(days.map((day) => [day.iso, { entryId: null, hours: null }]))
       grid.set(entry.deal_id, row)
     }
-    const cell = row.get(entry.data)
+    const cell = row.get(entry.date)
     // Already taken: keep the first, per the docstring above. Not an overwrite, because
     // the second entry is not a correction of the first -- both are real hours, and the
     // row total below counts only the one the cell can edit.
     if (cell === undefined || cell.entryId !== null) continue
-    row.set(entry.data, { entryId: entry.id, ore: entry.ore })
+    row.set(entry.date, { entryId: entry.id, hours: entry.hours })
   }
   return grid
 }
 
 export function rowTotal(row: Map<string, GridCell>): string {
   return sumDecimalStrings(
-    [...row.values()].map((cell) => cell.ore),
+    [...row.values()].map((cell) => cell.hours),
     HOURS_SCALE,
   )
 }
 
 export function columnTotal(grid: Map<string, Map<string, GridCell>>, iso: string): string {
   return sumDecimalStrings(
-    [...grid.values()].map((row) => row.get(iso)?.ore ?? null),
+    [...grid.values()].map((row) => row.get(iso)?.hours ?? null),
     HOURS_SCALE,
   )
 }
 
 export function gridTotal(grid: Map<string, Map<string, GridCell>>): string {
   return sumDecimalStrings(
-    [...grid.values()].flatMap((row) => [...row.values()].map((cell) => cell.ore)),
+    [...grid.values()].flatMap((row) => [...row.values()].map((cell) => cell.hours)),
     HOURS_SCALE,
   )
 }

@@ -1,0 +1,452 @@
+"""REB-752: the register of a contract's days, as the rows a client reads next to an invoice,
+as a CSV and as an archived PDF, and the one property they all share: the total is the
+invoice's."""
+
+import csv
+import io
+from collections.abc import Callable
+from datetime import date, datetime
+from decimal import Decimal
+from uuid import UUID, uuid4
+
+import pytest
+from sqlalchemy.orm import Session
+
+from pigrocrm.core.actor import Actor
+from pigrocrm.core.contracts.models import Contract, RateCard
+from pigrocrm.core.documents.models import Document
+from pigrocrm.core.errors import NotFound, ValidationFailed
+from pigrocrm.core.invoices.models import Invoice, InvoiceLine
+from pigrocrm.core.invoices.schemas import InvoiceIssue
+from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.storage.local import LocalFileStorage
+from pigrocrm.core.work_units.invoicing import assemble_unbilled_work_units_into_new_invoice
+from pigrocrm.core.work_units.models import Approval, WorkUnit
+from pigrocrm.core.work_units.register import (
+    REGISTER_TEMPLATE_NAME,
+    ContractRegisterService,
+)
+
+ADMIN = Actor(id=None, type="system", role="admin")
+
+
+def _contract(db_session: Session) -> Contract:
+    customer = Organization(
+        legal_name=f"Acme {uuid4()} S.r.l.",
+        vat_number="12345678901",
+        sdi_code="ABCDEFG",
+        address="Corso Italia 5",
+        postal_code="00100",
+        city="Roma",
+        province="RM",
+        country="IT",
+    )
+    db_session.add(customer)
+    db_session.flush()
+    contract = Contract(
+        customer_id=customer.id,
+        title="Consulenza CTO",
+        start=date(2026, 1, 1),
+        renewal_type="none",
+        termination_notice_days=30,
+        billing_cadence="monthly",
+        expense_policy={"kind": "not_reimbursable"},
+    )
+    db_session.add(contract)
+    db_session.flush()
+    db_session.add(
+        RateCard(
+            contract_id=contract.id,
+            valid_from=date(2026, 1, 1),
+            type="daily",
+            amount=Decimal("500.00"),
+            unit="day",
+        )
+    )
+    db_session.flush()
+    return contract
+
+
+def _install_profiles(db_session: Session) -> None:
+    """The legal entity and its regime, which `issue()` reads (duplicated from
+    `test_work_units_invoicing.py` rather than imported: `conftest` is an ambiguous module
+    name across this repository's test roots)."""
+    from pigrocrm.core.fiscal.repository import FiscalProfileRepository
+    from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
+    from pigrocrm.core.fiscal.service import FiscalProfileService
+    from pigrocrm.core.legal_entities.repository import LegalEntityRepository
+
+    LegalEntityService(db_session).upsert_default(
+        LegalEntityUpsert(
+            legal_name="Studio Rossi",
+            vat_number="01234567890",
+            tax_code="HMCRFT00A01H501K",
+            address="Via Vittorio Veneto 12",
+            postal_code="20124",
+            city="Milano",
+            province="MI",
+            country="IT",
+            email="mario@example.com",
+        ),
+        ADMIN,
+    )
+    legal_entity = LegalEntityRepository(db_session).default()
+    assert legal_entity is not None
+    if FiscalProfileRepository(db_session).get(legal_entity.id) is None:
+        FiscalProfileService(db_session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
+
+
+def _approval(db_session: Session, contract: Contract, **overrides: object) -> Approval:
+    document = Document(contract_id=contract.id, type="contract", title="Mail del cliente")
+    db_session.add(document)
+    db_session.flush()
+    payload: dict[str, object] = {
+        "contract_id": contract.id,
+        "channel": "email",
+        "sender": "mario@cliente.example",
+        "received_at": datetime(2026, 10, 2, 9, 30),
+        "message_id": "<abc@cliente.example>",
+        "document_id": document.id,
+        "excerpt": "Confermiamo.",
+        "origin": {"kind": "manual"},
+    }
+    payload.update(overrides)
+    approval = Approval(**payload)  # type: ignore[arg-type]
+    db_session.add(approval)
+    db_session.flush()
+    return approval
+
+
+# A day is born `proposed`, `approved` or `worked` and walks to the rest: the trigger
+# refuses any other start, so a test that wants a billed day takes the graph's own edges.
+_WALK: dict[str, tuple[str, ...]] = {
+    "invoiced": ("invoiced",),
+    "disputed": ("disputed",),
+    "paid": ("invoiced", "paid"),
+}
+
+
+def _bare_line(db_session: Session, contract: Contract) -> InvoiceLine:
+    """A line of a draft invoice of the contract's customer: what a billed day sits on."""
+    invoice = Invoice(customer_id=contract.customer_id, type="invoice", status="draft")
+    db_session.add(invoice)
+    db_session.flush()
+    line = InvoiceLine(
+        invoice_id=invoice.id,
+        line_number=1,
+        description="Attività",
+        quantity=Decimal("1.000000"),
+        unit_price=Decimal("1.000000"),
+        total_price=Decimal("1.00"),
+        vat_rate=Decimal("22.00"),
+    )
+    db_session.add(line)
+    db_session.flush()
+    return line
+
+
+def _day(db_session: Session, contract: Contract, **overrides: object) -> WorkUnit:
+    payload: dict[str, object] = {
+        "contract_id": contract.id,
+        "date": date(2026, 10, 7),
+        "quantity": Decimal("1.00"),
+        "description": "Giornata di consulenza",
+        "status": "worked",
+    }
+    payload.update(overrides)
+    target = str(payload["status"])
+    walk = _WALK.get(target, ())
+    if walk:
+        payload["status"] = "worked"
+    if walk:
+        payload["invoice_line_id"] = _bare_line(db_session, contract).id
+    day = WorkUnit(**payload)  # type: ignore[arg-type]
+    db_session.add(day)
+    db_session.flush()
+    for status in walk:
+        day.status = status
+        db_session.flush()
+    return day
+
+
+def test_the_register_lists_the_billed_days_with_their_proof_and_leaves_the_rest_out(
+    db_session: Session,
+) -> None:
+    contract = _contract(db_session)
+    approval = _approval(db_session, contract)
+    billed = _day(
+        db_session, contract, date=date(2026, 10, 7), approval_id=approval.id, status="invoiced"
+    )
+    _day(db_session, contract, date=date(2026, 10, 8), status="proposed")
+    _day(db_session, contract, date=date(2026, 10, 9))  # worked, not billed yet
+    _day(  # another month
+        db_session, contract, date=date(2026, 11, 3), approval_id=approval.id, status="invoiced"
+    )
+
+    register = ContractRegisterService(db_session).build(
+        contract.id, date(2026, 10, 1), date(2026, 10, 31), ADMIN
+    )
+
+    assert [(v.work_unit_id, v.date, v.status) for v in register.entries] == [
+        (billed.id, date(2026, 10, 7), "invoiced")
+    ]
+    [entry] = register.entries
+    assert entry.approval is not None
+    assert entry.approval.channel == "email"
+    assert register.quantity_total == Decimal("1.00")
+    assert register.without_approval == 0
+
+
+def test_a_day_with_no_approval_stays_on_the_register_and_is_counted(
+    db_session: Session,
+) -> None:
+    contract = _contract(db_session)
+    _day(db_session, contract, status="invoiced", date=date(2026, 10, 7))
+
+    register = ContractRegisterService(db_session).build(
+        contract.id, date(2026, 10, 1), date(2026, 10, 31), ADMIN
+    )
+
+    assert len(register.entries) == 1
+    assert register.entries[0].approval is None
+    assert register.without_approval == 1
+    assert register.quantity_total == Decimal("1.00")
+
+
+def test_the_register_total_is_the_invoices_and_names_the_invoice_once_it_is_numbered(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    _install_profiles(db_session)
+    contract = _contract(db_session)
+    approval = _approval(db_session, contract)
+    _day(db_session, contract, date=date(2026, 10, 7), approval_id=approval.id)
+    _day(db_session, contract, date=date(2026, 10, 8), quantity=Decimal("0.50"))
+    _day(db_session, contract, date=date(2026, 11, 2))
+    invoice = assemble_unbilled_work_units_into_new_invoice(
+        db_session, local_storage, contract.id, ADMIN, date(2026, 10, 1), date(2026, 10, 31)
+    )
+    service = ContractRegisterService(db_session)
+
+    draft = service.build(contract.id, date(2026, 10, 1), date(2026, 10, 31), ADMIN)
+
+    # «Its total matches the invoice»: 1.50 days on the line, 1.50 on the register, 750.00.
+    [line] = InvoiceService(db_session, local_storage).lines(invoice.id, ADMIN)
+    assert draft.quantity_total == line.quantity == Decimal("1.5")
+    assert invoice.taxable_amount == Decimal("750.00")
+    # A draft has no number yet; the day is on the register for being billed, not numbered.
+    assert [v.invoice_number for v in draft.entries] == [None, None]
+
+    issued = InvoiceService(db_session, local_storage).issue(invoice.id, InvoiceIssue(), ADMIN)
+    numbered = service.build(contract.id, date(2026, 10, 1), date(2026, 10, 31), ADMIN)
+    expected = f"{issued.year}/{issued.number}"
+    assert [v.invoice_number for v in numbered.entries] == [expected, expected]
+
+
+def test_a_disputed_and_a_paid_day_are_still_on_it(db_session: Session) -> None:
+    contract = _contract(db_session)
+    _day(db_session, contract, status="disputed", date=date(2026, 10, 7))
+    _day(db_session, contract, status="paid", date=date(2026, 10, 8))
+
+    register = ContractRegisterService(db_session).build(
+        contract.id, date(2026, 10, 1), date(2026, 10, 31), ADMIN
+    )
+
+    assert [v.status for v in register.entries] == ["disputed", "paid"]
+
+
+def test_a_period_that_ends_before_it_starts_is_refused(db_session: Session) -> None:
+    contract = _contract(db_session)
+    with pytest.raises(ValidationFailed):
+        ContractRegisterService(db_session).build(
+            contract.id, date(2026, 10, 31), date(2026, 10, 1), ADMIN
+        )
+
+
+def test_the_register_of_an_unknown_contract_is_not_found(db_session: Session) -> None:
+    with pytest.raises(NotFound):
+        ContractRegisterService(db_session).build(
+            uuid4(), date(2026, 10, 1), date(2026, 10, 31), ADMIN
+        )
+
+
+def test_the_csv_is_rfc_4180_with_a_totals_row_and_the_same_rows(db_session: Session) -> None:
+    contract = _contract(db_session)
+    approval = _approval(db_session, contract)
+    _day(
+        db_session,
+        contract,
+        date=date(2026, 10, 7),
+        quantity=Decimal("0.50"),
+        description='Revisione, "fase 2"\nsecondo giorno',
+        status="invoiced",
+        approval_id=approval.id,
+    )
+    _day(db_session, contract, date=date(2026, 10, 8), status="invoiced")
+    service = ContractRegisterService(db_session)
+    register = service.build(contract.id, date(2026, 10, 1), date(2026, 10, 31), ADMIN)
+
+    raw = service.build_csv(register)
+
+    assert raw.startswith(b"\xef\xbb\xbf")
+    text = raw.decode("utf-8-sig")
+    assert text.endswith("\r\n")
+    rows = list(csv.reader(io.StringIO(text)))
+    assert rows[0] == ["Data", "Quantità", "Descrizione", "Fattura", "Approvazione"]
+    assert rows[1] == [
+        "2026-10-07",
+        "0.50",
+        'Revisione, "fase 2"\nsecondo giorno',
+        "",
+        "email · mario@cliente.example · 2026-10-02 · <abc@cliente.example>",
+    ]
+    assert rows[2][:2] == ["2026-10-08", "1.00"] and rows[2][4] == ""
+    assert rows[3] == ["", "1.50", "Totale", "", ""]
+    assert service.csv_filename(register) == "registro-giornate-2026-10-01-2026-10-31.csv"
+
+
+@pytest.mark.parametrize("leader", ["=", "+", "-", "@"])
+def test_a_description_a_spreadsheet_would_run_as_a_formula_is_defused(
+    db_session: Session, leader: str
+) -> None:
+    contract = _contract(db_session)
+    _day(db_session, contract, status="invoiced", description=f"{leader}SUM(A1:A9)")
+    service = ContractRegisterService(db_session)
+    register = service.build(contract.id, date(2026, 10, 1), date(2026, 10, 31), ADMIN)
+
+    rows = list(csv.reader(io.StringIO(service.build_csv(register).decode("utf-8-sig"))))
+
+    assert rows[1][2] == f"'{leader}SUM(A1:A9)"
+
+
+def test_the_pdf_is_archived_as_a_document_of_the_customer_and_carries_the_same_figures(
+    db_session: Session,
+    local_storage: LocalFileStorage,
+    extract_pdf_text: Callable[[LocalFileStorage, Session, UUID], str],
+) -> None:
+    LegalEntityService(db_session).upsert_default(
+        LegalEntityUpsert(
+            legal_name="Studio Rossi",
+            vat_number="01234567890",
+            address="Via Vittorio Veneto 12",
+            postal_code="20124",
+            city="Milano",
+            province="MI",
+            country="IT",
+            email="mario@example.com",
+        ),
+        ADMIN,
+    )
+    contract = _contract(db_session)
+    approval = _approval(db_session, contract)
+    _day(
+        db_session,
+        contract,
+        date=date(2026, 10, 7),
+        description="Revisione @architettura [fase 1] & #2",
+        status="invoiced",
+        approval_id=approval.id,
+    )
+    _day(db_session, contract, date=date(2026, 10, 8), status="invoiced")
+    service = ContractRegisterService(db_session, local_storage)
+
+    document = service.render_pdf(contract.id, date(2026, 10, 1), date(2026, 10, 31), ADMIN)
+
+    assert document.customer_id == contract.customer_id
+    assert document.type == "hours_report"
+    assert document.current_version == 1
+    text = extract_pdf_text(local_storage, db_session, document.id)
+    assert "Registro giornate" in text
+    assert "01/10/2026 - 31/10/2026" in text
+    assert "Consulenza CTO" in text
+    assert "07/10/2026" in text and "08/10/2026" in text
+    # The description wraps inside its column, so the hostile characters are checked
+    # one by one: each reached the PDF literally, none was eaten by Markdown or Typst.
+    for fragment in ("Revisione", "@architettura", "[fase 1]", "& #2"):
+        assert fragment in text
+    assert "mario@cliente.example" in text and "2026-10-02" in text
+    assert "Totale: 2.00" in text and "2 giornate" in text
+
+    # Rendered again, it is a new version of the same template's output, not a second copy
+    # of the template: the layout row is created once.
+    service.render_pdf(contract.id, date(2026, 10, 1), date(2026, 10, 31), ADMIN)
+    from pigrocrm.core.templates.repository import TemplateRepository
+
+    assert TemplateRepository(db_session).get_by_name(REGISTER_TEMPLATE_NAME) is not None
+
+
+def test_the_pdf_needs_a_storage(db_session: Session) -> None:
+    contract = _contract(db_session)
+    with pytest.raises(ValidationFailed):
+        ContractRegisterService(db_session).render_pdf(
+            contract.id, date(2026, 10, 1), date(2026, 10, 31), ADMIN
+        )
+
+
+def test_a_register_narrowed_to_an_invoice_leaves_out_the_days_billed_on_another(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    _install_profiles(db_session)
+    contract = _contract(db_session)
+    for day in (date(2026, 10, 7), date(2026, 10, 10), date(2026, 10, 20)):
+        _day(db_session, contract, date=day)
+    other = assemble_unbilled_work_units_into_new_invoice(
+        db_session, local_storage, contract.id, ADMIN, date(2026, 10, 10), date(2026, 10, 10)
+    )
+    mine = assemble_unbilled_work_units_into_new_invoice(
+        db_session, local_storage, contract.id, ADMIN
+    )
+    service = ContractRegisterService(db_session)
+
+    whole = service.build(contract.id, date(2026, 10, 7), date(2026, 10, 20), ADMIN)
+    narrowed = service.build(
+        contract.id, date(2026, 10, 7), date(2026, 10, 20), ADMIN, invoice_id=mine.id
+    )
+
+    assert whole.quantity_total == Decimal("3.00")
+    assert [v.date for v in narrowed.entries] == [date(2026, 10, 7), date(2026, 10, 20)]
+    assert narrowed.quantity_total == Decimal("2.00")
+    assert other.id != mine.id
+
+
+def test_a_disputed_day_with_no_invoice_is_not_billed_and_a_billed_one_stays_when_resolved(
+    db_session: Session,
+) -> None:
+    contract = _contract(db_session)
+    # `worked` to `disputed` is a legal move on a day nobody invoiced: not billed.
+    unbilled = _day(db_session, contract, date=date(2026, 10, 7))
+    unbilled.status = "disputed"
+    # Billed, disputed and resolved back to `worked`: the line is still set, so it is
+    # still on the invoice.
+    billed = _day(db_session, contract, date=date(2026, 10, 8), status="disputed")
+    billed.status = "worked"
+    db_session.flush()
+
+    register = ContractRegisterService(db_session).build(
+        contract.id, date(2026, 10, 1), date(2026, 10, 31), ADMIN
+    )
+
+    assert [v.work_unit_id for v in register.entries] == [billed.id]
+
+
+def test_the_first_render_survives_another_request_creating_the_layout_first(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two first requests both find no layout row; the loser's insert is refused by the
+    unique name and it reads the winner's instead of failing."""
+    from pigrocrm.core.templates.repository import TemplateRepository
+
+    service = ContractRegisterService(db_session)
+    winner = service._template()
+    real = TemplateRepository.get_by_name
+    calls = {"n": 0}
+
+    def blind_the_first_look(self: TemplateRepository, name: str):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        return None if calls["n"] == 1 else real(self, name)
+
+    monkeypatch.setattr(TemplateRepository, "get_by_name", blind_the_first_look)
+
+    assert service._template().id == winner.id

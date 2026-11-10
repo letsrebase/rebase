@@ -22,7 +22,7 @@ test('a dead API reads as a failure, not an empty list, and the app recovers onc
   test.setTimeout(60_000)
 
   await loginAsAdmin(page)
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   // Confirms the list genuinely works before the API dies, so what follows is a
   // regression against a real success, not against a page that never loaded.
   await expect(page.getByRole('button', { name: /nuovo cliente/i })).toBeVisible()
@@ -30,12 +30,11 @@ test('a dead API reads as a failure, not an empty list, and the app recovers onc
   await killApi()
 
   try {
-    // A brand-new query, not a reload: reloading the document would also re-run
-    // `GET /api/auth/me`, and `AuthProvider`'s own try/catch (lib/auth.tsx)
-    // treats *any* failure there -- including the network error this test just
-    // caused -- as "not authenticated", bouncing to /login and masking the
-    // thing actually under test. Typing into the search box changes
-    // `useCustomers`' own query key instead, which has never been fetched
+    // A brand-new query, not a reload: reloading the document would re-run
+    // `GET /api/auth/me` against the dead API and replace the page with the
+    // session-unknown screen, masking the thing actually under test. Typing into the
+    // search box changes
+    // `useOrganizations`' own query key instead, which has never been fetched
     // before and so has no stale-but-cached data to fall back on.
     await page.getByPlaceholder(/cerca per ragione sociale/i).fill('la richiesta deve fallire')
 
@@ -47,7 +46,7 @@ test('a dead API reads as a failure, not an empty list, and the app recovers onc
 
   // A real recovery, not merely "a banner appeared once" -- and specifically
   // *not* clearing the search box back to '' and re-checking, which was this
-  // test's first draft: `queryKeys.customers({})` was already fetched
+  // test's first draft: `queryKeys.organizations({})` was already fetched
   // successfully before the API died and is still within react-query's own
   // 30s staleTime (lib/query.ts), so that query never re-hits the network at
   // all and the check would pass even against a *still-broken* relaunch --
@@ -56,11 +55,11 @@ test('a dead API reads as a failure, not an empty list, and the app recovers onc
   // query to refetch from nothing, `GET /api/auth/me` included -- which is
   // also the one request that can only succeed if the relaunched process was
   // handed the *same* PIGROCRM_JWT_SECRET, since that is what verifies the
-  // still-current session cookie's signature. Staying on /app/customers here is
+  // still-current session cookie's signature. Staying on /app/organizations here is
   // therefore proof of both a working database connection and a correctly
   // propagated secret, not just an HTTP server that answers.
   await page.reload()
-  await expect(page).toHaveURL(/\/app\/customers/)
+  await expect(page).toHaveURL(/\/app\/organizations/)
   await expect(page.getByRole('alert')).not.toBeVisible()
   await expect(page.getByRole('button', { name: /nuovo cliente/i })).toBeVisible()
 })
@@ -68,7 +67,7 @@ test('a dead API reads as a failure, not an empty list, and the app recovers onc
 /**
  * Fix round 1's Critical finding: `routes/app/deal/index.tsx` has its own,
  * *separate* implementation of the identical guard the test above exercises
- * for Clienti -- `KanbanBoard` has no `DataTable` underneath it to inherit
+ * for Organizations -- `KanbanBoard` has no `DataTable` underneath it to inherit
  * that coverage from, so `DealsKanban` hand-rolls `boardUnavailable` itself
  * (`stagesUnavailable || dealsUnavailable`, each `isError && data.length ===
  * 0`). No spec ever visited the Kanban board with the API down, and a
@@ -77,7 +76,7 @@ test('a dead API reads as a failure, not an empty list, and the app recovers onc
  * this whole task exists to prevent.
  *
  * The Kanban page has no search box or other filter to force a brand-new,
- * never-cached query the way the Clienti test above does, so this test uses a
+ * never-cached query the way the Organizations test above does, so this test uses a
  * different lever to the same end: kill the API *before* this browser session
  * has ever visited `/app/deal` at all, then navigate there with an in-app
  * (client-side) link click, not `page.goto`. A client-side transition does not
@@ -94,11 +93,10 @@ test('a dead API reads as a failure on the Kanban board too, not an empty pipeli
   await killApi()
 
   try {
-    // Through the group, closed on the dashboard since the sidebar became grouped --
-    // see `helpers.ts::navigate`. Arriving *by clicking* rather than by `goto` is
-    // deliberate: the point is that `useDeals` mounts for the first time in this
-    // session and really does hit the dead API.
-    await navigate(page, 'Vendite', 'Deal')
+    // Through the sidebar, see `helpers.ts::navigate`. Arriving *by clicking* rather than
+    // by `goto` is deliberate: the point is that `useDeals` mounts for the first time in
+    // this session and really does hit the dead API.
+    await navigate(page, 'Deal')
     await expect(page).toHaveURL(/\/app\/deal/)
 
     await expect(page.getByRole('alert')).toBeVisible()

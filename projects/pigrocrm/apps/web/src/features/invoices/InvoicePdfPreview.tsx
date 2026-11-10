@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { isMissingFile, toProblem } from '@/lib/api'
 import { useCan } from '@/lib/auth'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { useInvoicePdf, type Invoice } from './queries'
 
 /**
@@ -56,14 +56,11 @@ export function InvoicePdfPreview({ invoice }: { invoice: Invoice }) {
           </div>
         )
       ) : !blob ? (
-        <>
-          <p className="sr-only">Caricamento del PDF…</p>
-          <Skeleton className="m-4 flex-1" />
-        </>
+        <LoadingState label="Caricamento del PDF…" className="m-4" />
       ) : !isPdf(blob) ? (
         <NotPdf invoice={invoice} />
       ) : (
-        <PdfFrame blob={blob} title={`Anteprima PDF ${invoice.tipo === 'proforma' ? 'proforma' : 'fattura'}`} />
+        <PdfFrame blob={blob} title={`Anteprima PDF ${invoice.type === 'proforma' ? 'proforma' : 'fattura'}`} />
       )}
     </aside>
   )
@@ -99,13 +96,13 @@ function PdfFrame({ blob, title }: { blob: Blob; title: string }) {
 function Empty({ invoice }: { invoice: Invoice }) {
   const mayProduce = useCan('produce_invoice_artifacts')
   const text =
-    invoice.tipo === 'proforma'
+    invoice.type === 'proforma'
       ? mayProduce
         ? 'Il PDF della proforma non è ancora stato generato: «Genera PDF proforma» lo produce.'
         : 'Il PDF della proforma non è ancora stato generato: si produce con «Genera PDF proforma», che il tuo ruolo non può usare.'
-      : invoice.stato === 'bozza'
+      : invoice.status === 'draft'
         ? 'Il PDF si genera all’emissione. Fino ad allora la bozza è solo numeri.'
-        : invoice.importata_da != null
+        : invoice.imported_from != null
           ? 'Fattura importata: il PDF originale non è archiviato qui.'
           : mayProduce
             ? 'Nessun PDF archiviato per questo documento. «Rigenera documenti» lo produce.'
@@ -118,7 +115,7 @@ function Empty({ invoice }: { invoice: Invoice }) {
  * version, or its stored file is gone. The server's detail for either is a log line
  * (`invoice_artifact <uuid>#pdf not found`, `document_blob <key> not found`), so this says
  * it in Italian instead (REB-168), in the same voice as `Empty`, and names «Rigenera
- * documenti» only where it is on the page: an issued fattura of ours, since that button
+ * documents» only where it is on the page: an issued invoice of ours, since that button
  * repairs a lost file with identical bytes, and only to a role that has it (REB-294
  * hides it from a readonly one, and `InvoiceActions` words it the same way). A
  * proforma's «Genera PDF proforma» is not shown while the row carries an id, and an
@@ -127,7 +124,7 @@ function Empty({ invoice }: { invoice: Invoice }) {
 function Missing({ invoice }: { invoice: Invoice }) {
   const regenerate = useRegenerateHint(invoice)
   const text =
-    invoice.tipo === 'proforma'
+    invoice.type === 'proforma'
       ? 'Il PDF di questa proforma non è disponibile.'
       : regenerate === 'press'
         ? 'Il PDF di questa fattura non è disponibile. «Rigenera documenti» lo genera di nuovo.'
@@ -147,7 +144,7 @@ function Missing({ invoice }: { invoice: Invoice }) {
  */
 function NotPdf({ invoice }: { invoice: Invoice }) {
   const regenerate = useRegenerateHint(invoice)
-  const which = invoice.tipo === 'proforma' ? 'questa proforma' : 'questa fattura'
+  const which = invoice.type === 'proforma' ? 'questa proforma' : 'questa fattura'
   const why = `Il file archiviato per ${which} non è un PDF, quindi l’anteprima non lo mostra.`
   const how =
     regenerate === 'press'
@@ -165,7 +162,7 @@ function NotPdf({ invoice }: { invoice: Invoice }) {
  */
 function useRegenerateHint(invoice: Invoice): 'press' | 'role' | null {
   const mayProduce = useCan('produce_invoice_artifacts')
-  const ours = invoice.tipo !== 'proforma' && invoice.stato === 'emessa' && invoice.importata_da == null
+  const ours = invoice.type !== 'proforma' && invoice.status === 'issued' && invoice.imported_from == null
   if (!ours) return null
   return mayProduce ? 'press' : 'role'
 }

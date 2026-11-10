@@ -21,7 +21,7 @@ import { useCostCategories, useCosts, type Cost } from './queries'
  * deal.
  */
 export function CostsPanel({ dealId }: { dealId?: string }) {
-  const costs = useCosts(dealId === undefined ? { solo_generali: true } : { deal_id: dealId })
+  const costs = useCosts(dealId === undefined ? { only_general: true } : { deal_id: dealId })
   // Archived categories included, deliberately: a row filed under one before it was
   // archived must still show its name, and the picker below is the place that keeps
   // them out of *new* costs.
@@ -41,7 +41,7 @@ export function CostsPanel({ dealId }: { dealId?: string }) {
 
   const customFields = schema.data?.custom_fields ?? []
   const all = categories.data ?? []
-  const active = all.filter((category) => !category.archiviata)
+  const active = all.filter((category) => !category.archived)
 
   return (
     <div className="space-y-4">
@@ -64,6 +64,7 @@ export function CostsPanel({ dealId }: { dealId?: string }) {
       </div>
 
       <DataTable
+        label="Costi"
         columns={buildCostColumns(all, customFields)}
         data={costs.data?.items ?? []}
         isLoading={costs.isLoading}

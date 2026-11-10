@@ -4,8 +4,8 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AdminAdmins } from './Admins'
 
-const IVAN = { id: '1', email: 'ivan@rebase.it', nome: 'Ivan', attivo: true, created_at: '2026-09-10T10:00:00Z' }
-const ADA = { id: '2', email: 'ada@rebase.it', nome: 'Ada', attivo: true, created_at: '2026-09-10T11:00:00Z' }
+const IVAN = { id: '1', email: 'ivan@rebase.it', first_name: 'Ivan', active: true, created_at: '2026-09-10T10:00:00Z' }
+const ADA = { id: '2', email: 'ada@rebase.it', first_name: 'Ada', active: true, created_at: '2026-09-10T11:00:00Z' }
 
 function page(items: unknown[], next_cursor: string | null = null) {
   return { items, next_cursor }
@@ -74,7 +74,7 @@ describe('the Amministratori page (REB-279: promote/demote, no password anywhere
     await user.click(screen.getByRole('button', { name: 'Promuovi' }))
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('ada@rebase.it'))
     const [, init] = spy.mock.calls[1]!
-    expect(JSON.parse(init?.body as string)).toEqual({ email: 'ada@rebase.it', nome: 'Ada', cognome: 'Lovelace' })
+    expect(JSON.parse(init?.body as string)).toEqual({ email: 'ada@rebase.it', first_name: 'Ada', last_name: 'Lovelace' })
   })
 
   it('keeps a refused promotion on the field the server names', async () => {
@@ -110,6 +110,17 @@ describe('the Amministratori page (REB-279: promote/demote, no password anywhere
     const [url, init] = spy.mock.calls[1]!
     expect(url).toBe('/api/hub/admins/2/demote')
     expect(init?.method).toBe('POST')
+  })
+
+  it('says so under the form when a row cannot be removed, and keeps the row', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch')
+    spy.mockResolvedValueOnce(answer(200, page([IVAN, ADA])))
+    spy.mockResolvedValueOnce(answer(409, { detail: 'Deve restare almeno un amministratore.' }))
+    mount()
+    await screen.findByText('ada@rebase.it')
+    await userEvent.setup().click(screen.getByRole('button', { name: /Rimuovi.*Ada.*ada@rebase\.it/s }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Deve restare almeno un amministratore.')
+    expect(screen.getByText('ada@rebase.it')).toBeInTheDocument()
   })
 
   it('debounces the search box and asks the server, not the browser, to narrow the list', async () => {

@@ -1,0 +1,200 @@
+"""`update_contract`, `set_contract_state` and `update_rate_card`, the agent's side of
+what the contract page does (REB-741, REB-742), plus `create_rate_card`'s
+`close_previous`: real MCP round trips, so a refusal reaches the client as the
+domain sentence and not as a raw dump."""
+
+from datetime import date
+
+from mcp import Client
+from sqlalchemy.orm import Session
+
+from pigrocrm.core.contracts.models import Contract
+from pigrocrm.core.organizations.models import Organization
+
+
+def _contract_id(mcp_session: Session) -> str:
+    customer = Organization(legal_name="ACME Srl")
+    mcp_session.add(customer)
+    mcp_session.flush()
+    contract = Contract(
+        customer_id=customer.id,
+        title="Consulenza",
+        start=date(2026, 1, 1),
+        renewal_type="none",
+        termination_notice_days=30,
+        billing_cadence="monthly",
+        expense_policy={"kind": "not_reimbursable"},
+    )
+    mcp_session.add(contract)
+    mcp_session.flush()
+    mcp_session.commit()
+    return str(contract.id)
+
+
+async def test_a_contract_is_edited_and_activated(server, mcp_session) -> None:
+    contract_id = _contract_id(mcp_session)
+
+    async with Client(server) as client:
+        edited = await client.call_tool(
+            "update_contract",
+            {"contract_id": contract_id, "changes": {"termination_notice_days": 60}},
+        )
+        assert edited.structured_content["termination_notice_days"] == 60
+
+        active = await client.call_tool(
+            "set_contract_state", {"contract_id": contract_id, "status": "active"}
+        )
+        assert active.structured_content["status"] == "active"
+
+        repeat = await client.call_tool(
+            "set_contract_state",
+            {"contract_id": contract_id, "status": "active"},
+        )
+        assert repeat.is_error
+        assert "già" in repeat.content[0].text
+
+
+async def test_a_rate_card_is_replaced_and_edited(server, mcp_session) -> None:
+    contract_id = _contract_id(mcp_session)
+
+    async with Client(server) as client:
+        first = await client.call_tool(
+            "create_rate_card",
+            {
+                "contract_id": contract_id,
+                "valid_from": "2026-01-01",
+                "type": "daily",
+                "amount": "400.00",
+                "unit": "day",
+            },
+        )
+        second = await client.call_tool(
+            "create_rate_card",
+            {
+                "contract_id": contract_id,
+                "valid_from": "2027-01-01",
+                "type": "daily",
+                "amount": "450.00",
+                "unit": "day",
+                "close_previous": True,
+            },
+        )
+        listed = await client.call_tool("list_rate_cards", {"contract_id": contract_id})
+        assert [(c["id"], c["valid_to"]) for c in listed.structured_content["items"]] == [
+            (first.structured_content["id"], "2026-12-31"),
+            (second.structured_content["id"], None),
+        ]
+
+        edited = await client.call_tool(
+            "update_rate_card",
+            {
+                "contract_id": contract_id,
+                "rate_card_id": second.structured_content["id"],
+                "changes": {"amount": "475.00"},
+            },
+        )
+        assert edited.structured_content["amount"] == "475.00"
+
+
+async def test_a_cap_on_the_organizations_share_is_set_read_and_simulated(
+    server, mcp_session: Session
+) -> None:
+    """REB-761: an agent sets `customer_share_cap`, reads it back with `get_contract`,
+    sees the concentration compared with it and hears from `simulate_ceiling` that an
+    addition takes the customer past it."""
+    from pigrocrm.core.actor import Actor
+    from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
+    from pigrocrm.core.fiscal.service import FiscalProfileService
+
+    FiscalProfileService(mcp_session).upsert(
+        FiscalProfileUpsert(pack_id="it-standard"), Actor(id=None, type="mcp", role="admin")
+    )
+    mcp_session.commit()
+    contract_id = _contract_id(mcp_session)
+
+    async with Client(server) as client:
+        edited = await client.call_tool(
+            "update_contract",
+            {"contract_id": contract_id, "changes": {"customer_share_cap": "50.00"}},
+        )
+        assert edited.structured_content["customer_share_cap"] == "50.00"
+        read = await client.call_tool("get_contract", {"contract_id": contract_id})
+        assert read.structured_content["customer_share_cap"] == "50.00"
+
+        concentration = await client.call_tool(
+            "get_contract_concentration", {"contract_id": contract_id, "as_of": "2026-06-01"}
+        )
+        assert concentration.structured_content["threshold"] == 0.5
+        assert concentration.structured_content["threshold_from_contract"] is True
+
+        simulated = await client.call_tool(
+            "simulate_ceiling",
+            {
+                "year": 2026,
+                "budgeted_value": "1000.00",
+                "contract_id": contract_id,
+                "expected_date": "2026-06-01",
+            },
+        )
+        assert simulated.structured_content["thresholds"] == []
+        assert simulated.structured_content["contract_cap"]["falls_within"] is False
+
+
+async def test_a_note_on_the_renewal_clause_is_read_back_with_get_contract(
+    server, mcp_session: Session
+) -> None:
+    """REB-762's done-when: a note is added to the renewal clause and an agent reads it with
+    `get_contract`; it can also correct it and list them, and a note is never deleted."""
+    contract_id = _contract_id(mcp_session)
+
+    async with Client(server) as client:
+        created = await client.call_tool(
+            "create_clause_note",
+            {
+                "contract_id": contract_id,
+                "clause_reference": "Art. 8.3 Rinnovo",
+                "literal_text": "Il contratto si rinnova salvo disdetta.",
+                "adopted_interpretation": "Rinnovo tacito, disdetta a 60 giorni.",
+            },
+        )
+        note_id = created.structured_content["id"]
+        read = await client.call_tool("get_contract", {"contract_id": contract_id})
+        [note] = read.structured_content["note_clauses"]
+        assert note["adopted_interpretation"] == "Rinnovo tacito, disdetta a 60 giorni."
+        assert read.structured_content["next_contract_id"] is None
+
+        corrected = await client.call_tool(
+            "update_clause_note",
+            {
+                "contract_id": contract_id,
+                "note_id": note_id,
+                "changes": {"note": "Confermato dal cliente"},
+            },
+        )
+        assert corrected.structured_content["note"] == "Confermato dal cliente"
+        listed = await client.call_tool("list_clause_notes", {"contract_id": contract_id})
+        assert [n["id"] for n in listed.structured_content["items"]] == [note_id]
+
+        names = {tool.name for tool in (await client.list_tools()).tools}
+        assert not {"delete_clause_note", "archive_clause_note"} & names
+
+
+async def test_a_contract_is_renewed_with_renew_contract(server, mcp_session: Session) -> None:
+    contract_id = _contract_id(mcp_session)
+
+    async with Client(server) as client:
+        await client.call_tool(
+            "update_contract", {"contract_id": contract_id, "changes": {"end": "2026-12-31"}}
+        )
+        renewed = await client.call_tool(
+            "renew_contract",
+            {"contract_id": contract_id, "duration_count": 6, "duration_unit": "months"},
+        )
+        body = renewed.structured_content
+        assert (body["start"], body["end"]) == ("2027-01-01", "2027-06-30")
+        assert body["previous_contract_id"] == contract_id
+        read = await client.call_tool("get_contract", {"contract_id": contract_id})
+        assert read.structured_content["next_contract_id"] == body["id"]
+        again = await client.call_tool("renew_contract", {"contract_id": contract_id})
+        assert again.is_error
+        assert "già stato rinnovato" in again.content[0].text

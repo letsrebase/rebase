@@ -1,12 +1,12 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router'
 import { Settings, ShieldAlert } from 'lucide-react'
 import { defaultDashboardSearch } from '@/features/dashboard/search'
-import { SETTINGS_TABS } from '@/features/settings/tabs'
+import { SETTINGS_GROUPS, SETTINGS_TABS, settingsGroupOf } from '@/features/settings/tabs'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@rebase/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
 import { ConsentOutcome } from '@/components/ConsentOutcome'
-import { messaggioEsito, riprovaEsito } from '@/features/drive/esito'
+import { consentOutcome } from '@/features/consent/outcome'
 import { useAuth, useIsAdmin } from '@/lib/auth'
 import { canSeeSettingsTab } from '@/lib/permissions'
 
@@ -17,7 +17,7 @@ import { canSeeSettingsTab } from '@/lib/permissions'
  * write) -- Token is not (`PatService` scopes by `actor.id`, not role) and lives
  * at its own route, `/app/token`, outside this gate entirely.
  *
- * Note the asymmetry on the two newest: `TemplateService.list`/`describe`/
+ * Notes the asymmetry on the two newest: `TemplateService.list`/`describe`/
  * `preview` and `EmitterProfileService.get` carry no role check, because the
  * new-from-template dialog and the PDF header need them for every role. Only the
  * writes are gated, and only the writes live behind this tab.
@@ -48,12 +48,12 @@ import { canSeeSettingsTab } from '@/lib/permissions'
  *
  * - `profilo` (`ProfilePanel`) is a person's own preferences, not an admin-only write,
  *   and the weekly digest's own opt-out link (spec 2026-09-16 §3.6) sends whoever
- *   received the mail straight to `/app/settings/profile` -- a collaboratore or readonly
+ *   received the mail straight to `/app/settings/profile` -- a collaborator or readonly
  *   account included. Without this exemption that link would be dead for anyone but an
  *   admin, which REB-221's first round shipped and its second round exists to fix.
- * - `drive` (`DrivePanel`) is open to a collaboratore (REB-457). The Drive credential is
+ * - `drive` (`DrivePanel`) is open to a collaborator (REB-457). The Drive credential is
  *   per CRM user and the service lets any writer connect their own, and the consent's
- *   callback lands every outcome (`?esito=`) on this tab. A collaboratore reads the
+ *   callback lands every outcome (`?outcome=`) on this tab. A collaborator reads the
  *   outcome there, from the route itself, and manages their own Drive under it.
  *
  * A non-admin past the gate sees only the tabs their role may see, never the admin-only
@@ -61,7 +61,7 @@ import { canSeeSettingsTab } from '@/lib/permissions'
  *
  * One outcome is still read out in front of the gate: the Drive consent's, to a readonly
  * person (REB-446). They cannot start that consent, but the callback cannot know the
- * role, so an outcome that lands here anyway (`sessione` after logging back in as
+ * role, so an outcome that lands here anyway (`session_expired` after logging back in as
  * somebody else, a link somebody sent) is read above the explanation, without «Riprova»,
  * which `ConsentOutcome` offers only to a writer.
  */
@@ -73,21 +73,17 @@ export function SettingsLayout() {
   const current = SETTINGS_TABS.find((tab) => path.endsWith(`/settings/${tab.value}`))
   const mayOpen =
     isAdmin ||
-    (user !== null && current !== undefined && canSeeSettingsTab(user.ruolo, current.value))
+    (user !== null && current !== undefined && canSeeSettingsTab(user.role, current.value))
 
   if (!mayOpen) {
     const search = (location as { search?: Record<string, unknown> }).search
-    const driveEsito =
-      current?.value === 'drive' && typeof search?.esito === 'string' ? search.esito : undefined
+    const driveOutcome =
+      current?.value === 'drive' && typeof search?.outcome === 'string' ? search.outcome : undefined
     return (
       <div className="p-8">
         <div className="mx-auto flex max-w-md flex-col items-center gap-3 pt-16 text-center">
-          {driveEsito ? (
-            <ConsentOutcome
-              messaggio={messaggioEsito(driveEsito)}
-              riprova={riprovaEsito(driveEsito)}
-              className="mb-4 text-left"
-            />
+          {driveOutcome ? (
+            <ConsentOutcome {...consentOutcome('drive', driveOutcome)} className="mb-4 text-left" />
           ) : null}
           <ShieldAlert className="size-10 text-muted-foreground" aria-hidden="true" />
           <h1 className="text-xl font-semibold tracking-tight">Accesso riservato</h1>
@@ -112,20 +108,20 @@ export function SettingsLayout() {
   }
 
   // REB-294: the tab strip is the table, not a private list. A non-admin who got past
-  // the gate above sees `profilo` and, as a collaboratore, `drive` (REB-457), and
+  // the gate above sees `profilo` and, as a collaborator, `drive` (REB-457), and
   // nothing else: every other tab's services gate their writes on `require_admin`,
   // which is what `canSeeSettingsTab` encodes. The same function filters the sidebar's
   // «Impostazioni» sub-items and the profile menu's own entries, so none can drift.
-  const tabs = SETTINGS_TABS.filter(
-    (tab) => user !== null && canSeeSettingsTab(user.ruolo, tab.value),
-  )
-  const active =
-    tabs.find((tab) => tab.value === current?.value)?.value ?? (isAdmin ? 'fields' : 'profile')
+  // REB-771: the strip is cut to the entries of the group the page is on (the sidebar
+  // lists the groups), and a path that is no section falls back to Profilo's group.
+  const group = settingsGroupOf(current?.value) ?? SETTINGS_GROUPS[0]
+  const tabs = group.tabs.filter((tab) => user !== null && canSeeSettingsTab(user.role, tab.value))
+  const active = current?.value ?? 'profile'
 
   // `Tabs` wraps the header rather than sitting under it: the underline tabs of §4 are
   // *part* of the page's intestazione (`PageHeader`'s own `tabs` slot draws them and
   // closes them with the rule), and Radix needs the list inside its own root.
-  // `SETTINGS_TABS` stays the single source -- `AppShell` renders the same array as the
+  // `SETTINGS_GROUPS` stays the single source -- `AppShell` renders the same groups as the
   // sidebar's sub-items, so the two cannot drift.
   return (
     <Tabs value={active}>

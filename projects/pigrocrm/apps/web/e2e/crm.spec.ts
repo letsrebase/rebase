@@ -40,7 +40,7 @@ test('typing a field label one keystroke at a time still derives the whole key, 
   // live (strict-mode violation, two matches) before adding this.
   await expect(page.getByText('Settore', { exact: true })).toBeVisible()
 
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await expect(page.getByLabel('Settore')).toBeVisible()
 })
@@ -48,7 +48,7 @@ test('typing a field label one keystroke at a time still derives the whole key, 
 test('creating a customer, a person and a deal, then moving it across the board', async ({ page }) => {
   const name = `ACME ${Date.now()}`
 
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill(name)
   await page.getByLabel('P.IVA').fill('12345678901')
@@ -73,7 +73,7 @@ test('creating a customer, a person and a deal, then moving it across the board'
   // The row, not the page. What this step has to prove is that the person is in
   // the people list, and `getByText('Rossi')` proves only that the string is
   // somewhere on it -- satisfied just as well by the «Azienda» column, which
-  // renders `customer_ragione_sociale` (`features/people/columns.tsx`) and would
+  // renders `customer_legal_name` (`features/people/columns.tsx`) and would
   // read "Rossi Ingegneria ... Srl" for anyone linked to the customer
   // `e2e/search.spec.ts` creates. The surname alone is also not unique to a
   // person: `DataTable` draws real `<tr>` rows, so the row's own accessible name
@@ -83,8 +83,9 @@ test('creating a customer, a person and a deal, then moving it across the board'
 
   await page.goto('/app/deal')
   await page.getByRole('button', { name: /nuovo deal/i }).click()
-  await page.getByLabel(/^Cliente/).click()
-  await page.getByRole('option', { name }).click()
+  // The customer picker is a search box with the matches as buttons under it.
+  await page.getByLabel('Cerca un cliente').fill(name)
+  await page.getByRole('button', { name }).click()
   await page.getByLabel(/^Nome\b/).fill('Progetto E2E')
   await page.getByRole('button', { name: 'Salva' }).click()
 
@@ -97,20 +98,20 @@ test('creating a customer, a person and a deal, then moving it across the board'
   // move actually took, since the card never disappears) -- specifically inside
   // Offerta's own column, and still there after a reload discards any optimistic
   // client state and re-reads the server's own record.
-  const offerta = page
+  const offer = page
     .locator('div.flex.w-72.shrink-0.flex-col')
     .filter({ has: page.getByRole('heading', { name: 'Offerta', exact: true }) })
-  await expect(offerta.getByText('Progetto E2E', { exact: true })).toBeVisible()
+  await expect(offer.getByText('Progetto E2E', { exact: true })).toBeVisible()
 
   await page.reload()
-  const offertaAfterReload = page
+  const offerAfterReload = page
     .locator('div.flex.w-72.shrink-0.flex-col')
     .filter({ has: page.getByRole('heading', { name: 'Offerta', exact: true }) })
-  await expect(offertaAfterReload.getByText('Progetto E2E', { exact: true })).toBeVisible()
+  await expect(offerAfterReload.getByText('Progetto E2E', { exact: true })).toBeVisible()
 })
 
 test('an invalid VAT number surfaces the API message on the field', async ({ page }) => {
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill('Test IVA')
   await page.getByLabel('P.IVA').fill('123')
@@ -122,7 +123,7 @@ test('an invalid VAT number surfaces the API message on the field', async ({ pag
 
 test('the timeline records what happened', async ({ page }) => {
   const name = `Timeline ${Date.now()}`
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill(name)
   await page.getByRole('button', { name: 'Salva' }).click()

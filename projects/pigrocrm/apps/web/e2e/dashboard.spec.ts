@@ -16,7 +16,7 @@
  *    transaction as the state change, and the deal comes back moved. `OfferStatePicker.
  *    test.tsx` asserts the button posts; only this asserts the automation ran;
  *  - the movement's timeline entry is written by `Actor.system()` with the human in
- *    `attivata_da`, so "the system did it, because you accepted that offer" is one row and
+ *    `triggered_by`, so "the system did it, because you accepted that offer" is one row and
  *    not two — and reading it requires the row to have survived a real commit;
  *  - the commercial signal counts a predicate over three tables. Watching it go **down by
  *    one** because a deal was repaired is the only way to see that the card and the
@@ -32,13 +32,14 @@
  * `playwright.config.ts` runs `workers: 1, fullyParallel: false` against one database that
  * is never truncated between invocations.
  */
+import { readFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
 import { ensureSpaceHasWork, loginAsAdmin, seedCycleFixture, seedDealWithRate } from './helpers'
 
 /**
  * Today, from the browser host's own calendar parts.
  *
- * Never a literal date and never a literal year: `InvoiceService._check_issue_date` refuses
+ * Never a literal date and never a literal year: `invoices.checks.check_issue_date` refuses
  * anything outside the current one, and a hard-coded `2026` is a spec that starts failing on
  * the first of January. Never `toISOString().slice(0, 10)` either — that projects through
  * UTC, so anywhere behind it the date loses a day and on 31 December it loses a year, which
@@ -74,7 +75,7 @@ function currentMonth(): { da: string; a: string } {
  * visibility of a sentence the product had deliberately stopped printing, and timed out on
  * every run.
  *
- * The figure itself did not go anywhere: `CommercialDashboard.offerte_accettate_deal_non_vinto`
+ * The figure itself did not go anywhere: `CommercialDashboard.accepted_offers_deal_not_won`
  * is still computed, still the permanent cross-check on automation A1, and still what makes
  * the step below («the signal, after: down by one») worth asserting at all. Read where it
  * lives now. When a screen prints it again, this helper is the one place to point back at
@@ -82,10 +83,10 @@ function currentMonth(): { da: string; a: string } {
  */
 async function readSignal(page: Page): Promise<number> {
   const { da, a } = currentMonth()
-  const response = await page.request.get('/api/dashboard/sales', { params: { da, a } })
+  const response = await page.request.get('/api/dashboard/sales', { params: { from: da, to: a } })
   expect(response.status(), await response.text()).toBe(200)
-  const body = (await response.json()) as { offerte_accettate_deal_non_vinto: number }
-  const value = body.offerte_accettate_deal_non_vinto
+  const body = (await response.json()) as { accepted_offers_deal_not_won: number }
+  const value = body.accepted_offers_deal_not_won
   // A `NaN` compared with `>=` is silently false, so a field that stopped being a number
   // would look like a product failure. Say so instead.
   expect(Number.isInteger(value), `il segnale non è un numero: ${String(value)}`).toBe(true)
@@ -97,7 +98,10 @@ test.describe('il ciclo completo — metà umana', () => {
     page,
   }) => {
     await loginAsAdmin(page)
-    const me = (await (await page.request.get('/api/auth/me')).json()) as { id: string }
+    const me = (await (await page.request.get('/api/auth/me')).json()) as {
+      id: string
+      name: string
+    }
     const cycle = await seedCycleFixture(page)
 
     // 1. The signal, before. At least one, and the fixture is what guarantees it: an
@@ -114,9 +118,9 @@ test.describe('il ciclo completo — metà umana', () => {
     await page.keyboard.press('ControlOrMeta+k')
     const palette = page.getByRole('combobox')
     await expect(palette).toBeFocused()
-    await palette.fill(cycle.partitaIva.slice(3, 9))
+    await palette.fill(cycle.vatNumber.slice(3, 9))
     await page.getByRole('option', { name: cycle.customerName }).click()
-    await expect(page).toHaveURL(new RegExp(`/app/customers/${cycle.customerId}$`))
+    await expect(page).toHaveURL(new RegExp(`/app/organizations/${cycle.customerId}$`))
 
     // 3. From the customer to the deal, and from the deal's own Documenti tab to the offer.
     //    Not a `goto` straight to the document: the point of the cycle is that these screens
@@ -134,9 +138,9 @@ test.describe('il ciclo completo — metà umana', () => {
     // step 5 below pass whether or not automation A1 had ever run. `DealStageBar` says
     // where the deal *is*: «Fase attuale: X» while it is open, the outcome's own word
     // once it is closed.
-    const fase = page.getByRole('group', { name: 'Fase del deal' })
-    await expect(fase).toContainText('Fase attuale:')
-    await expect(fase).not.toContainText('Vinto')
+    const stage = page.getByRole('group', { name: 'Fase del deal' })
+    await expect(stage).toContainText('Fase attuale:')
+    await expect(stage).not.toContainText('Vinto')
 
     await page.getByRole('tab', { name: 'Documenti' }).click()
     await page.getByRole('link', { name: cycle.documentTitle }).click()
@@ -146,7 +150,7 @@ test.describe('il ciclo completo — metà umana', () => {
     //    from the server's own transition table, so this is the only button offered.
     await page.getByRole('button', { name: 'Segna come Accettata' }).click()
     await expect(page.getByText('Accettata')).toBeVisible()
-    // `accettata` is terminal (`OFFER_TRANSITIONS`), so the picker must now offer nothing.
+    // `accepted` is terminal (`OFFER_TRANSITIONS`), so the picker must now offer nothing.
     await expect(page.getByRole('button', { name: /^Segna come/ })).toHaveCount(0)
 
     // 5. Automation A1 ran inside that same transaction: the deal is won. Nothing in the
@@ -160,20 +164,22 @@ test.describe('il ciclo completo — metà umana', () => {
     //    you accepted that offer" are useless apart.
     await page.getByRole('tab', { name: 'Timeline' }).click()
     // Narrowed to A1, because A2 writes an entry of the *same* kind on this same deal: the
-    // first offer going `inviata` advanced it to «Offerta». Two automations, two rows, and
+    // first offer going `sent` advanced it to «Offerta». Two automations, two rows, and
     // an assertion that did not say which rule it meant would pass on either of them.
-    const movimento = page
+    const movement = page
       .getByRole('listitem')
       .filter({ hasText: /Automazione\.stage spostato/ })
       .filter({ hasText: 'Regola: A1' })
-    await expect(movimento).toHaveCount(1)
-    await expect(movimento).toContainText('Sistema')
+    await expect(movement).toHaveCount(1)
+    await expect(movement).toContainText('Sistema')
     // Not the user's own badge: an automation attributed to whoever happened to trigger it
     // is indistinguishable from a change that person made by hand.
-    await expect(movimento).not.toContainText('Utente')
-    await expect(movimento).toContainText('Regola: A1')
-    await expect(movimento).toContainText('A: Vinto')
-    await expect(movimento).toContainText(`Attivata da: ${me.id}`)
+    await expect(movement).not.toContainText('Utente')
+    await expect(movement).toContainText('Regola: A1')
+    await expect(movement).toContainText('A: Vinto')
+    // The member's name, resolved from the id the payload holds (REB-781), and the channel
+    // they used: this test drives the browser.
+    await expect(movement).toContainText(`Attivata da ${me.name} (dal web)`)
 
     // 7. The signal, after: **down by one**.
     //
@@ -196,62 +202,62 @@ test.describe('il ciclo completo — metà umana', () => {
       id: string
       code: string | null
     }[]
-    const vinto = stages.find((stage) => stage.code === 'vinto')
-    if (!vinto) throw new Error('lo stato «vinto» non è fra gli stati seminati')
+    const won = stages.find((stage) => stage.code === 'won')
+    if (!won) throw new Error('lo stato «vinto» non è fra gli stati seminati')
 
     // A deal that satisfies the predicate: won, with a billable hour nobody has put on a
     // document. Seeded so the count is at least one — a card and a list that agree on zero
     // agree about nothing, and would go on agreeing with the filter deleted.
     const { dealId } = await seedDealWithRate(page.request, {
-      nome: `Ciclo da fatturare ${stamp}`,
-      tariffa: '90.000000',
+      name: `Ciclo da fatturare ${stamp}`,
+      rate: '90.000000',
     })
     const entry = await page.request.post('/api/time-entries', {
       data: {
         deal_id: dealId,
         user_id: me.id,
-        data: isoToday(),
+        date: isoToday(),
         // A string with two decimal places: a bare JSON number arrives as a float, and
         // `Decimal` then carries only as many places as the float itself.
-        ore: '4.00',
-        descrizione: 'Ciclo lavoro da fatturare',
-        fatturabile: true,
+        hours: '4.00',
+        description: 'Ciclo lavoro da fatturare',
+        billable: true,
       },
     })
     expect(entry.status(), await entry.text()).toBe(201)
     const moved = await page.request.patch(`/api/deals/${dealId}/stage`, {
-      data: { stage_id: vinto.id },
+      data: { stage_id: won.id },
     })
     expect(moved.status(), await moved.text()).toBe(200)
 
     // And one deal that does *not* satisfy it, so "the filter narrows" is a fact this test
     // owns rather than one it inherits from whatever else the database happens to hold.
     await seedDealWithRate(page.request, {
-      nome: `Ciclo non fatturabile ${stamp}`,
-      tariffa: '90.000000',
+      name: `Ciclo non fatturabile ${stamp}`,
+      rate: '90.000000',
     })
 
     // The operational tab left the dashboard on 2026-09-08; the signal's count still comes
     // from the API, and the list behind it is what this test compares it with.
-    const segnali = (await (await page.request.get('/api/dashboard/operational')).json()) as {
-      segnali: { codice: string; conteggio: number }[]
+    const signals = (await (await page.request.get('/api/dashboard/operational')).json()) as {
+      signals: { code: string; count: number }[]
     }
-    const cartellino = segnali.segnali.find((s) => s.codice === 'vinto_da_fatturare')
-    if (!cartellino) throw new Error('il segnale «Vinto ma da fatturare» non è fra i segnali')
-    const sulCartellino = cartellino.conteggio
-    expect(sulCartellino).toBeGreaterThanOrEqual(1)
+    const toInvoiceSignal = signals.signals.find((s) => s.code === 'won_to_invoice')
+    if (!toInvoiceSignal) throw new Error('il segnale «Vinto ma da fatturare» non è fra i segnali')
+    const onTheTag = toInvoiceSignal.count
+    expect(onTheTag).toBeGreaterThanOrEqual(1)
 
-    await page.goto('/app/deal/list?da_fatturare=true')
-    await expect(page).toHaveURL(/\/app\/deal\/list\?da_fatturare=true/)
+    await page.goto('/app/deal/list?to_invoice=true')
+    await expect(page).toHaveURL(/\/app\/deal\/list\?to_invoice=true/)
     // Filtered rather than bare: `DataTable`'s own loading indicator is also a `status`,
     // so `getByRole('status')` alone is two elements and a strict-mode violation.
-    const bandiera = page.getByRole('status').filter({ hasText: 'Vinto ma da fatturare' })
-    await expect(bandiera).toContainText('Solo i deal vinti con ore fatturabili')
+    const banner = page.getByRole('status').filter({ hasText: 'Vinto ma da fatturare' })
+    await expect(banner).toContainText('Solo i deal vinti con ore fatturabili')
 
     // Criterion 2, as a number. The header row is the `+ 1`; `useDeals` drains every page
     // of the cursor, so this is the whole filtered set and not the first fifty of it.
     const filtrate = page.getByRole('row')
-    await expect(filtrate).toHaveCount(sulCartellino + 1)
+    await expect(filtrate).toHaveCount(onTheTag + 1)
 
     // The other half of criterion 2, and the one its quiet failure hides behind: an
     // unfiltered list rendered under a label promising a filtered one would satisfy every
@@ -260,18 +266,18 @@ test.describe('il ciclo completo — metà umana', () => {
     await expect(page.getByRole('status').filter({ hasText: 'Vinto ma da fatturare' })).toHaveCount(
       0,
     )
-    const tutte = page.getByRole('row')
+    const all = page.getByRole('row')
     await expect(async () => {
-      expect(await tutte.count()).toBeGreaterThan(sulCartellino + 1)
+      expect(await all.count()).toBeGreaterThan(onTheTag + 1)
     }).toPass()
   })
 
-  test('the three tabs are reachable and the period is in the URL', async ({ page }) => {
+  test('the tabs are reachable and the period is in the URL', async ({ page }) => {
     await loginAsAdmin(page)
     await ensureSpaceHasWork(page)
     const { da, a } = currentMonth()
 
-    await page.goto(`/app/?tab=economica&da=${da}&a=${a}`)
+    await page.goto(`/app/?tab=economic&from=${da}&to=${a}`)
     await expect(page.getByRole('group', { name: 'Ricavi incassati' })).toBeVisible()
 
     // The period is still in the address bar, which is the entire point of §4: a screenshot
@@ -281,19 +287,23 @@ test.describe('il ciclo completo — metà umana', () => {
     // — so a reload of the normalised URL lands on the dev server's own "did you mean
     // /app/?" page, which is an artefact of the harness and not of the product.
     // `search.spec.ts` records the same trap from the other direction.
-    const condiviso = page.url()
-    // `&a=`, not `a=`: the closing bound's parameter name is a suffix of the opening one's,
-    // so a bare `a=…` would also be found inside `da=…` and the assertion would hold for a
-    // URL carrying only one of the two.
-    expect(condiviso).toContain(`da=${da}`)
-    expect(condiviso).toContain(`&a=${a}`)
-    await page.goto(condiviso.replace('/app?', '/app/?'))
+    const shared = page.url()
+    // Both bounds, each by its own name: `from=` and `to=` share no suffix, so neither
+    // assertion can be satisfied by the other parameter.
+    expect(shared).toContain(`from=${da}`)
+    expect(shared).toContain(`to=${a}`)
+    await page.goto(shared.replace('/app?', '/app/?'))
     await expect(page.getByRole('group', { name: 'Ricavi incassati' })).toBeVisible()
-    // Three tabs since the Scadenziario joined them (REB-329); the operational one left
-    // the page on 2026-09-08.
-    await expect(page.getByRole('tab')).toHaveCount(3)
+    // Five tabs since the Work units joined them (REB-756, after the Year of REB-757 and the
+    // Scadenziario of REB-329); the operational one left the page on 2026-09-08.
+    await expect(page.getByRole('tab')).toHaveCount(5)
 
-    await page.goto('/app/?tab=commerciale')
+    // The days analysis opens from its own URL and reads the same period.
+    await page.goto(`/app/?tab=work_units&from=${da}&to=${a}`)
+    await expect(page.getByRole('group', { name: 'Giornate nel periodo' })).toBeVisible()
+    await expect(page.getByRole('group', { name: 'Tariffa reale al giorno' })).toBeVisible()
+
+    await page.goto('/app/?tab=commercial')
     await expect(page.getByText('Pipeline per stato')).toBeVisible()
     await expect(page.getByLabel('Dal')).toHaveCount(1)
   })
@@ -303,7 +313,7 @@ test.describe('il ciclo completo — metà umana', () => {
   }) => {
     await loginAsAdmin(page)
     await ensureSpaceHasWork(page)
-    await page.goto('/app/?tab=economica')
+    await page.goto('/app/?tab=economic')
     await expect(page.getByRole('group', { name: 'Ricavi incassati' })).toBeVisible()
     await expect(page.getByRole('figure', { name: /Andamento economico/ })).toBeVisible()
     await expect(page.getByRole('figure', { name: /Proiezione economica/ })).toBeVisible()
@@ -313,5 +323,27 @@ test.describe('il ciclo completo — metà umana', () => {
     await expect(page.getByText(/^Stima fiscale \d{4}$/)).toBeVisible()
     await expect(page.getByText('Ricavi incassabili')).toBeVisible()
     await expect(page.getByRole('link', { name: /Apri la stima fiscale/i })).toHaveCount(0)
+    // The seeded legal entity is a flat-rate regime, so the room under its two ceilings is on the
+    // page, with the simulator under it (REB-755).
+    await expect(page.getByText(/^Soglie del forfettario \d{4}$/)).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Simula' })).toBeVisible()
+  })
+
+  test('the year tab shows the register and offers the accountant CSV', async ({
+    page,
+  }) => {
+    await loginAsAdmin(page)
+    await page.goto('/app/?tab=year')
+    await expect(page.getByRole('tab', { name: 'Anno' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByText('Registro delle fatture emesse')).toBeVisible()
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: /Scarica il CSV per il commercialista/ }).click(),
+    ])
+    expect(download.suggestedFilename()).toMatch(/^registro-\d{4}-.+\.csv$/)
+    const path = await download.path()
+    expect(path).not.toBeNull()
+    // The byte-order mark an Italian-locale Excel needs to read the accents as UTF-8.
+    expect(readFileSync(path as string).subarray(0, 3)).toEqual(Buffer.from([0xef, 0xbb, 0xbf]))
   })
 })

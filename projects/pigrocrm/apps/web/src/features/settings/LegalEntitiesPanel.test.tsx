@@ -1,7 +1,7 @@
 /**
- * Impostazioni → Aziende with «Nuova azienda» (REB-632, spec 2026-10-03 §5): the one
+ * Settings → Legal entities with «Nuova azienda» (REB-632, spec 2026-10-03 §5): the one
  * button, the form it opens, the single request the form sends (the row and its fiscal
- * profile together), and the page landing on the new azienda once the list has two.
+ * profile together), and the page landing on the new legal entity once the list has two.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
@@ -25,44 +25,46 @@ function failed(error: unknown, status: number) {
   return { error, response: new Response(null, { status }) } as never
 }
 
-function azienda(id: string, nome: string, overrides: Partial<LegalEntityRecord> = {}): LegalEntityRecord {
+function legal_entity(id: string, name: string, overrides: Partial<LegalEntityRecord> = {}): LegalEntityRecord {
   return {
     id,
-    nome,
-    predefinita: false,
-    attiva: true,
-    ragione_sociale: `${nome} S.r.l.`,
-    partita_iva: null,
-    codice_fiscale: null,
-    indirizzo: null,
-    cap: null,
-    comune: null,
-    provincia: null,
-    nazione: 'IT',
-    pec: null,
-    codice_sdi: null,
-    telefono: null,
+    name,
+    is_default: false,
+    active: true,
+    legal_name: `${name} S.r.l.`,
+    vat_number: null,
+    tax_code: null,
+    address: null,
+    postal_code: null,
+    city: null,
+    province: null,
+    country: 'IT',
+    certified_email: null,
+    sdi_code: null,
+    phone: null,
     email: null,
-    sito_web: null,
+    website: null,
     logo_key: null,
-    firma_key: null,
-    firma_email: null,
-    regime_fiscale: null,
+    signature_key: null,
+    email_signature: null,
+    tax_regime: null,
+    fiscal_year_end_month: 12,
+    fiscal_year_end_day: 31,
     created_at: '2026-08-20T09:00:00Z',
     updated_at: '2026-08-20T09:00:00Z',
     ...overrides,
   }
 }
 
-const STUDIO = azienda('a-1', 'Studio Rossi', { predefinita: true })
-const LTD = azienda('a-2', 'rebase ltd', { nazione: 'GB', ragione_sociale: 'Rebase Ltd' })
+const STUDIO = legal_entity('a-1', 'Studio Rossi', { is_default: true })
+const LTD = legal_entity('a-2', 'rebase ltd', { country: 'GB', legal_name: 'Rebase Ltd' })
 
 /** The list the page reads, as the server would answer it after each write. */
 let listed: LegalEntityRecord[]
 
 function mockReads() {
   vi.mocked(api.GET).mockImplementation((path: string) => {
-    if (path === '/api/aziende') return Promise.resolve(ok(listed))
+    if (path === '/api/legal-entities') return Promise.resolve(ok(listed))
     // No fiscal profile yet on any azienda: the panel shows its empty form.
     return Promise.resolve(failed({ code: 'not_found' }, 404))
   })
@@ -110,7 +112,7 @@ describe('LegalEntitiesPanel, «Nuova azienda»', () => {
     await user.type(within(form).getByLabelText('Ragione sociale *'), 'Rebase Ltd')
     await user.clear(within(form).getByLabelText('Nazione'))
     await user.type(within(form).getByLabelText('Nazione'), 'gb')
-    await user.selectOptions(within(form).getByLabelText('Regime'), 'estero')
+    await user.selectOptions(within(form).getByLabelText('Regime'), 'foreign')
     // Abroad the rate is the country's own and nobody's guess: blank, and required.
     expect(within(form).getByLabelText('Aliquota IVA predefinita')).toHaveValue('')
     expect(within(form).getByRole('button', { name: 'Crea azienda' })).toBeDisabled()
@@ -123,19 +125,19 @@ describe('LegalEntitiesPanel, «Nuova azienda»', () => {
       string,
       { body: Record<string, unknown> },
     ]
-    expect(path).toBe('/api/aziende')
+    expect(path).toBe('/api/legal-entities')
     expect(init.body).toMatchObject({
-      nome: 'rebase ltd',
-      ragione_sociale: 'Rebase Ltd',
-      nazione: 'GB',
-      partita_iva: null,
+      name: 'rebase ltd',
+      legal_name: 'Rebase Ltd',
+      country: 'GB',
+      vat_number: null,
       fiscal_profile: {
         pack_id: 'non-it',
-        codice_regime: null,
-        aliquota_iva_default: '20.00',
-        natura_default: null,
-        applica_bollo: false,
-        coefficiente_redditivita: null,
+        regime_code: null,
+        default_vat_rate: '20.00',
+        default_vat_nature: null,
+        apply_stamp_duty: false,
+        profitability_coefficient: null,
         iban: 'GB29NWBK60161331926819',
       },
     })
@@ -165,7 +167,7 @@ describe('LegalEntitiesPanel, «Nuova azienda»', () => {
 
   it('keeps the forfettario defaults for an Italian azienda', async () => {
     const { user, form } = await openTheForm()
-    vi.mocked(api.POST).mockResolvedValue(ok(azienda('a-3', 'srl')))
+    vi.mocked(api.POST).mockResolvedValue(ok(legal_entity('a-3', 'srl')))
     await user.type(within(form).getByLabelText('Nome breve *'), 'srl')
     await user.type(within(form).getByLabelText('Ragione sociale *'), 'Rossi S.r.l.')
     await user.selectOptions(within(form).getByLabelText('Regime'), 'RF01')
@@ -174,31 +176,31 @@ describe('LegalEntitiesPanel, «Nuova azienda»', () => {
     await waitFor(() => expect(api.POST).toHaveBeenCalledTimes(1))
     const [, init] = vi.mocked(api.POST).mock.calls[0] as unknown as [
       string,
-      { body: { fiscal_profile: Record<string, unknown>; nazione: string } },
+      { body: { fiscal_profile: Record<string, unknown>; country: string } },
     ]
-    // The ordinary regime at the standard rate carries no natura (the SdI discards one
-    // beside a non-zero rate) and none of the forfettario's three income parameters,
+    // The ordinary regime at the standard rate carries no VAT nature (the SdI discards one
+    // beside a non-zero rate) and none of the flat-rate regime's three income parameters,
     // which the server would otherwise default and the estimate would compute from.
     expect(init.body.fiscal_profile).toEqual({
-      pack_id: 'it-flat-rate',
-      codice_regime: 'RF01',
-      aliquota_iva_default: '22.00',
-      natura_default: null,
-      riferimento_normativo: null,
-      coefficiente_redditivita: null,
-      aliquota_imposta_sostitutiva: null,
-      aliquota_inps: null,
+      pack_id: 'it-standard',
+      regime_code: 'RF01',
+      default_vat_rate: '22.00',
+      default_vat_nature: null,
+      legal_reference: null,
+      profitability_coefficient: null,
+      substitute_tax_rate: null,
+      social_security_rate: null,
       iban: null,
     })
-    expect(init.body.nazione).toBe('IT')
+    expect(init.body.country).toBe('IT')
   })
 
   it('lets a zero rate carry the natura the server requires beside it', async () => {
     const { user, form } = await openTheForm()
-    vi.mocked(api.POST).mockResolvedValue(ok(azienda('a-4', 'zero')))
+    vi.mocked(api.POST).mockResolvedValue(ok(legal_entity('a-4', 'zero')))
     await user.type(within(form).getByLabelText('Nome breve *'), 'zero')
     await user.type(within(form).getByLabelText('Ragione sociale *'), 'Zero S.r.l.')
-    await user.selectOptions(within(form).getByLabelText('Regime'), 'RF01')
+    await user.selectOptions(within(form).getByLabelText('Regime'), 'foreign')
     // Picking the regime proposes its rate and empties the natura; both stay editable.
     expect(within(form).getByLabelText('Natura')).toHaveValue('')
     await user.clear(within(form).getByLabelText('Aliquota IVA predefinita'))
@@ -211,10 +213,18 @@ describe('LegalEntitiesPanel, «Nuova azienda»', () => {
       { body: { fiscal_profile: Record<string, unknown> } },
     ]
     expect(init.body.fiscal_profile).toMatchObject({
-      codice_regime: 'RF01',
-      aliquota_iva_default: '0.00',
-      natura_default: 'N3.5',
+      pack_id: 'non-it',
+      regime_code: null,
+      default_vat_rate: '0.00',
+      default_vat_nature: 'N3.5',
     })
+  })
+
+  it('has no natura to offer the ordinary regime, which taxes every line', async () => {
+    const { user, form } = await openTheForm()
+    expect(within(form).getByLabelText('Natura')).toBeInTheDocument()
+    await user.selectOptions(within(form).getByLabelText('Regime'), 'RF01')
+    expect(within(form).queryByLabelText('Natura')).not.toBeInTheDocument()
   })
 
   it('puts a refusal under the field it names and keeps the form open', async () => {
@@ -227,8 +237,8 @@ describe('LegalEntitiesPanel, «Nuova azienda»', () => {
           status: 422,
           detail: 'emitter_profile.partita_iva: deve essere di 11 cifre',
           code: 'validation_failed',
-          entity: 'emitter_profile',
-          field: 'partita_iva',
+          entity: 'legal_entities',
+          field: 'vat_number',
           reason: 'deve essere di 11 cifre',
           expected: '11 cifre numeriche',
         },

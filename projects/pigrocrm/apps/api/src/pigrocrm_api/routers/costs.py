@@ -2,7 +2,8 @@ from datetime import date
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
+from pydantic import Field
 
 from pigrocrm.core.timetracking.costs import CostService
 from pigrocrm.core.timetracking.schemas import (
@@ -12,12 +13,16 @@ from pigrocrm.core.timetracking.schemas import (
     CostRead,
     CostUpdate,
 )
-from pigrocrm.core.validation import SafeStr
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor, module_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
-from pigrocrm_api.query_params import CUSTOM_QUERY_DESCRIPTION, parse_custom_filter
+from pigrocrm_api.query_params import CustomParams, KeysetParams
 
-router = APIRouter(prefix="/api/costs", tags=["costs"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/costs",
+    tags=["costs"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor), module_guard("costs")],
+)
 
 
 @router.post("", response_model=CostRead, status_code=status.HTTP_201_CREATED)
@@ -25,37 +30,25 @@ def create(data: CostCreate, session: SessionDep, actor: ActorDep) -> CostRead:
     return CostService(session).create(data, actor)
 
 
+class CostListParams(KeysetParams, CustomParams):
+    deal_id: UUID | None = None
+    legal_entity_id: UUID | None = Field(
+        default=None,
+        description="Only this legal entity's costs; omitted, all, general ones included",
+    )
+    only_general: bool = Field(
+        default=False, description="Only general expenses, that is, without a deal (§7.4)"
+    )
+    category_id: UUID | None = None
+    date_from: date | None = Field(default=None, alias="from")
+    date_to: date | None = Field(default=None, alias="to")
+
+
 @router.get("", response_model=CostPage)
 def list_costs(
-    session: SessionDep,
-    actor: ActorDep,
-    deal_id: Annotated[UUID | None, Query()] = None,
-    azienda_id: Annotated[
-        UUID | None,
-        Query(description="Solo i costi di questa azienda; omesso, tutti, i generali compresi"),
-    ] = None,
-    solo_generali: Annotated[
-        bool, Query(description="Solo spese generali, cioè senza deal (§7.4)")
-    ] = False,
-    category_id: Annotated[UUID | None, Query()] = None,
-    da: Annotated[date | None, Query()] = None,
-    a: Annotated[date | None, Query()] = None,
-    custom: Annotated[list[SafeStr] | None, Query(description=CUSTOM_QUERY_DESCRIPTION)] = None,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    cursor: Annotated[UUID | None, Query()] = None,
+    session: SessionDep, actor: ActorDep, params: Annotated[CostListParams, Query()]
 ) -> CostPage:
-    query = CostListQuery(
-        deal_id=deal_id,
-        azienda_id=azienda_id,
-        solo_generali=solo_generali,
-        category_id=category_id,
-        da=da,
-        a=a,
-        custom=parse_custom_filter(custom),
-        limit=limit,
-        cursor=cursor,
-    )
-    return CostService(session).list(query, actor)
+    return CostService(session).list(params.to_query(CostListQuery), actor)
 
 
 @router.get("/{cost_id}", response_model=CostRead)

@@ -1,3 +1,4 @@
+import os
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -7,30 +8,39 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.config import Settings
+from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.storage import LocalFileStorage
-from pigrocrm_mcp.server import build_server
+
+# The HTTP app refuses a placeholder signing key (PCORE-B-05) and `pigrocrm_mcp.http` builds one
+# at import: the secret is set before anything imports it.
+os.environ.setdefault("PIGROCRM_JWT_SECRET", "test-secret-for-the-mcp-test-suite-only")
+get_settings.cache_clear()  # an import above may have read the settings already
+
+from pigrocrm_mcp.server import build_server  # noqa: E402
 
 ADMIN = Actor(id=None, type="mcp", role="admin")
+# What fixtures seed with: defining a template is not something an agent credential may do
+# (`core/agent_actions.py`), and a fixture is not an agent.
+SETUP = Actor(id=None, type="system", role="admin")
 
 
 def _ensure_committed_default(engine: Engine) -> None:
-    """One committed default azienda in the worker's database (REB-623): since the
-    chain, a customer row and everything under it need an azienda, and a world that
+    """One committed default legal entity in the worker's database (REB-623): since the
+    chain, a customer row and everything under it need a legal entity, and a world that
     commits for real sees only committed rows. The per-test seed below then finds it
     and writes nothing. Inline rather than imported from the core suite's `fakes`,
     which this root's conftest does not put on the path."""
-    from pigrocrm.core.emitter.models import LegalEntity
+    from pigrocrm.core.legal_entities.models import LegalEntity
 
     with engine.begin() as connection:
         if connection.execute(
-            select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
+            select(LegalEntity.id).where(LegalEntity.is_default.is_(True))
         ).first():
             return
         connection.execute(
             LegalEntity.__table__.insert().values(
-                nome="Spazio di prova", ragione_sociale="Spazio di prova", predefinita=True
+                name="Spazio di prova", legal_name="Spazio di prova", is_default=True
             )
         )
 
@@ -50,18 +60,18 @@ def mcp_engine(pigrocrm_postgres: Any) -> Iterator[Engine]:
 def mcp_session(mcp_engine: Engine) -> Iterator[Session]:
     connection = mcp_engine.connect()
     transaction = connection.begin()
-    # The default azienda every provisioned space has (REB-615), seeded on the outer
+    # The default legal entity every provisioned space has (REB-615), seeded on the outer
     # connection so a service's rollback inside the session cannot remove it.
-    from pigrocrm.core.emitter.models import LegalEntity
+    from pigrocrm.core.legal_entities.models import LegalEntity
 
     # Since REB-623 the engine fixture commits one, so this is the fallback for a
     # database that has none. Not an early `return`: this is a generator fixture.
     if not connection.execute(
-        select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
+        select(LegalEntity.id).where(LegalEntity.is_default.is_(True))
     ).first():
         connection.execute(
             LegalEntity.__table__.insert().values(
-                nome="Spazio di prova", ragione_sociale="Spazio di prova", predefinita=True
+                name="Spazio di prova", legal_name="Spazio di prova", is_default=True
             )
         )
     # join_transaction_mode="create_savepoint" is load-bearing, not optional -- see
@@ -71,7 +81,7 @@ def mcp_session(mcp_engine: Engine) -> Iterator[Session]:
     # was dormant here because no MCP-side code ever called `session.rollback()`
     # across more than one tool call sharing this session -- until the final review's
     # item 6 fix made `_guard` roll back on every exception, which surfaced it
-    # immediately: a blocked `archive_customer` call's `Conflict` rolling back with
+    # immediately: a blocked `archive_organization` call's `Conflict` rolling back with
     # this parameter absent silently discarded the customer and deal an earlier,
     # already-committed tool call in the *same test* had created. Confirmed directly
     # by reproducing it with this parameter removed and watching two already-
@@ -120,9 +130,9 @@ def mcp_storage(tmp_path: Path) -> LocalFileStorage:
 
 @pytest.fixture
 def seeded_customer_id(mcp_session: Session) -> str:
-    from pigrocrm.core.customers.models import Customer
+    from pigrocrm.core.organizations.models import Organization
 
-    customer = Customer(ragione_sociale="ACME S.r.l.")
+    customer = Organization(legal_name="ACME S.r.l.")
     mcp_session.add(customer)
     mcp_session.flush()
     return str(customer.id)
@@ -132,30 +142,28 @@ def seeded_customer_id(mcp_session: Session) -> str:
 def seeded_template_id(mcp_session: Session) -> str:
     """Built with the same in-process services `server` itself calls -- an
     emitter profile (`create_document_from_template` renders through it) and one
-    template with a single declared variable, `oggetto`, so
+    template with a single declared variable, `subject`, so
     `test_describe_template_reports_the_variables_before_anyone_is_asked` has
     exactly one name to check for."""
-    from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-    from pigrocrm.core.emitter.service import LegalEntityService
+    from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+    from pigrocrm.core.legal_entities.service import LegalEntityService
     from pigrocrm.core.templates.schemas import TemplateCreate, TemplateVariable
     from pigrocrm.core.templates.service import TemplateService
 
     LegalEntityService(mcp_session).upsert_default(
-        LegalEntityUpsert(ragione_sociale="Studio Rossi", partita_iva="01234567890"),
+        LegalEntityUpsert(legal_name="Studio Rossi", vat_number="01234567890"),
         ADMIN,
     )
     template = TemplateService(mcp_session).create(
         TemplateCreate(
-            nome="Consulenza CTO",
-            tipo="offerta",
-            corpo_markdown="Spett.le {{cliente.ragione_sociale}} — {{oggetto}}",
-            variabili_dichiarate=[
-                TemplateVariable(
-                    nome="oggetto", etichetta="Oggetto", tipo="text", obbligatoria=True
-                )
+            name="Consulenza CTO",
+            type="offer",
+            body_markdown="Spett.le {{cliente.ragione_sociale}} — {{subject}}",
+            declared_variables=[
+                TemplateVariable(name="subject", label="Oggetto", type="text", required=True)
             ],
         ),
-        ADMIN,
+        SETUP,
     )
     return str(template.id)
 
@@ -169,7 +177,7 @@ def seeded_user_id(mcp_session: Session):
     conftest.py`'s identical fixture."""
     from pigrocrm.core.auth.models import User
 
-    user = User(email="worker-mcp@example.test", password_hash="x", nome="Worker")
+    user = User(email="worker-mcp@example.test", password_hash="x", name="Worker")
     mcp_session.add(user)
     mcp_session.flush()
     return user.id
@@ -184,14 +192,14 @@ def seeded_deal_id(mcp_session: Session, seeded_customer_id: str):
     from pigrocrm.core.deals.models import Deal
     from pigrocrm.core.pipeline.models import PipelineStage
 
-    stage = PipelineStage(nome="Aperto", posizione=0, probabilita_default=10, tipo="open")
+    stage = PipelineStage(name="Aperto", position=0, default_probability=10, type="open")
     mcp_session.add(stage)
     mcp_session.flush()
     deal = Deal(
-        nome="Progetto MCP",
+        name="Progetto MCP",
         customer_id=UUID(seeded_customer_id),
         pipeline_stage_id=stage.id,
-        probabilita=10,
+        probability=10,
     )
     mcp_session.add(deal)
     mcp_session.flush()
@@ -200,7 +208,7 @@ def seeded_deal_id(mcp_session: Session, seeded_customer_id: str):
 
 @pytest.fixture
 def seeded_offer_id(mcp_session: Session, seeded_customer_id: str, tmp_path: Path) -> str:
-    """A plain (not template-generated) offer in its initial `bozza` state -- enough
+    """A plain (not template-generated) offer in its initial `draft` state -- enough
     to exercise `set_offer_state`'s guard and `get_document_versions` on a document
     with zero versions, without needing Pandoc/Typst installed."""
     from uuid import UUID
@@ -209,7 +217,7 @@ def seeded_offer_id(mcp_session: Session, seeded_customer_id: str, tmp_path: Pat
     from pigrocrm.core.documents.service import DocumentService
 
     document = DocumentService(mcp_session, LocalFileStorage(tmp_path)).create(
-        DocumentCreate(customer_id=UUID(seeded_customer_id), tipo="offerta", titolo="Offerta test"),
+        DocumentCreate(customer_id=UUID(seeded_customer_id), type="offer", title="Offerta test"),
         ADMIN,
     )
     return str(document.id)

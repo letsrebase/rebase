@@ -18,14 +18,14 @@ from pigrocrm.core.contracts.models import Contract
 
 def _contract(**overrides: object) -> Contract:
     payload: dict[str, object] = {
-        "titolo": "Consulenza CTO",
-        "inizio": date(2026, 1, 1),
-        "tipo_rinnovo": "nessuno",
-        "preavviso_disdetta_giorni": 30,
-        "preavviso_rinnovo_giorni": None,
-        "fine": None,
-        "cadenza_fatturazione": "mensile",
-        "politica_spese": {"tipo": "non_rimborsabile"},
+        "title": "Consulenza CTO",
+        "start": date(2026, 1, 1),
+        "renewal_type": "none",
+        "termination_notice_days": 30,
+        "renewal_notice_days": None,
+        "end": None,
+        "billing_cadence": "monthly",
+        "expense_policy": {"kind": "not_reimbursable"},
     }
     payload.update(overrides)
     return Contract(**payload)  # type: ignore[arg-type]
@@ -35,24 +35,24 @@ def _contract(**overrides: object) -> Contract:
 
 
 def test_irrevocability_window_runs_the_notice_period_from_as_of() -> None:
-    contract = _contract(preavviso_disdetta_giorni=30, fine=None)
+    contract = _contract(termination_notice_days=30, end=None)
     assert irrevocability_window_end(contract, date(2026, 6, 1)) == date(2026, 7, 1)
 
 
 def test_irrevocability_window_clips_to_the_contracts_own_end() -> None:
-    contract = _contract(preavviso_disdetta_giorni=90, fine=date(2026, 6, 15))
+    contract = _contract(termination_notice_days=90, end=date(2026, 6, 15))
     assert irrevocability_window_end(contract, date(2026, 6, 1)) == date(2026, 6, 15)
 
 
 def test_irrevocability_window_is_none_once_the_contract_has_already_ended() -> None:
-    contract = _contract(preavviso_disdetta_giorni=30, fine=date(2026, 5, 1))
+    contract = _contract(termination_notice_days=30, end=date(2026, 5, 1))
     assert irrevocability_window_end(contract, date(2026, 6, 1)) is None
 
 
 def test_irrevocability_window_still_guarantees_the_contracts_own_last_day() -> None:
     """A contract ending exactly on `as_of` is not "already ended" -- the boundary
     itself still counts."""
-    contract = _contract(preavviso_disdetta_giorni=30, fine=date(2026, 6, 1))
+    contract = _contract(termination_notice_days=30, end=date(2026, 6, 1))
     assert irrevocability_window_end(contract, date(2026, 6, 1)) == date(2026, 6, 1)
 
 
@@ -60,21 +60,17 @@ def test_irrevocability_window_still_guarantees_the_contracts_own_last_day() -> 
 
 
 def test_renewal_deadline_counts_back_from_the_contracts_own_end() -> None:
-    contract = _contract(
-        tipo_rinnovo="tacito", preavviso_rinnovo_giorni=60, fine=date(2026, 12, 31)
-    )
+    contract = _contract(renewal_type="tacit", renewal_notice_days=60, end=date(2026, 12, 31))
     assert renewal_deadline(contract) == date(2026, 11, 1)
 
 
 def test_renewal_deadline_is_none_with_no_renewal_clause() -> None:
-    contract = _contract(
-        tipo_rinnovo="nessuno", preavviso_rinnovo_giorni=None, fine=date(2026, 12, 31)
-    )
+    contract = _contract(renewal_type="none", renewal_notice_days=None, end=date(2026, 12, 31))
     assert renewal_deadline(contract) is None
 
 
 def test_renewal_deadline_is_none_with_no_known_end_date() -> None:
-    contract = _contract(tipo_rinnovo="tacito", preavviso_rinnovo_giorni=60, fine=None)
+    contract = _contract(renewal_type="tacit", renewal_notice_days=60, end=None)
     assert renewal_deadline(contract) is None
 
 
@@ -105,8 +101,8 @@ def test_anniversary_year_bounds_roll_over_on_the_next_anniversary_itself() -> N
 def test_anniversary_year_bounds_handle_a_29_february_anchor_in_a_non_leap_year() -> None:
     """Neither 2026 nor 2027 is a leap year: the anchor falls back to 28 February on
     both sides of the window rather than raising."""
-    da, a = anniversary_year_bounds(date(2024, 2, 29), date(2026, 3, 1))
-    assert (da, a) == (date(2026, 2, 28), date(2027, 2, 27))
+    date_from, date_to = anniversary_year_bounds(date(2024, 2, 29), date(2026, 3, 1))
+    assert (date_from, date_to) == (date(2026, 2, 28), date(2027, 2, 27))
 
 
 def test_anniversary_year_bounds_reject_a_reference_date_before_the_contract_started() -> None:

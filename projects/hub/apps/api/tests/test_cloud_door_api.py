@@ -12,7 +12,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_sender
-from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.mail import RecordingSender
 from rebase_core.models import User
 
@@ -22,14 +21,14 @@ ADMIN_EMAIL = "ivan@rebase.it"
 
 @pytest.fixture
 def admin(api_session: Session) -> Iterator[None]:
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="Sala", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="Sala", role="admin"))
     api_session.commit()
     yield
     api_session.rollback()
     for table in (
         "talent_cloud_grants",
         "admin_actions",
-        "comments",
+        "notes",
         "sessions",
         "magic_link_tokens",
         "logins",
@@ -45,9 +44,8 @@ def admin(api_session: Session) -> Iterator[None]:
 def _login(client: TestClient, sender: RecordingSender, email: str = ADMIN_EMAIL) -> None:
     """Signs `email` in; the speed bump on the public routes is reset first, since one
     test here signs in four times beside a wizard's request."""
-    reset_rate_limit()
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
 
@@ -56,12 +54,12 @@ def _apply(client: TestClient, email: str = "ada@studio.it") -> str:
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Ada",
-            "cognome": "Lovelace",
+            "first_name": "Ada",
+            "last_name": "Lovelace",
             "email": email,
-            "tariffa_giornaliera": "450",
-            "posizione": "Backend developer",
-            "remoto": "remoto",
+            "daily_rate": "450",
+            "job_title": "Backend developer",
+            "remote": "remote",
         },
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
     )
@@ -70,28 +68,28 @@ def _apply(client: TestClient, email: str = "ada@studio.it") -> str:
     return next(item["id"] for item in listed if item["email"] == email)
 
 
-def _request_company(client: TestClient, azienda: str = "Acme S.r.l.") -> str:
+def _request_company(client: TestClient, company: str = "Acme S.r.l.") -> str:
     response = client.post(
         "/api/hub/companies",
         json={
-            "nome_azienda": azienda,
-            "referente_nome": "Wile",
-            "referente_cognome": "Coyote",
+            "company_name": company,
+            "contact_first_name": "Wile",
+            "contact_last_name": "Coyote",
             "email": "wile@acme.it",
-            "telefono": "+39 345 1234567",
-            "figura_richiesta": "Backend developer",
-            "progetto": "Un backend developer per tre mesi.",
-            "periodo_da": "2026-10-01",
-            "durata": "3 mesi",
-            "budget_giornaliero": "500",
-            "remoto": "remoto",
-            "numero_risorse": 1,
-            "utm": {"origine": "team-builder"},
+            "phone": "+39 345 1234567",
+            "requested_role": "Backend developer",
+            "project": "Un backend developer per tre mesi.",
+            "period_from": "2026-10-01",
+            "duration": "3 mesi",
+            "daily_budget": "500",
+            "remote": "remote",
+            "headcount": 1,
+            "utm": {"origin": "team-builder"},
         },
     )
     assert response.status_code == 201, response.text
     listed = client.get("/api/hub/companies").json()["items"]
-    return next(item["id"] for item in listed if item["nome_azienda"] == azienda)
+    return next(item["id"] for item in listed if item["company_name"] == company)
 
 
 # ---- «Verificato» ---------------------------------------------------------------------------
@@ -104,7 +102,7 @@ def test_an_admin_marks_a_talent_vetted_and_the_list_reads_it(
     freelancer_id = _apply(client)
 
     row = next(item for item in client.get("/api/hub/talent").json()["items"])
-    assert (row["vetted_at"], row["ha_scheda_anonima"]) == (None, False)
+    assert (row["vetted_at"], row["has_anonymous_card"]) == (None, False)
 
     marked = client.post(f"/api/hub/freelancers/{freelancer_id}/vetted", json={"vetted": True})
     assert marked.status_code == 200, marked.text
@@ -143,7 +141,7 @@ def test_only_an_admin_marks_a_talent_vetted(
 # ---- the talent cloud's door ----------------------------------------------------------------
 
 
-def test_an_admin_opens_the_cloud_and_the_referente_finds_it_on_me(
+def test_an_admin_opens_the_cloud_and_the_contact_person_finds_it_on_me(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
     _login(client, sender)
@@ -153,9 +151,9 @@ def test_an_admin_opens_the_cloud_and_the_referente_finds_it_on_me(
     opened = client.post(f"/api/hub/companies/{company_id}/cloud")
     assert opened.status_code == 201, opened.text
     grant = opened.json()
-    assert grant["company_id"] == company_id and grant["azienda"] == "Acme S.r.l."
-    assert (grant["referente"], grant["email"]) == ("Wile Coyote", "wile@acme.it")
-    assert grant["granted_by_nome"] == "Ivan" and grant["revoked_at"] is None
+    assert grant["company_id"] == company_id and grant["company"] == "Acme S.r.l."
+    assert (grant["contact_person"], grant["email"]) == ("Wile Coyote", "wile@acme.it")
+    assert grant["granted_by_name"] == "Ivan" and grant["revoked_at"] is None
     # The mail leaves after the answer, to the referente, with the cloud's link.
     assert len(sender.sent) == mailed + 1
     mail = sender.sent[-1]
@@ -169,7 +167,7 @@ def test_an_admin_opens_the_cloud_and_the_referente_finds_it_on_me(
     assert len(sender.sent) == mailed + 1
 
     page = client.get(f"/api/hub/companies/{company_id}").json()
-    assert page["origine"] == "team-builder"
+    assert page["origin"] == "team-builder"
     assert page["talent_cloud_grant"]["id"] == grant["id"]
     listed = client.get("/api/hub/cloud/grants").json()
     assert [item["id"] for item in listed] == [grant["id"]]

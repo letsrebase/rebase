@@ -9,9 +9,11 @@ import pytest
 
 from pigrocrm.core.money import (
     line_value,
+    percent_to_share,
     percentage_of,
     round_hours,
     round_money,
+    share,
     sum_hours,
     sum_money,
 )
@@ -39,8 +41,8 @@ def test_line_value_is_a_rounded_product() -> None:
 
 def test_line_value_without_a_factor_is_none_not_zero() -> None:
     """A silent fall back to 0.00 would say "this work was free", which is a lie that
-    sums. `None` is excluded from the aggregate and counted separately as "ore senza
-    tariffa" (§5.1)."""
+    sums. `None` is excluded from the aggregate and counted separately as "hours without a
+    rate" (§5.1)."""
     assert line_value(Decimal("8.00"), None) is None
 
 
@@ -48,11 +50,11 @@ def test_an_aggregate_is_the_sum_of_rounded_rows_and_diverges_from_the_exact_sum
     """1000 rows of 0.10 h at 33.333333 EUR/h. `Σ ROUND(...)` is 3330.00;
     `ROUND(Σ exact)` is 3333.33. The rule is the first, and this test exhibits the
     difference rather than asserting the rule in prose (criterion 4)."""
-    ore, tariffa = Decimal("0.10"), Decimal("33.333333")
-    rows = [line_value(ore, tariffa) for _ in range(1000)]
+    hours, rate = Decimal("0.10"), Decimal("33.333333")
+    rows = [line_value(hours, rate) for _ in range(1000)]
     assert sum_money(rows) == Decimal("3330.00")
-    assert round_money(ore * tariffa * 1000) == Decimal("3333.33")
-    assert sum_money(rows) != round_money(ore * tariffa * 1000)
+    assert round_money(hours * rate * 1000) == Decimal("3333.33")
+    assert sum_money(rows) != round_money(hours * rate * 1000)
 
 
 def test_the_same_thousand_rows_summed_as_floats_diverge_from_the_decimal_total() -> None:
@@ -82,3 +84,13 @@ def test_percentage_of_zero_is_none_not_zero() -> None:
     assert percentage_of(Decimal("-500.00"), Decimal("0.00")) is None
     assert percentage_of(Decimal("250.00"), Decimal("1000.00")) == Decimal("25.00")
     assert percentage_of(Decimal("1.00"), Decimal("3.00")) == Decimal("33.33")
+
+
+def test_share_is_zero_when_there_is_nothing_to_scale_against() -> None:
+    assert share(Decimal("25"), Decimal("100")) == 0.25
+    assert share(Decimal("25"), Decimal("0")) == 0.0
+    assert share(Decimal("25"), Decimal("-1")) == 0.0
+
+
+def test_percent_to_share_reads_a_stored_percentage_as_a_ratio() -> None:
+    assert percent_to_share(Decimal("50.00")) == 0.5

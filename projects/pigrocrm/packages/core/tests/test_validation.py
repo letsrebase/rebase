@@ -47,7 +47,7 @@ def test_a_nul_byte_inside_a_list_item_is_rejected_and_names_its_index() -> None
     """Mirrors FieldDefinitionCreate.options: a list of strings must reject a NUL
     byte in any one element, not just when the whole field is a scalar string."""
     with pytest.raises(ValidationError) as exc:
-        _Model(required="ok", items=["fine", "bad\x00one"])
+        _Model(required="ok", items=["end", "bad\x00one"])
     error = exc.value.errors()[0]
     assert error["loc"] == ("items", 1)
 

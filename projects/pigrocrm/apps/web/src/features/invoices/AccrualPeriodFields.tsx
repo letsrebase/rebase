@@ -32,8 +32,8 @@ export function AccrualPeriodFields({
         <Input
           id={`${idPrefix}-competenza-da`}
           type="date"
-          value={value.competenza_da}
-          onChange={(event) => onChange({ ...value, competenza_da: event.target.value })}
+          value={value.accrual_from}
+          onChange={(event) => onChange({ ...value, accrual_from: event.target.value })}
         />
       </div>
       <div className="space-y-2">
@@ -42,8 +42,8 @@ export function AccrualPeriodFields({
           id={`${idPrefix}-competenza-a`}
           type="date"
           aria-label="Competenza al"
-          value={value.competenza_a}
-          onChange={(event) => onChange({ ...value, competenza_a: event.target.value })}
+          value={value.accrual_to}
+          onChange={(event) => onChange({ ...value, accrual_to: event.target.value })}
         />
       </div>
     </>

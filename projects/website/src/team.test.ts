@@ -14,6 +14,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const source = readFileSync(join(__dirname, 'team.js'), 'utf-8')
 const utmSource = readFileSync(join(__dirname, 'utm.js'), 'utf-8')
 const indexHtml = readFileSync(join(__dirname, 'index.html'), 'utf-8')
+const bandCases = (
+  JSON.parse(readFileSync(join(__dirname, '../../../shared/format-cases/format-cases.json'), 'utf-8')) as {
+    bandLabel: { band: Band; unit: string; label: string }[]
+  }
+).bandLabel
 
 interface Band {
   min: number
@@ -29,38 +34,38 @@ interface TeamBuilder {
 
 const NBSP = ' '
 const DASH = '–'
-const DESCRIZIONE =
+const DESCRIPTION =
   'Ci serve una web app per i clienti: pagamenti, dashboard dei conti, API di open banking.'
 
 const PROPOSAL = {
   id: '5b1f2c3d-4e5f-4a6b-8c7d-00000000abcd',
-  descrizione: DESCRIZIONE,
-  persone: null,
-  riassunto: 'Una web app per i clienti di una fintech: chi fa il backend e chi il frontend.',
-  luogo: { locale: false, dove: null },
+  description: DESCRIPTION,
+  people: null,
+  summary: 'Una web app per i clienti di una fintech: chi fa il backend e chi il frontend.',
+  location: { locale: false, dove: null },
   team: [
     {
-      posizione: 1,
-      ruolo: 'Backend developer',
-      motivazione: 'Ha costruito le API di pagamento di due banche.',
-      giorni_settimana: 5,
-      scheda: { ruolo: 'Sviluppatore backend', seniority: 'senior', anni: 9, competenze: ['Python'], settori: [], lingue: [], luogo: null, sintesi: 'Nove anni.' },
-      modalita: 'remoto',
-      fascia: { min: 400, max: 500 },
+      position: 1,
+      role: 'Backend developer',
+      reasoning: 'Ha costruito le API di pagamento di due banche.',
+      week_days: 5,
+      card: { role: 'Sviluppatore backend', seniority: 'senior', experience_years: 9, skills: ['Python'], industries: [], languages: [], location: null, profile_summary: 'Nove anni.' },
+      mode: 'remote',
+      band: { min: 400, max: 500 },
     },
     {
-      posizione: 2,
-      ruolo: 'Frontend developer',
-      motivazione: 'Porta React.',
-      giorni_settimana: 3,
-      scheda: { ruolo: 'Sviluppatrice frontend', seniority: 'mid', anni: 1, competenze: ['React'], settori: [], lingue: [], luogo: null, sintesi: 'Interfacce.' },
-      modalita: 'ibrido',
-      fascia: null,
+      position: 2,
+      role: 'Frontend developer',
+      reasoning: 'Porta React.',
+      week_days: 3,
+      card: { role: 'Sviluppatrice frontend', seniority: 'mid', experience_years: 1, skills: ['React'], industries: [], languages: [], location: null, profile_summary: 'Interfacce.' },
+      mode: 'hybrid',
+      band: null,
     },
   ],
-  economia: { giorno: null, mese: null, giorni_mese: 22 },
+  economics: { day: null, month: null, days_month: 22 },
   previous_id: null,
-  origine: 'pubblico',
+  origin: 'public',
   created_at: '2026-10-07T08:00:00Z',
 }
 
@@ -105,10 +110,9 @@ it('stays small: the first page a visitor loads carries it', () => {
 describe('bandLabel', () => {
   it('writes the bands as the hub does, non-breaking space and en dash included', () => {
     const { bandLabel } = load()
-    expect(bandLabel({ min: 400, max: 500 })).toBe(`400${DASH}500${NBSP}€ al giorno`)
-    expect(bandLabel({ min: 800, max: null })).toBe(`oltre 800${NBSP}€ al giorno`)
-    expect(bandLabel({ min: 0, max: 300 })).toBe(`fino a 300${NBSP}€ al giorno`)
-    expect(bandLabel({ min: 1000, max: 1150 })).toBe(`1.000${DASH}1.150${NBSP}€ al giorno`)
+    for (const { band, label } of bandCases.filter((c) => c.unit === 'day')) {
+      expect(bandLabel(band), JSON.stringify(band)).toBe(label)
+    }
     // A band that is not one reads as no band, never as «undefined–NaN».
     for (const odd of [null, undefined, {}, { min: '400', max: 500 }, { min: 400 }]) {
       expect(bandLabel(odd as unknown as Band)).toBe('Tariffa da definire')
@@ -120,7 +124,7 @@ describe('sentence', () => {
   it('is the API’s own, the hub’s for a 429, ours when nothing answered', () => {
     const { sentence } = load()
     expect(sentence(503, { detail: 'Il team builder è spento.' })).toBe('Il team builder è spento.')
-    expect(sentence(422, { detail: [{ loc: ['body', 'descrizione'], msg: 'troppo corta', type: 'value_error' }] })).toBe('troppo corta')
+    expect(sentence(422, { detail: [{ loc: ['body', 'description'], msg: 'troppo corta', type: 'value_error' }] })).toBe('troppo corta')
     expect(sentence(429, null)).toBe('Troppe richieste da qui. Riprova tra un minuto.')
     expect(sentence(502, null)).toBe('Non siamo riusciti a proporre un team. Riprova.')
     expect(sentence(500, { detail: '' })).toBe('Non siamo riusciti a proporre un team. Riprova.')
@@ -138,7 +142,7 @@ describe('mount', () => {
 
   it('refuses a form without its parts rather than failing later', () => {
     const api = load()
-    document.body.innerHTML = '<form data-team data-result="#nowhere"><textarea name="descrizione"></textarea></form>'
+    document.body.innerHTML = '<form data-team data-result="#nowhere"><textarea name="description"></textarea></form>'
     expect(api.mount(document.querySelector('form') as HTMLFormElement)).toBe(false)
   })
 
@@ -150,7 +154,7 @@ describe('mount', () => {
     textarea.setAttribute('aria-invalid', 'true')
     textarea.setAttribute('aria-describedby', 'team-error')
     const chips = [...form.querySelectorAll<HTMLButtonElement>('button[data-example]')]
-    const count = form.querySelector('select[name="persone"]') as HTMLSelectElement
+    const count = form.querySelector('select[name="people"]') as HTMLSelectElement
     expect(count.value).toBe('1')
     expect(chips).toHaveLength(4)
     for (const chip of chips) {
@@ -158,7 +162,7 @@ describe('mount', () => {
       expect(textarea.value).toBe(chip.getAttribute('data-example'))
       expect(textarea.value.length).toBeGreaterThanOrEqual(40)
       // The example's own headcount, the hub page's numbers (3, 2, 2, 1).
-      expect(count.value).toBe(chip.getAttribute('data-persone'))
+      expect(count.value).toBe(chip.getAttribute('data-people'))
     }
     expect(error.textContent).toBe('')
     expect(textarea.hasAttribute('aria-invalid')).toBe(false)
@@ -189,7 +193,7 @@ describe('mount', () => {
     const fetchSpy = vi.fn(async () => body())
     const { form, textarea, error, result } = fixture()
     api.mount(form, fetchSpy as unknown as typeof fetch)
-    textarea.value = DESCRIZIONE
+    textarea.value = DESCRIPTION
     submit(form)
     await flush()
     await flush()
@@ -206,7 +210,7 @@ describe('mount', () => {
     const fetchSpy = vi.fn(() => new Promise<Response>((resolve) => (resolveCall = resolve)))
     const { form, textarea, button, error, result } = fixture()
     api.mount(form, fetchSpy as unknown as typeof fetch)
-    textarea.value = DESCRIZIONE
+    textarea.value = DESCRIPTION
     submit(form)
     expect(button.disabled).toBe(true)
     expect(button.textContent).toBe('Sto leggendo i profili…')
@@ -222,7 +226,7 @@ describe('mount', () => {
     expect(url).toBe('/api/hub/team/proposals')
     expect(init.method).toBe('POST')
     // The headcount travels with the description, one by default as on the hub's page.
-    expect(JSON.parse(init.body as string)).toEqual({ descrizione: DESCRIZIONE, persone: 1 })
+    expect(JSON.parse(init.body as string)).toEqual({ description: DESCRIPTION, people: 1 })
     // A second submit while one runs does nothing.
     submit(form)
     expect(fetchSpy).toHaveBeenCalledTimes(1)
@@ -238,7 +242,7 @@ describe('mount', () => {
     expect(result.hidden).toBe(false)
     expect(result.querySelector('h2')?.textContent).toBe('La nostra proposta')
     expect(document.activeElement).toBe(result.querySelector('h2'))
-    expect(result.querySelector('.team-summary')?.textContent).toBe(PROPOSAL.riassunto)
+    expect(result.querySelector('.team-summary')?.textContent).toBe(PROPOSAL.summary)
     const members = [...result.querySelectorAll('.team-member')].map((item) =>
       [...item.children].map((child) => child.textContent),
     )
@@ -251,7 +255,7 @@ describe('mount', () => {
     const door = result.querySelector('a.cta') as HTMLAnchorElement
     expect(door.textContent).toBe('Vedi il team completo')
     expect(door.getAttribute('href')).toBe(
-      `/hub/team?proposta=${PROPOSAL.id}&utm_source=linkedin&utm_campaign=orbita&da=home`,
+      `/hub/team?proposal=${PROPOSAL.id}&utm_source=linkedin&utm_campaign=orbita&from=home`,
     )
     window.history.replaceState({}, '', '/')
   })
@@ -265,7 +269,7 @@ describe('mount', () => {
       .mockImplementationOnce(() => new Promise<Response>((resolve) => (resolveCall = resolve)))
     const { form, textarea, button, error, result } = fixture()
     api.mount(form, fetchSpy as unknown as typeof fetch)
-    textarea.value = DESCRIZIONE
+    textarea.value = DESCRIPTION
     submit(form)
     await flush()
     await flush()
@@ -280,7 +284,7 @@ describe('mount', () => {
     expect(result.querySelector('a.cta')).toBeNull()
     expect(textarea.disabled).toBe(true)
     expect(button.disabled).toBe(true)
-    expect((form.querySelector('select[name="persone"]') as HTMLSelectElement).disabled).toBe(true)
+    expect((form.querySelector('select[name="people"]') as HTMLSelectElement).disabled).toBe(true)
     for (const chip of form.querySelectorAll<HTMLButtonElement>('button[data-example]')) expect(chip.disabled).toBe(true)
 
     resolveCall(answer(503, { detail: 'Il team builder è spento.' }))
@@ -298,21 +302,21 @@ describe('mount', () => {
     const { result } = fixture()
     const whole = {
       ...PROPOSAL,
-      team: [PROPOSAL.team[0], { ...PROPOSAL.team[1], fascia: { min: 300, max: 400 } }],
-      economia: { giorno: { min: 700, max: 900 }, mese: { min: 15400, max: 19800 }, giorni_mese: 22 },
+      team: [PROPOSAL.team[0], { ...PROPOSAL.team[1], band: { min: 300, max: 400 } }],
+      economics: { day: { min: 700, max: 900 }, month: { min: 15400, max: 19800 }, days_month: 22 },
     }
     api.render(result, whole)
     expect(result.querySelector('.team-total')?.textContent).toBe(`Tutto il team: 700${DASH}900${NBSP}€ al giorno`)
-    api.render(result, { ...whole, id: 'beef', riassunto: 'Un altro team.' })
+    api.render(result, { ...whole, id: 'beef', summary: 'Un altro team.' })
     expect(result.querySelectorAll('h2')).toHaveLength(1)
     expect(result.querySelector('.team-summary')?.textContent).toBe('Un altro team.')
-    expect(result.querySelector('a.cta')?.getAttribute('href')).toBe('/hub/team?proposta=beef&da=home')
+    expect(result.querySelector('a.cta')?.getAttribute('href')).toBe('/hub/team?proposal=beef&from=home')
   })
 
   it('shows the summary and a door back to the builder when nobody fits', () => {
     const api = load()
     const { result } = fixture()
-    api.render(result, { ...PROPOSAL, team: [], riassunto: 'Al momento nessun profilo corrisponde alla richiesta.' })
+    api.render(result, { ...PROPOSAL, team: [], summary: 'Al momento nessun profilo corrisponde alla richiesta.' })
     expect(result.querySelector('.team-summary')?.textContent).toBe('Al momento nessun profilo corrisponde alla richiesta.')
     expect(result.querySelector('.team-roles')).toBeNull()
     expect(result.querySelector('.team-total')).toBeNull()
@@ -329,7 +333,7 @@ describe('mount', () => {
     const fetchSpy = vi.fn(async () => (body === null ? new Response('', { status }) : answer(status, body)))
     const { form, textarea, button, error, result } = fixture()
     api.mount(form, fetchSpy as unknown as typeof fetch)
-    textarea.value = DESCRIZIONE
+    textarea.value = DESCRIPTION
     submit(form)
     await flush()
     await flush()
@@ -346,11 +350,43 @@ describe('mount', () => {
     })
     const { form, textarea, button, error } = fixture()
     api.mount(form, fetchSpy as unknown as typeof fetch)
-    textarea.value = DESCRIZIONE
+    textarea.value = DESCRIPTION
     submit(form)
     await flush()
     await flush()
     expect(error.textContent).toBe('Non siamo riusciti a proporre un team. Riprova.')
     expect(button.disabled).toBe(false)
+  })
+
+  it('gives up after about 95 seconds, with the same message, and frees the form', async () => {
+    vi.useFakeTimers()
+    try {
+      const api = load()
+      let signal: AbortSignal | undefined
+      const fetchSpy = vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            signal = init.signal as AbortSignal
+            signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+          }),
+      )
+      const { form, textarea, button, error } = fixture()
+      api.mount(form, fetchSpy as unknown as typeof fetch)
+      textarea.value = DESCRIPTION
+      submit(form)
+      expect(button.disabled).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(94_000)
+      expect(signal?.aborted).toBe(false)
+      expect(button.disabled).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(signal?.aborted).toBe(true)
+      expect(error.textContent).toBe('Non siamo riusciti a proporre un team. Riprova.')
+      expect(button.disabled).toBe(false)
+      expect(form.hasAttribute('aria-busy')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

@@ -61,9 +61,23 @@ archives before that. On 2026-09-17 the board stood at 275 while the three proje
 were being filed; the 69 terminal issues (Done, Canceled, Duplicate) that sat in a
 Completed project or in no project were archived by hand through the API, which is what
 Linear would have done in six months and is undone from the archive view, and the count
-went to 206. Before a bulk filing, read `teams { issueCount }` and, when there is no room,
-archive terminal issues of Completed projects. Never delete an issue to make room: an
-archived issue keeps its URL, its comments and its links, a deleted one does not.
+went to 206. Before a bulk filing, read `teams { issueCount }`, and never delete an issue
+to make room: an archived issue keeps its URL, its comments and its links, a deleted one
+does not.
+
+**When there is no room, archive the oldest Done issues first, and only those that are
+no longer current** (Lorenzo, 2026-10-20, as a standing rule). Oldest means by
+`completedAt`, across every team of the workspace. Not current means the issue is in a
+Completed or Canceled project, or in none; an issue whose project is still open
+(`planned`, `started`, `paused`, `backlog`) stays out of the archive, and one found
+archived there is unarchived (`issueUnarchive`). Archive in a batch that leaves room
+(on 2026-10-20: the 30 oldest, from 255 to 225), and say on the card that needed the room
+which issues went. The first pass of that day archived by a date cut-off instead and took
+cards of open projects with it; they were restored the same day, which is why the rule
+says oldest first and current never. The Linear MCP server has no archive tool:
+archive with the `issueArchive(id:)` mutation on `https://api.linear.app/graphql`,
+authenticated by your own personal API key (Linear, Settings, Security & access), one
+call per issue. A full board is a reason to archive, never a reason to stop filing.
 
 Every project always carries a lead, whoever it is. A project created without a
 lead is incomplete. Adding both of us as members used to be required too
@@ -124,27 +138,28 @@ unassigned card's owner is not queryable without reading it.
 
 ## Reaching it
 
-Two skills in `.claude/skills/` carry this contract to the moment it is needed:
-`linear-ticket` (the calls, in order, with every field) and `linear-content` (how the
-words are written). This file stays the source; a disagreement between it and a skill is
-a bug in the skill.
+Two skills of the workflow kit (`.agents/skills/`, mirrored into `.claude/skills/`)
+carry this contract to the moment it is needed: `linear-ticket` (the calls, in order,
+with every field) and `linear-content` (how the words are written). They read this
+board's data from `.github/workflow.json`. This file stays the source; a disagreement
+between it and a skill is a bug in the skill.
 
-The MCP server is `linear-rebase`, enrolled per client outside this repository. It is
-the Linear surface to use: another Linear server on the same machine reaches another
-company's board, not this one. When `linear-rebase` is not in the session, the web app
-at `linear.app/letsrebase` is the fallback, as the `linear-ticket` skill says; a failing
-or wrong-workspace connector is never a reason to start work or open a PR without its
-card.
+The MCP server is `linear-rebase`, defined in the committed `.mcp.json` (Claude Code,
+omp) and `.codex/config.toml` (Codex) with no credential: each person signs in on their
+own Linear account the first time. A machine with several Linear workspaces signed in
+can reach another company's board through a server of any name, so the workspace is
+proved, not assumed. When `linear-rebase` is not in the session, the web app at
+`linear.app/letsrebase` is the fallback, as the `linear-ticket` skill says; a failing or
+wrong-workspace connector is never a reason to start work or open a PR without its card.
 
-Before your first write in a session, two read calls. `list_projects` or `list_issues`,
-to check the team name that comes back: two Linear workspaces are enrolled on this
-machine and the failure mode of picking the wrong one is filing a client's work in the
-wrong company's board. Then `get_user` with `"me"`, to learn **which of us this session
-writes as**, because the token belongs to one account and both of us run agents against
-this board. Keep its `id`, not the display name: ownership is decided by comparing that
-id against `assigneeId` and `createdById`, which is one string equality against a value
-that cannot be re-rendered. That account is what `assignee: "me"` means, what "yours"
-means everywhere below, and it is not necessarily the person who is talking to you.
+Before your first write in a session, two read calls. `get_workspace`, whose `url` must
+be `https://linear.app/letsrebase`: the failure mode of a wrong one is filing a client's
+work in the wrong company's board. Then `get_user` with `"me"`, to learn **which of us this session writes
+as**, because the sign-in belongs to one account and both of us run agents against this
+board. Keep its `id`, not the display name: ownership is decided by comparing that id
+against `assigneeId` and `createdById`, which is one string equality against a value that
+cannot be re-rendered. That account is what `assignee: "me"` means, what "yours" means
+everywhere below, and it is not necessarily the person who is talking to you.
 
 ## The loop
 
@@ -205,11 +220,10 @@ lands. On a milestone's draft PR none of that fires (§ Which PR): the URL goes 
 card the PR lists, and each card moves by hand at its run's start and at the merge. So
 the evidence that would have closed the card goes in a comment before or right after
 the merge, not in a state change you make. From here to the merge the card keeps
-following the PR: the review's findings and what you did with them, Greptile's and
-CodeRabbit's findings on each push, CodeRabbit's verdicts on Greptile's, and whether each
-was fixed or answered (the PR merges only when neither reviewer's last pass leaves
-anything open and Greptile's score reads 5/5), a CI run that went red and why, a push
-that changed what the PR is. One line each is enough, and silence is not.
+following the PR: the independent review's findings and what you did with them, a CI
+run that went red and why, a push that changed what the PR is. One line each is enough,
+and silence is not. The review bots, CodeRabbit and Greptile, are off since 2026-10-30
+(REB-864, `docs/agents/pr-creation.md` § The review loop).
 
 **When you finish.** `Done` means verified on the surface the issue is about, and the
 comment that closes it says how. A green CI check closes a CI issue. A deploy issue
@@ -328,13 +342,11 @@ Applies to every project, milestone and issue title, and to the labels.
   filed for the sake of having one.
 - **English, first person, no em dashes**, same as every other repo-facing surface. See
   the Conventions section of the root `AGENTS.md`.
-- **A change to how this repository uses Linear reaches the client-repo template, or
-  it quietly stops being true off this board.** This file, and
-  `.claude/skills/linear-ticket`, `linear-content` and `pr-creation`, are the same
-  shape `tooling/client-repo-starter/template/` hands to a new client repo and the
-  shape `letsrebase/point` already copied at setup. See root `AGENTS.md` §
-  Conventions for the rule and `tooling/client-repo-starter/README.md` §
-  Retrofitting an existing repository for the fold-in procedure.
+- **How this board is worked is the workflow kit's, and the kit is shared.** The three
+  skills and the scripts come from `tooling/workflow-kit/`, also copied into the client
+  repositories and Lorenzo's personal ones; a change to them is made there and synced, as
+  the root `AGENTS.md` § Conventions says. What is this board's alone stays here and in
+  `.github/workflow.json`.
 
 ## Commits and issues
 

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
+import { asBody } from '@/lib/formValues'
 import { queryKeys } from '@/lib/query'
 import { downloadDocument } from '@/features/documents/queries'
 
@@ -9,7 +10,7 @@ import { downloadDocument } from '@/features/documents/queries'
  * Wire shapes taken from the generated OpenAPI schema, never hand-declared: the single
  * source of truth is `timetracking/schemas.py` and `pnpm generate:api` tracks it.
  *
- * Note that `ore`, `tariffa_applicata`, `valore_riga` and every other `Decimal` come
+ * Note that `hours`, `applied_rate`, `line_value` and every other `Decimal` come
  * through as `string`, never `number` -- which is what lets `lib/decimal.ts` read them
  * digit by digit instead of through a binary float.
  */
@@ -26,12 +27,12 @@ type TimeEntryUpdateBody = components['schemas']['TimeEntryUpdate']
 
 export interface TimeEntriesListParams {
   deal_id?: string
-  azienda_id?: string
+  legal_entity_id?: string
   user_id?: string
-  da?: string
-  a?: string
-  fatturabile?: boolean
-  fatturato?: boolean
+  from?: string
+  to?: string
+  billable?: boolean
+  invoiced?: boolean
 }
 
 /**
@@ -88,11 +89,14 @@ export function useDealRates(dealId: string, userId: string | undefined) {
   })
 }
 
-/** Invalidates the summary and the deal's own timeline alongside the list: an hour
+/** Invalidates the summary, the deal's own timeline and the calendar alongside the list: an hour
  *  changes all three, and a stale summary next to a fresh list is the shape of bug
  *  that makes people stop trusting the screen. */
 function invalidateAfterWrite(queryClient: ReturnType<typeof useQueryClient>, dealId?: string) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.timeEntries() })
+  // The calendar's month carries the hours of each day (and the day panel reads them), so an
+  // hour written from the register, the week grid or the panel itself makes it stale too.
+  void queryClient.invalidateQueries({ queryKey: queryKeys.calendarAll })
   if (dealId) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.dealTimeSummary(dealId) })
     void queryClient.invalidateQueries({ queryKey: queryKeys.timeline('deal', dealId) })
@@ -103,7 +107,7 @@ export function useLogTime() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/time-entries', { body: body as unknown as TimeEntryCreateBody })),
+      unwrap(api.POST('/api/time-entries', { body: asBody<TimeEntryCreateBody>(body) })),
     onSuccess: (entry) => invalidateAfterWrite(queryClient, entry.deal_id),
   })
 }
@@ -115,7 +119,7 @@ export function useUpdateTimeEntry(entryId: string) {
       unwrap(
         api.PATCH('/api/time-entries/{entry_id}', {
           params: { path: { entry_id: entryId } },
-          body: body as unknown as TimeEntryUpdateBody,
+          body: asBody<TimeEntryUpdateBody>(body),
         }),
       ),
     onSuccess: (entry) => invalidateAfterWrite(queryClient, entry.deal_id),
@@ -136,11 +140,11 @@ export function useUpdateTimeEntry(entryId: string) {
 export function useUpdateHours() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ entryId, ore }: { entryId: string; ore: string }) =>
+    mutationFn: ({ entryId, hours }: { entryId: string; hours: string }) =>
       unwrap(
         api.PATCH('/api/time-entries/{entry_id}', {
           params: { path: { entry_id: entryId } },
-          body: { ore } as unknown as TimeEntryUpdateBody,
+          body: asBody<TimeEntryUpdateBody>({ hours }),
         }),
       ),
     onSuccess: (entry) => invalidateAfterWrite(queryClient, entry.deal_id),
@@ -156,19 +160,18 @@ export function useDeleteTimeEntry() {
       ),
     // The 204 carries no body, so the deal to refresh has to come from the caller's own
     // variables rather than from a response that says nothing.
-    onSuccess: (_data, variables) => invalidateAfterWrite(queryClient, variables.dealId),
+    onSuccess: (_date, variables) => invalidateAfterWrite(queryClient, variables.dealId),
   })
 }
 
 /**
- * The XLSX only. A plain URL, not a fetch: the browser downloads the file itself, so
- * the bytes never pass through JavaScript. Same-origin, so the session cookie travels
- * with it and no token has to be put in a query string.
+ * The API path of the XLSX only, to download through `DownloadButton` (the space's prefix
+ * and the session refresh come with `fetchWithRefresh`).
  *
- * The PDF deliberately has no URL of its own here -- see `useRenderTimeReportPdf`.
+ * The PDF deliberately has no path of its own here -- see `useRenderTimeReportPdf`.
  */
-export function timeReportXlsxUrl(dealId: string, mese: string): string {
-  const query = new URLSearchParams({ mese, formato: 'xlsx' })
+export function timeReportXlsxPath(dealId: string, month: string): string {
+  const query = new URLSearchParams({ month })
   return `/api/deals/${dealId}/time-report?${query.toString()}`
 }
 
@@ -177,32 +180,29 @@ export function timeReportXlsxUrl(dealId: string, mese: string): string {
  *
  * The two formats answer differently on purpose. The XLSX is a working copy: the
  * endpoint streams the bytes with a `Content-Disposition`, so an anchor is exactly
- * right. The PDF is an *artefact* -- `render_pdf` archives it as a `document`, and the
- * endpoint answers `201` with that document's JSON, because slice 2's rule is that
- * archived bytes are fetched from the document download endpoint and nowhere else.
+ * right. The PDF is an *artefact* -- `render_pdf` archives it as a `document`, so it is a
+ * `POST` (a GET must not create anything) that answers `201` with that document's JSON,
+ * because slice 2's rule is that archived bytes are fetched from the document download
+ * endpoint and nowhere else.
  *
- * Pointing an anchor at it therefore navigated the browser to a page of JSON. Two
- * steps, not one: render (and archive), then download the archived document through
+ * Two steps, not one: render (and archive), then download the archived document through
  * the one path that carries authorisation on either storage backend.
  */
 export function useRenderTimeReportPdf() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (variables: { dealId: string; mese: string }) => {
+    mutationFn: async (variables: { dealId: string; month: string }) => {
       const document = await unwrap(
-        api.GET('/api/deals/{deal_id}/time-report', {
-          params: {
-            path: { deal_id: variables.dealId },
-            query: { mese: variables.mese, formato: 'pdf' },
-          },
+        api.POST('/api/deals/{deal_id}/time-report/pdf', {
+          params: { path: { deal_id: variables.dealId }, query: { month: variables.month } },
         }),
       )
-      await downloadDocument((document as { id: string }).id)
+      await downloadDocument(document.id)
       return document
     },
     // The render archived a new document version, so the deal's Documenti tab is stale
     // the moment this resolves.
-    onSuccess: (_data, variables) => {
+    onSuccess: (_date, variables) => {
       // The owner-scoped key first, then the empty-object wildcard that partially
       // matches every cached owner -- the same belt-and-braces `useDeleteDocument`
       // uses, and for the same reason: this render archived a new version, so the

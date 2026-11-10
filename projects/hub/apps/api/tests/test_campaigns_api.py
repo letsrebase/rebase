@@ -1,15 +1,17 @@
 """Campaigns over HTTP: the public unsubscribe (Task 14) and the admin routes (Task 17)."""
 
+import hashlib
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from admins import an_admin
 from campaign_api_flow import (  # noqa: F401  (fixture)
-    admin_user,
     recipient_row,
     recipient_rows,
     tidy,
 )
+from campaign_fixtures import RESEND_TEST_SECRET
 from fastapi.testclient import TestClient
 from sqlalchemy import update
 from sqlalchemy.orm import Session
@@ -20,17 +22,15 @@ from rebase_core.config import Settings, get_settings
 from rebase_core.mail import RecordingSender
 from rebase_core.models import Campaign, CampaignOptout, CampaignRecipient, Freelancer, User
 
-WEBHOOK_SECRET = "whsec_" + "c2VncmV0bw=="
-
 
 def test_the_header_url_fetched_by_get_only_redirects_to_the_page(
     client: TestClient,
     tidy: Session,  # noqa: F811  (fixture)
 ) -> None:
     recipient_row(tidy, "good")
-    answer = client.get("/api/hub/campagne/disiscrizione?t=good", follow_redirects=False)
+    answer = client.get("/api/hub/campaigns/unsubscribe?t=good", follow_redirects=False)
     assert answer.status_code == 303
-    assert answer.headers["location"] == "https://letsrebase.com/hub/disiscrizione?t=good"
+    assert answer.headers["location"] == "https://letsrebase.com/hub/unsubscribe?t=good"
     assert tidy.query(CampaignOptout).count() == 0
 
 
@@ -39,11 +39,11 @@ def test_a_mangled_token_stays_one_encoded_parameter_of_the_redirect(
 ) -> None:
     """The token reaches the route decoded; written back raw, `a%26x%3D1` would become a
     second parameter and `%0D%0A` a line break in the `Location` header."""
-    answer = client.get("/api/hub/campagne/disiscrizione?t=a%26x%3D1", follow_redirects=False)
-    assert answer.headers["location"] == "https://letsrebase.com/hub/disiscrizione?t=a%26x%3D1"
-    broken = client.get("/api/hub/campagne/disiscrizione?t=a%0D%0Ab", follow_redirects=False)
+    answer = client.get("/api/hub/campaigns/unsubscribe?t=a%26x%3D1", follow_redirects=False)
+    assert answer.headers["location"] == "https://letsrebase.com/hub/unsubscribe?t=a%26x%3D1"
+    broken = client.get("/api/hub/campaigns/unsubscribe?t=a%0D%0Ab", follow_redirects=False)
     assert broken.status_code == 303
-    assert broken.headers["location"].endswith("/disiscrizione?t=a%0D%0Ab")
+    assert broken.headers["location"].endswith("/unsubscribe?t=a%0D%0Ab")
 
 
 def test_the_one_click_post_opts_out_and_a_wrong_token_answers_the_same(
@@ -52,14 +52,52 @@ def test_the_one_click_post_opts_out_and_a_wrong_token_answers_the_same(
 ) -> None:
     recipient_row(tidy, "good")
     wrong = client.post(
-        "/api/hub/campagne/disiscrizione?t=nope", data={"List-Unsubscribe": "One-Click"}
+        "/api/hub/campaigns/unsubscribe?t=nope", data={"List-Unsubscribe": "One-Click"}
     )
     right = client.post(
-        "/api/hub/campagne/disiscrizione?t=good", data={"List-Unsubscribe": "One-Click"}
+        "/api/hub/campaigns/unsubscribe?t=good", data={"List-Unsubscribe": "One-Click"}
     )
     assert wrong.status_code == right.status_code == 200
     assert wrong.json() == right.json() == {"ok": True}
     assert tidy.get(CampaignOptout, "ada@studio.it") is not None
+
+
+def test_the_confirmation_button_confirms_once_and_a_wrong_link_is_refused(
+    client: TestClient,
+    tidy: Session,  # noqa: F811  (fixture)
+) -> None:
+    """REB-911: a GET never confirms (a mail scanner opens every link), the POST does, the
+    same link again answers the same, and anything else is a 410 with the page's sentence."""
+    tidy.add(
+        User(
+            email="ada@studio.it",
+            first_name="Ada",
+            last_name="Lovelace",
+            confirmation_token_hash=hashlib.sha256(b"good").hexdigest(),
+            confirmation_expires_at=datetime.now(UTC) + timedelta(days=1),
+        )
+    )
+    tidy.add(
+        User(
+            email="old@studio.it",
+            first_name="Old",
+            last_name="Link",
+            confirmation_token_hash=hashlib.sha256(b"old").hexdigest(),
+            confirmation_expires_at=datetime.now(UTC) - timedelta(days=1),
+        )
+    )
+    tidy.commit()
+    assert client.get("/api/hub/campaigns/confirm?t=good").status_code != 200
+    for _ in range(2):
+        assert client.post("/api/hub/campaigns/confirm?t=good").json() == {"ok": True}
+    for bad in ("nope", "old"):
+        refused = client.post(f"/api/hub/campaigns/confirm?t={bad}")
+        assert refused.status_code == 410
+        assert refused.json()["detail"] == "Il link non è valido o è scaduto."
+    tidy.expire_all()
+    confirmed = {u.email: u.email_confirmed_at for u in tidy.query(User).all()}
+    assert confirmed["ada@studio.it"] is not None
+    assert confirmed["old@studio.it"] is None
 
 
 def test_seven_one_click_posts_in_a_row_from_one_client_all_opt_out(
@@ -73,7 +111,7 @@ def test_seven_one_click_posts_in_a_row_from_one_client_all_opt_out(
     recipient_rows(tidy, addresses)
     for token in addresses:
         answer = client.post(
-            f"/api/hub/campagne/disiscrizione?t={token}", data={"List-Unsubscribe": "One-Click"}
+            f"/api/hub/campaigns/unsubscribe?t={token}", data={"List-Unsubscribe": "One-Click"}
         )
         assert answer.status_code == 200, answer.text
     tidy.expire_all()
@@ -81,24 +119,29 @@ def test_seven_one_click_posts_in_a_row_from_one_client_all_opt_out(
 
 
 def login_admin(client: TestClient, sender: RecordingSender, session: Session) -> None:
-    admin_user(session)
+    an_admin(session, last_name="Sala")
     assert client.post("/api/hub/auth/link", json={"email": "ivan@rebase.it"}).status_code == 202
-    token = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text).group(1)  # type: ignore[union-attr]
+    token = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text).group(1)  # type: ignore[union-attr]
     assert client.post("/api/hub/auth/enter", json={"token": token}).status_code == 200
 
 
-def a_card_without_cv(session: Session, email: str) -> None:
+def a_card_without_cv(session: Session, email: str, *, confirmed: bool = True) -> None:
     from decimal import Decimal
 
-    user = User(email=email, nome="Ada", cognome="L")
+    user = User(
+        email=email,
+        first_name="Ada",
+        last_name="L",
+        email_confirmed_at=datetime.now(UTC) if confirmed else None,
+    )
     session.add(user)
     session.flush()
     session.add(
         Freelancer(
             user_id=user.id,
-            tariffa_giornaliera=Decimal("400"),
-            posizione="Dev",
-            remoto="remoto",
+            daily_rate=Decimal("400"),
+            job_title="Dev",
+            remote="remote",
             links=[],
         )
     )
@@ -109,7 +152,7 @@ def with_webhook(client: TestClient) -> None:
     """This environment has Resend's webhook secret, as production does."""
     client.app.dependency_overrides[get_settings] = lambda: Settings(  # type: ignore[attr-defined]
         _env_file=None,  # type: ignore[call-arg]
-        resend_webhook_secret=WEBHOOK_SECRET,
+        resend_webhook_secret=RESEND_TEST_SECRET,
     )
 
 
@@ -117,14 +160,14 @@ def a_draft(client: TestClient) -> str:
     created = client.post(
         "/api/hub/campaigns",
         json={
-            "nome": "X",
-            "fonte": "stato",
-            "stato_percorso": "completo",
-            "oggetto": "o",
-            "testo": "t",
-            "bottone_testo": "b",
-            "bottone_meta": "area",
-            "azione": "entrato",
+            "name": "X",
+            "source": "status",
+            "journey_status": "complete",
+            "subject": "o",
+            "text": "t",
+            "button_text": "b",
+            "button_meta": "area",
+            "action": "signed_in",
         },
     )
     assert created.status_code == 201, created.text
@@ -146,10 +189,10 @@ def test_a_signed_in_member_hitting_campaigns_is_403_not_401(
     tidy: Session,  # noqa: F811  (fixture)
     sender: RecordingSender,
 ) -> None:
-    tidy.add(User(email="membro@studio.it", nome="M", cognome="M"))
+    tidy.add(User(email="membro@studio.it", first_name="M", last_name="M"))
     tidy.commit()
     assert client.post("/api/hub/auth/link", json={"email": "membro@studio.it"}).status_code == 202
-    token = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text).group(1)  # type: ignore[union-attr]
+    token = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text).group(1)  # type: ignore[union-attr]
     assert client.post("/api/hub/auth/enter", json={"token": token}).status_code == 200
     assert client.get("/api/hub/campaigns").status_code == 403
 
@@ -164,45 +207,47 @@ def test_the_admin_drafts_tests_and_schedules_a_campaign(
     client.app.dependency_overrides[get_campaign_sender] = lambda: recording  # type: ignore[attr-defined]
     with_webhook(client)
     a_card_without_cv(tidy, "ada@studio.it")
+    a_card_without_cv(tidy, "gia@studio.it", confirmed=False)
     templates = client.get("/api/hub/campaigns/templates").json()
-    cv = next(t for t in templates if t["stato_percorso"] == "manca_cv")
+    cv = next(t for t in templates if t["journey_status"] == "missing_cv")
     created = client.post(
         "/api/hub/campaigns",
         json={
-            "nome": "CV",
-            "fonte": "stato",
+            "name": "CV",
+            "source": "status",
             **{
                 k: cv[k]
                 for k in (
-                    "stato_percorso",
-                    "oggetto",
-                    "testo",
-                    "bottone_testo",
-                    "bottone_meta",
-                    "azione",
+                    "journey_status",
+                    "subject",
+                    "text",
+                    "button_text",
+                    "button_meta",
+                    "action",
                 )
             },
         },
     )
     assert created.status_code == 201, created.text
     campaign_id = created.json()["id"]
-    assert client.get(f"/api/hub/campaigns/{campaign_id}/audience").json()["incluse"] == 1
-    refused = client.post(f"/api/hub/campaigns/{campaign_id}/schedule", json={"esclusi": []})
+    preview = client.get(f"/api/hub/campaigns/{campaign_id}/audience").json()
+    assert preview["included"] == 1 and preview["excluded"] == 1
+    assert {line["email"]: line["excluded"] for line in preview["lines"]}["gia@studio.it"] == (
+        "indirizzo non confermato"
+    )
+    refused = client.post(f"/api/hub/campaigns/{campaign_id}/schedule", json={"excluded": []})
     assert refused.status_code == 409 and "prova" in refused.json()["detail"]
     tested = client.post(f"/api/hub/campaigns/{campaign_id}/test").json()
-    assert tested["pronta"] is True and recording.sent[0].mail.to == "ivan@rebase.it"
+    assert tested["ready"] is True and recording.sent[0].mail.to == "ivan@rebase.it"
     scheduled = client.post(
         f"/api/hub/campaigns/{campaign_id}/schedule",
-        json={"giorno": "2030-01-10", "ora": "09:30", "esclusi": []},
+        json={"day": "2030-01-10", "at_time": "09:30", "excluded": []},
     )
     assert (
-        scheduled.status_code == 200
-        and scheduled.json()["programmata_per"] == "2030-01-10T08:30:00Z"
+        scheduled.status_code == 200 and scheduled.json()["scheduled_for"] == "2030-01-10T08:30:00Z"
     )
     detail = client.get(f"/api/hub/campaigns/{campaign_id}").json()
-    assert (
-        detail["conteggi"]["in_coda"] == 1 and detail["destinatari"][0]["email"] == "ada@studio.it"
-    )
+    assert detail["counts"]["queued"] == 1 and detail["recipients"][0]["email"] == "ada@studio.it"
 
 
 def test_without_a_resend_key_the_test_is_a_503_sentence(
@@ -213,7 +258,7 @@ def test_without_a_resend_key_the_test_is_a_503_sentence(
     login_admin(client, sender, tidy)
     client.app.dependency_overrides[get_campaign_sender] = lambda: None  # type: ignore[attr-defined]
     campaign_id = a_draft(client)
-    for verb, body in (("test", None), ("schedule", {"esclusi": []})):
+    for verb, body in (("test", None), ("schedule", {"excluded": []})):
         answer = client.post(f"/api/hub/campaigns/{campaign_id}/{verb}", json=body)
         assert answer.status_code == 503 and "non è configurato" in answer.json()["detail"]
 
@@ -230,7 +275,7 @@ def test_a_key_without_the_webhook_secret_refuses_test_and_schedule(
     recording = RecordingCampaignSender()
     client.app.dependency_overrides[get_campaign_sender] = lambda: recording  # type: ignore[attr-defined]
     campaign_id = a_draft(client)
-    for verb, body in (("test", None), ("schedule", {"esclusi": []})):
+    for verb, body in (("test", None), ("schedule", {"excluded": []})):
         answer = client.post(f"/api/hub/campaigns/{campaign_id}/{verb}", json=body)
         assert answer.status_code == 503, answer.text
         assert answer.json()["detail"] == (
@@ -240,7 +285,7 @@ def test_a_key_without_the_webhook_secret_refuses_test_and_schedule(
     tidy.expire_all()
     campaign = tidy.get(Campaign, campaign_id)
     assert campaign is not None
-    assert (campaign.stato, campaign.prova_inviata_at) == ("bozza", None)
+    assert (campaign.status, campaign.test_sent_at) == ("draft", None)
 
 
 def test_never_write_records_the_address(
@@ -255,10 +300,10 @@ def test_never_write_records_the_address(
         ).status_code
         == 200
     )
-    assert tidy.get(CampaignOptout, "lorenzo@studio.it").fonte == "admin"  # type: ignore[union-attr]
+    assert tidy.get(CampaignOptout, "lorenzo@studio.it").source == "admin"  # type: ignore[union-attr]
 
 
-def test_riscrivi_opens_a_lista_draft_and_refuses_a_draft(
+def test_follow_up_opens_to_list_draft_and_refuses_to_draft(
     client: TestClient,
     tidy: Session,  # noqa: F811  (fixture)
     sender: RecordingSender,
@@ -267,29 +312,29 @@ def test_riscrivi_opens_a_lista_draft_and_refuses_a_draft(
     draft_id = a_draft(client)
     refused = client.post(f"/api/hub/campaigns/{draft_id}/follow-up")
     assert refused.status_code == 409 and "già inviata" in refused.json()["detail"]
-    tidy.execute(update(Campaign).where(Campaign.id == UUID(draft_id)).values(stato="inviata"))
+    tidy.execute(update(Campaign).where(Campaign.id == UUID(draft_id)).values(status="sent"))
     campaign = tidy.get(Campaign, UUID(draft_id))
     assert campaign is not None
     tidy.add(
         CampaignRecipient(
             campaign_id=campaign.id,
             email="ada@studio.it",
-            tipo="freelancer",
-            codice="1",
-            prima={},
-            disiscrizione_token="t-riscrivi",
-            stato="inviata",
-            inviata_at=datetime.now(UTC),
+            kind="freelancer",
+            code="1",
+            before={},
+            unsubscribe_token="t-riscrivi",
+            status="sent",
+            sent_at=datetime.now(UTC),
         )
     )
     tidy.commit()
     created = client.post(f"/api/hub/campaigns/{draft_id}/follow-up")
     assert created.status_code == 201, created.text
     body = created.json()
-    assert (body["fonte"], body["segue_id"], body["stato"]) == ("lista", draft_id, "bozza")
+    assert (body["source"], body["follows_id"], body["status"]) == ("list", draft_id, "draft")
     detail = client.get(f"/api/hub/campaigns/{draft_id}").json()
-    assert detail["conteggi"]["azioni"] == 0
-    assert detail["destinatari"][0]["entrato_dalla_mail"] is False
+    assert detail["counts"]["actions"] == 0
+    assert detail["recipients"][0]["signed_in_from_mail"] is False
 
 
 def test_a_null_on_a_not_nullable_field_is_422_not_500(
@@ -297,7 +342,7 @@ def test_a_null_on_a_not_nullable_field_is_422_not_500(
     tidy: Session,  # noqa: F811  (fixture)
     sender: RecordingSender,
 ) -> None:
-    """Part 1 (REB-550): `fonte`, `azione` and `bottone_meta` are `NOT NULL` in
+    """Part 1 (REB-550): `source`, `action` and `button_meta` are `NOT NULL` in
     `models.py`'s `Campaign`. An explicit `null` for one of them used to reach
     `CampaignService.update`'s blanket `setattr` and raise an `IntegrityError`, a 500;
     `CampaignPatch` now refuses it before the body ever reaches the service, and its
@@ -305,14 +350,14 @@ def test_a_null_on_a_not_nullable_field_is_422_not_500(
     web's `ApiError.fields` reads it (`detail[].loc[-1]`, `apps/web/src/lib/api.ts`)."""
     login_admin(client, sender, tidy)
     campaign_id = a_draft(client)
-    for field in ("fonte", "azione", "bottone_meta"):
+    for field in ("source", "action", "button_meta"):
         answer = client.patch(f"/api/hub/campaigns/{campaign_id}", json={field: None})
         assert answer.status_code == 422, answer.text
         detail = answer.json()["detail"]
         assert detail[0]["loc"][-1] == field
         assert "il campo non può essere svuotato" in detail[0]["msg"]
     unchanged = client.get(f"/api/hub/campaigns/{campaign_id}").json()
-    assert unchanged["campagna"]["fonte"] == "stato"
+    assert unchanged["campaign"]["source"] == "status"
 
 
 def test_a_blank_name_is_a_422_sentence_on_create_and_on_update(
@@ -324,25 +369,25 @@ def test_a_blank_name_is_a_422_sentence_on_create_and_on_update(
     naming the field, `nome` last in `loc` as the page reads it."""
     login_admin(client, sender, tidy)
     campaign_id = a_draft(client)
-    answer = client.patch(f"/api/hub/campaigns/{campaign_id}", json={"nome": "   "})
+    answer = client.patch(f"/api/hub/campaigns/{campaign_id}", json={"name": "   "})
     assert answer.status_code == 422, answer.text
     (item,) = answer.json()["detail"]
     assert (item["loc"][-1], item["msg"]) == (
-        "nome",
+        "name",
         "Il nome della campagna non può essere vuoto.",
     )
-    assert client.get(f"/api/hub/campaigns/{campaign_id}").json()["campagna"]["nome"] == "X"
+    assert client.get(f"/api/hub/campaigns/{campaign_id}").json()["campaign"]["name"] == "X"
     created = client.post(
         "/api/hub/campaigns",
         json={
-            "nome": " \t ",
-            "fonte": "stato",
-            "stato_percorso": "completo",
-            "bottone_meta": "area",
-            "azione": "entrato",
+            "name": " \t ",
+            "source": "status",
+            "journey_status": "complete",
+            "button_meta": "area",
+            "action": "signed_in",
         },
     )
-    assert created.status_code == 422 and created.json()["detail"][0]["loc"][-1] == "nome"
+    assert created.status_code == 422 and created.json()["detail"][0]["loc"][-1] == "name"
 
 
 def test_a_draft_is_deleted_and_a_scheduled_campaign_is_not(
@@ -355,7 +400,7 @@ def test_a_draft_is_deleted_and_a_scheduled_campaign_is_not(
     login_admin(client, sender, tidy)
     draft_id = a_draft(client)
     kept_id = a_draft(client)
-    tidy.execute(update(Campaign).where(Campaign.id == UUID(kept_id)).values(stato="annullata"))
+    tidy.execute(update(Campaign).where(Campaign.id == UUID(kept_id)).values(status="cancelled"))
     tidy.commit()
     assert client.delete(f"/api/hub/campaigns/{draft_id}").status_code == 204
     assert client.get(f"/api/hub/campaigns/{draft_id}").status_code == 404
@@ -384,17 +429,17 @@ def test_a_stalled_send_reads_its_reason_on_the_list_and_the_page(
         update(Campaign)
         .where(Campaign.id == UUID(campaign_id))
         .values(
-            stato="in_invio",
-            fermo_at=stopped,
-            fermo_motivo="Resend rifiuta l'invio: controlla la chiave e il dominio del mittente",
+            status="sending",
+            stalled_at=stopped,
+            stalled_reason="Resend rifiuta l'invio: controlla la chiave e il dominio del mittente",
         )
     )
     tidy.commit()
-    page = client.get(f"/api/hub/campaigns/{campaign_id}").json()["campagna"]
+    page = client.get(f"/api/hub/campaigns/{campaign_id}").json()["campaign"]
     (item,) = client.get("/api/hub/campaigns").json()["items"]
     for read in (page, item):
         assert (
-            read["fermo_motivo"]
+            read["stalled_reason"]
             == "Resend rifiuta l'invio: controlla la chiave e il dominio del mittente"
         )
-        assert read["fermo_at"].startswith("2026-09-28T09:00:00")
+        assert read["stalled_at"].startswith("2026-09-28T09:00:00")

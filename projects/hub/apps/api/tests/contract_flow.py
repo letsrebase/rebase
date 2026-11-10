@@ -1,24 +1,24 @@
 """What «Crea match» leaves behind, over HTTP, for the signing tests (REB-387 phase 3):
 an admin signed in, a card, a request, the tax data and a draft match. Reuses
-`test_matches_api.py`'s own constants and route helpers rather than copying them
-(REB-406): `enter` is `test_matches_api._login_as`, the one copy of that recipe, and
-`draft_match` builds on `_ready` instead of redoing it. The signing, webhook and
+`contract_api_helpers`' constants and route helpers rather than copying them (REB-406,
+HTEST-03): `enter` is `login_as`, the one copy of that recipe, and `draft_match` builds on
+`ready` instead of redoing it. The signing, webhook and
 member-contract tests import this module too."""
 
 from typing import Any
 
-from fastapi.testclient import TestClient
-from test_matches_api import (
+from contract_api_helpers import (
     ADMIN_EMAIL,
-    CLIENTE,
+    CUSTOMER,
     FISCAL,
-    LETTERA,
+    LETTER,
     MISSING,
     PDF,
     TABLES,
-    _login_as,
-    _ready,
+    login_as,
+    ready,
 )
+from fastapi.testclient import TestClient
 
 from rebase_core.mail import RecordingSender
 
@@ -35,10 +35,10 @@ SIGNER = {
 
 __all__ = [
     "ADMIN_EMAIL",
-    "CLIENTE",
+    "CUSTOMER",
     "FISCAL",
     "FREELANCER_EMAIL",
-    "LETTERA",
+    "LETTER",
     "MISSING",
     "PDF",
     "SIGNER",
@@ -51,17 +51,17 @@ __all__ = [
 def enter(client: TestClient, sender: RecordingSender, email: str) -> None:
     """Signs `email` in through the magic link, as the member area does: the
     member-contract tests use this to enter as the freelancer, not only the admin
-    `_ready` signs in as."""
-    _login_as(client, sender, email)
+    `ready` signs in as."""
+    login_as(client, sender, email)
 
 
 def draft_match(client: TestClient, sender: RecordingSender) -> dict[str, Any]:
-    """The admin signed in, Ada's card, ACME's request and her tax data (`_ready`), then
+    """The admin signed in, Ada's card, ACME's request and her tax data (`ready`), then
     a draft match: the match as `POST /api/hub/freelancers/{id}/matches` answered it."""
-    freelancer_id, company_id = _ready(client, sender)
+    freelancer_id, company_id = ready(client, sender)
     created = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+        json={"company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
     )
     assert created.status_code == 201, created.text
     body: dict[str, Any] = created.json()

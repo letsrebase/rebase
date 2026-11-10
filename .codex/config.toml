@@ -1,0 +1,8 @@
+# The Linear server for this repository, with no credential: run
+# `codex mcp login linear-rebase` once and sign in on your own Linear account.
+# Codex reads this file only in a project it trusts. Claude Code and omp read the
+# same definition from .mcp.json. The skills check the workspace with get_workspace
+# before writing (.agents/skills/linear-ticket), because one machine can have several
+# Linear workspaces signed in.
+[mcp_servers.linear-rebase]
+url = "https://mcp.linear.app/mcp"

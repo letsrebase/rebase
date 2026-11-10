@@ -5,19 +5,20 @@ import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
+import { ScrollRegion } from '@rebase/ui/table'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { emptyLine, type DraftLine } from './lineDraft'
-import { formatMoney, sumLineTotals } from './format'
+import { formatMoney, formatQuantity, sumLineTotals } from './format'
 import { useReplaceLines, type Invoice, type InvoiceLine, type InvoiceLineInput } from './queries'
 
 function draftFrom(line: InvoiceLine): DraftLine {
   return {
-    descrizione: line.descrizione,
-    quantita: line.quantita,
-    unita_misura: line.unita_misura ?? '',
-    prezzo_unitario: line.prezzo_unitario,
-    sconto_percentuale: line.sconto_percentuale ?? '',
-    sconto_importo: line.sconto_importo ?? '',
+    description: line.description,
+    quantity: line.quantity,
+    unit_of_measure: line.unit_of_measure ?? '',
+    unit_price: line.unit_price,
+    discount_percentage: line.discount_percentage ?? '',
+    discount_amount: line.discount_amount ?? '',
   }
 }
 
@@ -38,12 +39,12 @@ function optional(value: string): string | null {
 
 function toInput(draft: DraftLine): InvoiceLineInput {
   return {
-    descrizione: draft.descrizione,
-    quantita: draft.quantita,
-    unita_misura: optional(draft.unita_misura),
-    prezzo_unitario: draft.prezzo_unitario,
-    sconto_percentuale: optional(draft.sconto_percentuale),
-    sconto_importo: optional(draft.sconto_importo),
+    description: draft.description,
+    quantity: draft.quantity,
+    unit_of_measure: optional(draft.unit_of_measure),
+    unit_price: draft.unit_price,
+    discount_percentage: optional(draft.discount_percentage),
+    discount_amount: optional(draft.discount_amount),
   } as InvoiceLineInput
 }
 
@@ -79,7 +80,7 @@ export function InvoiceLinesEditor({
   // inputs would only invite an edit that cannot be saved.
   if (readOnly) {
     return (
-      <div className="space-y-3">
+      <ScrollRegion label="Righe della fattura" className="space-y-3">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-muted-foreground text-left">
@@ -93,16 +94,16 @@ export function InvoiceLinesEditor({
           <tbody>
             {lines.map((line) => (
               <tr key={line.id} className="border-t">
-                <td className="py-2">{line.descrizione}</td>
-                <td className="py-2">{line.quantita}</td>
-                <td className="py-2">{line.unita_misura ?? '—'}</td>
-                <td className="py-2">{formatMoney(line.prezzo_unitario)}</td>
-                <td className="py-2 text-right">{formatMoney(line.prezzo_totale)}</td>
+                <td className="py-2">{line.description}</td>
+                <td className="py-2">{formatQuantity(line.quantity)}</td>
+                <td className="py-2">{line.unit_of_measure ?? '—'}</td>
+                <td className="py-2">{formatMoney(line.unit_price)}</td>
+                <td className="py-2 text-right">{formatMoney(line.total_price)}</td>
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      </ScrollRegion>
     )
   }
 
@@ -118,8 +119,8 @@ export function InvoiceLinesEditor({
             </Label>
             <Input
               id={`riga-descrizione-${index}`}
-              value={row.descrizione}
-              onChange={(event) => update(index, 'descrizione', event.target.value)}
+              value={row.description}
+              onChange={(event) => update(index, 'description', event.target.value)}
             />
           </div>
           <div className="space-y-1 sm:col-span-2">
@@ -128,8 +129,8 @@ export function InvoiceLinesEditor({
             </Label>
             <Input
               id={`riga-quantita-${index}`}
-              value={row.quantita}
-              onChange={(event) => update(index, 'quantita', event.target.value)}
+              value={row.quantity}
+              onChange={(event) => update(index, 'quantity', event.target.value)}
             />
           </div>
           <div className="space-y-1 sm:col-span-1">
@@ -138,8 +139,8 @@ export function InvoiceLinesEditor({
             </Label>
             <Input
               id={`riga-unita-${index}`}
-              value={row.unita_misura}
-              onChange={(event) => update(index, 'unita_misura', event.target.value)}
+              value={row.unit_of_measure}
+              onChange={(event) => update(index, 'unit_of_measure', event.target.value)}
             />
           </div>
           <div className="space-y-1 sm:col-span-2">
@@ -148,8 +149,8 @@ export function InvoiceLinesEditor({
             </Label>
             <Input
               id={`riga-prezzo-${index}`}
-              value={row.prezzo_unitario}
-              onChange={(event) => update(index, 'prezzo_unitario', event.target.value)}
+              value={row.unit_price}
+              onChange={(event) => update(index, 'unit_price', event.target.value)}
             />
           </div>
           <div className="space-y-1 sm:col-span-2">
@@ -158,8 +159,8 @@ export function InvoiceLinesEditor({
             </Label>
             <Input
               id={`riga-sconto-${index}`}
-              value={row.sconto_percentuale}
-              onChange={(event) => update(index, 'sconto_percentuale', event.target.value)}
+              value={row.discount_percentage}
+              onChange={(event) => update(index, 'discount_percentage', event.target.value)}
             />
           </div>
           <div className="sm:col-span-1">
@@ -177,7 +178,7 @@ export function InvoiceLinesEditor({
         </div>
       ))}
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <Button
           variant="outline"
           size="sm"
@@ -187,7 +188,7 @@ export function InvoiceLinesEditor({
           Aggiungi riga
         </Button>
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           {/* Explicitly a preview. The authoritative totals are the ones the API
               stored -- `sumLineTotals` adds integer cents purely so the editor can
               show a running figure before saving, and the label is what stops anyone

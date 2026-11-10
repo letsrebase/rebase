@@ -23,8 +23,8 @@ def test_the_migrations_produce_exactly_the_models_schema(hub_engine: Engine) ->
 
 
 def test_the_company_check_constraints_are_installed(hub_engine: Engine) -> None:
-    """REB-380: `ck_companies_giorni_presenza_range`, `ck_companies_giorni_presenza_together`
-    and `ck_companies_numero_risorse_positive` are real database constraints, not only a
+    """REB-380: `ck_companies_onsite_days_range`, `ck_companies_onsite_days_together`
+    and `ck_companies_headcount_positive` are real database constraints, not only a
     Pydantic rule -- proven with a raw `INSERT` that bypasses the schema entirely. Every
     attempt runs inside one savepoint of a transaction rolled back at the end, so nothing
     here leaves a row behind for another test."""
@@ -32,38 +32,38 @@ def test_the_company_check_constraints_are_installed(hub_engine: Engine) -> None
         outer = connection.begin()
         user_id = connection.execute(
             text(
-                "INSERT INTO users (id, email, nome, cognome, role, attivo) "
+                "INSERT INTO users (id, email, first_name, last_name, role, active) "
                 "VALUES (gen_random_uuid(), 'ck-companies@studio.it', 'A', 'B', "
                 "'member', true) RETURNING id"
             )
         ).scalar()
 
-        def _insert(remoto: str, giorni_presenza: str, numero_risorse: int) -> None:
+        def _insert(remote: str, onsite_days: str, headcount: int) -> None:
             connection.execute(
                 text(
-                    "INSERT INTO companies (id, user_id, nome_azienda, figura_richiesta, "
-                    "progetto, periodo_da, durata, budget_giornaliero, remoto, "
-                    "giorni_presenza, numero_risorse, stato) VALUES (gen_random_uuid(), "
+                    "INSERT INTO companies (id, user_id, company_name, requested_role, "
+                    "project, period_from, duration, daily_budget, remote, "
+                    "onsite_days, headcount, status) VALUES (gen_random_uuid(), "
                     f":user_id, 'ACME', 'Dev', 'Un progetto', '2026-10-01', '3 mesi', "
-                    f"500, :remoto, {giorni_presenza}, :numero_risorse, 'nuovo')"
+                    f"500, :remote, {onsite_days}, :headcount, 'new')"
                 ),
-                {"user_id": user_id, "remoto": remoto, "numero_risorse": numero_risorse},
+                {"user_id": user_id, "remote": remote, "headcount": headcount},
             )
 
-        with pytest.raises(IntegrityError), connection.begin_nested():  # ibrido, no days
-            _insert("ibrido", "NULL", 1)
+        with pytest.raises(IntegrityError), connection.begin_nested():  # hybrid, no days
+            _insert("hybrid", "NULL", 1)
 
-        with pytest.raises(IntegrityError), connection.begin_nested():  # not ibrido, days set
-            _insert("remoto", "2", 1)
+        with pytest.raises(IntegrityError), connection.begin_nested():  # not hybrid, days set
+            _insert("remote", "2", 1)
 
         with pytest.raises(IntegrityError), connection.begin_nested():  # days outside 1-4
-            _insert("ibrido", "5", 1)
+            _insert("hybrid", "5", 1)
 
         with pytest.raises(IntegrityError), connection.begin_nested():  # fewer than one person
-            _insert("remoto", "NULL", 0)
+            _insert("remote", "NULL", 0)
 
         with connection.begin_nested():  # the same shape, valid, must be accepted
-            _insert("ibrido", "3", 2)
+            _insert("hybrid", "3", 2)
 
         outer.rollback()
 
@@ -116,7 +116,7 @@ def test_the_production_table_is_adopted_with_its_rows(hub_postgres: Any) -> Non
                     )
                 ).scalars()
             )
-            assert {"nome", "cognome", "linkedin_url", "utm_id"} <= columns
+            assert {"first_name", "last_name", "linkedin_url", "utm_id"} <= columns
             version = connection.execute(text("SELECT version_num FROM alembic_version"))
             assert version.scalar() == head_revision()
             # And the result is the models' schema, on the adopted table as on a fresh one.
@@ -134,80 +134,81 @@ def test_the_contract_constraints_are_installed(hub_engine: Engine) -> None:
         outer = connection.begin()
         user_id = connection.execute(
             text(
-                "INSERT INTO users (id, email, nome, cognome, role, attivo) VALUES "
+                "INSERT INTO users (id, email, first_name, last_name, role, active) VALUES "
                 "(gen_random_uuid(), 'ck-contracts@studio.it', 'A', 'B', 'admin', true) "
                 "RETURNING id"
             )
         ).scalar()
         freelancer_id = connection.execute(
             text(
-                "INSERT INTO freelancers (id, user_id, links, stato, compilata_da) VALUES "
-                "(gen_random_uuid(), :user_id, '[]', 'nuovo', 'persona') RETURNING id"
+                "INSERT INTO freelancers (id, user_id, links, status, filled_by) VALUES "
+                "(gen_random_uuid(), :user_id, '[]', 'new', 'person') RETURNING id"
             ),
             {"user_id": user_id},
         ).scalar()
         company_id = connection.execute(
             text(
-                "INSERT INTO companies (id, user_id, nome_azienda, figura_richiesta, progetto, "
-                "periodo_da, durata, budget_giornaliero, remoto, numero_risorse, stato) VALUES "
+                "INSERT INTO companies (id, user_id, company_name, requested_role, project, "
+                "period_from, duration, daily_budget, remote, headcount, status) VALUES "
                 "(gen_random_uuid(), :user_id, 'ACME', 'Dev', 'Un progetto', '2026-10-01', "
-                "'3 mesi', 500, 'remoto', 1, 'nuovo') RETURNING id"
+                "'3 mesi', 500, 'remote', 1, 'new') RETURNING id"
             ),
             {"user_id": user_id},
         ).scalar()
         match_id = connection.execute(
             text(
-                "INSERT INTO matches (id, freelancer_id, company_id, cliente_ragione_sociale, "
-                "cliente_piva, cliente_sede, stato, created_by) VALUES (gen_random_uuid(), "
-                ":freelancer_id, :company_id, 'ACME S.r.l.', '01234567890', 'Milano', 'bozza', "
+                "INSERT INTO matches (id, freelancer_id, company_id, customer_legal_name, "
+                "customer_vat_number, customer_registered_office, status, created_by) "
+                "VALUES (gen_random_uuid(), "
+                ":freelancer_id, :company_id, 'ACME S.r.l.', '01234567890', 'Milano', 'draft', "
                 ":user_id) RETURNING id"
             ),
             {"freelancer_id": freelancer_id, "company_id": company_id, "user_id": user_id},
         ).scalar()
 
-        def _document(kind: str, match: object, numero: str | None, stato: str) -> None:
+        def _document(kind: str, match: object, number: str | None, status: str) -> None:
             connection.execute(
                 text(
-                    "INSERT INTO contract_documents (id, kind, freelancer_id, match_id, numero, "
-                    "text_version, testo_bozza, data, pdf, stato, created_by) VALUES "
-                    "(gen_random_uuid(), :kind, :freelancer_id, :match_id, :numero, '0.1', true, "
-                    "'{}', :pdf, :stato, :user_id)"
+                    "INSERT INTO contract_documents (id, kind, freelancer_id, match_id, number, "
+                    "text_version, draft_text, data, pdf, status, created_by) VALUES "
+                    "(gen_random_uuid(), :kind, :freelancer_id, :match_id, :number, '0.1', true, "
+                    "'{}', :pdf, :status, :user_id)"
                 ),
                 {
                     "kind": kind,
                     "freelancer_id": freelancer_id,
                     "match_id": match,
-                    "numero": numero,
+                    "number": number,
                     "pdf": b"%PDF-",
-                    "stato": stato,
+                    "status": status,
                     "user_id": user_id,
                 },
             )
 
         refused = (
-            ("quadro", match_id, None, "generato"),  # a framework hangs on no match
-            ("quadro", None, "2026-001", "generato"),  # and takes no number
-            ("lettera", match_id, None, "generato"),  # a letter always has a number
-            ("lettera", None, "2026-001", "generato"),  # and a match
-            ("lettera", match_id, "2026-001", "disdetto"),  # a notice is a framework's
-            ("quadro", None, None, "forse"),  # an unknown state
-            ("fattura", None, None, "generato"),  # an unknown kind
+            ("framework", match_id, None, "generated"),  # a framework hangs on no match
+            ("framework", None, "2026-001", "generated"),  # and takes no number
+            ("letter", match_id, None, "generated"),  # a letter always has a number
+            ("letter", None, "2026-001", "generated"),  # and a match
+            ("letter", match_id, "2026-001", "notice_served"),  # a notice is a framework's
+            ("framework", None, None, "forse"),  # an unknown state
+            ("fattura", None, None, "generated"),  # an unknown kind
         )
-        for kind, match, numero, stato in refused:
+        for kind, match, number, status in refused:
             with pytest.raises(IntegrityError), connection.begin_nested():
-                _document(kind, match, numero, stato)
+                _document(kind, match, number, status)
 
         with connection.begin_nested():  # the valid shapes are accepted
-            _document("quadro", None, None, "generato")
-            _document("lettera", match_id, "2026-001", "in_attesa")
+            _document("framework", None, None, "generated")
+            _document("letter", match_id, "2026-001", "pending")
         with pytest.raises(IntegrityError), connection.begin_nested():  # a number, once
-            _document("lettera", match_id, "2026-001", "generato")
+            _document("letter", match_id, "2026-001", "generated")
         with pytest.raises(IntegrityError), connection.begin_nested():  # one tax row per card
             for _ in range(2):
                 connection.execute(
                     text(
-                        "INSERT INTO freelancer_fiscal (id, freelancer_id, codice_fiscale, "
-                        "partita_iva, domicilio, updated_by) VALUES (gen_random_uuid(), "
+                        "INSERT INTO freelancer_fiscal (id, freelancer_id, tax_code, "
+                        "vat_number, domicile, updated_by) VALUES (gen_random_uuid(), "
                         ":freelancer_id, 'LVLDAA85T50H501Z', '01234567890', 'Milano', :user_id)"
                     ),
                     {"freelancer_id": freelancer_id, "user_id": user_id},
@@ -253,6 +254,7 @@ def test_migration_0017_can_run_again_and_roll_back(hub_postgres: Any) -> None:
         with engine.connect() as connection:
             assert _existing_tables(connection) == new_tables
 
+        command.downgrade(config, "0017")
         with engine.begin() as connection:
             connection.execute(text("UPDATE alembic_version SET version_num = '0016'"))
         command.upgrade(config, "head")
@@ -275,15 +277,15 @@ def test_an_envelope_belongs_to_one_document_and_keeps_its_item(hub_engine: Engi
         outer = connection.begin()
         user_id = connection.execute(
             text(
-                "INSERT INTO users (id, email, nome, cognome, role, attivo) VALUES "
+                "INSERT INTO users (id, email, first_name, last_name, role, active) VALUES "
                 "(gen_random_uuid(), 'ck-envelopes@studio.it', 'A', 'B', 'admin', true) "
                 "RETURNING id"
             )
         ).scalar()
         freelancer_id = connection.execute(
             text(
-                "INSERT INTO freelancers (id, user_id, links, stato, compilata_da) VALUES "
-                "(gen_random_uuid(), :user_id, '[]', 'nuovo', 'persona') RETURNING id"
+                "INSERT INTO freelancers (id, user_id, links, status, filled_by) VALUES "
+                "(gen_random_uuid(), :user_id, '[]', 'new', 'person') RETURNING id"
             ),
             {"user_id": user_id},
         ).scalar()
@@ -292,9 +294,9 @@ def test_an_envelope_belongs_to_one_document_and_keeps_its_item(hub_engine: Engi
             connection.execute(
                 text(
                     "INSERT INTO contract_documents (id, kind, freelancer_id, text_version, "
-                    "testo_bozza, data, pdf, stato, documenso_id, documenso_item_id, "
-                    "created_by) VALUES (gen_random_uuid(), 'quadro', :freelancer_id, '0.1', "
-                    "false, '{}', :pdf, 'inviato', :envelope, :item, :user_id)"
+                    "draft_text, data, pdf, status, documenso_id, documenso_item_id, "
+                    "created_by) VALUES (gen_random_uuid(), 'framework', :freelancer_id, '0.1', "
+                    "false, '{}', :pdf, 'sent', :envelope, :item, :user_id)"
                 ),
                 {
                     "freelancer_id": freelancer_id,
@@ -328,6 +330,7 @@ def test_migration_0019_can_run_again_and_roll_back(hub_postgres: Any) -> None:
         command.downgrade(config, "0018")
         command.upgrade(config, "head")
         engine = create_engine(url, future=True)
+        command.downgrade(config, "0019")
         with engine.begin() as connection:
             connection.execute(text("UPDATE alembic_version SET version_num = '0018'"))
         command.upgrade(config, "head")
@@ -352,6 +355,7 @@ def test_migration_0020_can_run_again_and_roll_back(hub_postgres: Any) -> None:
         command.downgrade(config, "0019")
         command.upgrade(config, "head")
         engine = create_engine(url, future=True)
+        command.downgrade(config, "0020")
         with engine.begin() as connection:
             connection.execute(text("UPDATE alembic_version SET version_num = '0019'"))
         command.upgrade(config, "head")
@@ -365,9 +369,9 @@ def test_migration_0020_can_run_again_and_roll_back(hub_postgres: Any) -> None:
         engine.dispose()
 
 
-def test_migration_0021_backfills_every_active_match_as_da_collegare(hub_postgres: Any) -> None:
-    """REB-497, § 3.1 of the design: a match already `attivo` when 0021 ships waits as
-    `da_collegare`, so the sweep links it; nothing else would ever look at it again. A
+def test_migration_0021_backfills_every_active_match_as_to_link(hub_postgres: Any) -> None:
+    """REB-497, § 3.1 of the design: a match already `active` when 0021 ships waits as
+    `to_link`, so the sweep links it; nothing else would ever look at it again. A
     match in any other state keeps no link state until it turns active."""
     with hub_postgres.fresh_container() as container:
         url = container.get_connection_url()
@@ -400,7 +404,7 @@ def test_migration_0021_backfills_every_active_match_as_da_collegare(hub_postgre
                 ),
                 {"user_id": user_id},
             ).scalar()
-            for stato in ("attivo", "bozza", "in_firma", "concluso"):
+            for old_status in ("attivo", "bozza", "in_firma", "concluso"):
                 connection.execute(
                     text(
                         "INSERT INTO matches (id, freelancer_id, company_id, "
@@ -412,7 +416,7 @@ def test_migration_0021_backfills_every_active_match_as_da_collegare(hub_postgre
                     {
                         "freelancer_id": freelancer_id,
                         "company_id": company_id,
-                        "stato": stato,
+                        "stato": old_status,
                         "user_id": user_id,
                     },
                 )
@@ -420,12 +424,14 @@ def test_migration_0021_backfills_every_active_match_as_da_collegare(hub_postgre
         command.upgrade(config, "head")
 
         with engine.connect() as connection:
-            states = dict(connection.execute(text("SELECT stato, pigro_stato FROM matches")).all())
+            states = dict(
+                connection.execute(text("SELECT status, pigro_status FROM matches")).all()
+            )
         assert states == {
-            "attivo": "da_collegare",
-            "bozza": None,
-            "in_firma": None,
-            "concluso": None,
+            "active": "to_link",
+            "draft": None,
+            "awaiting_signature": None,
+            "concluded": None,
         }
         engine.dispose()
 
@@ -438,36 +444,36 @@ def test_the_campaign_constraints_are_installed(hub_engine: Engine) -> None:
         outer = connection.begin()
         user_id = connection.execute(
             text(
-                "INSERT INTO users (id, email, nome, cognome, role, attivo, created_at, "
+                "INSERT INTO users (id, email, first_name, last_name, role, active, created_at, "
                 "updated_at) VALUES (gen_random_uuid(), 'c@rebase.it', 'C', '', 'admin', "
                 "true, now(), now()) RETURNING id"
             )
         ).scalar_one()
         base = (
-            "INSERT INTO campaigns (id, created_by, nome, slug, fonte, stato_percorso, filtri, "
-            "segue_id, oggetto, testo, bottone_testo, bottone_meta, azione, stato, "
-            "contenuto_at, created_at, updated_at) VALUES (gen_random_uuid(), :u, 'n', :slug, "
-            ":fonte, :sp, CAST(:filtri AS JSONB), :segue, '', '', '', :bottone_meta, :azione, "
-            ":stato, now(), now(), now())"
+            "INSERT INTO campaigns (id, created_by, name, slug, source, journey_status, filters, "
+            "follows_id, subject, text, button_text, button_meta, action, status, "
+            "content_at, created_at, updated_at) VALUES (gen_random_uuid(), :u, 'n', :slug, "
+            ":source, :sp, CAST(:filters AS JSONB), :segue, '', '', '', :button_meta, :action, "
+            ":status, now(), now(), now())"
         )
         valid = {
-            "fonte": "stato",
+            "source": "status",
             "sp": "lead",
-            "filtri": None,
+            "filters": None,
             "segue": None,
-            "bottone_meta": "area",
-            "azione": "cv",
-            "stato": "bozza",
+            "button_meta": "area",
+            "action": "cv",
+            "status": "draft",
         }
         bad = (
-            {**valid, "slug": "a", "sp": None},  # ck_campaigns_stato_percorso
-            {**valid, "slug": "b", "fonte": "filtri"},  # ck_campaigns_filtri
-            {**valid, "slug": "c", "azione": "vola"},  # ck_campaigns_azione
-            {**valid, "slug": "d", "fonte": "nuvola"},  # ck_campaigns_fonte
-            {**valid, "slug": "e", "stato": "volante"},  # ck_campaigns_stato
-            {**valid, "slug": "f", "bottone_meta": "cielo"},  # ck_campaigns_bottone_meta
-            # ck_campaigns_segue
-            {**valid, "slug": "g", "fonte": "lista", "sp": None, "filtri": None},
+            {**valid, "slug": "a", "sp": None},  # ck_campaigns_journey_status
+            {**valid, "slug": "b", "source": "filters"},  # ck_campaigns_filters
+            {**valid, "slug": "c", "action": "vola"},  # ck_campaigns_action
+            {**valid, "slug": "d", "source": "nuvola"},  # ck_campaigns_source
+            {**valid, "slug": "e", "status": "volante"},  # ck_campaigns_status
+            {**valid, "slug": "f", "button_meta": "cielo"},  # ck_campaigns_button_meta
+            # ck_campaigns_follows
+            {**valid, "slug": "g", "source": "list", "sp": None, "filters": None},
         )
         for values in bad:
             savepoint = connection.begin_nested()
@@ -479,16 +485,16 @@ def test_the_campaign_constraints_are_installed(hub_engine: Engine) -> None:
         ).scalar_one()
 
         recipient = (
-            "INSERT INTO campaign_recipients (id, campaign_id, email, tipo, pigro_slugs, "
-            "codice, prima, stato, tentativi, disiscrizione_token, created_at) VALUES "
-            "(gen_random_uuid(), :campaign_id, :email, :tipo, '[]', 'abc12345', '{}', "
-            ":stato, 0, :token, now())"
+            "INSERT INTO campaign_recipients (id, campaign_id, email, kind, pigro_slugs, "
+            "code, before, status, attempts, unsubscribe_token, created_at) VALUES "
+            "(gen_random_uuid(), :campaign_id, :email, :kind, '[]', 'abc12345', '{}', "
+            ":status, 0, :token, now())"
         )
         for values in (
-            # ck_campaign_recipients_tipo
-            {"email": "r1@rebase.it", "tipo": "volante", "stato": "in_coda", "token": "t1"},
-            # ck_campaign_recipients_stato
-            {"email": "r2@rebase.it", "tipo": "lead", "stato": "spedita", "token": "t2"},
+            # ck_campaign_recipients_kind
+            {"email": "r1@rebase.it", "kind": "volante", "status": "queued", "token": "t1"},
+            # ck_campaign_recipients_status
+            {"email": "r2@rebase.it", "kind": "lead", "status": "spedita", "token": "t2"},
         ):
             savepoint = connection.begin_nested()
             with pytest.raises(IntegrityError):
@@ -499,18 +505,18 @@ def test_the_campaign_constraints_are_installed(hub_engine: Engine) -> None:
             {
                 "campaign_id": campaign_id,
                 "email": "r3@rebase.it",
-                "tipo": "lead",
-                "stato": "in_coda",
+                "kind": "lead",
+                "status": "queued",
                 "token": "t3",
             },
         )
 
-        optout = "INSERT INTO campaign_optouts (email, fonte) VALUES (:email, :fonte)"
-        savepoint = connection.begin_nested()  # ck_campaign_optouts_fonte
+        optout = "INSERT INTO campaign_optouts (email, source) VALUES (:email, :source)"
+        savepoint = connection.begin_nested()  # ck_campaign_optouts_source
         with pytest.raises(IntegrityError):
-            connection.execute(text(optout), {"email": "o1@rebase.it", "fonte": "spam"})
+            connection.execute(text(optout), {"email": "o1@rebase.it", "source": "spam"})
         savepoint.rollback()
-        connection.execute(text(optout), {"email": "o2@rebase.it", "fonte": "link"})
+        connection.execute(text(optout), {"email": "o2@rebase.it", "source": "link"})
 
         outer.rollback()
 

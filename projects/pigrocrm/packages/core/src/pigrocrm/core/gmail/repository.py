@@ -3,31 +3,30 @@
 import hashlib
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import case, delete, func, null, select, text, update
+from sqlalchemy import Connection, case, delete, func, null, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import escape_like
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document, DocumentVersion
-from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.gmail.models import (
     EmailDraft,
     GmailKnownAddress,
     GmailMessage,
     GmailMessageLink,
     GoogleAccount,
-    GoogleOAuthState,
     PaymentReminder,
 )
 from pigrocrm.core.gmail.roster import EntityRef
 from pigrocrm.core.gmail.schemas import EDITABLE_SEND_STATES
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 # An arbitrary but stable first key for `pg_try_advisory_lock(int, int)`, so this
@@ -36,6 +35,7 @@ from pigrocrm.core.people.models import Person
 # namespaces: hashing a UUID into 64 bits alone risks colliding with anything else that
 # also hashes something into 64 bits.
 SYNC_LOCK_NAMESPACE = 0x7091
+_HELD_LOCKS_KEY = "gmail_sync_locks"
 
 
 def _lock_key(account_id: UUID) -> int:
@@ -68,6 +68,13 @@ def _lock_key(account_id: UUID) -> int:
 class GmailRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    @property
+    def _held_locks(self) -> dict[UUID, Connection]:
+        """The lock connections this session holds, keyed by account. On the session and
+        not on this object: the repository is built afresh wherever it is needed, and the
+        one that releases a lock is not always the one that took it."""
+        return cast("dict[UUID, Connection]", self.session.info.setdefault(_HELD_LOCKS_KEY, {}))
 
     def account_for_user(self, user_id: UUID) -> GoogleAccount | None:
         return self.session.execute(
@@ -115,66 +122,6 @@ class GmailRepository:
             ).scalars()
         )
 
-    def add_state(self, state: GoogleOAuthState) -> GoogleOAuthState:
-        self.session.add(state)
-        self.session.flush()
-        return state
-
-    def consume_state(
-        self, jti: str, now: datetime, purpose: str = "gmail"
-    ) -> GoogleOAuthState | None:
-        """Marks the row consumed and returns it, or returns `None` if it does not
-        exist, has expired, was already consumed, or was minted for a different flow.
-
-        One statement, deliberately: a conditional `UPDATE ... WHERE consumed_at IS
-        NULL ... RETURNING`. Postgres serialises two concurrent callbacks carrying the
-        same jti on the row lock, and the loser re-evaluates its `WHERE` against the
-        winner's committed row, finds `consumed_at` no longer NULL and updates nothing.
-        `test_gmail_models.py` proves that with two real connections and a barrier --
-        drop the predicate and it reports `[1, 1]` instead of `[0, 1]`.
-
-        A read-then-write pair over the same column would pass every single-threaded
-        test and hand two callbacks the same authorisation code.
-
-        `purpose` defaults to `"gmail"`, the value every row carried before Drive
-        existed (see `GoogleOAuthState.purpose`'s docstring), so `GmailOAuthService`
-        needs no change to keep filtering on it. It is part of the `WHERE` and not a
-        check on the row after the fact, so a state minted for the other flow simply
-        does not match this statement at all: it is left exactly as it was, still
-        single-use and still redeemable by its own flow's callback. Answering `None`
-        here must not spend it -- a Drive state is not this method's to consume.
-        """
-        return self.session.execute(
-            update(GoogleOAuthState)
-            .where(
-                GoogleOAuthState.jti == jti,
-                GoogleOAuthState.consumed_at.is_(None),
-                GoogleOAuthState.expires_at > now,
-                GoogleOAuthState.purpose == purpose,
-            )
-            .values(consumed_at=now)
-            .returning(GoogleOAuthState)
-        ).scalar_one_or_none()
-
-    def prune_states(self, now: datetime) -> int:
-        """Called at the start of every sync. `refresh_tokens` has this same problem
-        and, per residuo R8, no pruning at all -- this table does not repeat it.
-
-        Expiry, not consumption, is the criterion: a consumed row is still evidence
-        that a jti was used, and it has to outlive its own TTL or the single-use check
-        above would start answering "unknown" instead of "already redeemed" for a
-        replay that arrives seconds later.
-        """
-        deleted = self.session.execute(
-            delete(GoogleOAuthState)
-            .where(GoogleOAuthState.expires_at < now)
-            .returning(GoogleOAuthState.id)
-        )
-        # `RETURNING` rather than `rowcount`: the DBAPI's row count is typed as
-        # `Any`-free only on `CursorResult`, and this table is small and short-lived
-        # by construction, so counting the returned ids costs nothing worth naming.
-        return len(deleted.scalars().all())
-
     # --- the per-mailbox sync lock ---------------------------------------------------
 
     def try_sync_lock(self, account_id: UUID) -> bool:
@@ -184,43 +131,63 @@ class GmailRepository:
         Session-scoped and not `pg_try_advisory_xact_lock`, so the lock covers the whole
         cycle regardless of how the cycle chooses to commit. That is also why it has to
         be handed back explicitly: see `release_sync_lock`.
+
+        Taken on a connection of its own, kept until `release_sync_lock`, and not on the
+        `Session`'s. A session-level lock lives and dies with one *database connection*,
+        but a `Session` gives its connection back to the pool at every commit and checks
+        out whichever one is next in line for its following statement: the unlock would
+        then run on a different connection, answer `false`, and leave the lock on the
+        first one until the process restarts. (Measured: with three idle connections in
+        the pool, the statement after a commit ran on another backend.)
         """
-        return bool(
-            self.session.execute(
-                text("SELECT pg_try_advisory_lock(:ns, :key)"),
-                {"ns": SYNC_LOCK_NAMESPACE, "key": _lock_key(account_id)},
-            ).scalar_one()
-        )
+        connection = self.session.get_bind().engine.connect()
+        try:
+            # No transaction on it: nothing but the lock statements ever runs here, and a
+            # transaction left open would be one more thing to roll back.
+            connection.execution_options(isolation_level="AUTOCOMMIT")
+            acquired = bool(
+                connection.execute(
+                    text("SELECT pg_try_advisory_lock(:ns, :key)"),
+                    {"ns": SYNC_LOCK_NAMESPACE, "key": _lock_key(account_id)},
+                ).scalar_one()
+            )
+        except BaseException:
+            connection.invalidate()
+            connection.close()
+            raise
+        if not acquired:
+            connection.close()
+            return False
+        self._held_locks[account_id] = connection
+        return True
 
     def release_sync_lock(self, account_id: UUID) -> None:
-        """Hands the lock back on the connection that holds it.
+        """Hands the lock back on the connection that holds it, and never raises for it.
 
-        This must not be a statement that can fail. A session-level advisory lock
-        outlives its transaction *and* its SQLAlchemy `Session`: the connection returns
-        to the pool still holding it, and every later sync for that mailbox then answers
-        "already running" for the life of the process -- indistinguishable from a hung
-        job, and unfixable without a restart.
+        This must not be a statement that can fail the caller: it runs in a `finally`,
+        and raising from there would mask the failure that got us there. And a lock that
+        is not handed back outlives everything -- the connection returns to the pool
+        still holding it, and every later sync for that mailbox then answers "already
+        running" for the life of the process, indistinguishable from a hung job and
+        unfixable without a restart.
 
-        The one way the unlock can fail is on a transaction Postgres has already
-        aborted, which refuses every further statement until it is rolled back. Hence
-        the retry, and hence the `rollback` -- which is not the wide one it looks like:
-        the server threw that work away itself when it aborted, so there is nothing left
-        to discard. Deliberately *not* pre-emptive. `Session.is_active` stays `True`
-        after a failed raw `execute` (it only goes false on a failed flush), so a check
-        before the fact would not fire, and rolling back unconditionally would throw
-        away a healthy caller's uncommitted work for nothing.
+        The lock connection runs nothing else, so the unlock can only fail when the
+        connection itself is gone or broken. Then the connection is invalidated: that
+        closes it for good instead of returning it to the pool, and Postgres drops every
+        advisory lock a session holds when the session ends, so the lock goes with it.
         """
+        connection = self._held_locks.pop(account_id, None)
+        if connection is None:
+            return
         try:
-            self._advisory_unlock(account_id)
+            connection.execute(
+                text("SELECT pg_advisory_unlock(:ns, :key)"),
+                {"ns": SYNC_LOCK_NAMESPACE, "key": _lock_key(account_id)},
+            )
         except DBAPIError:
-            self.session.rollback()
-            self._advisory_unlock(account_id)
-
-    def _advisory_unlock(self, account_id: UUID) -> None:
-        self.session.execute(
-            text("SELECT pg_advisory_unlock(:ns, :key)"),
-            {"ns": SYNC_LOCK_NAMESPACE, "key": _lock_key(account_id)},
-        )
+            connection.invalidate()
+        finally:
+            connection.close()
 
     def sync_started_at(self, account_id: UUID) -> datetime | None:
         """When the last cycle that *committed* began, or `None` if none ever has.
@@ -280,6 +247,14 @@ class GmailRepository:
         )
         return len(inserted.scalars().all())
 
+    def delete_known_addresses(self, account_id: UUID) -> None:
+        """Forgets every address this mailbox was searched over, so the next backfill
+        treats the whole roster as new. For a mailbox that changed Google identity: the
+        register described the previous mailbox, not this one."""
+        self.session.execute(
+            delete(GmailKnownAddress).where(GmailKnownAddress.google_account_id == account_id)
+        )
+
     # --- messages --------------------------------------------------------------------
 
     def message_ids_present(self, account_id: UUID, gmail_ids: Sequence[str]) -> set[str]:
@@ -334,6 +309,19 @@ class GmailRepository:
         """
         return self.session.get(GmailMessage, message_id)
 
+    def message_linked_to(self, message_id: UUID, entity_type: str, entity_id: UUID) -> bool:
+        """Whether a stored message is filed against this customer, person or deal."""
+        return (
+            self.session.execute(
+                select(GmailMessageLink.id).where(
+                    GmailMessageLink.gmail_message_id == message_id,
+                    GmailMessageLink.entity_type == entity_type,
+                    GmailMessageLink.entity_id == entity_id,
+                )
+            ).first()
+            is not None
+        )
+
     def message_by_gmail_id(self, account_id: UUID, gmail_id: str) -> GmailMessage | None:
         return self.session.execute(
             select(GmailMessage).where(
@@ -346,10 +334,10 @@ class GmailRepository:
         """Called only when the user explicitly chose to on disconnect. The
         `gmail_message_links` rows go with them by ON DELETE CASCADE.
 
-        `RETURNING` and not `rowcount`, for the reason `prune_states` states: the
-        DBAPI's row count is only typed on `CursorResult`. The count matters here --
-        it is what the timeline entry records about an irreversible deletion -- so it
-        has to come from somewhere the type system agrees exists.
+        `RETURNING` and not `rowcount`: the DBAPI's row count is only typed on
+        `CursorResult`. The count matters here -- it is what the timeline entry records
+        about an irreversible deletion -- so it has to come from somewhere the type system
+        agrees exists.
         """
         deleted = self.session.execute(
             delete(GmailMessage)
@@ -387,14 +375,24 @@ class GmailRepository:
         return True
 
     def messages_for_entity(
-        self, entity_type: str, entity_id: UUID, *, limit: int
+        self, entity_type: str, entity_id: UUID, *, limit: int, newest_first: bool = False
     ) -> list[GmailMessage]:
         """Everything filed against one customer, person or deal.
 
         Ordered by thread and then by date, because the reader of a customer page is
         reading conversations rather than a flat mailbox: interleaving two threads by
         timestamp alone produces a page on which no exchange can be followed.
+
+        `newest_first` is the other reading: a flat list by date, newest first, so that the
+        `limit` cuts the oldest and not whichever threads sort last. It is what choosing the
+        message that approved something needs (REB-747), where the recent one is the one wanted
+        and a long history must not hide it.
         """
+        order = (
+            (GmailMessage.internal_date.desc(), GmailMessage.id)
+            if newest_first
+            else (GmailMessage.gmail_thread_id, GmailMessage.internal_date)
+        )
         return list(
             self.session.execute(
                 select(GmailMessage)
@@ -403,7 +401,7 @@ class GmailRepository:
                     GmailMessageLink.entity_type == entity_type,
                     GmailMessageLink.entity_id == entity_id,
                 )
-                .order_by(GmailMessage.gmail_thread_id, GmailMessage.internal_date)
+                .order_by(*order)
                 .limit(limit)
             )
             .scalars()
@@ -420,7 +418,7 @@ class GmailRepository:
         *,
         expected_updated_at: datetime | None = None,
     ) -> bool:
-        """Moves a draft out of an editable state into `in_invio` in one statement, and
+        """Moves a draft out of an editable state into `sending` in one statement, and
         answers whether *this* caller is the one that moved it.
 
         A conditional UPDATE and not a SELECT-then-set: two concurrent requests both pass
@@ -431,7 +429,7 @@ class GmailRepository:
 
         The predicate is `EDITABLE_SEND_STATES` rather than `== "bozza"`, and that is the
         same fact stated twice on purpose: a draft whose previous attempt was refused is
-        `fallito`, nothing left, and it must be sendable again -- otherwise the only
+        `failed`, nothing left, and it must be sendable again -- otherwise the only
         recovery from one 400 from Gmail is retyping the message.
 
         `last_error` is cleared with the claim: an error sentence next to a send that is
@@ -439,23 +437,22 @@ class GmailRepository:
 
         `google_account_id` is written **here** and nowhere else, because the claim is the
         first moment a mailbox is involved at all -- and every state whose outcome nobody
-        knows (`in_invio`, `incerto`) is reached through this statement, so writing it
+        knows (`sending`, `uncertain`) is reached through this statement, so writing it
         with the claim is what makes "every reconcilable draft says whose it is" true by
         construction rather than by remembering. Without it, one user's sync reconciles
-        another user's unresolved send against the wrong mailbox and can write `fallito`
+        another user's unresolved send against the wrong mailbox and can write `failed`
         on a delivered message.
 
         `synchronize_session=False` because the default would be actively wrong here.
         SQLAlchemy's `evaluate` strategy applies the `values()` to any object in this
         session that matches the criteria *in memory* -- and the loser of the race holds
-        an ORM copy loaded before the winner committed, so it still reads `bozza` and
-        would be marked `in_invio` locally by an UPDATE that touched zero rows. The
+        an ORM copy loaded before the winner committed, so it still reads `draft` and
+        would be marked `sending` locally by an UPDATE that touched zero rows. The
         caller re-reads the committed state instead, which is the only honest source.
 
-        `RETURNING` and not `rowcount`, for the reason `prune_states` and
-        `delete_messages_for` both give: the DBAPI's row count is typed only on
-        `CursorResult`, and this answer decides whether an email is sent -- it has to come
-        from somewhere the type system agrees exists.
+        `RETURNING` and not `rowcount`, for the reason `delete_messages_for` gives: the
+        DBAPI's row count is typed only on `CursorResult`, and this answer decides whether
+        an email is sent -- it has to come from somewhere the type system agrees exists.
 
         `expected_updated_at` is the revision the person read (REB-419), and it joins the
         guard for the same reason `send_state` is in it: a check made before this
@@ -474,7 +471,7 @@ class GmailRepository:
             update(EmailDraft)
             .where(*guard)
             .values(
-                send_state="in_invio",
+                send_state="sending",
                 send_attempted_at=now,
                 last_error=None,
                 google_account_id=account_id,
@@ -491,17 +488,17 @@ class GmailRepository:
         The edit's twin of the claim above, conditional for the same reason. The edit reads
         the row, checks that it is editable and validates the new fields, and a claim can
         commit in between. A write conditioned on the id alone would then land on a draft
-        already `in_invio`, and the send, which composes from the row it reloads after its
+        already `sending`, and the send, which composes from the row it reloads after its
         claim, would carry text nobody reviewed while the revision the person named still
         matched when the claim checked it. With `send_state` in this `WHERE` as well, the
         row decides whichever order the two arrive in: an edit that writes first moves
         `updated_at` and the claim refuses the send, and a claim that commits first leaves
         this write zero rows to touch.
 
-        `send_state` becomes `bozza`, which from the two editable states is exactly the
-        rule an edit has always followed: a `fallito` draft that is edited is a draft
+        `send_state` becomes `draft`, which from the two editable states is exactly the
+        rule an edit has always followed: a `failed` draft that is edited is a draft
         again, and its `last_error` goes with it, since the sentence describes text that
-        is no longer there. `last_error` is read from the row as it was, so a `bozza`
+        is no longer there. `last_error` is read from the row as it was, so a `draft`
         keeps whatever it held. `synchronize_session=False` and `RETURNING`, for the
         reasons the claim gives.
         """
@@ -513,9 +510,9 @@ class GmailRepository:
             )
             .values(
                 **values,
-                send_state="bozza",
+                send_state="draft",
                 last_error=case(
-                    (EmailDraft.send_state == "fallito", null()),
+                    (EmailDraft.send_state == "failed", null()),
                     else_=EmailDraft.last_error,
                 ),
             )
@@ -531,7 +528,7 @@ class GmailRepository:
         The delete's own twin of the claim above and of `update_editable_draft`,
         conditional for the same reason. The delete reads the row and checks that it is
         editable, and a claim can commit in between -- a DELETE conditioned on the id
-        alone would then remove a draft already `in_invio`, and the send, which records
+        alone would then remove a draft already `sending`, and the send, which records
         its outcome against the row it reloads after its claim, would find nothing to
         write it onto: the previous system's `404 Offerta non trovata per registrare
         l'invio email`, with the mail already delivered. With `send_state` in this
@@ -560,17 +557,17 @@ class GmailRepository:
         """Every draft **of this mailbox** whose outcome nobody knows, oldest attempt
         first.
 
-        `in_invio` is in here beside `incerto` and it is not an oversight: a process that
+        `sending` is in here beside `uncertain` and it is not an oversight: a process that
         died between the claim and the record leaves exactly that, and a draft left in it
         can be neither edited, nor sent, nor verified. `EmailSendService.reconcile` is
-        what decides whether a given `in_invio` is still in flight or abandoned -- this
+        what decides whether a given `sending` is still in flight or abandoned -- this
         query only says which rows are worth asking about.
 
         Scoped to one account, and that scoping is the fix for a defect B2-6 could
         mitigate and not remove. `reconcile_all` runs inside each user's own sync cycle,
         so an unscoped list handed user A's cycle user B's unresolved send: A's mailbox
         cannot contain it, the lookups all come back empty, and past the grace window the
-        reconciliation writes `fallito` on a message that is sitting in B's client's
+        reconciliation writes `failed` on a message that is sitting in B's client's
         inbox. Telling somebody their email failed when it was delivered is the one
         outcome here that cannot be walked back, because the answer to it is to send it
         again.
@@ -584,7 +581,7 @@ class GmailRepository:
             self.session.execute(
                 select(EmailDraft.id)
                 .where(
-                    EmailDraft.send_state.in_(("incerto", "in_invio")),
+                    EmailDraft.send_state.in_(("uncertain", "sending")),
                     EmailDraft.google_account_id == account_id,
                 )
                 .order_by(EmailDraft.send_attempted_at)
@@ -712,9 +709,9 @@ class GmailRepository:
             .where(
                 DocumentVersion.document_id == document_id,
                 # The *current* version, by the document's own pointer rather than by
-                # `max(numero)`: those two disagree the moment a version is added and the
+                # `max(number)`: those two disagree the moment a version is added and the
                 # pointer is not moved, and the document layer owns that decision.
-                DocumentVersion.numero == Document.versione_corrente,
+                DocumentVersion.number == Document.current_version,
                 # The PDF goes out as a PDF or not at all (REB-480): a current version of
                 # another type, written before `add_version` refused one on this
                 # document, is no courtesy copy, and the reminder goes without one.
@@ -724,7 +721,7 @@ class GmailRepository:
         ).scalar_one_or_none()
         return [version_id] if version_id is not None else []
 
-    def last_outbound_about(self, account_id: UUID, numero: str) -> UUID | None:
+    def last_outbound_about(self, account_id: UUID, number: str) -> UUID | None:
         """The newest message this mailbox sent whose subject names this invoice.
 
         What threads a reminder onto the invoice's own covering email, so the recipient
@@ -736,9 +733,9 @@ class GmailRepository:
         because the escaped needle is matched literally -- the number is bracketed by the
         subject's own text on both sides only when it really appears.
         """
-        if not numero:
+        if not number:
             return None
-        like = f"%{escape_like(numero)}%"
+        like = f"%{escape_like(number)}%"
         return self.session.execute(
             select(GmailMessage.id)
             .where(
@@ -750,56 +747,56 @@ class GmailRepository:
             .limit(1)
         ).scalar_one_or_none()
 
-    def emitter_profile(self) -> LegalEntity | None:
-        """The default azienda, or `None` on an installation that has not filled it in.
+    def legal_entities(self) -> LegalEntity | None:
+        """The default legal entity, or `None` on an installation that has not filled it in.
 
         Read through the repository rather than by constructing `LegalEntityService`, which
         would pull a whole service (and its `actor` checks) into a path that needs one
-        string. Since REB-627 it is the fallback of `azienda_for`, for a mail about a
-        record that has no azienda of its own (a contact with no customer).
+        string. Since REB-627 it is the fallback of `legal_entity_for`, for a mail about a
+        record that has no legal entity of its own (a contact with no customer).
         """
         return self.session.execute(
-            select(LegalEntity).where(LegalEntity.predefinita.is_(True))
+            select(LegalEntity).where(LegalEntity.is_default.is_(True))
         ).scalar_one_or_none()
 
-    def azienda_for_draft(self, draft: EmailDraft) -> LegalEntity | None:
-        """The azienda a draft speaks for: for a payment reminder the invoice's, which
+    def legal_entity_for_draft(self, draft: EmailDraft) -> LegalEntity | None:
+        """The legal entity a draft speaks for: for a payment reminder the invoice's, which
         the body and the IBAN already use, even when its customer has since moved to
-        another azienda (Greptile, PR #510); for any other draft the record's
-        (`azienda_for`)."""
+        another legal entity (Greptile, PR #510); for any other draft the record's
+        (`legal_entity_for`)."""
         if draft.payment_reminder_id is not None:
-            azienda_id = self.session.execute(
-                select(Invoice.azienda_id)
+            legal_entity_id = self.session.execute(
+                select(Invoice.legal_entity_id)
                 .join(PaymentReminder, PaymentReminder.invoice_id == Invoice.id)
                 .where(PaymentReminder.id == draft.payment_reminder_id)
             ).scalar_one_or_none()
-            if azienda_id is not None:
-                return self.session.get(LegalEntity, azienda_id)
-        return self.azienda_for(draft.entity_type, draft.entity_id)
+            if legal_entity_id is not None:
+                return self.session.get(LegalEntity, legal_entity_id)
+        return self.legal_entity_for(draft.entity_type, draft.entity_id)
 
-    def azienda_for(self, entity_type: str, entity_id: UUID) -> LegalEntity | None:
-        """The azienda a mail speaks for (REB-627, spec 2026-10-03 §1.8): a customer's own,
+    def legal_entity_for(self, entity_type: str, entity_id: UUID) -> LegalEntity | None:
+        """The legal entity a mail speaks for (REB-627, spec 2026-10-03 §1.8): a customer's own,
         a person's through its customer, a deal's own; the default when the record has
         none, or names none. It supplies the `From` display name and the Message-ID
-        domain, so a letter about azienda X's customer leaves in X's name."""
-        azienda_id: UUID | None = None
-        if entity_type == "customer":
-            azienda_id = self.session.execute(
-                select(Customer.azienda_id).where(Customer.id == entity_id)
+        domain, so a letter about legal entity X's customer leaves in X's name."""
+        legal_entity_id: UUID | None = None
+        if entity_type == "organization":
+            legal_entity_id = self.session.execute(
+                select(Organization.legal_entity_id).where(Organization.id == entity_id)
             ).scalar_one_or_none()
         elif entity_type == "person":
-            azienda_id = self.session.execute(
-                select(Customer.azienda_id)
-                .join(Person, Person.customer_id == Customer.id)
+            legal_entity_id = self.session.execute(
+                select(Organization.legal_entity_id)
+                .join(Person, Person.customer_id == Organization.id)
                 .where(Person.id == entity_id)
             ).scalar_one_or_none()
         elif entity_type == "deal":
-            azienda_id = self.session.execute(
-                select(Deal.azienda_id).where(Deal.id == entity_id)
+            legal_entity_id = self.session.execute(
+                select(Deal.legal_entity_id).where(Deal.id == entity_id)
             ).scalar_one_or_none()
-        if azienda_id is None:
-            return self.emitter_profile()
-        return self.session.get(LegalEntity, azienda_id)
+        if legal_entity_id is None:
+            return self.legal_entities()
+        return self.session.get(LegalEntity, legal_entity_id)
 
     def last_inbound_from(
         self, account_id: UUID, addresses: Sequence[str], since: datetime

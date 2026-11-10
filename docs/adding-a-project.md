@@ -157,7 +157,7 @@ workspace the project joined in section 2.
 Add the project's expensive checks to `.github/preflight.json`, with `when` globs
 scoped to `projects/<name>/**`. Mark `serial: true` anything that binds a fixed host
 port or a shared database (a machine running several agents at once has port
-collisions that read exactly like a failing test). Then run `preflight --list` and read
+collisions that read exactly like a failing test). Then run `python3 .github/kit/bin/preflight --list` and read
 which checks your diff actually selects, rather than assuming the globs are right.
 
 **Anything you took off the PR path has to appear here.** A heavy check in neither
@@ -395,11 +395,13 @@ the repository takes TLS away on the spot.
 
 Since 2026-09-12 (REB-187) PostHog's data warehouse reads the hub's production database
 (`rebase` on 55435: `signups`, `freelancers`, `companies`, `guide_downloads`, `logins`,
-`comments`) and the CRM's production registry (`pigrocrm_tenants` on 55432: `tenants`),
+`notes`) and the CRM's production registry (`pigrocrm_tenants` on 55432: `tenants`),
 so the events the surfaces send can be joined to the rows behind them. `logins` was
 `member_logins` until the identity merge renamed it (REB-281, migration 0012); the grant
 followed the table, the sync did not, and PostHog paused it with «something this sync
-depends on no longer exists». The preview databases (55434, 55436) are not connected.
+depends on no longer exists». `notes` was `comments` until REB-856 (migration 0042)
+made it the one thread of notes: the same break, so after that deploy the schema is refreshed
+and the sync re-pointed in PostHog, and the old `comments` rows over there deleted. The preview databases (55434, 55436) are not connected.
 The design is `docs/design/2026-09-12-posthog-analytics-design.md`. Both Postgres answer on the
 loopback only, so PostHog reaches them through an SSH tunnel, and the arrangement on the
 server is:
@@ -446,7 +448,7 @@ Keeping it working:
   name. The old sync's rows stay in PostHog under the old name: delete them there, or
   two tables claim to be the same thing. Same for a column dropped from a synced table.
 - **A column moved out of a synced table takes its data out of the warehouse**, without
-  failing anything. The identity merge moved `nome`, `cognome`, `email` and
+  failing anything. The identity merge moved `nome`, `last_name`, `email` and
   `linkedin_url` from `freelancers` and `companies` into `users`, which is deliberately
   not granted: those syncs keep running and arrive without the identity they used to
   carry, so a dashboard that joins a person to their card is empty rather than broken.

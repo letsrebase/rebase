@@ -1,5 +1,5 @@
 /**
- * The three tabs and the period control, driven entirely by the search params.
+ * The four tabs and the period control, driven entirely by the search params.
  *
  * The component takes the search object and an `onSearchChange` callback rather than
  * reaching for the router itself, so the round trip the URL exists for is assertable:
@@ -7,19 +7,32 @@
  * handed back as a new search object for the route to push into the URL.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+// REB-788: the panels read the role (the estimate is an administrator's), so the tests
+// say which role is signed in; the default is the one that may read everything.
+const session = vi.hoisted(() => ({ role: 'admin' as 'admin' | 'collaborator' | 'readonly' }))
+vi.mock('@/lib/auth', async () => {
+  const { can } = await import('@/lib/permissions')
+  return {
+    useAuth: () => ({ user: { id: 'u-1', role: session.role } }),
+    useCan: (action: Parameters<typeof can>[1]) => can(session.role, action),
+  }
+})
 import { DashboardPage } from './DashboardPage'
 import type { DashboardSearch } from './search'
 import { api } from '@/lib/api'
+import { spaceModules } from '@/lib/modules.testing'
+import type { ModuleKey } from '@/lib/modules'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
   return { ...actual, api: { GET: vi.fn(), POST: vi.fn(), PUT: vi.fn(), DELETE: vi.fn() } }
 })
 
-// The tabs link out (the fiscal card points at Impostazioni → Aziende when a parameter is
+// The tabs link out (the fiscal card points at Settings → Legal entities when a parameter is
 // missing), and a `<Link>` outside a router throws. What those destinations are is asserted
 // in each tab's own file; here the only question is which tab got mounted.
 vi.mock('@tanstack/react-router', () => ({
@@ -27,66 +40,84 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 const EMPTY_DASHBOARD = {
-  periodo: { da: '2026-03-01', a: '2026-03-31' },
-  calcolato_alle: '2026-03-15T10:00:00Z',
+  period: { from: '2026-03-01', to: '2026-03-31' },
+  calculated_at: '2026-03-15T10:00:00Z',
   pipeline: [],
-  chiusure: { vinti: 0, persi: 0, valore_vinto: '0.00', tasso_conversione: null },
-  offerte_in_attesa: [],
-  offerte_in_attesa_totale: 0,
-  chiusure_previste_30_giorni: 0,
-  chiusure_non_attribuibili: 0,
-  offerte_accettate_deal_non_vinto: 0,
+  closings: {
+    won: 0,
+    lost: 0,
+    won_value: '0.00',
+    won_monthly_recurring: '0.00',
+    conversion_rate: null,
+  },
+  open_monthly_recurring: '0.00',
+  offers_pending: [],
+  offers_pending_total: 0,
+  expected_closings_30_days: 0,
+  closings_not_attributable: 0,
+  accepted_offers_deal_not_won: 0,
 }
 
 
 const EMPTY_OVERVIEW = {
-  calcolato_alle: '2026-03-15T10:00:00Z',
-  cassa: {
-    anno: 2026,
-    incassato: '0.00',
-    da_incassare: '0.00',
-    bozze: '0.00',
-    proiettato: '0.00',
-    costi: '0.00',
-    lordo_effettivo: '0.00',
-    lordo_proiettato: '0.00',
-    mesi: [],
-    base: 'competenza',
+  calculated_at: '2026-03-15T10:00:00Z',
+  pension_fund: {
+    year: 2026,
+    paid: '0.00',
+    unpaid: '0.00',
+    drafts: '0.00',
+    projected: '0.00',
+    costs: '0.00',
+    actual_gross: '0.00',
+    projected_gross: '0.00',
+    months: [],
+    base: 'accrual',
   },
-  fiscale: null,
-  fiscale_proiettato: null,
-  concentrazione_clienti: [],
-  netto_effettivo: null,
-  netto_proiettato: null,
+  tax: null,
+  projected_tax: null,
+  customer_concentration: [],
+  actual_net: null,
+  projected_net: null,
 }
 
 
 const EMPTY_ESTIMATE = {
-  anno: 2026,
-  stima: true,
-  avvertenza: 'Stima indicativa.',
-  ricavi: '0.00',
-  coefficiente_redditivita: null,
-  imponibile: null,
-  aliquota_imposta_sostitutiva: null,
-  imposta_sostitutiva: null,
-  aliquota_inps: null,
-  contributi: null,
-  reddito_netto_stimato: null,
+  year: 2026,
+  estimate: true,
+  warning: 'Stima indicativa.',
+  revenue: '0.00',
+  profitability_coefficient: null,
+  taxable_amount: null,
+  substitute_tax_rate: null,
+  substitute_tax: null,
+  social_security_rate: null,
+  contributions: null,
+  estimated_net_income: null,
 }
 
 /** One mock for every endpoint the tabs read: which tab is mounted decides which are
  *  called. The economic one reads two -- the overview behind its cards and the estimate
  *  behind the «Stima fiscale» card under them. */
 const EMPTY_RECEIVABLES = {
-  calcolato_alle: '2026-03-15T10:00:00Z',
-  oggi: '2026-03-15',
-  totale: '0.00',
-  fasce: [],
-  per_mese: [],
-  per_cliente: [],
-  scadute: [],
-  scadute_totale: 0,
+  calculated_at: '2026-03-15T10:00:00Z',
+  today: '2026-03-15',
+  total: '0.00',
+  bands: [],
+  by_month: [],
+  by_customer: [],
+  overdue: [],
+  total_overdue: 0,
+}
+
+const EMPTY_YEAR = {
+  year: 2026,
+  legal_entity_id: 'a1',
+  legal_entity_name: 'Studio Rossi',
+  total: { invoices: 0, taxable_amount: '0.00', social_security_surcharge: '0.00', stamp_duty: '0.00', total: '0.00' },
+  regimes: [],
+  treatments: [],
+  register: [],
+  cancelled: 0,
 }
 
 const BY_PATH: Record<string, unknown> = {
@@ -94,13 +125,27 @@ const BY_PATH: Record<string, unknown> = {
   '/api/dashboard/receivables': EMPTY_RECEIVABLES,
   '/api/analytics/overview': EMPTY_OVERVIEW,
   '/api/analytics/fiscal': EMPTY_ESTIMATE,
+  // No ceiling applies: the panel under the figures draws nothing (REB-755).
+  '/api/analytics/ceilings': { year: 2026, legal_entity_id: 'a1', pack_id: 'it-flat-rate', pack_version: '1', thresholds: [] },
+  // No active contract caps a customer's share: nor does that panel have anything to show.
+  '/api/contracts': { items: [], next_cursor: null },
+  '/api/analytics/year': EMPTY_YEAR,
+  // Nothing late and nothing due today: the «Da fare» band is its one line (REB-874, and
+  // `DaFareBand.test.tsx` for the rest).
+  '/api/activities/today': {
+    today: '2026-03-15',
+    overdue: { total: 0, items: [] },
+    today_due: { total: 0, items: [] },
+    next_seven_days: { total: 0, items: [] },
+    without_due_date: { total: 0, items: [] },
+  },
 }
 
 const SEARCH: DashboardSearch = {
-  tab: 'commerciale',
-  da: '2026-03-01',
-  a: '2026-03-31',
-  base: 'competenza',
+  tab: 'commercial',
+  from: '2026-03-01',
+  to: '2026-03-31',
+  base: 'accrual',
 }
 
 function renderPage(search = SEARCH) {
@@ -115,6 +160,7 @@ function renderPage(search = SEARCH) {
 }
 
 beforeEach(() => {
+  session.role = 'admin'
   vi.mocked(api.GET).mockReset()
   vi.mocked(api.GET).mockImplementation(
     ((path: string) =>
@@ -127,7 +173,7 @@ beforeEach(() => {
 
 describe('DashboardPage', () => {
   it('renders the tab the URL names, not the first one', async () => {
-    renderPage({ ...SEARCH, tab: 'economica' })
+    renderPage({ ...SEARCH, tab: 'economic' })
     expect(await screen.findByRole('group', { name: 'Ricavi incassati' })).toBeInTheDocument()
     // The commercial tab's own card, by the title it has today: after the 2026-09-09
     // rename «Pipeline aperta per stato» exists nowhere, so asserting *its* absence
@@ -145,10 +191,10 @@ describe('DashboardPage', () => {
   })
 
   it('passes the period from the URL through to the request', async () => {
-    renderPage({ tab: 'commerciale', da: '2024-06-01', a: '2024-06-30', base: 'competenza' })
+    renderPage({ tab: 'commercial', from: '2024-06-01', to: '2024-06-30', base: 'accrual' })
     expect(await screen.findByText(/nessun dato nel periodo/i)).toBeInTheDocument()
     expect(api.GET).toHaveBeenCalledWith('/api/dashboard/sales', {
-      params: { query: { da: '2024-06-01', a: '2024-06-30' } },
+      params: { query: { from: '2024-06-01', to: '2024-06-30' } },
     })
   })
 
@@ -157,8 +203,8 @@ describe('DashboardPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Anno' }))
     expect(onSearchChange).toHaveBeenCalledTimes(1)
     const [next] = onSearchChange.mock.calls[0]!
-    expect(next.da).toMatch(/^\d{4}-01-01$/)
-    expect(next.a).toMatch(/^\d{4}-12-31$/)
+    expect(next.from).toMatch(/^\d{4}-01-01$/)
+    expect(next.to).toMatch(/^\d{4}-12-31$/)
   })
 
   it('draws the three period presets as controls and not as bare text', () => {
@@ -186,21 +232,21 @@ describe('DashboardPage', () => {
   })
 
   it('hands a changed tab back for the URL', async () => {
-    const { onSearchChange } = renderPage({ ...SEARCH, tab: 'economica' })
+    const { onSearchChange } = renderPage({ ...SEARCH, tab: 'economic' })
     await userEvent.click(screen.getByRole('tab', { name: 'Commerciale' }))
-    expect(onSearchChange).toHaveBeenCalledWith({ tab: 'commerciale' })
+    expect(onSearchChange).toHaveBeenCalledWith({ tab: 'commercial' })
   })
 
   it('passes the reading from the URL through to the economic request, and hands a change back', async () => {
     // ORB-133: the switch is the page's, the state is the URL's. Nothing is held locally,
     // so a shared link reopens on the same reading.
-    const { onSearchChange } = renderPage({ ...SEARCH, tab: 'economica', base: 'incasso' })
+    const { onSearchChange } = renderPage({ ...SEARCH, tab: 'economic', base: 'collection' })
     await screen.findByRole('group', { name: 'Ricavi incassati' })
     expect(api.GET).toHaveBeenCalledWith('/api/analytics/overview', {
-      params: { query: { anno: 2026, base: 'incasso' } },
+      params: { query: { year: 2026, base: 'collection' } },
     })
     await userEvent.click(screen.getByRole('radio', { name: 'Competenza' }))
-    expect(onSearchChange).toHaveBeenCalledWith({ base: 'competenza' })
+    expect(onSearchChange).toHaveBeenCalledWith({ base: 'accrual' })
   })
 
   it('keeps a typed date in the URL too', () => {
@@ -208,7 +254,7 @@ describe('DashboardPage', () => {
     // keystrokes the way a text input does, and a typing simulation would assert nothing.
     const { onSearchChange } = renderPage()
     fireEvent.change(screen.getByLabelText('Dal'), { target: { value: '2025-02-01' } })
-    expect(onSearchChange).toHaveBeenLastCalledWith({ da: '2025-02-01', a: '2026-03-31' })
+    expect(onSearchChange).toHaveBeenLastCalledWith({ from: '2025-02-01', to: '2026-03-31' })
   })
 
 })
@@ -216,8 +262,7 @@ describe('DashboardPage', () => {
 describe('DashboardPage, the page intestazione', () => {
   /**
    * Since the 2026-09-08 revision the dashboard owns its own header rather than being
-   * given one by the route: the tabs are part of the intestazione (§4, «Sotto, quando
-   * servono, le tab»), and the period picker is this screen's one header control. A
+   * given one by the route: the tabs are part of the intestazione (§4: the tabs sit under it, when there are any), and the period picker is this screen's one header control. A
    * route that kept drawing its own `PageHeader` above this one would put two `<h1>`s
    * on the home page.
    */
@@ -228,29 +273,113 @@ describe('DashboardPage, the page intestazione', () => {
     expect(screen.getByRole('tab', { name: 'Commerciale' })).toBeInTheDocument()
     expect(screen.getByLabelText('Dal')).toBeInTheDocument()
   })
+
+  /** REB-874: the band sits between the title and the tab strip, so it is the first thing
+   *  under «Home» and the analysis tabs start below it. */
+  it('draws the «Da fare» band above the analysis tabs', async () => {
+    renderPage()
+    const line = await screen.findByText('Niente in ritardo né in scadenza oggi.')
+    const tab = screen.getByRole('tab', { name: 'Commerciale' })
+    expect(line.compareDocumentPosition(tab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const title = screen.getByRole('heading', { level: 1, name: 'Home' })
+    expect(title.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
 })
 
-describe('DashboardPage, three tabs', () => {
-  it('offers the economic, commercial and scadenziario tabs, and marks the current one', () => {
-    renderPage({ ...SEARCH, tab: 'economica' })
+describe('DashboardPage, four tabs', () => {
+  it('offers the economic, commercial, scadenziario, anno and giornate tabs, and marks the current one', () => {
+    renderPage({ ...SEARCH, tab: 'economic' })
     const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent)
-    expect(tabs).toEqual(['Economica', 'Commerciale', 'Scadenziario'])
+    expect(tabs).toEqual(['Economica', 'Commerciale', 'Scadenziario', 'Anno', 'Giornate'])
     expect(screen.getByRole('tab', { name: 'Economica' })).toHaveAttribute('aria-selected', 'true')
   })
 
+  /** REB-757: the year tab reads the year the period names and nothing else. */
+  it('mounts the anno tab on the picker\'s year, with the picker', async () => {
+    renderPage({ ...SEARCH, tab: 'year' })
+    expect(await screen.findByText(/nessuna fattura emessa nel 2026/i)).toBeInTheDocument()
+    expect(screen.getByLabelText('Dal')).toBeInTheDocument()
+    expect(api.GET).toHaveBeenCalledWith('/api/analytics/year', { params: { query: { year: 2026 } } })
+  })
+
   it('shows the period picker on the two tabs that have a period', () => {
-    renderPage({ ...SEARCH, tab: 'economica' })
+    renderPage({ ...SEARCH, tab: 'economic' })
     expect(screen.getByLabelText('Dal')).toBeInTheDocument()
   })
 
   /** REB-329: the scadenziario has no period, so the picker would change nothing on
    *  screen; it is not drawn, and the tab reads its own endpoint and no other. */
   it('mounts the scadenziario without a period picker, reading its own endpoint', async () => {
-    renderPage({ ...SEARCH, tab: 'scadenziario' })
+    renderPage({ ...SEARCH, tab: 'receivables' })
     expect(await screen.findByText(/scadenziario per fascia/i)).toBeInTheDocument()
     expect(screen.queryByLabelText('Dal')).not.toBeInTheDocument()
     // No period, and in «tutte» no azienda either: an empty query (REB-632).
     expect(api.GET).toHaveBeenCalledWith('/api/dashboard/receivables', { params: { query: {} } })
     expect(api.GET).not.toHaveBeenCalledWith('/api/dashboard/sales', expect.anything())
+  })
+})
+
+/** REB-953: the tabs of a module the space has switched off are not drawn. */
+describe('DashboardPage with modules off', () => {
+  function answerModules(off: readonly ModuleKey[]) {
+    vi.mocked(api.GET).mockImplementation(
+      ((path: string) =>
+        Promise.resolve({
+          data: path === '/api/settings/modules' ? spaceModules(off) : BY_PATH[path],
+          response: new Response(null, { status: 200 }),
+        })) as never,
+    )
+  }
+
+  it('draws no «Commerciale» tab with deals off, and opens a link to it on the first tab', async () => {
+    answerModules(['deals'])
+    renderPage({ ...SEARCH, tab: 'commercial' })
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'Commerciale' })).toBeNull())
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Economica',
+      'Scadenziario',
+      'Anno',
+      'Giornate',
+    ])
+    expect(screen.getByRole('tab', { name: 'Economica' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByRole('group', { name: 'Ricavi incassati' })).toBeInTheDocument()
+    expect(api.GET).not.toHaveBeenCalledWith('/api/dashboard/sales', expect.anything())
+  })
+
+  it('draws no «Anno» tab with taxes off and no «Giornate» with contracts off', async () => {
+    answerModules(['taxes', 'contracts'])
+    renderPage({ ...SEARCH, tab: 'year' })
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'Anno' })).toBeNull())
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Economica',
+      'Commerciale',
+      'Scadenziario',
+    ])
+    expect(await screen.findByRole('group', { name: 'Ricavi incassati' })).toBeInTheDocument()
+    expect(api.GET).not.toHaveBeenCalledWith('/api/analytics/year', expect.anything())
+  })
+
+  it('leaves the economic tab without its fiscal estimate and ceilings with taxes off', async () => {
+    answerModules(['taxes'])
+    renderPage({ ...SEARCH, tab: 'economic' })
+    expect(await screen.findByRole('group', { name: 'Ricavi incassati' })).toBeInTheDocument()
+    await waitFor(() => expect(api.GET).toHaveBeenCalledWith('/api/settings/modules'))
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'Anno' })).toBeNull())
+    expect(screen.queryByText('Stima fiscale')).toBeNull()
+    expect(api.GET).not.toHaveBeenCalledWith('/api/analytics/fiscal', expect.anything())
+    expect(api.GET).not.toHaveBeenCalledWith('/api/analytics/ceilings', expect.anything())
+  })
+
+  it('draws every tab again with the modules on', async () => {
+    answerModules([])
+    renderPage({ ...SEARCH, tab: 'economic' })
+    await waitFor(() => expect(api.GET).toHaveBeenCalledWith('/api/settings/modules'))
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual([
+      'Economica',
+      'Commerciale',
+      'Scadenziario',
+      'Anno',
+      'Giornate',
+    ])
   })
 })

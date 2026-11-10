@@ -1,3 +1,4 @@
+import os
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -13,34 +14,45 @@ from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.storage import LocalFileStorage
-from pigrocrm_api.deps import get_session, get_storage
-from pigrocrm_api.main import create_app
-from pigrocrm_api.ratelimit import reset_rate_limit
+
+# `create_app()` refuses a placeholder signing key (PCORE-B-05), and `pigrocrm_api.main` builds
+# one at import: the secret is set before anything imports it.
+os.environ.setdefault("PIGROCRM_JWT_SECRET", "test-secret-for-the-api-test-suite-only")
+get_settings.cache_clear()  # an import above may have read the settings already
+
+from scripted_model import ScriptedModel  # noqa: E402
+
+from pigrocrm_api.deps import get_model_call, get_session, get_storage  # noqa: E402
+from pigrocrm_api.main import create_app  # noqa: E402
+from pigrocrm_api.ratelimit import reset_rate_limit  # noqa: E402
 
 ADMIN_EMAIL = "admin@pigro.it"
 ADMIN_PASSWORD = "supersegreta1"
-# Obviously a placeholder, but >= 32 characters: Settings.jwt_secret now rejects
-# anything shorter (see pigrocrm.core.config), so a short literal here would fail at
-# fixture setup rather than merely warn.
+# Obviously a placeholder, but >= 32 characters: Settings.jwt_secret rejects anything
+# shorter (see pigrocrm.core.config), so a short literal here would fail at fixture setup.
 TEST_JWT_SECRET = "test-secret-for-the-api-test-suite-only"
+# The app refuses to boot on the public default secret (`require_production_secrets`, run
+# by the lifespan every `with TestClient(app)` triggers), so the process environment the
+# suite's `get_settings()` reads carries a real one. Set before any `Settings()` is built.
+os.environ.setdefault("PIGROCRM_JWT_SECRET", TEST_JWT_SECRET)
 
 
 def _ensure_committed_default(engine: Engine) -> None:
-    """One committed default azienda in the worker's database (REB-623): since the
-    chain, a customer row and everything under it need an azienda, and a world that
+    """One committed default legal entity in the worker's database (REB-623): since the
+    chain, a customer row and everything under it need a legal entity, and a world that
     commits for real sees only committed rows. The per-test seed below then finds it
     and writes nothing. Inline rather than imported from the core suite's `fakes`,
     which this root's conftest does not put on the path."""
-    from pigrocrm.core.emitter.models import LegalEntity
+    from pigrocrm.core.legal_entities.models import LegalEntity
 
     with engine.begin() as connection:
         if connection.execute(
-            select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
+            select(LegalEntity.id).where(LegalEntity.is_default.is_(True))
         ).first():
             return
         connection.execute(
             LegalEntity.__table__.insert().values(
-                nome="Spazio di prova", ragione_sociale="Spazio di prova", predefinita=True
+                name="Spazio di prova", legal_name="Spazio di prova", is_default=True
             )
         )
 
@@ -62,18 +74,18 @@ def api_engine(pigrocrm_postgres: Any) -> Iterator[Engine]:
 def api_session(api_engine: Engine) -> Iterator[Session]:
     connection = api_engine.connect()
     transaction = connection.begin()
-    # The default azienda every provisioned space has (REB-615), seeded on the outer
+    # The default legal entity every provisioned space has (REB-615), seeded on the outer
     # connection so a service's rollback inside the session cannot remove it.
-    from pigrocrm.core.emitter.models import LegalEntity
+    from pigrocrm.core.legal_entities.models import LegalEntity
 
     # Since REB-623 the engine fixture commits one, so this is the fallback for a
     # database that has none. Not an early `return`: this is a generator fixture.
     if not connection.execute(
-        select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
+        select(LegalEntity.id).where(LegalEntity.is_default.is_(True))
     ).first():
         connection.execute(
             LegalEntity.__table__.insert().values(
-                nome="Spazio di prova", ragione_sociale="Spazio di prova", predefinita=True
+                name="Spazio di prova", legal_name="Spazio di prova", is_default=True
             )
         )
     # join_transaction_mode="create_savepoint" is load-bearing, not optional -- see
@@ -98,18 +110,24 @@ def api_session(api_engine: Engine) -> Iterator[Session]:
 def _fresh_rate_limit() -> None:
     # The limiter's bucket is a module-level dict, so it outlives any one test's own
     # fixtures: without this, a test that spends its budget on `/api/auth/link` or
-    # `/api/tenants/{slug}/disponibile` (REB-228) hands the next one an already-spent
+    # `/api/tenants/{slug}/available` (REB-228) hands the next one an already-spent
     # bucket -- including a test that builds its own `TestClient` by hand instead of
     # going through `client` or `test_tenants_api.py`'s own `spaces_client`
     # (`test_the_root_slug_is_the_root_itself_and_nobody_elses_name` reaches
-    # `disponibile` that way). Autouse, not tucked inside one fixture, so no test in
+    # `available` that way). Autouse, not tucked inside one fixture, so no test in
     # this directory can be the one left uncovered.
     reset_rate_limit()
 
 
 @pytest.fixture
-def client(api_session: Session, tmp_path: Path) -> Iterator[TestClient]:
+def model_call() -> ScriptedModel:
+    return ScriptedModel()
+
+
+@pytest.fixture
+def client(api_session: Session, tmp_path: Path, model_call: ScriptedModel) -> Iterator[TestClient]:
     app = create_app()
+    app.dependency_overrides[get_model_call] = lambda: model_call
     app.dependency_overrides[get_session] = lambda: api_session
     # Documents/templates tests upload and download real bytes; without this override
     # `get_storage` falls through to `storage_from_settings(get_settings())`, which
@@ -142,7 +160,7 @@ def client(api_session: Session, tmp_path: Path) -> Iterator[TestClient]:
 @pytest.fixture
 def admin_user(api_session: Session):
     return UserService(api_session).create(
-        UserCreate(email=ADMIN_EMAIL, password=ADMIN_PASSWORD, nome="Admin", ruolo="admin"),
+        UserCreate(email=ADMIN_EMAIL, password=ADMIN_PASSWORD, name="Admin", role="admin"),
         Actor.system(),
     )
 
@@ -156,13 +174,13 @@ def logged_in(client: TestClient, admin_user) -> TestClient:
     return client
 
 
-def _client_as(client: TestClient, session: Session, *, email: str, ruolo: Role) -> TestClient:
-    """The same shape as `admin_user`/`logged_in` above, generalised over `ruolo` so a
+def _client_as(client: TestClient, session: Session, *, email: str, role: Role) -> TestClient:
+    """The same shape as `admin_user`/`logged_in` above, generalised over `role` so a
     router's own `actor.require_write`/`actor.require_admin` gate can be exercised
     over real HTTP -- not only at the service layer, where every existing test in
     this suite already covers it."""
     UserService(session).create(
-        UserCreate(email=email, password=ADMIN_PASSWORD, nome="Test", ruolo=ruolo),
+        UserCreate(email=email, password=ADMIN_PASSWORD, name="Test", role=role),
         Actor.system(),
     )
     response = client.post("/api/auth/login", json={"email": email, "password": ADMIN_PASSWORD})
@@ -172,9 +190,9 @@ def _client_as(client: TestClient, session: Session, *, email: str, ruolo: Role)
 
 @pytest.fixture
 def readonly_client(client: TestClient, api_session: Session) -> TestClient:
-    return _client_as(client, api_session, email="readonly@pigro.it", ruolo="readonly")
+    return _client_as(client, api_session, email="readonly@pigro.it", role="readonly")
 
 
 @pytest.fixture
 def collaborator_client(client: TestClient, api_session: Session) -> TestClient:
-    return _client_as(client, api_session, email="collaboratore@pigro.it", ruolo="collaboratore")
+    return _client_as(client, api_session, email="collaboratore@pigro.it", role="collaborator")

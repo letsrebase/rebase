@@ -37,19 +37,21 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.contacts import points
 from mcp import Client
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage, GmailMessageLink, GoogleAccount
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage import LocalFileStorage
+from pigrocrm_mcp.provenance import PROVENANCE_TEXT_FREE
 from pigrocrm_mcp.server import build_server
 
 # 32 bytes of "k", base64. Written out rather than imported from
@@ -88,9 +90,9 @@ def gmail_actor(mcp_session: Session) -> Actor:
     user = User(
         email="agent-owner@example.test",
         password_hash="x",
-        nome="Owner",
-        ruolo="admin",
-        attivo=True,
+        name="Owner",
+        role="admin",
+        active=True,
     )
     mcp_session.add(user)
     mcp_session.flush()
@@ -126,8 +128,8 @@ def connected_account(mcp_session: Session, gmail_actor: Actor) -> GoogleAccount
 
 
 @pytest.fixture
-def customer(mcp_session: Session) -> Customer:
-    """A real `customers` row.
+def customer(mcp_session: Session) -> Organization:
+    """A real `organizations` row.
 
     `filed_message` predates this and files its link against a bare `uuid4()`, which is
     enough for the read tools -- `gmail_message_links` carries no foreign key, because
@@ -135,7 +137,7 @@ def customer(mcp_session: Session) -> Customer:
     surface that *validates* the entity against the right table, so it needs a row that
     exists.
     """
-    row = Customer(ragione_sociale="Acme S.r.l.", email=CLIENT)
+    row = Organization(legal_name="Acme S.r.l.", contact_points=points(email=CLIENT))
     mcp_session.add(row)
     mcp_session.flush()
     return row
@@ -143,7 +145,7 @@ def customer(mcp_session: Session) -> Customer:
 
 @pytest.fixture
 def filed_message(
-    mcp_session: Session, connected_account: GoogleAccount, customer: Customer
+    mcp_session: Session, connected_account: GoogleAccount, customer: Organization
 ) -> Iterator[tuple[UUID, UUID]]:
     """One inbound message filed against one customer. Returns (customer id, message
     id) -- the two identifiers an agent would hold."""
@@ -165,7 +167,9 @@ def filed_message(
     mcp_session.add(message)
     mcp_session.flush()
     mcp_session.add(
-        GmailMessageLink(gmail_message_id=message.id, entity_type="customer", entity_id=customer_id)
+        GmailMessageLink(
+            gmail_message_id=message.id, entity_type="organization", entity_id=customer_id
+        )
     )
     mcp_session.flush()
     yield customer_id, message.id
@@ -279,7 +283,7 @@ async def test_the_gmail_tools_are_absent_when_gmail_is_not_configured(server: A
     assert not (names & SLICE_5B_TOOLS)
     # And the rest of the surface is untouched: "absent" must mean the Gmail tools, not
     # a server that failed to build.
-    assert "create_customer" in names
+    assert "create_organization" in names
 
 
 # --- what the three tools actually answer ----------------------------------------------
@@ -296,18 +300,20 @@ async def test_list_gmail_messages_reads_the_stored_mirror(
     async with Client(gmail_server) as client:
         result = await client.call_tool(
             "list_gmail_messages",
-            {"entity_type": "customer", "entity_id": str(customer_id)},
+            {"entity_type": "organization", "entity_id": str(customer_id)},
         )
 
     rows = _payload(result)
     rows = rows["result"] if isinstance(rows, dict) and "result" in rows else rows
+    # Mail written by somebody else: each item carries the marker, the list stays a list.
+    assert all(row["provenance"] == PROVENANCE_TEXT_FREE for row in rows)
     assert [row["id"] for row in rows] == [str(message_id)]
-    assert rows[0]["da"] == CLIENT
-    assert rows[0]["oggetto"] == "Preventivo per il rifacimento del sito"
+    assert rows[0]["from"] == CLIENT
+    assert rows[0]["subject"] == "Preventivo per il rifacimento del sito"
     # The listing is a listing: the body belongs to `get_gmail_message`, so an agent
     # that only needs to know a conversation exists does not pull a customer's whole
     # correspondence into its context to find out.
-    assert "corpo" not in rows[0]
+    assert "body" not in rows[0]
 
 
 async def test_get_gmail_message_returns_the_body_marked_as_untrusted(
@@ -323,9 +329,9 @@ async def test_get_gmail_message_returns_the_body_marked_as_untrusted(
         result = await client.call_tool("get_gmail_message", {"message_id": str(message_id)})
 
     body = _payload(result)
-    assert body["corpo"] == "Ciao, ci mandi un preventivo per il rifacimento del sito?"
-    assert body["allegati"][0]["name"] == "brief.pdf"
-    assert "non attendibile" in body["provenienza"]
+    assert body["body"] == "Ciao, ci mandi un preventivo per il rifacimento del sito?"
+    assert body["attachments"][0]["name"] == "brief.pdf"
+    assert "untrusted" in body["provenance"]
 
 
 async def test_get_gmail_message_marks_our_own_mail_as_ours(
@@ -355,7 +361,7 @@ async def test_get_gmail_message_marks_our_own_mail_as_ours(
     async with Client(gmail_server) as client:
         result = await client.call_tool("get_gmail_message", {"message_id": str(message.id)})
 
-    assert "non attendibile" not in _payload(result)["provenienza"]
+    assert "untrusted" not in _payload(result)["provenance"]
 
 
 async def test_a_message_id_nobody_stored_is_guidance_not_a_stack_trace(
@@ -404,7 +410,7 @@ async def test_no_gmail_tool_answer_carries_a_credential(
         answers = [
             await client.call_tool(
                 "list_gmail_messages",
-                {"entity_type": "customer", "entity_id": str(customer_id)},
+                {"entity_type": "organization", "entity_id": str(customer_id)},
             ),
             await client.call_tool("get_gmail_message", {"message_id": str(message_id)}),
             await client.call_tool("describe_gmail_account", {}),
@@ -435,7 +441,7 @@ async def test_draft_email_is_the_one_writing_tool_an_agent_gets(gmail_server: A
 async def test_draft_email_leaves_the_draft_unsent_and_asks_google_nothing(
     gmail_server: Any, mcp_session: Session, filed_message: tuple[UUID, UUID]
 ) -> None:
-    """`bozza` is a state only `EmailSendService` can leave, and this surface holds no
+    """`draft` is a state only `EmailSendService` can leave, and this surface holds no
     tool that could. The silence is proved by the repository-root socket guard, which
     fails any test that opens one."""
     customer_id, _message_id = filed_message
@@ -444,7 +450,7 @@ async def test_draft_email_leaves_the_draft_unsent_and_asks_google_nothing(
         result = await client.call_tool(
             "draft_email",
             {
-                "entity_type": "customer",
+                "entity_type": "organization",
                 "entity_id": str(customer_id),
                 "to_addresses": [CLIENT],
                 "subject": "Accompagnamento offerta",
@@ -453,11 +459,11 @@ async def test_draft_email_leaves_the_draft_unsent_and_asks_google_nothing(
         )
 
     answer = _payload(result)
-    assert answer["stato"] == "bozza"
-    assert "persona" in answer["nota"]
+    assert answer["status"] == "draft"
+    assert "person" in answer["note"]
 
     draft = mcp_session.execute(select(EmailDraft)).scalars().one()
-    assert draft.send_state == "bozza"
+    assert draft.send_state == "draft"
     assert draft.subject == "Accompagnamento offerta"
     assert draft.sent_gmail_message_id is None
     assert draft.google_account_id is None
@@ -473,7 +479,7 @@ async def test_draft_email_refuses_an_entity_that_does_not_exist(gmail_server: A
         result = await client.call_tool(
             "draft_email",
             {
-                "entity_type": "customer",
+                "entity_type": "organization",
                 "entity_id": str(uuid4()),
                 "to_addresses": [CLIENT],
                 "subject": "Offerta",
@@ -504,7 +510,7 @@ async def test_a_readonly_agent_cannot_even_draft(
         result = await client.call_tool(
             "draft_email",
             {
-                "entity_type": "customer",
+                "entity_type": "organization",
                 "entity_id": str(customer_id),
                 "to_addresses": [CLIENT],
                 "subject": "Offerta",
@@ -520,26 +526,26 @@ async def test_a_readonly_agent_cannot_even_draft(
 
 
 async def test_list_payment_reminder_candidates_reads_the_register_and_calls_nobody(
-    gmail_server: Any, mcp_session: Session, customer: Customer
+    gmail_server: Any, mcp_session: Session, customer: Organization
 ) -> None:
     """The one method of 5B-2 that genuinely earns a tool: crossing due dates against
     payments against what has already gone out is the laborious part of chasing money.
 
-    `importo` travels as the invoice's own frozen decimal, as a string. A float here
+    `amount` travels as the invoice's own frozen decimal, as a string. A float here
     would be a demand for payment naming a figure the client's copy does not carry.
     """
-    scadenza = oggi_in_italia() - timedelta(days=40)
+    due_date = today_local() - timedelta(days=40)
     invoice = Invoice(
         customer_id=customer.id,
-        tipo="fattura",
-        stato="emessa",
-        anno=scadenza.year,
-        numero=4321,
-        data_emissione=scadenza - timedelta(days=30),
-        data_scadenza=scadenza,
-        imponibile=Decimal("1000.00"),
-        imposta=Decimal("220.00"),
-        totale=Decimal("1220.00"),
+        type="invoice",
+        status="issued",
+        year=due_date.year,
+        number=4321,
+        issue_date=due_date - timedelta(days=30),
+        due_date=due_date,
+        taxable_amount=Decimal("1000.00"),
+        vat_amount=Decimal("220.00"),
+        total=Decimal("1220.00"),
     )
     mcp_session.add(invoice)
     mcp_session.flush()
@@ -549,12 +555,13 @@ async def test_list_payment_reminder_candidates_reads_the_register_and_calls_nob
 
     rows = _payload(result)
     rows = rows["result"] if isinstance(rows, dict) and "result" in rows else rows
+    assert all(row["provenance"] == PROVENANCE_TEXT_FREE for row in rows)
     mine = [row for row in rows if row["invoice_id"] == str(invoice.id)]
     assert len(mine) == 1
-    assert mine[0]["importo"] == "1220.00"
-    assert mine[0]["cliente"] == "Acme S.r.l."
-    assert mine[0]["giorni_di_ritardo"] == 40
-    assert mine[0]["prossimo_livello"] == 1
+    assert mine[0]["amount"] == "1220.00"
+    assert mine[0]["customer"] == "Acme S.r.l."
+    assert mine[0]["days_of_delay"] == 40
+    assert mine[0]["next_level"] == 1
 
 
 async def test_no_tool_prepares_a_payment_reminder(gmail_server: Any) -> None:
@@ -566,5 +573,26 @@ async def test_no_tool_prepares_a_payment_reminder(gmail_server: Any) -> None:
     becoming an automated persecution, with nobody having decided to chase it at all."""
     names = await _tool_names(gmail_server)
 
-    assert not [name for name in names if "reminder" in name and not name.startswith("list_")]
+    assert not [
+        name for name in names if "payment_reminder" in name and not name.startswith("list_")
+    ]
     assert not [name for name in names if "sollecit" in name]
+
+
+async def test_a_malformed_gmail_message_id_gets_the_same_guidance_as_every_other_id(
+    gmail_server, connected_account
+) -> None:
+    """REB-808: `get_gmail_message` and `list_gmail_messages` took a `UUID`, which the SDK
+    checked ahead of the guard and answered in pydantic's English."""
+    async with Client(gmail_server) as client:
+        message = await client.call_tool("get_gmail_message", {"message_id": "non-un-uuid"})
+        listing = await client.call_tool(
+            "list_gmail_messages", {"entity_type": "organization", "entity_id": "non-un-uuid"}
+        )
+
+    for result in (message, listing):
+        assert result.is_error
+        text = result.content[0].text
+        assert "errors.pydantic.dev" not in text
+        assert "is not a valid identifier" in text
+        assert "Expected value" in text

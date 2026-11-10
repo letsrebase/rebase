@@ -16,37 +16,41 @@ def spec(key: str, field_type: str, **kw: Any) -> FieldSpec:
 
 
 def test_empty_specs_and_empty_values_produce_empty_result() -> None:
-    assert validate_custom_fields("customer", [], {}) == {}
+    assert validate_custom_fields("organization", [], {}) == {}
 
 
 def test_unknown_key_is_rejected_rather_than_silently_stored() -> None:
     """Silently accepting unknown keys turns JSONB into a junk drawer and hides typos
     from agents that guessed a field name."""
     with pytest.raises(ValidationFailed) as exc:
-        validate_custom_fields("customer", [spec("settore", "text")], {"setore": "IT"})
+        validate_custom_fields("organization", [spec("settore", "text")], {"setore": "IT"})
     assert exc.value.details["field"] == "setore"
     assert "settore" in exc.value.details["reason"]
 
 
 def test_missing_required_field_is_rejected() -> None:
     with pytest.raises(ValidationFailed) as exc:
-        validate_custom_fields("customer", [spec("settore", "text", required=True)], {})
+        validate_custom_fields("organization", [spec("settore", "text", required=True)], {})
     assert exc.value.details["field"] == "settore"
 
 
 def test_required_field_rejects_empty_string() -> None:
     with pytest.raises(ValidationFailed):
         validate_custom_fields(
-            "customer", [spec("settore", "text", required=True)], {"settore": "   "}
+            "organization", [spec("settore", "text", required=True)], {"settore": "   "}
         )
 
 
 def test_optional_field_accepts_none_and_is_dropped() -> None:
-    assert validate_custom_fields("customer", [spec("settore", "text")], {"settore": None}) == {}
+    assert (
+        validate_custom_fields("organization", [spec("settore", "text")], {"settore": None}) == {}
+    )
 
 
 def test_text_is_trimmed() -> None:
-    result = validate_custom_fields("customer", [spec("settore", "text")], {"settore": "  IT  "})
+    result = validate_custom_fields(
+        "organization", [spec("settore", "text")], {"settore": "  IT  "}
+    )
     assert result == {"settore": "IT"}
 
 
@@ -77,12 +81,12 @@ def test_currency_rejects_non_numeric() -> None:
 
 
 def test_date_accepts_iso_string_and_date_and_normalises_to_iso() -> None:
-    specs = [spec("scadenza", "date")]
+    specs = [spec("due_date", "date")]
     assert (
-        validate_custom_fields("c", specs, {"scadenza": "2026-08-06"})["scadenza"] == "2026-08-06"
+        validate_custom_fields("c", specs, {"due_date": "2026-08-06"})["due_date"] == "2026-08-06"
     )
     assert (
-        validate_custom_fields("c", specs, {"scadenza": date(2026, 8, 6)})["scadenza"]
+        validate_custom_fields("c", specs, {"due_date": date(2026, 8, 6)})["due_date"]
         == "2026-08-06"
     )
 
@@ -90,22 +94,22 @@ def test_date_accepts_iso_string_and_date_and_normalises_to_iso() -> None:
 @pytest.mark.parametrize("bad", ["06/08/2026", "2026-13-01", "domani"])
 def test_date_rejects_non_iso(bad: str) -> None:
     with pytest.raises(ValidationFailed) as exc:
-        validate_custom_fields("c", [spec("scadenza", "date")], {"scadenza": bad})
+        validate_custom_fields("c", [spec("due_date", "date")], {"due_date": bad})
     assert exc.value.details["expected"] == "una data ISO (YYYY-MM-DD)"
 
 
 def test_select_accepts_a_declared_option() -> None:
-    s = spec("stato", "select", options=["attivo", "sospeso"])
-    assert validate_custom_fields("c", [s], {"stato": "attivo"})["stato"] == "attivo"
+    s = spec("status", "select", options=["active", "sospeso"])
+    assert validate_custom_fields("c", [s], {"status": "active"})["status"] == "active"
 
 
 def test_select_rejects_an_undeclared_option_and_lists_the_valid_ones() -> None:
     """The error must name the allowed values: an agent that gets 'invalid' retries
     at random, one that gets the list corrects itself."""
-    s = spec("stato", "select", options=["attivo", "sospeso"])
+    s = spec("status", "select", options=["active", "sospeso"])
     with pytest.raises(ValidationFailed) as exc:
-        validate_custom_fields("c", [s], {"stato": "chiuso"})
-    assert "attivo" in exc.value.details["expected"]
+        validate_custom_fields("c", [s], {"status": "closed"})
+    assert "active" in exc.value.details["expected"]
     assert "sospeso" in exc.value.details["expected"]
 
 
@@ -135,9 +139,17 @@ def test_checkbox_coerces_common_truthy_representations(raw: Any, expected: bool
     assert validate_custom_fields("c", [spec("ok", "checkbox")], {"ok": raw})["ok"] is expected
 
 
-def test_checkbox_rejects_ambiguous_values() -> None:
+@pytest.mark.parametrize("raw", ["forse", 1.0, 2, -1, 0.0])
+def test_checkbox_rejects_ambiguous_values(raw: Any) -> None:
     with pytest.raises(ValidationFailed):
-        validate_custom_fields("c", [spec("ok", "checkbox")], {"ok": "forse"})
+        validate_custom_fields("c", [spec("ok", "checkbox")], {"ok": raw})
+
+
+@pytest.mark.parametrize("raw", [True, False])
+def test_a_number_field_refuses_a_boolean(raw: bool) -> None:
+    """`float(True)` is 1.0: without the check a checkbox's answer is stored as a quantity."""
+    with pytest.raises(ValidationFailed):
+        validate_custom_fields("c", [spec("n", "number")], {"n": raw})
 
 
 @pytest.mark.parametrize("url", ["https://example.com", "http://localhost:5173/x?y=1"])
@@ -173,7 +185,7 @@ def test_all_errors_name_the_entity() -> None:
 
 def test_checkbox_rejects_unhashable_values_instead_of_raising_typeerror() -> None:
     """An MCP client sends arbitrary JSON, so a dict landing on a checkbox field is
-    entirely plausible. `value in TRUE_VALUES` must not leak a raw TypeError for an
+    entirely plausible. a membership test must not leak a raw TypeError for an
     unhashable value - it must fail the same way any other non-boolean value does."""
     with pytest.raises(ValidationFailed) as exc:
         validate_custom_fields("c", [spec("ok", "checkbox")], {"ok": {"a": 1}})
@@ -248,7 +260,7 @@ def test_field_spec_rejects_select_with_no_options_as_an_impossible_state() -> N
     with nothing listed after it - exactly the useless "invalid" this design exists
     to avoid. Refusing to construct the spec is better than emitting that message."""
     with pytest.raises(ValidationError):
-        FieldSpec(key="stato", label="Stato", field_type="select", options=[])
+        FieldSpec(key="status", label="Stato", field_type="select", options=[])
 
 
 def test_field_spec_rejects_multiselect_with_no_options() -> None:

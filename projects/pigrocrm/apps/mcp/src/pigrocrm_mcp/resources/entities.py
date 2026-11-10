@@ -1,29 +1,89 @@
+from collections.abc import Sequence
 from uuid import UUID
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm.core.customers.schemas import CustomerRead
-from pigrocrm.core.customers.service import CustomerService
+from pigrocrm.core.contact_points.schemas import ContactPointRead
+from pigrocrm.core.deals.schemas import DealListQuery, DealRead, DealValueLineRead
 from pigrocrm.core.deals.service import DealService
+from pigrocrm.core.labels import ACTIVITY_KIND, NOTE_SOURCE, label
+from pigrocrm.core.notes.service import NoteService
+from pigrocrm.core.organizations.schemas import OrganizationRead
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.people.schemas import PersonListQuery
 from pigrocrm.core.people.service import PersonService
+from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.provenance import PROVENANCE_TEXT_FREE
+
+_DEAL_HOURS_STATUS = {"in_progress": "in progress", "to_invoice": "to invoice", "closed": "closed"}
 
 
 def _timeline_lines(context: McpContext, entity: str, entity_id: UUID) -> list[str]:
     entries = ActivityService(context.session).timeline(entity, entity_id, limit=10)
     if not entries:
-        return ["_Nessuna attività registrata._"]
-    return [f"- {e.occurred_at:%Y-%m-%d %H:%M} · **{e.kind}** · da {e.actor_type}" for e in entries]
+        return ["_No activity recorded._"]
+    return [
+        f"- {e.occurred_at:%Y-%m-%d %H:%M} · **{label(ACTIVITY_KIND, e.kind)}** · by {e.actor_type}"
+        for e in entries
+    ]
 
 
 def _custom_lines(custom_fields: dict[str, object]) -> list[str]:
     if not custom_fields:
         return []
-    return ["", "## Campi personalizzati", ""] + [
+    return ["", "## Custom fields", ""] + [
         f"- **{key}**: {value}" for key, value in sorted(custom_fields.items())
     ]
+
+
+def _note_lines(context: McpContext, entity_type: str, entity_id: UUID) -> list[str]:
+    """The whole thread, newest first (the tools carry the latest 50): who wrote each note,
+    when, through which door and whether it was edited since."""
+    notes = NoteService(context.session).list_for_entity(entity_type, entity_id, context.actor)
+    if not notes:
+        return []
+    lines = ["", "## Note"]
+    for note in notes:
+        # A note from before the thread existed has no source and no author.
+        who = note.author or (
+            "Earlier note" if note.source is None else label(NOTE_SOURCE, note.source)
+        )
+        header = f"**{note.created_at:%Y-%m-%d %H:%M}** · {who}"
+        if note.source is not None:
+            header += f" · source: {label(NOTE_SOURCE, note.source)}"
+        if note.edited_at is not None:
+            header += f" · edited on {note.edited_at:%Y-%m-%d %H:%M}"
+            if note.edited_by:
+                header += f" by {note.edited_by}"
+        lines += ["", header, "", note.text]
+    return lines
+
+
+def _figures(deal: DealRead) -> str:
+    """The two figures of a deal's lines, beside its total: what is paid once and what
+    arrives every month. Empty for a deal with no lines."""
+    if deal.one_off_value is None or deal.monthly_recurring_value is None:
+        return ""
+    return (
+        f" (one-off {deal.one_off_value}, monthly recurring {deal.monthly_recurring_value};"
+        " an open-ended fee counts 12 months)"
+    )
+
+
+def _value_line(line: DealValueLineRead) -> str:
+    quantity = "" if line.unit == "flat" else f" × {line.quantity}"
+    start = f" from {line.start}" if line.start else ""
+    if line.duration_months:
+        duration = f" for {line.duration_months} months"
+    else:
+        duration = " open-ended" if line.delivery_period != "one_off" else ""
+    label = f"{line.description}: " if line.description else ""
+    return (
+        f"- {label}{line.unit_price}{quantity} per {line.unit}, {line.delivery_period}"
+        f"{start}{duration}"
+    )
 
 
 def _or_dash(value: object) -> str:
@@ -41,153 +101,197 @@ def _or_dash(value: object) -> str:
     return "—" if value is None else str(value)
 
 
-def _address_line(customer: CustomerRead) -> str:
+def _address_line(customer: OrganizationRead) -> str:
     """Joins only the parts that are actually present.
 
-    A customer with no street/CAP/comune/provincia used to render as
-    `—,   () IT` -- a literal dash, a comma, two blank spaces where CAP and
-    comune would go, and empty parentheses -- noise a model has to read past
+    A customer with no street/postal code/city/province used to render as
+    `—,   () IT` -- a literal dash, a comma, two blank spaces where postal code and
+    city would go, and empty parentheses -- noise a model has to read past
     before it can act. With nothing but a country, this renders as `IT` alone.
     """
-    locality = " ".join(part for part in (customer.cap, customer.comune) if part)
-    if customer.provincia:
-        locality = f"{locality} ({customer.provincia})".strip()
-    if customer.nazione:
-        locality = f"{locality} {customer.nazione}".strip()
-    segments = [part for part in (customer.indirizzo, locality) if part]
+    locality = " ".join(part for part in (customer.postal_code, customer.city) if part)
+    if customer.province:
+        locality = f"{locality} ({customer.province})".strip()
+    if customer.country:
+        locality = f"{locality} {customer.country}".strip()
+    segments = [part for part in (customer.address, locality) if part]
     return ", ".join(segments) if segments else "—"
 
 
-def render_customer(context: McpContext, customer_id: UUID) -> str:
-    customer = CustomerService(context.session).get(customer_id, context.actor)
+def _contact_point_lines(points: Sequence[ContactPointRead], *, heading: str) -> list[str]:
+    """Every contact point with its label, note and primary marker; nothing when there are
+    none. The primary email is the address the CRM's mail goes to."""
+    if not points:
+        return []
+    lines = ["", f"## {heading}", ""]
+    for point in points:
+        marker = " (primary)" if point.is_primary else ""
+        note = f" — {point.note}" if point.note else ""
+        lines.append(f"- {point.kind}: {point.value} [{point.label}]{marker}{note}")
+    return lines
+
+
+def _provenance_line() -> str:
+    """First line of every card: the names, notes and custom fields below were written by
+    somebody else (a person, or an agent that was reading a mail)."""
+    return f"_Provenance: {PROVENANCE_TEXT_FREE}_"
+
+
+def render_organization(context: McpContext, customer_id: UUID) -> str:
+    customer = OrganizationService(context.session).get(customer_id, context.actor)
     people = PersonService(context.session).list(
         PersonListQuery(customer_id=customer_id, limit=50), context.actor
     )
-    from pigrocrm.core.deals.schemas import DealListQuery
 
-    deals = DealService(context.session).list(
-        DealListQuery(customer_id=customer_id, limit=50), context.actor
+    # A core page that points into a module the space switched off leaves that part out
+    # (spec 2026-11-09, A2); `None` is every module.
+    show_deals = context.modules is None or "deals" in context.modules
+    deals = (
+        DealService(context.session).list(
+            DealListQuery(customer_id=customer_id, limit=50), context.actor
+        )
+        if show_deals
+        else None
     )
 
     lines = [
-        f"# {customer.ragione_sociale}",
+        _provenance_line(),
         "",
-        "## Dati fiscali",
+        f"# {customer.legal_name}",
         "",
-        f"- P.IVA: {customer.partita_iva or '—'}",
-        f"- Codice fiscale: {customer.codice_fiscale or '—'}",
-        f"- Codice SDI: {customer.codice_sdi or '—'}",
-        f"- PEC: {customer.pec or '—'}",
-        f"- Indirizzo: {_address_line(customer)}",
+        "## Tax data",
         "",
-        "## Contatti",
+        f"- VAT number: {customer.vat_number or '—'}",
+        f"- Tax code: {customer.tax_code or '—'}",
+        f"- Recipient code (SdI): {customer.sdi_code or '—'}",
+        f"- PEC: {customer.certified_email or '—'}",
+        f"- Address: {_address_line(customer)}",
+        "",
+        "## Contacts",
         "",
     ]
     lines += [
-        f"- {p.nome} {p.cognome or ''} — {p.ruolo or 'ruolo non indicato'} — {p.email or '—'}"
+        f"- {p.first_name} {p.last_name or ''} — {p.role or 'role not given'} — {p.email or '—'}"
         for p in people.items
-    ] or ["_Nessun contatto._"]
-    lines += ["", "## Deal", ""]
-    lines += [
-        f"- {d.nome} — valore previsto {_or_dash(d.valore_previsto)} — probabilità {d.probabilita}%"
-        for d in deals.items
-    ] or ["_Nessun deal._"]
+    ] or ["_No contacts._"]
+    lines += _contact_point_lines(customer.contact_points, heading="Organization contact points")
+    if deals is not None:
+        lines += ["", "## Deal", ""]
+        lines += [
+            f"- {d.name} — expected value {_or_dash(d.expected_value)}{_figures(d)}"
+            f" — probability {d.probability}%"
+            for d in deals.items
+        ] or ["_No deals._"]
     lines += _custom_lines(customer.custom_fields)
-    lines += ["", "## Timeline", ""] + _timeline_lines(context, "customer", customer_id)
-    if customer.note:
-        lines += ["", "## Note", "", customer.note]
+    lines += ["", "## Timeline", ""] + _timeline_lines(context, "organization", customer_id)
+    lines += _note_lines(context, "organization", customer_id)
     return "\n".join(lines)
 
 
 def render_person(context: McpContext, person_id: UUID) -> str:
     person = PersonService(context.session).get(person_id, context.actor)
     lines = [
-        f"# {person.nome} {person.cognome or ''}".strip(),
+        _provenance_line(),
         "",
-        f"- Ruolo: {person.ruolo or '—'}",
-        f"- Email: {person.email or '—'}",
-        f"- Telefono: {person.telefono or '—'}",
-        f"- LinkedIn: {person.linkedin or '—'}",
+        f"# {person.first_name} {person.last_name or ''}".strip(),
+        "",
+        f"- Role: {person.role or '—'}",
+        f"- Primary email: {person.email or '—'}",
+        f"- Primary phone: {person.phone or '—'}",
+        f"- Primary LinkedIn: {person.linkedin or '—'}",
     ]
     if person.customer_id:
-        customer = CustomerService(context.session).get(person.customer_id, context.actor)
-        lines.append(f"- Cliente: {customer.ragione_sociale} (`customer://{customer.id}`)")
+        customer = OrganizationService(context.session).get(person.customer_id, context.actor)
+        lines.append(f"- Organization: {customer.legal_name} (`organization://{customer.id}`)")
     else:
-        lines.append("- Cliente: non associato")
+        lines.append("- Organization: not linked")
+    lines += _contact_point_lines(person.contact_points, heading="Contact points")
     lines += _custom_lines(person.custom_fields)
     lines += ["", "## Timeline", ""] + _timeline_lines(context, "person", person_id)
-    if person.note:
-        lines += ["", "## Note", "", person.note]
+    lines += _note_lines(context, "person", person_id)
     return "\n".join(lines)
 
 
 def render_deal(context: McpContext, deal_id: UUID) -> str:
     deal = DealService(context.session).get(deal_id, context.actor)
-    customer = CustomerService(context.session).get(deal.customer_id, context.actor)
-
-    from pigrocrm.core.pipeline.service import PipelineService
+    customer = OrganizationService(context.session).get(deal.customer_id, context.actor)
 
     stage = PipelineService(context.session).get(deal.pipeline_stage_id)
 
     lines = [
-        f"# {deal.nome}",
+        _provenance_line(),
         "",
-        f"- Cliente: {customer.ragione_sociale} (`customer://{customer.id}`)",
-        f"- Stato: {stage.nome} ({stage.tipo})",
-        f"- Valore previsto: {_or_dash(deal.valore_previsto)}",
-        f"- Probabilità: {deal.probabilita}%",
-        f"- Chiusura prevista: {deal.data_chiusura_prevista or '—'}",
-        f"- Ore preventivate: {_or_dash(deal.ore_preventivate)}",
-        f"- Valore preventivato: {_or_dash(deal.valore_preventivato)}",
+        f"# {deal.name}",
+        "",
+        f"- Organization: {customer.legal_name} (`organization://{customer.id}`)",
+        f"- Stage: {stage.name} ({stage.type})",
+        f"- Expected value: {_or_dash(deal.expected_value)}",
+        f"- Probability: {deal.probability}%",
+        f"- Expected close: {deal.expected_close_date or '—'}",
+        f"- Budgeted hours: {_or_dash(deal.budgeted_hours)}",
+        f"- Budgeted value: {_or_dash(deal.budgeted_value)}",
     ]
+    if deal.value_lines:
+        lines += ["", "## Value lines", ""]
+        lines += [_value_line(line) for line in deal.value_lines]
+        lines += [
+            f"- One-off value: {_or_dash(deal.one_off_value)}",
+            f"- Monthly recurring value: {_or_dash(deal.monthly_recurring_value)}",
+            "- The expected value counts an open-ended fee at 12 months.",
+        ]
     lines += _custom_lines(deal.custom_fields)
 
     # Reading before acting (slice 1 §8.4), applied to the one thing an agent wants to
     # know before logging an hour. Still no revenue figure in *this* block: revenue is
     # the invoice (§3, decision 2), and the hours half has to be readable on a deal that
     # has none. The economics live in their own section below.
-    summary = TimeEntryService(context.session).deal_summary(deal.id, context.actor)
-    lines += [
-        "",
-        "## Ore",
-        f"- Stato: **{summary.stato}**",
-        f"- Ore consuntivate: {summary.ore_totali}",
-        f"- Ore fatturabili non ancora fatturate: {summary.ore_fatturabili_non_fatturate}",
-        f"- Valore delle ore non fatturate (stima): {summary.valore_ore_non_fatturate} EUR",
-    ]
-    if summary.ore_senza_tariffa:
-        lines.append(
-            f"- Voci senza tariffa: {summary.ore_senza_tariffa} "
-            "(escluse dal valore maturato e dal margine)"
-        )
+    # Hours, labour and the margin they feed are `time`'s: without it the deal has none to show.
+    if context.modules is None or "time" in context.modules:
+        summary = TimeEntryService(context.session).deal_summary(deal.id, context.actor)
+        lines += [
+            "",
+            "## Hours",
+            f"- Status: **{_DEAL_HOURS_STATUS.get(summary.status, summary.status)}**",
+            f"- Hours logged: {summary.total_hours}",
+            f"- Billable hours not yet invoiced: {summary.billable_uninvoiced_hours}",
+            f"- Value of uninvoiced hours (estimate): {summary.unbilled_hours_value} EUR",
+        ]
+        if summary.hours_without_rate:
+            lines.append(
+                f"- Entries without a rate: {summary.hours_without_rate} "
+                "(excluded from the accrued value and the margin)"
+            )
 
-    # 4A deliberately printed no revenue here, because there were no invoices to read and
-    # a zero would have looked like a real figure. There are now: `deal_pnl` reads the
-    # issued ones and this block is the payoff -- an agent asked "how is this project
-    # going" sees the economics in the same read as the hours, instead of inferring them.
-    pnl = AnalyticsService(context.session).deal_pnl(deal.id, context.actor)
-    lines += [
-        "",
-        "## Economia",
-        f"- Ricavi fatturati: {pnl.ricavi} EUR ({pnl.fatture_emesse} fatture emesse)",
-        f"- Costi diretti: {pnl.costi_diretti} EUR",
-        f"- Costo del lavoro: {pnl.costo_lavoro} EUR",
-    ]
-    if pnl.stato == "chiuso":
-        lines.append(f"- Margine lordo: {pnl.margine_lordo} EUR (definitivo)")
-    else:
-        # Never a margin without the qualifier on an unfinished deal: the figure is
-        # provisional, and an agent handed a bare number will quote it as final.
-        lines.append(f"- Margine lordo: {pnl.margine_lordo} EUR — **provvisorio**")
-        lines.append(f"- Valore maturato (stima, non un ricavo): {pnl.valore_maturato} EUR")
-    if pnl.margine_percentuale is None:
-        # `null` is not zero per cent: nothing has been invoiced yet, which is a
-        # different sentence from "every euro earned went out in costs".
-        lines.append("- Margine %: non calcolabile, nessun ricavo fatturato")
-    else:
-        lines.append(f"- Margine %: {pnl.margine_percentuale}")
+    # The economics are `get_deal_pnl`'s, which spans deals, time and costs: with `costs` off
+    # the direct-costs line and the margin it feeds would print a figure the space has
+    # switched off (REB-978).
+    if context.modules is None or {"time", "costs"} <= set(context.modules):
+        # 4A deliberately printed no revenue here, because there were no invoices to read and
+        # a zero would have looked like a real figure. There are now: `deal_pnl` reads the
+        # issued ones and this block is the payoff -- an agent asked "how is this project
+        # going" sees the economics in the same read as the hours, instead of inferring them.
+        pnl = AnalyticsService(context.session).deal_pnl(deal.id, context.actor)
+        lines += [
+            "",
+            "## Economics",
+            f"- Invoiced revenue: {pnl.revenue} EUR ({pnl.issued_invoices} invoices issued)",
+            f"- Direct costs: {pnl.direct_costs} EUR",
+            f"- Labor cost: {pnl.work_cost} EUR",
+        ]
+        if pnl.status == "closed":
+            lines.append(f"- Gross margin: {pnl.gross_margin} EUR (final)")
+        else:
+            # Never a margin without the qualifier on an unfinished deal: the figure is
+            # provisional, and an agent handed a bare number will quote it as final.
+            lines.append(f"- Gross margin: {pnl.gross_margin} EUR — **provisional**")
+            lines.append(f"- Accrued value (estimate, not revenue): {pnl.accrued_value} EUR")
+        if pnl.percentage_margin is None:
+            # `null` is not zero per cent: nothing has been invoiced yet, which is a
+            # different sentence from "every euro earned went out in costs".
+            lines.append("- Margin %: not computable, no revenue invoiced")
+        else:
+            lines.append(f"- Margin %: {pnl.percentage_margin}")
 
     lines += ["", "## Timeline", ""] + _timeline_lines(context, "deal", deal_id)
-    if deal.note:
-        lines += ["", "## Note", "", deal.note]
+    lines += _note_lines(context, "deal", deal_id)
     return "\n".join(lines)

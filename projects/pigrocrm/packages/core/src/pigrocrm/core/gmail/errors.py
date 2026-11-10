@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from pigrocrm.core.errors import Conflict
+from pigrocrm.core.http import UpstreamUnavailable
 
 
 @dataclass(frozen=True)
@@ -33,14 +34,8 @@ class UpstreamFailure:
 class GoogleCallFailed(Exception):
     """Internal to `pigrocrm.core.gmail`, and meant never to cross the package
     boundary: a caller outside this package cannot be expected to know what an
-    `UpstreamFailure` is, so every public method should convert it into a `DomainError`
-    first. `tokens.py` and `send.py` do.
-
-    `GmailSyncService.sync` does **not**, and until something converts it this is a
-    documented hole rather than a rule: a listing that comes back 429 raises this out
-    of `sync`, which is why `POST /api/gmail/sync` answers 500 to an exhausted Gmail
-    quota and why `cli.py` catches it by name to keep the cron log to one line. The
-    cure is `sync` raising `GmailUnavailable` instead, which would fix both at once."""
+    `UpstreamFailure` is, so every public method converts it into a `GmailUnavailable`
+    first (`tokens.py`, `send.py` and `sync.py`'s `_unavailable_on_failure` do)."""
 
     def __init__(self, failure: UpstreamFailure, what: str) -> None:
         super().__init__(f"{what} fallita ({failure.status}/{failure.error_code or 'n/d'})")
@@ -97,13 +92,9 @@ class ScopeMissing(Conflict):
         )
 
 
-class GmailUnavailable(Conflict):
+class GmailUnavailable(UpstreamUnavailable):
     """Transient, after every retry was spent. Distinct from `CredentialRevoked`
     precisely because the reaction differs: wait and try again, versus re-consent."""
 
     def __init__(self, what: str, status: int) -> None:
-        super().__init__(
-            "gmail",
-            f"{what}: Gmail non ha risposto correttamente (codice {status}). Riprova più tardi",
-            status=status,
-        )
+        super().__init__("gmail", "Gmail", status, what=what)

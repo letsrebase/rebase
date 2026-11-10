@@ -1,6 +1,8 @@
+from collections.abc import Iterable
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
@@ -18,10 +20,10 @@ _ENTITY_TYPE_MAX_LENGTH = 30
 _KIND_MAX_LENGTH = 50
 
 # Matches every REST timeline route's own `Query(ge=1, le=200)` exactly (see
-# routers/customers.py, people.py, deals.py). Enforced here, not only per-router,
+# routers/organizations.py, people.py, deals.py). Enforced here, not only per-router,
 # because the MCP `get_timeline` tool calls straight into this method with a bare
 # `limit: int` parameter of its own -- no schema of any kind sits between the tool
-# and this call, unlike search_customers/search_people/search_deals, whose `limit`
+# and this call, unlike search_organizations/search_people/search_deals, whose `limit`
 # is bounded through `*ListQuery`'s own `Field(ge=1, le=200)`. Without this check,
 # `-1` reached Postgres raw as `psycopg.errors.InvalidRowCountInLimitClause` ("LIMIT
 # must not be negative"), and `10**9` silently returned everything where REST would
@@ -75,7 +77,63 @@ class ActivityService:
                 "fuori intervallo",
                 expected=f"{TIMELINE_LIMIT_MIN}-{TIMELINE_LIMIT_MAX}",
             )
-        return [
-            ActivityRead.model_validate(a)
-            for a in self.repo.timeline(entity_type, entity_id, limit)
-        ]
+        return serve_activities(self.session, self.repo.timeline(entity_type, entity_id, limit))
+
+
+def serve_activities(session: Session, rows: Iterable[Activity]) -> list[ActivityRead]:
+    """The rows as the API and the MCP serve them: each with the name of the member
+    behind it (REB-781).
+
+    A function and not an `ActivityService` method: the operational dashboard serves its
+    «attività recenti» through it too, and a public method on the service would be a
+    surface the MCP coverage sweep demands a tool or an exclusion for, for what is a
+    helper to two readers.
+
+    One query for the whole page, not one per row. `User` is read without a filter on
+    `active`: a member who has left still did what the timeline says they did, and a
+    blank where their name was would read as a system action. A row whose id no user row
+    holds (a space restored from a partial dump, a token owner removed by hand) keeps
+    `actor_name=None` rather than failing the read.
+    """
+    activities = list(rows)
+    wanted: set[UUID] = set()
+    for activity in activities:
+        wanted.update(
+            member
+            for member in (activity.actor_id, _triggering_member(activity))
+            if member is not None
+        )
+    names: dict[UUID, str] = {}
+    # Imported here, not at the top: `auth/__init__` loads `pat_service`, which imports this
+    # module for `ActivityService`, so a top-level import of `auth.models` is a cycle that
+    # only an import order starting in `auth` survives.
+    from pigrocrm.core.auth.models import User
+
+    if wanted:
+        found = session.execute(select(User.id, User.name).where(User.id.in_(wanted)))
+        names = {user_id: name for user_id, name in found}
+    result: list[ActivityRead] = []
+    for activity in activities:
+        read = ActivityRead.model_validate(activity)
+        if activity.actor_id is not None:
+            read.actor_name = names.get(activity.actor_id)
+        trigger = _triggering_member(activity)
+        if trigger is not None:
+            read.triggered_by_name = names.get(trigger)
+        result.append(read)
+    return result
+
+
+def _triggering_member(activity: Activity) -> UUID | None:
+    """The member an automation's entry names in `payload.triggered_by`, if it names one.
+
+    The payload is free-form JSON written by many callers, so anything that is not the
+    text of a UUID is no member at all rather than an error: a read of the timeline must
+    not fail on one odd row."""
+    raw = activity.payload.get("triggered_by") if activity.actor_type == "system" else None
+    if not isinstance(raw, str):
+        return None
+    try:
+        return UUID(raw)
+    except ValueError:
+        return None

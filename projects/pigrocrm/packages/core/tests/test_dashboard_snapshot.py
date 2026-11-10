@@ -11,7 +11,7 @@ the other side, and adds the three things that file cannot say:
       first aggregate, synchronised with two events rather than by calling the writer
       inline -- so what is asserted is that the snapshot is fixed by the
       `transaction_timestamp()` statement itself, not merely by whichever query ran first;
-  (c) `calcolato_alle` precedes that commit, bracketed by the database's own clock.
+  (c) `calculated_at` precedes that commit, bracketed by the database's own clock.
 
 And then the inversion, which is what makes (a) mean something instead of decorating the
 file: repeated with the isolation level forced to `read committed`, (b) **fails** -- the
@@ -54,18 +54,17 @@ from typing import Any, NamedTuple
 from uuid import UUID
 
 import pytest
-from fakes.azienda_fixtures import committed_default_azienda, remove_azienda
+from fakes.legal_entity_fixtures import committed_default_legal_entity, remove_legal_entity
 from sqlalchemy import Engine, delete, select, text
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.service import AnalyticsService
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.dashboard import service as dashboard_service
 from pigrocrm.core.dashboard.schemas import (
     CommercialDashboard,
     EconomicDashboard,
     OperationalDashboard,
-    PeriodoQuery,
+    PeriodQuery,
     PipelineStageSummary,
 )
 from pigrocrm.core.dashboard.service import DashboardService
@@ -74,6 +73,7 @@ from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.pipeline.schemas import PipelineStageRead
 from pigrocrm.core.pipeline.service import PipelineService
@@ -101,20 +101,20 @@ class Seeded(NamedTuple):
 def seeded(db_engine: Engine) -> Iterator[Seeded]:
     factory = session_factory(db_engine)
     with factory() as session:
-        azienda_id = committed_default_azienda(session)
+        legal_entity_id = committed_default_legal_entity(session)
         stages = {s.code: s for s in PipelineService(session).seed_defaults(SEED) if s.code}
-        customer = Customer(ragione_sociale=f"{_PREFIX} Cliente", nazione="IT", custom_fields={})
+        customer = Organization(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         session.add(customer)
         session.flush()
         customer_id = customer.id
-        # No `data_chiusura_prevista`: the baseline for "prossime chiusure" has to be zero
+        # No `expected_close_date`: the baseline for "prossime chiusure" has to be zero
         # so that the intruder below is the only thing that could ever move it.
         base = Deal(
-            nome=f"{_PREFIX} base",
+            name=f"{_PREFIX} base",
             customer_id=customer_id,
             pipeline_stage_id=stages["lead"].id,
-            valore_previsto=Decimal("1000.00"),
-            probabilita=50,
+            expected_value=Decimal("1000.00"),
+            probability=50,
             custom_fields={},
         )
         session.add(base)
@@ -131,20 +131,22 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
             session.execute(
                 delete(Invoice).where(
                     Invoice.customer_id.in_(
-                        select(Customer.id).where(Customer.ragione_sociale.like(f"{_PREFIX} %"))
+                        select(Organization.id).where(Organization.legal_name.like(f"{_PREFIX} %"))
                     )
                 )
             )
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
-            session.execute(delete(Customer).where(Customer.ragione_sociale.like(f"{_PREFIX} %")))
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
+            session.execute(
+                delete(Organization).where(Organization.legal_name.like(f"{_PREFIX} %"))
+            )
             session.execute(delete(PipelineStage))
-            remove_azienda(session, azienda_id)
+            remove_legal_entity(session, legal_entity_id)
             session.commit()
 
 
 def _dashboard(engine: Engine) -> CommercialDashboard:
     with session_factory(engine)() as session:
-        return DashboardService(session).get_commercial_dashboard(PeriodoQuery(), READONLY)
+        return DashboardService(session).get_commercial_dashboard(PeriodQuery(), READONLY)
 
 
 def _read(engine: Engine, call: Callable[[DashboardService], Any]) -> Any:
@@ -160,9 +162,9 @@ def _imminent_date() -> date:
     the month is inside it and outside the period itself.
     """
     today = today_local()
-    _, fine_periodo = month_bounds(today.year, today.month)
-    _, imminente = window_from(fine_periodo, 10)
-    return imminente
+    _, period_end = month_bounds(today.year, today.month)
+    _, upcoming = window_from(period_end, 10)
+    return upcoming
 
 
 def _intruder_deal(seeded: Seeded) -> Deal:
@@ -173,12 +175,12 @@ def _intruder_deal(seeded: Seeded) -> Deal:
     figure moving would be a coincidence; the pair is the property.
     """
     return Deal(
-        nome=f"{_PREFIX} intruso",
+        name=f"{_PREFIX} intruso",
         customer_id=seeded.customer_id,
         pipeline_stage_id=seeded.stages["lead"].id,
-        valore_previsto=Decimal("9999.00"),
-        probabilita=50,
-        data_chiusura_prevista=_imminent_date(),
+        expected_value=Decimal("9999.00"),
+        probability=50,
+        expected_close_date=_imminent_date(),
         custom_fields={},
     )
 
@@ -188,27 +190,27 @@ def _intruder_invoice(seeded: Seeded) -> Invoice:
 
     It is what a deal cannot be: a row the *economic* and *operational* dashboards would
     each report from more than one query. Issued today, so it falls in the current month
-    (`fatture_emesse`, `pnl.in_corso.ricavi`); unpaid (`da_incassare`); due yesterday, so
-    `_overdue_predicate`'s strict `<` catches it (`scaduto`, `scaduto_non_incassato`); and
-    attached to the base deal, which sits on an `open` stage (`fatturato_non_vinto`) and
+    (`issued_invoices`, `pnl.in_progress.revenue`); unpaid (`unpaid`); due yesterday, so
+    `_overdue_predicate`'s strict `<` catches it (`expired`, `overdue_unpaid`); and
+    attached to the base deal, which sits on an `open` stage (`invoiced_unwon`) and
     gives `revenue_in_range` -- which groups by `deal_id` and skips nulls -- something to
     group by.
     """
     return Invoice(
         customer_id=seeded.customer_id,
         deal_id=seeded.deal_id,
-        tipo="fattura",
-        stato="emessa",
-        stato_pagamento="da_incassare",
-        imponibile=Decimal("9999.00"),
-        imposta=Decimal("0.00"),
-        bollo=Decimal("0.00"),
-        totale=Decimal("9999.00"),
-        data_emissione=today_local(),
-        data_scadenza=today_local() - timedelta(days=1),
-        causale=f"{_PREFIX} intruso",
-        tipo_documento="TD01",
-        divisa="EUR",
+        type="invoice",
+        status="issued",
+        payment_status="unpaid",
+        taxable_amount=Decimal("9999.00"),
+        vat_amount=Decimal("0.00"),
+        stamp_duty=Decimal("0.00"),
+        total=Decimal("9999.00"),
+        issue_date=today_local(),
+        due_date=today_local() - timedelta(days=1),
+        memo=f"{_PREFIX} intruso",
+        sdi_document_type="TD01",
+        currency="EUR",
         custom_fields={},
     )
 
@@ -224,7 +226,7 @@ def _run_with_a_commit_in_the_middle(
     monkeypatch: pytest.MonkeyPatch,
     *,
     call: Callable[[DashboardService], Any] = lambda service: service.get_commercial_dashboard(
-        PeriodoQuery(), READONLY
+        PeriodQuery(), READONLY
     ),
     barrier_on: tuple[type, str] = (DealRepository, "pipeline_summary"),
     intruder: str = "deal",
@@ -320,7 +322,7 @@ def test_the_constant_is_the_level_the_connection_actually_gets(
     assert dashboard_service.SNAPSHOT_ISOLATION == "REPEATABLE READ"
     monkeypatch.setattr(dashboard_service, "SNAPSHOT_ISOLATION", constant)
     with session_factory(seeded.engine)() as session:
-        DashboardService(session).get_commercial_dashboard(PeriodoQuery(), READONLY)
+        DashboardService(session).get_commercial_dashboard(PeriodQuery(), READONLY)
         level = session.execute(text("SHOW transaction_isolation")).scalar_one()
     assert level == shown
 
@@ -340,10 +342,10 @@ def test_clause_b_a_commit_before_the_first_aggregate_appears_in_no_figure(
     result, _instant = _run_with_a_commit_in_the_middle(seeded, monkeypatch)
 
     lead = _lead(result)
-    assert lead.numero == 1
-    assert lead.valore_totale == Decimal("1000.00")
-    assert lead.valore_ponderato == Decimal("500.00")
-    assert result.chiusure_previste_30_giorni == 0
+    assert lead.number == 1
+    assert lead.total_value == Decimal("1000.00")
+    assert lead.weighted_value == Decimal("500.00")
+    assert result.expected_closings_30_days == 0
 
 
 def test_the_intruder_really_was_committed_and_the_dashboard_can_see_it(
@@ -358,28 +360,28 @@ def test_the_intruder_really_was_committed_and_the_dashboard_can_see_it(
     _run_with_a_commit_in_the_middle(seeded, monkeypatch)
 
     later = _dashboard(seeded.engine)
-    assert _lead(later).numero == 2
-    assert _lead(later).valore_totale == Decimal("10999.00")
-    assert later.chiusure_previste_30_giorni == 1
+    assert _lead(later).number == 2
+    assert _lead(later).total_value == Decimal("10999.00")
+    assert later.expected_closings_30_days == 1
 
 
 # -- clause (c): the instant is the snapshot's, not the response's ---------------
 
 
-def test_clause_c_calcolato_alle_precedes_the_parallel_commit(
+def test_clause_c_calculated_at_precedes_the_parallel_commit(
     seeded: Seeded, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`calcolato_alle` is when the reading happened, not when the answering finished.
+    """`calculated_at` is when the reading happened, not when the answering finished.
 
     The bound is taken with `clock_timestamp()` on the writer's connection immediately
     before its COMMIT, so it is a real lower bound on that commit rather than a reading
-    taken after it. A `calcolato_alle` filled in at the end of the request -- with
+    taken after it. A `calculated_at` filled in at the end of the request -- with
     `clock_timestamp()`, or in Python -- lands after this instant and fails here, while
     still passing a bracket taken around the whole call.
     """
     result, instant_before_commit = _run_with_a_commit_in_the_middle(seeded, monkeypatch)
-    assert result.calcolato_alle < instant_before_commit, (
-        f"calcolato_alle {result.calcolato_alle} is not before the parallel commit at "
+    assert result.calculated_at < instant_before_commit, (
+        f"calcolato_alle {result.calculated_at} is not before the parallel commit at "
         f"{instant_before_commit}; it is not the snapshot's instant"
     )
 
@@ -403,20 +405,20 @@ def test_the_inversion_read_committed_leaks_the_parallel_commit(
     result, _instant = _run_with_a_commit_in_the_middle(seeded, monkeypatch)
 
     lead = _lead(result)
-    assert lead.numero == 2, (
+    assert lead.number == 2, (
         "in READ COMMITTED the post-barrier queries should have seen the parallel commit. "
         "They did not, which means the barrier is not actually landing between two "
         "statements -- fix the barrier before trusting clause (b)."
     )
-    assert lead.valore_totale == Decimal("10999.00")
-    assert result.chiusure_previste_30_giorni == 1
+    assert lead.total_value == Decimal("10999.00")
+    assert result.expected_closings_30_days == 1
 
 
 # -- criterion 6 on every dashboard, not on the first one built -------------------
 
 
 def _economic(service: DashboardService) -> EconomicDashboard:
-    return service.get_economic_dashboard(PeriodoQuery(), READONLY)
+    return service.get_economic_dashboard(PeriodQuery(), READONLY)
 
 
 def _operational(service: DashboardService) -> OperationalDashboard:
@@ -426,23 +428,23 @@ def _operational(service: DashboardService) -> OperationalDashboard:
 def _economic_figures(result: EconomicDashboard) -> dict[str, object]:
     """The four figures the invoice intruder would reach, from four separate queries.
 
-    `fatture_emesse` and `ricavi_in_corso` come from two different owners --
+    `issued_invoices` and `ricavi_in_corso` come from two different owners --
     `InvoiceRepository` and `AnalyticsService` -- so agreement between them is not a
     property of one query having been run once.
     """
     return {
-        "fatture_emesse": result.fatture_emesse,
-        "da_incassare": result.da_incassare,
-        "scaduto": result.scaduto,
-        "ricavi_in_corso": result.pnl.in_corso.ricavi,
+        "issued_invoices": result.issued_invoices,
+        "unpaid": result.unpaid,
+        "expired": result.expired,
+        "ricavi_in_corso": result.pnl.in_progress.revenue,
     }
 
 
 def _operational_figures(result: OperationalDashboard) -> dict[str, object]:
-    conteggi = {signal.codice: signal.conteggio for signal in result.segnali}
+    counts = {signal.code: signal.count for signal in result.signals}
     return {
-        "fatturato_non_vinto": conteggi["fatturato_non_vinto"],
-        "scaduto_non_incassato": conteggi["scaduto_non_incassato"],
+        "invoiced_unwon": counts["invoiced_unwon"],
+        "overdue_unpaid": counts["overdue_unpaid"],
     }
 
 
@@ -457,13 +459,13 @@ class _Dashboard(NamedTuple):
 _ALL_THREE = [
     _Dashboard(
         "commerciale",
-        lambda service: service.get_commercial_dashboard(PeriodoQuery(), READONLY),
+        lambda service: service.get_commercial_dashboard(PeriodQuery(), READONLY),
         (DealRepository, "pipeline_summary"),
         "deal",
         lambda result: {
-            "lead.numero": _lead(result).numero,
-            "lead.valore_totale": _lead(result).valore_totale,
-            "chiusure_previste_30_giorni": result.chiusure_previste_30_giorni,
+            "lead.numero": _lead(result).number,
+            "lead.valore_totale": _lead(result).total_value,
+            "expected_closings_30_days": result.expected_closings_30_days,
         },
     ),
     _Dashboard(
@@ -508,12 +510,12 @@ def test_clause_b_the_new_dashboards_see_no_mid_flight_commit(
     **no** figure of the response -- not in the money and not in the count.
 
     Both are asserted, and that is the point of the pair rather than of a total alone: an
-    implementation that leaked the row into `fatture_emesse` while keeping the revenue
+    implementation that leaked the row into `issued_invoices` while keeping the revenue
     right would pass a test that only checked the money, and that is exactly the shape a
     partially-snapshotted page takes.
 
     The expectation is a reading taken moments earlier on the same engine, not a literal
-    zero. `da_incassare`, `scaduto` and the two signals are whole-register aggregates with
+    zero. `unpaid`, `expired` and the two signals are whole-register aggregates with
     no period and no name to scope them, so a row left committed by another test file would
     move a literal and turn a real failure into an unexplainable one.
     """

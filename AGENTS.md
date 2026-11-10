@@ -25,15 +25,16 @@ typeface, the brand mark and the contrast maths every surface measures its colou
 with, which the CRM and the website must agree on and neither can own.
 `shared/analytics` is the second: the one PostHog project every surface reports to, and
 the policy the SPAs initialise it with. `shared/ui` is the third and the largest: the
-token layer both SPAs render on and the eighteen primitives they share, with a gallery
+token layer both SPAs render on and the seventeen primitives they share, with a gallery
 that renders every one of them and the contract tests that hold them to the record. **A
 primitive is generated there and nowhere else**: the repository has exactly one
 `components.json`, in that package, so `shadcn add` cannot quietly grow another local
 copy inside an application (REB-304). A project small enough to be a
 single artifact may be one package at its own root rather than growing an `apps/`
 directory with one entry in it, which is what
-`projects/website` is. `tooling/` holds the client-repo starter kit and the weekly
-Snyk report, and a directory is not created there before something real goes in it.
+`projects/website` is. `tooling/` holds the client-repo starter kit, the weekly
+Snyk report, the workflow kit and the English lint, and a directory is not created
+there before something real goes in it.
 
 ## The dependency rule, which is the whole reason these projects live together
 
@@ -82,10 +83,15 @@ nothing when you are not. Narrow to one project by passing its paths as argument
 
 ## Verification: three tiers, and where each check lives
 
-1. **Local, before the PR exists**: `.github/preflight.json`. Everything expensive:
-   the full Python suite, Playwright, the images. `preflight --list` prints what your
-   diff selects before you trust it; `preflight --install-hook` runs it on push.
-2. **`pull_request`**: one cheap gate per project, scoped by `dorny/paths-filter`.
+1. **Local, before the PR exists**: `.github/preflight.json`, run by the workflow kit's
+   `python3 .github/kit/bin/preflight` (no install, Python 3.10 and git). Everything
+   expensive: the full Python suite, Playwright, the images. `--list` prints what your
+   diff selects before you trust it; `--install-hook` runs it on push.
+2. **`pull_request`**: one cheap gate per project, scoped by `dorny/paths-filter`, plus
+   the workflow kit's own job (`kit · check and PR lint`): the PR's title and body
+   against `.github/workflow.json`, and the kit's copy against its manifest; and the
+   English lint (`english · identifiers and comments`, seconds), which reads every
+   project's names and comments and fails on Italian in them (§ Conventions).
 3. **`push` to `main`**: the heavy tier (the images), scoped by the
    same filters. It was unconditional until 2026-09-09, when the measurement said
    1,564 hosted minutes in eight days against a 2,000/month allowance on a private
@@ -127,6 +133,17 @@ gate in a four-way matrix and each job runs every fourth file of the sorted list
 longest job was 174s (REB-561). The `slow` and `planner` markers are deselected on
 every tier and no test carries them since REB-580: the fifty-thousand-row planner corpus
 went, because a space's tables never reach the size where the plan it asserted matters.
+
+**A killed run's PostgreSQL is removed by the next session, and on a local Docker daemon
+none listens publicly.** There the fixture publishes it on `127.0.0.1` (a port published on
+every interface is accepted by Docker's own iptables rules ahead of UFW); a remote daemon
+keeps Docker's default binding, so its exposure is that host's firewall's. It labels the
+container `letsrebase.tests.owner` with the pytest process that started it, so the next
+session removes any whose owner is gone: that is what cleans up after a killed run when
+`TESTCONTAINERS_RYUK_DISABLED=true` is set (REB-854). CI sets it in `_python-gate.yml`
+(REB-860): Ryuk, the one container published on every interface, failed to start there
+with «address already in use» five times in two days, and a runner is discarded after
+the job anyway. Never remove a labelled container by hand while its owner is alive.
 
 `ci` is the aggregate job and the only status check this repository should ever be
 asked to require, and since 2026-09-10 it is required: the ruleset "main: pull
@@ -193,6 +210,17 @@ repository secrets, `SNYK_TOKEN` and `LINEAR_API_KEY`; how to set and rotate the
 the dry run (`gh workflow run snyk-weekly.yml -f dry_run=true`), are in
 `tooling/snyk-weekly/README.md`.
 
+**The daily Linear audit is a sixth thing, read-only and not a status check.** Every
+morning at 06:20 UTC `.github/workflows/linear-audit.yml` runs the workflow kit's
+`linear_audit.py` against team `rebase` with the same `LINEAR_API_KEY`: cards without a
+project, a milestone, a priority, one type and one area label, a title under 80
+characters or (filed in the last day) a `**Done when.**` line, and projects owing an
+update or the Completed state. It prints identifiers and project names only, since the
+run log is public; a red run is the list to fix. Before any of that, in Claude Code and
+omp, the kit's Linear gate refuses a card, comment or update that breaks the
+`linear-content` rules a machine can check (`.claude/settings.json`,
+`.omp/hooks/pre/linear-gate.ts`).
+
 ## Conventions
 
 - **Conventional Commits**, in English, in the first person, written the way a person
@@ -209,17 +237,41 @@ the dry run (`gh workflow run snyk-weekly.yml -f dry_run=true`), are in
 
   The line, and it is the only one: **what the product says to its users stays in the
   user's language**, which for PigroCRM is Italian. That means the strings a person
-  reads or hears, not the code around them: UI copy, validation and error messages,
-  the OpenAPI descriptions rendered on the public docs page, every MCP tool, prompt
-  and resource description (an assistant reads those out to an Italian freelancer),
-  document templates and seeded content. When you cannot tell whether a docstring is
-  documentation or product surface, check whether a framework publishes it: a
-  `@mcp.tool()` or a FastAPI `description=` is the product speaking.
+  reads or hears inside the product, not the code around them: UI copy, validation and
+  error messages the web apps show, emails, push and Slack text, document templates and
+  seeded content. **What the code publishes to a developer or an agent is English**
+  (Lorenzo, 2026-11-03, REB-908): the OpenAPI document (titles, summaries, route,
+  schema and field descriptions), the MCP server's instructions, every tool, prompt and
+  resource description and every parameter description, the prompt bodies, the hints
+  only the MCP layer writes, and the CLI's help and output. Italian stays there only for
+  proper nouns and Italian terms with no English equivalent (FatturaPA, SdI, INPS, PEC),
+  and for a UI label quoted as the user sees it («Genera»).
 
-  Two things are grandfathered, deliberately. The dated design records under
-  `projects/pigrocrm/docs/superpowers/` are a verbatim record of decisions already
-  taken and are not retranslated: rewriting a record is how a record stops being one.
-  Anything written from now on, there included, is English.
+  **Identifiers are English too** (decided 2026-11-02, REB-897 to REB-904): database
+  tables, columns, enum values, constraint, index and policy names, REST paths, JSON
+  fields and query parameters, MCP tool and parameter names, CLI flags, environment
+  variables, module and file names, test names and comments. `docs/glossary.md` is the
+  one mapping from an Italian term to its English name; add the term there before you
+  invent a second one. `tooling/english-lint` enforces it on every pull request and in
+  preflight: it fails on an Italian word in an identifier or a file name, on a comment
+  or docstring written in Italian (a route's or a tool's included), and on the published
+  keyword strings (`description=`, `summary=`, `title=`, `help=`, `instructions=` of
+  FastAPI, Pydantic, MCP and argparse calls); it reads no other string literal, which
+  is where the product's Italian lives. Run it with
+  `python3 tooling/english-lint/english_lint.py <paths>` (`--summary` for counts per
+  directory); its few exceptions, each with a reason, are in
+  `tooling/english-lint/allowlist.py`.
+
+  What stays as it is, deliberately, and is not retranslated: the dated design records
+  under `projects/pigrocrm/docs/superpowers/` and the rows of `docs/design/DECISIONS.md`
+  (rewriting a record is how a record stops being one), every Alembic revision up to
+  the rename's own, the template variables people type (`{{cliente.provincia}}`), the
+  keys of users' custom fields, the FatturaPA element names, and the few names that live
+  outside our systems: the browser routes in bookmarks and sent mails (the redirect
+  stubs, `/app/entra`'s 301), the API URLs of mails already sent (the hub's
+  unsubscribe, team answer and magic link), the referral parameter `?rif=` next to its
+  English name, and the indexed `/termini`. A new one of those is a decision, not a
+  shortcut. Anything written from now on, there included, is English.
 - A design decision that is a rule rather than a picture goes in
   `docs/design/DECISIONS.md`, as a row, with the date.
 - **The tracker is Linear, and using it is not optional.** Team `rebase`, issue
@@ -244,10 +296,9 @@ the dry run (`gh workflow run snyk-weekly.yml -f dry_run=true`), are in
   step included, is a Linear card; in doubt, it is a Linear card, and only Ivan or
   Lorenzo opens a roadmap issue. A pull request may name the roadmap point it moves
   (`Roadmap: #297`) on the line right before its own `Linear: REB-N.` line, which
-  stays last so the check in `.claude/skills/pr-creation/` § Before `gh pr create`
-  still passes. `Closes #297` goes on that line only when merging that pull request
-  really finishes the whole roadmap point, which on a milestone's draft PR means
-  waiting for the card that finishes it.
+  stays last so `pr_lint.py`, a step of `ci`, still passes. `Closes #297` goes on
+  that line only when merging that pull request really finishes the whole roadmap
+  point, which on a milestone's draft PR means waiting for the card that finishes it.
 - **The weekly Snyk issue is the other kind, and only its workflow opens it.** When the
   Monday scan finds anything at medium or above, `snyk-weekly.yml` files a GitHub issue
   labelled `security`, the way Dependabot files an alert, and its twin Linear card,
@@ -341,20 +392,20 @@ the dry run (`gh workflow run snyk-weekly.yml -f dry_run=true`), are in
   the card; every comment, the closing evidence included, written before or right after
   the merge; `Canceled`; and the `In production` comment when a tag ships. An issue
   reference in a commit body is a pointer, not a link.
-- **A change to how this repository uses Linear reaches the client-repo template and
-  every repo already built from it, or it is a rule that quietly stops being true off
-  this board.** `docs/tracker.md`, `.claude/skills/linear-ticket`,
-  `.claude/skills/linear-content` and `.claude/skills/pr-creation` are the same shape
-  `tooling/client-repo-starter/template/` hands to a new client repo, and the shape
-  `letsrebase/point` (and any repo onboarded after it) already copied at setup. When
-  an edit to one of those four is not `rebase`-team-specific, fold the matching edit
-  into `tooling/client-repo-starter/template/` in the same pull request
-  (`.claude/skills/client-repo-onboarding/` § Keeping the template in step). For a
-  repository already onboarded, the fold cannot land in this PR: file a Linear issue
-  in that repository's own team, never in `rebase`'s, naming the drift, the same way
-  `tooling/client-repo-starter/README.md` § Retrofitting an existing repository
-  already asks for the fold's own PR. A lesson learned once and never carried over is
-  a lesson every future client repo, and `point` today, pays for again.
+- **The procedure for Linear, PRs and CI is the workflow kit, written once in
+  `tooling/workflow-kit/` and copied into every repository that uses it**: this one,
+  the client repositories built from `tooling/client-repo-starter/` (whose script runs
+  the kit's sync), and Lorenzo's
+  personal repositories (`docs/design/DECISIONS.md`, 2026-10-27). The kit's skills
+  (`linear-ticket`, `linear-content`, `pr-creation`) and scripts read this
+  repository's data from `.github/workflow.json` and its own steps from `docs/agents/`.
+  A change to the kit is made in `tooling/workflow-kit/files/`, with `VERSION` bumped,
+  and this repository is re-synced in the same pull request (`python3
+  .github/kit/bin/kit.py sync --source tooling/workflow-kit`); `ci` fails when the copy
+  here differs from its manifest. Another repository picks the change up with its own
+  sync, in its own pull request; for a client repository already onboarded, file that
+  sync as a Linear issue in its own team, never in `rebase`'s. `docs/tracker.md` stays
+  this repository's own contract.
 
 Find the issue before you start, check it is yours, move it as you go, and close it
 only against evidence on the surface it is about. A defect you found and did not fix
@@ -362,14 +413,29 @@ gets filed before you finish.
 
 ## Skills an agent is handed
 
-`.claude/skills/` holds the procedures an agent needs at a precise moment, so they are
-not left to memory: `pr-creation` (branch, title, body, review and merge loop, the
-hand-off to Linear), `linear-ticket` (the board workflow in one `save_issue` call, the
-state changes, the API quirks) and `linear-content` (how an issue, a comment, a closing
-comment or a project update is written here). They point at this file,
-`docs/tracker.md`, `.github/PULL_REQUEST_TEMPLATE.md` and `docs/design/DECISIONS.md`
-and restate as little of them as they can: the documents are the contract, the skills
-are the order of operations, and where the two disagree the skill has the bug.
+Skills are written in `.agents/skills/`, which Codex and other agents read, and
+`kit.py sync` copies them into `.claude/skills/` for Claude Code; omp reads both and
+collapses the identical copies. Never edit `.claude/skills/`: `ci` fails on a mirror
+that differs. A copy and not a symlink, because Git for Windows checks a symlink out as
+a plain text file unless the machine is in Developer Mode with `core.symlinks` on.
+
+The workflow kit's three are `pr-creation` (branch, title, body, review and merge loop,
+the hand-off to Linear), `linear-ticket` (the board workflow in one `save_issue` call,
+the state changes, the API quirks) and `linear-content` (how an issue, a comment, a
+closing comment or a project update is written). This repository's own steps for them
+are in `docs/agents/` (the Greptile and CodeRabbit loop, paused since 2026-10-30 with both
+bots off, REB-864; milestone branches; releases),
+and its own skills sit beside them (`client-repo-onboarding`, `posthog-analytics`,
+`social-content`). They point at this file, `docs/tracker.md`, `.github/workflow.json`
+and `docs/design/DECISIONS.md` and restate as little of them as they can: the documents
+are the contract, the skills are the order of operations, and where the two disagree
+the skill has the bug.
+
+The Linear server is committed: `.mcp.json` (Claude Code, omp) and `.codex/config.toml`
+(Codex) define it with no credential, and each person signs in on their own account the
+first time (`/mcp` in Claude Code and omp, `codex mcp login linear-rebase`). The skills
+prove the workspace with `get_workspace` before writing, since one machine often has
+several Linear workspaces signed in.
 
 ## What a human decides, not you
 

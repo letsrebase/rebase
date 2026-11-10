@@ -8,11 +8,11 @@ const EMAIL = 'e2e@pigro.it'
 const PASSWORD = 'supersegreta1'
 
 test('an unauthenticated visitor is sent to the login page', async ({ page }) => {
-  await page.goto('/app/customers')
+  await page.goto('/app/organizations')
   // The guard in routes/app.tsx sends the visitor to the login with the page they asked
   // for as `redirect`, which the login reads back once a session exists: that is the
   // whole URL, and a bare `/app/login$` has not matched it since that parameter exists.
-  await expect(page).toHaveURL(/\/app\/login\?redirect=%2Fapp%2Fcustomers$/)
+  await expect(page).toHaveURL(/\/app\/login\?redirect=%2Fapp%2Forganizations$/)
 })
 
 test('a wrong password is rejected without saying which field was wrong', async ({ page }) => {
@@ -34,7 +34,7 @@ test('a correct login reaches the dashboard and logout returns to login', async 
   await page.getByRole('button', { name: 'Accedi' }).click()
 
   // `(\?|$)` rather than `(\/|$)`: `/app/` carries a `validateSearch` since slice 6, so a
-  // correct login lands on `/app?tab=commerciale&da=…&a=…`. The old alternation was also
+  // correct login lands on `/app?tab=commercial&from=…&to=…`. The old alternation was also
   // satisfied by `/app/login` itself, which is the failure mode `helpers.ts::login`
   // documents at length.
   await expect(page).toHaveURL(/\/app\/?(\?|$)/)

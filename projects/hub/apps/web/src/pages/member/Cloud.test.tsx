@@ -18,7 +18,7 @@ const DASH = '–'
 
 const THANKS = 'Grazie: ti scriviamo entro due giorni lavorativi.'
 const CLOSED = 'Il talent cloud non è aperto per questo account.'
-const DESCRIZIONE =
+const DESCRIPTION =
   'Ci serve una web app per i clienti: pagamenti, dashboard dei conti, API di open banking.'
 
 const ADA_ID = '9d0c1a2b-1111-4111-8111-000000000001'
@@ -30,76 +30,76 @@ const GRACE_ID = '9d0c1a2b-2222-4222-8222-000000000002'
  *  company. */
 const ADA = {
   freelancer_id: ADA_ID,
-  nome: 'Ada',
-  cognome: 'Lovelace',
+  first_name: 'Ada',
+  last_name: 'Lovelace',
   linkedin_url: 'https://www.linkedin.com/in/ada',
   links: ['https://github.com/ada', 'javascript:alert(1)'],
   vetted: true,
   card: {
-    ruolo: 'Backend developer',
+    role: 'Backend developer',
     seniority: 'senior',
-    anni: 9,
-    competenze: ['Python', 'FastAPI'],
-    settori: ['fintech'],
-    lingue: ['italiano', 'inglese'],
-    luogo: null,
-    sintesi: 'Nove anni su sistemi di pagamento, dal disegno delle API al rilascio.',
+    experience_years: 9,
+    skills: ['Python', 'FastAPI'],
+    industries: ['fintech'],
+    languages: ['italiano', 'inglese'],
+    location: null,
+    profile_summary: 'Nove anni su sistemi di pagamento, dal disegno delle API al rilascio.',
   },
-  modalita: 'remoto',
-  fascia: { min: 500, max: 650 },
-  ha_cv: true,
-  tariffa_giornaliera: '463.21',
-  stato: 'attivo',
+  mode: 'remote',
+  band: { min: 500, max: 650 },
+  has_cv: true,
+  daily_rate: '463.21',
+  status: 'active',
   note: 'Nota riservata dell’admin',
   email: 'ada@studio.it',
-  telefono: '+39 333 1112233',
+  phone: '+39 333 1112233',
 }
 
 const GRACE = {
   freelancer_id: GRACE_ID,
-  nome: 'Grace',
-  cognome: 'Hopper',
+  first_name: 'Grace',
+  last_name: 'Hopper',
   linkedin_url: null,
   links: [],
   vetted: false,
   card: {
-    ruolo: 'Frontend developer',
+    role: 'Frontend developer',
     seniority: 'mid',
-    anni: 1,
-    competenze: ['React'],
-    settori: [],
-    lingue: ['italiano'],
-    luogo: null,
-    sintesi: 'Interfacce in React per prodotti rivolti ai clienti finali.',
+    experience_years: 1,
+    skills: ['React'],
+    industries: [],
+    languages: ['italiano'],
+    location: null,
+    profile_summary: 'Interfacce in React per prodotti rivolti ai clienti finali.',
   },
-  modalita: null,
-  fascia: null,
-  ha_cv: false,
+  mode: null,
+  band: null,
+  has_cv: false,
 }
 
-const LIST = { items: [ADA, GRACE], ruoli: ['Backend developer', 'Frontend developer'], capped: false }
+const LIST = { items: [ADA, GRACE], roles: ['Backend developer', 'Frontend developer'], capped: false }
 
 const PROPOSAL = {
   id: '5b1f2c3d-4e5f-4a6b-8c7d-00000000abcd',
-  riassunto: 'Una web app per i clienti di una fintech: chi fa il backend.',
-  luogo: { locale: false, dove: null },
+  summary: 'Una web app per i clienti di una fintech: chi fa il backend.',
+  location: { on_site: false, place: null },
   team: [
     {
-      posizione: 1,
+      position: 1,
       freelancer_id: ADA_ID,
-      nome: 'Ada',
-      cognome: 'Lovelace',
-      ruolo: 'Backend developer',
-      motivazione: 'Ha costruito le API di pagamento di due banche.',
-      giorni_settimana: 5,
-      scheda: { ...ADA.card, luogo: 'Torino' },
-      modalita: 'remoto',
-      fascia: { min: 500, max: 650 },
+      first_name: 'Ada',
+      last_name: 'Lovelace',
+      role: 'Backend developer',
+      reasoning: 'Ha costruito le API di pagamento di due banche.',
+      week_days: 5,
+      card: { ...ADA.card, location: 'Torino' },
+      mode: 'remote',
+      band: { min: 500, max: 650 },
     },
   ],
-  economia: { giorno: { min: 500, max: 650 }, mese: { min: 11000, max: 14300 }, giorni_mese: 22 },
+  economics: { day: { min: 500, max: 650 }, month: { min: 11000, max: 14300 }, days_month: 22 },
   previous_id: null,
-  origine: 'cloud',
+  origin: 'cloud',
   created_at: '2026-09-26T08:00:00Z',
 }
 
@@ -202,7 +202,7 @@ describe('Talent cloud, its states', () => {
   })
 
   it('says so when the cloud has nobody yet', async () => {
-    serve({ '/api/hub/me/cloud/talents': () => answer(200, { items: [], ruoli: [], capped: false }) })
+    serve({ '/api/hub/me/cloud/talents': () => answer(200, { items: [], roles: [], capped: false }) })
     mount()
     expect(await screen.findByText('Nel talent cloud non c’è ancora nessun profilo.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Togli i filtri' })).toBeNull()
@@ -226,7 +226,7 @@ describe('Talent cloud, the cards', () => {
     const ada = within(card('Ada Lovelace'))
     expect(ada.getByText('Backend developer, Senior, 9 anni di esperienza')).toBeInTheDocument()
     expect(ada.getByText('Verificato da rebase')).toBeInTheDocument()
-    expect(ada.getByText(ADA.card.sintesi)).toBeInTheDocument()
+    expect(ada.getByText(ADA.card.profile_summary)).toBeInTheDocument()
     expect(within(ada.getByRole('list', { name: 'Competenze' })).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['Python', 'FastAPI'])
     expect(within(ada.getByRole('list', { name: 'Settori' })).getByText('fintech')).toBeInTheDocument()
     expect(within(ada.getByRole('list', { name: 'Lingue' })).getByText('inglese')).toBeInTheDocument()
@@ -251,7 +251,7 @@ describe('Talent cloud, the cards', () => {
     const names = screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)
     expect(names.slice(-2)).toEqual(['Ada Lovelace', 'Grace Hopper'])
     const page = document.body.textContent ?? ''
-    for (const secret of ['463', 'attivo', 'Nota riservata', 'ada@studio.it', '+39', 'Torino']) {
+    for (const secret of ['463', 'active', 'Nota riservata', 'ada@studio.it', '+39', 'Torino']) {
       expect(page).not.toContain(secret)
     }
   })
@@ -261,7 +261,7 @@ describe('Talent cloud, the filters', () => {
   it('sends each filter as the API takes it, and clears them all at once', async () => {
     const spy = serve({
       '/api/hub/me/cloud/talents': (url) =>
-        url.searchParams.get('competenza') === 'cobol' ? answer(200, { ...LIST, items: [] }) : answer(200, LIST),
+        url.searchParams.get('skill') === 'cobol' ? answer(200, { ...LIST, items: [] }) : answer(200, LIST),
     })
     const user = userEvent.setup()
     mount()
@@ -269,27 +269,27 @@ describe('Talent cloud, the filters', () => {
     expect(talentCalls(spy)[0]?.toString()).toBe('')
 
     await pick(user, 'Ruolo', 'Frontend developer')
-    await waitFor(() => expect(talentCalls(spy).at(-1)?.get('ruolo')).toBe('Frontend developer'))
+    await waitFor(() => expect(talentCalls(spy).at(-1)?.get('role')).toBe('Frontend developer'))
     await pick(user, 'Seniority', 'Senior')
     await waitFor(() => expect(talentCalls(spy).at(-1)?.get('seniority')).toBe('senior'))
     await pick(user, 'Modalità', 'Ibrido')
-    await waitFor(() => expect(talentCalls(spy).at(-1)?.get('modalita')).toBe('ibrido'))
+    await waitFor(() => expect(talentCalls(spy).at(-1)?.get('mode')).toBe('hybrid'))
     await pick(user, 'Fascia', `500${DASH}650${NBSP}€ al giorno`)
     await waitFor(() => {
       const last = talentCalls(spy).at(-1)
-      expect([last?.get('fascia_min'), last?.get('fascia_max')]).toEqual(['500', '650'])
+      expect([last?.get('min_band'), last?.get('max_band')]).toEqual(['500', '650'])
     })
     // The band with no top sends its bottom alone.
     await pick(user, 'Fascia', `oltre 800${NBSP}€ al giorno`)
     await waitFor(() => {
       const last = talentCalls(spy).at(-1)
-      expect([last?.get('fascia_min'), last?.has('fascia_max')]).toEqual(['800', false])
+      expect([last?.get('min_band'), last?.has('max_band')]).toEqual(['800', false])
     })
 
     // One skill, sent once the typing stops.
     await user.type(screen.getByLabelText('Competenza'), 'cobol')
-    await waitFor(() => expect(talentCalls(spy).at(-1)?.get('competenza')).toBe('cobol'))
-    expect(talentCalls(spy).filter((params) => params.has('competenza'))).toHaveLength(1)
+    await waitFor(() => expect(talentCalls(spy).at(-1)?.get('skill')).toBe('cobol'))
+    expect(talentCalls(spy).filter((params) => params.has('skill'))).toHaveLength(1)
     expect(await screen.findByText('Nessun profilo corrisponde ai filtri.')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Togli i filtri' }))
@@ -347,10 +347,10 @@ describe('Talent cloud, the builder inside', () => {
     })
     const user = userEvent.setup()
     mount()
-    await user.type(await screen.findByLabelText('Descrizione del progetto'), DESCRIZIONE)
+    await user.type(await screen.findByLabelText('Descrizione del progetto'), DESCRIPTION)
     await user.click(screen.getByRole('button', { name: 'Proponi il team' }))
-    await screen.findByText(PROPOSAL.riassunto)
-    expect(posted(spy, '/api/hub/me/cloud/proposals')).toEqual([{ descrizione: DESCRIZIONE, persone: 1 }])
+    await screen.findByText(PROPOSAL.summary)
+    expect(posted(spy, '/api/hub/me/cloud/proposals')).toEqual([{ description: DESCRIPTION, people: 1 }])
     expect(posted(spy, '/api/hub/team/proposals')).toEqual([])
     // The cloud shows who each person is: the builder's card is headed by the name.
     const team = screen.getByRole('list', { name: 'Il team' })

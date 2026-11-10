@@ -81,14 +81,14 @@ def test_the_cli_indexes_every_users_row_not_only_the_owner_and_is_idempotent(
     owner = f"owner-{uuid4()}@studio.it"
     invited = f"invited-{uuid4()}@studio.it"
     try:
-        service.provision(TenantSignup(slug=slug, nome="Ada", email=owner))
+        service.provision(TenantSignup(first_name="Ada", slug=slug, name="Ada", email=owner))
         space = create_engine(
             tenant_database_url(settings, tenant_database_name(slug)), future=True
         )
         try:
             with session_factory(space)() as space_session:
                 UserService(space_session).create(
-                    UserCreate(email=invited, password=None, nome="Bea", ruolo="collaboratore"),
+                    UserCreate(email=invited, password=None, name="Bea", role="collaborator"),
                     Actor.system(),
                 )
         finally:
@@ -97,12 +97,12 @@ def test_the_cli_indexes_every_users_row_not_only_the_owner_and_is_idempotent(
         monkeypatch.setattr(cli, "get_settings", lambda: settings)
         assert cli.main(["rebuild-identity-index"]) == 0
         out = capsys.readouterr().out
-        assert f"{slug}: 2 indirizzi, 2 nuove identità" in out
+        assert f"{slug}: 2 addresses, 2 new identities" in out
         assert _identities(registry_session, {owner, invited}) == {owner, invited}
 
         # A second run has nothing new to add and says so.
         assert cli.main(["rebuild-identity-index"]) == 0
-        assert f"{slug}: 2 indirizzi, già indicizzati" in capsys.readouterr().out
+        assert f"{slug}: 2 addresses, already indexed" in capsys.readouterr().out
         assert _identities(registry_session, {owner, invited}) == {owner, invited}
         assert (
             registry_session.scalar(select(Identity.id).where(Identity.email.in_({owner, invited})))
@@ -131,8 +131,8 @@ def test_overlapping_owner_emails_across_spaces_produce_one_identity_row_per_add
     slug_a = f"prova-overlap-a-{uuid4().hex[:8]}"
     slug_b = f"prova-overlap-b-{uuid4().hex[:8]}"
     try:
-        service.provision(TenantSignup(slug=slug_a, nome="Ada", email=shared))
-        service.provision(TenantSignup(slug=slug_b, nome="Ada", email=shared))
+        service.provision(TenantSignup(first_name="Ada", slug=slug_a, name="Ada", email=shared))
+        service.provision(TenantSignup(first_name="Ada", slug=slug_b, name="Ada", email=shared))
 
         monkeypatch.setattr(cli, "get_settings", lambda: settings)
         assert cli.main(["rebuild-identity-index"]) == 0
@@ -163,7 +163,7 @@ def test_the_cli_skips_a_space_it_cannot_reach_and_still_indexes_the_others(
     ghost = f"prova-fantasma-{uuid4().hex[:8]}"
     owner = f"reachable-{uuid4()}@studio.it"
     try:
-        service.provision(TenantSignup(slug=slug, nome="Ada", email=owner))
+        service.provision(TenantSignup(first_name="Ada", slug=slug, name="Ada", email=owner))
         registry_session.add(
             Tenant(slug=ghost, db_name=tenant_database_name(ghost), owner_email="x@studio.it")
         )
@@ -174,9 +174,9 @@ def test_the_cli_skips_a_space_it_cannot_reach_and_still_indexes_the_others(
         captured = capsys.readouterr()
         ghost_lines = [line for line in captured.err.splitlines() if line.startswith(ghost)]
         assert len(ghost_lines) == 1
-        assert ghost_lines[0].startswith(f"{ghost}: non raggiungibile (")
+        assert ghost_lines[0].startswith(f"{ghost}: unreachable (")
         assert "x:y" not in captured.err and settings.database_url not in captured.err
-        assert f"{slug}: 1 indirizzi, 1 nuove identità" in captured.out
+        assert f"{slug}: 1 addresses, 1 new identities" in captured.out
         assert _identities(registry_session, {owner}) == {owner}
     finally:
         _drop(settings, slug)
@@ -197,7 +197,7 @@ def test_the_cli_never_fails_when_the_registry_is_unreachable(
     monkeypatch.setattr(cli, "get_settings", lambda: unreachable)
     assert cli.main(["rebuild-identity-index"]) == 0
     err = capsys.readouterr().err
-    assert "registro degli spazi non raggiungibile (" in err and "x:y" not in err
+    assert "space registry unreachable (" in err and "x:y" not in err
 
 
 def test_a_space_with_no_users_is_reported_and_touches_no_identity(
@@ -212,7 +212,9 @@ def test_a_space_with_no_users_is_reported_and_touches_no_identity(
     service = TenantService(registry_session, settings)
     slug = f"prova-vuoto-{uuid4().hex[:8]}"
     try:
-        service.provision(TenantSignup(slug=slug, nome="Ada", email=f"solo-{uuid4()}@studio.it"))
+        service.provision(
+            TenantSignup(first_name="Ada", slug=slug, name="Ada", email=f"solo-{uuid4()}@studio.it")
+        )
         space = create_engine(
             tenant_database_url(settings, tenant_database_name(slug)), future=True
         )
@@ -224,7 +226,7 @@ def test_a_space_with_no_users_is_reported_and_touches_no_identity(
 
         monkeypatch.setattr(cli, "get_settings", lambda: settings)
         assert cli.main(["rebuild-identity-index"]) == 0
-        assert f"{slug}: nessun utente" in capsys.readouterr().out
+        assert f"{slug}: no users" in capsys.readouterr().out
     finally:
         _drop(settings, slug)
         registry_session.execute(text("delete from tenants where slug = :s"), {"s": slug})

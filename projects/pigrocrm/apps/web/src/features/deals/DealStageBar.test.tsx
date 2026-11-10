@@ -8,22 +8,22 @@ import { DealStageBar } from './DealStageBar'
 import type { Deal, Stage } from './queries'
 
 const STAGES: Stage[] = [
-  { id: 's3', nome: 'Proposta', posizione: 3, probabilita_default: 60, tipo: 'open', code: null },
-  { id: 's1', nome: 'Contatto', posizione: 1, probabilita_default: 10, tipo: 'open', code: null },
-  { id: 's2', nome: 'Analisi', posizione: 2, probabilita_default: 30, tipo: 'open', code: null },
-  { id: 'won', nome: 'Vinto', posizione: 4, probabilita_default: 100, tipo: 'won', code: 'won' },
-  { id: 'lost', nome: 'Perso', posizione: 5, probabilita_default: 0, tipo: 'lost', code: 'lost' },
+  { id: 's3', name: 'Proposta', position: 3, default_probability: 60, type: 'open', code: null },
+  { id: 's1', name: 'Contatto', position: 1, default_probability: 10, type: 'open', code: null },
+  { id: 's2', name: 'Analisi', position: 2, default_probability: 30, type: 'open', code: null },
+  { id: 'won', name: 'Vinto', position: 4, default_probability: 100, type: 'won', code: 'won' },
+  { id: 'lost', name: 'Perso', position: 5, default_probability: 0, type: 'lost', code: 'lost' },
 ]
 
 function deal(stageId: string): Deal {
-  return { id: 'd1', nome: 'Sito', pipeline_stage_id: stageId } as unknown as Deal
+  return { id: 'd1', name: 'Sito', pipeline_stage_id: stageId } as unknown as Deal
 }
 
 describe('DealStageBar', () => {
   it('draws the open stages in pipeline order and marks the current one', () => {
     render(<DealStageBar deal={deal('s2')} stages={STAGES} canMove onMove={vi.fn()} />)
     const segments = screen.getAllByRole('button')
-    // Ordered by `posizione`, not by the order the API happened to return them in, and
+    // Ordered by `position`, not by the order the API happened to return them in, and
     // the two outcomes are not steps.
     expect(segments.map((button) => button.textContent)).toEqual(['Contatto', 'Analisi', 'Proposta'])
     expect(screen.getByRole('button', { name: 'Analisi' })).toHaveAttribute('aria-current', 'step')

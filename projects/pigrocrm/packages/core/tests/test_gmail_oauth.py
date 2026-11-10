@@ -32,10 +32,11 @@ from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings, decode_google_token_key
+from pigrocrm.core.crypto import seal, unseal
 from pigrocrm.core.drive.models import GoogleDriveAccount
 from pigrocrm.core.errors import Conflict, DomainError, PermissionDenied
-from pigrocrm.core.gmail.crypto import seal, unseal
 from pigrocrm.core.gmail.models import (
+    GmailKnownAddress,
     GmailMessage,
     GmailMessageLink,
     GoogleAccount,
@@ -46,6 +47,7 @@ from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES, SCOPE_EMAIL, SCOPE_READONLY, SCOPE_SEND
 from pigrocrm.core.gmail.tokens import GOOGLE_AUTH_URL, GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.google.states import OAuthStateRepository
 from pigrocrm.core.tenants import space_base_settings
 
 KEY = b"k" * 32
@@ -94,15 +96,15 @@ def _service(
     )
 
 
-def _user(session: Session, email: str = "owner@example.it", ruolo: str = "admin") -> User:
-    user = User(email=email, nome="Owner", password_hash="x", ruolo=ruolo, attivo=True)
+def _user(session: Session, email: str = "owner@example.it", role: str = "admin") -> User:
+    user = User(email=email, name="Owner", password_hash="x", role=role, active=True)
     session.add(user)
     session.flush()
     return user
 
 
-def _actor(user: User, ruolo: str = "admin") -> Actor:
-    return Actor(id=user.id, type="user", role=ruolo)  # type: ignore[arg-type]
+def _actor(user: User, role: str = "admin") -> Actor:
+    return Actor(id=user.id, type="user", role=role)  # type: ignore[arg-type]
 
 
 def _start(service: GmailOAuthService, actor: Actor) -> tuple[str, dict[str, list[str]]]:
@@ -209,7 +211,7 @@ def test_complete_stores_the_refresh_token_encrypted_and_records_the_connection(
     assert REFRESH.encode() not in account.refresh_token_ciphertext
     assert unseal(account.refresh_token_ciphertext, account.refresh_token_nonce, KEY) == REFRESH
     kinds = db_session.execute(select(Activity.kind)).scalars().all()
-    assert "gmail.account_collegato" in kinds
+    assert "gmail.account_connected" in kinds
 
 
 def test_the_verifier_that_reaches_google_is_the_pre_image_of_the_published_challenge(
@@ -298,7 +300,7 @@ def test_a_state_refused_for_the_wrong_user_is_burned_and_not_returned_to_its_ow
 
 def test_an_expired_state_is_refused(db_session: Session) -> None:
     """The TTL is a wall-clock interval, not a calendar date, so there is no year to
-    hard-code and nothing for `oggi_in_italia` to project."""
+    hard-code and nothing for `today_local` to project."""
     user = _user(db_session)
     service = _service(db_session, _fake())
     state = _state_of(service, _actor(user))
@@ -603,7 +605,7 @@ def test_an_unconfigured_installation_refuses_the_callback_too(db_session: Sessi
 
 
 def test_a_readonly_actor_can_neither_start_nor_disconnect(db_session: Session) -> None:
-    user = _user(db_session, "reader@example.it", ruolo="readonly")
+    user = _user(db_session, "reader@example.it", role="readonly")
     service = _service(db_session, _fake())
     with pytest.raises(PermissionDenied):
         service.start(_actor(user, "readonly"))
@@ -626,7 +628,7 @@ def _stored_message(session: Session, account: GoogleAccount, gmail_id: str) -> 
         subject="Oggetto",
         snippet="anteprima",
         internal_date=datetime.now(UTC),
-        body_text="corpo",
+        body_text="body",
         attachments=[],
     )
     session.add(message)
@@ -651,7 +653,7 @@ def test_disconnect_overwrites_the_credential_rather_than_dereferencing_it(
     assert account.status == "disconnected"
     assert account.disconnected_at is not None
     kinds = db_session.execute(select(Activity.kind)).scalars().all()
-    assert "gmail.account_scollegato" in kinds
+    assert "gmail.account_disconnected" in kinds
 
 
 def test_disconnect_records_the_choice_about_the_stored_messages(db_session: Session) -> None:
@@ -668,13 +670,13 @@ def test_disconnect_records_the_choice_about_the_stored_messages(db_session: Ses
 
     payload = (
         db_session.execute(
-            select(Activity.payload).where(Activity.kind == "gmail.account_scollegato")
+            select(Activity.payload).where(Activity.kind == "gmail.account_disconnected")
         )
         .scalars()
         .one()
     )
-    assert payload["messaggi_cancellati"] is True
-    assert payload["messaggi_cancellati_conteggio"] == 1
+    assert payload["deleted_messages"] is True
+    assert payload["count_deleted_messages"] == 1
 
 
 def test_disconnecting_with_deletion_removes_the_messages_and_their_links(
@@ -690,7 +692,7 @@ def test_disconnecting_with_deletion_removes_the_messages_and_their_links(
     account = db_session.execute(select(GoogleAccount)).scalars().one()
     message = _stored_message(db_session, account, "m1")
     db_session.add(
-        GmailMessageLink(gmail_message_id=message.id, entity_type="customer", entity_id=uuid4())
+        GmailMessageLink(gmail_message_id=message.id, entity_type="organization", entity_id=uuid4())
     )
     db_session.flush()
 
@@ -726,14 +728,10 @@ def test_disconnecting_nothing_is_a_refusal_and_not_a_silent_success(
 # --- the state table's own housekeeping ----------------------------------------------
 
 
-def test_prune_states_removes_the_expired_rows_and_only_those(db_session: Session) -> None:
-    """`refresh_tokens` has this same problem and, per residuo R8, no pruning at all --
-    this table does not repeat it."""
-    user = _user(db_session)
+def _states_expiring(session: Session, user: User, *offsets: timedelta) -> None:
     now = datetime.now(UTC)
-    repo = GmailRepository(db_session)
-    for offset in (-timedelta(minutes=10), -timedelta(seconds=1), timedelta(minutes=5)):
-        repo.add_state(
+    for offset in offsets:
+        session.add(
             GoogleOAuthState(
                 jti=f"jti-{offset.total_seconds()}",
                 code_verifier="v" * 43,
@@ -741,10 +739,88 @@ def test_prune_states_removes_the_expired_rows_and_only_those(db_session: Sessio
                 expires_at=now + offset,
             )
         )
+    session.flush()
 
-    assert repo.prune_states(now) == 2
-    survivors = db_session.execute(select(GoogleOAuthState.jti)).scalars().all()
-    assert survivors == ["jti-300.0"]
+
+def test_prune_expired_removes_the_expired_rows_and_only_those(db_session: Session) -> None:
+    """`refresh_tokens` has this same problem and, per residuo R8, no pruning at all --
+    this table does not repeat it."""
+    user = _user(db_session)
+    _states_expiring(
+        db_session, user, -timedelta(minutes=10), -timedelta(seconds=1), timedelta(minutes=5)
+    )
+
+    assert OAuthStateRepository(db_session).prune_expired(datetime.now(UTC)) == 2
+
+    assert db_session.execute(select(GoogleOAuthState.jti)).scalars().all() == ["jti-300.0"]
+
+
+def test_starting_a_consent_prunes_the_expired_states(db_session: Session) -> None:
+    """The table is tidied by whoever starts a consent next, since that is the only
+    thing that grows it -- not by the Gmail sync, which a space with no mailbox (a Drive
+    or a Slack connection only) never runs."""
+    user = _user(db_session)
+    _states_expiring(db_session, user, -timedelta(minutes=10), timedelta(minutes=5))
+
+    _, query = _start(_service(db_session, _fake()), _actor(user))
+
+    survivors = set(db_session.execute(select(GoogleOAuthState.jti)).scalars().all())
+    assert survivors == {"jti-300.0", query["state"][0]}
+
+
+# --- a mailbox that changes identity starts clean --------------------------------------
+
+
+def _connected_with_history(db_session: Session, user: User, fake: FakeGmail) -> GoogleAccount:
+    """A connected mailbox that has synced: a watermark, a last sync, a searched address."""
+    service = _service(db_session, fake)
+    service.complete(code="c1", state=_state_of(service, _actor(user)), actor=_actor(user))
+    account = _accounts(db_session)[0]
+    account.sync_watermark = datetime.now(UTC) - timedelta(hours=1)
+    account.last_sync_at = datetime.now(UTC) - timedelta(hours=1)
+    db_session.add(GmailKnownAddress(google_account_id=account.id, address="cliente@acme.it"))
+    db_session.flush()
+    return account
+
+
+def test_a_different_mailbox_does_not_inherit_the_previous_ones_sync_state(
+    db_session: Session,
+) -> None:
+    """The watermark and the register of searched addresses describe the mailbox that
+    left. Kept, the new mailbox's first cycle would read from where the other stopped
+    and its backfill would skip every address the other had been searched for: its
+    history would silently never arrive."""
+    user = _user(db_session)
+    fake = _fake()
+    account = _connected_with_history(db_session, user, fake)
+    service = _service(db_session, fake)
+    service.disconnect(delete_messages=False, actor=_actor(user))
+
+    fake.id_token = _id_token("999999", "someone.else@gmail.com")
+    service.complete(code="c2", state=_state_of(service, _actor(user)), actor=_actor(user))
+
+    db_session.refresh(account)
+    assert account.email_address == "someone.else@gmail.com"
+    assert account.sync_watermark is None
+    assert account.last_sync_at is None
+    assert GmailRepository(db_session).seen_addresses(account.id) == set()
+
+
+def test_the_same_mailbox_reconnected_keeps_its_sync_state(db_session: Session) -> None:
+    """Disconnecting and reconnecting the same mailbox is a new consent for the same
+    history, so the watermark and the searched addresses stay."""
+    user = _user(db_session)
+    fake = _fake()
+    account = _connected_with_history(db_session, user, fake)
+    watermark = account.sync_watermark
+    service = _service(db_session, fake)
+    service.disconnect(delete_messages=False, actor=_actor(user))
+
+    service.complete(code="c2", state=_state_of(service, _actor(user)), actor=_actor(user))
+
+    db_session.refresh(account)
+    assert account.sync_watermark == watermark
+    assert GmailRepository(db_session).seen_addresses(account.id) == {"cliente@acme.it"}
 
 
 # --- a space on the root's client (REB-394) -------------------------------------------

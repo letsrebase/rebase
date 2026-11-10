@@ -15,7 +15,7 @@ from testcontainers.community.postgres import PostgresContainer
 from rebase_core.db import Base
 from rebase_core.migrate import INI_PATH, head_revision, upgrade_to_head
 
-_NUMERO = count(1)
+_NUMBER = count(1)
 
 
 def _user(connection: Connection, email: str) -> str:
@@ -104,7 +104,7 @@ def _signed_letter(
                 "false, '{}', :n, '\\x00', 'firmato', "
                 "now() - CAST(:ago AS interval), :a, now(), now()) RETURNING id"
             ),
-            {"m": match, "f": freelancer_id, "a": admin, "ago": ago, "n": next(_NUMERO)},
+            {"m": match, "f": freelancer_id, "a": admin, "ago": ago, "n": next(_NUMBER)},
         ).scalar_one()
     )
 
@@ -122,9 +122,9 @@ def _reward(connection: Connection, referral_id: str, document_id: str) -> None:
 
 def _rows(connection: Connection) -> dict[str, tuple[str, bool, str | None]]:
     return {
-        str(row.id): (row.stato, row.verified_at is not None, row.verified_via)
+        str(row.id): (row.status, row.verified_at is not None, row.verified_via)
         for row in connection.execute(
-            text("SELECT id, stato, verified_at, verified_via FROM referrals")
+            text("SELECT id, status, verified_at, verified_via FROM referrals")
         )
     }
 
@@ -161,11 +161,11 @@ def test_migration_0030_keeps_what_counts_counting_and_runs_again() -> None:
                 _company(connection, tweety),
             )
             # A reward already written: it counted, whoever logged in. The letter's signer is
-            # the freelancer, so the company referral is `storico`, not `lettera`.
+            # the freelancer, so the company referral is `storico`, not `letter`.
             letter = _signed_letter(connection, ada_card, wile_co, admin, "3 days")
             with_reward = _referral(connection, referrer, "company", wile_co)
             _reward(connection, with_reward, letter)
-            # A freelancer who signed a letter, with no reward on file: `lettera`.
+            # A freelancer who signed a letter, with no reward on file: `letter`.
             signed = _referral(connection, referrer, "freelancer", grace_card)
             _signed_letter(connection, grace_card, road_co, admin, "4 days")
             # A login after the referral was made: `accesso`, at that login.
@@ -188,12 +188,12 @@ def test_migration_0030_keeps_what_counts_counting_and_runs_again() -> None:
                 connection, referrer, "freelancer", "00000000-0000-0000-0000-00000000dead"
             )
         expected = {
-            with_reward: ("verificato", True, "storico"),
-            signed: ("verificato", True, "lettera"),
-            logged_in: ("verificato", True, "accesso"),
-            old_login: ("da_verificare", False, None),
-            plain: ("da_verificare", False, None),
-            orphan: ("da_verificare", False, None),
+            with_reward: ("verified", True, "history"),
+            signed: ("verified", True, "letter"),
+            logged_in: ("verified", True, "login"),
+            old_login: ("to_verify", False, None),
+            plain: ("to_verify", False, None),
+            orphan: ("to_verify", False, None),
         }
         for _ in range(2):  # a retried deploy runs the same revision again
             command.upgrade(config, "head")
@@ -210,8 +210,11 @@ def test_migration_0030_keeps_what_counts_counting_and_runs_again() -> None:
                     text("SELECT logged_at FROM logins WHERE user_id = :u"), {"u": road}
                 ).scalar_one()
                 assert moments[logged_in] == login_at
-                # A person who logs in after the migration is verified by the code, and the
-                # revision run again over the columns must not undo it or promote anything else.
+            # A person who logs in after the migration is verified by the code, and the
+            # revision run again over the columns must not undo it or promote anything else.
+            # Rewound to 0030, the schema the revision was written for.
+            command.downgrade(config, "0030")
+            with engine.begin() as connection:
                 connection.execute(
                     text(
                         "UPDATE referrals SET stato = 'verificato', verified_at = now(), "
@@ -222,10 +225,10 @@ def test_migration_0030_keeps_what_counts_counting_and_runs_again() -> None:
                 connection.execute(text("UPDATE alembic_version SET version_num = '0029'"))
             command.upgrade(config, "head")
             with engine.begin() as connection:
-                assert _rows(connection) == {**expected, plain: ("verificato", True, "accesso")}
+                assert _rows(connection) == {**expected, plain: ("verified", True, "login")}
                 connection.execute(
                     text(
-                        "UPDATE referrals SET stato = 'da_verificare', verified_at = NULL, "
+                        "UPDATE referrals SET status = 'to_verify', verified_at = NULL, "
                         "verified_via = NULL WHERE id = :i"
                     ),
                     {"i": plain},
@@ -236,7 +239,7 @@ def test_migration_0030_keeps_what_counts_counting_and_runs_again() -> None:
                     text(
                         "SELECT column_name FROM information_schema.columns "
                         "WHERE table_name = 'referrals' AND column_name IN "
-                        "('stato', 'verified_at', 'verified_via')"
+                        "('stato', 'status', 'verified_at', 'verified_via')"
                     )
                 ).all()
                 assert columns == []

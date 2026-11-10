@@ -62,7 +62,7 @@ describe('useDocuments', () => {
 
 describe('useDocument', () => {
   it('never fires with an empty id', () => {
-    // B1: `useCustomer('')` once produced a 307 to the *list* endpoint with an
+    // B1: `useOrganization('')` once produced a 307 to the *list* endpoint with an
     // absolute URL that bypassed Vite's proxy entirely. Disabling the query is the
     // structural fix; this test is what keeps a refactor from undoing it.
     const { result } = renderHook(() => useDocument(''), { wrapper })
@@ -76,10 +76,10 @@ describe('OFFER_TRANSITIONS', () => {
     // The table is the backend's own (documents/service.py OFFER_TRANSITIONS). The UI
     // reads it to decide which buttons to draw; it never re-decides the rule, and a
     // refused transition still comes back as the server's own 409 message.
-    expect(OFFER_TRANSITIONS.bozza).toEqual(['inviata'])
-    expect(OFFER_TRANSITIONS.inviata).toEqual(['accettata', 'rifiutata', 'bozza'])
-    expect(OFFER_TRANSITIONS.accettata).toEqual([])
-    expect(OFFER_TRANSITIONS.rifiutata).toEqual([])
+    expect(OFFER_TRANSITIONS.draft).toEqual(['sent'])
+    expect(OFFER_TRANSITIONS.sent).toEqual(['accepted', 'rejected', 'draft'])
+    expect(OFFER_TRANSITIONS.accepted).toEqual([])
+    expect(OFFER_TRANSITIONS.rejected).toEqual([])
   })
 })
 
@@ -123,9 +123,9 @@ describe('downloadDocument', () => {
     await downloadDocument('doc-1', 2)
 
     expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
-      '/api/documents/doc-1/download?numero=2',
+      '/api/documents/doc-1/download?number=2',
       '/api/auth/refresh',
-      '/api/documents/doc-1/download?numero=2',
+      '/api/documents/doc-1/download?number=2',
     ])
     expect(clicks).toHaveBeenCalledTimes(1)
   })

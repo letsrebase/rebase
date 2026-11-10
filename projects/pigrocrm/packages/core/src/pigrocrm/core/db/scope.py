@@ -1,10 +1,10 @@
-"""The azienda scope a session carries, bound as two transaction-local Postgres
+"""The legal entity scope a session carries, bound as two transaction-local Postgres
 settings the row-level policies read (REB-633, spec 2026-10-03 §4).
 
-`pigrocrm.aziende` is `*` for an unscoped actor, or the comma-joined ids of the
-actor's aziende, possibly the empty string for a scoped person with no active azienda
+`pigrocrm.legal_entities` is `*` for an unscoped actor, or the comma-joined ids of the
+actor's legal entities, possibly the empty string for a scoped person with no active legal entity
 left. A connection with nothing set reads `NULL`, a pooled one whose transaction-local
-value expired reads the empty string, and `azienda_visibile()` reads both as nothing:
+value expired reads the empty string, and `legal_entity_visible()` reads both as nothing:
 the default is closed. `pigrocrm.user_id` is the actor's own user id, read by the one
 policy that needs to know whose mailbox a row belongs to (`gmail_messages`).
 
@@ -18,6 +18,8 @@ transaction on that session.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import event, text
@@ -26,19 +28,19 @@ from sqlalchemy.orm import Session
 if TYPE_CHECKING:
     from pigrocrm.core.actor import Actor
 
-SCOPE_SETTING = "pigrocrm.aziende"
+SCOPE_SETTING = "pigrocrm.legal_entities"
 USER_SETTING = "pigrocrm.user_id"
-EVERY_AZIENDA = "*"
+EVERY_LEGAL_ENTITY = "*"
 _BOUND = "pigrocrm_scope_listener"
 
 
 def scope_value(actor: Actor) -> str:
-    """What `pigrocrm.aziende` holds for `actor`: `*` for an unscoped one, the ids of
-    the scope otherwise, and the empty string for a scope with no azienda left, which
+    """What `pigrocrm.legal_entities` holds for `actor`: `*` for an unscoped one, the ids of
+    the scope otherwise, and the empty string for a scope with no legal entity left, which
     the policies read as nothing (spec §1.11: nothing turns an empty scope into «tutte»)."""
-    if actor.aziende is None:
-        return EVERY_AZIENDA
-    return ",".join(str(azienda) for azienda in actor.aziende)
+    if actor.legal_entities is None:
+        return EVERY_LEGAL_ENTITY
+    return ",".join(str(legal_entity) for legal_entity in actor.legal_entities)
 
 
 def user_value(actor: Actor) -> str:
@@ -80,6 +82,21 @@ def bind_scope(session: Session, actor: Actor) -> None:
                 _apply(connection, *bound)
 
 
+@contextmanager
+def widened(session: Session) -> Iterator[None]:
+    """Run a statement over every legal entity inside the same transaction, and put the actor's
+    scope back after it: for the maintenance of rows a caller's scope hides but whose
+    consistency the caller's own act depends on (REB-985: the copies of an item that becomes a
+    copy). It reveals nothing, since the caller gets no row back, and the scope the session
+    carried is restored even if the statement raises."""
+    previous = session.info.get(_BOUND, (EVERY_LEGAL_ENTITY, ""))
+    _apply(session.connection(), EVERY_LEGAL_ENTITY, previous[1])
+    try:
+        yield
+    finally:
+        _apply(session.connection(), *previous)
+
+
 # SQLSTATE of `insufficient_privilege`, and the sentence Postgres puts in front of a
 # row-level policy's refusal. A missing grant answers the same SQLSTATE with another
 # sentence («permission denied for table ...»), and that one is a deploy defect, not a
@@ -100,11 +117,12 @@ def is_policy_refusal(exc: BaseException) -> bool:
 
 
 __all__ = [
-    "EVERY_AZIENDA",
+    "EVERY_LEGAL_ENTITY",
     "INSUFFICIENT_PRIVILEGE",
     "SCOPE_SETTING",
     "USER_SETTING",
     "bind_scope",
     "is_policy_refusal",
     "scope_value",
+    "widened",
 ]

@@ -36,8 +36,7 @@
       # The two renderer binaries below are the upstream Linux release tarballs, one
       # per architecture in `rendererReleases`, so these are the systems the shell,
       # the packages and the modules exist for. A Mac is not among them, and this
-      # repository has no Linux builder of its own any more (qasimodo.com is gone,
-      # 2026-09-25). `nix build .#packages.x86_64-linux.pigrocrm-api`, as
+      # repository has no Linux builder of its own. `nix build .#packages.x86_64-linux.pigrocrm-api`, as
       # preflight.json does, still needs one; `scripts/nix-pnpm-hash.sh` builds the
       # one value that changes by hand, the pnpm store hash below, in a `nixos/nix`
       # container instead.
@@ -67,7 +66,7 @@
           pythonVersion = readPin ./.python-version "([0-9]+\\.[0-9]+)[[:space:]]*";
           python = pkgs."python${lib.replaceStrings [ "." ] [ "" ] pythonVersion}";
 
-          # `engines.node` is ">=22.13"; the attribute is `nodejs_22`.
+          # `engines.node` is ">=22.13"; the attribute is `nodejs_24`.
           nodeMajor = lib.head (
             builtins.match ">=([0-9]+)(\\.[0-9]+)*" (builtins.fromJSON (builtins.readFile ./package.json)).engines.node
           );
@@ -217,7 +216,7 @@
                 )
               );
             };
-            hash = "sha256-uqxIE/qKADXlioaDmzDq/PaKeG0BOPZSvcOSE5hcoXM=";
+            hash = "sha256-wmy+/tHDO+vJf3+6Onoi6ZEn+YHv6mhtqr4MOUP09U4=";
           };
 
           # A Vite deployable: the `dist/` of one workspace package, built the way its
@@ -336,7 +335,9 @@
             hub-web = viteApp {
               name = "hub";
               dir = ./projects/hub/apps/web;
-              shared = appShared;
+              # The hub's build type-checks its tests, which read the cases it shares
+              # with the website (`Dockerfile.web` copies the directory too).
+              shared = appShared ++ [ ./shared/format-cases ];
             };
             website = viteApp {
               name = "website";
@@ -368,7 +369,7 @@
                   settings = {
                     timezone = "Europe/Rome";
                     mcp_full_access = false;
-                    solleciti_grace_days = 7;
+                    payment_reminders_grace_days = 7;
                   };
                   # A throwaway secret for a throwaway VM; in the store on purpose,
                   # where a real one must never be.
@@ -388,7 +389,7 @@
                 machine.succeed("curl -fsS http://localhost/health | grep -F '\"status\":\"ok\"'")
                 # The SPA shell, on its prefix and on a deep link a refresh would hit.
                 machine.succeed("curl -fsS http://localhost/app/ | grep -F '/app/assets/'")
-                machine.succeed("curl -fsS http://localhost/app/clienti/some-uuid | grep -F '/app/assets/'")
+                machine.succeed("curl -fsS http://localhost/app/organizations/some-uuid | grep -F '/app/assets/'")
                 machine.succeed("curl -fsS http://localhost/app/mark.svg >/dev/null")
                 # The magic link: the shell on /app/verify, the old /app/entra sent
                 # there with its query string, on the root and under a space, and the
@@ -405,6 +406,16 @@
                 machine.succeed("curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' http://localhost/ | grep -Fx '302 http://localhost/app/'")
                 # A space's own prefix reaches the same shell and the same API.
                 machine.succeed("curl -fsS http://localhost/studiorossi/app/ | grep -F '/app/assets/'")
+                # The installable app (REB-731): the worker with the header that lets it
+                # take its scope, the manifest and the offline page, at the root and
+                # under a space, and never the SPA shell in their place.
+                machine.succeed("curl -fsSI http://localhost/app/sw.js | grep -i '^service-worker-allowed: /app'")
+                machine.succeed("curl -fsSI http://localhost/studiorossi/app/sw.js | grep -i '^service-worker-allowed: /studiorossi/app'")
+                machine.succeed("curl -fsSI http://localhost/studiorossi/app/sw.js | grep -i '^cache-control: no-cache'")
+                machine.succeed("curl -fsS http://localhost/studiorossi/app/manifest.webmanifest | grep -F 'start_url'")
+                machine.succeed("curl -fsS http://localhost/app/manifest.webmanifest | grep -F 'start_url'")
+                machine.succeed("curl -fsS http://localhost/studiorossi/app/offline.html | grep -F 'Sei offline'")
+                machine.succeed("curl -fsSI http://localhost/studiorossi/app/offline.html | grep -i '^x-frame-options: DENY'")
                 machine.succeed("curl -fsS http://localhost/studiorossi/health | grep -F '\"status\":\"ok\"'")
                 # The API answers behind /api/: an unauthenticated request is refused
                 # by the application, not by nginx.
@@ -444,26 +455,26 @@
               let
                 # A minimal document the sweep has work on (REB-403, Greptile's review
                 # of the first cut): one user, one freelancer, one framework agreement
-                # `inviato` with an envelope, every NOT NULL column filled, every check
+                # `sent` with an envelope, every NOT NULL column filled, every check
                 # constraint satisfied (`ck_contract_documents_envelope_item` wants
-                # `documenso_item_id` set alongside `documenso_id`; `kind = 'quadro'`
-                # wants `match_id`/`numero` both null). Verified by hand first against a
+                # `documenso_item_id` set alongside `documenso_id`; `kind = 'framework'`
+                # wants `match_id`/`number` both null). Verified by hand first against a
                 # throwaway Postgres with the same migrations (see the report).
                 sweepFixtureSql = pkgs.writeText "rebase-hub-sweep-fixture.sql" ''
                   WITH u AS (
-                    INSERT INTO users (id, email, nome, cognome, role, attivo)
+                    INSERT INTO users (id, email, first_name, last_name, role, active)
                     VALUES (gen_random_uuid(), 'sweep-test@example.com', 'Test', 'Sweep', 'member', true)
                     RETURNING id
                   ), f AS (
-                    INSERT INTO freelancers (id, user_id, links, stato, compilata_da)
-                    SELECT gen_random_uuid(), u.id, '[]'::jsonb, 'nuovo', 'persona' FROM u
+                    INSERT INTO freelancers (id, user_id, links, status, filled_by)
+                    SELECT gen_random_uuid(), u.id, '[]'::jsonb, 'new', 'person' FROM u
                     RETURNING id
                   )
                   INSERT INTO contract_documents
-                    (id, kind, freelancer_id, text_version, testo_bozza, data, pdf, stato,
+                    (id, kind, freelancer_id, text_version, draft_text, data, pdf, status,
                      documenso_id, documenso_item_id, created_by)
-                  SELECT gen_random_uuid(), 'quadro', f.id, '1.0', false, '{}'::jsonb,
-                         '\x255044462d312e34'::bytea, 'inviato',
+                  SELECT gen_random_uuid(), 'framework', f.id, '1.0', false, '{}'::jsonb,
+                         '\x255044462d312e34'::bytea, 'sent',
                          'env_test_sweep', 'item_test_sweep', u.id
                   FROM f, u;
                 '';
@@ -597,11 +608,13 @@
                 machine.succeed("curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' http://localhost/termini | grep -Fx '301 http://localhost/terms'")
                 machine.succeed("curl -fsS http://localhost/pitch >/dev/null")
                 machine.succeed("curl -fsS http://localhost/company >/dev/null")
-                # The community page's old name, with its query string kept.
-                machine.succeed("curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' 'http://localhost/orbiters?x=1' | grep -Fx '301 http://localhost/community?x=1'")
-                # The two files the build generates from the same map.
+                # The community page's older name, dropped on 2026-10-20 (REB-670).
+                machine.succeed("curl -sS -o /dev/null -w '%{http_code}' http://localhost/orbiters | grep -Ex '404'")
+                # The three files the build generates from the same map.
                 machine.succeed("curl -fsS http://localhost/robots.txt | grep -F 'Sitemap:'")
                 machine.succeed("curl -fsS http://localhost/sitemap.xml | grep -F '<urlset'")
+                machine.succeed("curl -fsS http://localhost/llms.txt | grep -Fx '# rebase'")
+                machine.succeed("curl -sSI http://localhost/llms.txt | grep -i '^content-type: text/plain; charset=utf-8'")
                 # The hashed assets the pages link to are served under /assets/.
                 machine.succeed("curl -fsS http://localhost/ | grep -oE '/assets/[^\"]+' | head -1 | xargs -I{} curl -fsS http://localhost{} >/dev/null")
                 # No fallback: a file nobody linked is a 404, as is the bare html name.
@@ -812,6 +825,20 @@
               # and `/<slug>/mcp` reach the API or the MCP server with the full path,
               # whose middleware strips the prefix.
               slug = "[a-z0-9][a-z0-9-]{1,30}[a-z0-9]";
+              # The headers of the three files a space is installed from (spa.conf,
+              # REB-731): revalidated before every use. nginx drops every inherited
+              # `add_header` from a location that declares one of its own, and here this
+              # nginx is the edge, so the origin-wide set of `rebase-nginx-headers`
+              # (above) is repeated beside it: the offline page is a document, and the
+              # worker replays it for any page of the space, a magic link's included.
+              pwaHeaders = ''
+                add_header Cache-Control "no-cache" always;
+                add_header X-Content-Type-Options nosniff always;
+                add_header Referrer-Policy strict-origin always;
+                add_header X-Frame-Options DENY always;
+                add_header Content-Security-Policy "frame-ancestors 'none';" always;
+                add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+              '';
               # The compose file's `x-api-environment`: one block, both services.
               environment = {
                 PIGROCRM_STORAGE_LOCAL_ROOT = cfg.documentsDir;
@@ -1011,6 +1038,37 @@
                           "= /app".return = "302 /app/";
                           "= /login".return = "302 /app/login";
                           "^~ /app/".tryFiles = "$uri /app/index.html";
+                          # The installable app (REB-731; spa.conf has the reasons): the
+                          # worker, the manifest and the offline page at the root and
+                          # under every slug, never the SPA shell. The worker's header is
+                          # what lets it take the scope `/app` without a trailing slash.
+                          "= /app/sw.js" = {
+                            tryFiles = "/app/sw.js =404";
+                            extraConfig = ''add_header Service-Worker-Allowed "/app" always;'' + pwaHeaders;
+                          };
+                          "= /app/manifest.webmanifest" = {
+                            tryFiles = "/app/manifest.webmanifest =404";
+                            extraConfig = "default_type application/manifest+json;\n" + pwaHeaders;
+                          };
+                          "= /app/offline.html" = {
+                            tryFiles = "/app/offline.html =404";
+                            extraConfig = pwaHeaders;
+                          };
+                          "~ \"^(/${slug})/app/sw\\.js$\"" = {
+                            priority = 900;
+                            tryFiles = "/app/sw.js =404";
+                            extraConfig = ''add_header Service-Worker-Allowed "$1/app" always;'' + pwaHeaders;
+                          };
+                          "~ \"^/${slug}/app/manifest\\.webmanifest$\"" = {
+                            priority = 900;
+                            tryFiles = "/app/manifest.webmanifest =404";
+                            extraConfig = "default_type application/manifest+json;\n" + pwaHeaders;
+                          };
+                          "~ \"^/${slug}/app/offline\\.html$\"" = {
+                            priority = 900;
+                            tryFiles = "/app/offline.html =404";
+                            extraConfig = pwaHeaders;
+                          };
                           # The magic link lands on /app/verify?t=<token> (spa.conf):
                           # the shell, served from inside this location so `access_log
                           # off` holds and the token never reaches the log; the old
@@ -1316,9 +1374,6 @@
                             root = webRoot;
                             tryFiles = "$uri /hub/index.html";
                           };
-                          # letsrebase.conf also keeps `/api/orbiters/signups`, the
-                          # name before REB-204, for pages cached with it; a fresh
-                          # self-host has no such pages, so the alias is not carried.
                           "= /api/community/signups" = proxyLocation cfg.address cfg.port;
                           "^~ /api/hub/" = proxyLocation cfg.address cfg.port // {
                             extraConfig = "client_max_body_size 6M;";
@@ -1384,13 +1439,6 @@
                       "= /" = page "index.html";
                       "= /pigrocrm" = page "pigrocrm.html";
                       "= /community" = page "community.html";
-                      # The community page's old name (ORB-194). A relative Location,
-                      # on the location itself rather than the server: the hub's
-                      # module may share this name (see there).
-                      "= /orbiters" = {
-                        return = "301 /community$is_args$args";
-                        extraConfig = "absolute_redirect off;";
-                      };
                       # The pitch deck, a page shared by link (ORB-153), and the deck for
                       # companies (REB-553), the same kind of page.
                       "= /pitch" = page "pitch.html";
@@ -1404,6 +1452,9 @@
                       # Generated by the build from the same map as the pages.
                       "= /robots.txt" = page "robots.txt";
                       "= /sitemap.xml" = page "sitemap.xml";
+                      "= /llms.txt" = page "llms.txt" // {
+                        extraConfig = "charset utf-8;";
+                      };
                       "/assets/" = {
                         root = cfg.package;
                         tryFiles = "$uri =404";

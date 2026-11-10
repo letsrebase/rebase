@@ -2,12 +2,15 @@ import { Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/rea
 import { useEffect } from 'react'
 import { AppShell } from '@/components/AppShell'
 import { GmailBanner } from '@/components/GmailBanner'
+import { ModuleGate } from '@/components/ModuleGate'
+import { Button } from '@rebase/ui/button'
 import { Loader } from '@rebase/ui/loader'
+import { OnboardingGate } from '@/features/onboarding/OnboardingGate'
 import { useAuth } from '@/lib/auth'
 import { PUBLIC_APP_ROUTES } from '@/lib/tenant'
 
 function AppLayout() {
-  const { user, isLoading } = useAuth()
+  const { user, isLoading, isError, retrySession } = useAuth()
   const navigate = useNavigate()
   const { pathname, href } = useLocation()
   // Task A7 moved the login page to routes/app/login.tsx so its URL is
@@ -32,22 +35,35 @@ function AppLayout() {
     // tenant prefix before the router ever sees a path), so it is already exactly the
     // shape `safeAppRedirect` (lib/tenant.ts) checks against: never carries the slug,
     // never another origin. The login page reads it back once a session exists.
-    if (!isLoginRoute && !isLoading && !user) void navigate({ to: '/app/login', search: { redirect: href } })
-  }, [isLoginRoute, isLoading, user, navigate, href])
+    if (!isLoginRoute && !isLoading && !isError && !user) void navigate({ to: '/app/login', search: { redirect: href } })
+  }, [isLoginRoute, isLoading, isError, user, navigate, href])
 
   if (isLoginRoute) return <Outlet />
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
+      <div className="flex min-h-full items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
         <Loader className="size-8" />
         Caricamento…
+      </div>
+    )
+  }
+  // The session could not be read at all (the API is restarting, the network dropped):
+  // that is not "signed out", so the login page is no answer. Say so and offer a retry.
+  if (isError) {
+    return (
+      <div className="flex min-h-full flex-col items-center justify-center gap-4 p-8 text-center">
+        <p className="text-sm text-muted-foreground">
+          Non riesco a raggiungere il server. Controlla la connessione e riprova.
+        </p>
+        <Button onClick={retrySession}>Riprova</Button>
       </div>
     )
   }
   if (!user) return null
 
   return (
+    <OnboardingGate>
     <AppShell>
       {/* Outside the <Outlet />, so it survives every navigation within the shell
           rather than being remounted (and re-announced) per page -- and inside this
@@ -55,8 +71,12 @@ function AppLayout() {
           unauthenticated visitor, who has no google_accounts row to have an opinion
           about and would collect a 401 on every load of the login screen. */}
       <GmailBanner />
-      <Outlet />
+      {/* The pages of a module the space has switched off are not drawn (REB-953). */}
+      <ModuleGate>
+        <Outlet />
+      </ModuleGate>
     </AppShell>
+    </OnboardingGate>
   )
 }
 

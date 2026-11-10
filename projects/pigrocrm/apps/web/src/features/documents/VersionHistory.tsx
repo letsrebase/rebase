@@ -13,15 +13,11 @@ import {
 const BYTES_PER_KILOBYTE = 1024
 
 /**
- * Bytes as the browser's own locale would write them. `Intl.NumberFormat` with a
- * byte unit does the rounding, so nothing here does arithmetic on a size that could
- * drift from what the server reported.
- *
- * Divides by 1024, not 1000, even though the unit it asks `Intl` to label is the
- * (decimal) "kilobyte": confirmed live -- `12345` bytes has to read "12,1 kB", the
- * conventional binary-kilobyte figure this product's own file browsers (Finder,
- * Explorer) already show, and `12345 / 1000` rounds to "12,3 kB" instead, which is
- * simply the wrong number for the same bytes.
+ * Bytes as the browser's own locale would write them: `Intl.NumberFormat` with a byte
+ * unit does the rounding, so nothing here does arithmetic that could drift from what the
+ * server reported. Divides by 1024 while labelling the decimal "kilobyte": `12345` bytes
+ * reads "12,1 kB", the figure Finder and Explorer show. Kilobytes at most, so 5 MiB is
+ * "5.120 kB" (never "5,0 MB"): that is what the screen has always said.
  */
 function formatSize(bytes: number): string {
   return new Intl.NumberFormat('it-IT', {
@@ -31,14 +27,16 @@ function formatSize(bytes: number): string {
   }).format(bytes >= BYTES_PER_KILOBYTE ? bytes / BYTES_PER_KILOBYTE : bytes)
 }
 
+const dateTimeFormatter = new Intl.DateTimeFormat('it-IT', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+})
+
 function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('it-IT', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  return dateTimeFormatter.format(new Date(iso))
 }
 
 /**
@@ -49,7 +47,7 @@ function formatDateTime(iso: string): string {
  * `documentTitle` names the document for a failed download's banner (REB-388): a
  * version row shows only its number and its size, never a filename of its own, so a
  * "file the person clicked" sentence has nowhere else to get the name from. The one
- * caller (`routes/app/documents/$documentId.tsx`) already has `record.titolo` at hand.
+ * caller (`routes/app/documents/$documentId.tsx`) already has `record.title` at hand.
  */
 export function VersionHistory({
   documentId,
@@ -58,7 +56,7 @@ export function VersionHistory({
   documentId: string
   documentTitle: string
 }) {
-  // REB-294: «Rigenera» is `regenerate_document` (`collaboratore`); the download is a
+  // REB-294: «Rigenera» is `regenerate_document` (`collaborator`); the download is a
   // read. The item is dropped from the menu -- not disabled -- because unlike a
   // template-less version (a state of *this row*), a readonly actor can never
   // regenerate *any* row, and REB-294's rule is that a readonly person sees no write
@@ -92,9 +90,9 @@ export function VersionHistory({
         <ul className="divide-y border">
           {items.map((version) => (
             <li key={version.id} className="flex items-center gap-3 px-4 py-3">
-              <span className="w-10 font-medium">v{version.numero}</span>
+              <span className="w-10 font-medium">v{version.number}</span>
               <span className="flex-1 text-sm text-muted-foreground">
-                {formatDateTime(version.created_at)} · {formatSize(version.dimensione)}
+                {formatDateTime(version.created_at)} · {formatSize(version.size)}
               </span>
               {/* Behind the «⋯» like every other row action (§4), where the two lone
                   icons at the end of the row used to be. Only a version generated from
@@ -103,19 +101,19 @@ export function VersionHistory({
                   -- so the item is disabled rather than dropped, since an item that
                   vanishes from one row to the next is a menu nobody learns. */}
               <RowActions
-                label={`Azioni per la versione ${version.numero}`}
+                label={`Azioni per la versione ${version.number}`}
                 items={[
                   {
                     label: 'Scarica',
                     onSelect: () => {
                       setProblem(null)
-                      void downloadDocument(documentId, version.numero).catch(
+                      void downloadDocument(documentId, version.number).catch(
                         (error: unknown) =>
                           setProblem({
                             ...toProblem(error),
                             detail: documentDownloadErrorMessage(
                               error,
-                              `${documentTitle} (v${version.numero})`,
+                              `${documentTitle} (v${version.number})`,
                             ),
                           }),
                       )
@@ -128,7 +126,7 @@ export function VersionHistory({
                           disabled: version.template_id === null || regenerate.isPending,
                           onSelect: () => {
                             setProblem(null)
-                            regenerate.mutate(version.numero, {
+                            regenerate.mutate(version.number, {
                               onError: (error: unknown) => setProblem(toProblem(error)),
                             })
                           },

@@ -1,11 +1,8 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
-from pigrocrm.core.activities.schemas import ActivityRead
-from pigrocrm.core.activities.service import ActivityService
-from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection
 from pigrocrm.core.people.schemas import (
     PersonCreate,
     PersonListQuery,
@@ -15,11 +12,17 @@ from pigrocrm.core.people.schemas import (
 )
 from pigrocrm.core.people.service import PersonService
 from pigrocrm.core.validation import SafeStr
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
-from pigrocrm_api.query_params import CUSTOM_QUERY_DESCRIPTION, parse_custom_filter
+from pigrocrm_api.query_params import CustomParams, SearchParams, SortedParams, sort_field
+from pigrocrm_api.timeline import timeline_router
 
-router = APIRouter(prefix="/api/people", tags=["people"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/people",
+    tags=["people"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.post("", response_model=PersonRead, status_code=status.HTTP_201_CREATED)
@@ -27,37 +30,17 @@ def create(data: PersonCreate, session: SessionDep, actor: ActorDep) -> PersonRe
     return PersonService(session).create(data, actor)
 
 
+class PersonListParams(SortedParams, SearchParams, CustomParams):
+    customer_id: UUID | None = None
+    # `last_name` is the one nullable sort column in the whole whitelist.
+    sort: SafeStr | None = sort_field("created_at", "updated_at", "last_name")
+
+
 @router.get("", response_model=PersonPage)
 def list_people(
-    session: SessionDep,
-    actor: ActorDep,
-    # SafeStr: see the identical comment on list_customers (routers/customers.py)
-    # -- these are ordinary query parameters, not Create/Update schema fields, so
-    # the guard has to sit on the parameter itself for FastAPI's own validation to
-    # catch it as a 422 before PersonListQuery is hand-built below.
-    search: Annotated[SafeStr | None, Query()] = None,
-    customer_id: Annotated[UUID | None, Query()] = None,
-    custom: Annotated[list[SafeStr] | None, Query(description=CUSTOM_QUERY_DESCRIPTION)] = None,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    # `str`, not `UUID`, since slice 6 -- see the identical comment on list_customers
-    # (routers/customers.py).
-    cursor: Annotated[str | None, Query(max_length=CURSOR_MAX_LENGTH)] = None,
-    # A plain string and not a `Literal` -- see the reasoning on list_customers
-    # (routers/customers.py). `cognome` is the one nullable sort column in the whole
-    # whitelist.
-    sort: Annotated[SafeStr | None, Query(description="created_at | updated_at | cognome")] = None,
-    dir: Annotated[SortDirection, Query()] = "asc",
+    session: SessionDep, actor: ActorDep, params: Annotated[PersonListParams, Query()]
 ) -> PersonPage:
-    query = PersonListQuery(
-        search=search,
-        customer_id=customer_id,
-        custom=parse_custom_filter(custom),
-        limit=limit,
-        cursor=cursor,
-        sort=sort,
-        dir=dir,
-    )
-    return PersonService(session).list(query, actor)
+    return PersonService(session).list(params.to_query(PersonListQuery), actor)
 
 
 @router.get("/{person_id}", response_model=PersonRead)
@@ -80,11 +63,4 @@ def restore(person_id: UUID, session: SessionDep, actor: ActorDep) -> PersonRead
     return PersonService(session).restore(person_id, actor)
 
 
-@router.get("/{person_id}/timeline", response_model=list[ActivityRead])
-def timeline(
-    person_id: UUID,
-    session: SessionDep,
-    actor: ActorDep,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-) -> list[ActivityRead]:
-    return ActivityService(session).timeline("person", person_id, limit)
+router.include_router(timeline_router("person", id_param="person_id"))

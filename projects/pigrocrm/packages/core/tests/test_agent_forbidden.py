@@ -21,20 +21,25 @@ makes it true of every caller, including one nobody has written yet.
 
 import pytest
 
-from pigrocrm.core.actor import AGENT_FORBIDDEN_ACTIONS, Actor
+from pigrocrm.core.actor import Actor
+from pigrocrm.core.agent_actions import (
+    AGENT_ALLOWED_ACTIONS,
+    FULL_ACCESS_ACTIONS,
+    PERSON_ONLY_ACTIONS,
+)
 from pigrocrm.core.errors import AgentForbidden, PermissionDenied
 
 AGENT_ADMIN = Actor(id=None, type="mcp", role="admin")
 # The same credential on an installation that has opted in. Same type, same role --
 # the only difference is what `Settings.mcp_full_access` said when `PatService.resolve`
 # built it, which is the whole design: the capability rides on the credential.
-AGENT_APERTO = Actor(id=None, type="mcp", role="admin", full_access=True)
+AGENT_OPEN = Actor(id=None, type="mcp", role="admin", full_access=True)
 AGENT_READONLY = Actor(id=None, type="mcp", role="readonly")
 HUMAN_ADMIN = Actor(id=None, type="user", role="admin")
 SYSTEM = Actor.system()
 
 
-@pytest.mark.parametrize("action", sorted(AGENT_FORBIDDEN_ACTIONS))
+@pytest.mark.parametrize("action", sorted(FULL_ACCESS_ACTIONS))
 def test_an_admin_agent_is_refused_every_forbidden_action(action: str) -> None:
     """The whole point: *admin* is the role a PAT most often carries, because a PAT
     carries whatever its owner has and the person wiring an agent up is usually the
@@ -48,7 +53,7 @@ def test_an_admin_agent_is_refused_every_forbidden_action(action: str) -> None:
         AGENT_ADMIN.require_write(action)
 
 
-@pytest.mark.parametrize("action", sorted(AGENT_FORBIDDEN_ACTIONS))
+@pytest.mark.parametrize("action", sorted(FULL_ACCESS_ACTIONS))
 def test_a_human_admin_is_refused_none_of_them(action: str) -> None:
     """The other half, and the one that keeps this from being a way to break the
     product: a person with the right role may still do every one of them. If this passed
@@ -70,12 +75,46 @@ def test_the_refusal_names_the_credential_and_not_the_role() -> None:
         AGENT_READONLY.require_admin("issue_invoice")
 
 
-def test_an_agent_keeps_everything_that_was_never_banned() -> None:
-    """The ban is a list of named operations, not a second role. An agent recording a
+def test_an_agent_keeps_what_the_allowlist_names() -> None:
+    """The allowlist mirrors the tool surface, not a second role. An agent recording a
     time entry or creating a customer is the product working as designed."""
     AGENT_ADMIN.require_write("log_time")
     AGENT_ADMIN.require_write("create_invoice")
     AGENT_ADMIN.require_write("confirm_proforma")
+
+
+def test_the_three_classes_are_disjoint() -> None:
+    """One operation, one answer: a key in two sets would make the refusal depend on
+    which check happened to run first."""
+    assert not AGENT_ALLOWED_ACTIONS & FULL_ACCESS_ACTIONS
+    assert not AGENT_ALLOWED_ACTIONS & PERSON_ONLY_ACTIONS
+    assert not FULL_ACCESS_ACTIONS & PERSON_ONLY_ACTIONS
+
+
+@pytest.mark.parametrize("action", sorted(PERSON_ONLY_ACTIONS))
+def test_a_person_only_action_is_refused_to_every_agent_even_an_opted_in_one(
+    action: str,
+) -> None:
+    """Creating an administrator, rewriting the space settings (the ceiling included),
+    minting a token or sending mail in the owner's name is not something the
+    `mcp_full_access` switch hands out (PAPI-01)."""
+    for agent in (AGENT_ADMIN, AGENT_OPEN, AGENT_READONLY):
+        with pytest.raises(AgentForbidden):
+            agent.require_admin(action)
+        with pytest.raises(AgentForbidden):
+            agent.require_write(action)
+    HUMAN_ADMIN.require_admin(action)
+
+
+def test_an_action_nobody_classified_is_refused_to_an_agent() -> None:
+    """The default is closed. The denylist this replaced left every operation nobody
+    remembered to name open to a token, which is how REST-only operations with no tool
+    stayed reachable."""
+    with pytest.raises(AgentForbidden):
+        AGENT_ADMIN.require_write("an_operation_added_without_classifying_it")
+    with pytest.raises(AgentForbidden):
+        AGENT_OPEN.require_admin("an_operation_added_without_classifying_it")
+    HUMAN_ADMIN.require_write("an_operation_added_without_classifying_it")
 
 
 def test_a_readonly_agent_still_fails_the_role_check_on_an_allowed_action() -> None:
@@ -92,7 +131,7 @@ def test_the_system_actor_is_not_an_agent() -> None:
     SYSTEM.require_write("export_invoice_xml")
 
 
-@pytest.mark.parametrize("action", sorted(AGENT_FORBIDDEN_ACTIONS))
+@pytest.mark.parametrize("action", sorted(FULL_ACCESS_ACTIONS))
 def test_an_opted_in_agent_is_refused_none_of_them(action: str) -> None:
     """The other half of the switch, and the reason it is a switch rather than a wall.
 
@@ -106,8 +145,8 @@ def test_an_opted_in_agent_is_refused_none_of_them(action: str) -> None:
     switch is on and one operation still refuses, in a product where the refusal arrives
     at the moment somebody is trying to issue an invoice.
     """
-    AGENT_APERTO.require_admin(action)
-    AGENT_APERTO.require_write(action)
+    AGENT_OPEN.require_admin(action)
+    AGENT_OPEN.require_write(action)
 
 
 def test_opting_in_does_not_hand_out_a_role() -> None:
@@ -115,12 +154,12 @@ def test_opting_in_does_not_hand_out_a_role() -> None:
     credential on an opted-in installation still cannot write, and the refusal is the
     ordinary `PermissionDenied` -- because at that point the question really is about the
     role, and answering "ask somebody senior" is now the correct advice."""
-    readonly_aperto = Actor(id=None, type="mcp", role="readonly", full_access=True)
+    readonly_open = Actor(id=None, type="mcp", role="readonly", full_access=True)
 
     with pytest.raises(PermissionDenied):
-        readonly_aperto.require_write("issue_invoice")
+        readonly_open.require_write("issue_invoice")
     with pytest.raises(PermissionDenied):
-        readonly_aperto.require_write("log_time")
+        readonly_open.require_write("log_time")
 
 
 def test_the_switch_defaults_to_closed() -> None:

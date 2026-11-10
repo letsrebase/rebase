@@ -10,8 +10,8 @@ import base64
 import pytest
 
 from pigrocrm.core.config import Settings, decode_google_token_key, gmail_configured
+from pigrocrm.core.crypto import seal, unseal
 from pigrocrm.core.errors import Conflict
-from pigrocrm.core.gmail.crypto import seal, unseal
 from pigrocrm.core.space_settings import apply_overrides
 from pigrocrm.core.tenants import space_base_settings
 from pigrocrm.core.tenants.google import oauth_state_prefix, relay_slug, space_token_key
@@ -75,7 +75,7 @@ def test_without_the_setting_a_space_still_has_no_google() -> None:
 
 
 def test_a_space_with_its_own_client_borrows_nothing_from_the_root() -> None:
-    """Impostazioni → Spazio still lets a space bring its own client. Then the root's
+    """Settings → Space still lets a space bring its own client. Then the root's
     secret must not authenticate somebody else's client id, and the root's callback is
     not an address their client registered."""
     base = space_base_settings(_root(), "studio")

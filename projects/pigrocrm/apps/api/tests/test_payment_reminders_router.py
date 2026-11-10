@@ -14,7 +14,7 @@ the reminder is, because that writes a demand for payment in the owner's name.
 The invoices here are issued through the real endpoint, not built as rows: it is the only
 way to get a genuine `pdf_document_id`, and the courtesy copy the reminder attaches has to
 be the artefact slice 3 stored rather than one this file invented. The due date is then
-pushed into the past on the row, because `fiscal_profile.giorni_scadenza` makes every
+pushed into the past on the row, because `fiscal_profile.due_days` makes every
 freshly issued invoice current by construction.
 """
 
@@ -23,14 +23,14 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
+from legal_entities_helpers import legal_entity_url
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.clock import oggi_in_italia
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.gmail.models import EmailDraft, PaymentReminder
 from pigrocrm.core.invoices.models import Invoice
-from pigrocrm.core.invoices.naming import numero_completo
+from pigrocrm.core.invoices.naming import number_complete
 
 REMINDERS = "/api/payment-reminders"
 CANDIDATES = f"{REMINDERS}/candidates"
@@ -40,27 +40,27 @@ IBAN = "IT60X0542811101000000123456"
 @pytest.fixture
 def fiscal_profile(logged_in: TestClient) -> dict[str, Any]:
     """With an IBAN: a reminder with nowhere to pay is a reminder nobody can act on, and
-    `SollecitiService` refuses to prepare one."""
+    `PaymentRemindersService` refuses to prepare one."""
     response = logged_in.put(
-        azienda_url(logged_in, "/fiscal-profile"), json={"codice_regime": "RF19", "iban": IBAN}
+        legal_entity_url(logged_in, "/fiscal-profile"), json={"regime_code": "RF19", "iban": IBAN}
     )
     assert response.status_code == 200, response.text
     return response.json()
 
 
 @pytest.fixture
-def emitter(logged_in: TestClient) -> dict[str, Any]:
+def legal_entity(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.put(
-        azienda_url(logged_in),
+        legal_entity_url(logged_in),
         json={
-            "ragione_sociale": "Studio Rossi",
-            "partita_iva": "01234567890",
-            "codice_fiscale": "HMCRFT00A01H501K",
-            "indirizzo": "Via Vittorio Veneto 12",
-            "cap": "20124",
-            "comune": "Milano",
-            "provincia": "MI",
-            "nazione": "IT",
+            "legal_name": "Studio Rossi",
+            "vat_number": "01234567890",
+            "tax_code": "HMCRFT00A01H501K",
+            "address": "Via Vittorio Veneto 12",
+            "postal_code": "20124",
+            "city": "Milano",
+            "province": "MI",
+            "country": "IT",
             "email": "mario@studiorossi.it",
         },
     )
@@ -71,17 +71,17 @@ def emitter(logged_in: TestClient) -> dict[str, Any]:
 @pytest.fixture
 def customer(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.post(
-        "/api/customers",
+        "/api/organizations",
         json={
-            "ragione_sociale": "Acme S.r.l.",
-            "partita_iva": "12345678901",
-            "codice_sdi": "ABCDEFG",
-            "email": "ada@acme.it",
-            "indirizzo": "Corso Italia 5",
-            "cap": "00100",
-            "comune": "Roma",
-            "provincia": "RM",
-            "nazione": "IT",
+            "legal_name": "Acme S.r.l.",
+            "vat_number": "12345678901",
+            "sdi_code": "ABCDEFG",
+            "contact_points": [{"kind": "email", "value": "ada@acme.it"}],
+            "address": "Corso Italia 5",
+            "postal_code": "00100",
+            "city": "Roma",
+            "province": "RM",
+            "country": "IT",
         },
     )
     assert response.status_code == 201, response.text
@@ -94,7 +94,7 @@ def overdue_invoice(
     api_session: Session,
     customer: dict[str, Any],
     fiscal_profile: dict[str, Any],
-    emitter: dict[str, Any],
+    legal_entity: dict[str, Any],
 ) -> dict[str, Any]:
     """An issued invoice, forty days past its due date.
 
@@ -107,8 +107,8 @@ def overdue_invoice(
         "/api/invoices",
         json={
             "customer_id": customer["id"],
-            "causale": "Consulenza",
-            "righe": [{"descrizione": "Consulenza", "prezzo_unitario": "1000.00"}],
+            "memo": "Consulenza",
+            "lines": [{"description": "Consulenza", "unit_price": "1000.00"}],
         },
     )
     assert draft.status_code == 201, draft.text
@@ -117,7 +117,7 @@ def overdue_invoice(
 
     row = api_session.get(Invoice, issued.json()["id"])
     assert row is not None
-    row.data_scadenza = oggi_in_italia() - timedelta(days=40)
+    row.due_date = today_local() - timedelta(days=40)
     api_session.flush()
     return issued.json()
 
@@ -128,7 +128,7 @@ def overdue_invoice(
 def test_the_candidate_list_names_the_overdue_invoice_and_its_frozen_figure(
     logged_in: TestClient, overdue_invoice: dict[str, Any]
 ) -> None:
-    """`importo` is the invoice's own `totale`, exact and as a decimal string. A demand
+    """`amount` is the invoice's own `total`, exact and as a decimal string. A demand
     naming a figure the client's copy does not carry is a demand they are right to
     ignore."""
     response = logged_in.get(CANDIDATES)
@@ -137,14 +137,14 @@ def test_the_candidate_list_names_the_overdue_invoice_and_its_frozen_figure(
     page = response.json()
     mine = [item for item in page["items"] if item["invoice_id"] == overdue_invoice["id"]]
     assert len(mine) == 1
-    assert mine[0]["importo"] == overdue_invoice["totale"]
-    assert mine[0]["cliente"] == "Acme S.r.l."
-    assert mine[0]["giorni_di_ritardo"] == 40
-    assert mine[0]["solleciti_inviati"] == 0
-    assert mine[0]["prossimo_livello"] == 1
+    assert mine[0]["amount"] == overdue_invoice["total"]
+    assert mine[0]["customer"] == "Acme S.r.l."
+    assert mine[0]["days_of_delay"] == 40
+    assert mine[0]["sent_payment_reminders"] == 0
+    assert mine[0]["next_level"] == 1
     # No mailbox is connected, so "has this client replied" is unknown -- and `null` says
     # unknown, which is not the same claim as "nobody replied".
-    assert mine[0]["ultima_risposta_il"] is None
+    assert mine[0]["last_answer_at"] is None
     assert page["total"] == len(page["items"])
 
 
@@ -166,7 +166,7 @@ def test_an_invoice_still_inside_its_grace_period_is_not_a_candidate(
     no due date in the condition at all -- it chased on `emailSentCount > 0`."""
     row = api_session.get(Invoice, overdue_invoice["id"])
     assert row is not None
-    row.data_scadenza = oggi_in_italia() - timedelta(days=1)
+    row.due_date = today_local() - timedelta(days=1)
     api_session.flush()
 
     assert logged_in.get(CANDIDATES).json()["items"] == []
@@ -179,7 +179,7 @@ def test_creating_a_reminder_prepares_a_draft_and_sends_nothing(
     logged_in: TestClient, api_session: Session, overdue_invoice: dict[str, Any]
 ) -> None:
     """Spec 8.3. `sent_at` is `None` on everything this endpoint creates, and the draft is
-    `bozza` -- a state only `EmailSendService` can leave, and this endpoint never builds
+    `draft` -- a state only `EmailSendService` can leave, and this endpoint never builds
     one. The socket guard asserts the silence: nothing here reaches Google."""
     response = logged_in.post(REMINDERS, json={"invoice_id": overdue_invoice["id"]})
 
@@ -191,10 +191,10 @@ def test_creating_a_reminder_prepares_a_draft_and_sends_nothing(
 
     draft = api_session.get(EmailDraft, reminder["email_draft_id"])
     assert draft is not None
-    assert draft.send_state == "bozza"
+    assert draft.send_state == "draft"
     assert draft.google_account_id is None
     assert draft.to_addresses == ["ada@acme.it"]
-    assert numero_completo(overdue_invoice["anno"], overdue_invoice["numero"]) in draft.subject
+    assert number_complete(overdue_invoice["year"], overdue_invoice["number"]) in draft.subject
     # The letter carries the invoice's own frozen figure and somewhere to pay it.
     assert IBAN in draft.body_markdown
     # And it attaches the invoice's own stored PDF -- never an upload (spec 6.4) -- so
@@ -254,7 +254,7 @@ def test_the_body_takes_one_field_and_refuses_a_second(
     name the amount would produce a demand the client's own copy of the invoice does not
     support -- so `extra="forbid"` makes it a 422 rather than a silently ignored key."""
     response = logged_in.post(
-        REMINDERS, json={"invoice_id": overdue_invoice["id"], "importo": "1.00"}
+        REMINDERS, json={"invoice_id": overdue_invoice["id"], "amount": "1.00"}
     )
 
     assert response.status_code == 422

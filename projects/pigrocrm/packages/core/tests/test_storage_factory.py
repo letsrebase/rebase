@@ -1,8 +1,8 @@
 """Which credential writes the documents, and when that question gets answered.
 
 Two ways to configure Drive after slice 9: the service account every earlier
-installation set up in the environment, and the titolare's *own* connected account
-writing into a folder they chose in Impostazioni → Drive. The first is fully known at
+installation set up in the environment, and the owner's *own* connected account
+writing into a folder they chose in Settings → Drive. The first is fully known at
 startup. The second is not known at startup at all -- the row it lives in may not exist
 yet, and the API has to boot anyway, or nobody can reach the settings page that would
 create it. So the second one resolves at the first operation instead, and that is the
@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
+from pigrocrm.core.crypto import seal
 from pigrocrm.core.drive.errors import DriveCredentialRevoked
 from pigrocrm.core.drive.models import GoogleDriveAccount
 from pigrocrm.core.drive.query import file_meta_url
@@ -42,7 +43,6 @@ from pigrocrm.core.drive.repository import DriveRepository
 from pigrocrm.core.drive.schemas import DRIVE_SCOPE_FILE, DRIVE_SCOPE_READONLY
 from pigrocrm.core.drive.transport import user_transport_for
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
-from pigrocrm.core.gmail.crypto import seal
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm.core.storage import lazy_drive
@@ -86,10 +86,16 @@ class RecordingHttp:
     headers: list[dict[str, str]] = field(default_factory=list)
 
     def __call__(
-        self, method: str, url: str, headers: dict[str, str], body: bytes | None
-    ) -> tuple[int, bytes]:
+        self,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
+    ) -> tuple[int, bytes, dict[str, str]]:
         self.headers.append(dict(headers))
-        return self.inner(method, url, headers, body)
+        return self.inner(method, url, headers, body, max_bytes=max_bytes)
 
 
 def _account(
@@ -99,10 +105,10 @@ def _account(
     storage_folder_id: str | None = STORAGE_FOLDER,
     updated_at: datetime | None = None,
     scopes: tuple[str, ...] = (DRIVE_SCOPE_READONLY, DRIVE_SCOPE_FILE),
-    ruolo: str = "admin",
+    role: str = "admin",
 ) -> GoogleDriveAccount:
     """A connected Drive with a write folder chosen -- the state the lazy storage has
-    to find. Its owner is an admin unless `ruolo` says otherwise: only an admin's row
+    to find. Its owner is an admin unless `role` says otherwise: only an admin's row
     may supply the space's storage (REB-457).
 
     The refresh token is really sealed, with the same key `gmail_settings()` publishes,
@@ -111,10 +117,10 @@ def _account(
     """
     user = User(
         email=f"drive-{uuid4().hex[:8]}@example.it",
-        nome="Titolare",
+        name="Titolare",
         password_hash="x",
-        ruolo=ruolo,
-        attivo=True,
+        role=role,
+        active=True,
     )
     session.add(user)
     session.flush()
@@ -237,7 +243,7 @@ def test_a_half_configured_service_account_is_still_a_startup_failure() -> None:
 
 
 def test_gdrive_with_a_session_factory_returns_a_lazy_storage_and_opens_no_session() -> None:
-    """The whole reason this storage is lazy: the API must start before the titolare has
+    """The whole reason this storage is lazy: the API must start before the owner has
     connected Drive. Construction therefore reads nothing -- proven by a factory that
     fails the test if it is ever called."""
     storage = storage_from_settings(
@@ -265,7 +271,7 @@ def test_storage_account_finds_the_active_account_that_has_a_write_folder(
 def test_storage_account_ignores_an_account_with_no_write_folder(db_session: Session) -> None:
     """Connected is not configured. A Drive whose `storage_folder_id` is still `None`
     can be read from, and writing into it would mean picking a folder somewhere in the
-    titolare's personal Drive on their behalf."""
+    owner's personal Drive on their behalf."""
     _account(db_session, storage_folder_id=None)
     assert DriveRepository(db_session).storage_account() is None
 
@@ -297,9 +303,9 @@ def test_storage_account_prefers_the_most_recently_updated_when_more_than_one_qu
     assert found is newer and found is not older
 
 
-@pytest.mark.parametrize("ruolo", ["collaboratore", "readonly"])
+@pytest.mark.parametrize("role", ["collaborator", "readonly"])
 def test_storage_account_never_answers_with_a_non_admin_s_row(
-    db_session: Session, ruolo: str
+    db_session: Session, role: str
 ) -> None:
     """REB-457. The write folder is the space's, not a person's: every document the
     space generates lands there, an automation's included. So a non-admin's row never
@@ -311,7 +317,7 @@ def test_storage_account_never_answers_with_a_non_admin_s_row(
     admin = _account(db_session, updated_at=datetime(2026, 1, 1, tzinfo=UTC))
     _account(
         db_session,
-        ruolo=ruolo,
+        role=role,
         storage_folder_id=OTHER_FOLDER,
         updated_at=datetime(2026, 6, 1, tzinfo=UTC),
     )
@@ -324,7 +330,7 @@ def test_storage_account_with_only_a_non_admin_s_folder_is_not_configured(
 ) -> None:
     """The behaviour change REB-457 accepts: an installation whose only write folder
     sits on a non-admin's row reads as not configured until an admin chooses one."""
-    _account(db_session, ruolo="collaboratore")
+    _account(db_session, role="collaborator")
     assert DriveRepository(db_session).storage_account() is None
 
 
@@ -347,14 +353,14 @@ def test_storage_holder_names_the_same_row_storage_account_answers_with(
 def test_storage_holder_is_none_when_only_a_non_admin_s_row_names_a_folder(
     db_session: Session,
 ) -> None:
-    _account(db_session, ruolo="collaboratore")
+    _account(db_session, role="collaborator")
     assert DriveRepository(db_session).storage_holder() is None
 
 
 def test_storage_account_stops_answering_with_an_admin_who_is_demoted(
     db_session: Session,
 ) -> None:
-    """The role is read at each resolution, from `users.ruolo` as it is now, not
+    """The role is read at each resolution, from `users.role` as it is now, not
     remembered from the moment the folder was chosen: a demoted admin stops supplying
     the space's storage at the next operation."""
     account = _account(db_session)
@@ -362,7 +368,7 @@ def test_storage_account_stops_answering_with_an_admin_who_is_demoted(
 
     owner = db_session.get(User, account.user_id)
     assert owner is not None
-    owner.ruolo = "collaboratore"
+    owner.role = "collaborator"
     db_session.flush()
 
     assert DriveRepository(db_session).storage_account() is None
@@ -379,7 +385,7 @@ def test_the_lazy_storage_stops_writing_into_a_demoted_admin_s_folder(
 
     owner = db_session.get(User, account.user_id)
     assert owner is not None
-    owner.ruolo = "collaboratore"
+    owner.role = "collaborator"
     db_session.flush()
 
     with pytest.raises(StorageNotConfigured):
@@ -445,13 +451,13 @@ def test_signed_url_without_a_connected_drive_refuses_too(db_session: Session) -
         storage.signed_url(KEY, TTL)
 
 
-# --- Configured: the titolare's own credential, the titolare's own folder -------------
+# --- Configured: the owner's own credential, the owner's own folder -------------
 
 
 def test_put_writes_under_the_chosen_folder_with_the_owners_own_bearer_token(
     db_session: Session,
 ) -> None:
-    """The slice in one test: the bytes land under the folder the titolare picked -- one
+    """The slice in one test: the bytes land under the folder the owner picked -- one
     folder per customer beneath it, exactly the arrangement the service account
     produces -- and every request that put them there carried *their* access token,
     obtained by refreshing the sealed refresh token on their row."""
@@ -510,7 +516,7 @@ def test_the_transport_is_built_once_and_reused_across_operations(db_session: Se
 
 
 def test_changing_the_write_folder_takes_effect_without_a_restart(db_session: Session) -> None:
-    """`updated_at` is the seam. The titolare changes the folder in Impostazioni →
+    """`updated_at` is the seam. The owner changes the folder in Settings →
     Drive; the next upload has to land in the new one. A storage that resolved once and
     never looked again would keep writing into the old folder until somebody restarted
     the API, with nothing on any screen to say so."""
@@ -587,7 +593,7 @@ def test_a_revoked_grant_is_recorded_on_the_row_and_answers_with_no_account_name
     assert MAILBOX in stored.last_error
     assert REFRESH_TOKEN not in stored.last_error
     kinds = db_session.execute(select(Activity.kind)).scalars().all()
-    assert "drive.credenziale_revocata" in kinds
+    assert "drive.credential_revoked" in kinds
 
 
 def test_after_a_revocation_the_next_operation_asks_for_configuration_again(
@@ -807,8 +813,13 @@ def test_a_revocation_is_never_recorded_against_a_resolution_that_moved(
     swaps: list[str] = []
 
     def swap_then_refuse(
-        method: str, url: str, headers: dict[str, str], body: bytes | None
-    ) -> tuple[int, bytes]:
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        *,
+        max_bytes: int | None = None,
+    ) -> tuple[int, bytes, dict[str, str]]:
         swaps.append(url)
         storage._resolution = lazy_drive._Resolution(
             account_id=other.id,
@@ -819,7 +830,7 @@ def test_a_revocation_is_never_recorded_against_a_resolution_that_moved(
                 root_folder_id=STORAGE_FOLDER,
             ),
         )
-        return gmail(method, url, headers, body)
+        return gmail(method, url, headers, body, max_bytes=max_bytes)
 
     storage = LazyUserDriveStorage(
         _sessions(db_session),
@@ -859,7 +870,7 @@ def test_a_revocation_is_never_recorded_against_a_resolution_that_moved(
         db_session.execute(
             select(Activity.entity_id).where(
                 Activity.entity_type == "google_drive_account",
-                Activity.kind == "drive.credenziale_revocata",
+                Activity.kind == "drive.credential_revoked",
                 Activity.entity_id.in_([failing.id, other.id]),
             )
         )
@@ -875,7 +886,7 @@ def test_a_grant_without_the_write_scope_refuses_the_upload_with_guidance(
     """`drive.file` is the scope that lets this credential create a file at all, and
     until now nothing checked it before a write.
 
-    A titolare can arrive here honestly: the consent screen lets a person tick fewer
+    An owner can arrive here honestly: the consent screen lets a person tick fewer
     scopes than were asked for, and a Google client whose scope list changes between
     two authorisations leaves older grants short of one. What happened then was a
     `files.create` refused by Google as a 403 inside `GDriveStorage`, surfacing as
@@ -921,7 +932,7 @@ def test_a_read_refused_over_the_missing_scope_is_not_worded_as_a_write(
     opposite of true.
 
     So the sentence names the archive rather than the direction of travel, and the
-    guidance -- reconnect from Impostazioni → Drive -- is unchanged, because the fix is.
+    guidance -- reconnect from Settings → Drive -- is unchanged, because the fix is.
     `put` and `delete` keep the write wording: those really are writes, and naming them
     is more precise than naming the archive.
     """

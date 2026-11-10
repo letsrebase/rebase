@@ -35,6 +35,7 @@
         "projects/pigrocrm/apps/mcp/**",
         "projects/pigrocrm/packages/**",
         "projects/pigrocrm/conftest.py",
+        "conftest.py",
         "pyproject.toml",
         "uv.lock"
       ],
@@ -130,7 +131,7 @@
       "id": "contract-pdf",
       "run": "uv run python projects/hub/tools/build_contract_pdf.py && uv run pytest -q projects/hub/packages/core/tests/test_contract_render.py",
       "when": [
-        "projects/hub/content/contratti/**",
+        "projects/hub/content/contracts/**",
         "projects/hub/tools/**",
         "projects/hub/packages/core/src/rebase_core/contracts/**",
         "projects/hub/packages/core/tests/test_contract_render.py",
@@ -138,7 +139,7 @@
         "shared/brand/fonts/**",
         "shared/brand/echo/echo-ink-watermelon-outlines-260.png"
       ],
-      "why": "Typesets both contracts with pandoc and Typst twice: through the laptop script into the ignored content/contratti/dist/, and through rebase_core.contracts the way the API renders them, the signature query included. Nothing is committed, so nothing can go stale; what this catches is a Markdown edit, a marker or a template change that no longer compiles."
+      "why": "Typesets both contracts with pandoc and Typst twice: through the laptop script into the ignored content/contracts/dist/, and through rebase_core.contracts the way the API renders them, the signature query included. Nothing is committed, so nothing can go stale; what this catches is a Markdown edit, a marker or a template change that no longer compiles."
     },
     {
       "id": "wordmark",
@@ -180,6 +181,11 @@
         "projects/hub/packages/**",
         "projects/hub/apps/web/src/lib/amount_cases.json",
         "projects/hub/conftest.py",
+        "conftest.py",
+        "projects/hub/docker-compose.yml",
+        "projects/hub/docker-compose.documenso.yml",
+        "projects/hub/db-backup/Dockerfile",
+        ".github/workflows/deploy-hub.yml",
         "pyproject.toml",
         "uv.lock"
       ],
@@ -220,6 +226,19 @@
         "pnpm-workspace.yaml"
       ],
       "why": "vite build then tsc --noEmit, the same pair the node gate runs. The route tree is code, so nothing has to be generated first."
+    },
+    {
+      "id": "hub-api-types",
+      "run": "pnpm --filter hub generate:api && git diff --exit-code -- projects/hub/apps/web/src/lib/api-types.ts",
+      "when": [
+        "projects/hub/apps/api/**",
+        "projects/hub/packages/core/**",
+        "projects/hub/apps/web/scripts/**",
+        "projects/hub/apps/web/package.json",
+        "pyproject.toml",
+        "uv.lock"
+      ],
+      "why": "api-types.ts is generated from the API's OpenAPI document; a response model changed without regenerating it leaves the web typed against the old shape."
     },
     {
       "id": "website-types",
@@ -324,21 +343,33 @@
     },
     {
       "id": "hub-documenso-compose",
-      "run": "cd projects/hub && [ \"$(POSTGRES_PASSWORD=x REBASE_DATA_DIR=. docker compose -p rebase config --services | sort | tr '\\n' ' ')\" = 'api db mcp sweep web ' ] && [ \"$(POSTGRES_PASSWORD=x REBASE_DATA_DIR=. REBASE_DOCUMENSO_DATA_DIR=. DOCUMENSO_DB_PASSWORD=x DOCUMENSO_NEXTAUTH_SECRET=x DOCUMENSO_ENCRYPTION_KEY=x DOCUMENSO_ENCRYPTION_SECONDARY_KEY=x DOCUMENSO_SIGNING_PASSPHRASE=x DOCUMENSO_SIGNING_CERT_BASE64=x REBASE_RESEND_API_KEY=x COMPOSE_FILE=docker-compose.yml:docker-compose.documenso.yml docker compose -p rebase config --services | sort | tr '\\n' ' ')\" = 'api db documenso documenso-db mcp sweep web ' ]",
+      "run": "cd projects/hub && [ \"$(POSTGRES_PASSWORD=x REBASE_DATA_DIR=. docker compose -p rebase config --services | sort | tr '\\n' ' ')\" = 'api campaigns cards db mcp sweep web ' ] && [ \"$(POSTGRES_PASSWORD=x REBASE_DATA_DIR=. REBASE_DOCUMENSO_DATA_DIR=. DOCUMENSO_DB_PASSWORD=x DOCUMENSO_NEXTAUTH_SECRET=x DOCUMENSO_ENCRYPTION_KEY=x DOCUMENSO_ENCRYPTION_SECONDARY_KEY=x DOCUMENSO_SIGNING_PASSPHRASE=x DOCUMENSO_SIGNING_CERT_BASE64=x REBASE_RESEND_API_KEY=x HUB_BACKUP_CERT_B64=x HUB_BACKUP_R2_ACCOUNT_ID=x HUB_BACKUP_BUCKET=x HUB_BACKUP_ACCESS_KEY_ID=x HUB_BACKUP_SECRET_ACCESS_KEY=x HUB_BACKUP_PING_URL=https://hc-ping.example.test/y DOCUMENSO_BACKUP_PING_URL=https://hc-ping.example.test/x COMPOSE_FILE=docker-compose.yml:docker-compose.documenso.yml docker compose -p rebase config --services | sort | tr '\\n' ' ')\" = 'api campaigns cards db documenso documenso-backup documenso-db hub-backup mcp sweep web ' ]",
       "when": [
         "projects/hub/docker-compose.yml",
         "projects/hub/docker-compose.documenso.yml"
       ],
-      "why": "Nothing in CI or preflight otherwise reads docker-compose.documenso.yml (REB-393): the preview's deploy and CI's hub-images build never set COMPOSE_FILE, so a variable renamed or removed in either file only breaks a real deploy. This asks compose to resolve both shapes with throwaway values -- preview's, the plain file alone, and production's, both files together -- and checks the exact service list each one starts, so a Documenso service left out of the second shape or leaked into the first fails here instead of on the server."
+      "why": "Nothing in CI or preflight otherwise reads docker-compose.documenso.yml (REB-393): the preview's deploy and CI's hub-images build never set COMPOSE_FILE, so a variable renamed or removed in either file only breaks a real deploy. This asks compose to resolve both shapes with throwaway values -- preview's, the plain file alone, and production's, both files together -- and checks the exact service list each one starts, so a Documenso or backup service left out of the second shape or leaked into the first fails here instead of on the server."
     },
     {
       "id": "vaultwarden-drill",
-      "run": "shellcheck projects/vaultwarden/scripts/*.sh projects/vaultwarden/tests/*.sh && projects/vaultwarden/tests/backup-restore.sh",
+      "run": "shellcheck projects/vaultwarden/scripts/*.sh projects/vaultwarden/tests/*.sh && node --experimental-strip-types --no-warnings projects/vaultwarden/tests/branding.mjs && projects/vaultwarden/tests/backup-restore.sh",
       "when": [
-        "projects/vaultwarden/**"
+        "projects/vaultwarden/**",
+        "shared/brand/**"
       ],
       "serial": true,
       "why": "REB-648. Vaultwarden has no code and no unit tests: what can break is the compose file, the backup and restore scripts and the pinned image, and the only check that reads all three is running them. This starts the real compose file on a throwaway data directory, proves it publishes on the loopback only, refuses a signup without an invitation and has the admin page off (and opens it with a hash, as the README writes it), then backs up into an S3 gateway, checks the object is an encrypted envelope and restores it on a scratch server. ci.yml runs the same script as the `vaultwarden` job. Serial: it starts containers and pulls an image."
+    },
+    {
+      "id": "hub-db-backup-drill",
+      "run": "shellcheck projects/hub/db-backup/scripts/*.sh projects/hub/db-backup/tests/*.sh && projects/hub/db-backup/tests/backup-restore.sh",
+      "when": [
+        "projects/hub/db-backup/**",
+        "projects/hub/docker-compose.documenso.yml",
+        "projects/hub/docker-compose.yml"
+      ],
+      "serial": true,
+      "why": "REB-715, REB-717. The two database backups are bash around pg_dump, openssl and curl, and the only check that reads the compose files, the image, the scripts and the pinned Postgres together is running them. This builds the backup services' image from the real compose files, starts the real `documenso-db` with a migration row and a contract in it and the real `db` with an Alembic revision and rows in it, backs each up into an S3 gateway under its own prefix, checks each object is an encrypted envelope that no other key opens, runs the loops against a stand-in for healthchecks.io (a ping after a success on each service's own check, `/fail` after a refused upload, the URL never printed), and restores both into a scratch Postgres, Documenso's twice (from the unpacked file and straight from the envelope, the contract back byte for byte) and the hub's with the row count of every table and the revision compared with the source's. ci.yml runs the same script as the `hub · database backups drill` job. Serial: it builds an image and starts containers."
     },
     {
       "id": "nix-packages",
@@ -394,7 +425,67 @@
         "projects/pigrocrm/deploy/nginx/preview.pigro.letsrebase.conf",
         "projects/website/deploy/check-unindexable.sh"
       ],
-      "why": "The three vhosts that decide whether a preview or the CRM's production host tells a crawler to stay out are edited by hand and rewritten in place by certbot, and nothing else ever asks the live host what it actually answers. Named one by one rather than globbed: the directories they live in also hold nginx.conf, spa.conf, orbiters-proxy.conf and letsrebase.conf (production website, which stays indexable and this script never asserts on), none of which the live hosts under test depend on, and a docker build or Playwright run over an unrelated comment in one of those was exactly the ORB-141 cost this repository already paid once. Reaches preview.letsrebase.com, preview.pigro.letsrebase.com and pigro.letsrebase.com over HTTPS for the X-Robots-Tag and robots.txt REB-108 checks; a GitHub-hosted runner has nothing of its own to prove here, which is why this runs only from a developer machine."
+      "why": "The three vhosts that decide whether a preview or the CRM's production host tells a crawler to stay out are edited by hand and rewritten in place by certbot, and nothing else ever asks the live host what it actually answers. Named one by one rather than globbed: the directories they live in also hold nginx.conf, spa.conf, rebase-proxy.conf and letsrebase.conf (production website, which stays indexable and this script never asserts on), none of which the live hosts under test depend on, and a docker build or Playwright run over an unrelated comment in one of those was exactly the ORB-141 cost this repository already paid once. Reaches preview.letsrebase.com, preview.pigro.letsrebase.com and pigro.letsrebase.com over HTTPS for the X-Robots-Tag and robots.txt REB-108 checks; a GitHub-hosted runner has nothing of its own to prove here, which is why this runs only from a developer machine."
+    },
+    {
+      "id": "kit",
+      "run": "python3 .github/kit/bin/kit.py check && python3 -m unittest discover -s tooling/workflow-kit/tests",
+      "when": [
+        ".agents/**",
+        ".claude/**",
+        ".github/kit/**",
+        ".omp/hooks/**",
+        ".github/workflow.json",
+        ".github/PULL_REQUEST_TEMPLATE.md",
+        "tooling/workflow-kit/**"
+      ],
+      "why": "The kit job in ci runs the same check on every PR in seconds; here it catches a skill edited in .claude/skills instead of .agents/skills, or a kit change not synced, before the push rather than after (REB-814)."
+    },
+    {
+      "id": "secrets-scan",
+      "run": "docker run --rm -v \"$PWD\":/repo ghcr.io/gitleaks/gitleaks:v8.30.0@sha256:691af3c7c5a48b16f187ce3446d5f194838f91238f27270ed36eef6359a574d9 dir --no-banner --redact -c /repo/.github/gitleaks.toml /repo",
+      "when": [
+        "**"
+      ],
+      "unless": [
+        "docs/**"
+      ],
+      "serial": true,
+      "why": "INFRA-A-19. The working tree through gitleaks with the repository's allow-list, so a key is caught before the push; ci.yml's `secrets-scan` job reads the history. Needs only Docker and the image, no network key."
+    },
+    {
+      "id": "english-lint",
+      "run": "python3 -m unittest discover -s tooling/english-lint && python3 tooling/english-lint/english_lint.py",
+      "when": [
+        "projects/**",
+        "shared/**",
+        "tooling/**",
+        "scripts/**",
+        "infra/**",
+        "conftest.py",
+        ".github/**"
+      ],
+      "why": "REB-904. No Italian in an identifier, a file name or a comment (strings are the product's own copy and are not read). Seconds: Python through tokenize and ast, TypeScript through the workspace's `typescript` package, so `pnpm install` once is all it needs. The unit tests plant an Italian name and expect a failure. ci.yml's `english-lint` job runs the same two commands; the vocabulary is docs/glossary.md's and the exceptions are tooling/english-lint/allowlist.py."
+    },
+    {
+      "id": "infra-dns-names",
+      "run": "python3 -m unittest discover -s tooling/english-lint -p 'test_check_dns_names.py' && python3 tooling/english-lint/check_dns_names.py",
+      "when": [
+        "infra/cloudflare/**",
+        "tooling/english-lint/**"
+      ],
+      "why": "REB-914. No DNS record name carries an Italian word (proper nouns allowed, `firma` and `pigro` until REB-918), read with the English lint's own vocabulary. Stdlib Python, milliseconds; ci.yml's `infra` job runs the same two commands."
+    },
+    {
+      "id": "infra-nginx",
+      "run": "bash scripts/check-nginx.sh",
+      "when": [
+        "infra/origin/nginx/**",
+        "projects/*/deploy/**",
+        "scripts/check-nginx.sh"
+      ],
+      "serial": true,
+      "why": "CI-A-08. `nginx -t` over every nginx file the repository carries, in the pinned image with the snippet sources mounted; ci.yml's `infra` job runs the same script, beside terraform fmt, validate and the import count."
     }
   ]
 }

@@ -1,12 +1,12 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DataTable, type DataTableFeatures } from './DataTable'
 import type { ColumnDef } from '@tanstack/react-table'
 
-interface Riga {
+interface Row {
   id: string
-  nome: string
+  name: string
 }
 
 // Two columns on purpose: a plain `accessorKey` (the default "just call
@@ -14,14 +14,14 @@ interface Riga {
 // exercise both branches of `table.FlexRender` (v9's replacement for calling
 // `flexRender` by hand -- see DataTable.tsx's own comment on why v9's `useTable`
 // is used at all here), not only the simpler of the two.
-const COLUMNS: ColumnDef<DataTableFeatures, Riga>[] = [
+const COLUMNS: ColumnDef<DataTableFeatures, Row>[] = [
   { accessorKey: 'id', header: 'ID', cell: (info) => `#${info.getValue()}` },
-  { accessorKey: 'nome', header: 'Nome' },
+  { accessorKey: 'name', header: 'Nome' },
 ]
 
-const ACME: Riga = { id: '1', nome: 'ACME Srl' }
-const BETA: Riga = { id: '2', nome: 'Beta SpA' }
-const DATA: Riga[] = [ACME, BETA]
+const ACME: Row = { id: '1', name: 'ACME Srl' }
+const BETA: Row = { id: '2', name: 'Beta SpA' }
+const DATA: Row[] = [ACME, BETA]
 
 function rowFor(text: string): HTMLElement {
   const cell = screen.getByText(text)
@@ -32,7 +32,7 @@ function rowFor(text: string): HTMLElement {
 
 describe('DataTable', () => {
   it('renders a header per column and a row per datum, through both a plain accessor and a custom cell', () => {
-    render(<DataTable columns={COLUMNS} data={DATA} />)
+    render(<DataTable label="Clienti" columns={COLUMNS} data={DATA} />)
     expect(screen.getByRole('columnheader', { name: 'ID' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Nome' })).toBeInTheDocument()
     expect(screen.getByText('#1')).toBeInTheDocument()
@@ -42,35 +42,35 @@ describe('DataTable', () => {
   })
 
   it('shows a distinguishable loading state instead of the table, not an empty one', () => {
-    render(<DataTable columns={COLUMNS} data={[]} isLoading />)
+    render(<DataTable label="Clienti" columns={COLUMNS} data={[]} isLoading />)
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     expect(screen.getByRole('status')).toBeInTheDocument()
     expect(screen.queryByText('Nessun risultato.')).not.toBeInTheDocument()
   })
 
-  /** A different shape, deliberately -- but not a different *size*: bars shorter than
-   *  the rows they stand in for, in no container, made the table jump the moment the
-   *  request landed. */
-  it('loads inside the same container as the table, at the height of a real row', () => {
-    render(<DataTable columns={COLUMNS} data={[]} isLoading />)
-    const container = screen.getByRole('status')
-    expect(container.className).toContain('border-border')
-    expect(container.querySelector('.h-12')).not.toBeNull()
+  /** A different shape, deliberately -- the brand loader, no header -- but the same
+   *  container, so the table does not change width the moment the request lands. */
+  it('shows the brand loader inside the same container as the table', () => {
+    const { container } = render(<DataTable label="Clienti" columns={COLUMNS} data={[]} isLoading />)
+    const frame = container.querySelector('[data-slot="data-table"]')
+    expect(frame?.className).toContain('border-border')
+    expect(frame?.querySelector('[data-slot="loader"]')).not.toBeNull()
+    expect(screen.getByRole('status')).toBeInTheDocument()
   })
 
   it('shows an honest empty state -- the full table chrome, one row saying so -- once loading is over', () => {
-    render(<DataTable columns={COLUMNS} data={[]} />)
+    render(<DataTable label="Clienti" columns={COLUMNS} data={[]} />)
     expect(screen.getByRole('table')).toBeInTheDocument()
     expect(screen.getByText('Nessun risultato.')).toBeInTheDocument()
   })
 
   it('accepts a caller-supplied empty message instead of the default', () => {
-    render(<DataTable columns={COLUMNS} data={[]} emptyMessage="Nessun cliente trovato." />)
+    render(<DataTable label="Clienti" columns={COLUMNS} data={[]} emptyMessage="Nessun cliente trovato." />)
     expect(screen.getByText('Nessun cliente trovato.')).toBeInTheDocument()
   })
 
   /**
-   * The defect a fix round caught live on Clienti, Persone and Deal alike: a
+   * The defect a fix round caught live on Organizations, People and Deal alike: a
    * failed list request rendered the exact same "Nessun risultato." row an
    * honestly-empty result gets, with nothing on screen distinguishing "you
    * have none" from "we could not ask". `isError`/`error` exist to make the
@@ -79,7 +79,7 @@ describe('DataTable', () => {
    */
   it('shows the failed request as a distinct banner, not the same shape an empty result gets', () => {
     const error = { code: 'http_error', detail: 'Il server non risponde.', status: 503 }
-    render(<DataTable columns={COLUMNS} data={[]} isError error={error} />)
+    render(<DataTable label="Clienti" columns={COLUMNS} data={[]} isError error={error} />)
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     expect(screen.getByRole('alert')).toHaveTextContent('Il server non risponde.')
     expect(screen.queryByText('Nessun risultato.')).not.toBeInTheDocument()
@@ -87,7 +87,7 @@ describe('DataTable', () => {
 
   it('uses the server’s own message in the failed-request banner, not a client-side rewording', () => {
     const error = { code: 'not_found', detail: 'cliente 123 non trovato' }
-    render(<DataTable columns={COLUMNS} data={[]} isError error={error} />)
+    render(<DataTable label="Clienti" columns={COLUMNS} data={[]} isError error={error} />)
     expect(screen.getByRole('alert')).toHaveTextContent('cliente 123 non trovato')
   })
 
@@ -101,6 +101,7 @@ describe('DataTable', () => {
   it('keeps showing already-loaded rows instead of a banner when a background refetch fails', () => {
     render(
       <DataTable
+        label="Clienti"
         columns={COLUMNS}
         data={DATA}
         isError
@@ -114,39 +115,48 @@ describe('DataTable', () => {
 
   it('calls onRowClick with the original row datum, not a table-internal wrapper', async () => {
     const onRowClick = vi.fn()
-    render(<DataTable columns={COLUMNS} data={DATA} onRowClick={onRowClick} />)
+    render(<DataTable label="Clienti" columns={COLUMNS} data={DATA} onRowClick={onRowClick} />)
     await userEvent.click(screen.getByText('ACME Srl'))
     expect(onRowClick).toHaveBeenCalledExactlyOnceWith(ACME)
   })
 
   it('leaves rows out of tab order when no onRowClick is given -- nothing to activate', () => {
-    render(<DataTable columns={COLUMNS} data={DATA} />)
+    render(<DataTable label="Clienti" columns={COLUMNS} data={DATA} />)
     expect(rowFor('ACME Srl')).not.toHaveAttribute('tabindex')
   })
 
   it('puts a clickable row in tab order', () => {
-    render(<DataTable columns={COLUMNS} data={DATA} onRowClick={vi.fn()} />)
+    render(<DataTable label="Clienti" columns={COLUMNS} data={DATA} onRowClick={vi.fn()} />)
     expect(rowFor('ACME Srl')).toHaveAttribute('tabindex', '0')
   })
 
   it('activates a row from the keyboard with Enter, mirroring a click', () => {
     const onRowClick = vi.fn()
-    render(<DataTable columns={COLUMNS} data={DATA} onRowClick={onRowClick} />)
+    render(<DataTable label="Clienti" columns={COLUMNS} data={DATA} onRowClick={onRowClick} />)
     fireEvent.keyDown(rowFor('Beta SpA'), { key: 'Enter' })
     expect(onRowClick).toHaveBeenCalledExactlyOnceWith(BETA)
   })
 
   it('activates a row from the keyboard with Space too', () => {
     const onRowClick = vi.fn()
-    render(<DataTable columns={COLUMNS} data={DATA} onRowClick={onRowClick} />)
+    render(<DataTable label="Clienti" columns={COLUMNS} data={DATA} onRowClick={onRowClick} />)
     fireEvent.keyDown(rowFor('Beta SpA'), { key: ' ' })
     expect(onRowClick).toHaveBeenCalledExactlyOnceWith(BETA)
   })
 
   it('ignores a key that is neither Enter nor Space', () => {
     const onRowClick = vi.fn()
-    render(<DataTable columns={COLUMNS} data={DATA} onRowClick={onRowClick} />)
+    render(<DataTable label="Clienti" columns={COLUMNS} data={DATA} onRowClick={onRowClick} />)
     fireEvent.keyDown(rowFor('Beta SpA'), { key: 'a' })
+    expect(onRowClick).not.toHaveBeenCalled()
+  })
+
+  it('leaves Enter on a control inside a cell to that control', () => {
+    const onRowClick = vi.fn()
+    render(<DataTable label="Clienti" columns={COLUMNS} data={DATA} onRowClick={onRowClick} />)
+    const inner = document.createElement('button')
+    rowFor('Beta SpA').appendChild(inner)
+    fireEvent.keyDown(inner, { key: 'Enter' })
     expect(onRowClick).not.toHaveBeenCalled()
   })
 
@@ -158,7 +168,7 @@ describe('DataTable', () => {
      `ring-inset` is load-bearing rather than stylistic: the scroll container above is
      `overflow-y-hidden` and an outer ring on the last row would be clipped away. */
   it('gives a clickable row a visible focus ring, drawn inside the clipping container', () => {
-    render(<DataTable columns={COLUMNS} data={DATA} onRowClick={vi.fn()} />)
+    render(<DataTable label="Clienti" columns={COLUMNS} data={DATA} onRowClick={vi.fn()} />)
     const classes = rowFor('ACME Srl').className.split(/\s+/)
     expect(classes).toContain('focus-visible:ring-2')
     expect(classes).toContain('focus-visible:ring-ring')
@@ -167,7 +177,7 @@ describe('DataTable', () => {
   })
 
   it('leaves a non-clickable row without a focus ring -- there is nothing to focus', () => {
-    render(<DataTable columns={COLUMNS} data={DATA} />)
+    render(<DataTable label="Clienti" columns={COLUMNS} data={DATA} />)
     const classes = rowFor('ACME Srl').className.split(/\s+/)
     expect(classes).not.toContain('focus-visible:ring-2')
     expect(classes).not.toContain('focus-visible:ring-inset')
@@ -182,30 +192,30 @@ describe('DataTable', () => {
  * through `tableFeatures({ columnMeta })` rather than by global declaration merging.
  */
 describe('DataTable column meta', () => {
-  const ALIGNED: ColumnDef<DataTableFeatures, Riga>[] = [
-    { accessorKey: 'nome', header: 'Nome' },
+  const ALIGNED: ColumnDef<DataTableFeatures, Row>[] = [
+    { accessorKey: 'name', header: 'Nome' },
     { accessorKey: 'id', header: 'Totale', meta: { align: 'right' } },
   ]
 
   it('right-aligns both the header and the cells of a numeric column', () => {
-    render(<DataTable columns={ALIGNED} data={DATA} />)
+    render(<DataTable label="Clienti" columns={ALIGNED} data={DATA} />)
     expect(screen.getByRole('columnheader', { name: 'Totale' }).className).toContain('text-right')
     const cell = screen.getByText('1').closest('td')
     expect(cell?.className).toContain('text-right')
   })
 
   it('leaves a column with no alignment of its own where it was', () => {
-    render(<DataTable columns={ALIGNED} data={DATA} />)
+    render(<DataTable label="Clienti" columns={ALIGNED} data={DATA} />)
     expect(screen.getByRole('columnheader', { name: 'Nome' }).className).not.toContain('text-right')
     expect(screen.getByText('ACME Srl').closest('td')?.className).not.toContain('text-right')
   })
 
   it('passes a column width through to the header, so the «⋯» column can stay narrow', () => {
-    const sized: ColumnDef<DataTableFeatures, Riga>[] = [
-      { accessorKey: 'nome', header: 'Nome' },
-      { id: 'azioni', header: '', meta: { width: '3rem' } /* jsdom resolves rem against a 16px root */, cell: () => null },
+    const sized: ColumnDef<DataTableFeatures, Row>[] = [
+      { accessorKey: 'name', header: 'Nome' },
+      { id: 'actions', header: '', meta: { width: '3rem' } /* jsdom resolves rem against a 16px root */, cell: () => null },
     ]
-    render(<DataTable columns={sized} data={DATA} />)
+    render(<DataTable label="Clienti" columns={sized} data={DATA} />)
     const headers = screen.getAllByRole('columnheader')
     expect(headers[1]).toHaveStyle({ width: '48px' })
   })
@@ -217,7 +227,7 @@ describe('the table container', () => {
    *  the derived scale no longer gives; what the container must not carry is any
    *  radius class of its own. */
   it('is a square, hairline-bordered card that clips its own corners', () => {
-    render(<DataTable columns={COLUMNS} data={DATA} />)
+    render(<DataTable label="Clienti" columns={COLUMNS} data={DATA} />)
     const container = screen.getByRole('table').closest('[data-slot="data-table"]')
     expect(container?.className).not.toMatch(/rounded/)
     expect(container?.className).toContain('border-border')
@@ -235,9 +245,41 @@ describe('the table container', () => {
    * to stay, but the horizontal axis is now a scroll axis.
    */
   it('scrolls a too-wide table inside itself rather than widening the page', () => {
-    render(<DataTable columns={COLUMNS} data={DATA} />)
+    render(<DataTable label="Clienti" columns={COLUMNS} data={DATA} />)
     const container = screen.getByRole('table').closest('[data-slot="data-table"]')
     expect(container?.className).toContain('overflow-x-auto')
     expect(container?.className).toContain('overflow-y-hidden')
+  })
+})
+
+describe('DataTable scroll region', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  /**
+   * REB-782: the shared `Table` names its scroll region from `scrollLabel`, and a list
+   * that overflows has to say what it holds, so `label` is the region's name.
+   */
+  it('names its scroll region after its label while it overflows', () => {
+    let notify: () => void = () => {}
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          notify = callback
+        }
+        observe() {}
+        disconnect() {}
+      },
+    )
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(400)
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(200)
+    render(<DataTable label="Clienti" columns={COLUMNS} data={DATA} />)
+
+    act(() => notify())
+
+    expect(screen.getByRole('region', { name: 'Clienti' })).toHaveAttribute('tabindex', '0')
   })
 })

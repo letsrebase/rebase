@@ -4,8 +4,10 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.contact_points.models import ContactPoint
+from pigrocrm.core.contact_points.service import owners_matching
 from pigrocrm.core.db import decode_cursor, escape_like, keyset_predicate, order_by
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.people.schemas import PERSON_SORTS, PersonListQuery
 
@@ -23,7 +25,7 @@ class PersonRepository:
         return person
 
     def customer_names(self, customer_ids: Collection[UUID]) -> dict[UUID, str]:
-        """The `ragione_sociale` of each given customer, in one query.
+        """The `legal_name` of each given customer, in one query.
 
         One statement for a whole page, not one per row: `PersonService` reads this
         once with every distinct `customer_id` on the page it is about to return, so a
@@ -44,7 +46,9 @@ class PersonRepository:
         if not customer_ids:
             return {}
         rows = self.session.execute(
-            select(Customer.id, Customer.ragione_sociale).where(Customer.id.in_(customer_ids))
+            select(Organization.id, Organization.legal_name).where(
+                Organization.id.in_(customer_ids)
+            )
         ).all()
         return {row[0]: row[1] for row in rows}
 
@@ -63,13 +67,13 @@ class PersonRepository:
             # trailing "\" combines with the wildcard just after it into an
             # accidental escape sequence that swallows the match entirely. escape="\\"
             # states explicitly which character escape_like used, rather than relying
-            # on ILIKE's default. Mirrors CustomerRepository.list exactly.
+            # on ILIKE's default. Mirrors OrganizationRepository.list exactly.
             like = f"%{escape_like(query.search.lower())}%"
             stmt = stmt.where(
                 or_(
-                    Person.nome.ilike(like, escape="\\"),
-                    Person.cognome.ilike(like, escape="\\"),
-                    Person.email.ilike(like, escape="\\"),
+                    Person.first_name.ilike(like, escape="\\"),
+                    Person.last_name.ilike(like, escape="\\"),
+                    Person.id.in_(owners_matching(ContactPoint.person_id, query.search)),
                 )
             )
         if query.customer_id:
@@ -78,10 +82,10 @@ class PersonRepository:
             # JSONB containment, served by the GIN index.
             stmt = stmt.where(Person.custom_fields.contains(query.custom))
 
-        # Residuo R9 -- see `CustomerRepository.list` for the reasoning. `cognome` is
+        # Residuo R9 -- see `OrganizationRepository.list` for the reasoning. `last_name` is
         # the one nullable column in any of the four whitelists, so this is the `list`
         # where `keyset_predicate`'s `OR col IS NULL` arm actually fires: without it a
-        # scan ordered by `cognome` stops at the last surname and never returns the
+        # scan ordered by `last_name` stops at the last surname and never returns the
         # people who have none.
         spec = PERSON_SORTS.resolve(query.sort)
         if query.cursor:

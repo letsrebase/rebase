@@ -29,7 +29,7 @@ function ok(data: unknown) {
 
 describe('useInvoice', () => {
   it('does not fire a request for an empty id', async () => {
-    // B1: `useCustomer('')` once produced a 307 to the *list* endpoint with an
+    // B1: `useOrganization('')` once produced a 307 to the *list* endpoint with an
     // absolute URL, bypassing even the Vite proxy. The guard is on the hook, and this
     // is the test the original fix never got.
     const { result } = renderHook(() => useInvoice(''), { wrapper })
@@ -56,11 +56,11 @@ describe('useInvoice', () => {
 describe('useInvoices', () => {
   it('passes the filters through as query parameters', async () => {
     mockGet.mockReturnValueOnce(ok({ items: [], next_cursor: null }))
-    const { result } = renderHook(() => useInvoices({ tipo: 'proforma', anno: 2026 }), { wrapper })
+    const { result } = renderHook(() => useInvoices({ type: 'proforma', year: 2026 }), { wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(mockGet).toHaveBeenCalledWith(
       '/api/invoices',
-      expect.objectContaining({ params: { query: { tipo: 'proforma', anno: 2026 } } }),
+      expect.objectContaining({ params: { query: { type: 'proforma', year: 2026 } } }),
     )
   })
 })

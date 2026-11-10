@@ -6,6 +6,7 @@ import re
 from collections.abc import Iterator
 
 import pytest
+from api_responses import ok
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
@@ -27,18 +28,18 @@ def sender(client: TestClient) -> Iterator[RecordingSender]:
 
 @pytest.fixture
 def admin(api_session: Session) -> Iterator[None]:
-    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
     api_session.commit()
     yield
     api_session.rollback()
-    for table in ("admin_actions", "comments", "freelancers", "companies", "users", "signups"):
+    for table in ("admin_actions", "notes", "freelancers", "companies", "users", "signups"):
         api_session.execute(text(f"DELETE FROM {table}"))
     api_session.commit()
 
 
 def _login(client: TestClient, sender: RecordingSender, email: str = ADMIN_EMAIL) -> None:
     assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
-    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    match = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
 
@@ -49,12 +50,12 @@ def _apply(client: TestClient, email: str = "ada@studio.it") -> str:
     response = client.post(
         "/api/hub/freelancers",
         data={
-            "nome": "Ada",
-            "cognome": "Lovelace",
+            "first_name": "Ada",
+            "last_name": "Lovelace",
             "email": email,
-            "tariffa_giornaliera": "450",
-            "posizione": "Backend developer",
-            "remoto": "remoto",
+            "daily_rate": "450",
+            "job_title": "Backend developer",
+            "remote": "remote",
         },
         files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
     )
@@ -67,23 +68,23 @@ def _request_company(client: TestClient) -> str:
     response = client.post(
         "/api/hub/companies",
         json={
-            "nome_azienda": "ACME Srl",
-            "referente_nome": "Wile",
-            "referente_cognome": "E.",
+            "company_name": "ACME Srl",
+            "contact_first_name": "Wile",
+            "contact_last_name": "E.",
             "email": "wile@acme.it",
-            "telefono": "+39 345 1234567",
-            "figura_richiesta": "Backend developer",
-            "progetto": "Un backend developer per tre mesi.",
-            "periodo_da": "2026-10-01",
-            "durata": "3 mesi",
-            "budget_giornaliero": "500",
-            "remoto": "remoto",
-            "numero_risorse": 1,
+            "phone": "+39 345 1234567",
+            "requested_role": "Backend developer",
+            "project": "Un backend developer per tre mesi.",
+            "period_from": "2026-10-01",
+            "duration": "3 mesi",
+            "daily_budget": "500",
+            "remote": "remote",
+            "headcount": 1,
         },
     )
     assert response.status_code == 201, response.text
     listed = client.get("/api/hub/companies").json()["items"]
-    return next(item["id"] for item in listed if item["nome_azienda"] == "ACME Srl")
+    return next(item["id"] for item in listed if item["company_name"] == "ACME Srl")
 
 
 # ---- freelancers ------------------------------------------------------------------------
@@ -97,18 +98,18 @@ def test_an_admin_overrides_a_freelancer_field_and_reads_the_audit_trail(
 
     overridden = client.patch(
         f"/api/hub/freelancers/{freelancer_id}/override",
-        json={"posizione": "Tech lead", "tariffa_giornaliera": "600"},
+        json={"job_title": "Tech lead", "daily_rate": "600"},
     )
     assert overridden.status_code == 200, overridden.text
-    assert overridden.json()["posizione"] == "Tech lead"
+    assert overridden.json()["job_title"] == "Tech lead"
 
     trail = client.get(f"/api/hub/freelancers/{freelancer_id}/audit")
     assert trail.status_code == 200
     entries = trail.json()
     assert len(entries) == 1
     assert entries[0]["kind"] == "overridden"
-    assert entries[0]["admin_nome"] == "Ivan"
-    assert entries[0]["payload"]["before"]["posizione"] == "Backend developer"
+    assert entries[0]["admin_name"] == "Ivan"
+    assert entries[0]["payload"]["before"]["job_title"] == "Backend developer"
 
 
 def test_overriding_a_freelancer_identity_field_moves_it_onto_the_linked_user(
@@ -118,11 +119,11 @@ def test_overriding_a_freelancer_identity_field_moves_it_onto_the_linked_user(
     freelancer_id = _apply(client)
 
     overridden = client.patch(
-        f"/api/hub/freelancers/{freelancer_id}/override", json={"nome": "Grace"}
+        f"/api/hub/freelancers/{freelancer_id}/override", json={"first_name": "Grace"}
     )
-    assert overridden.status_code == 200 and overridden.json()["nome"] == "Grace"
+    assert overridden.status_code == 200 and overridden.json()["first_name"] == "Grace"
     user_id = api_session.scalar(select(Freelancer.user_id).where(Freelancer.id == freelancer_id))
-    assert api_session.get(User, user_id).nome == "Grace"
+    assert api_session.get(User, user_id).first_name == "Grace"
 
 
 def test_overriding_a_required_field_to_null_is_a_422(
@@ -130,7 +131,7 @@ def test_overriding_a_required_field_to_null_is_a_422(
 ) -> None:
     _login(client, sender)
     freelancer_id = _apply(client)
-    refused = client.patch(f"/api/hub/freelancers/{freelancer_id}/override", json={"stato": None})
+    refused = client.patch(f"/api/hub/freelancers/{freelancer_id}/override", json={"status": None})
     assert refused.status_code == 422
 
 
@@ -157,12 +158,12 @@ def test_an_admin_deletes_a_freelancer_reversibly(
 
     deleted = client.delete(f"/api/hub/freelancers/{freelancer_id}")
     assert deleted.status_code == 200 and deleted.json()["deleted_at"] is not None
-    assert client.get("/api/hub/freelancers").json()["totale"] == 0
+    assert client.get("/api/hub/freelancers").json()["total"] == 0
     assert client.get(f"/api/hub/freelancers/{freelancer_id}").status_code == 404
 
     restored = client.post(f"/api/hub/freelancers/{freelancer_id}/restore")
     assert restored.status_code == 200 and restored.json()["deleted_at"] is None
-    assert client.get("/api/hub/freelancers").json()["totale"] == 1
+    assert client.get("/api/hub/freelancers").json()["total"] == 1
 
 
 def test_an_admin_reverts_a_freelancer_override_from_its_audit_entry(
@@ -170,12 +171,16 @@ def test_an_admin_reverts_a_freelancer_override_from_its_audit_entry(
 ) -> None:
     _login(client, sender)
     freelancer_id = _apply(client)
-    client.patch(f"/api/hub/freelancers/{freelancer_id}/override", json={"posizione": "Tech lead"})
+    ok(
+        client.patch(
+            f"/api/hub/freelancers/{freelancer_id}/override", json={"job_title": "Tech lead"}
+        )
+    )
     action_id = client.get(f"/api/hub/freelancers/{freelancer_id}/audit").json()[0]["id"]
 
     reverted = client.post(f"/api/hub/freelancers/{freelancer_id}/audit/{action_id}/revert")
     assert reverted.status_code == 200
-    assert reverted.json()["posizione"] == "Backend developer"
+    assert reverted.json()["job_title"] == "Backend developer"
 
 
 def test_reverting_a_delete_entry_is_refused(
@@ -183,8 +188,8 @@ def test_reverting_a_delete_entry_is_refused(
 ) -> None:
     _login(client, sender)
     freelancer_id = _apply(client)
-    client.delete(f"/api/hub/freelancers/{freelancer_id}")
-    client.post(f"/api/hub/freelancers/{freelancer_id}/restore")
+    ok(client.delete(f"/api/hub/freelancers/{freelancer_id}"))
+    ok(client.post(f"/api/hub/freelancers/{freelancer_id}/restore"))
     delete_entry = next(
         e
         for e in client.get(f"/api/hub/freelancers/{freelancer_id}/audit").json()
@@ -204,14 +209,14 @@ def test_an_admin_overrides_deletes_and_restores_a_company_request(
     company_id = _request_company(client)
 
     overridden = client.patch(
-        f"/api/hub/companies/{company_id}/override", json={"budget_giornaliero": "650"}
+        f"/api/hub/companies/{company_id}/override", json={"daily_budget": "650"}
     )
     assert overridden.status_code == 200
-    assert overridden.json()["budget_giornaliero"] == "650"
+    assert overridden.json()["daily_budget"] == "650"
 
     deleted = client.delete(f"/api/hub/companies/{company_id}")
     assert deleted.status_code == 200 and deleted.json()["deleted_at"] is not None
-    assert client.get("/api/hub/companies").json()["totale"] == 0
+    assert client.get("/api/hub/companies").json()["total"] == 0
 
     restored = client.post(f"/api/hub/companies/{company_id}/restore")
     assert restored.status_code == 200 and restored.json()["deleted_at"] is None

@@ -483,22 +483,26 @@ def test_the_render_pipeline_closes_the_residual_dash_and_ellipsis_gap(
     """
     from pigrocrm.core.config import Settings
     from pigrocrm.core.render.pdf import build_header, render_pdf
+    from pigrocrm.core.templates.scope import LEGAL_ENTITY_KEYS, italian_keys
 
     escaped = escape_markdown("Rossi -- Bianchi ... Fine --- capo")
     settings = Settings(jwt_secret="x" * 32)
     header = build_header(
-        {
-            "ragione_sociale": "Test",
-            "partita_iva": "1",
-            "email": "a@b.it",
-            "telefono": "1",
-            "pec": "a@b.it",
-            "sito_web": "b.it",
-            "indirizzo": "via Test 1",
-            "cap": "00000",
-            "comune": "Roma",
-            "provincia": "RM",
-        }
+        italian_keys(
+            {
+                "legal_name": "Test",
+                "vat_number": "1",
+                "email": "a@b.it",
+                "phone": "1",
+                "certified_email": "a@b.it",
+                "website": "b.it",
+                "address": "via Test 1",
+                "postal_code": "00000",
+                "city": "Roma",
+                "province": "RM",
+            },
+            LEGAL_ENTITY_KEYS,
+        )
     )
     pdf_bytes = render_pdf(f"{escaped}\n", header_typst=header, settings=settings)
     pdf_path = tmp_path / "doc.pdf"
@@ -544,7 +548,7 @@ def _compile_markdown_to_pdf_uris(body_markdown: str, tmp_path: Path) -> list[st
 
 
 @requires_real_compiler
-def test_url_context_makes_the_customers_own_site_a_working_link_for_real(
+def test_url_context_makes_the_organizations_own_site_a_working_link_for_real(
     tmp_path: Path,
 ) -> None:
     # The brief's own flagship example, and the bug this round's fix closes: before

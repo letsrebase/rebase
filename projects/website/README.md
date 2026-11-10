@@ -32,15 +32,16 @@ pnpm --filter website lint
 | `src/pitch.html` | `/pitch` | The pitch deck, nineteen slides with keyboard, swipe and wheel navigation; shared by link, `noindex`. Its own stylesheet, `pitch.css`; its pictures under `src/pitch/`; its script, `deck.js`, shared with the page below |
 | `src/company.html` | `/company` | The deck for companies hiring a freelancer (REB-553): fifteen slides on the same stage, `pitch.css` and `deck.js`, the numbers, the selection, the day rates, the three services with a price each, the team builder, the talent cloud; shared by link, `noindex`. Its own picture under `src/company/` |
 
-The community page (its own signup form, at `/community`, `/orbiters` before
-REB-212) is gone (REB-72): both names 301 to `/` now, a week after the landing had
-held the front door long enough that nothing still pointed people at the old one. The
+The community page (its own signup form, at `/community`) is gone (REB-72): the name
+301s to `/` now, a week after the landing had held the front door long enough that
+nothing still pointed people at the old one. Its older name, `/orbiters`, answered the
+same 301 until 2026-10-20 (REB-670) and is a 404 now. The
 hub owns every signup since 2026-09-09 (REB-17), so the page's own form was not
 carried forward.
 
-The landing's two doors point at `/hub/freelance` and `/hub/aziende`, the hub's
+The landing's two doors point at `/hub/freelance` and `/hub/companies`, the hub's
 wizards, and the team builder in its hero (REB-676, `src/team.js`) asks the hub's own
-`POST /api/hub/team/proposals` and sends the visitor to `/hub/team?proposta=<id>` for the
+`POST /api/hub/team/proposals` and sends the visitor to `/hub/team?proposal=<id>` for the
 whole team, which the hub reads back by that id (REB-675); without JavaScript the form is
 a GET to `/hub/team` with the description. Every one of those is served by the rebase hub
 (`projects/hub`) on the same origin: they are the things this project does not own, and
@@ -75,7 +76,7 @@ restated here:
 - **The mark.** The four tiles are `.glyph` in `src/system.css` here, used by
   `landing.css` alone now that the community page is gone (REB-72), a second, larger
   drawing of the same four colours in `pitch.css` for the deck's own chrome, and
-  Tailwind classes in the application's `BrandMark.tsx`. The first and third assert
+  Tailwind classes in `@rebase/ui`'s `brand-mark.tsx`. The first and third assert
   their order against
   `@rebase/brand/mark`, so those two cannot drift.
 
@@ -89,11 +90,28 @@ thing twice, once for production and once for the dev and preview servers. Chang
 and change the other: `path-map-plugin.test.ts` reads `nginx.conf` and fails until you
 have.
 
-`robots.txt` (REB-109) and `sitemap.xml` (REB-110) are a third kind of build output,
-next to the six pages and the hashed assets: `src/path-map-plugin.ts`'s own
-`writeBundle` hook writes both straight into `dist/`, since neither has an HTML input
-in `vite.config.ts` to build it from. `GENERATED_PATHS` in that file lists them, and
-is where the next file made this way goes.
+`robots.txt` (REB-109), `sitemap.xml` (REB-110) and `llms.txt` (REB-701) are a third
+kind of build output, next to the six pages and the hashed assets:
+`src/path-map-plugin.ts`'s own `writeBundle` hook writes them straight into `dist/`,
+since none has an HTML input in `vite.config.ts` to build it from. `GENERATED_PATHS` in
+that file lists them, and is where the next file made this way goes. The same hook
+copies the brand mark to `/assets/rebase-logo.svg`, a name that never changes, for the
+Organization's logo.
+
+What a search engine or an AI assistant reads about the site is derived from the pages,
+never written a second time (`src/site-text.ts`). `llms.txt` lists the indexable pages
+with their own `<title>` and meta description, the hub doors the home offers as
+buttons, and the home's «Le domande» with their answers. The home's FAQPage structured
+data is added at build time from that same section. The WebSite, Organization (home)
+and SoftwareApplication (`/pigrocrm`) blocks are hand-written in the heads, and their
+tests hold every value to something the site already says. So a new question in «Le
+domande» needs no other edit; a new fact in a JSON-LD block needs the page to say it
+first.
+
+Search Console's domain property for `letsrebase.com` is owned by ciao@letsrebase.com
+and by Ivan; the sitemap is submitted there. Only the four pages in the sitemap are
+meant to be indexed: `/pitch` and `/company` say `noindex`, the hub's SPA says
+`noindex` on every route, and PigroCRM's host answers `Disallow: /`.
 
 `deploy/letsrebase.conf` is the host's vhost: it terminates TLS and sends everything
 here except what belongs to the other tenants of the origin: `/hub/`, `/api/hub/`,

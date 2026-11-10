@@ -9,48 +9,48 @@ meant to exist. `CostCategory` is genuinely reusable for a rebillable expense's 
 category (categorising an outflow is the same problem either way), so
 `contract_expenses` reuses it directly rather than inventing a parallel taxonomy.
 
-**`politica_spese`'s shape**, decided here -- spec §7's own permission ("not deeply
+**`expense_policy`'s shape**, decided here -- spec §7's own permission ("not deeply
 validated [on `contracts`] -- the rebillable-expenses issue is what reads and
 enforces its shape"): a tagged JSONB union keyed by `kind`, English, matching the
 convention this schema already uses for a JSONB *discriminator* key
-(`work_unit_transitions.attore`: `{"kind": "human", ...}`; `approvals.origine`:
-`{"kind": "manuale"}`) rather than the Italian `tipo` a plain top-level *column*
+(`work_unit_transitions.actor`: `{"kind": "human", ...}`; `approvals.origin`:
+`{"kind": "manuale"}`) rather than the Italian `type` a plain top-level *column*
 would carry -- with Italian *values*, since those name a business kind a person
 reads, not a protocol tag:
 
-    {"kind": "non_rimborsabile"}
-    {"kind": "rimborsabile", "richiede_preautorizzazione": true}
-    {"kind": "rimborsabile_con_tetto", "importo_tetto": "500.00",
-     "richiede_preautorizzazione": false}
+    {"kind": "not_reimbursable"}
+    {"kind": "reimbursable", "requires_pre_authorization": true}
+    {"kind": "reimbursable_with_cap", "amount_cap": "500.00",
+     "requires_pre_authorization": false}
 
 mastro's own three-variant `ExpensePolicy` (`contract.ts:96-99`) is
 `not_reimbursed` / `reimbursed_at_cost` / `reimbursed_with_cap`, translated one for
 one. mastro's own `requiresExpensePreAuthorisation` is a *separate* boolean column
 on its `contract` (`contract.ts:225-227`) -- PigroCRM's own `contracts` table (spec
 §3) has no second column for it, so it is folded into this same JSONB as
-`richiede_preautorizzazione` instead: the two facts mastro's own trigger reads
+`requires_pre_authorization` instead: the two facts mastro's own trigger reads
 (`0025_expense_and_clause_note_constraints.sql::expense_set_reimbursable`) both
-live in `politica_spese` here, never split across a column the signed-off
+live in `expense_policy` here, never split across a column the signed-off
 `contracts` table does not have. Absent, it defaults to `false` (mastro's own
-column default) -- `triggers.py` reads it with `COALESCE`; `"non_rimborsabile"`
+column default) -- `triggers.py` reads it with `COALESCE`; `"not_reimbursable"`
 needs it not at all, since nothing is ever reimbursed regardless of
 pre-authorisation.
 
-`importo_tetto` is stored but not read by the reimbursable trigger, mirroring
+`amount_cap` is stored but not read by the reimbursable trigger, mirroring
 mastro's own `expense_set_reimbursable`, which likewise reads only `policy_kind` --
 the cap constrains how much of an expense a human rebills at invoicing time, not
 whether it counts as reimbursable at all. Enforcing the cap is not part of this
 issue's Done-when and is left for whoever builds the review screen that reads it.
 
 Two existing fixtures elsewhere in this codebase (REB-358's own tests) already
-write `politica_spese = {"tipo": "non_rimborsabile"}` -- written before this field
+write `expense_policy = {"tipo": "not_reimbursable"}` -- written before this field
 was interpreted by anything, per the spec's own "not deeply validated" note. They
 are untouched here: none of them ever creates a `contract_expenses` row, so the key
 mismatch is silent exactly where it is harmless, and rewriting unrelated tests is
 outside this issue's scope.
 """
 
-from datetime import date
+import datetime as dt
 from decimal import Decimal
 from uuid import UUID
 
@@ -79,24 +79,24 @@ class ContractExpense(Base, PrimaryKeyMixin, TimestampMixin):
     category_id: Mapped[UUID] = mapped_column(
         ForeignKey("cost_categories.id"), nullable=False, index=True
     )
-    data: Mapped[date] = mapped_column(Date, nullable=False)
-    importo: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    descrizione: Mapped[str] = mapped_column(Text, nullable=False)
-    pre_autorizzata: Mapped[bool] = mapped_column(
+    date: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    pre_authorized: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     # mastro's `authorisationReference` -- freeform evidence, not a foreign key, the
     # same lighter-weight treatment as any other written proof this schema does not
     # elevate to its own table (spec §7's own note on `approvals.document_id` being
     # stricter because a day's approval is a heavier fact).
-    riferimento_autorizzazione: Mapped[str | None] = mapped_column(Text, default=None)
-    # Never set by application code -- `contract_expense_set_rimborsabile`
-    # (triggers.py) computes it from `pre_autorizzata` against the owning
-    # contract's `politica_spese` on every insert or update (spec §7): an expense
+    authorization_reference: Mapped[str | None] = mapped_column(Text, default=None)
+    # Never set by application code -- `contract_expense_set_reimbursable`
+    # (triggers.py) computes it from `pre_authorized` against the owning
+    # contract's `expense_policy` on every insert or update (spec §7): an expense
     # that fails the check is still recorded, flagged, never silently accepted or
     # rejected outright, the same non-blocking philosophy as
-    # `lavorato_senza_approvazione` (spec §5).
-    rimborsabile: Mapped[bool] = mapped_column(
+    # `worked_without_approval` (spec §5).
+    reimbursable: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )
     # `SET NULL`, the same divergence from mastro's own `RESTRICT`, and the same
@@ -113,14 +113,14 @@ class ContractExpense(Base, PrimaryKeyMixin, TimestampMixin):
 
     __table_args__ = (
         # mastro's own `expense_amount_positive`.
-        CheckConstraint("importo > 0", name="ck_contract_expenses_importo_positive"),
+        CheckConstraint("amount > 0", name="ck_contract_expenses_amount_positive"),
         # mastro's own `expense_authorisation_reference_matches_pre_authorised`
         # (`0025_expense_and_clause_note_constraints.sql`): the written proof is
         # required exactly when the box is checked, and forbidden -- never a stale
         # leftover from before it was unchecked -- otherwise.
         CheckConstraint(
-            "(pre_autorizzata AND riferimento_autorizzazione IS NOT NULL) "
-            "OR (NOT pre_autorizzata AND riferimento_autorizzazione IS NULL)",
-            name="ck_contract_expenses_riferimento_matches_pre_autorizzata",
+            "(pre_authorized AND authorization_reference IS NOT NULL) "
+            "OR (NOT pre_authorized AND authorization_reference IS NULL)",
+            name="ck_contract_expenses_reference_matches_pre_authorized",
         ),
     )

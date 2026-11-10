@@ -32,8 +32,8 @@ import { PAGES, REDIRECTS, SITE_HOST, route } from './path-map-plugin'
  *   route to resolve.
  * - A link that resolves through `REDIRECTS` is treated as wrong, not merely checked
  *   for a working target. `REDIRECTS` exists for a bookmark or an inbound link this
- *   site does not control (`/orbiters` and `/community`, the community page's old and
- *   its own name, gone entirely since REB-72); markup this build produces itself
+ *   site does not control (`/community`, the community page's name, gone entirely
+ *   since REB-72); markup this build produces itself
  *   should say what it means directly. That rule is what the three links this issue
  *   names actually trip: none of them 404, all three still 301 to a page that
  *   exists, and all three are "wrong" only in that sense, which is exactly why
@@ -71,18 +71,14 @@ function idsOn(page: string): Set<string> {
 // `developers.google.com` since REB-410: the privacy page links Google's User Data Policy.
 // `www.anthropic.com` since REB-515: the privacy page's team builder section links
 // Anthropic's own privacy page, the way it already links PostHog's and OpenAI's.
-// `luma.com` since REB-605: the landing's events link the rebase house's own Luma
-// page, the one event of ours with a registration.
 const EXTERNAL_HOSTS = [
   'github.com',
   'pigro.letsrebase.com',
   'openai.com',
   'posthog.com',
-  'humancraft.tech',
   'www.linkedin.com',
   'developers.google.com',
   'www.anthropic.com',
-  'luma.com',
 ]
 
 function checkExternal(href: string): string | undefined {
@@ -192,10 +188,11 @@ describe.each(PAGE_FILES)('%s', (name) => {
     expect(ogUrl, `${name} og:url`).toBe(expected)
   })
 
-  it('carries structured data only if it is the front door', () => {
-    // REB-113: the WebSite/Organization block lives on index.html alone; the assertion
-    // that block is well-formed and says what the legal pages say is landing-pages.test.ts's.
-    expect(html[name].includes('application/ld+json'), name).toBe(name === 'index.html')
+  it('carries structured data only if it is the front door or the CRM\'s page', () => {
+    // REB-113: the WebSite/Organization block lives on index.html; REB-701 added the
+    // SoftwareApplication on pigrocrm.html. Both blocks are checked for what they say in
+    // landing-pages.test.ts; the decks and the legal pages carry none.
+    expect(html[name].includes('application/ld+json'), name).toBe(['index.html', 'pigrocrm.html'].includes(name))
   })
 })
 
@@ -221,9 +218,6 @@ describe('checkHref, edge cases none of the four pages exercise today', () => {
     // The redirect-is-wrong rule still applies once the query string is gone.
     expect(checkHref('index.html', '/pigrocrm?utm_source=newsletter')).toBeUndefined()
     expect(checkHref('index.html', '/community?utm_source=newsletter')).toMatch(
-      /redirect to \//,
-    )
-    expect(checkHref('index.html', '/orbiters?utm_source=newsletter')).toMatch(
       /redirect to \//,
     )
     // An unknown path is still refused.

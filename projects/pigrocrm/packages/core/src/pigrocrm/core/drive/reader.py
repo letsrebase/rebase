@@ -1,4 +1,4 @@
-"""Read-only Drive, confined to the folders the titolare pointed at.
+"""Read-only Drive, confined to the folders the owner pointed at.
 
 Spec 9C names the failure to avoid: reading somebody's Drive. A personal Drive holds
 the photos of their children, their rent contract, the folder of another job. So this
@@ -20,7 +20,7 @@ transport received across the whole module and checks each listing named a folde
 the hierarchy.
 
 **One sentence for three different situations.** A file that does not exist, a file in
-an unconfigured corner of the titolare's own Drive and a file in a stranger's Drive all
+an unconfigured corner of the owner's own Drive and a file in a stranger's Drive all
 answer `NotFound("drive_file", <id>)`, in the same words. Distinguishing them would
 answer "is there a file with this id?" for anybody who can reach the tool, which is an
 existence oracle over all of Google Drive.
@@ -158,17 +158,17 @@ class DriveEntry:
     """One child of a folder. Italian field names, like every other schema a person or
     an agent reads.
 
-    `dimensione` is `None` and not `0` for a folder or a native Google file: those have
+    `size` is `None` and not `0` for a folder or a native Google file: those have
     no bytes on Drive to measure, and `0` would say "an empty file", which is a
-    different and false statement. Same for `modificato_il`, which Drive can omit.
+    different and false statement. Same for `modified_at`, which Drive can omit.
     """
 
     id: str
-    nome: str
+    name: str
     mime: str
-    dimensione: int | None
-    modificato_il: datetime | None
-    cartella: bool
+    size: int | None
+    modified_at: datetime | None
+    folder: bool
 
 
 @dataclass(frozen=True)
@@ -224,13 +224,13 @@ class DriveReader:
         `read_bytes` already make, answered to the caller instead of consumed
         internally, and it is confined by the same `is_within_roots` check they are --
         including the same single sentence for a file that does not exist, a file in an
-        unconfigured corner of the titolare's Drive and a file in a stranger's Drive
+        unconfigured corner of the owner's Drive and a file in a stranger's Drive
         (see the module docstring: telling those apart is an existence oracle over all
         of Google Drive).
 
         It exists because two callers need a *name* and there was no way to ask for
         one. An import records where a document came from -- `{"drive_file_id": ...,
-        "mime": ..., "nome": ...}` -- and "a file was uploaded" is not an answer to
+        "mime": ..., "name": ...}` -- and "a file was uploaded" is not an answer to
         "where did this come from?" years later; and `describe_roots` below needs the
         name of a folder that has no listable parent to have appeared in.
         """
@@ -244,10 +244,10 @@ class DriveReader:
         one has no way in, and the roots are the only folders it may be told about
         without being told about everything above them. So this is one `files.get` per
         root -- deliberately *not* a listing, because the folder above a root is the
-        titolare's Drive and enumerating it is the failure this module exists to
+        owner's Drive and enumerating it is the failure this module exists to
         prevent.
 
-        A root the titolare has since deleted, or that Drive answers 404 for, raises
+        A root the owner has since deleted, or that Drive answers 404 for, raises
         `NotFound` naming that id rather than being skipped: an entry point silently
         missing one of its folders would read as "this root is empty".
         """
@@ -265,7 +265,7 @@ class DriveReader:
     def is_within_roots(self, file_id: str) -> bool:
         """Whether a configured root is this file's ancestor -- or is this file.
 
-        A folder the titolare named is inside the roots by definition, and answering
+        A folder the owner named is inside the roots by definition, and answering
         that needs no call to Google at all. Everything else is `files.get` on the
         parents, level by level, with a cache for the duration of this one call: a file
         with several parents whose paths meet again is otherwise walked once per path.
@@ -299,7 +299,10 @@ class DriveReader:
         defaults to `settings.drive_text_max_bytes`. See `DOWNLOAD_MAX_BYTES`.
         """
         checked = checked_outside_id(file_id, field="file_id")
-        limit = self._text_max_bytes if max_bytes is None else max_bytes
+        # A caller's `max_bytes` may raise the text limit above the configured default
+        # (that is what it is for) but, like `read_bytes`', only up to the download
+        # ceiling: `_ceiling` is the one bound on what a caller may ask this reader for.
+        limit = self._text_max_bytes if max_bytes is None else self._ceiling(max_bytes)
 
         def work() -> FileText:
             content, mime = self._read_bytes(checked, self._ceiling(None))
@@ -337,8 +340,8 @@ class DriveReader:
         under `TRANSPORT_ENTITY` (`document_blob`), which is right for the caller it was
         written for -- `GDriveStorage` reaches Drive for the bytes of a CRM document --
         and wrong for every caller of this class. A Google 500 while listing a folder the
-        titolare named arrived as «document_blob: elenco fallito (500)»: there is no CRM
-        document in that operation, `_resolve_original_pdf` documents the opposite, and an
+        owner named arrived as «document_blob: elenco fallito (500)»: there is no CRM
+        document in that operation, `OriginalPdfResolver.resolve` documents the opposite, and an
         adapter routing on the entity would send somebody to the documents screen. So the
         transport's entity, and *only* it, is re-stamped as `ENTITY` on the way out.
 
@@ -415,25 +418,26 @@ class DriveReader:
 
         if mime == GOOGLE_DOC_MIME:
             content = self._transport.bytes(
-                "GET", file_export_url(file_id, PLAIN_TEXT_MIME), what=_WHAT_EXPORT
+                "GET",
+                file_export_url(file_id, PLAIN_TEXT_MIME),
+                what=_WHAT_EXPORT,
+                max_bytes=max_bytes,
             )
             mime = PLAIN_TEXT_MIME
         elif mime.startswith(_GOOGLE_NATIVE_PREFIX):
             raise Conflict(ENTITY, _NO_BYTES.format(mime=mime), file_id=file_id, mime=mime)
         else:
-            content = self._transport.bytes("GET", file_media_url(file_id), what=_WHAT_DOWNLOAD)
-
-        # Not a memory bound, and it would be dishonest to describe it as one: by the
-        # time this runs, `DriveTransport` has already buffered the whole response in
-        # memory (`urllib` reads it in one `response.read()`), so what this refuses is
-        # *returning* an oversized answer, not allocating it. The bound that actually
-        # limits allocation is the declared-size check above, and above that Google's
-        # own per-file limits. Kept regardless: an export declares no size at all, so
-        # without this a Google Doc of any length would come back whole.
-        if len(content) > max_bytes:
-            raise Conflict(
-                ENTITY, _TOO_BIG.format(max_bytes=max_bytes), file_id=file_id, size=len(content)
+            content = self._transport.bytes(
+                "GET", file_media_url(file_id), what=_WHAT_DOWNLOAD, max_bytes=max_bytes
             )
+
+        # The transport reads at most `max_bytes + 1` bytes off the socket, so an answer
+        # longer than the ceiling is told apart from one that fits without ever being
+        # buffered whole. The declared-size check above is the cheap refusal; this is the
+        # one that holds for an export, which declares no size at all. The size of an
+        # oversized answer is not reported: the read stopped one byte past the ceiling.
+        if len(content) > max_bytes:
+            raise Conflict(ENTITY, _TOO_BIG.format(max_bytes=max_bytes), file_id=file_id)
         return content, mime
 
     def _within_roots(self, file_id: str, cache: dict[str, list[str]]) -> bool:
@@ -475,7 +479,7 @@ class DriveReader:
         propagates as a `Conflict` instead. That is the right answer for the caller --
         an outage or a permission change is worth reporting as itself, and swallowing
         it would make an unshared parent look like an unconfigured one -- but it does
-        mean a 403 on a *parent* of a file the titolare can read surfaces as a Drive
+        mean a 403 on a *parent* of a file the owner can read surfaces as a Drive
         error rather than as `NotFound`. It has not been seen, and inventing a
         translation for it would be inventing which of the two it was.
         """
@@ -487,7 +491,7 @@ class DriveReader:
                 "GET", file_meta_url(file_id, fields=_PARENT_FIELDS), what=_WHAT_META
             )
         except Conflict as refusal:
-            if refusal.details.get("status") != 404:
+            if refusal.details.get("upstream_status") != 404:
                 raise
             payload = {}
         parents = _parents(payload)
@@ -500,7 +504,7 @@ class DriveReader:
                 "GET", file_meta_url(file_id, fields=_ENTRY_FIELDS), what=_WHAT_META
             )
         except Conflict as refusal:
-            if refusal.details.get("status") == 404:
+            if refusal.details.get("upstream_status") == 404:
                 # Same sentence as a file outside the roots: see the module docstring.
                 raise NotFound(ENTITY, file_id) from refusal
             raise
@@ -520,7 +524,7 @@ class _AlreadyAuthorized:
 # What a caller passes as `action` to say "the agent ban for this operation has already
 # been applied, under a name this call cannot know".
 #
-# There is exactly one such caller -- `InvoiceService._drive_reader`, whose operation is
+# There is exactly one such caller -- `OriginalPdfResolver._drive_reader`, whose operation is
 # `import_issued_invoice`, checked by `import_issued` under that name before any of this
 # runs. Passing the name again here would check the same ban twice; passing anything else
 # would check the wrong one.
@@ -552,7 +556,7 @@ def drive_reader_for(
     before the next has anything to say:
 
     1. `action`: the operation the caller is about, checked against
-       `AGENT_FORBIDDEN_ACTIONS` before this function touches the database at all. An
+       `FULL_ACCESS_ACTIONS` before this function touches the database at all. An
        agent credential on an installation that has not opted in is refused here, so it
        never learns whether a Drive is even connected;
     2. `usable`, which holds no transport and therefore *cannot* have called Google, so
@@ -561,13 +565,13 @@ def drive_reader_for(
     3. the roots, which must not be empty -- see below;
     4. only then the credential, composed by `user_transport_for` -- the row's refresh
        token unsealed, wrapped in `UserTokens`, handed to a `DriveTransport`. The roots
-       come from the row, so a reader cannot be pointed at a folder the titolare did not
+       come from the row, so a reader cannot be pointed at a folder the owner did not
        configure.
 
     `feature` is the name the refusal uses ("la lettura dei documenti da Drive"), so a
     missing scope reads as a feature that is off rather than as a broken credential.
 
-    `action` is the name `AGENT_FORBIDDEN_ACTIONS` lists the operation under -- the MCP
+    `action` is the name `FULL_ACCESS_ACTIONS` lists the operation under -- the MCP
     tool's own name, which is also what a REST route would pass. It is here, at the one
     point every reader of Drive is built from, rather than in each caller: the tool being
     unregistered protects the MCP transport only, and a personal access token is not
@@ -575,7 +579,7 @@ def drive_reader_for(
     composes a reader inherits the ban by passing its action.
 
     It is **required**, and one caller must not pass a real one:
-    `InvoiceService._drive_reader`, whose operation is `import_issued_invoice` -- already
+    `OriginalPdfResolver._drive_reader`, whose operation is `import_issued_invoice` -- already
     on the list, and already checked by `import_issued` under that name. Passing it here
     too would check the same ban twice, and passing anything else would check the wrong
     one. That caller passes `ALREADY_AUTHORIZED` instead, by name.
@@ -584,7 +588,7 @@ def drive_reader_for(
     exemption nobody had to ask for. A new route or tool composing a reader and not
     thinking about the ban inherited it silently, and this is the one omission in this
     module with no symptom -- the reader works, the roots are honoured, and an agent
-    credential the installation never opted in for reads the titolare's Drive. Spelling
+    credential the installation never opted in for reads the owner's Drive. Spelling
     it at the call site is what makes a reviewer ask "already authorized by whom?";
     nothing here can answer that, which is also why the three MCP tools are tested
     against a closed agent credential one by one.
@@ -594,7 +598,7 @@ def drive_reader_for(
     the only way to have none is never to have configured them -- and it is a
     configuration step, not a fault. Without this the reader would compose happily and
     every operation would answer "not found", or list nothing: an agent would report
-    that the titolare's Drive is empty, and the person would go looking for a bug
+    that the owner's Drive is empty, and the person would go looking for a bug
     instead of opening the settings screen.
 
     `on_revoked` closes the last gap: a revocation can only be *learned* by a refresh
@@ -603,10 +607,10 @@ def drive_reader_for(
     discovered it, and then the exception continues.
 
     The `GoogleTokenClient` `user_transport_for` builds lives as long as the reader.
-    Unlike `routers/gmail.py`'s per-process cache, that means one token exchange per
-    reader rather than one per hour per process -- the price of `packages/core` not
-    owning a process-wide cache, and the same choice `apps/mcp`'s privileged tools
-    already make.
+    Unlike the API's per-process cache (`pigrocrm_api/google_tokens.py`), that means one
+    token exchange per reader rather than one per hour per process -- the price of
+    `packages/core` not owning a process-wide cache, and the same choice `apps/mcp`'s
+    privileged tools already make.
     """
     if isinstance(action, str):
         # Before the session is touched: a refusal here must not double as "there is a
@@ -650,11 +654,11 @@ def _entry(item: dict[str, Any]) -> DriveEntry:
     mime = str(item.get("mimeType") or "")
     return DriveEntry(
         id=str(item.get("id") or ""),
-        nome=str(item.get("name") or ""),
+        name=str(item.get("name") or ""),
         mime=mime,
-        dimensione=_as_int(item.get("size")),
-        modificato_il=_moment(item.get("modifiedTime")),
-        cartella=mime == FOLDER_MIME,
+        size=_as_int(item.get("size")),
+        modified_at=_moment(item.get("modifiedTime")),
+        folder=mime == FOLDER_MIME,
     )
 
 

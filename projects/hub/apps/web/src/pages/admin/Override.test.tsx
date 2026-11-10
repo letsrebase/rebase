@@ -1,57 +1,102 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import type { Company, CompanyOverride, Freelancer, FreelancerOverride } from '@/lib/api'
+import type { Company, CompanyOverride, ContactPoint, Freelancer, FreelancerOverride } from '@/lib/api'
 import { CompanyOverrideDialog, FreelancerOverrideDialog, RecordLifecycle } from './Override'
+
+const LOGIN_ADA: ContactPoint = {
+  id: null,
+  kind: 'email',
+  value: 'ada@studio.it',
+  label: 'work',
+  note: null,
+  is_primary: true,
+  position: 0,
+}
 
 const FREELANCER: Freelancer = {
   id: 'f1',
-  nome: 'Ada',
-  cognome: 'Lovelace',
+  first_name: 'Ada',
+  last_name: 'Lovelace',
   email: 'ada@studio.it',
   linkedin_url: 'https://www.linkedin.com/in/ada',
   cv_filename: 'cv.pdf',
   cv_size: 2048,
-  tariffa_giornaliera: '500.00',
-  posizione: 'CTO',
-  remoto: 'remoto',
+  daily_rate: '500.00',
+  job_title: 'CTO',
+  remote: 'remote',
   links: ['https://github.com/ada', 'https://ada.dev'],
-  stato: 'attivo',
-  note: null,
-  origine: null,
+  status: 'active',
+  origin: null,
   utm_source: null,
+  utm_medium: null,
   utm_campaign: null,
+  utm_content: null,
+  utm_term: null,
+  utm_id: null,
+  phone: null,
+  contact_points: [LOGIN_ADA],
+  seniority_admin: null,
+  experience_years_admin: null,
   created_at: '2026-09-10T10:00:00Z',
-  compilata_da: 'persona',
-  completa: true,
-  commenti: [],
-  accessi: 3,
-  provenienza: 'landing',
-  ultimo_accesso: null,
+  filled_by: 'person',
+  complete: true,
+  note: [],
+  logins: 3,
+  provenance: 'landing',
+  last_access: null,
   deleted_at: null,
   vetted_at: null,
+  cv_mime: 'application/pdf',
+  updated_at: '2026-09-10T10:00:00Z',
+  signup_utm: null,
+  last_logins: [],
+  last_download_guide: [],
+  pigro_slug: null,
 }
 
 const COMPANY: Company = {
   id: 'c1',
-  nome_azienda: 'Rossi Studio',
-  referente: 'Mario Rossi',
+  company_name: 'Rossi Studio',
+  contact_person: 'Mario Rossi',
   email: 'mario@rossi.it',
-  telefono: '+39 345 1234567',
-  figura_richiesta: 'Backend developer',
-  progetto: 'Piattaforma di prenotazione',
-  periodo_da: '2026-10-01',
-  durata: '3 mesi',
-  budget_giornaliero: '450.00',
-  remoto: 'remoto',
-  giorni_presenza: null,
-  numero_risorse: 2,
-  stato: 'nuovo',
-  note: null,
-  origine: null,
+  phone: '+39 345 1234567',
+  contact_points: [
+    { id: null, kind: 'email', value: 'mario@rossi.it', label: 'work', note: null, is_primary: true, position: 0 },
+    {
+      id: 'p1',
+      kind: 'phone',
+      value: '+39 345 1234567',
+      label: 'work',
+      note: null,
+      is_primary: true,
+      position: 1,
+    },
+  ],
+  requested_role: 'Backend developer',
+  project: 'Piattaforma di prenotazione',
+  period_from: '2026-10-01',
+  duration: '3 mesi',
+  daily_budget: '450.00',
+  remote: 'remote',
+  onsite_days: null,
+  headcount: 2,
+  status: 'new',
+  crm_status: null,
+  crm_situation: null,
+  crm_deal_url: null,
+  crm_attempted_at: null,
+  origin: null,
   utm_source: null,
+  utm_medium: null,
+  utm_campaign: null,
+  utm_content: null,
+  utm_term: null,
+  utm_id: null,
+  crm_error: null,
   created_at: '2026-09-10T10:00:00Z',
-  commenti: [],
+  updated_at: '2026-09-10T10:00:00Z',
+  note: [],
   deleted_at: null,
   talent_cloud_grant: null,
 }
@@ -126,15 +171,39 @@ describe('FreelancerOverrideDialog', () => {
     mountFreelancer({ onSave })
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     expect(onSave).toHaveBeenCalledWith({
-      nome: 'Ada',
-      cognome: 'Lovelace',
+      first_name: 'Ada',
+      last_name: 'Lovelace',
       linkedin_url: 'https://www.linkedin.com/in/ada',
-      tariffa_giornaliera: '500.00',
-      posizione: 'CTO',
-      remoto: 'remoto',
+      daily_rate: '500.00',
+      job_title: 'CTO',
+      remote: 'remote',
       links: ['https://github.com/ada', 'https://ada.dev'],
-      compilata_da: 'persona',
+      filled_by: 'person',
     })
+  })
+
+  it('shows the sign-in address read only and sends the points added beside it', async () => {
+    const onSave = vi.fn<(data: FreelancerOverride) => void>()
+    mountFreelancer({ onSave })
+    expect(screen.getByText('ada@studio.it')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: /Valore del recapito/ })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Valore del recapito 1' }), '+39 333 123 4567')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Etichetta del recapito 1' }))
+    await userEvent.click(screen.getByRole('option', { name: 'personale' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Nota del recapito 1' }), 'solo WhatsApp')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(onSave.mock.calls[0]![0].contact_points).toEqual([
+      { kind: 'phone', value: '+39 333 123 4567', label: 'personal', note: 'solo WhatsApp', is_primary: false },
+    ])
+  })
+
+  it('does not save while a contact point is not what its kind says', async () => {
+    mountFreelancer()
+    await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+    await userEvent.type(screen.getByRole('textbox', { name: 'Valore del recapito 1' }), '12')
+    expect(screen.getByRole('alert')).toHaveTextContent('almeno 6 cifre')
+    expect(screen.getByRole('button', { name: 'Salva' })).toBeDisabled()
   })
 
   it('clears a nullable text field to null when the box is emptied', async () => {
@@ -146,8 +215,8 @@ describe('FreelancerOverrideDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     const sent = onSave.mock.calls[0]![0]
     expect(sent.linkedin_url).toBeNull()
-    expect(sent.posizione).toBeNull()
-    expect(sent.tariffa_giornaliera).toBeNull()
+    expect(sent.job_title).toBeNull()
+    expect(sent.daily_rate).toBeNull()
   })
 
   it('sets remoto to null through the "Non impostata" option', async () => {
@@ -156,7 +225,7 @@ describe('FreelancerOverrideDialog', () => {
     await userEvent.click(screen.getByRole('combobox', { name: 'Modalità' }))
     await userEvent.click(screen.getByRole('option', { name: 'Non impostata' }))
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
-    expect(onSave.mock.calls[0]![0].remoto).toBeNull()
+    expect(onSave.mock.calls[0]![0].remote).toBeNull()
   })
 
   it('splits the links textarea into a trimmed array, blank lines dropped', async () => {
@@ -181,7 +250,7 @@ describe('FreelancerOverrideDialog', () => {
     await userEvent.clear(rate)
     await userEvent.type(rate, typed)
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
-    expect(onSave.mock.calls[0]![0].tariffa_giornaliera).toBe(sent)
+    expect(onSave.mock.calls[0]![0].daily_rate).toBe(sent)
   })
 
   it('says a rate that is not an amount is not one, and keeps Save off (REB-485)', async () => {
@@ -254,7 +323,7 @@ describe('CompanyOverrideDialog', () => {
   })
 
   it('shows and requires giorni in sede only for ibrido, pre-filled from the current row', () => {
-    mountCompany({ company: { ...COMPANY, remoto: 'ibrido', giorni_presenza: 3 } })
+    mountCompany({ company: { ...COMPANY, remote: 'hybrid', onsite_days: 3 } })
     expect(screen.getByLabelText('Giorni in sede a settimana')).toHaveValue(3)
   })
 
@@ -264,26 +333,57 @@ describe('CompanyOverrideDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     const sent = onSave.mock.calls[0]![0]
     expect(sent).toEqual({
-      nome_azienda: 'Rossi Studio',
-      figura_richiesta: 'Backend developer',
-      progetto: 'Piattaforma di prenotazione',
-      periodo_da: '2026-10-01',
-      durata: '3 mesi',
-      budget_giornaliero: '450.00',
-      remoto: 'remoto',
-      giorni_presenza: null,
-      numero_risorse: 2,
+      company_name: 'Rossi Studio',
+      requested_role: 'Backend developer',
+      project: 'Piattaforma di prenotazione',
+      period_from: '2026-10-01',
+      duration: '3 mesi',
+      daily_budget: '450.00',
+      remote: 'remote',
+      onsite_days: null,
+      headcount: 2,
     })
+  })
+
+  it('does not send the contacts, nor stop saving, while the list is the stored one (REB-944)', async () => {
+    const onSave = vi.fn<(data: CompanyOverride) => void>()
+    const legacy = {
+      ...COMPANY,
+      contact_points: [
+        COMPANY.contact_points[0]!,
+        { ...COMPANY.contact_points[1]!, value: 'int. 12' },
+      ],
+    }
+    mountCompany({ onSave, company: legacy })
+    expect(screen.getByRole('button', { name: 'Salva' })).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(onSave.mock.calls[0]![0]).not.toHaveProperty('contact_points')
+  })
+
+  it('edits the contact’s labelled phone and note, and takes a point off', async () => {
+    const onSave = vi.fn<(data: CompanyOverride) => void>()
+    mountCompany({ onSave })
+    expect(screen.getByText('mario@rossi.it')).toBeInTheDocument()
+    await userEvent.type(screen.getByRole('textbox', { name: 'Nota del recapito 1' }), 'centralino')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Etichetta del recapito 1' }))
+    await userEvent.click(screen.getByRole('option', { name: 'amministrazione' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(onSave.mock.calls[0]![0].contact_points).toEqual([
+      { kind: 'phone', value: '+39 345 1234567', label: 'billing', note: 'centralino', is_primary: true },
+    ])
+    await userEvent.click(screen.getByRole('button', { name: 'Togli il recapito 1' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(onSave.mock.calls[1]![0].contact_points).toEqual([])
   })
 
   it('clears giorni_presenza to null the moment remoto leaves ibrido', async () => {
     const onSave = vi.fn<(data: CompanyOverride) => void>()
-    mountCompany({ onSave, company: { ...COMPANY, remoto: 'ibrido', giorni_presenza: 3 } })
+    mountCompany({ onSave, company: { ...COMPANY, remote: 'hybrid', onsite_days: 3 } })
     await userEvent.click(screen.getByRole('combobox', { name: 'Modalità' }))
     await userEvent.click(screen.getByRole('option', { name: 'In sede' }))
     expect(screen.queryByLabelText('Giorni in sede a settimana')).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
-    expect(onSave.mock.calls[0]![0]).toMatchObject({ remoto: 'in_sede', giorni_presenza: null })
+    expect(onSave.mock.calls[0]![0]).toMatchObject({ remote: 'on_site', onsite_days: null })
   })
 
   it('sends giorni_presenza as a number when remoto is ibrido', async () => {
@@ -293,7 +393,7 @@ describe('CompanyOverrideDialog', () => {
     await userEvent.click(screen.getByRole('option', { name: 'Ibrido' }))
     await userEvent.type(screen.getByLabelText('Giorni in sede a settimana'), '2')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
-    expect(onSave.mock.calls[0]![0]).toMatchObject({ remoto: 'ibrido', giorni_presenza: 2 })
+    expect(onSave.mock.calls[0]![0]).toMatchObject({ remote: 'hybrid', onsite_days: 2 })
   })
 
   it('sends the referente nome/cognome only once filled in', async () => {
@@ -303,8 +403,8 @@ describe('CompanyOverrideDialog', () => {
     await userEvent.type(screen.getByLabelText('Cognome'), 'Bianchi')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     const sent = onSave.mock.calls[0]![0]
-    expect(sent.nome).toBe('Mario')
-    expect(sent.cognome).toBe('Bianchi')
+    expect(sent.first_name).toBe('Mario')
+    expect(sent.last_name).toBe('Bianchi')
     expect(sent.linkedin_url).toBeUndefined()
   })
 
@@ -323,7 +423,7 @@ describe('CompanyOverrideDialog', () => {
     await userEvent.clear(budget)
     await userEvent.type(budget, '1.500')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
-    expect(onSave.mock.calls[0]![0].budget_giornaliero).toBe('1500.00')
+    expect(onSave.mock.calls[0]![0].daily_budget).toBe('1500.00')
   })
 
   it('says a budget that is not an amount is not one, and keeps Save off (REB-485)', async () => {

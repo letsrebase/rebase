@@ -8,8 +8,7 @@
 # the new one. Setting the hash to a fake value forces a rebuild, and the
 # failure names the real one, on the "got:" line.
 #
-# There is no Linux builder for this repository any more (qasimodo.com is
-# gone, Ivan, 2026-09-25). This script builds inside a `nixos/nix` container
+# There is no Linux builder for this repository. This script builds inside a `nixos/nix` container
 # on the local machine instead. The hash does not depend on the CPU
 # architecture: aarch64-linux and x86_64-linux reproduce the same value, so
 # it runs on whichever one the container gives it (aarch64-linux on Apple
@@ -39,18 +38,19 @@
 # again. Delete it with: docker volume rm rebase-nix-store
 #
 # Docker Desktop's credential helper can hang the image pull; this script
-# always points its own docker calls at an empty, throwaway DOCKER_CONFIG to
-# sidestep that, without touching your shell's own docker config. Blanking
-# DOCKER_CONFIG also drops Docker Desktop's context, which is how it knows
-# where the daemon's socket is; this script reads that endpoint first
-# (unless DOCKER_HOST is already set) and carries it over.
+# points its own docker calls at a throwaway DOCKER_CONFIG (which also holds
+# the container's [safe] gitconfig) to sidestep that, without touching your
+# shell's own docker config. Blanking DOCKER_CONFIG also drops Docker Desktop's
+# context, which is how it knows where the daemon's socket is; this script reads
+# that endpoint first (unless DOCKER_HOST is already set) and carries it over.
 
 set -euo pipefail
 
 FAKE_HASH='sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
 DOCKER_VOLUME='rebase-nix-store'
 MIN_FREE_GB=5
-IMAGE='nixos/nix:latest'
+# Pinned by digest so the builder cannot change under a hash; bump deliberately.
+IMAGE='nixos/nix:latest@sha256:f159a58f390677f41e8e900a74b6e2f9c7f27b364122ae6acf7a652ce6c551c0'
 HASH_LINE_RE='^[[:space:]]*hash = "sha256-[^"]*";'
 
 write=0
@@ -299,6 +299,13 @@ fi
 
 echo "nix-pnpm-hash: building packages.$system.pigrocrm-web.pnpmDeps in a $IMAGE container ($platform)..." >&2
 echo '{}' >"$docker_config_dir/config.json"
+# On a Linux host the bind-mounted copy keeps this user's uid, and the container
+# runs as root, so the ownership check of Nix's libgit2 refuses /workspace ("is
+# not owned by current user") before Nix can read the flake. Docker Desktop on a
+# Mac hides the owner, which is why this only shows on Linux (REB-710). The
+# container's system gitconfig, which libgit2 reads, marks that one path safe;
+# nothing outside the container reads it.
+printf '[safe]\n\tdirectory = /workspace\n' >"$docker_config_dir/gitconfig"
 
 set +e
 # /nix and /workspace name paths inside the container image, not on this host.
@@ -306,6 +313,7 @@ build_log=$(DOCKER_CONFIG="$docker_config_dir" docker run --rm \
   --platform "$platform" \
   -v "${DOCKER_VOLUME}:/nix" \
   -v "${copy_dir}:/workspace:ro" \
+  -v "${docker_config_dir}/gitconfig:/etc/gitconfig:ro" \
   -w /workspace \
   "$IMAGE" \
   sh -c "nix build --extra-experimental-features 'nix-command flakes' --no-link '.#packages.${system}.pigrocrm-web.pnpmDeps'" 2>&1)

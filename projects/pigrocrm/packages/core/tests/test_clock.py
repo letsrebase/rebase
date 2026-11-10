@@ -3,18 +3,16 @@
 `datetime.now(UTC).date()` is wrong for every figure in this slice, and wrong in a way
 that is invisible for twenty-three hours a day: at 00:30 on 1 April in Rome it is still
 31 March in UTC, so a deal won just after midnight lands in the previous month's
-conversion rate. `deals.chiuso_il`, `documents.stato_dal`, `invoices.data_emissione`,
-`costs.data` and `time_entries.data` are all calendar dates in the *emitter's* day, not
+conversion rate. `deals.closed_at`, `documents.status_since`, `invoices.issue_date`,
+`costs.date` and `time_entries.date` are all calendar dates in the *emitter's* day, not
 instants, and slice 3 §6.2 already fixed that rule -- this module is the mechanism.
 
 Two clocks in one product is a bug that shows up on 31 December, which is the worst
 possible day to find it. That sentence is why this file does more than the brief asked
-for. `pigrocrm.core.clock.oggi_in_italia()` already existed and already had a commit
-(875a1f9) behind it fixing three production sites that read the wrong day; adding a
-second, settings-driven day function beside it would have been the very defect the
-module is named after. So `oggi_in_italia()` is now a thin alias over `today_local()`,
-and `test_oggi_in_italia_reads_the_same_instant_as_today_local` is what proves the two
-are one mechanism rather than two that happen to agree today.
+for. `pigrocrm.core.db.clock.today_local()` is the one function that answers "what day is
+it", and the former `pigrocrm.core.clock.today_in_italy()`, a second name for it, is gone
+(B-29): a second day function beside it would have been the very defect the module is named
+after, and commit 875a1f9 had already fixed three production sites that read the wrong day.
 
 The AST scan at the bottom is the other half. The brief's own interface section says
 "nothing else in the project may call `date.today()` or `datetime.now(UTC).date()`" and
@@ -32,7 +30,6 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import month_bounds, today_local
 
@@ -59,7 +56,7 @@ def test_an_unknown_timezone_is_refused_at_construction() -> None:
         Settings(timezone="Europe/Atlantis")
 
 
-def test_today_local_is_the_emitter_day_not_the_utc_day(
+def test_today_local_is_the_legal_entity_day_not_the_utc_day(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """00:30 on 1 April in Rome is 22:30 on 31 March in UTC. The clock must answer
@@ -109,26 +106,6 @@ def test_today_local_with_no_argument_uses_the_cached_settings() -> None:
     assert isinstance(today_local(), date)
 
 
-def test_oggi_in_italia_reads_the_same_instant_as_today_local(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """One clock, not two that agree by coincidence.
-
-    `oggi_in_italia()` predates this module and has eight production callers, all of
-    them fiscal. If it kept its own `datetime.now(ITALY_TZ).date()` the product would
-    have two answers to "what day is it" that diverge the moment `PIGROCRM_TIMEZONE` is
-    set -- and diverge silently, on the fiscal half. Freezing `db.clock._now` and
-    asserting `oggi_in_italia()` moves with it is what makes the delegation observable:
-    against the old independent implementation this assertion fails, because the real
-    system clock does not answer 1 April 2026.
-    """
-    import pigrocrm.core.db.clock as clock
-
-    monkeypatch.setattr(clock, "_now", lambda: datetime(2026, 3, 31, 22, 30, tzinfo=UTC))
-    assert oggi_in_italia() == date(2026, 4, 1)
-    assert oggi_in_italia() == today_local()
-
-
 def test_month_bounds_is_inclusive_at_both_ends() -> None:
     assert month_bounds(2026, 2) == (date(2026, 2, 1), date(2026, 2, 28))
     assert month_bounds(2024, 2) == (date(2024, 2, 1), date(2024, 2, 29))
@@ -146,8 +123,8 @@ def test_month_bounds_applies_the_full_gregorian_leap_rule() -> None:
 def test_window_from_is_inclusive_at_both_ends() -> None:
     """The date arithmetic `core/dashboard/` is forbidden to contain (slice 6 §3) lives
     here instead. Inclusive at both ends, like `month_bounds`: every period filter in
-    slices 4 and 6 is `BETWEEN da AND a`, and a second convention is how a day gets counted
-    twice."""
+    slices 4 and 6 is `BETWEEN date_from AND date_to`, and a second convention is how a day
+    gets counted twice."""
     from pigrocrm.core.db import window_from
 
     assert window_from(date(2026, 1, 31), 30) == (date(2026, 1, 31), date(2026, 3, 2))
@@ -157,13 +134,13 @@ def test_window_from_is_inclusive_at_both_ends() -> None:
     assert window_from(date(2026, 5, 4), 0) == (date(2026, 5, 4), date(2026, 5, 4))
 
 
-@pytest.mark.parametrize("mese", [0, 13, -1])
-def test_month_bounds_refuses_a_month_outside_one_to_twelve(mese: int) -> None:
+@pytest.mark.parametrize("month", [0, 13, -1])
+def test_month_bounds_refuses_a_month_outside_one_to_twelve(month: int) -> None:
     from pigrocrm.core.errors import ValidationFailed
 
     with pytest.raises(ValidationFailed) as caught:
-        month_bounds(2026, mese)
-    assert caught.value.details["field"] == "mese"
+        month_bounds(2026, month)
+    assert caught.value.details["field"] == "month"
 
 
 # --- The mechanical guard -------------------------------------------------------------
@@ -243,7 +220,7 @@ def test_the_guard_recognises_both_banned_shapes() -> None:
         "a = datetime.now(UTC)\n"
         "b = today_local()\n"
         "c = _now().astimezone(zone).date()\n"
-        "d = invoice.created_at.astimezone(ITALY_TZ).date()\n"
+        "d = local_date(invoice.created_at)\n"
     )
     assert [s for n in ast.walk(allowed) if (s := _is_process_clock_day(n)) is not None] == []
 

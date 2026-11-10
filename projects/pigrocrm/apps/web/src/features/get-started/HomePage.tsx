@@ -2,10 +2,10 @@
  * The Home, `/app/` (spec 2026-09-16 §4.1, REB-222).
  *
  * While the space is empty (no customer, deal, time entry or document) the Home is the
- * start page, the same one the sidebar's «Primi passi» opens: a new space has no numbers
+ * start page, the same one the profile menu's «Primi passi» opens: a new space has no numbers
  * to chart, and the first screen should bring the person's own work in rather than show
  * them zeros. From the first piece of work on it is the dashboard, with a «Completa lo
- * spazio» card above it while a step is still open that this person could do, then the
+ * space» card above it while a step is still open that this person could do, then the
  * dashboard alone. The one-time redirect to «Primi passi» of 2026-09-12 (ORB-180) is
  * gone: the Home already is that page when it matters.
  *
@@ -29,9 +29,13 @@ import { Button } from '@rebase/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@rebase/ui/card'
 import { useCanWrite } from '@/lib/auth'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
+import { SoloHome } from '@/features/dashboard/SoloHome'
+import { useModules } from '@/lib/modules'
 import { ConsentOutcome } from '@/components/ConsentOutcome'
-import { messaggioEsito, riprovaEsito } from '@/features/gmail/esito'
+import { consentOutcome } from '@/features/consent/outcome'
 import type { DashboardSearch, HomeSearch } from '@/features/dashboard/search'
+import { RecordDayShortcut } from '@/features/days/RecordDayShortcut'
+import { PendingProposalsNotice } from '@/features/proposals/PendingProposalsNotice'
 import { useFirstSteps, type FirstStepsState } from './firstSteps'
 import { GetStartedPage } from './GetStartedPage'
 
@@ -44,6 +48,7 @@ export function HomePage({
 }) {
   const state = useFirstSteps()
   const canWrite = useCanWrite()
+  const modules = useModules()
   // Held from the first settled answer on, for the reason the module docstring gives.
   // Set during render, React's pattern for state derived from a previous render: the
   // page never draws once with the choice still unmade.
@@ -51,26 +56,26 @@ export function HomePage({
   if (startPage === null && state.spaceEmpty !== null && !state.workFailed) setStartPage(state.spaceEmpty)
   const chosen = startPage ?? state.spaceEmpty
   if (chosen === null) return null
-  if (chosen) return <GetStartedPage esito={search.esito} />
-  return (
-    <DashboardPage
-      search={search}
-      onSearchChange={onSearchChange}
-      notice={
-        <>
-          {/* The consent flow comes back here only if the API read the space as empty
-              and this page did not (a read that failed counts as work): the outcome is
-              still the person's to read. */}
-          <ConsentOutcome
-            messaggio={messaggioEsito(search.esito)}
-            riprova={riprovaEsito(search.esito)}
-            className="mb-6"
-          />
-          {state.loading ? null : <CompleteSpaceCard state={state} canWrite={canWrite} />}
-        </>
-      }
-    />
+  if (chosen) return <GetStartedPage outcome={search.outcome} />
+  // What sits under the title on either Home: the consent flow's outcome, the day shortcut,
+  // the proposals waiting and the «Completa lo spazio» card.
+  const notice = (
+    <>
+      {/* The consent flow comes back here only if the API read the space as empty
+          and this page did not (a read that failed counts as work): the outcome is
+          still the person's to read. */}
+      <ConsentOutcome {...consentOutcome('gmail', search.outcome)} className="mb-6" />
+      <RecordDayShortcut />
+      <PendingProposalsNotice />
+      {state.loading ? null : <CompleteSpaceCard state={state} canWrite={canWrite} />}
+    </>
   )
+  // The profile picks the Home (spec 2026-11-09 B5, REB-958): `solo` gets its own, every
+  // other space (`company`, not chosen yet, or a read that failed) the five tabs it always
+  // had. Not drawn before the profile is known, so a solo space never flashes the tabs.
+  if (modules.loading) return null
+  if (modules.profile === 'solo') return <SoloHome notice={notice} />
+  return <DashboardPage search={search} onSearchChange={onSearchChange} notice={notice} />
 }
 
 /**

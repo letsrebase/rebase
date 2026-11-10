@@ -1,6 +1,7 @@
 ---
 name: posthog-analytics
-description: Use when a change touches what this monorepo sends to PostHog or reads from it: adding or renaming an event in the website, the CRM, the hub or the MCP servers, sending an event from an API server, counting signups, activations or funnel steps, answering «how many people did X», exposing a database table to PostHog's data warehouse, or diagnosing a sync that failed, a count that looks too low, or an event that never arrives. Triggers on «PostHog», «analytics», «funnel», «warehouse», «evento», «tracciamento», «quante persone», «sync failed», and on any new `*_POSTHOG_*` setting.
+description: >-
+  Use when a change touches what this monorepo sends to PostHog or reads from it: adding or renaming an event in the website, the CRM, the hub or the MCP servers, sending an event from an API server, counting signups, activations or funnel steps, answering «how many people did X», exposing a database table to PostHog's data warehouse, or diagnosing a sync that failed, a count that looks too low, or an event that never arrives. Triggers on «PostHog», «analytics», «funnel», «warehouse», «evento», «tracciamento», «quante persone», «sync failed», and on any new `*_POSTHOG_*` setting.
 ---
 
 # PostHog in this monorepo
@@ -17,10 +18,10 @@ skill adds is the order of operations and the traps that cost a wasted afternoon
 
 | Surface | How PostHog gets in | Where events are named |
 |---|---|---|
-| `projects/website` | PostHog's loader inside `consent.js`, **after the visitor's yes**; no npm dependency; the key is a literal that `pixel.test.ts` compares with the package | `community.js` (`iscrizione_community`) |
-| `projects/pigrocrm/apps/web` | `initAnalytics` from `@rebase/analytics/browser` in `main.tsx`, text masked in replay | the middleware table in `src/lib/analytics.ts`: a successful API call earns an event (`spazio_creato`, `fattura_emessa`, …) |
-| `projects/hub/apps/web` | the same `initAnalytics`, inputs masked | `src/lib/analytics.ts`: `useWizardAnalytics` (`wizard_iniziato`, `wizard_passo`, `wizard_completato`), `guida_scaricata` in `pages/member/Area.tsx` |
-| `projects/hub/apps/api` | `rebase_core.analytics` (`Tracker`), a background task after the row is committed | `iscrizione_completata` |
+| `projects/website` | PostHog's loader inside `consent.js`, **after the visitor's yes**; no npm dependency; the key is a literal that `pixel.test.ts` compares with the package | none of its own since the community form went (REB-72): `consent.js` loads the pixel and only pageviews flow |
+| `projects/pigrocrm/apps/web` | `initAnalytics` from `@rebase/analytics/browser` in `main.tsx`, text masked in replay | the middleware table in `src/lib/analytics.ts`: a successful API call earns an event (`space_created`, `invoice_issued`, …) |
+| `projects/hub/apps/web` | the same `initAnalytics`, inputs masked | `src/lib/analytics.ts`: `useWizardAnalytics` (`wizard_started`, `wizard_step`, `wizard_completed`), `guide_downloaded` in `pages/member/Area.tsx` |
+| `projects/hub/apps/api` | `rebase_core.analytics` (`Tracker`), a background task after the row is committed | `signup_completed` |
 | `projects/pigrocrm/apps/mcp` | `posthog.mcp.instrument` with `context=False`, `enable_exception_autocapture=False`, `enable_conversation_id=False`, `capture_model=False`, `report_missing=False` and `collect_feedback=False`, every option that shapes the tool surface named (the SDK flipped the conversation and model ones to on in 7.56.0; REB-642, `DECISIONS.md` 2026-10-05) | PostHog's own `$mcp_tool_call` and friends |
 | `projects/hub/apps/mcp` | not instrumented on purpose: its only users are admins | — |
 
@@ -30,14 +31,14 @@ personal key (`phx_…`) never enters a file, a card or a chat transcript.
 
 ## An event's shape
 
-- **Name**: Italian, snake_case, a past participle of what the person did
-  (`cliente_creato`, `iscrizione_completata`, `guida_scaricata`), or `wizard_passo` for
+- **Name**: English, snake_case, a past participle of what the person did
+  (`customer_created`, `signup_completed`, `guide_downloaded`), or `wizard_step` for
   a step. English and `$`-prefixed names belong to PostHog.
-- **Properties**: `tipo` for the kind (`freelance` / `azienda`), `via` for who sent it
-  (`server`, `ui`), `passo` / `passi` for a step, the `utm_*` and `origine` the row was
+- **Properties**: `kind` for the kind (`freelance` / `company`), `via` for who sent it
+  (`server`, `ui`), `step` / `steps` for a step, the `utm_*` and `origin` the row was
   stored with. Never a name, an address, a rate or anything that names a person: the
   identify call carries those, once, behind a login.
-- **Identity**: behind a login the browser calls `identifyUser(<uuid>, {email, nome})`,
+- **Identity**: behind a login the browser calls `identifyUser(<uuid>, {email, name})`,
   so a server event for that person is captured on `distinct_id=str(<uuid>)` and needs
   no flag. An anonymous visitor stays anonymous (`person_profiles: 'identified_only'`):
   the browser posts its own id with the write (`distinctId()` from
@@ -46,7 +47,7 @@ personal key (`phx_…`) never enters a file, a card or a chat transcript.
   sent none the server invents a UUID so the event still counts.
 - **Two halves, one count**: a browser event stays the last step of the client-side
   funnel; the server's event is the total, under a name of its own
-  (`guida_scaricata` in the browser, `guida_consegnata` from the API), because a name
+  (`wizard_completed` in the browser, `signup_completed` from the API), because a name
   shared by the two halves doubles every naive count. Never quote a browser count as a
   total: on 2026-09-14/15 three profiles out of seven reached the hub with no browser
   event at all.
@@ -109,9 +110,22 @@ personal key (`phx_…`) never enters a file, a card or a chat transcript.
 The PostHog MCP (`mcp__plugin_posthog_posthog__exec`) is the way in from a session. The
 OAuth grant it asks for on first use can be completed from Chrome, «Read-only» is enough
 for every query, and a write (a source edit, a schema reload, a cohort) needs a
-reconnect with that scope, which no browser login changes. The `querying-posthog-data`
+reconnect with that scope, which no browser login changes. For a write without that
+reconnect, a signed-in browser profile reaches the same API from inside the page with the
+session cookie and the `posthog_csrftoken` cookie as `X-CSRFToken`: Lorenzo's own login
+and `ciao@letsrebase.com` are both members of the organisation. The `querying-posthog-data`
 skill has the general method; these are the project's rules on top of it:
 
+- **An insight reads an action, never a bare event name.** The English rename of
+  2026-11-03 (REB-912) changed every event name the CRM and the hub send; each new name
+  has an action of the same name whose steps match it and the Italian name it replaced,
+  and the dashboards' insights read those actions, so their series run across that date.
+  A new insight on one of those events uses the action. A future rename adds the old name
+  as one more step of the action instead of breaking the insights. Properties have no
+  equivalent: a breakdown across the date reads both keys
+  (`coalesce(properties.step, properties.passo)`, as «Where people leave the wizard»
+  does), and the group type `spazio` (index 0) holds the spaces seen before it, `space`
+  (index 1) the ones after.
 - **Bound every query on `timestamp`**. For browser events filter
   `properties.$host = 'letsrebase.com'` (or `pigro.letsrebase.com`): the previews report
   under their own hosts and the old `joinorbiters.com` events are still there. A server
@@ -128,11 +142,11 @@ skill has the general method; these are the project's rules on top of it:
   the SPAs load it always. A funnel from `/` to `/hub/freelance` therefore counts only
   consenting visitors, and on 2026-09-15 two of ten wizard visitors had a landing
   pageview. Start funnels at the SPA's first pageview or say the top is missing.
-- **`wizard_passo` fires on every step shown, backward moves included**, so «last passo
+- **`wizard_step` fires on every step shown, backward moves included**, so «last step
   per person» is not «where they left»; take the first in-order occurrence of each step
-  (a `FunnelsQuery` does) or `max(passo)` per session with the completion joined.
+  (a `FunnelsQuery` does) or `max(step)` per session with the completion joined.
 - **Ground truth is the product's own database.** Before quoting a signup count, read
-  `mcp__rebase-hub__list_talenti` (`stato="lead"` for the bare sign-ups, REB-288's
+  `mcp__rebase-hub__list_talents` (`status="lead"` for the bare sign-ups, REB-288's
   removal pass folded the old `list_signups` and `list_freelancers` into it; the
   warehouse tables below work too) and say how many the events missed. Those rows are
   other people's data: counts and patterns travel, names and addresses do not.
@@ -178,7 +192,7 @@ pull request asks before the email does. Three shapes, three answers:
   in `WAREHOUSE_TABLES`. No grant to write: the old one followed the table;
 - **a column moved out of a synced table**: nothing fails. The data simply stops arriving
   and every dashboard that read it goes quietly empty, which is what the identity merge
-  did to `nome`, `cognome`, `email` and `linkedin_url` when they moved into `users`, a
+  did to `nome`, `last_name`, `email` and `linkedin_url` when they moved into `users`, a
   table deliberately ungranted. Say so on the card, and treat granting the new table as
   the decision it is, not as a repair;
 - **a binary column added to a synced table**: a source selects every column unless a

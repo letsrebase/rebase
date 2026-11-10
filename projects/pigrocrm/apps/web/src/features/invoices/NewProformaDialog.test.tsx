@@ -36,29 +36,29 @@ function failed(error: unknown, status: number) {
   return Promise.resolve({ error, response: new Response(null, { status }) }) as never
 }
 
-const CUSTOMERS = [
-  { id: 'cust-1', ragione_sociale: 'ACME Srl', azienda_id: 'a1' },
-  { id: 'cust-2', ragione_sociale: 'Beta Snc', azienda_id: 'a2' },
+const ORGANIZATIONS = [
+  { id: 'cust-1', legal_name: 'ACME Srl', legal_entity_id: 'a1' },
+  { id: 'cust-2', legal_name: 'Beta Snc', legal_entity_id: 'a2' },
 ]
 
-// `customer_ragione_sociale` is on the wire shape (`DealRead`, denormalised there on
+// `customer_legal_name` is on the wire shape (`DealRead`, denormalised there on
 // purpose), which is what lets the deal-fixed dialog name the customer without asking
 // for it.
 const DEALS = [
-  { id: 'deal-1', nome: 'Sito vetrina', customer_id: 'cust-1', customer_ragione_sociale: 'ACME Srl', azienda_id: 'a2' },
-  { id: 'deal-2', nome: 'App interna', customer_id: 'cust-1', customer_ragione_sociale: 'ACME Srl', azienda_id: 'a1' },
+  { id: 'deal-1', name: 'Sito vetrina', customer_id: 'cust-1', customer_legal_name: 'ACME Srl', legal_entity_id: 'a2' },
+  { id: 'deal-2', name: 'App interna', customer_id: 'cust-1', customer_legal_name: 'ACME Srl', legal_entity_id: 'a1' },
 ]
 
 /** Every GET this dialog can make, answered by path. `useDeals` walks a cursor, so its
  *  page has to carry an explicit `next_cursor: null` or it would loop. */
 function mockGets() {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
-    if (path === '/api/customers') return ok({ items: CUSTOMERS, next_cursor: null })
+    if (path === '/api/organizations') return ok({ items: ORGANIZATIONS, next_cursor: null })
     if (path === '/api/deals') return ok({ items: DEALS, next_cursor: null })
     // The two single-record reads the *fixed* variants make, to name in words what the
     // pickers would otherwise have offered as a choice. Both are cache hits in the app
     // -- the page that opened the dialog has already read them.
-    if (path === '/api/customers/{customer_id}') return ok(CUSTOMERS[0])
+    if (path === '/api/organizations/{organization_id}') return ok(ORGANIZATIONS[0])
     if (path === '/api/deals/{deal_id}') return ok(DEALS[0])
     return ok({ items: [], next_cursor: null })
   }) as never)
@@ -75,7 +75,7 @@ beforeEach(() => {
   vi.mocked(api.POST).mockReset()
   vi.mocked(toast.success).mockReset()
   navigate.mockReset()
-  aziende = undefined
+  legal_entities = undefined
   mockGets()
 })
 
@@ -83,15 +83,15 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-/** The aziende the dialog runs under: none means the context's default, a one-azienda
+/** The legal entities the dialog runs under: none means the context's default, a one-legal-entity
  *  space; a test about «Emessa da» sets two before opening. */
-let aziende: LegalEntityValue | undefined
+let legal_entities: LegalEntityValue | undefined
 
 function renderWithClient(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      {aziende ? <LegalEntityContext value={aziende}>{ui}</LegalEntityContext> : ui}
+      {legal_entities ? <LegalEntityContext value={legal_entities}>{ui}</LegalEntityContext> : ui}
     </QueryClientProvider>,
   )
 }
@@ -110,9 +110,9 @@ async function open(props: ButtonProps = {}) {
   await screen.findByRole('dialog')
 }
 
-async function chooseCustomer(name: string) {
-  await userEvent.click(screen.getByLabelText(/^Cliente/))
-  await userEvent.click(await screen.findByRole('option', { name }))
+async function chooseOrganization(name: string) {
+  // The customer picker is a search: its matches are buttons under the box.
+  await userEvent.click(await screen.findByRole('button', { name }))
 }
 
 function body(): Record<string, unknown> {
@@ -129,7 +129,7 @@ function setDate(label: string | RegExp, value: string) {
 
 /** The shortest complete form, so a test about one field is not mostly about the rest. */
 async function fillMinimum() {
-  await chooseCustomer('ACME Srl')
+  await chooseOrganization('ACME Srl')
   await userEvent.type(screen.getByLabelText(/^Causale/), 'Consulenza agosto')
   await userEvent.type(screen.getByLabelText('Descrizione riga 1'), 'Analisi')
   await userEvent.type(screen.getByLabelText('Prezzo unitario riga 1'), '150.00')
@@ -166,7 +166,7 @@ describe('NewProformaButton', () => {
 
   it('refuses to post without a causale', async () => {
     await open()
-    await chooseCustomer('ACME Srl')
+    await chooseOrganization('ACME Srl')
     await userEvent.type(screen.getByLabelText('Descrizione riga 1'), 'Analisi')
     await userEvent.type(screen.getByLabelText('Prezzo unitario riga 1'), '150.00')
     await userEvent.click(screen.getByRole('button', { name: 'Crea proforma' }))
@@ -177,10 +177,10 @@ describe('NewProformaButton', () => {
 
   it('refuses to post a document with no priced line', async () => {
     // A proforma with no lines is a zero-total document, and the owner would only
-    // discover it on the detail page. The API accepts it (`righe` defaults to empty);
+    // discover it on the detail page. The API accepts it (`lines` defaults to empty);
     // this form does not offer it.
     await open()
-    await chooseCustomer('ACME Srl')
+    await chooseOrganization('ACME Srl')
     await userEvent.type(screen.getByLabelText(/^Causale/), 'Consulenza settembre')
     await userEvent.click(screen.getByRole('button', { name: 'Crea proforma' }))
 
@@ -191,9 +191,9 @@ describe('NewProformaButton', () => {
   })
 
   it('creates the proforma and goes to it, so it can be confirmed and issued', async () => {
-    vi.mocked(api.POST).mockReturnValue(ok({ id: 'inv-9', tipo: 'proforma', stato: 'bozza' }))
+    vi.mocked(api.POST).mockReturnValue(ok({ id: 'inv-9', type: 'proforma', status: 'draft' }))
     await open()
-    await chooseCustomer('ACME Srl')
+    await chooseOrganization('ACME Srl')
     await userEvent.type(screen.getByLabelText(/^Causale/), 'Consulenza settembre')
     await userEvent.type(screen.getByLabelText('Descrizione riga 1'), 'Analisi')
     await userEvent.clear(screen.getByLabelText('Quantità riga 1'))
@@ -203,10 +203,10 @@ describe('NewProformaButton', () => {
 
     expect(body()).toEqual({
       customer_id: 'cust-1',
-      tipo: 'proforma',
-      causale: 'Consulenza settembre',
-      data_emissione: TODAY,
-      righe: [{ descrizione: 'Analisi', quantita: '2', prezzo_unitario: '150.00' }],
+      type: 'proforma',
+      memo: 'Consulenza settembre',
+      issue_date: TODAY,
+      lines: [{ description: 'Analisi', quantity: '2', unit_price: '150.00' }],
     })
     expect(navigate).toHaveBeenCalledWith({
       to: '/app/invoices/$invoiceId',
@@ -218,7 +218,7 @@ describe('NewProformaButton', () => {
   it('sends the chosen deal, and offers only that customer’s deals', async () => {
     vi.mocked(api.POST).mockReturnValue(ok({ id: 'inv-9' }))
     await open()
-    await chooseCustomer('ACME Srl')
+    await chooseOrganization('ACME Srl')
 
     // The deal picker asks the API for that customer's deals rather than filtering a
     // full list in the browser: `DealListQuery` has `customer_id`, and the repository
@@ -271,7 +271,7 @@ describe('NewProformaButton', () => {
       ),
     )
     await open()
-    await chooseCustomer('ACME Srl')
+    await chooseOrganization('ACME Srl')
     await userEvent.type(screen.getByLabelText(/^Causale/), 'Consulenza')
     await userEvent.type(screen.getByLabelText('Descrizione riga 1'), 'Analisi')
     await userEvent.type(screen.getByLabelText('Prezzo unitario riga 1'), '150')
@@ -305,7 +305,7 @@ describe('NewProformaButton, the dates', () => {
     setDate(/^Data/, '2026-08-31')
     await userEvent.click(screen.getByRole('button', { name: 'Crea proforma' }))
 
-    expect(body()).toMatchObject({ data_emissione: '2026-08-31' })
+    expect(body()).toMatchObject({ issue_date: '2026-08-31' })
   })
 
   it('refuses to post without a date', async () => {
@@ -326,7 +326,7 @@ describe('NewProformaButton, the dates', () => {
     setDate('Competenza al', '2026-08-31')
     await userEvent.click(screen.getByRole('button', { name: 'Crea proforma' }))
 
-    expect(body()).toMatchObject({ competenza_da: '2026-08-01', competenza_a: '2026-08-31' })
+    expect(body()).toMatchObject({ accrual_from: '2026-08-01', accrual_to: '2026-08-31' })
   })
 
   it('leaves the period out of the body when neither end is given', async () => {
@@ -337,8 +337,8 @@ describe('NewProformaButton, the dates', () => {
     await fillMinimum()
     await userEvent.click(screen.getByRole('button', { name: 'Crea proforma' }))
 
-    expect(body()).not.toHaveProperty('competenza_da')
-    expect(body()).not.toHaveProperty('competenza_a')
+    expect(body()).not.toHaveProperty('accrual_from')
+    expect(body()).not.toHaveProperty('accrual_to')
   })
 
   it('refuses a period with only one end, before asking', async () => {
@@ -420,15 +420,15 @@ describe('NewProformaButton, opened from a record that already answers the quest
     await open({
       customerId: 'cust-1',
       dealId: 'deal-1',
-      prefill: { descrizione: 'Sito vetrina', importo: '4500.00' },
+      prefill: { description: 'Sito vetrina', amount: '4500.00' },
     })
 
-    // `DealRead.customer_ragione_sociale` carries the name, and the deal page has
+    // `DealRead.customer_legal_name` carries the name, and the deal page has
     // already read the deal -- so the dialog opens with both parties named and never
-    // touches `/api/customers/{customer_id}`, which from that page would be a cold read
+    // touches `/api/organizations/{organization_id}`, which from that page would be a cold read
     // behind a «…» placeholder.
     expect(await screen.findByText('ACME Srl')).toBeInTheDocument()
-    expect(api.GET).not.toHaveBeenCalledWith('/api/customers/{customer_id}', expect.anything())
+    expect(api.GET).not.toHaveBeenCalledWith('/api/organizations/{organization_id}', expect.anything())
   })
 
   it('fixes the deal too, and starts from the deal’s own name and expected value', async () => {
@@ -436,7 +436,7 @@ describe('NewProformaButton, opened from a record that already answers the quest
     await open({
       customerId: 'cust-1',
       dealId: 'deal-1',
-      prefill: { descrizione: 'Sito vetrina', importo: '4500.00' },
+      prefill: { description: 'Sito vetrina', amount: '4500.00' },
     })
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
@@ -451,10 +451,10 @@ describe('NewProformaButton, opened from a record that already answers the quest
     expect(body()).toEqual({
       customer_id: 'cust-1',
       deal_id: 'deal-1',
-      tipo: 'proforma',
-      causale: 'Acconto',
-      data_emissione: TODAY,
-      righe: [{ descrizione: 'Sito vetrina', quantita: '1', prezzo_unitario: '4500.00' }],
+      type: 'proforma',
+      memo: 'Acconto',
+      issue_date: TODAY,
+      lines: [{ description: 'Sito vetrina', quantity: '1', unit_price: '4500.00' }],
     })
   })
 
@@ -463,7 +463,7 @@ describe('NewProformaButton, opened from a record that already answers the quest
     await open({
       customerId: 'cust-1',
       dealId: 'deal-1',
-      prefill: { descrizione: 'Sito vetrina', importo: '4500.00' },
+      prefill: { description: 'Sito vetrina', amount: '4500.00' },
     })
 
     await userEvent.clear(screen.getByLabelText('Prezzo unitario riga 1'))
@@ -472,7 +472,7 @@ describe('NewProformaButton, opened from a record that already answers the quest
     await userEvent.click(screen.getByRole('button', { name: 'Crea proforma' }))
 
     expect(body()).toMatchObject({
-      righe: [{ descrizione: 'Sito vetrina', quantita: '1', prezzo_unitario: '1500.00' }],
+      lines: [{ description: 'Sito vetrina', quantity: '1', unit_price: '1500.00' }],
     })
   })
 
@@ -480,7 +480,7 @@ describe('NewProformaButton, opened from a record that already answers the quest
     await open({
       customerId: 'cust-1',
       dealId: 'deal-1',
-      prefill: { descrizione: 'Sito vetrina', importo: '' },
+      prefill: { description: 'Sito vetrina', amount: '' },
     })
 
     expect(screen.getByLabelText('Descrizione riga 1')).toHaveValue('Sito vetrina')
@@ -489,26 +489,26 @@ describe('NewProformaButton, opened from a record that already answers the quest
 })
 
 describe('«Emessa da» (REB-626)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', attiva: true } as LegalEntityRecord
-  const REBASE = { id: 'a2', nome: 'rebase', attiva: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a1', name: 'humancraft', active: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', name: 'rebase', active: true } as LegalEntityRecord
 
-  function twoAziende() {
-    aziende = {
-      aziende: [HUMANCRAFT, REBASE],
+  function twoLegalEntities() {
+    legal_entities = {
+      legal_entities: [HUMANCRAFT, REBASE],
       selected: null,
       select: vi.fn(),
-      several: true, scoped: false, pinned: false,
+      several: true, scoped: false, pinned: false, loaded: true,
       byId: (id) => [HUMANCRAFT, REBASE].find((a) => a.id === id),
     }
   }
 
   it('names the customer\'s azienda once a customer is chosen, and the deal\'s once a deal is', async () => {
-    twoAziende()
-    // `GET /api/customers/{customer_id}` answers the first customer, whose azienda is
+    twoLegalEntities()
+    // `GET /api/organizations/{organization_id}` answers the first customer, whose azienda is
     // humancraft; the chosen deal below belongs to rebase, which then takes over.
     await open()
     expect(screen.queryByText('Emessa da')).not.toBeInTheDocument()
-    await chooseCustomer('ACME Srl')
+    await chooseOrganization('ACME Srl')
     expect(await screen.findByText('Emessa da')).toBeInTheDocument()
     expect(await screen.findByText('humancraft')).toBeInTheDocument()
 
@@ -517,10 +517,10 @@ describe('«Emessa da» (REB-626)', () => {
     expect(await screen.findByText('rebase')).toBeInTheDocument()
   })
 
-  it('says nothing in a one-azienda space', async () => {
+  it('says nothing in a one-legal-entity space', async () => {
     await open()
-    await chooseCustomer('ACME Srl')
+    await chooseOrganization('ACME Srl')
     expect(screen.queryByText('Emessa da')).not.toBeInTheDocument()
-    expect(vi.mocked(api.GET)).not.toHaveBeenCalledWith('/api/customers/{customer_id}', expect.anything())
+    expect(vi.mocked(api.GET)).not.toHaveBeenCalledWith('/api/organizations/{organization_id}', expect.anything())
   })
 })

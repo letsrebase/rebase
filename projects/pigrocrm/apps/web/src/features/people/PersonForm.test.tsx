@@ -9,12 +9,12 @@ import { api } from '@/lib/api'
 import type { FieldDefinition } from '@/lib/schema'
 
 // `api.GET` is spied on directly (not `vi.mock('@/lib/api', ...)`), mirroring
-// `Timeline.test.tsx`: `PersonForm` calls `useCustomers` (for the "Azienda (cliente)"
-// picker), a real query through the real `unwrap`, so what is under test is this
+// `Timeline.test.tsx`: `PersonForm` mounts `OrganizationPicker` (for the "Azienda (cliente)"
+// picker), which runs a real query through the real `unwrap`, so what is under test is this
 // form's own handling of what that hook returns, not a reimplementation of it.
 const mockGet = vi.spyOn(api, 'GET')
 
-function customerPage(items: { id: string; ragione_sociale: string }[]) {
+function organizationPage(items: { id: string; legal_name: string }[]) {
   return Promise.resolve({
     data: { items, next_cursor: null },
     response: new Response(null, { status: 200 }),
@@ -24,12 +24,12 @@ function customerPage(items: { id: string; ragione_sociale: string }[]) {
 beforeEach(() => {
   mockGet.mockReset()
   // Every test that renders PersonForm with the dialog open reaches
-  // `CustomerPicker`, which calls `useCustomers` for the "Azienda (cliente)" picker -- an
+  // `OrganizationPicker`, which searches organizations for the "Azienda (cliente)" picker -- an
   // empty page is enough for every one of those that does not care about its
   // contents; the ones that do override this before rendering. The one test
   // below that renders with the dialog closed never calls `api.GET` at all, so
   // this default simply goes unused there.
-  mockGet.mockReturnValue(customerPage([]))
+  mockGet.mockReturnValue(organizationPage([]))
 })
 
 function renderWithClient(ui: ReactElement) {
@@ -39,13 +39,13 @@ function renderWithClient(ui: ReactElement) {
 
 const BASE_PERSON: Person = {
   id: 'p1',
-  nome: 'Mario',
-  cognome: 'Rossi',
+  first_name: 'Mario',
+  last_name: 'Rossi',
   email: null,
-  telefono: null,
-  ruolo: null,
+  contact_points: [],
+  phone: null,
+  role: null,
   linkedin: null,
-  note: null,
   customer_id: null,
   custom_fields: {},
   created_at: '2026-08-06T00:00:00Z',
@@ -60,7 +60,7 @@ const SENIORITY: FieldDefinition = {
   options: ['Junior', 'Senior'],
 }
 
-const DISPONIBILE: FieldDefinition = {
+const AVAILABLE: FieldDefinition = {
   key: 'disponibile',
   label: 'Disponibile',
   type: 'checkbox',
@@ -105,7 +105,7 @@ function mockGmail(syncing: boolean) {
     ((path: string) =>
       path === '/api/gmail/account'
         ? Promise.resolve({ data: gmailHealth(syncing), response: new Response(null, { status: 200 }) })
-        : customerPage([])) as never,
+        : organizationPage([])) as never,
   )
 }
 
@@ -132,17 +132,17 @@ describe('PersonForm', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     expect(submitted(onSubmit)).toEqual({
-      nome: 'Mario',
-      cognome: 'Rossi',
+      first_name: 'Mario',
+      last_name: 'Rossi',
       custom_fields: { seniority: 'Senior' },
     })
   })
 
   /**
-   * The defect this guards, identical in shape to `CustomerForm`'s own
+   * The defect this guards, identical in shape to `OrganizationForm`'s own
    * (reproduced live there first -- see task-6-report.md): archive a field
-   * definition while a record still carries a value for it, open Modifica,
-   * press Salva with nothing else changed. A flat form state would re-derive
+   * definition while a record still carries a value for it, open Edit,
+   * press Save with nothing else changed. A flat form state would re-derive
    * "is this key custom?" from the *active* schema, reclassify the value as
    * native, and 422 on `PersonUpdate`'s `extra="forbid"`.
    */
@@ -166,7 +166,7 @@ describe('PersonForm', () => {
     const payload = submitted(onSubmit)
     expect(payload).not.toHaveProperty('seniority')
     expect(payload.custom_fields).toEqual({})
-    expect(payload).toEqual({ nome: 'Mario', cognome: 'Rossi', custom_fields: {} })
+    expect(payload).toEqual({ first_name: 'Mario', last_name: 'Rossi', custom_fields: {} })
   })
 
   it('sends an untouched checkbox as false on create, never as an absent key', async () => {
@@ -176,7 +176,7 @@ describe('PersonForm', () => {
         title="Nuova persona"
         open
         onOpenChange={vi.fn()}
-        customFields={[DISPONIBILE]}
+        customFields={[AVAILABLE]}
         onSubmit={onSubmit}
       />,
     )
@@ -184,7 +184,7 @@ describe('PersonForm', () => {
     await userEvent.type(screen.getByLabelText(/^Nome/), 'Luigi')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
-    expect(submitted(onSubmit)).toEqual({ nome: 'Luigi', custom_fields: { disponibile: false } })
+    expect(submitted(onSubmit)).toEqual({ first_name: 'Luigi', custom_fields: { 'disponibile': false } })
   })
 
   /** The other side of the same rule (see `DynamicForm.test.tsx`): doing this on
@@ -197,21 +197,21 @@ describe('PersonForm', () => {
         title="Modifica persona"
         open
         onOpenChange={vi.fn()}
-        customFields={[DISPONIBILE]}
+        customFields={[AVAILABLE]}
         initial={personToFormValues(BASE_PERSON)}
         onSubmit={onSubmit}
       />,
     )
 
-    await userEvent.type(screen.getByLabelText('Telefono'), '02123456')
+    await userEvent.type(screen.getByLabelText('Ruolo'), 'Fondatore')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     const payload = submitted(onSubmit)
     expect(payload.custom_fields).toEqual({})
     expect(payload).toEqual({
-      nome: 'Mario',
-      cognome: 'Rossi',
-      telefono: '02123456',
+      first_name: 'Mario',
+      last_name: 'Rossi',
+      role: 'Fondatore',
       custom_fields: {},
     })
   })
@@ -220,7 +220,7 @@ describe('PersonForm', () => {
     const onSubmit = vi.fn()
     const initial = personToFormValues({
       ...BASE_PERSON,
-      telefono: '02123456',
+      role: 'Fondatore',
       custom_fields: { seniority: 'Senior' },
     })
     renderWithClient(
@@ -234,33 +234,30 @@ describe('PersonForm', () => {
       />,
     )
 
-    await userEvent.clear(screen.getByLabelText('Telefono'))
-    // Two comboboxes exist in this render: index 0 is the "Azienda (cliente)" picker every
-    // PersonForm renders unconditionally, index 1 is the Seniority custom field.
-    const [, seniorityCombobox] = screen.getAllByRole('combobox')
-    await userEvent.click(seniorityCombobox!)
+    await userEvent.clear(screen.getByLabelText('Ruolo'))
+    await userEvent.click(screen.getByRole('combobox'))
     await userEvent.click(screen.getByRole('option', { name: 'Nessuna selezione' }))
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     expect(submitted(onSubmit)).toEqual({
-      nome: 'Mario',
-      cognome: 'Rossi',
-      telefono: '',
+      first_name: 'Mario',
+      last_name: 'Rossi',
+      role: '',
       custom_fields: { seniority: null },
     })
   })
 
   describe('customer association', () => {
     /**
-     * A fix-round defect, back-ported from `DealForm.tsx`'s identical fix:
-     * `useCustomers({limit: 200})` used to run at `PersonForm`'s own top level,
+     * A fix-round defect, back-ported from `DealForm.tsx`'s identical fix: the
+     * customer request used to run at `PersonForm`'s own top level,
      * unconditionally -- and this form is mounted by both the Persone list and
      * every person detail page regardless of `open` (only the dialog's own
      * visibility toggles on it), so every view of either screen fired a
-     * `GET /api/customers?limit=200` for a dropdown nobody had opened. The
-     * picker is now its own component (`CustomerPicker`), mounted -- and
-     * therefore only ever calling `useCustomers` -- inside `DialogContent`,
-     * which Radix does not render at all while `open` is false.
+     * `GET /api/organizations` for a picker nobody had opened. The picker is its own
+     * component (`OrganizationPicker`), mounted -- and therefore only ever
+     * searching organizations -- inside `DialogContent`, which Radix does not render
+     * at all while `open` is false.
      */
     it('does not fetch the customer list while the dialog is closed', () => {
       renderWithClient(
@@ -297,7 +294,7 @@ describe('PersonForm', () => {
     })
 
     it('sends a chosen customer_id on create', async () => {
-      mockGet.mockReturnValue(customerPage([{ id: 'cust-1', ragione_sociale: 'ACME Srl' }]))
+      mockGet.mockReturnValue(organizationPage([{ id: 'cust-1', legal_name: 'ACME Srl' }]))
       const onSubmit = vi.fn()
       renderWithClient(
         <PersonForm
@@ -310,12 +307,11 @@ describe('PersonForm', () => {
       )
 
       await userEvent.type(screen.getByLabelText(/^Nome/), 'Luigi')
-      await userEvent.click(screen.getByRole('combobox'))
-      await userEvent.click(await screen.findByRole('option', { name: 'ACME Srl' }))
+      await userEvent.click(await screen.findByRole('button', { name: 'ACME Srl' }))
       await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
       expect(submitted(onSubmit)).toEqual({
-        nome: 'Luigi',
+        first_name: 'Luigi',
         customer_id: 'cust-1',
         custom_fields: {},
       })
@@ -323,17 +319,17 @@ describe('PersonForm', () => {
 
     /**
      * The bug the brief's own sample would have shipped, found by reading
-     * `PersonUpdate`/`PersonService.update` rather than assumed from Customer's
-     * shape (Customer has no such relationship to generalise from): there is no
+     * `PersonUpdate`/`PersonService.update` rather than assumed from Organization's
+     * shape (Organization has no such relationship to generalise from): there is no
      * way to clear `customer_id` with `null` (`model_dump(exclude_none=True)`
      * drops it before the service ever sees it) or `""` (fails UUID parsing,
      * 422). Only an explicit `detach: true` removes an existing association.
-     * Selecting "Nessun cliente" on a person who had one must send that flag --
+     * Removing the customer of a person who had one must send that flag --
      * omitting the key, or sending a value the server silently ignores or
      * rejects, both leave the stale association in place.
      */
     it('detaches an existing customer with `detach: true`, never `customer_id: null`', async () => {
-      mockGet.mockReturnValue(customerPage([{ id: 'cust-1', ragione_sociale: 'ACME Srl' }]))
+      mockGet.mockReturnValue(organizationPage([{ id: 'cust-1', legal_name: 'ACME Srl' }]))
       const onSubmit = vi.fn()
       renderWithClient(
         <PersonForm
@@ -346,8 +342,7 @@ describe('PersonForm', () => {
         />,
       )
 
-      await userEvent.click(await screen.findByRole('combobox'))
-      await userEvent.click(await screen.findByRole('option', { name: 'Nessun cliente' }))
+      await userEvent.click(await screen.findByRole('button', { name: 'Rimuovi il cliente' }))
       await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
       const payload = submitted(onSubmit)
@@ -356,7 +351,7 @@ describe('PersonForm', () => {
     })
 
     it('keeps sending the same customer_id when the association is untouched on edit', async () => {
-      mockGet.mockReturnValue(customerPage([{ id: 'cust-1', ragione_sociale: 'ACME Srl' }]))
+      mockGet.mockReturnValue(organizationPage([{ id: 'cust-1', legal_name: 'ACME Srl' }]))
       const onSubmit = vi.fn()
       renderWithClient(
         <PersonForm
@@ -386,6 +381,10 @@ describe('PersonForm', () => {
   describe('the Gmail sync notice', () => {
     const NOTICE = /le conversazioni con questo indirizzo compariranno al prossimo sync/i
 
+    const ADA = [
+      { id: 'cp1', kind: 'email', value: 'ada@acme.it', label: 'work', note: null, is_primary: true, position: 0 },
+    ] as Person['contact_points']
+
     it('tells the user when a newly added address will start showing conversations', async () => {
       mockGmail(true)
       renderWithClient(
@@ -399,7 +398,8 @@ describe('PersonForm', () => {
       )
 
       expect(screen.queryByText(NOTICE)).not.toBeInTheDocument()
-      await userEvent.type(screen.getByLabelText('Email'), 'ada@acme.it')
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.type(screen.getByLabelText('Valore recapito 1'), 'ada@acme.it')
       expect(await screen.findByText(NOTICE)).toBeInTheDocument()
     })
 
@@ -421,7 +421,8 @@ describe('PersonForm', () => {
         />,
       )
 
-      await userEvent.type(screen.getByLabelText('Email'), 'ada@acme.it')
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.type(screen.getByLabelText('Valore recapito 1'), 'ada@acme.it')
       expect(screen.queryByText(NOTICE)).not.toBeInTheDocument()
     })
 
@@ -438,7 +439,7 @@ describe('PersonForm', () => {
           open
           onOpenChange={vi.fn()}
           customFields={[]}
-          initial={personToFormValues({ ...BASE_PERSON, email: 'ada@acme.it' })}
+          initial={personToFormValues({ ...BASE_PERSON, contact_points: ADA })}
           onSubmit={vi.fn()}
         />,
       )
@@ -455,13 +456,214 @@ describe('PersonForm', () => {
           open
           onOpenChange={vi.fn()}
           customFields={[]}
-          initial={personToFormValues({ ...BASE_PERSON, email: 'ada@acme.it' })}
+          initial={personToFormValues({ ...BASE_PERSON, contact_points: ADA })}
           onSubmit={vi.fn()}
         />,
       )
 
-      await userEvent.type(await screen.findByLabelText('Email'), '.uk')
+      await userEvent.type(await screen.findByLabelText('Valore recapito 1'), '.uk')
       expect(await screen.findByText(NOTICE)).toBeInTheDocument()
+    })
+
+    it('does not announce a phone number or a second address that is already known', async () => {
+      mockGmail(true)
+      renderWithClient(
+        <PersonForm
+          title="Modifica persona"
+          open
+          onOpenChange={vi.fn()}
+          customFields={[]}
+          initial={personToFormValues({ ...BASE_PERSON, contact_points: ADA })}
+          onSubmit={vi.fn()}
+        />,
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.click(screen.getByLabelText('Tipo recapito 2'))
+      await userEvent.click(await screen.findByRole('option', { name: 'Telefono' }))
+      await userEvent.type(screen.getByLabelText('Valore recapito 2'), '02123456')
+      expect(screen.queryByText(NOTICE)).not.toBeInTheDocument()
+    })
+  })
+
+  describe('the contact points', () => {
+    const STORED = [
+      { id: 'cp1', kind: 'email', value: 'ada@acme.it', label: 'work', note: null, is_primary: true, position: 0 },
+      { id: 'cp2', kind: 'phone', value: '+39 02 123456', label: 'personal', note: 'WhatsApp', is_primary: true, position: 1 },
+      { id: 'cp3', kind: 'linkedin', value: 'https://www.linkedin.com/in/ada', label: 'work', note: null, is_primary: true, position: 2 },
+    ] as Person['contact_points']
+    const WITH_POINTS: Person = { ...BASE_PERSON, contact_points: STORED }
+
+    it('sends the list typed on a new person, with no id, no position and no flat fields', async () => {
+      const onSubmit = vi.fn()
+      renderWithClient(
+        <PersonForm title="Nuova persona" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,
+      )
+
+      await userEvent.type(screen.getByLabelText(/^Nome/), 'Ada')
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.type(screen.getByLabelText('Valore recapito 1'), 'ada@acme.it')
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.type(screen.getByLabelText('Valore recapito 2'), 'ada@home.it')
+      await userEvent.click(screen.getByLabelText('Principale recapito 2'))
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      const payload = submitted(onSubmit)
+      expect(payload.contact_points).toEqual([
+        { kind: 'email', value: 'ada@acme.it', label: 'work', note: null, is_primary: false },
+        { kind: 'email', value: 'ada@home.it', label: 'work', note: null, is_primary: true },
+      ])
+      for (const old of ['email', 'phone', 'linkedin']) expect(payload).not.toHaveProperty(old)
+    })
+
+    it('says nothing about the list when it was left alone on an edit', async () => {
+      const onSubmit = vi.fn()
+      renderWithClient(
+        <PersonForm
+          title="Modifica persona"
+          open
+          onOpenChange={vi.fn()}
+          customFields={[]}
+          initial={personToFormValues(WITH_POINTS)}
+          onSubmit={onSubmit}
+        />,
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      expect(submitted(onSubmit)).not.toHaveProperty('contact_points')
+    })
+
+    it('saves the rest of a record whose stored points would not pass today’s rules', async () => {
+      const onSubmit = vi.fn()
+      const legacy = [
+        { id: 'l1', kind: 'email', value: 'ada(at)acme', label: 'work', note: null, is_primary: true, position: 0 },
+        { id: 'l2', kind: 'phone', value: 'int. 2', label: 'work', note: null, is_primary: true, position: 1 },
+      ] as Person['contact_points']
+      renderWithClient(
+        <PersonForm
+          title="Modifica persona"
+          open
+          onOpenChange={vi.fn()}
+          customFields={[]}
+          initial={personToFormValues({ ...BASE_PERSON, contact_points: legacy })}
+          onSubmit={onSubmit}
+        />,
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      expect(onSubmit).toHaveBeenCalledTimes(1)
+      expect(submitted(onSubmit)).not.toHaveProperty('contact_points')
+    })
+
+    it('keeps a stored value that fails today’s rules when another point is added', async () => {
+      const onSubmit = vi.fn()
+      const legacy = [
+        { id: 'l1', kind: 'email', value: 'ada(at)acme', label: 'work', note: null, is_primary: true, position: 0 },
+      ] as Person['contact_points']
+      renderWithClient(
+        <PersonForm
+          title="Modifica persona"
+          open
+          onOpenChange={vi.fn()}
+          customFields={[]}
+          initial={personToFormValues({ ...BASE_PERSON, contact_points: legacy })}
+          onSubmit={onSubmit}
+        />,
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.type(screen.getByLabelText('Valore recapito 2'), 'ada@acme.it')
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      expect(submitted(onSubmit).contact_points).toEqual([
+        { kind: 'email', value: 'ada(at)acme', label: 'work', note: null, is_primary: true },
+        { kind: 'email', value: 'ada@acme.it', label: 'work', note: null, is_primary: false },
+      ])
+    })
+
+    it('sends the whole list in the order it was put in once a point moved', async () => {
+      const onSubmit = vi.fn()
+      renderWithClient(
+        <PersonForm
+          title="Modifica persona"
+          open
+          onOpenChange={vi.fn()}
+          customFields={[]}
+          initial={personToFormValues(WITH_POINTS)}
+          onSubmit={onSubmit}
+        />,
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Sposta su recapito 3' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      const sent = submitted(onSubmit).contact_points as { kind: string; is_primary: boolean }[]
+      expect(sent.map((point) => point.kind)).toEqual(['email', 'linkedin', 'phone'])
+      expect(sent.every((point) => point.is_primary)).toBe(true)
+      expect(sent[2]).toEqual({
+        kind: 'phone',
+        value: '+39 02 123456',
+        label: 'personal',
+        note: 'WhatsApp',
+        is_primary: true,
+      })
+    })
+
+    it('drops a blank row instead of sending or refusing it', async () => {
+      const onSubmit = vi.fn()
+      renderWithClient(
+        <PersonForm title="Nuova persona" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,
+      )
+
+      await userEvent.type(screen.getByLabelText(/^Nome/), 'Ada')
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      expect(submitted(onSubmit)).not.toHaveProperty('contact_points')
+    })
+
+    it('refuses the same address twice and says so on the second row', async () => {
+      const onSubmit = vi.fn()
+      renderWithClient(
+        <PersonForm title="Nuova persona" open onOpenChange={vi.fn()} customFields={[]} onSubmit={onSubmit} />,
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.type(screen.getByLabelText('Valore recapito 1'), 'ada@acme.it')
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+      await userEvent.type(screen.getByLabelText('Valore recapito 2'), 'ADA@acme.it')
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      expect(onSubmit).not.toHaveBeenCalled()
+      expect(screen.getByRole('group', { name: 'Recapito 2' })).toHaveTextContent('già nell’elenco')
+    })
+
+    it('puts the server sentence on the row it names, counting only the rows that were sent', async () => {
+      renderWithClient(
+        <PersonForm
+          title="Modifica persona"
+          open
+          onOpenChange={vi.fn()}
+          customFields={[]}
+          initial={personToFormValues(WITH_POINTS)}
+          problem={{
+            type: 'about:blank',
+            title: 'Dati non validi',
+            status: 422,
+            code: 'validation_failed',
+            detail: 'person.contact_points[2]: serve l’indirizzo di un profilo su linkedin.com',
+            field: 'contact_points[2]',
+            reason: 'serve l’indirizzo di un profilo su linkedin.com',
+          }}
+          onSubmit={vi.fn()}
+        />,
+      )
+
+      const alerts = screen.getAllByRole('alert')
+      expect(alerts).toHaveLength(1)
+      expect(screen.getByRole('group', { name: 'Recapito 3' })).toContainElement(alerts[0] as HTMLElement)
     })
   })
 })

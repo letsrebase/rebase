@@ -40,8 +40,7 @@ import pytest
 from sqlalchemy import Engine, delete
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.dashboard.schemas import CommercialDashboard, PeriodoQuery
+from pigrocrm.core.dashboard.schemas import CommercialDashboard, PeriodQuery
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.base import uuid7
@@ -53,6 +52,7 @@ from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.repository import DocumentRepository
 from pigrocrm.core.documents.schemas import DocumentListQuery
 from pigrocrm.core.invoices.repository import InvoiceRepository
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.timetracking.repository import TimeEntryRepository
@@ -71,7 +71,7 @@ class Seeded(NamedTuple):
     stage_ids: dict[str, UUID]
 
 
-def _cancellato() -> datetime:
+def _cancelled() -> datetime:
     return datetime.now(UTC)
 
 
@@ -80,17 +80,17 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
     factory = session_factory(db_engine)
     with factory() as session:
         stages = {s.code: s for s in PipelineService(session).seed_defaults(SEED) if s.code}
-        customer = Customer(ragione_sociale=f"{_PREFIX} Cliente", nazione="IT", custom_fields={})
+        customer = Organization(legal_name=f"{_PREFIX} Cliente", country="IT", custom_fields={})
         session.add(customer)
         session.flush()
 
-        def deal(nome: str, stage: str, **extra: object) -> Deal:
+        def deal(name: str, stage: str, **extra: object) -> Deal:
             row = Deal(
-                nome=f"{_PREFIX} {nome}",
+                name=f"{_PREFIX} {name}",
                 customer_id=customer.id,
                 pipeline_stage_id=stages[stage].id,
-                valore_previsto=Decimal("1000.00"),
-                probabilita=50,
+                expected_value=Decimal("1000.00"),
+                probability=50,
                 custom_fields={},
                 **extra,
             )
@@ -99,23 +99,23 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
 
         # Four in `lead` and two in `contattato`: the stage card must equal the deals of
         # *its* stage, so a drill-through that dropped `stage_id` would return six.
-        aperti = [deal(f"aperto {index}", "lead") for index in range(4)]
+        open = [deal(f"aperto {index}", "lead") for index in range(4)]
         for index in range(2):
-            deal(f"contattato {index}", "contattato")
+            deal(f"contattato {index}", "contacted")
         # Soft-deleted, in `lead`. Counted by neither side; counted by a side that forgot
         # `deleted_at IS NULL`.
-        rimosso = deal("aperto cancellato", "lead", deleted_at=_cancellato())
-        vinto = deal("vinto", "vinto", chiuso_il=today_local())
-        perso = deal("perso", "perso", chiuso_il=today_local())
+        removed = deal("aperto cancellato", "lead", deleted_at=_cancelled())
+        won = deal("won", "won", closed_at=today_local())
+        lost = deal("lost", "lost", closed_at=today_local())
         session.flush()
 
-        def document(nome: str, *, tipo: str = "offerta", **extra: object) -> None:
+        def document(name: str, *, type: str = "offer", **extra: object) -> None:
             session.add(
                 Document(
-                    tipo=tipo,
-                    titolo=f"{_PREFIX} {nome}",
-                    stato_dal=today_local(),
-                    versione_corrente=1,
+                    type=type,
+                    title=f"{_PREFIX} {name}",
+                    status_since=today_local(),
+                    current_version=1,
                     custom_fields={},
                     **extra,
                 )
@@ -123,49 +123,51 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
 
         # -- the "offerte in attesa" card -----------------------------------------
         for index in range(3):
-            document(f"inviata {index}", customer_id=customer.id, stato="inviata")
+            document(f"inviata {index}", customer_id=customer.id, status="sent")
         document(
-            "inviata cancellata", customer_id=customer.id, stato="inviata", deleted_at=_cancellato()
+            "inviata cancellata", customer_id=customer.id, status="sent", deleted_at=_cancelled()
         )
-        # Differs from the wanted set in `stato` only, and the next one in `tipo` only:
+        # Differs from the wanted set in `status` only, and the next one in `type` only:
         # each exists so that dropping one filter on one side shows up as a divergence
         # rather than as two matching numbers.
-        document("bozza", customer_id=customer.id, stato="bozza")
-        document("contratto inviato", customer_id=customer.id, tipo="contratto", stato="inviata")
+        document("draft", customer_id=customer.id, status="draft")
+        document("contratto inviato", customer_id=customer.id, type="contract", status="sent")
 
         # -- §6.2's signal card: accepted offer, deal not won ---------------------
-        document("accettata 0", deal_id=aperti[0].id, stato="accettata")
-        document("accettata 1", deal_id=aperti[1].id, stato="accettata")
+        document("accettata 0", deal_id=open[0].id, status="accepted")
+        document("accettata 1", deal_id=open[1].id, status="accepted")
         # A lost deal with an accepted offer is the signal too: the predicate is
         # `tipo != 'won'`, not `tipo == 'open'`. Written down because the two differ only
         # on this row.
-        document("accettata persa", deal_id=perso.id, stato="accettata")
+        document("accettata persa", deal_id=lost.id, status="accepted")
         # The three exclusions, one per clause of the predicate.
-        document("accettata ok", deal_id=vinto.id, stato="accettata")
-        document("accettata su cliente", customer_id=customer.id, stato="accettata")
+        document("accettata ok", deal_id=won.id, status="accepted")
+        document("accettata su cliente", customer_id=customer.id, status="accepted")
         document(
             "accettata cancellata",
-            deal_id=aperti[2].id,
-            stato="accettata",
-            deleted_at=_cancellato(),
+            deal_id=open[2].id,
+            status="accepted",
+            deleted_at=_cancelled(),
         )
-        document("accettata deal cancellato", deal_id=rimosso.id, stato="accettata")
+        document("accettata deal cancellato", deal_id=removed.id, status="accepted")
         session.commit()
         stage_ids = {code: stage.id for code, stage in stages.items()}
     try:
         yield Seeded(db_engine, stage_ids)
     finally:
         with factory() as session:
-            session.execute(delete(Document).where(Document.titolo.like(f"{_PREFIX} %")))
-            session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
-            session.execute(delete(Customer).where(Customer.ragione_sociale.like(f"{_PREFIX} %")))
+            session.execute(delete(Document).where(Document.title.like(f"{_PREFIX} %")))
+            session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))
+            session.execute(
+                delete(Organization).where(Organization.legal_name.like(f"{_PREFIX} %"))
+            )
             session.execute(delete(PipelineStage))
             session.commit()
 
 
 def _dashboard(engine: Engine) -> CommercialDashboard:
     with session_factory(engine)() as session:
-        return DashboardService(session).get_commercial_dashboard(PeriodoQuery(), READONLY)
+        return DashboardService(session).get_commercial_dashboard(PeriodQuery(), READONLY)
 
 
 def _documents(engine: Engine, query: DocumentListQuery) -> list[Document]:
@@ -184,14 +186,14 @@ def test_the_open_deals_card_equals_its_deal_list(seeded: Seeded) -> None:
     ignored the stage would fail on neither if only one stage were asserted.
     """
     dashboard = _dashboard(seeded.engine)
-    for code, expected in (("lead", 4), ("contattato", 2)):
+    for code, expected in (("lead", 4), ("contacted", 2)):
         card = next(row for row in dashboard.pipeline if row.stage_code == code)
         with session_factory(seeded.engine)() as session:
             page = DealService(session).list(
                 DealListQuery(stage_id=seeded.stage_ids[code], limit=_ALL), READONLY
             )
-        assert card.numero == len(page.items), f"stage {code}"
-        assert card.numero == expected, f"stage {code}: the corpus itself has drifted"
+        assert card.number == len(page.items), f"stage {code}"
+        assert card.number == expected, f"stage {code}: the corpus itself has drifted"
         assert all(str(item.pipeline_stage_id) == card.stage_id for item in page.items)
 
 
@@ -206,12 +208,12 @@ def test_the_open_deals_card_excludes_the_soft_deleted_deal_on_both_sides(
         page = DealService(session).list(
             DealListQuery(stage_id=seeded.stage_ids["lead"], limit=_ALL), READONLY
         )
-    nomi = {item.nome for item in page.items}
-    assert f"{_PREFIX} aperto cancellato" not in nomi
-    assert card.numero == len(nomi)
+    names = {item.name for item in page.items}
+    assert f"{_PREFIX} aperto cancellato" not in names
+    assert card.number == len(names)
 
 
-# -- card: offerte in attesa -> /app/documents?tipo=offerta&stato=inviata ---------
+# -- card: pending offers -> /app/documents?type=offer&status=sent --------------
 
 
 def test_the_pending_offers_card_equals_its_document_list(seeded: Seeded) -> None:
@@ -219,30 +221,30 @@ def test_the_pending_offers_card_equals_its_document_list(seeded: Seeded) -> Non
     renderings of one predicate, asserted as the same set of rows and not merely as the
     same integer."""
     dashboard = _dashboard(seeded.engine)
-    rows = _documents(seeded.engine, DocumentListQuery(tipo="offerta", stato="inviata", limit=_ALL))
-    assert dashboard.offerte_in_attesa_totale == len(rows) == 3
-    assert {offer.document_id for offer in dashboard.offerte_in_attesa} == {
+    rows = _documents(seeded.engine, DocumentListQuery(type="offer", status="sent", limit=_ALL))
+    assert dashboard.offers_pending_total == len(rows) == 3
+    assert {offer.document_id for offer in dashboard.offers_pending} == {
         str(row.id) for row in rows
     }
 
 
-def test_the_pending_offers_list_drops_the_row_that_differs_only_in_tipo_or_stato(
+def test_the_pending_offers_list_drops_the_row_that_differs_only_in_type_or_status(
     seeded: Seeded,
 ) -> None:
     """Each filter, isolated. `DRILL contratto inviato` differs from a wanted row only in
-    `tipo`, `DRILL bozza` only in `stato`, `DRILL inviata cancellata` only in
+    `type`, `DRILL bozza` only in `status`, `DRILL inviata cancellata` only in
     `deleted_at`. A side that dropped any one of the three would return four rows against
     a card of three."""
-    titoli = {
-        row.titolo
+    titles = {
+        row.title
         for row in _documents(
-            seeded.engine, DocumentListQuery(tipo="offerta", stato="inviata", limit=_ALL)
+            seeded.engine, DocumentListQuery(type="offer", status="sent", limit=_ALL)
         )
     }
-    assert titoli == {f"{_PREFIX} inviata {index}" for index in range(3)}
+    assert titles == {f"{_PREFIX} inviata {index}" for index in range(3)}
 
 
-# -- card: offerta accettata, deal non vinto -> ?solo_deal_non_vinto=true ---------
+# -- card: accepted offer, deal not won -> ?unwon_only=true ----------------------
 
 
 def test_the_signal_card_equals_its_filtered_document_list(seeded: Seeded) -> None:
@@ -252,19 +254,19 @@ def test_the_signal_card_equals_its_filtered_document_list(seeded: Seeded) -> No
     each can still be returning different three rows, and a count-only assertion is
     exactly how that goes unnoticed.
     """
-    count = _dashboard(seeded.engine).offerte_accettate_deal_non_vinto
-    rows = _documents(seeded.engine, DocumentListQuery(solo_deal_non_vinto=True, limit=_ALL))
+    count = _dashboard(seeded.engine).accepted_offers_deal_not_won
+    rows = _documents(seeded.engine, DocumentListQuery(only_unwon_deals=True, limit=_ALL))
     assert count == len(rows)
-    assert {row.titolo for row in rows} == {
+    assert {row.title for row in rows} == {
         f"{_PREFIX} accettata 0",
         f"{_PREFIX} accettata 1",
         f"{_PREFIX} accettata persa",
     }
-    assert all(row.stato == "accettata" for row in rows)
+    assert all(row.status == "accepted" for row in rows)
 
 
 @pytest.mark.parametrize(
-    ("escluso", "perche"),
+    ("excluded", "why"),
     [
         ("accettata ok", "il deal è vinto"),
         ("accettata su cliente", "non ha un deal"),
@@ -273,7 +275,7 @@ def test_the_signal_card_equals_its_filtered_document_list(seeded: Seeded) -> No
     ],
 )
 def test_the_signal_filter_excludes_each_row_it_must(
-    seeded: Seeded, escluso: str, perche: str
+    seeded: Seeded, excluded: str, why: str
 ) -> None:
     """The negative half, one clause of the predicate at a time.
 
@@ -281,28 +283,26 @@ def test_the_signal_filter_excludes_each_row_it_must(
     test above whenever the count was wrong in the same way -- which is precisely what
     "two calculations that agree" means.
     """
-    titoli = {
-        row.titolo
-        for row in _documents(
-            seeded.engine, DocumentListQuery(solo_deal_non_vinto=True, limit=_ALL)
-        )
+    titles = {
+        row.title
+        for row in _documents(seeded.engine, DocumentListQuery(only_unwon_deals=True, limit=_ALL))
     }
-    assert f"{_PREFIX} {escluso}" not in titoli, perche
+    assert f"{_PREFIX} {excluded}" not in titles, why
 
 
 def test_the_signal_filter_composes_with_the_other_filters(seeded: Seeded) -> None:
     """It is an additional predicate, not a replacement for the query. A filter that
-    silently dropped `stato` would make the drill-through a different question, and a
+    silently dropped `status` would make the drill-through a different question, and a
     filter that replaced the statement would return the accepted offers here."""
     assert (
         _documents(
-            seeded.engine, DocumentListQuery(solo_deal_non_vinto=True, stato="inviata", limit=_ALL)
+            seeded.engine, DocumentListQuery(only_unwon_deals=True, status="sent", limit=_ALL)
         )
         == []
     )
     scoped = _documents(
         seeded.engine,
-        DocumentListQuery(solo_deal_non_vinto=True, deal_id=None, tipo="offerta", limit=_ALL),
+        DocumentListQuery(only_unwon_deals=True, deal_id=None, type="offer", limit=_ALL),
     )
     assert len(scoped) == 3
 
@@ -345,7 +345,7 @@ _SHARED_PREDICATES = [
     ),
     (
         "_overdue_predicate()",
-        (InvoiceRepository.count_scadute_non_incassate, InvoiceRepository.list),
+        (InvoiceRepository.count_overdue_not_paid, InvoiceRepository.list),
     ),
 ]
 

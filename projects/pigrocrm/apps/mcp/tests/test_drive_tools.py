@@ -41,9 +41,9 @@ def drive_actor(mcp_session: Session) -> Actor:
     user = User(
         email="drive-owner@example.test",
         password_hash="x",
-        nome="Owner",
-        ruolo="admin",
-        attivo=True,
+        name="Owner",
+        role="admin",
+        active=True,
     )
     mcp_session.add(user)
     mcp_session.flush()
@@ -80,7 +80,7 @@ async def test_describe_drive_account_is_absent_when_google_is_not_configured(
     repository actually runs its whole suite under."""
     names = await _tool_names(server)
     assert "describe_drive_account" not in names
-    assert "create_customer" in names
+    assert "create_organization" in names
 
 
 async def test_describe_drive_account_reports_no_account_when_nothing_is_connected(

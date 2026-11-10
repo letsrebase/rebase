@@ -1,13 +1,13 @@
 /* The team builder on the landing's first screen (REB-676).
  *
  * Ivan, 2026-10-07: the first thing a visitor sees is the box with the examples and the
- * chance to build their team, «in una forma semplificata ... con un output minimo che poi
- * può essere visto in modo completo all'interno della pagina di dettaglio». So this is
+ * chance to build their team, «in a simplified form ... with a minimal output that can then
+ * be seen in full on the detail page» (said in Italian). So this is
  * the hub's team builder (projects/hub, TeamBuilder.tsx) cut to what a static page can
  * carry without a framework: four examples that fill the box, one call to the hub's own
  * POST /api/hub/team/proposals on the same origin, and the least of the answer that
  * says whether it is worth a click: the summary, each role with its seniority and its
- * day band, the team's day band, and one door into /hub/team?proposta=<id>, where the
+ * day band, the team's day band, and one door into /hub/team?proposal=<id>, where the
  * hub reads the proposal back (REB-675) and the whole page is. No «Rigenera», no
  * «Assumi team»: the page sends the description and the headcount the visitor picked
  * (one by default, as the hub's page), and everything past the minimum lives on the
@@ -33,10 +33,13 @@
 ;(function () {
   var API = '/api/hub/team/proposals'
   var PAGE = '/hub/team'
-  var DESCRIZIONE_MIN = 40
+  var DESCRIPTION_MIN = 40
   var PENDING = 'Sto leggendo i profili…'
-  var TOO_SHORT = 'Raccontaci qualcosa in più: servono almeno ' + DESCRIZIONE_MIN + ' caratteri.'
+  var TOO_SHORT = 'Raccontaci qualcosa in più: servono almeno ' + DESCRIPTION_MIN + ' caratteri.'
   var FAILED = 'Non siamo riusciti a proporre un team. Riprova.'
+  // The model call takes up to about 90 s (the host vhost's proxy_read_timeout); a few
+  // seconds past it the request is given up as a failure rather than left spinning.
+  var TIMEOUT_MS = 95000
   // The hub's own sentence for a 429 (`api.ts`): the speed bump answers no JSON.
   var THROTTLED = 'Troppe richieste da qui. Riprova tra un minuto.'
   var NO_BAND = 'Tariffa da definire'
@@ -65,16 +68,16 @@
   }
 
   /** «Senior, 9 anni di esperienza», from the card, as the hub's `format.ts` says it. */
-  function experience(scheda) {
+  function experience(card) {
     var parts = []
-    if (scheda && scheda.seniority) parts.push(SENIORITY[scheda.seniority] || scheda.seniority)
-    if (scheda && typeof scheda.anni === 'number') {
+    if (card && card.seniority) parts.push(SENIORITY[card.seniority] || card.seniority)
+    if (card && typeof card.experience_years === 'number') {
       parts.push(
-        scheda.anni === 0
+        card.experience_years === 0
           ? 'meno di un anno di esperienza'
-          : scheda.anni === 1
+          : card.experience_years === 1
             ? '1 anno di esperienza'
-            : scheda.anni + ' anni di esperienza',
+            : card.experience_years + ' anni di esperienza',
       )
     }
     return parts.join(', ')
@@ -109,36 +112,36 @@
   }
 
   /** The minimal result into `result`, then the door, decorated by utm.js like every
-   *  other link into the hub so the campaign and `da=home` follow the visitor. Text
+   *  other link into the hub so the campaign and `from=home` follow the visitor. Text
    *  nodes only, no innerHTML: the summary and the roles are the model's words. */
   function render(result, proposal) {
     while (result.firstChild) result.removeChild(result.firstChild)
     var title = el('h2', 'team-title', 'La nostra proposta')
     title.tabIndex = -1
     result.appendChild(title)
-    result.appendChild(el('p', 'team-summary', proposal.riassunto))
+    result.appendChild(el('p', 'team-summary', proposal.summary))
     var members = Array.isArray(proposal.team) ? proposal.team : []
     if (members.length) {
       var list = el('ul', 'team-roles')
       list.setAttribute('aria-label', 'Il team')
       members.forEach(function (member) {
         var item = el('li', 'team-member')
-        item.appendChild(el('strong', 'team-role', member.ruolo))
-        var meta = experience(member.scheda)
+        item.appendChild(el('strong', 'team-role', member.role))
+        var meta = experience(member.card)
         if (meta) item.appendChild(el('span', 'team-meta', meta))
-        item.appendChild(el('span', 'team-band', bandLabel(member.fascia)))
+        item.appendChild(el('span', 'team-band', bandLabel(member.band)))
         list.appendChild(item)
       })
       result.appendChild(list)
-      var giorno = proposal.economia && proposal.economia.giorno
-      var total = giorno ? bandLabel(giorno) : NO_BAND
+      var day = proposal.economics && proposal.economics.day
+      var total = day ? bandLabel(day) : NO_BAND
       result.appendChild(
         el('p', 'team-total', 'Tutto il team: ' + (total === NO_BAND ? NO_BAND.toLowerCase() : total)),
       )
     }
     var actions = el('p', 'actions')
     var door = el('a', 'cta', members.length ? 'Vedi il team completo' : 'Riprova nel team builder')
-    door.href = PAGE + '?proposta=' + encodeURIComponent(proposal.id)
+    door.href = PAGE + '?proposal=' + encodeURIComponent(proposal.id)
     actions.appendChild(door)
     result.appendChild(actions)
     if (window.__utm) window.__utm.carryUtm(result)
@@ -150,17 +153,17 @@
 
   /** A 200 whose body is a proposal: an id to link and a summary to show. Anything
    *  else (no JSON, an empty object) is treated as no answer at all, so the region is
-   *  never a door to `?proposta=undefined`. */
+   *  never a door to `?proposal=undefined`. */
   function isProposal(body) {
-    return Boolean(body) && typeof body.id === 'string' && typeof body.riassunto === 'string'
+    return Boolean(body) && typeof body.id === 'string' && typeof body.summary === 'string'
   }
 
   /** Mounts the builder on `form`: the examples fill the box, the submit asks the hub.
    *  `fetchImpl` is for the tests; the page uses `window.fetch`. Returns whether the
    *  form had everything it needs. */
   function mount(form, fetchImpl) {
-    var box = form.querySelector('textarea[name="descrizione"]')
-    var count = form.querySelector('select[name="persone"]')
+    var box = form.querySelector('textarea[name="description"]')
+    var count = form.querySelector('select[name="people"]')
     var button = form.querySelector('button[type="submit"]')
     var error = form.querySelector('.team-error')
     var result = document.querySelector(form.getAttribute('data-result') || '')
@@ -207,13 +210,17 @@
       chip.addEventListener('click', function () {
         box.value = chip.getAttribute('data-example')
         // The example's own headcount, so the selector agrees with the text.
-        if (count && chip.getAttribute('data-persone')) count.value = chip.getAttribute('data-persone')
+        if (count && chip.getAttribute('data-people')) count.value = chip.getAttribute('data-people')
         say('')
         box.focus()
       })
     })
 
+    var timer = null
+
     function settle() {
+      if (timer !== null) clearTimeout(timer)
+      timer = null
       busy = false
       hold(false)
       button.textContent = label
@@ -224,8 +231,8 @@
       event.preventDefault()
       if (busy) return
       var text = box.value.trim()
-      var persone = count ? parseInt(count.value, 10) : NaN
-      if (text.length < DESCRIZIONE_MIN) {
+      var people = count ? parseInt(count.value, 10) : NaN
+      if (text.length < DESCRIPTION_MIN) {
         say(TOO_SHORT, true)
         box.focus()
         return
@@ -241,10 +248,15 @@
       button.appendChild(document.createTextNode(PENDING))
       form.setAttribute('aria-busy', 'true')
       var call = fetchImpl || window.fetch.bind(window)
+      var controller = new AbortController()
+      timer = setTimeout(function () {
+        controller.abort()
+      }, TIMEOUT_MS)
       call(API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(persone >= 1 ? { descrizione: text, persone: persone } : { descrizione: text }),
+        signal: controller.signal,
+        body: JSON.stringify(people >= 1 ? { description: text, people: people } : { description: text }),
       })
         .then(function (response) {
           return response

@@ -198,7 +198,7 @@ describe('GmailPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Scollega la casella' }))
     await waitFor(() => expect(api.DELETE).toHaveBeenCalled())
     expect(vi.mocked(api.DELETE).mock.calls[0]?.[1]).toMatchObject({
-      params: { query: { elimina_messaggi: false } },
+      params: { query: { delete_messages: false } },
     })
   })
 
@@ -212,7 +212,7 @@ describe('GmailPanel', () => {
 
     await waitFor(() => expect(api.DELETE).toHaveBeenCalled())
     expect(vi.mocked(api.DELETE).mock.calls[0]?.[1]).toMatchObject({
-      params: { query: { elimina_messaggi: true } },
+      params: { query: { delete_messages: true } },
     })
   })
 

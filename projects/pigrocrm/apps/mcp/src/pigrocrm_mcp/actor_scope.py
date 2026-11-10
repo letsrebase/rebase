@@ -51,7 +51,7 @@ class ActorFromRequest:
         request = ctx.request
         actor = getattr(getattr(request, "state", None), ACTOR_STATE_KEY, None)
         if not isinstance(actor, Actor):
-            raise MCPError(code=-32001, message="nessun attore associato alla richiesta")
+            raise MCPError(code=-32001, message="no actor associated with the request")
         token = _CURRENT_ACTOR.set(actor)
         try:
             return await call_next(ctx)

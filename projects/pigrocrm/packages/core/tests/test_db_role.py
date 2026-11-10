@@ -1,6 +1,6 @@
 """The application role the boot creates (REB-634, spec 2026-10-03 §4 «The role»).
 
-The boundary itself is `test_azienda_scope.py`, which connects as this role. This file
+The boundary itself is `test_legal_entity_scope.py`, which connects as this role. This file
 is about the helper: what one URL means, what two mean, and that the grants reach a
 table created after the role was granted, which is what every later migration is.
 """
@@ -12,7 +12,7 @@ from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.exc import DBAPIError
 
 from pigrocrm.core.config import Settings
-from pigrocrm.core.db.role import application_role, ensure_application_role
+from pigrocrm.core.db.role import DEFINER_FUNCTIONS, application_role, ensure_application_role
 
 ROLE = "pigrocrm_app_role_test"
 
@@ -81,3 +81,53 @@ def test_a_role_that_bypasses_the_policies_is_refused_not_granted(db_engine: Eng
     finally:
         with db_engine.begin() as connection:
             connection.execute(text(f"DROP ROLE IF EXISTS {ROLE}_super"))
+
+
+def test_the_definer_helpers_pin_a_closed_search_path_and_are_closed_to_public(
+    db_engine: Engine,
+) -> None:
+    """B-09 (migration 0066): the helpers that read past the policies resolve names in the
+    catalog first, and only the roles `ensure_application_role` names may run them."""
+    with db_engine.connect() as connection:
+        for function in DEFINER_FUNCTIONS:
+            config, public = connection.execute(
+                text(
+                    "SELECT proconfig, has_function_privilege('public', oid, 'EXECUTE') "
+                    "FROM pg_proc WHERE oid = to_regprocedure(:f)"
+                ),
+                {"f": function},
+            ).one()
+            assert "search_path=pg_catalog, public, pg_temp" in config
+            assert public is False, f"{function} is executable by PUBLIC"
+
+
+def test_the_application_role_runs_the_definer_helpers_but_cannot_move_the_schema_version(
+    db_engine: Engine,
+) -> None:
+    app_url = db_engine.url.set(username=f"{ROLE}_defn", password="x")
+    assert ensure_application_role(db_engine.url, app_url) is True
+    with db_engine.begin() as connection:
+        outsider = f"{ROLE}_outsider"
+        connection.execute(text(f"DROP ROLE IF EXISTS {outsider}"))
+        connection.execute(text(f"CREATE ROLE {outsider} LOGIN PASSWORD 'x'"))
+        connection.execute(
+            text(f"GRANT CONNECT ON DATABASE {db_engine.url.database} TO {outsider}")
+        )
+        connection.execute(text(f"GRANT USAGE ON SCHEMA public TO {outsider}"))
+    app = create_engine(app_url, future=True)
+    outside = create_engine(db_engine.url.set(username=outsider, password="x"), future=True)
+    try:
+        with app.begin() as connection:
+            assert (
+                connection.execute(
+                    text("SELECT organization_archived(gen_random_uuid())")
+                ).scalar_one()
+                is None
+            )
+            with pytest.raises(DBAPIError):
+                connection.execute(text("UPDATE alembic_version SET version_num = version_num"))
+        with outside.connect() as connection, pytest.raises(DBAPIError):
+            connection.execute(text("SELECT organization_archived(gen_random_uuid())"))
+    finally:
+        app.dispose()
+        outside.dispose()

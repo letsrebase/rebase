@@ -1,16 +1,21 @@
-import logging
-from typing import Annotated
-from urllib.parse import quote
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Path, Query, Request, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
-from pigrocrm.core.activities.schemas import ActivityRead
-from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.invoices.import_confirm import InvoiceConfirmRequest, InvoiceConfirmResult
 from pigrocrm.core.invoices.import_review import InvoiceReviewRequest, InvoiceReviewResult
+from pigrocrm.core.invoices.import_upload import (
+    UPLOAD_MAX_TOTAL_BYTES,
+    UploadedInvoiceConfirmResult,
+    UploadedInvoiceReviewResult,
+    parse_decisions,
+)
+from pigrocrm.core.invoices.importing import CONFIRM_ACTION, REVIEW_ACTION
 from pigrocrm.core.invoices.schemas import (
     MAX_LINES,
     ArtifactKind,
@@ -24,25 +29,31 @@ from pigrocrm.core.invoices.schemas import (
     InvoiceListQuery,
     InvoicePage,
     InvoiceRead,
-    InvoiceStato,
-    InvoiceTipo,
+    InvoiceStatus,
     InvoiceTransmitted,
+    InvoiceType,
     InvoiceUpdate,
     PaymentState,
+    PaymentStatus,
     RegisterGapRead,
     RegisterGapsDeclare,
-    StatoPagamento,
 )
 from pigrocrm.core.invoices.service import InvoiceService
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep, get_actor
+from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
+from pigrocrm_api.query_params import LEGAL_ENTITY_QUERY_DESCRIPTION, KeysetParams
+from pigrocrm_api.timeline import timeline_router
 
-router = APIRouter(prefix="/api/invoices", tags=["invoices"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/invoices",
+    tags=["invoices"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
-logger = logging.getLogger(__name__)
-
-ANNO_MIN = 2000
-ANNO_MAX = 2999
+YEAR_MIN = 2000
+YEAR_MAX = 2999
 
 
 class InvoiceLinesBody(BaseModel):
@@ -53,11 +64,31 @@ class InvoiceLinesBody(BaseModel):
     one place the OpenAPI document also shows.
     """
 
-    righe: list[InvoiceLineIn] = Field(default_factory=list, max_length=MAX_LINES)
+    lines: list[InvoiceLineIn] = Field(default_factory=list, max_length=MAX_LINES)
 
 
 def _service(session: SessionDep, storage: StorageDep, settings: SettingsDep) -> InvoiceService:
     return InvoiceService(session, storage, settings)
+
+
+class InvoiceListParams(KeysetParams):
+    customer_id: UUID | None = None
+    deal_id: UUID | None = None
+    legal_entity_id: UUID | None = Field(default=None, description=LEGAL_ENTITY_QUERY_DESCRIPTION)
+    type: InvoiceType | None = None
+    status: InvoiceStatus | None = None
+    year: int | None = Field(default=None, ge=YEAR_MIN, le=YEAR_MAX)
+    payment_status: PaymentStatus | None = None
+    # The drill-through of the operational dashboard's "scaduto e non incassato" card
+    # (§6.2). The card links here and nowhere else, and the rows returned are counted by
+    # the same predicate function the card's `COUNT` uses.
+    overdue: bool = False
+    # The fattura a consumed proforma was issued as: the proforma's page asks for the
+    # one row whose `origin_proforma_id` is its own id (ORB-134).
+    origin_proforma_id: UUID | None = None
+    # Leave out the proformas that became a fattura: the list under «Tutte» otherwise
+    # shows each issued proforma twice, once as itself and once as its number (ORB-169).
+    exclude_consumed: bool = False
 
 
 @router.get("", response_model=InvoicePage)
@@ -66,43 +97,9 @@ def list_invoices(
     storage: StorageDep,
     settings: SettingsDep,
     actor: ActorDep,
-    customer_id: Annotated[UUID | None, Query()] = None,
-    deal_id: Annotated[UUID | None, Query()] = None,
-    azienda_id: Annotated[
-        UUID | None, Query(description="Solo le righe di questa azienda; omesso, tutte")
-    ] = None,
-    tipo: Annotated[InvoiceTipo | None, Query()] = None,
-    stato: Annotated[InvoiceStato | None, Query()] = None,
-    anno: Annotated[int | None, Query(ge=ANNO_MIN, le=ANNO_MAX)] = None,
-    stato_pagamento: Annotated[StatoPagamento | None, Query()] = None,
-    # The drill-through of the operational dashboard's "scaduto e non incassato" card
-    # (§6.2). The card links here and nowhere else, and the rows returned are counted by
-    # the same predicate function the card's `COUNT` uses.
-    scadute: Annotated[bool, Query()] = False,
-    # The fattura a consumed proforma was issued as: the proforma's page asks for the
-    # one row whose `origine_proforma_id` is its own id (ORB-134).
-    origine_proforma_id: Annotated[UUID | None, Query()] = None,
-    # Leave out the proformas that became a fattura: the list under «Tutte» otherwise
-    # shows each issued proforma twice, once as itself and once as its number (ORB-169).
-    escludi_consumate: Annotated[bool, Query()] = False,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    cursor: Annotated[UUID | None, Query()] = None,
+    params: Annotated[InvoiceListParams, Query()],
 ) -> InvoicePage:
-    query = InvoiceListQuery(
-        customer_id=customer_id,
-        deal_id=deal_id,
-        azienda_id=azienda_id,
-        tipo=tipo,
-        stato=stato,
-        anno=anno,
-        stato_pagamento=stato_pagamento,
-        scadute=scadute,
-        origine_proforma_id=origine_proforma_id,
-        escludi_consumate=escludi_consumate,
-        limit=limit,
-        cursor=cursor,
-    )
-    return _service(session, storage, settings).list(query, actor)
+    return _service(session, storage, settings).list(params.to_query(InvoiceListQuery), actor)
 
 
 @router.post("", response_model=InvoiceRead, status_code=status.HTTP_201_CREATED)
@@ -117,12 +114,12 @@ def create(
 
 
 class InvoiceImportResult(BaseModel):
-    """The imported fattura alongside the gaps still waiting for a declaration -- the
+    """The imported invoice alongside the gaps still waiting for a declaration -- the
     operator sees both in one round trip instead of importing blind and querying the
     register separately after every row."""
 
-    fattura: InvoiceRead
-    buchi_non_dichiarati: list[int]
+    invoice: InvoiceRead
+    undeclared_gaps: list[int]
 
 
 # The four routes below must stay ahead of every `/{invoice_id}` route in this file:
@@ -136,15 +133,15 @@ def import_issued(
     storage: StorageDep,
     settings: SettingsDep,
     actor: ActorDep,
-    azienda_id: Annotated[UUID | None, Query()] = None,
+    legal_entity_id: Annotated[UUID | None, Query()] = None,
 ) -> InvoiceImportResult:
-    """Slice 9 §3: a fattura issued by the previous system. Admin only, enforced by the
+    """Slice 9 §3: an invoice issued by the previous system. Admin only, enforced by the
     service. No artefacts are produced: the PDF, if any, is the original. On the
-    register of `azienda_id`, the default azienda when omitted (REB-620)."""
+    register of `legal_entity_id`, the default legal entity when omitted (REB-620)."""
     service = _service(session, storage, settings)
-    fattura = service.import_issued(data, actor, azienda_id=azienda_id)
+    invoice = service.import_issued(data, actor, legal_entity_id=legal_entity_id)
     return InvoiceImportResult(
-        fattura=fattura, buchi_non_dichiarati=service.undeclared_gaps(data.anno, azienda_id)
+        invoice=invoice, undeclared_gaps=service.undeclared_gaps(data.year, legal_entity_id)
     )
 
 
@@ -159,11 +156,11 @@ def review_import(
     """REB-365: read-only, admin only, enforced by the service. Reviews one or more
     already-archived documents and reports one row per invoice they parse into --
     never writes a row. A `"ready"` row whose customer resolves to exactly one
-    contract with a day-rate card in force on the invoice's own `data_emissione`
-    also carries `mappature_giorni` (REB-369): a proposed link, per line, to that
+    contract with a day-rate card in force on the invoice's own `issue_date`
+    also carries `days_mappings` (REB-369): a proposed link, per line, to that
     contract's recorded, unbilled `work_units`."""
-    righe = _service(session, storage, settings).review_import(data.document_ids, actor)
-    return InvoiceReviewResult(righe=righe)
+    lines = _service(session, storage, settings).review_import(data.document_ids, actor)
+    return InvoiceReviewResult(lines=lines)
 
 
 @router.post("/import/confirm", response_model=InvoiceConfirmResult)
@@ -178,44 +175,149 @@ def confirm_import(
     document's own stored bytes -- never trusts an earlier `/import/review` call
     -- and writes the register through `import_issued` itself for every invoice
     that classifies `"ready"`: never a second, independently-maintained write
-    path. `create_customer` (REB-367) creates the matched party as a new
-    `Customer` inside that same write when no `customer_id` is given and no
-    exact tax-id match exists."""
-    righe = _service(session, storage, settings).confirm_import(
+    path. `create_organization` (REB-367) creates the matched party as a new
+    `Organization` inside that same write when no `customer_id` is given and no
+    exact tax-id match exists. `share_organization` (REB-970) makes the organization another
+    legal entity bills, which the row names in `existing_organization_id`, shared across the
+    legal entities and attaches the invoice to it."""
+    lines = _service(session, storage, settings).confirm_import(
         data.document_id,
         actor,
         customer_id=data.customer_id,
-        create_customer=data.create_customer,
+        create_organization=data.create_organization,
+        share_organization=data.share_organization,
     )
-    return InvoiceConfirmResult(righe=righe)
+    return InvoiceConfirmResult(lines=lines)
 
 
-# The register is per azienda (REB-619): both routes take the azienda as a query
-# parameter and read the default when it is omitted, so a space with one azienda calls
-# them exactly as before.
-@router.get("/register/{anno}/gaps", response_model=list[RegisterGapRead])
-def register_gaps(
-    anno: int,
+# The two upload routes read the multipart body themselves (`await request.form()`), after
+# the admin check, instead of declaring `File()`/`Form()` parameters: FastAPI parses a
+# declared body before it calls the handler, and Starlette spools every file part to disk
+# while it does, so a collaboratore would have had up to the proxy's limit written to disk
+# before a 403. The schema is stated by hand for the OpenAPI document and the docs page.
+_UPLOAD_BODY: dict[str, Any] = {
+    "required": True,
+    "content": {
+        "multipart/form-data": {
+            "schema": {
+                "type": "object",
+                "required": ["file"],
+                "properties": {
+                    "file": {
+                        "type": "array",
+                        "items": {"type": "string", "format": "binary"},
+                        "description": "FatturaPA XML files or ZIPs of them, one part each.",
+                    },
+                    "decisioni": {
+                        "type": "string",
+                        "description": (
+                            'On the confirmation: `{"clienti": {"<party_key>": '
+                            '{"create_organization": true}}}`, or `share_organization`.'
+                        ),
+                    },
+                },
+            }
+        }
+    },
+}
+
+
+async def _uploaded(request: Request) -> tuple[list[tuple[str, bytes]], str]:
+    """The files of the multipart body as `(name, bytes)`, and the `decisioni` field. Each
+    file is read through the whole request's ceiling plus one byte, so a body larger than
+    the service will take is refused by `expand_uploads` with its sentence instead of being
+    held in memory first; the service opens the ZIPs, after the admin check."""
+    form = await request.form()
+    files = [
+        (part.filename or "senza-nome", await part.read(UPLOAD_MAX_TOTAL_BYTES + 1))
+        for part in form.getlist("file")
+        if isinstance(part, StarletteUploadFile)
+    ]
+    decisions = form.get("decisioni")
+    return files, decisions if isinstance(decisions, str) else "{}"
+
+
+@router.post(
+    "/import/upload/review",
+    response_model=UploadedInvoiceReviewResult,
+    openapi_extra={"requestBody": _UPLOAD_BODY},
+)
+async def review_import_upload(
+    request: Request,
     session: SessionDep,
     storage: StorageDep,
     settings: SettingsDep,
     actor: ActorDep,
-    azienda_id: Annotated[UUID | None, Query()] = None,
+) -> UploadedInvoiceReviewResult:
+    """REB-758: `/import/review` for the page, which holds bytes and not `document_id`s.
+    The multipart field `file` is repeated, one per FatturaPA XML file or ZIP of them (a
+    ZIP is opened, one level deep). Read-only and admin only, and nothing is stored: a
+    row names its file and the file's `sha256`, and its customer by a `party_key`, which
+    is the key of that customer's decision in `/import/upload/confirm`."""
+    actor.require_admin(REVIEW_ACTION)
+    files, _ = await _uploaded(request)
+    lines = await run_in_threadpool(
+        _service(session, storage, settings).review_upload, files, actor
+    )
+    return UploadedInvoiceReviewResult(lines=lines)
+
+
+@router.post(
+    "/import/upload/confirm",
+    response_model=UploadedInvoiceConfirmResult,
+    openapi_extra={"requestBody": _UPLOAD_BODY},
+)
+async def confirm_import_upload(
+    request: Request,
+    session: SessionDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+    actor: ActorDep,
+) -> UploadedInvoiceConfirmResult:
+    """REB-758: `/import/confirm` for the page. The same bytes as the review, sent again:
+    each file is parsed and classified from its own bytes against the register as it is
+    now, never from the review, and written by the same code `/import/confirm` runs. A
+    single-invoice file's XML is archived as a document of the invoice's customer.
+    `decisioni` is the JSON `{"clienti": {"<party_key>": {"create_organization": true}}}`:
+    per customer, a `customer_id` to attach, `create_organization` or `share_organization`,
+    as on `/import/confirm`."""
+    actor.require_admin(CONFIRM_ACTION)
+    files, decisions = await _uploaded(request)
+    lines = await run_in_threadpool(
+        _service(session, storage, settings).confirm_upload,
+        files,
+        parse_decisions(decisions),
+        actor,
+    )
+    return UploadedInvoiceConfirmResult(lines=lines)
+
+
+# The register is per legal entity (REB-619): both routes take the legal entity as a query
+# parameter and read the default when it is omitted, so a space with one legal entity calls
+# them exactly as before.
+@router.get("/register/{year}/gaps", response_model=list[RegisterGapRead])
+def register_gaps(
+    year: Annotated[int, Path(ge=YEAR_MIN, le=YEAR_MAX)],
+    session: SessionDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+    actor: ActorDep,
+    legal_entity_id: Annotated[UUID | None, Query()] = None,
 ) -> list[RegisterGapRead]:
-    return _service(session, storage, settings).register_gaps(anno, actor, azienda_id)
+    return _service(session, storage, settings).register_gaps(year, actor, legal_entity_id)
 
 
-@router.post("/register/{anno}/gaps", response_model=list[RegisterGapRead])
+@router.post("/register/{year}/gaps", response_model=list[RegisterGapRead])
 def declare_register_gaps(
-    anno: int,
+    year: Annotated[int, Path(ge=YEAR_MIN, le=YEAR_MAX)],
     data: RegisterGapsDeclare,
     session: SessionDep,
     storage: StorageDep,
     settings: SettingsDep,
     actor: ActorDep,
-    azienda_id: Annotated[UUID | None, Query()] = None,
+    legal_entity_id: Annotated[UUID | None, Query()] = None,
 ) -> list[RegisterGapRead]:
-    return _service(session, storage, settings).declare_gaps(anno, data, actor, azienda_id)
+    return _service(session, storage, settings).declare_gaps(year, data, actor, legal_entity_id)
 
 
 @router.get("/{invoice_id}", response_model=InvoiceRead)
@@ -278,7 +380,7 @@ def replace_lines(
     """`PUT`, not `PATCH`: the whole list is replaced. It is the natural shape of a line
     editor, and it is what makes clearing an optional numeric column possible at all
     (A14)."""
-    return _service(session, storage, settings).replace_lines(invoice_id, body.righe, actor)
+    return _service(session, storage, settings).replace_lines(invoice_id, body.lines, actor)
 
 
 @router.post("/{invoice_id}/confirm", response_model=InvoiceRead)
@@ -302,7 +404,7 @@ def issue(
     actor: ActorDep,
 ) -> InvoiceRead:
     """Admin only, enforced by the service. `{invoice_id}` is the *source* row: a
-    `bozza` fattura is issued in place, and a `confermata` proforma produces a new
+    `draft` invoice is issued in place, and a `confirmed` proforma produces a new
     numbered row linked back to it.
 
     `issue()` no longer produces the PDF/XML itself -- that used to be a second
@@ -312,26 +414,7 @@ def issue(
     second transaction: `produce_artifacts` is called here, right after, so a caller
     of this endpoint never has to make a separate call to see the PDF/XML.
     """
-    service = _service(session, storage, settings)
-    result = service.issue(invoice_id, data, actor)
-    # Once `issue` has committed, the answer is the issued row whatever the render does
-    # (REB-143). The number is consumed and the invoice is a fiscal fact; a render that
-    # raised used to turn that into an error, and the person saw a failure for an
-    # invoice that was really issued. The failure is logged and the row is read back as
-    # it stands, so `pdf_document_id`/`xml_document_id` say which file exists and
-    # «Rigenera documenti» (`POST /artifacts`, below) is the retry. A comment and not
-    # the docstring, which is this route's OpenAPI description.
-    try:
-        service.produce_artifacts(result.id, actor)
-    except Exception:
-        # Anything, not only a `DomainError`: a Typst crash or a storage backend that
-        # refused the bytes is exactly the case, and none of them undoes the commit
-        # above. Logged first, so a rollback that fails too (a dead connection) cannot
-        # hide the render's own error. The rollback clears whatever the render left
-        # half-flushed or aborted, so the read below starts on a clean session.
-        logger.exception("invoice %s issued, its PDF/XML were not produced", result.id)
-        session.rollback()
-    return service.get(result.id, actor)
+    return _service(session, storage, settings).issue_and_render(invoice_id, data, actor)
 
 
 @router.post("/{invoice_id}/annul", response_model=InvoiceRead)
@@ -388,18 +471,7 @@ def _download(
     service: InvoiceService, invoice_id: UUID, kind: ArtifactKind, actor: ActorDep
 ) -> Response:
     data, content_type, filename = service.download(invoice_id, kind, actor)
-    return Response(
-        content=data,
-        media_type=content_type,
-        headers={
-            # RFC 5987, percent-encoded rather than interpolated: the XML name is built
-            # from a fiscal identifier and the PDF name from integers, so nothing
-            # dangerous should reach here -- encoding it anyway means a future change
-            # cannot turn a name into a response header.
-            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename, safe='')}",
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
+    return attachment_response(data, content_type, filename)
 
 
 @router.get("/{invoice_id}/pdf")
@@ -426,11 +498,4 @@ def download_xml(
     return _download(_service(session, storage, settings), invoice_id, "xml", actor)
 
 
-@router.get("/{invoice_id}/timeline", response_model=list[ActivityRead])
-def timeline(
-    invoice_id: UUID,
-    session: SessionDep,
-    actor: ActorDep,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-) -> list[ActivityRead]:
-    return ActivityService(session).timeline("invoice", invoice_id, limit)
+router.include_router(timeline_router("invoice", id_param="invoice_id"))

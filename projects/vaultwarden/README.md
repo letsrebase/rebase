@@ -3,16 +3,17 @@
 The password manager of the rebase members: one organisation, `Rebase`, with a collection
 per set of credentials, assigned to named members with a permission each. Why Vaultwarden
 and not something else is `docs/design/DECISIONS.md`, 2026-10-05 (REB-644); this directory
-is how it runs (REB-648). The members' own page is `docs/guida-per-i-membri.md`, in Italian.
+is how it runs (REB-648). The members' own page is `docs/members-guide.md`, in Italian.
 
 ```
 docker-compose.yml          the server and its backup service, image pinned by tag and digest
 .env.example                every host variable, and which ones the deploy writes for you
 deploy/vault.letsrebase.conf  the host's nginx vhost
+branding/                   the look of the web vault, generated from shared/brand (see "Look")
 scripts/backup.sh           one encrypted backup, to R2    scripts/backup-loop.sh  its schedule
 scripts/restore.sh          open one backup into an empty directory
 docs/restore.md             the restore runbook
-docs/guida-per-i-membri.md  the member guide (Italian)
+docs/members-guide.md         the member guide (Italian)
 tests/                      the drill: config, backup and restore, on throwaway servers
 ```
 
@@ -61,8 +62,10 @@ tests/                      the drill: config, backup and restore, on throwaway 
    `certbot --nginx --redirect -d vault.letsrebase.com`, then `Strict-Transport-Security`
    added to the installed 443 block by hand (the vhost's own header comment says why).
 6. **GitHub**: the Environment `vaultwarden-production` with the five `DEPLOY_*` secrets
-   (`DEPLOY_KNOWN_HOSTS` captured as `docs/adding-a-project.md` §7 says) and the three
-   secrets above, then the variable `VAULTWARDEN_DEPLOY_ENABLED=true`.
+   (`DEPLOY_KNOWN_HOSTS` captured as `docs/adding-a-project.md` §7 says), the three
+   secrets above and `VAULTWARDEN_BACKUP_PING_URL`, the ping URL of the healthchecks.io
+   check («Backup» below; as healthchecks.io shows it, no trailing slash), then the
+   variable `VAULTWARDEN_DEPLOY_ENABLED=true`.
 7. **The release**: `git tag vaultwarden-v0.1.0 && git push origin vaultwarden-v0.1.0`,
    after the PR is merged and Lorenzo says so. The tag's CI run, the deploy run and
    `https://vault.letsrebase.com/alive` answering are the evidence.
@@ -108,6 +111,101 @@ there, `config.json` holds it and the backup carries it.
   view, view with hidden passwords, edit, edit with hidden passwords, or manage.
   Organisation owners and admins can open every collection, so those roles stay with the
   few people trusted with all of it. `ORG_GROUPS_ENABLED` stays off.
+- The collections, named in English like the apps (REB-691, `docs/design/DECISIONS.md`
+  2026-10-14): `Infrastructure` and `Administration` for rebase's own credentials, assigned to
+  no User today; `Clients/<client>` for what every project of a client shares, and
+  `Clients/<client>/<project>` for one match, assigned to the freelancers on it. Nesting is a
+  name and nothing else: a collection inherits no item, access or permission from its parent,
+  so assigning `Clients/<client>/<project>` does not show `Clients/<client>`. A freelancer gets
+  «View items»; «manage» stays with the owners. «View items, hidden passwords» is not a
+  protection: it hides the eye and the copy button, and the decrypted password is still in
+  the page (checked on a test member, 2026-10-14).
+
+## Look
+
+The web vault is upstream's, unmodified on disk, wearing the rebase brand through mechanisms
+that survive an image bump because none of them edits the image (REB-688, REB-699). **What a
+member sees says «Rebase Password Manager», never Vaultwarden** (Lorenzo, 2026-10-19,
+`docs/design/DECISIONS.md`); code, comments and this repository keep the upstream name.
+
+- **A stylesheet.** The server compiles `branding/templates/scss/user.vaultwarden.scss.hbs`
+  (`TEMPLATES_FOLDER=/templates`, mounted read-only) and appends it to `/css/vaultwarden.css`,
+  which every page loads. It sets the web vault's own colour properties (both the older RGB
+  triplets and the newer hex ones, light and dark theme) to palette tokens, and replaces the
+  inline Vaultwarden wordmark of the pre-login header and of the sidebar with `lockup.svg`
+  without its graft (the dotted line under the word, cropped out of the picture here: in a
+  sidebar it read as a stray rule, REB-692), with «password manager» under the word as text in
+  the page's own face (`lockup-paper.svg` on a dark ground: the vault's sidebar and the dark theme; the Admin
+  Console's sidebar is light in the light theme and takes the ink one; a collapsed sidebar
+  takes the mark alone, without the label). The boot splash's logo takes the cropped lockup and no label.
+- **A branded copy of the web vault**, built at every start by `scripts/brand-web-vault.sh`,
+  which the compose file mounts into `/etc/vaultwarden.d/`: the image's `/start.sh` sources
+  every script there just before it execs the server, and `WEB_VAULT_FOLDER` then points the
+  server at the copy (`/web-vault-rebase`, in the container's own layer, not the data
+  directory). In the copy it rewrites the literals of the page, as upstream spells them: the
+  tab's title (`index.html`, and `app/main.<hash>.js` for every route: «Vaults | Rebase
+  Password Manager»), the footer, the splash's alt text, the authenticator's issuer, the
+  manifest's name and colours, `theme-color` and the pinned tab's tint, the logo SVGs'
+  titles; and it puts `branding/images` in as the favicons. The favicons, the manifest and
+  `main.js` get a hash in their file name and `index.html` (served `public, max-age=600`) names the new
+  ones: upstream serves them `public, immutable, max-age=604800`, so a browser that visited
+  before the look existed would otherwise keep the old favicon for a week (that is why the
+  mounted favicons of REB-688 still showed Vaultwarden's in one tab, 2026-10-19). A literal
+  that an image bump moved is a warning on the container's log, `brand-web-vault:`, and the
+  server starts all the same; the drill fails on it. The footer keeps Bitwarden's trademark
+  disclaimer, with the product's name in it.
+- **`branding/branding.env`**, a hash of the files above and of the script, plus the product's
+  name and browser colours the script reads, loaded as the server's `env_file`.
+  Compose recreates a service when its configuration changes and not when a bind-mounted
+  file's content does, and the server reads its templates once and caches the stylesheet, so
+  without the hash a deploy of a new look would go green and change nothing.
+- **Nothing in the data directory**, so the backup carries none of it and a restore onto a
+  fresh host gets the look back from the repository.
+
+Nothing here restates a colour or a drawing: `branding/build.mjs` reads `shared/brand/palette.css`
+and the two lockups and writes the files, and `tests/branding.mjs` (run by the `vaultwarden`
+job and by preflight) fails when the stylesheet or the pinned-tab icon is not what the brand
+produces, when `branding.env` is not the hash of the files as committed, when an image is
+missing or the wrong size, or when a colour pair is below AA (4.5:1) in either theme,
+measured against the web vault's own grounds. It cannot tell a favicon drawn in last
+month's palette from this month's: redraw them whenever the mark changes.
+Change a colour in `palette.css`, then:
+
+```
+pnpm install --frozen-lockfile --filter @rebase/brand
+pnpm --filter @rebase/brand exec node ../../projects/vaultwarden/branding/build.mjs
+```
+
+**The mails** (REB-690, REB-692, REB-699) use the same mechanism: `branding/templates/email/` overrides upstream's
+header and footer partials, the organisation invitation (in English, like every other mail
+and the apps) and the six mails whose upstream body says Vaultwarden (sign-in code, protected
+action, email change, invitation accepted, invitation confirmed, SMTP test: same words, the
+product's name), the server's own 404 page (`branding/templates/404.hbs`) and, through `INVITATION_ORG_NAME`, the name an invitation from the admin page carries.
+Upstream's partials carry the Vaultwarden wordmark and a GitHub icon as inline images, and the
+server attaches both to every mail whatever the template uses. Ours draw the mark from table
+cells and attach nothing (`SMTP_EMBED_IMAGES=false` in the compose file). Every mail says
+«password manager» where a reader looks first: the sender's display name (`SMTP_FROM_NAME`,
+`Rebase Password Manager`), a label under the wordmark, the footer, and in the invitation its
+subject and first sentence. The other mails keep upstream's body
+inside our frame, so the frame's footer says nothing about ignoring the message: some of those
+bodies are security alerts. Those bodies do not mention Vaultwarden (checked against 1.37.4's
+templates; `tests/branding.mjs` holds our own to it). Render one after a bump with the admin page's SMTP test.
+
+What is deliberately not themed, because it is out of reach without a fork or is not what a
+member reads: the browser extension and the mobile apps (their look and name are Bitwarden's and
+are not served from here), the bodies of the mails not listed above, the one-time welcome dialog
+and the illustrations other than the pre-login pictures, the Admin Console's mark («Bitwarden
+logo» alt texts, which name the upstream client), the admin page itself (`/admin`, off by
+design, upstream's page), and the server's API metadata and HTTP headers, which name the server
+software to a client and not to a person.
+
+**After bumping the image**, check it by eye as well as by the drill: the stylesheet selects
+the web vault's own elements (`bit-landing-header header a bit-svg`, `bit-nav-logo a bit-svg`,
+`app-organization-layout`, a link's `!tw-h-[55px]` class when the sidebar is collapsed) and
+sets its own custom properties, none of which upstream promises. The drill proves the
+stylesheet, the lockup rules and every mounted image are served; a renamed element would
+show only as the Vaultwarden wordmark coming back, so look at the login page, the vault and
+the Admin Console, expanded and collapsed, after a bump.
 
 ## Backup
 
@@ -125,18 +223,34 @@ one backup a minute after the container starts, then one a day at `VAULTWARDEN_B
 
 R2 deletes objects after ninety days (`infra/cloudflare/r2.tf`). `docker compose -p
 vaultwarden ps` on the host shows the backup container `unhealthy` when no backup has
-finished in the last 26 hours; `docker compose -p vaultwarden logs backup` says why. There
-is no alert beyond that (a follow-up card). **The restore is the proof of a backup**:
+finished in the last 26 hours; `docker compose -p vaultwarden logs backup` says why.
+
+**The alarm is a healthchecks.io check** (REB-671), so nothing extra runs on the host. After
+every run the loop pings `VAULTWARDEN_BACKUP_PING_URL`, the check's URL, or `<url>/fail`
+when the run failed; the check mails on a failure, and when its period plus grace passes
+with no success, which is what a revoked R2 key, a full disk or a container that is gone
+look like. The URL is a secret, since whoever holds it can report a success: it lives in
+the `vaultwarden-production` Environment, the deploy writes it into the host `.env`
+(`env-secrets`), and the loop refuses to start without one. A ping that cannot get through
+is logged and nothing more: the check going quiet is its own alarm.
+
+The account is `ciao@letsrebase.com` on healthchecks.io (its password is in the `Rebase`
+organisation's `Infrastructure` collection and in the `ciao-rebase` Chrome profile; a login
+link by mail works too). The check is «Vaultwarden backup», slug `vaultwarden-backup`,
+period one day, grace two hours, and it mails both `ciao@letsrebase.com` and Lorenzo. A new
+URL means a new Environment secret and a deploy. **The restore is the proof of a backup**:
 `docs/restore.md`, to be done once on a scratch container before anything real is stored,
 and again whenever the scripts or the image change.
 
 ## The drill
 
 `tests/backup-restore.sh` runs the real compose file and the real scripts on throwaway
-servers (an S3 gateway stands in for R2): it registers an account and puts an item in it,
-then proves the server answers on `127.0.0.1` only, refuses a signup without an
-invitation and has the admin page off; takes a backup into the bucket, checks the object is
-an encrypted envelope holding none of the plain text; restores it into a new directory
+servers (an S3 gateway stands in for R2, a small listener for healthchecks.io): it registers
+an account and puts an item in it, then proves the server answers on `127.0.0.1` only,
+refuses a signup without an invitation and has the admin page off; takes a backup into the
+bucket, checks the object is an encrypted envelope holding none of the plain text; runs the
+loop once with the right key and once with a revoked one and checks the monitor heard a
+success and then a `/fail`; restores the backup into a new directory
 with `scripts/restore.sh` and reads the item back from a scratch server. CI runs it on every
 change to this directory and on every `vaultwarden-v*` tag. Locally, from the repository
-root: `projects/vaultwarden/tests/backup-restore.sh` (Docker, node 22 and openssl).
+root: `projects/vaultwarden/tests/backup-restore.sh` (Docker, node 24 and openssl).

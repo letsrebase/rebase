@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  daysBetweenIso,
   formatIsoDateItalian,
   formatIsoDayMonth,
   formatIsoWeekday,
@@ -129,5 +130,22 @@ describe('startOfWeek', () => {
   it('drops the time of day, so a late-evening anchor names the same week as a morning one', () => {
     const late = startOfWeek(new Date(2026, 2, 12, 23, 30))
     expect([late.getHours(), late.getMinutes()]).toEqual([0, 0])
+  })
+})
+
+describe('daysBetweenIso', () => {
+  it('counts calendar days, forward and back', () => {
+    expect(daysBetweenIso('2026-03-01', '2026-03-31')).toBe(30)
+    expect(daysBetweenIso('2026-03-10', '2026-03-07')).toBe(-3)
+    expect(daysBetweenIso('2026-03-10', '2026-03-10')).toBe(0)
+  })
+
+  it('is not moved by the clocks changing in between', () => {
+    expect(daysBetweenIso('2026-03-28', '2026-03-30')).toBe(2)
+    expect(daysBetweenIso('2026-10-24', '2026-10-26')).toBe(2)
+  })
+
+  it('answers null for something that is not a date', () => {
+    expect(daysBetweenIso('nope', '2026-03-10')).toBeNull()
   })
 })

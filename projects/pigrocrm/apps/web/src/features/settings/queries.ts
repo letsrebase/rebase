@@ -2,7 +2,9 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 import { api, fetchWithRefresh, toProblem, unwrap, type ProblemDetail } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import type { EntityType } from '@/lib/schema'
+import { asBody } from '@/lib/formValues'
 import { queryKeys } from '@/lib/query'
+import { isWatched } from './inviteMail'
 
 // -- Field definitions --------------------------------------------------------
 
@@ -12,7 +14,7 @@ type FieldDefinitionUpdateBody = components['schemas']['FieldDefinitionUpdate']
 
 /**
  * `include_archived: true`, always -- unlike `useEntitySchema` (lib/schema.ts),
- * which only needs what Customers/Persons/Deals currently render and excludes
+ * which only needs what Organizations/Persons/Deals currently render and excludes
  * archived fields by design, this admin screen's job is to also show what has
  * been archived, with a way back (`FieldsPanel`'s "Ripristina").
  */
@@ -30,7 +32,7 @@ export function useFieldDefinitions(entityType: EntityType) {
 
 /** Invalidates both this admin list and `queryKeys.schema` -- the second is
  *  what makes a field created/archived/restored/edited here show up (or
- *  disappear) on Customers/Persons/Deals immediately. Keyed off the response's
+ *  disappear) on Organizations/Persons/Deals immediately. Keyed off the response's
  *  own `entity_type`, never a caller-supplied one. */
 function invalidateFieldQueries(queryClient: QueryClient, entityType: string) {
   void queryClient.invalidateQueries({ queryKey: queryKeys.fields(entityType) })
@@ -42,7 +44,7 @@ export function useCreateFieldDefinition() {
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       unwrap(
-        api.POST('/api/field-definitions', { body: body as unknown as FieldDefinitionCreateBody }),
+        api.POST('/api/field-definitions', { body: asBody<FieldDefinitionCreateBody>(body) }),
       ),
     onSuccess: (field) => invalidateFieldQueries(queryClient, field.entity_type),
   })
@@ -59,7 +61,7 @@ export function useUpdateFieldDefinition() {
       unwrap(
         api.PATCH('/api/field-definitions/{field_id}', {
           params: { path: { field_id: fieldId } },
-          body: body as unknown as FieldDefinitionUpdateBody,
+          body: asBody<FieldDefinitionUpdateBody>(body),
         }),
       ),
     onSuccess: (field) => invalidateFieldQueries(queryClient, field.entity_type),
@@ -108,7 +110,7 @@ export function useCreateStage() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/pipeline-stages', { body: body as unknown as StageCreateBody })),
+      unwrap(api.POST('/api/pipeline-stages', { body: asBody<StageCreateBody>(body) })),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.stages }),
   })
 }
@@ -143,8 +145,11 @@ export type UserRecord = components['schemas']['UserRead']
 type InvitationCreateBody = components['schemas']['InvitationCreate']
 type UserUpdateBody = components['schemas']['UserUpdate']
 
-export function useUsers() {
+export function useUsers(options: { enabled?: boolean } = {}) {
   return useQuery({
+    // `GET /api/users` is admin-only: a caller that is not one must not make the request
+    // and be answered with a 403 banner (the tasks assignee picker).
+    enabled: options.enabled ?? true,
     queryKey: queryKeys.users,
     queryFn: () => unwrap(api.GET('/api/users')),
   })
@@ -163,13 +168,13 @@ export function useInviteUser() {
   return useMutation({
     mutationFn: (body: {
       email: string
-      nome: string | null
-      ruolo: string
-      aziende?: string[] | null
+      name: string | null
+      role: string
+      legal_entities?: string[] | null
     }) =>
       unwrap(
         api.POST('/api/users/invites', {
-          body: body as unknown as InvitationCreateBody,
+          body: asBody<InvitationCreateBody>(body),
         }),
       ),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.invites }),
@@ -178,11 +183,16 @@ export function useInviteUser() {
 
 /** «Inviti in attesa»: open and not yet expired only (the server's predicate, spec §3),
  *  newest first. A dead invitation is not shown as waiting; a resend or a fresh invite
- *  revives an expired one. */
+ *  revives an expired one. Each row says what became of its mail (REB-678), and a mail
+ *  still on its way is asked about again every few seconds, so «Inviata» turns into
+ *  «Consegnata» or «Non consegnata» without a reload. The list reads the provider
+ *  itself, so the poll stops the moment no recent mail is still open. */
 export function usePendingInvites() {
   return useQuery({
     queryKey: queryKeys.invites,
     queryFn: () => unwrap(api.GET('/api/users/invites')),
+    refetchInterval: (query) =>
+      query.state.data?.some((invite) => isWatched(invite, Date.now())) ? 4000 : false,
   })
 }
 
@@ -245,13 +255,17 @@ export function useUpdateUser() {
       unwrap(
         api.PATCH('/api/users/{user_id}', {
           params: { path: { user_id: userId } },
-          body: body as unknown as UserUpdateBody,
+          body: asBody<UserUpdateBody>(body),
         }),
       ),
     onSuccess: (updated) => {
       queryClient.setQueryData<UserRecord[]>(queryKeys.users, (previous) =>
         previous?.map((user) => (user.id === updated.id ? updated : user)),
       )
+      // A name or a role changed on the signed-in admin's own row is what the shell and
+      // the owner pickers read from `useAuth().user` (REB-796); with no observer on `me`
+      // this costs nothing.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.me })
     },
   })
 }
@@ -293,7 +307,7 @@ export function useCreateTemplate() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/templates', { body: body as unknown as TemplateCreateBody })),
+      unwrap(api.POST('/api/templates', { body: asBody<TemplateCreateBody>(body) })),
     onSuccess: () => invalidateTemplates(queryClient),
   })
 }
@@ -305,7 +319,7 @@ export function useUpdateTemplate(templateId: string) {
       unwrap(
         api.PATCH('/api/templates/{template_id}', {
           params: { path: { template_id: templateId } },
-          body: body as unknown as TemplateUpdateBody,
+          body: asBody<TemplateUpdateBody>(body),
         }),
       ),
     onSuccess: () => invalidateTemplates(queryClient),
@@ -313,7 +327,7 @@ export function useUpdateTemplate(templateId: string) {
 }
 
 /** `DELETE /api/templates/{id}` deactivates rather than deleting: it flips
- *  `attivo` and returns the row. Paired with `useActivateTemplate` deliberately
+ *  `active` and returns the row. Paired with `useActivateTemplate` deliberately
  *  -- an administrator who deactivates a template by mistake must have a way
  *  back, the same lesson `useUnarchiveFieldDefinition` exists for. A one-way
  *  door on a boolean column is a defect, not a simplification. */
@@ -356,33 +370,33 @@ type LegalEntityCreateBody = components['schemas']['LegalEntityCreate']
  */
 export function useLegalEntities() {
   return useQuery({
-    queryKey: queryKeys.aziende,
-    queryFn: () => unwrap(api.GET('/api/aziende')),
+    queryKey: queryKeys.legal_entities,
+    queryFn: () => unwrap(api.GET('/api/legal-entities')),
   })
 }
 
 /** `PUT`, not `PATCH`: `LegalEntityUpsert` is one shape for every write, because a
  *  write is always a whole row. Slice 3 builds FatturaPA on this row, so a partial
- *  save leaving `partita_iva` empty would surface much later as an invalid invoice.
+ *  save leaving `vat_number` empty would surface much later as an invalid invoice.
  *  The answer is the row as saved: written into the list at once, so the panel's row
  *  moves with the save and not one round trip later (REB-622: the form compares its
  *  version with the row's, and a prop that lagged the save read as another admin's
  *  older row), then the list is invalidated, which is where every reader gets it from. */
-export function useSaveLegalEntity(aziendaId: string) {
+export function useSaveLegalEntity(legalEntityId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       unwrap(
-        api.PUT('/api/aziende/{azienda_id}', {
-          params: { path: { azienda_id: aziendaId } },
-          body: body as unknown as LegalEntityUpsertBody,
+        api.PUT('/api/legal-entities/{legal_entity_id}', {
+          params: { path: { legal_entity_id: legalEntityId } },
+          body: asBody<LegalEntityUpsertBody>(body),
         }),
       ),
     onSuccess: (saved) => {
-      queryClient.setQueryData<LegalEntityRecord[]>(queryKeys.aziende, (previous) =>
-        previous?.map((azienda) => (azienda.id === saved.id ? saved : azienda)),
+      queryClient.setQueryData<LegalEntityRecord[]>(queryKeys.legal_entities, (previous) =>
+        previous?.map((legal_entity) => (legal_entity.id === saved.id ? saved : legal_entity)),
       )
-      void queryClient.invalidateQueries({ queryKey: queryKeys.aziende })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.legal_entities })
     },
   })
 }
@@ -399,13 +413,13 @@ export function useCreateLegalEntity() {
     // The same cast `useSaveLegalEntity` makes: the form sends the keys it asks for and the
     // server defaults the rest, while the generated type lists them all as present.
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/aziende', { body: body as unknown as LegalEntityCreateBody })),
+      unwrap(api.POST('/api/legal-entities', { body: asBody<LegalEntityCreateBody>(body) })),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.aziende })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.legal_entities })
       // The Home's «tutte» is a different answer from the second azienda on (no
       // space-wide estimate, the concentration per azienda), and its key does not
       // change: dropped here so a sixty-second `staleTime` cannot keep the old shape.
-      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardAll })
       void queryClient.invalidateQueries({ queryKey: ['fiscal-estimate'] })
     },
   })
@@ -413,7 +427,7 @@ export function useCreateLegalEntity() {
 
 // -- The logo and the signature of an azienda (REB-629) --------------------------------
 
-export type LegalEntityImageSlot = 'logo' | 'firma'
+export type LegalEntityImageSlot = 'logo' | 'signature'
 
 /**
  * The image's bytes, as a Blob the block turns into an object URL, or `null` when the
@@ -423,12 +437,12 @@ export type LegalEntityImageSlot = 'logo' | 'firma'
  * Outside the typed client for the response type, through `fetchWithRefresh` for the
  * session and the tenant prefix, like a document's download (`features/documents`).
  */
-export function useLegalEntityImage(aziendaId: string, slot: LegalEntityImageSlot, present: boolean) {
+export function useLegalEntityImage(legalEntityId: string, slot: LegalEntityImageSlot, present: boolean) {
   return useQuery({
-    queryKey: queryKeys.aziendaImage(aziendaId, slot),
+    queryKey: queryKeys.legalEntityImage(legalEntityId, slot),
     enabled: present,
     queryFn: async (): Promise<Blob | null> => {
-      const response = await fetchWithRefresh(`/api/aziende/${aziendaId}/${slot}`)
+      const response = await fetchWithRefresh(`/api/legal-entities/${legalEntityId}/${slot}`)
       if (response.status === 404) return null
       if (!response.ok) {
         const payload: unknown = await response.json().catch(() => null)
@@ -441,13 +455,13 @@ export function useLegalEntityImage(aziendaId: string, slot: LegalEntityImageSlo
 
 /** Multipart, so outside the typed client, the same exception `putVersion` documents. */
 async function putLegalEntityImage(
-  aziendaId: string,
+  legalEntityId: string,
   slot: LegalEntityImageSlot,
   file: File,
 ): Promise<LegalEntityRecord> {
   const body = new FormData()
   body.append('file', file)
-  const response = await fetchWithRefresh(`/api/aziende/${aziendaId}/${slot}`, {
+  const response = await fetchWithRefresh(`/api/legal-entities/${legalEntityId}/${slot}`, {
     method: 'PUT',
     body,
   })
@@ -468,33 +482,33 @@ export function imageTooLarge(file: File): ProblemDetail | null {
   return file.size > IMAGE_MAX_BYTES ? toProblem({ detail: IMAGE_TOO_LARGE }, 413) : null
 }
 
-export function useUploadLegalEntityImage(aziendaId: string, slot: LegalEntityImageSlot) {
+export function useUploadLegalEntityImage(legalEntityId: string, slot: LegalEntityImageSlot) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (file: File) => putLegalEntityImage(aziendaId, slot, file),
+    mutationFn: (file: File) => putLegalEntityImage(legalEntityId, slot, file),
     // The row (its key changed) and the bytes under the same prefix.
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.aziende }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.legal_entities }),
   })
 }
 
-export function useRemoveLegalEntityImage(aziendaId: string, slot: LegalEntityImageSlot) {
+export function useRemoveLegalEntityImage(legalEntityId: string, slot: LegalEntityImageSlot) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () =>
       unwrap(
         slot === 'logo'
-          ? api.DELETE('/api/aziende/{azienda_id}/logo', {
-              params: { path: { azienda_id: aziendaId } },
+          ? api.DELETE('/api/legal-entities/{legal_entity_id}/logo', {
+              params: { path: { legal_entity_id: legalEntityId } },
             })
-          : api.DELETE('/api/aziende/{azienda_id}/firma', {
-              params: { path: { azienda_id: aziendaId } },
+          : api.DELETE('/api/legal-entities/{legal_entity_id}/signature', {
+              params: { path: { legal_entity_id: legalEntityId } },
             }),
       ),
     onSuccess: () => {
       // The bytes query is disabled once the row has no key, so its cached Blob would
       // otherwise outlive the removal and flash on the next upload: dropped outright.
-      queryClient.removeQueries({ queryKey: queryKeys.aziendaImage(aziendaId, slot) })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.aziende })
+      queryClient.removeQueries({ queryKey: queryKeys.legalEntityImage(legalEntityId, slot) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.legal_entities })
     },
   })
 }

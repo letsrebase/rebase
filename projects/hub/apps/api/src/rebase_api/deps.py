@@ -5,31 +5,107 @@ from collections.abc import Callable, Iterator
 from contextlib import closing
 from datetime import datetime
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.analytics import Tracker, tracker_from_settings
+from rebase_core.anonymous_cv.render import CvRenderer, TypstCvRenderer
 from rebase_core.audit import utcnow
 from rebase_core.campaigns.sender import CampaignSender, campaign_sender_from_settings
+from rebase_core.card_batch import CardBatches
 from rebase_core.cloud import CLOUD_CLOSED, CloudCaller, CloudTalentService
 from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.render import ContractRenderer, Renderer
+from rebase_core.crm_link import CrmLeadService, link_after_response
 from rebase_core.db import SessionOpener, create_engine_from_settings, session_factory
 from rebase_core.documenso import DocumensoClient, client_from_settings
 from rebase_core.engagements import EngagementService
 from rebase_core.http import HttpCall, urllib_call, urllib_engagements_call
-from rebase_core.llm import LlmCall, call_from_settings
+from rebase_core.llm import (
+    AiCall,
+    LlmCall,
+    ModelFactory,
+    build_model,
+    call_for_task,
+)
+from rebase_core.llm_batch import batch_for_task
 from rebase_core.mail import EmailSender, sender_from_settings
+from rebase_core.member_schemas import MeRead
 from rebase_core.members import MemberService
-from rebase_core.schemas import MeRead
 from rebase_core.signing import SigningFactory, signing_from_settings
 from rebase_core.team_builder import TeamBuilder
+from rebase_core.team_slots import ProposalSlots, proposal_slots
 from rebase_core.users import UserService
 
-MEMBER_COOKIE = "orbiters_user"
+MEMBER_COOKIE = "rebase_user"
+# What the cookie was called until REB-668. The value is the same raw session token and
+# the `sessions` row behind it does not change, so a person signed in before the rename
+# stays signed in: `session_token` reads this name when the new one is absent and
+# `adopt_legacy_cookie` reissues the session under the new name on the first request
+# that resolves it. REB-697 drops both, and this constant, once `member_session_days`
+# (30) have passed since the release that carries the rename: every cookie under the
+# old name has expired by then.
+LEGACY_MEMBER_COOKIE = "orbiters_user"
+
+
+def session_tokens(request: Request) -> list[str]:
+    """The raw session tokens the request carries, the new cookie's first and the old
+    one's after it. A caller tries each in turn: a stale new cookie beside a live old
+    one (a rollback followed by a roll-forward) must not hide the session."""
+    names = (MEMBER_COOKIE, LEGACY_MEMBER_COOKIE)
+    return list(dict.fromkeys(request.cookies[name] for name in names if request.cookies.get(name)))
+
+
+def set_member_cookie(response: Response, settings: Settings, raw: str) -> None:
+    """The session cookie under its current name, and the old name dropped in the same
+    answer so a browser never holds both."""
+    response.set_cookie(
+        MEMBER_COOKIE,
+        raw,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        max_age=settings.member_session_days * 86400,
+        path="/",
+    )
+    _drop_legacy_cookie(response, settings)
+
+
+def clear_member_cookie(response: Response, settings: Settings) -> None:
+    """Both names, so a sign-out leaves nothing behind in a browser that still has the old."""
+    response.delete_cookie(
+        MEMBER_COOKIE,
+        path="/",
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+    )
+    _drop_legacy_cookie(response, settings)
+
+
+def _drop_legacy_cookie(response: Response, settings: Settings) -> None:
+    response.delete_cookie(
+        LEGACY_MEMBER_COOKIE,
+        path="/",
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+    )
+
+
+def adopt_legacy_cookie(request: Request, response: Response, settings: Settings, raw: str) -> None:
+    """A session that resolved through anything but the current cookie is reissued under
+    the new name, with a fresh 30 days: the server already slid the row's own deadline, so
+    the browser's copy follows it once. It rides the response of a route that answers with
+    a model; a route that returns its own `Response` (a download) or raises does not carry
+    it, and the next call that does, `/me` on every page load, reissues it."""
+    if request.cookies.get(MEMBER_COOKIE) != raw:
+        set_member_cookie(response, settings, raw)
+
 
 _engine: Engine | None = None
 _factory: sessionmaker[Session] | None = None
@@ -58,17 +134,25 @@ SessionDep = Annotated[Session, Depends(get_session)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
-def get_admin(request: Request, session: SessionDep, settings: SettingsDep) -> AdminRead:
+def get_admin(
+    request: Request, response: Response, session: SessionDep, settings: SettingsDep
+) -> AdminRead:
     """A signed-in person whose role is admin: a signed-in non-admin is a real identity
     hitting the wrong door (403), nobody signed in at all is 401 (design record
     2026-09-17 §4). The password login and its `orbiters_admin` cookie are gone
-    (REB-281): every admin resolves through the one cookie, `orbiters_user`, like
-    everyone else."""
+    (REB-281): every admin resolves through the one cookie, `rebase_user` (`orbiters_user`
+    until REB-668, still read), like everyone else."""
     users = UserService(session, settings)
-    me = users.resolve_admin(request.cookies.get(MEMBER_COOKIE))
-    if me is not None:
-        return AdminRead.model_validate(me)
-    if users.resolve(request.cookies.get(MEMBER_COOKIE)) is not None:
+    signed_in = False
+    for raw in session_tokens(request):
+        me = users.resolve(raw)
+        if me is None:
+            continue
+        if me.role == "admin":
+            adopt_legacy_cookie(request, response, settings, raw)
+            return AdminRead.model_validate(me)
+        signed_in = True
+    if signed_in:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Serve il ruolo di amministratore")
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Autenticazione richiesta")
 
@@ -76,13 +160,18 @@ def get_admin(request: Request, session: SessionDep, settings: SettingsDep) -> A
 AdminDep = Annotated[AdminRead, Depends(get_admin)]
 
 
-def get_me(request: Request, session: SessionDep, settings: SettingsDep) -> MeRead:
+def get_me(
+    request: Request, response: Response, session: SessionDep, settings: SettingsDep
+) -> MeRead:
     """Whoever the cookie resolves to, member or admin: the one dependency every
     signed-in route may depend on."""
-    user = UserService(session, settings).resolve(request.cookies.get(MEMBER_COOKIE))
-    if user is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Autenticazione richiesta")
-    return MemberService(session).me_read(user.id)
+    users = UserService(session, settings)
+    for raw in session_tokens(request):
+        user = users.resolve(raw)
+        if user is not None:
+            adopt_legacy_cookie(request, response, settings, raw)
+            return MemberService(session).me_read(user.id)
+    raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Autenticazione richiesta")
 
 
 MeDep = Annotated[MeRead, Depends(get_me)]
@@ -119,37 +208,13 @@ def get_campaign_sender(settings: SettingsDep) -> CampaignSender | None:
 CampaignSenderDep = Annotated[CampaignSender | None, Depends(get_campaign_sender)]
 
 
-def get_llm(settings: SettingsDep) -> LlmCall | None:
-    """The Claude seam (REB-508), or `None` without a key: the anonymous card is then
-    not written (REB-510). A dependency, so a test hands a `RecordingCall` the way it
-    hands `RecordingSender` for the mail."""
-    return call_from_settings(settings)
+def get_proposal_slots(settings: SettingsDep) -> ProposalSlots:
+    """The process's proposal gate (`rebase_core.team_slots`, spec § 5): the slots, the
+    clients' daily shares and the refusal writers, one for the process."""
+    return proposal_slots(settings)
 
 
-LlmDep = Annotated[LlmCall | None, Depends(get_llm)]
-
-# The proposals running now in this process (spec § 5): one semaphore for the process,
-# sized by `REBASE_TEAM_BUILDER_CONCURRENCY` when the first proposal arrives. A proposal
-# holds a worker thread for the seconds Claude takes, on the pool the member area and
-# the webhooks share, so the one past the cap is refused at once, never queued.
-_proposal_slots: tuple[int, threading.BoundedSemaphore] | None = None
-_proposal_slots_lock = threading.Lock()
-
-
-def get_proposal_slots(settings: SettingsDep) -> threading.BoundedSemaphore:
-    """The process's proposal slots, acquired with `blocking=False` and released in a
-    `finally`. Keyed by the size, the way `analytics.build_client` keys its client: the
-    setting never changes in a running process, and a test that sets another size gets
-    a semaphore of that size; a slot held on the old one is released into the old one."""
-    global _proposal_slots
-    size = settings.team_builder_concurrency
-    with _proposal_slots_lock:
-        if _proposal_slots is None or _proposal_slots[0] != size:
-            _proposal_slots = (size, threading.BoundedSemaphore(size))
-        return _proposal_slots[1]
-
-
-ProposalSlotsDep = Annotated[threading.BoundedSemaphore, Depends(get_proposal_slots)]
+ProposalSlotsDep = Annotated[ProposalSlots, Depends(get_proposal_slots)]
 
 
 def get_http_call() -> HttpCall:
@@ -243,6 +308,107 @@ def get_session_opener() -> SessionOpener:
 SessionOpenerDep = Annotated[SessionOpener, Depends(get_session_opener)]
 
 
+def get_crm_llm(settings: SettingsDep, opener: SessionOpenerDep) -> Callable[[], LlmCall | None]:
+    """What answers the seam of the `crm_lead` task (REB-867) when a request's draft is
+    needed: a callable, so «Modelli AI» is read at that moment and not when the request
+    arrived. A dependency, so a test hands a `RecordingCall`."""
+    return lambda: call_for_task(opener, settings, "crm_lead")
+
+
+CrmLlmDep = Annotated[Callable[[], LlmCall | None], Depends(get_crm_llm)]
+
+
+def get_crm_leads(
+    session: SessionDep, settings: SettingsDep, http: HttpCallDep, llm: CrmLlmDep
+) -> CrmLeadService:
+    """The filing of a company request in rebase's CRM (REB-868): «Riprova» and «Collega a
+    un altro deal». It reads through the engagements seam, whose 90 seconds leave room for
+    a CRM that is slow to answer."""
+    return CrmLeadService(session, settings, _engagements_call(http), llm)
+
+
+CrmLeadsDep = Annotated[CrmLeadService, Depends(get_crm_leads)]
+
+CrmFiling = Callable[[UUID], None]
+
+
+def get_crm_filing(
+    settings: SettingsDep, http: HttpCallDep, opener: SessionOpenerDep, llm: CrmLlmDep
+) -> CrmFiling:
+    """The first attempt at filing a new request in the CRM, for `BackgroundTasks`: runs
+    after the response in a session of its own and never raises (the sweep recovers)."""
+    engagements = _engagements_call(http)
+    return lambda company_id: link_after_response(opener, settings, engagements, llm, company_id)
+
+
+CrmFilingDep = Annotated[CrmFiling, Depends(get_crm_filing)]
+
+
+def get_card_llm(settings: SettingsDep, opener: SessionOpenerDep) -> LlmCall | None:
+    """The model seam for the anonymous card (REB-510, REB-831), or `None` when no model
+    is configured for the `card` task in «Modelli AI»: the card is then not written. A
+    dependency, so a test hands a `RecordingCall` the way it hands `RecordingSender` for
+    the mail."""
+    return call_for_task(opener, settings, "card")
+
+
+def get_team_llm(settings: SettingsDep, opener: SessionOpenerDep) -> LlmCall | None:
+    """The same seam for the team proposal (REB-508, REB-831): `None` when no model is
+    configured for the `team_proposal` task, and the builder answers as with the switch
+    off."""
+    return call_for_task(opener, settings, "team_proposal")
+
+
+def get_card_batches(settings: SettingsDep, opener: SessionOpenerDep) -> CardBatches | None:
+    """The Message Batches path of an admin's regeneration (REB-853), or `None` when the
+    `card` task's provider has none (only Anthropic does): the cards are then written with
+    the workers. A dependency, so a test hands a `RecordingBatch`."""
+    call = batch_for_task(opener, settings, "card")
+    return None if call is None else CardBatches(call, settings.cards_batch_threshold)
+
+
+CardLlmDep = Annotated[LlmCall | None, Depends(get_card_llm)]
+CardBatchesDep = Annotated[CardBatches | None, Depends(get_card_batches)]
+TeamLlmDep = Annotated[LlmCall | None, Depends(get_team_llm)]
+
+
+def get_cv_llm(settings: SettingsDep, opener: SessionOpenerDep) -> LlmCall | None:
+    """The model seam for the anonymous CV (REB-862), or `None` when no model is configured
+    for the `anonymous_cv` task: a kept body is then still served, and only a CV that needs
+    writing is refused. The writer names the talent on each request, so every usage row of
+    the call names the person it was about."""
+    return call_for_task(opener, settings, "anonymous_cv")
+
+
+def get_cv_renderer() -> CvRenderer:
+    """What prints the anonymous CV: Typst. A dependency, so the API's tests hand
+    `FakeCvRenderer` and need no binary."""
+    return TypstCvRenderer()
+
+
+CvLlmDep = Annotated[LlmCall | None, Depends(get_cv_llm)]
+CvRendererDep = Annotated[CvRenderer, Depends(get_cv_renderer)]
+
+
+def get_model_factory() -> ModelFactory:
+    """What builds a provider's model for a call: `build_model`. A dependency, so a test
+    hands a stub model and still runs the real `AiCall` around it."""
+    return build_model
+
+
+def get_test_call(
+    settings: SettingsDep,
+    opener: SessionOpenerDep,
+    model_factory: Annotated[ModelFactory, Depends(get_model_factory)],
+) -> Callable[[str], LlmCall]:
+    """«Prova» on «Modelli AI» (REB-833): the seam for one task, recording its usage as
+    `purpose="test"`."""
+    return lambda task: AiCall(opener, settings, task, purpose="test", model_factory=model_factory)
+
+
+TestCallDep = Annotated[Callable[[str], LlmCall], Depends(get_test_call)]
+
+
 def get_clock() -> Callable[[], datetime]:
     """The team builder's «now» (REB-581): the clock a proposal is stamped with and the
     daily cap counts from (`team_caps.require_daily_room`), one for both. A dependency so
@@ -255,7 +421,11 @@ ClockDep = Annotated[Callable[[], datetime], Depends(get_clock)]
 
 
 def get_team_builder(
-    session: SessionDep, llm: LlmDep, settings: SettingsDep, tracker: TrackerDep, clock: ClockDep
+    session: SessionDep,
+    llm: TeamLlmDep,
+    settings: SettingsDep,
+    tracker: TrackerDep,
+    clock: ClockDep,
 ) -> TeamBuilder:
     """The engine (REB-511) for this request: the Claude seam, `None` without a key, the
     tracker that counts the proposal and the clock that stamps it."""

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { describe, expect, it } from 'vitest'
-import { buildDealColumns, displayNative, formatDate, formatHours, formatMoney, sumValorePrevisto } from './columns'
+import { buildDealColumns, displayNative, formatDate, formatHours, formatMoney, sumExpectedValue } from './columns'
 import type { FieldDefinition } from '@/lib/schema'
 import { DEAL_STAGE_TONE, type Deal } from './queries'
 
@@ -14,7 +14,7 @@ const NBSP = '\u00a0'
 
 /**
  * Reads a native column's cell value the same way `DataTable` does internally --
- * through the column's own `accessorFn` -- mirroring `features/customers/
+ * through the column's own `accessorFn` -- mirroring `features/organizations/
  * queries.test.ts`/`features/people/columns.test.ts`'s identical helper.
  */
 function cellValue(column: ReturnType<typeof buildDealColumns>[number], deal: Deal) {
@@ -26,24 +26,25 @@ function cellValue(column: ReturnType<typeof buildDealColumns>[number], deal: De
 
 const BASE_DEAL: Deal = {
   id: 'd1',
-  azienda_id: 'a-1',
-  nome: 'Sito vetrina',
+  legal_entity_id: 'a-1',
+  name: 'Sito vetrina',
   customer_id: 'c1',
   pipeline_stage_id: 's1',
-  valore_previsto: null,
-  probabilita: 10,
-  data_chiusura_prevista: null,
+  expected_value: null,
+  one_off_value: null,
+  monthly_recurring_value: null,
+  probability: 10,
+  expected_close_date: null,
   owner_id: null,
-  note: null,
-  ore_preventivate: null,
-  valore_preventivato: null,
+  budgeted_hours: null,
+  budgeted_value: null,
   // Slice 4A added the per-deal hourly rate to `DealRead`; a deal that has never had
   // one set reads `null` and falls back to the user's own default (§7.2).
-  tariffa_oraria: null,
+  hourly_rate: null,
   // Slice 6 §4.1 added the closing day to `DealRead`. `null` on an open deal, and
   // deliberately not backfilled on deals closed before the column existed -- the
   // commercial dashboard declares how many of those there are rather than guessing.
-  chiuso_il: null,
+  closed_at: null,
   custom_fields: {},
   created_at: '2026-08-06T00:00:00Z',
   updated_at: '2026-08-06T00:00:00Z',
@@ -68,29 +69,46 @@ describe('buildDealColumns', () => {
   })
 
   it('renders a null valore_previsto as the empty dash, not zero', () => {
-    const [, valore] = buildDealColumns([])
-    expect(cellValue(valore!, { ...BASE_DEAL, valore_previsto: null })).toBe('—')
+    const [, value] = buildDealColumns([])
+    expect(cellValue(value!, { ...BASE_DEAL, expected_value: null })).toBe('—')
+  })
+
+  it('shows the fee alone, the one-off alone, or both, never the total beside the fee', () => {
+    const [, value] = buildDealColumns([])
+    const lines = { ...BASE_DEAL, expected_value: '26000.00', one_off_value: '20000.00', monthly_recurring_value: '500.00' }
+    expect(cellValue(value!, lines)).toBe(`20.000,00${NBSP}€ + 500,00${NBSP}€/mese`)
+    expect(cellValue(value!, { ...lines, expected_value: '6000.00', one_off_value: '0.00' })).toBe(
+      `500,00${NBSP}€/mese`,
+    )
+    expect(cellValue(value!, { ...lines, one_off_value: null })).toBe(`500,00${NBSP}€/mese`)
+    expect(cellValue(value!, { ...lines, monthly_recurring_value: '0.00' })).toBe(`20.000,00${NBSP}€`)
+    expect(cellValue(value!, { ...lines, monthly_recurring_value: null })).toBe(`20.000,00${NBSP}€`)
+  })
+
+  it('falls back to the total for a deal with no lines', () => {
+    const [, value] = buildDealColumns([])
+    expect(cellValue(value!, { ...BASE_DEAL, expected_value: '2500.00' })).toBe(`2.500,00${NBSP}€`)
   })
 
   it('renders a present valore_previsto with Italian currency formatting', () => {
-    const [, valore] = buildDealColumns([])
-    expect(cellValue(valore!, { ...BASE_DEAL, valore_previsto: '2500.50' })).toBe(`2.500,50${NBSP}€`)
+    const [, value] = buildDealColumns([])
+    expect(cellValue(value!, { ...BASE_DEAL, expected_value: '2500.50' })).toBe(`2.500,50${NBSP}€`)
   })
 
   it('renders probabilita as a percentage, including a real zero', () => {
-    const [, , probabilita] = buildDealColumns([])
-    expect(cellValue(probabilita!, { ...BASE_DEAL, probabilita: 0 })).toBe('0%')
-    expect(cellValue(probabilita!, { ...BASE_DEAL, probabilita: 50 })).toBe('50%')
+    const [, , probability] = buildDealColumns([])
+    expect(cellValue(probability!, { ...BASE_DEAL, probability: 0 })).toBe('0%')
+    expect(cellValue(probability!, { ...BASE_DEAL, probability: 50 })).toBe('50%')
   })
 
   it('renders a null chiusura prevista as the empty dash', () => {
-    const [, , , chiusura] = buildDealColumns([])
-    expect(cellValue(chiusura!, { ...BASE_DEAL, data_chiusura_prevista: null })).toBe('—')
+    const [, , , closing] = buildDealColumns([])
+    expect(cellValue(closing!, { ...BASE_DEAL, expected_close_date: null })).toBe('—')
   })
 
   it('renders a present chiusura prevista in Italian date order', () => {
-    const [, , , chiusura] = buildDealColumns([])
-    expect(cellValue(chiusura!, { ...BASE_DEAL, data_chiusura_prevista: '2026-08-06' })).toBe(
+    const [, , , closing] = buildDealColumns([])
+    expect(cellValue(closing!, { ...BASE_DEAL, expected_close_date: '2026-08-06' })).toBe(
       '06/08/2026',
     )
   })
@@ -99,28 +117,28 @@ describe('buildDealColumns', () => {
    *  rule has to hold on (the detail page is the other, and goes through the
    *  same `renderFieldValue`). */
   it('renders a checkbox custom column as No when the record carries no value for it', () => {
-    const attivo: FieldDefinition = {
+    const active: FieldDefinition = {
       key: 'urgente',
       label: 'Urgente',
       type: 'checkbox',
       required: false,
       options: [],
     }
-    const [, , , , urgente] = buildDealColumns([attivo])
-    expect(cellValue(urgente!, { ...BASE_DEAL, custom_fields: {} })).toBe('No')
-    expect(cellValue(urgente!, { ...BASE_DEAL, custom_fields: { urgente: true } })).toBe('Sì')
+    const [, , , , urgent] = buildDealColumns([active])
+    expect(cellValue(urgent!, { ...BASE_DEAL, custom_fields: {} })).toBe('No')
+    expect(cellValue(urgent!, { ...BASE_DEAL, custom_fields: { 'urgente': true } })).toBe('Sì')
   })
 
   it('keeps zero and false as real custom-field values, not a dash', () => {
-    const punteggio: FieldDefinition = {
+    const scoreField: FieldDefinition = {
       key: 'punteggio',
       label: 'Punteggio',
       type: 'number',
       required: false,
       options: [],
     }
-    const [, , , , score] = buildDealColumns([punteggio])
-    expect(cellValue(score!, { ...BASE_DEAL, custom_fields: { punteggio: 0 } })).toBe('0')
+    const [, , , , score] = buildDealColumns([scoreField])
+    expect(cellValue(score!, { ...BASE_DEAL, custom_fields: { 'punteggio': 0 } })).toBe('0')
   })
 })
 
@@ -172,25 +190,25 @@ describe('formatDate', () => {
   })
 })
 
-describe('sumValorePrevisto', () => {
+describe('sumExpectedValue', () => {
   it('renders zero for an empty column', () => {
-    expect(sumValorePrevisto([])).toBe(`0,00${NBSP}€`)
+    expect(sumExpectedValue([])).toBe(`0,00${NBSP}€`)
   })
 
   it('ignores unpriced (null) deals rather than treating them as zero-value contributions', () => {
     const deals = [
-      { ...BASE_DEAL, id: 'a', valore_previsto: '10.00' },
-      { ...BASE_DEAL, id: 'b', valore_previsto: null },
+      { ...BASE_DEAL, id: 'a', expected_value: '10.00' },
+      { ...BASE_DEAL, id: 'b', expected_value: null },
     ]
-    expect(sumValorePrevisto(deals)).toBe(`10,00${NBSP}€`)
+    expect(sumExpectedValue(deals)).toBe(`10,00${NBSP}€`)
   })
 
   it('sums several deals exactly, with the thousands separator', () => {
     const deals = [
-      { ...BASE_DEAL, id: 'a', valore_previsto: '1000.00' },
-      { ...BASE_DEAL, id: 'b', valore_previsto: '2500.50' },
+      { ...BASE_DEAL, id: 'a', expected_value: '1000.00' },
+      { ...BASE_DEAL, id: 'b', expected_value: '2500.50' },
     ]
-    expect(sumValorePrevisto(deals)).toBe(`3.500,50${NBSP}€`)
+    expect(sumExpectedValue(deals)).toBe(`3.500,50${NBSP}€`)
   })
 
   /**
@@ -218,13 +236,13 @@ describe('sumValorePrevisto', () => {
     const deals = Array.from({ length: 300 }, (_, i) => ({
       ...BASE_DEAL,
       id: `deal-${i}`,
-      valore_previsto: String(9999999999 - i * 1000003) + '.99',
+      expected_value: String(9999999999 - i * 1000003) + '.99',
     }))
 
     // The regression itself, computed the brief's own flawed way, right here in
     // the test -- so this assertion documents the failure it guards against,
     // not just the fix.
-    const naiveTotal = deals.reduce((sum, deal) => sum + Number(deal.valore_previsto ?? 0), 0)
+    const naiveTotal = deals.reduce((sum, deal) => sum + Number(deal.expected_value ?? 0), 0)
     const naiveFormatted = new Intl.NumberFormat('it-IT', {
       style: 'currency',
       currency: 'EUR',
@@ -232,7 +250,7 @@ describe('sumValorePrevisto', () => {
     }).format(naiveTotal)
     expect(naiveFormatted).toBe(`2.955.149.865.447,02${NBSP}€`)
 
-    expect(sumValorePrevisto(deals)).toBe(`2.955.149.865.447,00${NBSP}€`)
+    expect(sumExpectedValue(deals)).toBe(`2.955.149.865.447,00${NBSP}€`)
   })
 })
 
@@ -253,7 +271,7 @@ function renderCell(index: number, deal: Deal) {
 
 describe('how a deal row reads', () => {
   it('carries the deal name beside a chip of its initials', () => {
-    renderCell(0, { ...BASE_DEAL, nome: 'Sito vetrina' })
+    renderCell(0, { ...BASE_DEAL, name: 'Sito vetrina' })
     expect(screen.getByText('Sito vetrina')).toBeInTheDocument()
     expect(screen.getByText('SV')).toBeInTheDocument()
   })
@@ -261,12 +279,12 @@ describe('how a deal row reads', () => {
   /**
    * The line under the deal's name is who the work is for -- what turns a list of
    * project names into a list of work (design spec §4). It has to be asserted on the
-   * *rendered* cell: the column's `accessorFn` is still the bare `nome`, so a
-   * misspelled `customer_ragione_sociale` here would leave every `cellValue` assertion
+   * *rendered* cell: the column's `accessorFn` is still the bare `name`, so a
+   * misspelled `customer_legal_name` here would leave every `cellValue` assertion
    * in this file green.
    */
   it('names the deal\u2019s customer on the line under it', () => {
-    renderCell(0, { ...BASE_DEAL, customer_ragione_sociale: 'ACME Srl' })
+    renderCell(0, { ...BASE_DEAL, customer_legal_name: 'ACME Srl' })
     expect(screen.getByText('ACME Srl')).toBeInTheDocument()
   })
 
@@ -275,7 +293,7 @@ describe('how a deal row reads', () => {
    *  line, not an empty second line under the name: `EntityCell` treats
    *  `undefined`/`null`/`''` alike, and this is the assertion that keeps it that way. */
   it('draws no second line for a deal whose customer name did not come back', () => {
-    renderCell(0, { ...BASE_DEAL, customer_ragione_sociale: null })
+    renderCell(0, { ...BASE_DEAL, customer_legal_name: null })
     // The name's own wrapper holds the name and, when there is one, the sub-line. One
     // child means no second line at all -- not a second line rendered empty, which
     // would take the vertical space and make every row of the table taller for nothing.
@@ -284,13 +302,13 @@ describe('how a deal row reads', () => {
 
   /** The header has to sit over the digits it labels, which only the column can say. */
   it('declares value and probability right-aligned columns, so their headers move too', () => {
-    const [, valore, probabilita] = buildDealColumns([])
-    expect(valore?.meta).toEqual({ align: 'right' })
-    expect(probabilita?.meta).toEqual({ align: 'right' })
+    const [, value, probability] = buildDealColumns([])
+    expect(value?.meta).toEqual({ align: 'right' })
+    expect(probability?.meta).toEqual({ align: 'right' })
   })
 
   it('right-aligns the expected value inside its own cell', () => {
-    renderCell(1, { ...BASE_DEAL, valore_previsto: '2500.50' })
+    renderCell(1, { ...BASE_DEAL, expected_value: '2500.50' })
     expect(screen.getByText(/2\.500,50/).className).toContain('text-right')
   })
 
@@ -299,27 +317,27 @@ describe('how a deal row reads', () => {
    *  the rendered cell because `NumberCell` is a `cell` renderer and the `accessorFn`
    *  assertion above it goes nowhere near one. */
   it('renders the probability through NumberCell, with tabular figures', () => {
-    renderCell(2, { ...BASE_DEAL, probabilita: 10 })
+    renderCell(2, { ...BASE_DEAL, probability: 10 })
     const cell = screen.getByText('10%')
     expect(cell.className).toContain('tabular-nums')
     expect(cell.className).toContain('text-right')
   })
 
   it('puts a calendar icon before the expected closing date', () => {
-    const { container } = renderCell(3, { ...BASE_DEAL, data_chiusura_prevista: '2026-08-06' })
+    const { container } = renderCell(3, { ...BASE_DEAL, expected_close_date: '2026-08-06' })
     expect(screen.getByText('06/08/2026')).toBeInTheDocument()
     expect(container.querySelector('svg')).not.toBeNull()
   })
 
   it('shows an unpriced closing date as the dash, with no calendar icon claiming a date', () => {
-    const { container } = renderCell(3, { ...BASE_DEAL, data_chiusura_prevista: null })
+    const { container } = renderCell(3, { ...BASE_DEAL, expected_close_date: null })
     expect(screen.getByText('—')).toBeInTheDocument()
     expect(container.querySelector('svg')).toBeNull()
   })
 })
 
 /**
- * Keyed on `tipo`, never on the stage's name: a tenant renames its stages freely, and
+ * Keyed on `type`, never on the stage's name: a tenant renames its stages freely, and
  * only `open`/`won`/`lost` is guaranteed by the backend.
  */
 describe('DEAL_STAGE_TONE', () => {

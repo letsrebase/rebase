@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.config import GOOGLE_TOKEN_KEY_BYTES, Settings, gmail_configured
+from pigrocrm.core.config import Settings, gmail_configured
+from pigrocrm.core.crypto import KEY_BYTES
+from pigrocrm.core.modules.registry import MODULE_SETTING_KEYS, SHAPE_KEYS
 from pigrocrm.core.space_settings.models import SpaceSetting
 from pigrocrm.core.space_settings.schemas import (
     OVERRIDABLE_KEYS,
@@ -17,6 +19,7 @@ from pigrocrm.core.space_settings.schemas import (
     SpaceSettingsRead,
     SpaceSettingsUpdate,
 )
+from pigrocrm.core.space_settings.sealing import open_secret, seal_value
 from pigrocrm.core.versioning import require_unchanged
 
 ENTITY = "space_settings"
@@ -35,14 +38,14 @@ VERSION_KEY = "_version"
 # carries a version is compared against a settled state.
 VERSION_LOCK = 0xC0F6
 
-_BOOLS = {"google_app_unverified", "mcp_full_access"}
+_BOOLS = {"google_app_unverified", "mcp_full_access", "onboarding_skipped", *MODULE_SETTING_KEYS}
 _INTS = {
-    "solleciti_grace_days",
-    "solleciti_min_interval_days",
-    "solleciti_max_reminders",
+    "payment_reminders_grace_days",
+    "payment_reminders_min_interval_days",
+    "payment_reminders_max_reminders",
     "gmail_backfill_days",
 }
-_FLOATS = {"concentrazione_soglia_preferita"}
+_FLOATS = {"preferred_concentration_threshold"}
 # What `space_base_settings` lends a space from the root's Google, blanked again when the
 # space configures a client of its own (`apply_overrides`).
 _BORROWED_GOOGLE: dict[str, object] = {
@@ -96,7 +99,7 @@ def apply_overrides(base: Settings, overrides: dict[str, str]) -> Settings:
 
 def new_token_key() -> str:
     """32 random bytes, base64: what `decode_google_token_key` expects."""
-    return base64.b64encode(secrets.token_bytes(GOOGLE_TOKEN_KEY_BYTES)).decode("ascii")
+    return base64.b64encode(secrets.token_bytes(KEY_BYTES)).decode("ascii")
 
 
 class SpaceSettingsService:
@@ -121,9 +124,21 @@ class SpaceSettingsService:
             self.session.scalars(select(SpaceSetting).execution_options(populate_existing=True))
         )
 
-    @staticmethod
-    def _overrides_of(rows: list[SpaceSetting]) -> dict[str, str]:
-        return {row.key: row.value for row in rows if row.key in OVERRIDABLE_KEYS}
+    def _overrides_of(self, rows: list[SpaceSetting]) -> dict[str, str]:
+        """The rows `Settings` may be given, the sealed ones opened (`sealing.py`); a
+        secret this installation cannot open is left out, as if it were not set."""
+        overrides: dict[str, str] = {}
+        for row in rows:
+            if row.key not in OVERRIDABLE_KEYS:
+                continue
+            if row.key in SECRET_KEYS:
+                opened = open_secret(row.key, row.value, self.base.jwt_secret)
+                if opened is None:
+                    continue
+                overrides[row.key] = opened
+            else:
+                overrides[row.key] = row.value
+        return overrides
 
     @staticmethod
     def _version_of(rows: list[SpaceSetting]) -> datetime | None:
@@ -145,12 +160,12 @@ class SpaceSettingsService:
         what the database holds now, not what this session loaded before the lock."""
         return self.session.scalar(select(func.max(SpaceSetting.updated_at)))
 
-    def read(self, actor: Actor, *, spazio: str | None) -> SpaceSettingsRead:
+    def read(self, actor: Actor, *, space: str | None) -> SpaceSettingsRead:
         actor.require_admin("read_space_settings")
-        return self._read(spazio=spazio)
+        return self._read(space=space)
 
     def update(
-        self, data: SpaceSettingsUpdate, actor: Actor, *, spazio: str | None
+        self, data: SpaceSettingsUpdate, actor: Actor, *, space: str | None
     ) -> SpaceSettingsRead:
         actor.require_unscoped_admin("update_space_settings")
         # Every write takes the advisory lock, a versionless one included, so a save
@@ -185,13 +200,43 @@ class SpaceSettingsService:
             # Keys only, never values: two of them are secrets, and the timeline is read
             # by more people, for longer, than this table.
             self.activities.record(
-                ENTITY, SETTINGS_ID, "updated", actor, {"chiavi": sorted(set(changed))}
+                ENTITY, SETTINGS_ID, "updated", actor, {"keys": sorted(set(changed))}
             )
             self._set(VERSION_KEY, datetime.now(UTC).isoformat())
         self.session.commit()
-        return self._read(spazio=spazio)
+        return self._read(space=space)
+
+    def lock(self) -> None:
+        """The advisory lock every write takes, transaction-scoped: a caller that reads the
+        state it is about to change takes it first, so two admins cannot both pass a check
+        the other is invalidating."""
+        self.session.execute(select(func.pg_advisory_xact_lock(VERSION_LOCK)))
+
+    def write_shape(self, values: dict[str, str | None]) -> list[str]:
+        """Stages the profile and module rows (`SHAPE_KEYS`) in the caller's transaction, a
+        `None` deleting the row, and answers the keys that really changed. The one writer of
+        those keys: `SpaceSettingsUpdate` cannot carry them. It does no authorisation, takes
+        the advisory lock every write takes and stamps the version; the caller records who did
+        it on the timeline (`ENTITY`, `SETTINGS_ID`, keys only, never values) and commits."""
+        self.session.execute(select(func.pg_advisory_xact_lock(VERSION_LOCK)))
+        changed: list[str] = []
+        for key, value in values.items():
+            if key not in SHAPE_KEYS:
+                raise ValueError(f"{key} is not a profile or module key")
+            row = self.session.get(SpaceSetting, key)
+            if value is None:
+                if self._delete(key):
+                    changed.append(key)
+            elif row is None or row.value != value:
+                self._set(key, value)
+                changed.append(key)
+        if changed:
+            self._set(VERSION_KEY, datetime.now(UTC).isoformat())
+        return sorted(changed)
 
     def _set(self, key: str, value: str) -> None:
+        if key in SECRET_KEYS:
+            value = seal_value(value, self.base.jwt_secret)
         row = self.session.get(SpaceSetting, key)
         if row is None:
             self.session.add(SpaceSetting(key=key, value=value))
@@ -205,20 +250,20 @@ class SpaceSettingsService:
         self.session.delete(row)
         return True
 
-    def _read(self, *, spazio: str | None) -> SpaceSettingsRead:
+    def _read(self, *, space: str | None) -> SpaceSettingsRead:
         rows = self._rows()
         overrides = self._overrides_of(rows)
         settings = apply_overrides(self.base, overrides)
         public_url = settings.public_url.rstrip("/")
         return SpaceSettingsRead(
-            spazio=spazio,
+            space=space,
             public_url=public_url,
             google_client_id=settings.google_client_id,
-            google_client_secret_impostato=bool(settings.google_client_secret),
-            google_token_key_impostata=bool(settings.google_token_key),
+            google_client_secret_set=bool(settings.google_client_secret),
+            google_token_key_set=bool(settings.google_token_key),
             google_app_unverified=settings.google_app_unverified,
-            gmail_configurato=gmail_configured(settings),
-            google_client_condiviso=bool(settings.google_oauth_state_prefix),
+            gmail_configured=gmail_configured(settings),
+            google_client_shared=bool(settings.google_oauth_state_prefix),
             # This space's own addresses, the ones a client of its own registers, even
             # while it borrows the root's client (REB-394), whose consent comes back
             # through the root's callback and needs nothing registered per space.
@@ -226,12 +271,16 @@ class SpaceSettingsService:
             redirect_uri_drive=f"{public_url}/api/drive/oauth/callback" if public_url else "",
             storage_backend=settings.storage_backend,
             mcp_full_access=settings.mcp_full_access,
-            solleciti_grace_days=settings.solleciti_grace_days,
-            solleciti_min_interval_days=settings.solleciti_min_interval_days,
-            solleciti_max_reminders=settings.solleciti_max_reminders,
+            payment_reminders_grace_days=settings.payment_reminders_grace_days,
+            payment_reminders_min_interval_days=settings.payment_reminders_min_interval_days,
+            payment_reminders_max_reminders=settings.payment_reminders_max_reminders,
             gmail_backfill_days=settings.gmail_backfill_days,
-            concentrazione_soglia_preferita=settings.concentrazione_soglia_preferita,
-            sovrascritte=sorted(key for key in overrides if key not in SECRET_KEYS)
+            preferred_concentration_threshold=settings.preferred_concentration_threshold,
+            # The profile and the module switches have their own read (`modules/service.py`):
+            # this page lists what its own form can write.
+            overwritten=sorted(
+                key for key in overrides if key not in SECRET_KEYS and key not in SHAPE_KEYS
+            )
             + sorted(key for key in overrides if key in SECRET_KEYS),
             updated_at=self._version_of(rows),
         )

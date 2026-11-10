@@ -69,7 +69,12 @@ Copy `.env.example` into the repository root **on the server** (not only locally
 
 - `POSTGRES_PASSWORD` — required: `docker compose` refuses to start without it.
 - `PIGROCRM_JWT_SECRET` — generate a real secret (`openssl rand -hex 32`), different from
-  any value used in local development.
+  any value used in local development. The API and the MCP server refuse to start on the
+  published placeholder. **Rotating it logs everyone out and also unsets every space's own
+  Google client**: the two secrets a space keeps in its database (`google_client_secret`,
+  `google_token_key`) are sealed with a key derived from it, so after a rotation each space
+  re-enters its client secret and reconnects Gmail and Drive (a space on the root's shared
+  Google client is not affected).
 - Leave `PIGROCRM_COOKIE_SECURE` as it is: `docker-compose.yml` never forwards it to the
   `api` container, on purpose (see the comment there) — it only concerns the local
   development flow further up in the same file.
@@ -129,8 +134,9 @@ hardcoded credentials):
 
 ```
 # Postgres data lives on the host in PIGROCRM_DATA_DIR (see .env.example): a Docker reset
-# doesn't touch it. Backup: `scripts/backup-db.sh` (dated pg_dumpall, last 30 kept).
-docker compose exec api uv run --no-sync pigrocrm createadmin --email admin@tuodominio.it --nome "Nome Cognome"
+# doesn't touch it. Backup: production loads `docker-compose.backup.yml` (nightly, encrypted,
+# off-host, every database; see `.env.example`).
+docker compose exec api uv run --no-sync pigrocrm createadmin --email admin@tuodominio.it --name "Jane Doe"
 ```
 
 Asks for the password on the terminal, twice (never as an argument or environment variable).
@@ -148,10 +154,12 @@ from the network inside a production container already running, on every single 
 There is no daemon and no queue: the Gmail sync is a loop that starts, does its work and
 ends. The fifteen minutes are cron's, one line in the `crontab` of the user that owns the
 deploy. `$DEPLOY_PATH` below is the deploy directory configured in the environment (the
-root of this repository's checkout on the server):
+root of this repository's checkout on the server), and `-p` is that environment's compose
+project, `pigrocrm` on production and `pigrocrm-preview` on the preview: without it compose
+takes the directory's name, which is `pigrocrm` in both checkouts (REB-980):
 
 ```
-*/15 * * * * cd $DEPLOY_PATH/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync >> /var/log/pigrocrm-gmail-sync.log 2>&1
+*/15 * * * * cd $DEPLOY_PATH/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync >> /var/log/pigrocrm-gmail-sync.log 2>&1
 ```
 
 Every run synchronises every connected mailbox of the root installation and of every
@@ -161,7 +169,7 @@ else (never a subject, a message body or a correspondent's address). A space wit
 mailbox prints nothing. It exits `0` when every loop went through, or found another one
 already running, which is not an error, and `1` when at least one line went to `stderr`
 with a sentence: no mailbox anywhere, a deactivated owner, a revoked consent, or a space
-whose database or schema could not be used (`saltato`). An unforeseen failure is
+whose database or schema could not be used (`skipped`). An unforeseen failure is
 `saltato (Type)` followed by the frames of its traceback, in this same log. One line
 never stops the next.
 `--env-file ../../.env` and `--no-sync` are here for exactly the reasons of §1 and §5.
@@ -169,13 +177,28 @@ never stops the next.
 Same shape for the weekly report, one line for `pigrocrm digest` at eight on Monday:
 
 ```
-0 8 * * 1 cd $DEPLOY_PATH/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm digest >> /var/log/pigrocrm-digest.log 2>&1
+0 8 * * 1 cd $DEPLOY_PATH/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm digest >> /var/log/pigrocrm-digest.log 2>&1
 ```
 
-Every run prints one line per space: `inviato a N`, `vuoto`, `già inviato`, `nessun
+Every run prints one line per space: `inviato a N`, `empty`, `già inviato`, `nessun
 destinatario`, or `saltato (Type)` on `stderr`. `0 8` assumes the host's clock is already
 on Europe/Rome — check with `timedatectl` before pasting the line, or the report lands at
 the wrong hour. The runbook below now covers both jobs.
+
+And one for the reminder pass (REB-736), every fifteen minutes, on production and on the
+preview, each with its own `DEPLOY_PATH` and its own log:
+
+```
+*/15 * * * * cd /opt/pigrocrm/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders >> /var/log/pigrocrm-reminders.log 2>&1
+*/15 * * * * cd /opt/pigrocrm-preview/projects/pigrocrm && docker compose -p pigrocrm-preview --env-file ../../.env exec -T api uv run --no-sync pigrocrm reminders >> /var/log/pigrocrm-preview-reminders.log 2>&1
+```
+
+It walks the root installation and every space, puts each reminder in the lists of the
+people it is for and ends the ones whose cause is gone, and prints one line of counters per
+space. Unlike the digest it exits `1` when any line went to `stderr`, which is what lets the
+runbook's healthchecks.io ping stop when a space could not be walked.
+[`docs/superpowers/notes/2026-10-26-reminders-cron-runbook.md`](docs/superpowers/notes/2026-10-26-reminders-cron-runbook.md)
+has the line with the ping, the log's sentences and the lock.
 
 The runbook — the table of error sentences, what to do about each one and how they relate
 to the expiry of the Google consent — is
@@ -186,8 +209,8 @@ to the expiry of the Google consent — is
 Every operation in the UI is also an MCP tool. Over HTTP the server answers at
 `https://<host>/mcp` for the root installation and `https://<host>/<slug>/mcp` for a
 space, authenticated with a personal access token as a bearer. In the app, the
-«Collega un agente» entry at the bottom of the sidebar mints a token and gives you
-both snippets below with the values filled in.
+«Collega un agente» button on the Agenti page (at the foot of the sidebar) mints a token
+and gives you both snippets below with the values filled in.
 
 ```
 claude mcp add --transport http pigrocrm https://<host>/mcp --header "Authorization: Bearer pgc_..."

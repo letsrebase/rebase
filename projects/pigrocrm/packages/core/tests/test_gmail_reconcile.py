@@ -25,6 +25,8 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from fakes.contacts import points
+from fakes.customer_fixtures import make_customer
 from fakes.fake_gmail import FakeGmail
 from fakes.gmail_fixtures import (
     actor_for,
@@ -39,7 +41,6 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage, GoogleAccount
 from pigrocrm.core.gmail.schemas import SCOPE_EMAIL, SCOPE_SEND, EmailDraftCreate, EmailDraftRead
@@ -49,18 +50,11 @@ BODY = "Gentile Ada, in allegato la fattura."
 SUBJECT = "Fattura 2026/14"
 
 
-def _customer(session: Session) -> Customer:
-    customer = Customer(ragione_sociale="Acme", email="info@acme.it")
-    session.add(customer)
-    session.flush()
-    return customer
-
-
 def _draft(session: Session, account: GoogleAccount, **overrides: Any) -> EmailDraftRead:
-    customer = _customer(session)
+    customer = make_customer(session, email="info@acme.it")
     return draft_service(session).create(
         EmailDraftCreate(
-            entity_type="customer",
+            entity_type="organization",
             entity_id=customer.id,
             to_addresses=["ada@acme.it"],
             subject=SUBJECT,
@@ -105,7 +99,7 @@ def test_a_lost_answer_leaves_the_draft_uncertain_and_never_says_sent(
 
     row = db_session.get(EmailDraft, draft.id)
     assert row is not None
-    assert row.send_state == "incerto"
+    assert row.send_state == "uncertain"
     assert "sappiamo" in (row.last_error or "")
     # And no outbound row was invented: we do not know that it arrived.
     assert db_session.execute(select(func.count()).select_from(GmailMessage)).scalar_one() == 0
@@ -121,9 +115,9 @@ def test_an_uncertain_send_writes_its_own_timeline_entry(db_session: Session) ->
     db_session.rollback()
 
     kinds = db_session.execute(select(Activity.kind)).scalars().all()
-    assert "gmail.invio_incerto" in kinds
+    assert "gmail.send_uncertain" in kinds
     payloads = (
-        db_session.execute(select(Activity.payload).where(Activity.kind == "gmail.invio_incerto"))
+        db_session.execute(select(Activity.payload).where(Activity.kind == "gmail.send_uncertain"))
         .scalars()
         .all()
     )
@@ -152,7 +146,7 @@ def test_reconciliation_finds_it_by_our_own_message_id_and_adopts_gmails(
     read = service.reconcile(draft.id, actor_for(account))
     db_session.commit()
 
-    assert read.send_state == "inviato"
+    assert read.send_state == "sent"
     assert read.sent_gmail_message_id
     assert read.last_error is None
     # The answer the Email tab's «Verifica» reads is built like every other draft read
@@ -209,7 +203,7 @@ def test_a_double_send_cannot_happen(db_session: Session) -> None:
         == 1
     )
     row = db_session.get(EmailDraft, draft.id)
-    assert row is not None and row.send_state == "inviato"
+    assert row is not None and row.send_state == "sent"
 
 
 def test_a_message_genuinely_absent_after_the_grace_window_becomes_failed(
@@ -229,7 +223,7 @@ def test_a_message_genuinely_absent_after_the_grace_window_becomes_failed(
     read = service.reconcile(draft.id, actor_for(account))
     db_session.commit()
 
-    assert read.send_state == "fallito"
+    assert read.send_state == "failed"
     assert read.body_markdown == BODY
     assert read.to_addresses == ["ada@acme.it"]
     # The sentence names where to look, because the one thing that could make this
@@ -243,7 +237,7 @@ def test_a_message_genuinely_absent_after_the_grace_window_becomes_failed(
 def test_a_failed_reconciliation_leaves_a_draft_the_composer_can_reopen(
     db_session: Session,
 ) -> None:
-    """`fallito` is editable (B2-3) and sendable again (B2-5). A verdict that froze the
+    """`failed` is editable (B2-3) and sendable again (B2-5). A verdict that froze the
     draft would leave retyping the message as the only recovery."""
     account = connected_account(db_session)
     draft = _draft(db_session, account)
@@ -257,7 +251,7 @@ def test_a_failed_reconciliation_leaves_a_draft_the_composer_can_reopen(
 
     working = FakeGmail()
     read = send_service(db_session, working).send(draft.id, actor_for(account))
-    assert read.send_state == "inviato"
+    assert read.send_state == "sent"
     assert len([r for r in working.requests if r.is_messages_send]) == 1
 
 
@@ -277,7 +271,7 @@ def test_inside_the_grace_window_it_stays_uncertain_rather_than_guessing(
     db_session.rollback()
 
     read = service.reconcile(draft.id, actor_for(account))
-    assert read.send_state == "incerto"
+    assert read.send_state == "uncertain"
     # It did ask, though. "Not yet" is an answer about the index, not a refusal to look.
     assert [r for r in fake.requests if r.is_messages_list and "rfc822msgid" in (r.q or "")]
 
@@ -318,14 +312,14 @@ def test_reconciling_a_draft_that_was_never_sent_does_nothing(db_session: Sessio
 
     read = send_service(db_session, fake).reconcile(draft.id, actor_for(account))
 
-    assert read.send_state == "bozza"
+    assert read.send_state == "draft"
     assert fake.requests == []
 
 
 def test_a_readonly_actor_cannot_resolve_an_uncertain_outcome(db_session: Session) -> None:
     """«verifica» is the repair half of having pressed Invia, so it is gated like the
     send it repairs. Two reasons, and either alone would be enough: it writes
-    `send_state` to a terminal value (`inviato` or `fallito`), and it spends the owner's
+    `send_state` to a terminal value (`sent` or `failed`), and it spends the owner's
     Gmail quota under the owner's OAuth grant.
 
     Refused *before* any request goes out, which is the part worth asserting: a gate
@@ -337,7 +331,7 @@ def test_a_readonly_actor_cannot_resolve_an_uncertain_outcome(db_session: Sessio
     assert row is not None
     # Straight onto the row: `EmailDraftCreate` refuses `send_state` by design -- it is a
     # fact about what happened, never an input -- and the only writer is the send path.
-    row.send_state = "incerto"
+    row.send_state = "uncertain"
     db_session.commit()
     fake = FakeGmail()
 
@@ -348,7 +342,7 @@ def test_a_readonly_actor_cannot_resolve_an_uncertain_outcome(db_session: Sessio
 
     assert fake.requests == []
     db_session.refresh(row)
-    assert row.send_state == "incerto"
+    assert row.send_state == "uncertain"
 
 
 def test_reconciling_a_draft_that_does_not_exist_is_a_not_found(db_session: Session) -> None:
@@ -371,7 +365,7 @@ def test_a_gmail_that_rewrote_our_message_id_still_does_not_report_a_delivered_m
     `FakeGmail(rewrites_message_id=True)` is the `NO` branch of
     `docs/superpowers/notes/2026-08-20-gmail-message-id-verification.md`: the message
     really is in the mailbox and `q=rfc822msgid:` cannot find it. If reconciliation
-    stopped at the exact lookup, this draft would be marked `fallito` while the client
+    stopped at the exact lookup, this draft would be marked `failed` while the client
     already has the email -- and the person, reading «non risulta partito», would send
     it a second time. That is the defect this whole slice is named after, reintroduced
     through the back door of an assumption.
@@ -385,7 +379,12 @@ def test_a_gmail_that_rewrote_our_message_id_still_does_not_report_a_delivered_m
     # look for this conversation at all -- which is the fallback's real limit and not
     # something to paper over here.
     db_session.add(
-        Person(customer_id=draft.entity_id, nome="Ada", cognome="Rossi", email="ada@acme.it")
+        Person(
+            customer_id=draft.entity_id,
+            first_name="Ada",
+            last_name="Rossi",
+            contact_points=points(email="ada@acme.it"),
+        )
     )
     db_session.commit()
     fake = _lost_answer(True, rewrites_message_id=True)
@@ -403,7 +402,7 @@ def test_a_gmail_that_rewrote_our_message_id_still_does_not_report_a_delivered_m
     read = service.reconcile(draft.id, actor_for(account))
     db_session.commit()
 
-    assert read.send_state == "inviato", (
+    assert read.send_state == "sent", (
         "a delivered message was reported as failed because Gmail did not keep our "
         "Message-ID -- the exact case the verification note says is unverified"
     )
@@ -425,7 +424,7 @@ def test_the_approximate_match_will_not_steal_a_message_another_draft_already_cl
     first one's email: that would make one message the record of two sends, and the
     second draft would read as delivered when nothing left."""
     account = connected_account(db_session)
-    customer = _customer(db_session)
+    customer = make_customer(db_session, email="info@acme.it")
     already_sent = GmailMessage(
         google_account_id=account.id,
         gmail_message_id="sent-claimed",
@@ -440,7 +439,7 @@ def test_the_approximate_match_will_not_steal_a_message_another_draft_already_cl
     db_session.add(already_sent)
     claimant = draft_service(db_session).create(
         EmailDraftCreate(
-            entity_type="customer",
+            entity_type="organization",
             entity_id=customer.id,
             to_addresses=["ada@acme.it"],
             subject=SUBJECT,
@@ -450,7 +449,7 @@ def test_the_approximate_match_will_not_steal_a_message_another_draft_already_cl
     )
     claiming_row = db_session.get(EmailDraft, claimant.id)
     assert claiming_row is not None
-    claiming_row.send_state = "inviato"
+    claiming_row.send_state = "sent"
     claiming_row.sent_gmail_message_id = "sent-claimed"
     db_session.commit()
 
@@ -466,7 +465,7 @@ def test_the_approximate_match_will_not_steal_a_message_another_draft_already_cl
     _age(db_session, draft.id, minutes=16)
 
     read = service.reconcile(draft.id, actor_for(account))
-    assert read.send_state == "fallito"
+    assert read.send_state == "failed"
     assert read.sent_gmail_message_id is None
 
 
@@ -477,8 +476,8 @@ def test_a_send_abandoned_mid_flight_is_reconciled_rather_than_stranded(
     db_session: Session,
 ) -> None:
     """The window the three-transaction design pays for: the process dies between the
-    claim's commit and the outcome's commit, and the draft is left `in_invio`. Nothing
-    can edit it, send it or verify it, so it has to be resolvable the same way `incerto`
+    claim's commit and the outcome's commit, and the draft is left `sending`. Nothing
+    can edit it, send it or verify it, so it has to be resolvable the same way `uncertain`
     is -- by asking."""
     account = connected_account(db_session)
     draft = _draft(db_session, account)
@@ -490,31 +489,31 @@ def test_a_send_abandoned_mid_flight_is_reconciled_rather_than_stranded(
     # Rewind to what a killed process leaves behind: claimed, and nothing recorded.
     stranded = db_session.get(EmailDraft, draft.id)
     assert stranded is not None
-    stranded.send_state = "in_invio"
+    stranded.send_state = "sending"
     stranded.last_error = None
     db_session.commit()
     _age(db_session, draft.id, minutes=16)
 
     read = send_service(db_session, fake).reconcile(draft.id, actor_for(account))
     db_session.commit()
-    assert read.send_state == "inviato"
+    assert read.send_state == "sent"
 
 
 def test_a_send_still_in_flight_is_left_alone_and_asked_nothing(db_session: Session) -> None:
-    """Inside the grace window `in_invio` means "another request is doing this right
+    """Inside the grace window `sending` means "another request is doing this right
     now". Touching it would race a send about to record its own outcome."""
     account = connected_account(db_session)
     draft = _draft(db_session, account)
     db_session.commit()
     row = db_session.get(EmailDraft, draft.id)
     assert row is not None
-    row.send_state = "in_invio"
+    row.send_state = "sending"
     row.send_attempted_at = datetime.now(UTC)
     db_session.commit()
 
     fake = FakeGmail()
     read = send_service(db_session, fake).reconcile(draft.id, actor_for(account))
-    assert read.send_state == "in_invio"
+    assert read.send_state == "sending"
     assert fake.requests == []
 
 
@@ -538,7 +537,7 @@ def test_every_sync_reconciles_first(db_session: Session) -> None:
 
     row = db_session.get(EmailDraft, draft.id)
     assert row is not None
-    assert row.send_state == "inviato"
+    assert row.send_state == "sent"
     assert report.reconciled == 1
 
 
@@ -568,7 +567,7 @@ def test_verification_needs_the_read_scope_and_says_so(db_session: Session) -> N
     db_session.commit()
     row = db_session.get(EmailDraft, draft.id)
     assert row is not None
-    row.send_state = "incerto"
+    row.send_state = "uncertain"
     row.send_attempted_at = datetime.now(UTC)
     db_session.commit()
 
@@ -612,14 +611,14 @@ def test_one_users_sync_does_not_declare_another_users_delivered_mail_failed(
 
     `reconcile_all` runs inside *each* user's sync cycle. Before
     `email_drafts.google_account_id` existed it walked every unresolved draft in the
-    installation, so this cycle -- user A's -- would pick up user B's `incerto` send, look
+    installation, so this cycle -- user A's -- would pick up user B's `uncertain` send, look
     for it in A's mailbox, find nothing there because it never was there, and past the
-    grace window write `fallito` on a message sitting in B's client's inbox.
+    grace window write `failed` on a message sitting in B's client's inbox.
 
     That verdict is the worst thing this slice can produce: it is not merely wrong, it
     reads as an instruction to send the message a second time. Delete the
     `google_account_id` predicate in `uncertain_draft_ids` and this test reports
-    `fallito`.
+    `failed`.
     """
     mine = connected_account(db_session)
     theirs = connected_account(db_session, email_address="altro@example.it")
@@ -634,7 +633,7 @@ def test_one_users_sync_does_not_declare_another_users_delivered_mail_failed(
 
     stored = db_session.get(EmailDraft, draft.id)
     assert stored is not None
-    assert stored.send_state == "incerto"
+    assert stored.send_state == "uncertain"
     assert stored.google_account_id == theirs.id, "the claim must record the sending mailbox"
 
     # My cycle, with a mailbox that has never seen their message.
@@ -645,7 +644,7 @@ def test_one_users_sync_does_not_declare_another_users_delivered_mail_failed(
     assert resolved == 0
     after = db_session.get(EmailDraft, draft.id)
     assert after is not None
-    assert after.send_state == "incerto", "another mailbox's cycle rewrote this outcome"
+    assert after.send_state == "uncertain", "another mailbox's cycle rewrote this outcome"
     # And it did not even ask: their draft is none of this cycle's business, so no
     # lookup was spent on somebody else's correspondence.
     assert [request for request in empty.requests if "rfc822msgid" in (request.q or "")] == []
@@ -670,7 +669,7 @@ def test_verifying_someone_elses_send_by_hand_is_refused_rather_than_guessed(
 
     after = db_session.get(EmailDraft, draft.id)
     assert after is not None
-    assert after.send_state == "incerto"
+    assert after.send_state == "uncertain"
 
 
 def test_a_draft_that_never_left_carries_no_mailbox(db_session: Session) -> None:

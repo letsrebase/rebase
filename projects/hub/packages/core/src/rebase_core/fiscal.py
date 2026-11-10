@@ -3,9 +3,9 @@
 A table of its own rather than columns on `freelancers`, because PostHog's warehouse
 syncs `freelancers` whole (spec § 2). Filled by an admin in the match flow the first
 time, reused afterwards, editable from «Match e contratti».
-The partita IVA may be missing (REB-687): a member paid as a prestazione occasionale
+The `partita IVA` may be missing (REB-687): a member paid as a `prestazione occasionale`
 has none, and signs the occasional texts only. The audit entry names the
-fields that changed and never their values: a codice fiscale copied into
+fields that changed and never their values: a `codice fiscale` copied into
 `admin_actions` would be one more place to delete it from.
 """
 
@@ -20,7 +20,7 @@ from rebase_core.errors import NotFound
 from rebase_core.models import Freelancer, FreelancerFiscal
 
 ENTITY = "freelancer_fiscal"
-FISCAL_FIELDS = ("codice_fiscale", "partita_iva", "domicilio", "pec")
+FISCAL_FIELDS = ("tax_code", "vat_number", "domicile", "certified_email")
 
 
 class FiscalService:
@@ -51,15 +51,23 @@ class FiscalService:
             for field in FISCAL_FIELDS:
                 setattr(row, field, getattr(data, field))
             row.updated_by = admin_id
+            changed = [field for field in FISCAL_FIELDS if before.get(field) != getattr(row, field)]
+            if changed:
+                # Tax data is sensitive: the entry shares the save's transaction, under the
+                # card's row lock, so a save never exists without its trail (HCORE-09).
+                self.session.flush()
+                AdminActionService(self.session).record(
+                    ENTITY,
+                    freelancer_id,
+                    "fiscal_updated",
+                    admin_id,
+                    {"changed": changed},
+                    commit=False,
+                )
             self.session.commit()
         except Exception:
             self.session.rollback()
             raise
-        changed = [field for field in FISCAL_FIELDS if before.get(field) != getattr(row, field)]
-        if changed:
-            AdminActionService(self.session).record(
-                ENTITY, freelancer_id, "fiscal_updated", admin_id, {"changed": changed}
-            )
         return FiscalRead.model_validate(row)
 
     def _row(self, freelancer_id: UUID) -> FreelancerFiscal | None:

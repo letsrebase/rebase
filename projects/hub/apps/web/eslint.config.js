@@ -18,29 +18,47 @@ export default defineConfig([
     languageOptions: { ecmaVersion: 2020, globals: globals.browser },
   },
   {
-    // The primitives are shadcn's shapes copied from PigroCRM: a component beside its
-    // cva() variants, which the rule flags and which is how the generator ships them.
-    files: ['src/components/ui/**/*.{ts,tsx}'],
-    rules: { 'react-refresh/only-export-components': 'off' },
-  },
-  {
     // The route tree is code, not files: `router.tsx` exports the router and the pages
     // it mounts; `wizard/Wizard.tsx` exports the engine's component beside the step
     // type it takes; the two wizard pages export their step lists beside the page, so
     // the tests can validate a step without mounting the page, and so does
-    // `pages/member/Modifica.tsx` with `editSteps`, `pages/member/ModificaAzienda.tsx`
-    // with `editCompanyFields` (REB-314) and `pages/member/NuovaRichiestaAzienda.tsx`
+    // `pages/member/Edit.tsx` with `editSteps`, `pages/member/EditCompany.tsx`
+    // with `editCompanyFields` (REB-314) and `pages/member/NewRequestCompany.tsx`
     // with `newCompanyFields` (REB-381); `lib/me.tsx` (REB-279, replacing
     // `lib/member.tsx`) is a hook.
     files: [
       'src/router.tsx',
       'src/wizard/Wizard.tsx',
       'src/pages/*Wizard.tsx',
-      'src/pages/member/Modifica.tsx',
-      'src/pages/member/ModificaAzienda.tsx',
-      'src/pages/member/NuovaRichiestaAzienda.tsx',
+      'src/pages/member/Edit.tsx',
+      'src/pages/member/EditCompany.tsx',
+      'src/pages/member/NewCompanyRequest.tsx',
       'src/lib/me.tsx',
     ],
     rules: { 'react-refresh/only-export-components': 'off' },
+  },
+  {
+    // A table that overflows is a keyboard-reachable scroll region, and its name is what a
+    // screen reader says when the focus lands on it (REB-775, REB-782). A `<Table>` without
+    // `scrollLabel` is announced as nothing, and a hand-written `<table>` outside a
+    // `<ScrollRegion label>` is not a region at all, so a new one of either is a finding.
+    files: ['src/**/*.tsx'],
+    ignores: ['**/*.test.tsx'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "JSXOpeningElement:matches([name.name='Table'], [name.property.name='Table']):not(:has(JSXAttribute[name.name='scrollLabel']))",
+          message: 'A <Table> names what it holds: pass `scrollLabel` (REB-782).',
+        },
+        {
+          selector:
+            "JSXElement[openingElement.name.name='table']:not(JSXElement[openingElement.name.name='ScrollRegion'] > JSXElement)",
+          message:
+            'A hand-written <table> sits directly in a <ScrollRegion label="..."> from @rebase/ui/table (REB-782).',
+        },
+      ],
+    },
   },
 ])

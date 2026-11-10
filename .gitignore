@@ -32,14 +32,21 @@ test-results/
 .env
 .env.local
 
-# Storage locale dei documenti (LocalFileStorage)
+# Key material: the Documenso signing PKCS#12, the backup certificates' private keys and any
+# other secret file never belongs in the tree.
+*.p12
+*.pfx
+*.pem
+*.key
+
+# Local document storage (LocalFileStorage)
 var/
 # Postgres data if an installation points PIGROCRM_DATA_DIR inside the checkout
 data/
 
-# Playwright MCP snapshots and console logs written while I look at pages
+# Playwright MCP snapshots and console logs written while reviewing pages
 .playwright-mcp/
-# Screenshots I take while reviewing pages
+# Screenshots taken while reviewing pages
 *.png
 !**/public/*.png
 # The site's share card, drawn by projects/website/scripts/share-card.mjs and
@@ -48,5 +55,10 @@ data/
 !projects/website/src/public/assets/*.png
 # The echo logo, drawn by shared/brand/tools/build-echo.mjs and committed (ORB-200).
 !shared/brand/echo/*.png
+# The icons an installed PigroCRM wears, drawn by shared/brand/tools/build-pwa-icons.mjs
+# and committed (REB-731).
+!shared/brand/pwa/*.png
+# The web vault's favicons, drawn by projects/vaultwarden/branding/build.mjs and committed (REB-688).
+!projects/vaultwarden/branding/images/**/*.png
 # A rendered contact sheet beside a design record, the evidence for its rows (REB-298).
 !docs/design/**/*.png

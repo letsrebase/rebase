@@ -15,59 +15,59 @@ import { isStaleRow, type StalePhase } from './staleRow'
 /**
  * Every field the upsert accepts, in the order a person reads an invoice header:
  * who you are, where you are, how to reach you, how you are taxed. `logo_key` and
- * `firma_key` are not fields: they are the server's storage keys, written by the two
+ * `signature_key` are not fields: they are the server's storage keys, written by the two
  * uploads `LegalEntityImages` offers under this form (REB-629) and read-only on the row.
  */
-interface EmitterField {
+interface LegalEntityField {
   name:
-    | 'nome'
-    | 'ragione_sociale'
-    | 'partita_iva'
-    | 'codice_fiscale'
-    | 'indirizzo'
-    | 'cap'
-    | 'comune'
-    | 'provincia'
-    | 'nazione'
-    | 'pec'
-    | 'codice_sdi'
-    | 'telefono'
+    | 'name'
+    | 'legal_name'
+    | 'vat_number'
+    | 'tax_code'
+    | 'address'
+    | 'postal_code'
+    | 'city'
+    | 'province'
+    | 'country'
+    | 'certified_email'
+    | 'sdi_code'
+    | 'phone'
     | 'email'
-    | 'sito_web'
-    | 'regime_fiscale'
+    | 'website'
+    | 'tax_regime'
   label: string
   required?: boolean
   hint?: string
 }
 
-const FIELDS: readonly EmitterField[] = [
-  { name: 'nome', label: 'Nome breve', hint: 'Come compare nelle liste; vuoto, è la ragione sociale' },
-  { name: 'ragione_sociale', label: 'Ragione sociale', required: true },
-  { name: 'partita_iva', label: 'Partita IVA', hint: '11 cifre' },
-  { name: 'codice_fiscale', label: 'Codice fiscale' },
-  { name: 'indirizzo', label: 'Indirizzo' },
-  { name: 'cap', label: 'CAP' },
-  { name: 'comune', label: 'Comune' },
-  { name: 'provincia', label: 'Provincia' },
-  { name: 'nazione', label: 'Nazione' },
-  { name: 'pec', label: 'PEC' },
-  { name: 'codice_sdi', label: 'Codice SDI', hint: '7 caratteri' },
-  { name: 'telefono', label: 'Telefono' },
+const FIELDS: readonly LegalEntityField[] = [
+  { name: 'name', label: 'Nome breve', hint: 'Come compare nelle liste; vuoto, è la ragione sociale' },
+  { name: 'legal_name', label: 'Ragione sociale', required: true },
+  { name: 'vat_number', label: 'Partita IVA', hint: '11 cifre' },
+  { name: 'tax_code', label: 'Codice fiscale' },
+  { name: 'address', label: 'Indirizzo' },
+  { name: 'postal_code', label: 'CAP' },
+  { name: 'city', label: 'Comune' },
+  { name: 'province', label: 'Provincia' },
+  { name: 'country', label: 'Nazione' },
+  { name: 'certified_email', label: 'PEC' },
+  { name: 'sdi_code', label: 'Codice SDI', hint: '7 caratteri' },
+  { name: 'phone', label: 'Telefono' },
   { name: 'email', label: 'Email' },
-  { name: 'sito_web', label: 'Sito web' },
-  { name: 'regime_fiscale', label: 'Regime fiscale' },
+  { name: 'website', label: 'Sito web' },
+  { name: 'tax_regime', label: 'Regime fiscale' },
 ]
 
-type FieldName = EmitterField['name']
+type FieldName = LegalEntityField['name']
 
-/** A never-configured profile still needs `nazione` to read `IT`, matching the
+/** A never-configured profile still needs `country` to read `IT`, matching the
  *  server's own default, so the field is not blank on a first visit. */
 function emptyValues(): Record<FieldName, string> {
   const values = Object.fromEntries(FIELDS.map((field) => [field.name, ''])) as Record<
     FieldName,
     string
   >
-  return { ...values, nazione: 'IT' }
+  return { ...values, country: 'IT' }
 }
 
 /** `null` and `undefined` both become `''`, because an input's value cannot be
@@ -84,12 +84,12 @@ function valuesFrom(profile: LegalEntityRecord): Record<FieldName, string> {
 }
 
 /**
- * One azienda's identity: who issues, where it is, how to reach it, how it is taxed
- * in words. The row always exists (a space is born with its default azienda, REB-615),
+ * One legal entity's identity: who issues, where it is, how to reach it, how it is taxed
+ * in words. The row always exists (a space is born with its default legal entity, REB-615),
  * so there is no «not configured yet» state any more: a fresh space shows the name it
  * signed up with and empty fiscal fields, which is the state to fill in.
  */
-export function LegalEntityPanel({ azienda }: { azienda: LegalEntityRecord }) {
+export function LegalEntityPanel({ legal_entity }: { legal_entity: LegalEntityRecord }) {
   return (
     <div className="space-y-4">
       <div>
@@ -107,13 +107,13 @@ export function LegalEntityPanel({ azienda }: { azienda: LegalEntityRecord }) {
           here is typing. The form itself follows a newer row while it is untouched,
           below, and sends the version it was seeded from with every save (REB-622), so
           a draft started before somebody else's save is refused rather than written. */}
-      <LegalEntityForm key={`form-${azienda.id}`} profile={azienda} />
+      <LegalEntityForm key={`form-${legal_entity.id}`} profile={legal_entity} />
       {/* Keyed like the form: a refusal shown under azienda A's block must not
           outlive the switch to B. A distinct prefix on each, since the two are
           siblings: two siblings sharing one key is undefined to React, and in
           practice (REB-632, seen on the switch after «Nuova azienda») the previous
           azienda's form stayed mounted under the new one. */}
-      <LegalEntityImages key={`images-${azienda.id}`} azienda={azienda} />
+      <LegalEntityImages key={`images-${legal_entity.id}`} legal_entity={legal_entity} />
     </div>
   )
 }
@@ -198,7 +198,7 @@ function LegalEntityForm({ profile }: { profile: LegalEntityRecord }) {
       // `refetchQueries` with `throwOnError`, not `invalidateQueries`: the latter
       // resolves on a failed refetch too, and the banner would read «ricaricata» over
       // fields nothing reloaded.
-      await queryClient.refetchQueries({ queryKey: queryKeys.aziende }, { throwOnError: true })
+      await queryClient.refetchQueries({ queryKey: queryKeys.legal_entities }, { throwOnError: true })
     } catch (error) {
       toast.error(toProblem(error).detail)
       return

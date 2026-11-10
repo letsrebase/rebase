@@ -2,6 +2,8 @@
 actually sends is `tick.py`; this module never calls Resend except for the admin's own
 test."""
 
+import base64
+import binascii
 import re
 import secrets
 import unicodedata
@@ -10,12 +12,18 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import case, delete, func, or_, select, update
+from sqlalchemy import case, delete, func, or_, select, tuple_, update
 from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.campaigns.actions import snapshot
-from rebase_core.campaigns.audience import REASON_CANCELLED, build_audience, waiting_rows
+from rebase_core.campaigns.audience import (
+    REASON_CANCELLED,
+    REASON_UNCONFIRMED,
+    build_audience,
+    waiting_rows,
+)
+from rebase_core.campaigns.confirmation import request as request_confirmation
 from rebase_core.campaigns.links import LINK, button_problem
 from rebase_core.campaigns.render import RenderTarget, person_code, render
 from rebase_core.campaigns.schemas import (
@@ -45,7 +53,9 @@ from rebase_core.models import (
     Login,
     User,
 )
+from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
 
+BAD_CURSOR = "cursore non valido"
 NOT_A_DRAFT = "Si modifica solo una bozza: riportala in bozza prima."
 ONLY_A_DRAFT_IS_DELETED = (
     "Si elimina solo una bozza: una campagna programmata, inviata o annullata resta."
@@ -68,15 +78,15 @@ LIST_IS_FIXED = (
 # button link's `utm_campaign` and Resend's tag and follows a renamed draft.
 _CONTENT_FIELDS = (
     "slug",
-    "fonte",
-    "stato_percorso",
-    "filtri",
-    "oggetto",
-    "testo",
-    "bottone_testo",
-    "bottone_meta",
-    "bottone_url",
-    "azione",
+    "source",
+    "journey_status",
+    "filters",
+    "subject",
+    "text",
+    "button_text",
+    "button_meta",
+    "button_url",
+    "action",
 )
 
 
@@ -85,9 +95,15 @@ def _stripped(url: str | None) -> str | None:
     return (url or "").strip() or None
 
 
+def _recipient_cursor(recipient_id: UUID) -> str:
+    """The opaque cursor after a recipient: its id, which `_recipient_after` turns back
+    into the `(email, id)` position (an address is too long to carry in a cursor)."""
+    return base64.urlsafe_b64encode(recipient_id.bytes).decode("ascii").rstrip("=")
+
+
 def _slugify(value: str) -> str:
     ascii_text = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
-    return re.sub(r"[^a-z0-9]+", "-", ascii_text.lower()).strip("-") or "campagna"
+    return re.sub(r"[^a-z0-9]+", "-", ascii_text.lower()).strip("-") or "campaign"
 
 
 class CampaignService:
@@ -105,31 +121,35 @@ class CampaignService:
 
     def create(self, admin_id: UUID, data: CampaignDraft) -> CampaignRead:
         self._validate(
-            data.fonte, data.stato_percorso, data.filtri is not None, data.bottone_meta, data.azione
+            data.source,
+            data.journey_status,
+            data.filters is not None,
+            data.button_meta,
+            data.action,
         )
-        bottone_url = _stripped(data.bottone_url)
-        self._check_button(data.bottone_meta, bottone_url, data.azione)
+        button_url = _stripped(data.button_url)
+        self._check_button(data.button_meta, button_url, data.action)
         now = self.clock()
-        # `Campaign.filtri` is `JSONB(none_as_null=True)` (models.py), so an explicit
+        # `Campaign.filters` is `JSONB(none_as_null=True)` (models.py), so an explicit
         # `None` here binds as a true SQL NULL, matching the check constraint
         # `(fonte = 'filtri') = (filtri IS NOT NULL)`.
         campaign = Campaign(
             created_by=admin_id,
-            nome=data.nome.strip(),
-            slug=self._unique_slug(f"c-{now:%Y-%m-%d}-{_slugify(data.nome)}"[:70]),
-            fonte=data.fonte,
-            stato_percorso=data.stato_percorso if data.fonte == "stato" else None,
-            filtri=data.filtri.model_dump(mode="json", exclude_none=True)
-            if data.fonte == "filtri" and data.filtri
+            name=data.name.strip(),
+            slug=self._unique_slug(f"c-{now:%Y-%m-%d}-{_slugify(data.name)}"[:70]),
+            source=data.source,
+            journey_status=data.journey_status if data.source == "status" else None,
+            filters=data.filters.model_dump(mode="json", exclude_none=True)
+            if data.source == "filters" and data.filters
             else None,
-            oggetto=data.oggetto,
-            testo=data.testo,
-            bottone_testo=data.bottone_testo,
-            bottone_meta=data.bottone_meta,
-            bottone_url=bottone_url,
-            azione=data.azione,
-            stato="bozza",
-            contenuto_at=now,
+            subject=data.subject,
+            text=data.text,
+            button_text=data.button_text,
+            button_meta=data.button_meta,
+            button_url=button_url,
+            action=data.action,
+            status="draft",
+            content_at=now,
         )
         self.session.add(campaign)
         self.session.commit()
@@ -137,55 +157,55 @@ class CampaignService:
 
     def update(self, campaign_id: UUID, data: CampaignPatch) -> CampaignRead:
         campaign = self._require_locked(campaign_id)
-        if campaign.stato != "bozza":
+        if campaign.status != "draft":
             raise InvalidState(NOT_A_DRAFT)
         # The wizard sends every field on each «Avanti»: only a value that differs
         # makes the last test stale, not a field merely present in the request.
         before = {field: getattr(campaign, field) for field in _CONTENT_FIELDS}
         changes = data.model_dump(exclude_unset=True)
-        if "filtri" in changes and data.filtri is not None:
-            changes["filtri"] = data.filtri.model_dump(mode="json", exclude_none=True)
-        if campaign.fonte == "lista":
+        if "filters" in changes and data.filters is not None:
+            changes["filters"] = data.filters.model_dump(mode="json", exclude_none=True)
+        if campaign.source == "list":
             fixed = [
                 field
-                for field in ("fonte", "stato_percorso", "filtri", "azione")
+                for field in ("source", "journey_status", "filters", "action")
                 if field in changes and changes[field] != getattr(campaign, field)
             ]
             if fixed:
                 raise ValidationFailed(ENTITY, fixed[0], LIST_IS_FIXED)
-        if data.nome is not None:
-            changes["nome"] = data.nome.strip()
-            if changes["nome"] != campaign.nome:
+        if data.name is not None:
+            changes["name"] = data.name.strip()
+            if changes["name"] != campaign.name:
                 # The slug is the button's `utm_campaign` and Resend's tag: it follows
                 # the name a draft will be sent with (a filtered campaign starts as
                 # «Campagna da filtri»), keeping the day it was created.
                 created = campaign.created_at.astimezone(UTC)
                 campaign.slug = self._unique_slug(
-                    f"c-{created:%Y-%m-%d}-{_slugify(changes['nome'])}"[:70],
+                    f"c-{created:%Y-%m-%d}-{_slugify(changes['name'])}"[:70],
                     exclude=campaign.id,
                 )
         for field, value in changes.items():
             setattr(campaign, field, value)
-        if campaign.fonte == "filtri":
-            campaign.stato_percorso = None
-        elif campaign.fonte == "stato":
-            campaign.filtri = None
+        if campaign.source == "filters":
+            campaign.journey_status = None
+        elif campaign.source == "status":
+            campaign.filters = None
         self._validate(
-            campaign.fonte,
-            campaign.stato_percorso,
-            campaign.filtri is not None,
-            campaign.bottone_meta,
-            campaign.azione,
+            campaign.source,
+            campaign.journey_status,
+            campaign.filters is not None,
+            campaign.button_meta,
+            campaign.action,
         )
         # A button that leaves «Un link» takes its address with it unless the request
         # says otherwise, so the editor's «Dove porta» alone is a valid change.
-        if "bottone_url" in changes:
-            campaign.bottone_url = _stripped(campaign.bottone_url)
-        elif campaign.bottone_meta != LINK:
-            campaign.bottone_url = None
-        self._check_button(campaign.bottone_meta, campaign.bottone_url, campaign.azione)
+        if "button_url" in changes:
+            campaign.button_url = _stripped(campaign.button_url)
+        elif campaign.button_meta != LINK:
+            campaign.button_url = None
+        self._check_button(campaign.button_meta, campaign.button_url, campaign.action)
         if any(getattr(campaign, field) != before[field] for field in _CONTENT_FIELDS):
-            campaign.contenuto_at = self.clock()
+            campaign.content_at = self.clock()
         self.session.commit()
         return CampaignRead.model_validate(campaign)
 
@@ -194,63 +214,106 @@ class CampaignService:
         rows = build_audience(
             self.session, campaign, now=self.clock(), gap_days=self.settings.campaign_gap_days
         )
-        righe = [
+        lines = [
             AudienceRowRead(
                 email=r.candidate.email,
-                nome=r.candidate.nome,
-                tipo=r.candidate.tipo,
-                escluso=r.escluso,
+                name=r.candidate.name,
+                kind=r.candidate.kind,
+                excluded=r.excluded,
             )
             for r in rows
         ]
-        escluse = sum(1 for r in righe if r.escluso)
-        return AudiencePreview(righe=righe, incluse=len(righe) - escluse, escluse=escluse)
+        excluded = sum(1 for r in lines if r.excluded)
+        return AudiencePreview(lines=lines, included=len(lines) - excluded, excluded=excluded)
 
-    def list_all(self) -> CampaignList:
-        campaigns = self.session.scalars(
-            select(Campaign).order_by(Campaign.created_at.desc())
-        ).all()
+    def list_all(self, limit: int | None = None, cursor: str | None = None) -> CampaignList:
+        """Every campaign, newest first. The admin screen reads them all; an agent passes
+        `limit` (REB-804) and gets `next_cursor` for the page after, `None` on the last."""
+        stmt = select(Campaign)
+        spec = SortSpec("created_at", "datetime")
+        if cursor:
+            value, row_id = decode_cursor(spec, cursor)
+            stmt = stmt.where(keyset_predicate(Campaign.created_at, Campaign.id, value, row_id))
+        stmt = stmt.order_by(Campaign.created_at.desc(), Campaign.id.desc())
+        if limit is not None:
+            stmt = stmt.limit(limit + 1)
+        campaigns = list(self.session.scalars(stmt).all())
+        next_cursor = None
+        if limit is not None and len(campaigns) > limit:
+            campaigns = campaigns[:limit]
+            last = campaigns[-1]
+            next_cursor = encode_cursor(spec, last.created_at, last.id)
         counts = self._counts([c.id for c in campaigns])
         return CampaignList(
             items=[
                 CampaignListItem(
-                    **CampaignRead.model_validate(c).model_dump(exclude={"pronta"}),
-                    conteggi=counts.get(c.id, CampaignCounts()),
+                    **CampaignRead.model_validate(c).model_dump(exclude={"ready"}),
+                    counts=counts.get(c.id, CampaignCounts()),
                 )
                 for c in campaigns
-            ]
+            ],
+            next_cursor=next_cursor,
         )
 
-    def detail(self, campaign_id: UUID) -> CampaignDetail:
+    def detail(
+        self, campaign_id: UUID, limit: int | None = None, cursor: str | None = None
+    ) -> CampaignDetail:
+        """A campaign with its recipients by address. The admin screen reads them all;
+        an agent passes `limit` (REB-804) and gets `next_cursor` for the next recipients,
+        `None` on the last page. `counts` always count the whole list."""
         campaign = self._require(campaign_id)
-        rows = self.session.scalars(
-            select(CampaignRecipient)
-            .where(CampaignRecipient.campaign_id == campaign_id)
-            .order_by(CampaignRecipient.email)
-        ).all()
+        stmt = select(CampaignRecipient).where(CampaignRecipient.campaign_id == campaign_id)
+        if cursor:
+            after = self._recipient_after(campaign_id, cursor)
+            stmt = stmt.where(
+                tuple_(CampaignRecipient.email, CampaignRecipient.id)
+                > tuple_(after.email, after.id)
+            )
+        stmt = stmt.order_by(CampaignRecipient.email, CampaignRecipient.id)
+        if limit is not None:
+            stmt = stmt.limit(limit + 1)
+        rows = list(self.session.scalars(stmt).all())
+        next_cursor = None
+        if limit is not None and len(rows) > limit:
+            rows = rows[:limit]
+            next_cursor = _recipient_cursor(rows[-1].id)
         entered, acted = self._from_mail(campaign, rows)
         return CampaignDetail(
-            campagna=CampaignRead.model_validate(campaign),
-            conteggi=self._counts([campaign_id]).get(campaign_id, CampaignCounts()),
-            destinatari=[
+            campaign=CampaignRead.model_validate(campaign),
+            counts=self._counts([campaign_id]).get(campaign_id, CampaignCounts()),
+            recipients=[
                 RecipientRead.model_validate(r).model_copy(
                     update={
-                        "entrato_dalla_mail": r.id in entered,
-                        "azione_dalla_mail": r.id in acted,
+                        "signed_in_from_mail": r.id in entered,
+                        "action_from_mail": r.id in acted,
                     }
                 )
                 for r in rows
             ],
+            next_cursor=next_cursor,
         )
+
+    def _recipient_after(self, campaign_id: UUID, cursor: str) -> CampaignRecipient:
+        """The recipient a page's cursor names, which must be one of this campaign's: a
+        cursor from another campaign, or one that is not ours at all, is refused rather
+        than read as «from the start»."""
+        try:
+            key = UUID(bytes=base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+        except (binascii.Error, ValueError):
+            raise ValidationFailed(ENTITY, "cursor", BAD_CURSOR) from None
+        row = self.session.get(CampaignRecipient, key)
+        if row is None or row.campaign_id != campaign_id:
+            raise ValidationFailed(ENTITY, "cursor", BAD_CURSOR)
+        return row
 
     def _from_mail(
         self, campaign: Campaign, rows: Sequence[CampaignRecipient]
     ) -> tuple[set[UUID], set[UUID]]:
         """Which stamped rows came from this very mail (spec § 4.3, § 6.2). A login counts
         when it carries the campaign's slug and the row's own code, and it is the very
-        login that stamped `entrato_at`: the slug alone is also on a forwarded mail, and
+        login that stamped `signed_in_at`: the slug alone is also on a forwarded mail, and
         the same slug/code pair can recur from a later, unrelated login. A card created
-        for `profilo_creato` counts the same way, matched on the row's own code too
+        for `profile_created` counts the same way, matched on the row's own code too
         (Greptile P1): the wizard stores the button link's `utm_term` on the card
         (`freelancers.py`'s `data.utm`), just as a login does. Two queries for the whole
         list."""
@@ -264,11 +327,11 @@ class CampaignService:
         entered = {
             r.id
             for r in rows
-            if r.entrato_at is not None and (r.email, r.codice, r.entrato_at) in pairs
+            if r.signed_in_at is not None and (r.email, r.code, r.signed_in_at) in pairs
         }
-        if campaign.azione == "entrato":
+        if campaign.action == "signed_in":
             return entered, entered
-        if campaign.azione != "profilo_creato":
+        if campaign.action != "profile_created":
             return entered, set()
         cards = set(
             self.session.execute(
@@ -278,56 +341,61 @@ class CampaignService:
             ).all()
         )
         return entered, {
-            r.id for r in rows if r.azione_at is not None and (r.email, r.codice) in cards
+            r.id for r in rows if r.action_at is not None and (r.email, r.code) in cards
         }
 
     def send_test(
         self, campaign_id: UUID, admin: AdminRead, sender: CampaignSender
     ) -> CampaignRead:
         campaign = self._require_locked(campaign_id)
-        if campaign.stato != "bozza":
+        if campaign.status != "draft":
             raise InvalidState(NOT_A_DRAFT)
         if not (
-            campaign.oggetto.strip() and campaign.testo.strip() and campaign.bottone_testo.strip()
+            campaign.subject.strip() and campaign.text.strip() and campaign.button_text.strip()
         ):
-            raise ValidationFailed(ENTITY, "testo", EMPTY_MAIL)
+            raise ValidationFailed(ENTITY, "text", EMPTY_MAIL)
         target = RenderTarget(
             email=admin.email,
-            nome=(admin.nome or "").split(" ")[0] or None,
-            codice=person_code(admin.email),
-            token="prova",
+            name=(admin.first_name or "").split(" ")[0] or None,
+            code=person_code(admin.email),
+            token="test",
         )
         outcome = sender.send(
             render(campaign, target, self.settings, test=True),
-            idempotency_key=f"prova-{campaign.id}-{self.clock().isoformat()}",
+            idempotency_key=f"test-{campaign.id}-{self.clock().isoformat()}",
         )
-        if outcome.esito != "accettata":
+        if outcome.outcome != "accepted":
             raise InvalidState(
-                f"Resend non ha accettato la prova ({outcome.dettaglio or outcome.esito})."
+                f"Resend non ha accettato la prova ({outcome.detail or outcome.outcome})."
             )
-        campaign.prova_inviata_at = self.clock()
+        campaign.test_sent_at = self.clock()
         self.session.commit()
         return CampaignRead.model_validate(campaign)
 
     def schedule(self, campaign_id: UUID, data: ScheduleRequest) -> CampaignRead:
         campaign = self._require_locked(campaign_id)
-        if campaign.stato != "bozza":
+        if campaign.status != "draft":
             raise InvalidState(NOT_A_DRAFT)
-        if campaign.prova_inviata_at is None or campaign.prova_inviata_at < campaign.contenuto_at:
+        if campaign.test_sent_at is None or campaign.test_sent_at < campaign.content_at:
             raise InvalidState(NEED_TEST)
         now = self.clock()
         when = self._when(data, now)
-        unticked = set(data.esclusi)  # already stripped and lowercased
-        rows = [
-            r
-            for r in build_audience(
-                self.session, campaign, now=now, gap_days=self.settings.campaign_gap_days
-            )
-            if r.escluso is None and r.candidate.email not in unticked
-        ]
+        unticked = set(data.excluded)  # already stripped and lowercased
+        audience = build_audience(
+            self.session, campaign, now=now, gap_days=self.settings.campaign_gap_days
+        )
+        # REB-911: whoever this campaign leaves out for an unproved address is owed the one
+        # confirmation mail, which the tick sends; they join the campaigns after it.
+        request_confirmation(
+            self.session,
+            [r.candidate.email for r in audience if r.excluded == REASON_UNCONFIRMED],
+            now=now,
+        )
+        rows = [r for r in audience if r.excluded is None and r.candidate.email not in unticked]
         if not rows:
+            self.session.commit()  # the confirmations asked for above stay asked for
             raise ValidationFailed(
-                ENTITY, "esclusi", "La lista è vuota: nessuno riceverebbe la mail."
+                ENTITY, "excluded", "La lista è vuota: nessuno riceverebbe la mail."
             )
         for row in rows:
             c = row.candidate
@@ -335,40 +403,40 @@ class CampaignService:
                 CampaignRecipient(
                     campaign_id=campaign.id,
                     email=c.email,
-                    nome=c.nome,
-                    tipo=c.tipo,
+                    name=c.name,
+                    kind=c.kind,
                     user_id=c.user_id,
                     freelancer_id=c.freelancer_id,
                     signup_id=c.signup_id,
                     pigro_slugs=list(c.pigro_slugs),
-                    codice=person_code(c.email),
-                    prima=snapshot(self.session, c, now),
-                    disiscrizione_token=secrets.token_urlsafe(32),
+                    code=person_code(c.email),
+                    before=snapshot(self.session, c, now),
+                    unsubscribe_token=secrets.token_urlsafe(32),
                 )
             )
-        campaign.stato = "programmata"
-        campaign.programmata_per = when
+        campaign.status = "scheduled"
+        campaign.scheduled_for = when
         self.session.commit()
         return CampaignRead.model_validate(campaign)
 
     def back_to_draft(self, campaign_id: UUID) -> CampaignRead:
         campaign = self._require_locked(campaign_id)
-        if campaign.stato != "programmata":
+        if campaign.status != "scheduled":
             raise InvalidState("Torna in bozza solo una campagna programmata e non ancora partita.")
         self.session.execute(
             delete(CampaignRecipient).where(CampaignRecipient.campaign_id == campaign.id)
         )
-        campaign.stato, campaign.programmata_per = "bozza", None
+        campaign.status, campaign.scheduled_for = "draft", None
         self.session.commit()
         return CampaignRead.model_validate(campaign)
 
     def delete(self, campaign_id: UUID) -> None:
-        """An abandoned draft goes (REB-524). Only a `bozza`: it has never frozen a list,
+        """An abandoned draft goes (REB-524). Only a `draft`: it has never frozen a list,
         or `back_to_draft` already dropped the one it had, so the row is all there is.
         The lock is `_require_locked`'s, so a «Programma» racing this delete either
         lands first and makes this refuse, or waits and finds the row gone."""
         campaign = self._require_locked(campaign_id)
-        if campaign.stato != "bozza":
+        if campaign.status != "draft":
             raise InvalidState(ONLY_A_DRAFT_IS_DELETED)
         # A draft never carries a row that left or came back, but the cascade would
         # erase one silently if it ever did (CodeRabbit on #473): refuse instead.
@@ -378,13 +446,13 @@ class CampaignService:
             .where(
                 r.campaign_id == campaign.id,
                 or_(
-                    r.inviata_at.is_not(None),
-                    r.consegnata_at.is_not(None),
-                    r.rimbalzata_at.is_not(None),
-                    r.primo_clic_at.is_not(None),
-                    r.reclamo_at.is_not(None),
-                    r.entrato_at.is_not(None),
-                    r.azione_at.is_not(None),
+                    r.sent_at.is_not(None),
+                    r.delivered_at.is_not(None),
+                    r.bounced_at.is_not(None),
+                    r.first_click_at.is_not(None),
+                    r.complaint_at.is_not(None),
+                    r.signed_in_at.is_not(None),
+                    r.action_at.is_not(None),
                 ),
             )
             .limit(1)
@@ -396,94 +464,96 @@ class CampaignService:
 
     def cancel(self, campaign_id: UUID) -> CampaignRead:
         campaign = self._require_locked(campaign_id)
-        if campaign.stato not in ("programmata", "in_invio"):
+        if campaign.status not in ("scheduled", "sending"):
             raise InvalidState("Si annulla solo una campagna programmata o in invio.")
         self.session.execute(
             update(CampaignRecipient)
             .where(
-                CampaignRecipient.campaign_id == campaign.id, CampaignRecipient.stato == "in_coda"
+                CampaignRecipient.campaign_id == campaign.id, CampaignRecipient.status == "queued"
             )
-            .values(stato="saltata", motivo=REASON_CANCELLED)
+            .values(status="skipped", reason=REASON_CANCELLED)
         )
-        campaign.stato = "annullata"
+        campaign.status = "cancelled"
         self.session.commit()
         return CampaignRead.model_validate(campaign)
 
     def follow_up(self, campaign_id: UUID, admin_id: UUID) -> CampaignRead:
-        """«Riscrivi a chi non ha fatto niente» (spec § 4.3): a `bozza` with `fonte =
-        lista` that follows `campaign_id`, with the same action and a copy of its mail to
+        """«Riscrivi a chi non ha fatto niente» (spec § 4.3): a `draft` with `source =
+        list` that follows `campaign_id`, with the same action and a copy of its mail to
         rewrite. Its list is the sent rows with no action, read when shown and frozen
         when scheduled, like any other."""
         parent = self._require(campaign_id)
-        if parent.stato != "inviata":
+        if parent.status != "sent":
             raise InvalidState(ONLY_SENT)
         # Read live, the same way the list itself is shown (`waiting_rows`): a row's
-        # `azione_at` is only ever a stamp the tick wrote up to a minute ago, so a
+        # `action_at` is only ever a stamp the tick wrote up to a minute ago, so a
         # count of unstamped rows alone counts someone who already did the action live,
         # just not yet stamped (Greptile P1, CodeRabbit Minor).
         if not waiting_rows(self.session, parent):
             raise InvalidState(NOTHING_TO_FOLLOW)
         now = self.clock()
-        nome = f"{parent.nome}{FOLLOW_UP_SUFFIX}"[:CAMPAIGN_NAME_MAX_LENGTH]
+        name = f"{parent.name}{FOLLOW_UP_SUFFIX}"[:CAMPAIGN_NAME_MAX_LENGTH]
         campaign = Campaign(
             created_by=admin_id,
-            nome=nome,
-            slug=self._unique_slug(f"c-{now:%Y-%m-%d}-{_slugify(nome)}"[:70]),
-            fonte="lista",
-            segue_id=parent.id,
-            oggetto=parent.oggetto,
-            testo=parent.testo,
-            bottone_testo=parent.bottone_testo,
-            bottone_meta=parent.bottone_meta,
-            bottone_url=parent.bottone_url,
-            azione=parent.azione,
-            stato="bozza",
-            contenuto_at=now,
+            name=name,
+            slug=self._unique_slug(f"c-{now:%Y-%m-%d}-{_slugify(name)}"[:70]),
+            source="list",
+            follows_id=parent.id,
+            subject=parent.subject,
+            text=parent.text,
+            button_text=parent.button_text,
+            button_meta=parent.button_meta,
+            button_url=parent.button_url,
+            action=parent.action,
+            status="draft",
+            content_at=now,
         )
         self.session.add(campaign)
         self.session.commit()
         return CampaignRead.model_validate(campaign)
 
     def _when(self, data: ScheduleRequest, now: datetime) -> datetime:
-        if data.giorno is None and data.ora is None:
+        if data.day is None and data.at_time is None:
             return now
-        if data.giorno is None or data.ora is None:
+        if data.day is None or data.at_time is None:
             raise ValidationFailed(
-                ENTITY, "ora", "Serve giorno e ora, o nessuno dei due per inviare adesso."
+                ENTITY, "at_time", "Serve giorno e ora, o nessuno dei due per inviare adesso."
             )
-        wall = datetime.combine(data.giorno, data.ora)
+        wall = datetime.combine(data.day, data.at_time)
         local = wall.replace(tzinfo=ROME)  # fold=0: the first of an hour that happens twice
         if local.astimezone(UTC).astimezone(ROME).replace(tzinfo=None) != wall:
             raise ValidationFailed(
-                ENTITY, "ora", "Quest'ora non esiste il giorno del cambio d'ora: scegline un'altra."
+                ENTITY,
+                "at_time",
+                "Quest'ora non esiste il giorno del cambio d'ora: scegline un'altra.",
             )
         when = local.astimezone(UTC)
         if when < now - PAST_SLACK:
-            raise ValidationFailed(ENTITY, "giorno", "È già passato: scegli un momento futuro.")
+            raise ValidationFailed(ENTITY, "day", "È già passato: scegli un momento futuro.")
         return when
 
     # ---- helpers ------------------------------------------------------------------------
 
     def _validate(
-        self, fonte: str, stato_percorso: str | None, has_filters: bool, meta: str, azione: str
+        self, source: str, journey_status: str | None, has_filters: bool, meta: str, action: str
     ) -> None:
-        if fonte == "stato":
-            if stato_percorso not in JOURNEY_STATES:
-                raise ValidationFailed(ENTITY, "stato_percorso", "Scegli uno stato del percorso.")
-            if stato_percorso == "pigro_vuoto":
-                raise ValidationFailed(ENTITY, "stato_percorso", PIGRO_LATER)
-        elif fonte == "filtri" and not has_filters:
-            raise ValidationFailed(ENTITY, "filtri", "Scegli i filtri della lista.")
+        if source == "status":
+            if journey_status not in JOURNEY_STATES:
+                raise ValidationFailed(ENTITY, "journey_status", "Scegli uno stato del percorso.")
+            if journey_status == "pigro_empty":
+                raise ValidationFailed(ENTITY, "journey_status", PIGRO_LATER)
+        elif source == "filters" and not has_filters:
+            raise ValidationFailed(ENTITY, "filters", "Scegli i filtri della lista.")
         if meta == "pigro":
-            raise ValidationFailed(ENTITY, "bottone_meta", PIGRO_LATER)
-        if azione == "pigro_cliente":
-            raise ValidationFailed(ENTITY, "azione", PIGRO_LATER)
+            raise ValidationFailed(ENTITY, "button_meta", PIGRO_LATER)
+        if action == "pigro_customer":
+            raise ValidationFailed(ENTITY, "action", PIGRO_LATER)
 
     @staticmethod
-    def _check_button(meta: str, url: str | None, azione: str) -> None:
+    def _check_button(meta: str, url: str | None, action: str) -> None:
         """«Un link» carries an https address and measures the click; any other
         destination carries neither (REB-530, `campaigns/links.py`)."""
-        problem = button_problem(meta, url, azione)
+        problem = button_problem(meta, url, action)
         if problem is not None:
             raise ValidationFailed(ENTITY, *problem)
 
@@ -509,14 +579,14 @@ class CampaignService:
 
     def _require_locked(self, campaign_id: UUID) -> Campaign:
         """Like `_require`, but `SELECT ... FOR UPDATE`: every method whose write is
-        gated on the row's current `stato` takes this lock first (controller ruling
+        gated on the row's current `status` takes this lock first (controller ruling
         R12), so a second concurrent call blocks until the first commits, then sees the
         state the first left behind and raises the ordinary `InvalidState` sentence
         instead of racing into a write (`ck_campaign_recipients_...`'s unique index, or
         two mails to the same person). `populate_existing`: a `FOR UPDATE` read does not
         overwrite an object this session already holds, so without it the check below
         would run on the stale state the lock was meant to refresh (CodeRabbit on #473:
-        a `delete` of a `bozza` another session had just scheduled, whose cascade then
+        a `delete` of a `draft` another session had just scheduled, whose cascade then
         took the frozen list with it)."""
         campaign = self.session.get(
             Campaign, campaign_id, with_for_update=True, populate_existing=True
@@ -534,32 +604,32 @@ class CampaignService:
         rows = self.session.execute(
             select(
                 r.campaign_id,
-                func.count().label("destinatari"),
-                func.count(case((r.stato == "in_coda", 1))).label("in_coda"),
-                func.count(case((r.stato == "inviata", 1))).label("inviate"),
-                func.count(case((r.stato == "saltata", 1))).label("saltate"),
-                func.count(case((r.stato == "fallita", 1))).label("fallite"),
-                func.count(r.consegnata_at).label("consegnate"),
-                func.count(r.rimbalzata_at).label("rimbalzate"),
-                func.count(r.primo_clic_at).label("cliccate"),
-                func.count(r.entrato_at).label("entrate"),
-                func.count(r.azione_at).label("azioni"),
+                func.count().label("recipients"),
+                func.count(case((r.status == "queued", 1))).label("queued"),
+                func.count(case((r.status == "sent", 1))).label("sent"),
+                func.count(case((r.status == "skipped", 1))).label("skipped"),
+                func.count(case((r.status == "failed", 1))).label("failed"),
+                func.count(r.delivered_at).label("delivered"),
+                func.count(r.bounced_at).label("bounced"),
+                func.count(r.first_click_at).label("clicked"),
+                func.count(r.signed_in_at).label("entered"),
+                func.count(r.action_at).label("actions"),
             )
             .where(r.campaign_id.in_(ids))
             .group_by(r.campaign_id)
         ).all()
         return {
             row.campaign_id: CampaignCounts(
-                destinatari=row.destinatari,
-                in_coda=row.in_coda,
-                inviate=row.inviate,
-                saltate=row.saltate,
-                fallite=row.fallite,
-                consegnate=row.consegnate,
-                rimbalzate=row.rimbalzate,
-                cliccate=row.cliccate,
-                entrate=row.entrate,
-                azioni=row.azioni,
+                recipients=row.recipients,
+                queued=row.queued,
+                sent=row.sent,
+                skipped=row.skipped,
+                failed=row.failed,
+                delivered=row.delivered,
+                bounced=row.bounced,
+                clicked=row.clicked,
+                entered=row.entered,
+                actions=row.actions,
             )
             for row in rows
         }

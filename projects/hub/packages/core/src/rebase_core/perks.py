@@ -14,16 +14,17 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, and_, func, select
 from sqlalchemy.orm import Session
 
+from rebase_core.login_schemas import GuideDownloadRead, GuideStats
 from rebase_core.models import Freelancer, GuideDownload, User
-from rebase_core.schemas import GuideDownloadRead, GuideStats
 
 PERKS_DIR = Path(__file__).resolve().parent / "perks"
 
+# The name the guide downloads under: what a freelancer sees, so it stays Italian.
 GUIDE_FILENAME = "rebase-guida-primi-passi-freelance.pdf"
-GUIDE_PATH = PERKS_DIR / GUIDE_FILENAME
+GUIDE_PATH = PERKS_DIR / "rebase-guide-first-steps-freelance.pdf"
 
 
 def guide_bytes() -> bytes:
@@ -53,13 +54,26 @@ class PerkService:
         self.session.add(GuideDownload(user_id=user_id))
         self.session.commit()
 
+    @staticmethod
+    def _downloads() -> Select[GuideDownload, User, UUID]:
+        """A download, its person and that person's live card (`None` for a company
+        contact): a person has at most one card (`uq_freelancers_user_id`), so the outer
+        join never doubles a row."""
+        return (
+            select(GuideDownload, User, Freelancer.id)
+            .join(User, User.id == GuideDownload.user_id)
+            .outerjoin(
+                Freelancer, and_(Freelancer.user_id == User.id, Freelancer.deleted_at.is_(None))
+            )
+        )
+
     def guide_stats(self, now: datetime | None = None) -> GuideStats:
         moment = now or datetime.now(UTC)
         week_ago = moment - timedelta(days=7)
-        totale = self.session.scalar(select(func.count()).select_from(GuideDownload)) or 0
-        membri = self.session.scalar(select(func.count(func.distinct(GuideDownload.user_id)))) or 0
-        membri_totali = self.session.scalar(select(func.count()).select_from(Freelancer)) or 0
-        ultimi = (
+        total = self.session.scalar(select(func.count()).select_from(GuideDownload)) or 0
+        members = self.session.scalar(select(func.count(func.distinct(GuideDownload.user_id)))) or 0
+        total_members = self.session.scalar(select(func.count()).select_from(Freelancer)) or 0
+        last = (
             self.session.scalar(
                 select(func.count())
                 .select_from(GuideDownload)
@@ -68,26 +82,26 @@ class PerkService:
             or 0
         )
         rows = self.session.execute(
-            select(GuideDownload, User)
-            .join(User, User.id == GuideDownload.user_id)
+            self._downloads()
             .order_by(GuideDownload.downloaded_at.desc(), GuideDownload.id.desc())
             .limit(RECENT_DOWNLOADS)
         ).all()
         return GuideStats(
-            totale=totale,
-            membri=membri,
-            membri_totali=membri_totali,
-            ultimi_7_giorni=ultimi,
-            recenti=[
+            total=total,
+            members=members,
+            total_members=total_members,
+            last_7_days=last,
+            recent=[
                 GuideDownloadRead(
                     id=download.id,
                     user_id=download.user_id,
-                    nome=person.nome,
-                    cognome=person.cognome,
+                    freelancer_id=freelancer_id,
+                    first_name=person.first_name,
+                    last_name=person.last_name,
                     email=person.email,
                     downloaded_at=download.downloaded_at,
                 )
-                for download, person in rows
+                for download, person, freelancer_id in rows
             ],
         )
 
@@ -98,8 +112,7 @@ class PerkService:
         freelancer detail): the same shape `guide_stats` reads for everybody, scoped
         to a single `user_id` instead of grouped across the whole hub."""
         rows = self.session.execute(
-            select(GuideDownload, User)
-            .join(User, User.id == GuideDownload.user_id)
+            self._downloads()
             .where(GuideDownload.user_id == user_id)
             .order_by(GuideDownload.downloaded_at.desc(), GuideDownload.id.desc())
             .limit(limit)
@@ -108,10 +121,11 @@ class PerkService:
             GuideDownloadRead(
                 id=download.id,
                 user_id=download.user_id,
-                nome=person.nome,
-                cognome=person.cognome,
+                freelancer_id=freelancer_id,
+                first_name=person.first_name,
+                last_name=person.last_name,
                 email=person.email,
                 downloaded_at=download.downloaded_at,
             )
-            for download, person in rows
+            for download, person, freelancer_id in rows
         ]

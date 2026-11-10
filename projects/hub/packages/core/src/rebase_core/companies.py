@@ -1,13 +1,15 @@
 """Companies: a project that needs people, and what an admin does with the request."""
 
+from collections.abc import Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import Select, func, or_, select
+from sqlalchemy.orm import Session, selectinload
 
+from rebase_core.admin_schemas import StatusChange
 from rebase_core.audit import (
     TIMELINE_LIMIT_DEFAULT,
     AdminActionRead,
@@ -19,18 +21,26 @@ from rebase_core.audit import (
     utcnow,
 )
 from rebase_core.cloud import TalentCloudService
-from rebase_core.comments import CommentService
-from rebase_core.errors import NotFound, ValidationFailed
-from rebase_core.models import COMPANY_STATES, Company, User
-from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
-from rebase_core.referrals import ReferralService
-from rebase_core.schemas import (
+from rebase_core.company_schemas import (
+    CompanyAdminCreate,
     CompanyCreate,
     CompanyList,
     CompanyOverride,
     CompanyRead,
-    StatusChange,
 )
+from rebase_core.contact_points import (
+    ContactPointInput,
+    ContactPointService,
+    PointsAdded,
+    has_point_matching,
+    point_match_score,
+)
+from rebase_core.crm_words import TO_LINK, crm_state_sentence
+from rebase_core.errors import NotFound, ValidationFailed
+from rebase_core.models import COMPANY_STATES, Company, User
+from rebase_core.notes import NoteService
+from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
+from rebase_core.referrals import ReferralService
 from rebase_core.search import matches_any, similarity_score
 from rebase_core.users import UserService
 
@@ -38,40 +48,45 @@ ENTITY = "company"
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
 _SEARCH_COLUMNS = (
-    Company.nome_azienda,
-    User.nome,
-    User.cognome,
+    Company.company_name,
+    User.first_name,
+    User.last_name,
     User.email,
-    Company.progetto,
-    Company.figura_richiesta,
+    Company.project,
+    Company.requested_role,
 )
 # The three fields a request's referente shares with its `users` row (REB-281): an
 # override of one of these lands on the identity, never on the row, the same split
 # `rebase_core.freelancers`' own `_ADMIN_IDENTITY_FIELDS` keeps for a freelancer card.
-_ADMIN_IDENTITY_FIELDS = ("nome", "cognome", "linkedin_url")
+_ADMIN_IDENTITY_FIELDS = ("first_name", "last_name", "linkedin_url")
 
 
 def _to_read(row: Company, user: User) -> CompanyRead:
-    """`referente`/`email` read off the linked `users` row since migration B (REB-281)
+    """`contact_person`/`email` read off the linked `users` row since migration B (REB-281)
     dropped the request's own copies: a company's several requests over time all name
     the one person on file, not a free-text string each request could drift from."""
     return CompanyRead(
         id=row.id,
-        nome_azienda=row.nome_azienda,
-        referente=f"{user.nome} {user.cognome}".strip(),
+        company_name=row.company_name,
+        contact_person=f"{user.first_name} {user.last_name}".strip(),
         email=user.email,
-        telefono=user.telefono,
-        figura_richiesta=row.figura_richiesta,
-        progetto=row.progetto,
-        periodo_da=row.periodo_da,
-        durata=row.durata,
-        budget_giornaliero=row.budget_giornaliero,
-        remoto=row.remoto,
-        giorni_presenza=row.giorni_presenza,
-        numero_risorse=row.numero_risorse,
-        stato=row.stato,
-        note=row.note,
-        origine=row.origine,
+        phone=user.phone,
+        contact_points=ContactPointService.present(user),
+        requested_role=row.requested_role,
+        project=row.project,
+        period_from=row.period_from,
+        duration=row.duration,
+        daily_budget=row.daily_budget,
+        remote=row.remote,
+        onsite_days=row.onsite_days,
+        headcount=row.headcount,
+        status=row.status,
+        crm_status=row.crm_status,
+        crm_error=row.crm_error,
+        crm_situation=crm_state_sentence(row.crm_status, row.crm_error) or None,
+        crm_deal_url=row.crm_deal_url,
+        crm_attempted_at=row.crm_attempted_at,
+        origin=row.origin,
         utm_source=row.utm_source,
         utm_medium=row.utm_medium,
         utm_campaign=row.utm_campaign,
@@ -89,30 +104,30 @@ def _list_stmt(
     q: str,
     budget_min: Decimal | None,
     budget_max: Decimal | None,
-    periodo_da: date | None,
-    origine: str | None,
-    creato_da: datetime | None,
-    creato_a: datetime | None,
+    period_from: date | None,
+    origin: str | None,
+    created_from: datetime | None,
+    created_to: datetime | None,
 ) -> Select[Company, User]:
-    """Every company request, `stato` left for the caller to filter separately -- this
+    """Every company request, `status` left for the caller to filter separately -- this
     statement backs both the listing and the per-state `GROUP BY` counts, which must
     see every state at once."""
     stmt = select(Company, User).join(User, User.id == Company.user_id)
     stmt = stmt.where(Company.deleted_at.is_(None))
     if q:
-        stmt = stmt.where(matches_any(_SEARCH_COLUMNS, q))
+        stmt = stmt.where(or_(matches_any(_SEARCH_COLUMNS, q), has_point_matching(User.id, q)))
     if budget_min is not None:
-        stmt = stmt.where(Company.budget_giornaliero >= budget_min)
+        stmt = stmt.where(Company.daily_budget >= budget_min)
     if budget_max is not None:
-        stmt = stmt.where(Company.budget_giornaliero <= budget_max)
-    if periodo_da is not None:
-        stmt = stmt.where(Company.periodo_da >= periodo_da)
-    if origine is not None:
-        stmt = stmt.where(Company.origine == origine)
-    if creato_da is not None:
-        stmt = stmt.where(Company.created_at >= creato_da)
-    if creato_a is not None:
-        stmt = stmt.where(Company.created_at <= creato_a)
+        stmt = stmt.where(Company.daily_budget <= budget_max)
+    if period_from is not None:
+        stmt = stmt.where(Company.period_from >= period_from)
+    if origin is not None:
+        stmt = stmt.where(Company.origin == origin)
+    if created_from is not None:
+        stmt = stmt.where(Company.created_at >= created_from)
+    if created_to is not None:
+        stmt = stmt.where(Company.created_at <= created_to)
     return stmt
 
 
@@ -120,39 +135,59 @@ class CompanyService:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def request(self, data: CompanyCreate) -> tuple[CompanyRead, bool]:
+    def request(
+        self, data: CompanyCreate, *, deal_id: UUID | None = None
+    ) -> tuple[CompanyRead, bool]:
         """Every request is a row: a company has several projects, and two requests a
-        week apart are two things to answer, not one to merge. The referente's `users`
+        week apart are two things to answer, not one to merge. The requester's `users`
         row is get-or-created by lowercased email (REB-278), from the two fields the
         wizard collects (REB-279, decision (f)) plus, since REB-380, a phone number,
-        and left as it was found on a repeat request: the answer's `referente`/`email`
-        (and now `telefono`) read off that one row (REB-281), whether or not it
+        and left as it was found on a repeat request: the answer's `contact_person`/`email`
+        (and now `phone`) read off that one row (REB-281), whether or not it
         matches what this particular request said.
 
         The second element is whether this `user_id` already had at least one other
         request before this one, checked before the new row is added (REB-380): a
         returning referente the thank-you page can point at the member area they may
         not know exists, mirroring `FreelancerService.apply`'s own `created` boolean."""
+        read, existing, _ = self._request(data, deal_id, ())
+        return read, existing
+
+    def _request(
+        self,
+        data: CompanyCreate,
+        deal_id: UUID | None,
+        contact_points: Sequence[ContactPointInput],
+    ) -> tuple[CompanyRead, bool, PointsAdded | None]:
+        """`request`, plus the extra contact points an admin gave (REB-948), added to the
+        contact's list in the same transaction as the row and never replacing what they
+        already keep. Answers what was added too, for the trail."""
         utm = data.utm.model_dump() if data.utm is not None and not data.utm.is_empty() else {}
         email = data.email.strip().lower()
         user = UserService(self.session).get_or_create(
-            email, data.referente_nome, data.referente_cognome, telefono=data.telefono
+            email, data.contact_first_name, data.contact_last_name, phone=data.phone
         )
-        richiedente_esistente = (
+        added = ContactPointService(self.session).add(user, contact_points)
+        requester_existing = (
             self.session.scalar(select(Company.id).where(Company.user_id == user.id).limit(1))
             is not None
         )
         row = Company(
             user_id=user.id,
-            nome_azienda=data.nome_azienda,
-            figura_richiesta=data.figura_richiesta,
-            progetto=data.progetto,
-            periodo_da=data.periodo_da,
-            durata=data.durata,
-            budget_giornaliero=data.budget_giornaliero,
-            remoto=data.remoto,
-            giorni_presenza=data.giorni_presenza,
-            numero_risorse=data.numero_risorse,
+            company_name=data.company_name,
+            requested_role=data.requested_role,
+            project=data.project,
+            period_from=data.period_from,
+            duration=data.duration,
+            daily_budget=data.daily_budget,
+            remote=data.remote,
+            onsite_days=data.onsite_days,
+            headcount=data.headcount,
+            # The same transaction as the row: a request is never committed without its
+            # place in the CRM's queue (REB-868). The first attempt runs after the response.
+            crm_status=TO_LINK,
+            # A deal the admin named (REB-870), kept until the CRM links it.
+            crm_deal_id=deal_id,
             **utm,
         )
         self.session.add(row)
@@ -163,26 +198,55 @@ class CompanyService:
         # team request of the same contact kept (REB-600). `link_team_request` does
         # nothing once any company of the contact carries a referral, so only a first
         # attribution is ever made, from a first or a returning request alike.
-        ReferralService(self.session).link_team_request(row.id, user, own_code=data.rif)
+        ReferralService(self.session).link_team_request(row.id, user, own_code=data.ref)
         self.session.commit()
-        return _to_read(row, user), richiedente_esistente
+        return _to_read(row, user), requester_existing, added
+
+    def check_admin_create(self, data: CompanyAdminCreate) -> None:
+        """What `create_by_admin` would refuse about the contact's extra points, said before
+        anything is written (and before the MCP tool spends a model call), so a refusal leaves
+        nothing behind: no contact, no request. The flat `phone` is counted, since the same
+        write stores it as the contact's primary number when they have none."""
+        email = data.email.strip().lower()
+        known = UserService(self.session).person(email)
+        ContactPointService(self.session).check_added(
+            known or User(email=email), data.contact_points, phone=data.phone
+        )
+
+    def create_by_admin(
+        self, data: CompanyAdminCreate, admin_id: UUID, *, source: str
+    ) -> CompanyRead:
+        """An admin opens the request on the referente's behalf (REB-870): the row the
+        wizard writes, `to_link`, with the CRM deal when one is named. No mail goes to
+        anybody; the trail records `company_created` with the admin, the door and the deal."""
+        self.check_admin_create(data)
+        read, _, added = self._request(data, data.deal_id, data.contact_points)
+        payload: dict[str, Any] = {"source": source}
+        if data.deal_id is not None:
+            payload["deal_id"] = str(data.deal_id)
+        if added is not None:
+            payload["contact_points_added"] = added.added
+        AdminActionService(self.session).record(
+            ENTITY, read.id, "company_created", admin_id, payload
+        )
+        return read
 
     def list_recent(
         self,
         limit: int = LIST_LIMIT_DEFAULT,
-        stato: str | None = None,
+        status: str | None = None,
         *,
         q: str | None = None,
         cursor: str | None = None,
         budget_min: Decimal | None = None,
         budget_max: Decimal | None = None,
-        periodo_da: date | None = None,
-        origine: str | None = None,
-        creato_da: datetime | None = None,
-        creato_a: datetime | None = None,
+        period_from: date | None = None,
+        origin: str | None = None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
     ) -> CompanyList:
         """Newest-or-best-match first (REB-285 adds `q`, `cursor` and the filters below
-        `stato`; the field itself is unvalidated pass-through, like every other filter
+        `status`; the field itself is unvalidated pass-through, like every other filter
         in this package -- an unknown value is simply an empty list, never a 422)."""
         limit = max(1, min(limit, LIST_LIMIT_MAX))
         term = (q or "").strip()
@@ -191,24 +255,26 @@ class CompanyService:
             q=term,
             budget_min=budget_min,
             budget_max=budget_max,
-            periodo_da=periodo_da,
-            origine=origine,
-            creato_da=creato_da,
-            creato_a=creato_a,
+            period_from=period_from,
+            origin=origin,
+            created_from=created_from,
+            created_to=created_to,
         )
 
         grouped = self.session.execute(
-            base.with_only_columns(Company.stato, func.count()).group_by(Company.stato)
+            base.with_only_columns(Company.status, func.count()).group_by(Company.status)
         ).all()
         by_state: dict[str, int] = {state: count for state, count in grouped}
-        per_stato = {state: by_state.get(state, 0) for state in COMPANY_STATES}
-        totale = sum(per_stato.values()) if stato is None else per_stato.get(stato, 0)
+        by_status = {state: by_state.get(state, 0) for state in COMPANY_STATES}
+        total = sum(by_status.values()) if status is None else by_status.get(status, 0)
 
-        stmt = base if stato is None else base.where(Company.stato == stato)
+        stmt = base if status is None else base.where(Company.status == status)
         sort_spec = SortSpec("score", "float") if term else SortSpec("created_at", "datetime")
         sort_column: Any
         if term:
-            score = similarity_score(_SEARCH_COLUMNS, term).label("score")
+            score = func.greatest(
+                similarity_score(_SEARCH_COLUMNS, term), point_match_score(User.id, term)
+            ).label("score")
             stmt = stmt.add_columns(score)
             sort_column = score
         else:
@@ -217,7 +283,9 @@ class CompanyService:
             value, row_id = decode_cursor(sort_spec, cursor)
             stmt = stmt.where(keyset_predicate(sort_column, Company.id, value, row_id))
         rows = self.session.execute(
-            stmt.order_by(sort_column.desc(), Company.id.desc()).limit(limit + 1)
+            stmt.order_by(sort_column.desc(), Company.id.desc())
+            .limit(limit + 1)
+            .options(selectinload(User.contact_points))
         ).all()
 
         page_rows = rows[:limit]
@@ -228,29 +296,42 @@ class CompanyService:
             next_cursor = encode_cursor(sort_spec, last_sort, last[0].id)
 
         return CompanyList(
-            totale=totale,
+            total=total,
             items=[_to_read(row[0], row[1]) for row in page_rows],
-            per_stato=per_stato,
+            by_status=by_status,
             next_cursor=next_cursor,
         )
 
     def get(self, company_id: UUID) -> CompanyRead:
-        """The row with its thread of comments, newest first, and since REB-518 the
+        """The row with its thread of notes, newest first, and since REB-518 the
         talent cloud its referente holds for it while it is open. Only here: the list
         leaves both empty."""
         row, user = self._require(company_id)
         read = _to_read(row, user)
-        read.commenti = CommentService(self.session).list(ENTITY, company_id)
+        read.note = NoteService(self.session).list(ENTITY, company_id)
         read.talent_cloud_grant = TalentCloudService(self.session).for_company(company_id)
         return read
 
-    def set_status(self, company_id: UUID, change: StatusChange) -> CompanyRead:
-        if change.stato not in COMPANY_STATES:
-            raise ValidationFailed(ENTITY, "stato", f"uno fra {', '.join(COMPANY_STATES)}")
+    def set_status(
+        self, company_id: UUID, change: StatusChange, *, admin_id: UUID, source: str
+    ) -> CompanyRead:
+        """Moves the request to `change.status` and, when it moved, records who and by
+        which door (`source`, `web` or `mcp`) as a `status_changed` entry of the trail."""
+        if change.status not in COMPANY_STATES:
+            raise ValidationFailed(ENTITY, "status", f"uno fra {', '.join(COMPANY_STATES)}")
         row, user = self._require(company_id)
-        row.stato = change.stato
-        if change.note is not None:
-            row.note = change.note.strip() or None
+        before = row.status
+        row.status = change.status
+        if before != change.status:
+            # In the transaction of the change itself (HCORE-09).
+            AdminActionService(self.session).record(
+                ENTITY,
+                row.id,
+                "status_changed",
+                admin_id,
+                {"before": before, "after": change.status, "source": source},
+                commit=False,
+            )
         self.session.commit()
         return _to_read(row, user)
 
@@ -260,23 +341,28 @@ class CompanyService:
         (`_ADMIN_IDENTITY_FIELDS`), and records the real delta as one `AdminAction`
         (REB-347), the same discipline `FreelancerService.override` keeps."""
         row, user = self._require(company_id)
-        changes = supplied_changes(data)
-        if not changes:
+        changes = supplied_changes(data, exclude={"contact_points"})
+        points_set = "contact_points" in data.model_fields_set
+        if not changes and not points_set:
             return _to_read(row, user)
         identity_changes = {k: v for k, v in changes.items() if k in _ADMIN_IDENTITY_FIELDS}
         row_changes = {k: v for k, v in changes.items() if k not in _ADMIN_IDENTITY_FIELDS}
         reject_cleared_columns(ENTITY, User, identity_changes)
+        if identity_changes.get("linkedin_url") is not None:
+            UserService(self.session).require_free_linkedin(
+                user.id, identity_changes["linkedin_url"]
+            )
         reject_cleared_columns(ENTITY, Company, row_changes)
         # A partial override may touch only one side of the together-rule
-        # (`ck_companies_giorni_presenza_together`): computed and refused here, on the
+        # (`ck_companies_onsite_days_together`): computed and refused here, on the
         # prospective values and before anything is mutated, rather than left for the
         # commit below to hit the database's own `CHECK` and surface as a raw
         # `IntegrityError`.
-        final_remoto = row_changes.get("remoto", row.remoto)
-        final_giorni_presenza = row_changes.get("giorni_presenza", row.giorni_presenza)
-        if (final_remoto == "ibrido") != (final_giorni_presenza is not None):
+        final_remote = row_changes.get("remote", row.remote)
+        final_onsite_days = row_changes.get("onsite_days", row.onsite_days)
+        if (final_remote == "hybrid") != (final_onsite_days is not None):
             raise ValidationFailed(
-                ENTITY, "giorni_presenza", "va indicato solo, e sempre, per il lavoro ibrido"
+                ENTITY, "onsite_days", "va indicato solo, e sempre, per il lavoro ibrido"
             )
         before = {
             **{field: getattr(user, field) for field in identity_changes},
@@ -286,14 +372,22 @@ class CompanyService:
             setattr(user, field, value)
         for field, value in row_changes.items():
             setattr(row, field, value)
-        self.session.commit()
+        self.session.flush()
         after = {
             **{field: getattr(user, field) for field in identity_changes},
             **{field: getattr(row, field) for field in row_changes},
         }
+        if points_set:
+            written = ContactPointService(self.session).write_override(user, data.contact_points)
+            if written is not None:
+                before["contact_points"], after["contact_points"] = written
         delta = field_changes(before, after)
         if delta:
-            AdminActionService(self.session).record(ENTITY, row.id, "overridden", admin_id, delta)
+            # In the transaction of the override itself (HCORE-09).
+            AdminActionService(self.session).record(
+                ENTITY, row.id, "overridden", admin_id, delta, commit=False
+            )
+        self.session.commit()
         return _to_read(row, user)
 
     def soft_delete(self, company_id: UUID, admin_id: UUID) -> CompanyRead:
@@ -336,6 +430,10 @@ class CompanyService:
                 ENTITY, "action_id", "si può ripristinare solo una modifica di campo"
             )
         before = action.payload.get("before", {})
+        if "note" in before:
+            raise ValidationFailed(
+                ENTITY, "action_id", "una nota non si ripristina da qui: si modifica nelle note"
+            )
         restored = {
             field: coerce_stored_value(
                 User if field in _ADMIN_IDENTITY_FIELDS else Company, field, value

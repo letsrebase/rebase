@@ -11,7 +11,7 @@ insertion. That is why slice 1 chose keyset, and it does not stop being true bec
 sort column changed.
 
 **The cursor is opaque.** A keyset over a non-unique column needs the pair
-`(sort value, id)`, and the sort value can be null (`people.cognome`). An empty string in
+`(sort value, id)`, and the sort value can be null (`people.last_name`). An empty string in
 a query parameter is indistinguishable from a null, and rows are lost on exactly that
 distinction -- so the pair is JSON, base64url, unpadded, and the client echoes it back
 without interpreting it. The encoding also carries the sort key, so replaying a cursor
@@ -29,12 +29,12 @@ Postgres matches ordering pathkeys *including* nulls placement, and it does not 
 of an ascending index yields `DESC NULLS FIRST`; asking for `DESC NULLS LAST` therefore
 matches no index at all, and the planner sequentially scans the table and sorts it --
 measured on `postgres:17-alpine` at 50 000 rows, with `ORDER BY ragione_sociale DESC, id
-DESC` over the same rows taking `Index Scan Backward using ix_customers_ragione_sociale_id`.
+DESC` over the same rows taking `Index Scan Backward using ix_organizations_ragione_sociale_id`.
 On a column that cannot be null the two orderings are identical by construction, because
 there are no nulls to place; so `SortSpec.nullable` decides whether `nulls_last()` is
 emitted, and that is the only thing it decides.
 
-`people.cognome` is the one column where the null tail is real, so it keeps
+`people.last_name` is the one column where the null tail is real, so it keeps
 `DESC NULLS LAST` and pays for it with a second index `(cognome DESC NULLS LAST, id DESC)`.
 This is why the whitelist is short: every admitted column costs an index, and a nullable one
 costs two.
@@ -70,7 +70,7 @@ from sqlalchemy.orm.attributes import InstrumentedAttribute
 from pigrocrm.core.errors import ValidationFailed
 
 SortDirection = Literal["asc", "desc"]
-# `date` joined the two originals for `attivita.scadenza` (slice 10). It is a kind of
+# `date` joined the two originals for `tasks.due_date` (slice 10). It is a kind of
 # its own and not `text`, because the cursor's value becomes a bound parameter compared
 # against the column: a `Date` column against a text parameter is `date > text`, an
 # operator Postgres does not have, so the keyset seek would fail at the database rather
@@ -84,7 +84,7 @@ SortKind = Literal["text", "date", "datetime"]
 # guessed -- the brief's 512 was a guess and it was wrong by a factor of four, which the
 # test named after this constant caught.
 #
-# The longest whitelisted sort column is `customers.ragione_sociale`, String(255). The
+# The longest whitelisted sort column is `organizations.legal_name`, String(255). The
 # worst case per character is a control character, which JSON must escape to `\uXXXX`
 # (6 bytes); 255 * 6 = 1530, plus roughly 80 bytes of envelope (`{"i":"<uuid>","k":
 # "<key>","v":""}`) is about 1610 bytes, which base64 expands to about 2148 characters.
@@ -93,7 +93,7 @@ SortKind = Literal["text", "date", "datetime"]
 #
 # A bound below the longest cursor the encoder can *produce* would be worse than no bound
 # at all: it would make the last page of an ordered scan unreachable, and only for
-# customers with long accented names.
+# organizations with long accented names.
 CURSOR_MAX_LENGTH = 4096
 
 _ENTITY = "cursor"
@@ -181,11 +181,18 @@ def _decode_value(spec: SortSpec, raw: object) -> object | None:
         raise ValidationFailed(_ENTITY, "cursor", "cursore non valido", expected="stringa")
     if spec.kind == "datetime":
         try:
-            return datetime.fromisoformat(raw)
+            moment = datetime.fromisoformat(raw)
         except ValueError as exc:
             raise ValidationFailed(
                 _ENTITY, "cursor", "cursore non valido", expected="data ISO 8601"
             ) from exc
+        if moment.tzinfo is None:
+            # A cursor this module wrote always carries an offset; a naive one is forged,
+            # and compared with a `timestamptz` column it would use the session's zone.
+            raise ValidationFailed(
+                _ENTITY, "cursor", "cursore non valido", expected="data ISO 8601 con fuso"
+            )
+        return moment
     if spec.kind == "date":
         try:
             return date.fromisoformat(raw)
@@ -205,7 +212,7 @@ def encode_cursor(spec: SortSpec, value: object, row_id: UUID) -> str:
     # so there is nothing to protect from a non-ASCII byte -- and the default would spend
     # six characters on every accented letter of an Italian company name, twelve on
     # anything outside the BMP. That is a three-fold difference in the length of every
-    # cursor over a `ragione_sociale`, paid on every page of every ordered scan.
+    # cursor over a `legal_name`, paid on every page of every ordered scan.
     body = json.dumps(payload, separators=(",", ":"), sort_keys=True, ensure_ascii=False).encode(
         "utf-8"
     )
@@ -263,7 +270,7 @@ def order_by(spec: SortSpec, direction: SortDirection) -> tuple[UnaryExpression[
     See the module docstring for the measurement.
 
     A nullable column is the opposite case: there `NULLS LAST` is a real requirement in both
-    directions, and it is why `people.cognome` carries a descending index of its own.
+    directions, and it is why `people.last_name` carries a descending index of its own.
     """
     column, identity = spec.column, _identity(spec)
     ordered = column.asc() if direction == "asc" else column.desc()

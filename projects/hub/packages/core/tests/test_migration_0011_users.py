@@ -55,7 +55,7 @@ def test_migration_a_backfills_users_from_freelancers_admin_users_and_companies(
                 )
             )
             # 3. A freelancer who is also an admin, but a *deactivated* one: stays a
-            #    member, and `attivo` stays true -- it is the freelancer's own flag,
+            #    member, and `active` stays true -- it is the freelancer's own flag,
             #    unaffected by the admin_users row's.
             connection.execute(
                 text(
@@ -73,7 +73,7 @@ def test_migration_a_backfills_users_from_freelancers_admin_users_and_companies(
                 )
             )
             # 4. An admin with no card and no company request at all: a brand-new row,
-            #    `cognome` left blank on purpose (decision (d)).
+            #    `last_name` left blank on purpose (decision (d)).
             connection.execute(
                 text(
                     "INSERT INTO admin_users (id, email, nome, password_hash, attivo, "
@@ -206,7 +206,9 @@ def test_migration_a_backfills_users_from_freelancers_admin_users_and_companies(
             session = factory()
             try:
                 resolved = AdminTokenService(session).resolve(raw_token)
-                assert resolved.email == "carla@rebase.it" and resolved.nome == "Carla Cattivi"
+                assert (
+                    resolved.email == "carla@rebase.it" and resolved.first_name == "Carla Cattivi"
+                )
             finally:
                 session.close()
         engine.dispose()

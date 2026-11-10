@@ -1,10 +1,10 @@
 """The thin half. Everything that matters happened in `SearchService`.
 
-Shaped exactly like `tools/customers.py`: resolve the service on the context's session, call
+Shaped exactly like `tools/organizations.py`: resolve the service on the context's session, call
 it, `model_dump(mode="json")`.
 
 What keeps the score out of an agent's context as `0.6000000238418579` is
-`SearchHit.punteggio` being a `Decimal` and not a `float` -- measured, not assumed:
+`SearchHit.score` being a `Decimal` and not a `float` -- measured, not assumed:
 swapping `mode="json"` for the default here leaves every assertion in
 `apps/mcp/tests/test_mcp_search.py` green, because the SDK's own encoder renders a
 `Decimal` and a `UUID` as strings anyway. `mode="json"` stays because every other tool
@@ -23,6 +23,6 @@ from pigrocrm_mcp.context import McpContext
 def search_everything(context: McpContext, query: SearchQuery) -> dict[str, Any]:
     return (
         SearchService(context.session)
-        .search_everything(query, context.actor)
+        .search_everything(query, context.actor, modules=context.modules)
         .model_dump(mode="json")
     )

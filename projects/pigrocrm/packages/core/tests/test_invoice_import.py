@@ -1,4 +1,4 @@
-"""Import dello storico fatture (slice 9 §3)."""
+"""Import of the invoice history (slice 9 §3)."""
 
 from datetime import date
 from decimal import Decimal
@@ -10,8 +10,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.invoices.models import Invoice, InvoiceCounter, InvoiceRegisterGap
+from pigrocrm.core.organizations.models import Organization
 
 ADMIN = Actor(id=None, type="system", role="admin")
 
@@ -24,15 +24,15 @@ def _fiscal_customer_id(session: Session) -> UUID:
     directory pytest resolves first would ever bind `from conftest import ...`
     correctly when the whole suite is collected in one run.
     """
-    customer = Customer(
-        ragione_sociale=f"Acme {uuid4()}",
-        partita_iva="12345678901",
-        codice_sdi="ABCDEFG",
-        indirizzo="Corso Italia 5",
-        cap="00100",
-        comune="Roma",
-        provincia="RM",
-        nazione="IT",
+    customer = Organization(
+        legal_name=f"Acme {uuid4()}",
+        vat_number=f"{uuid4().int % 10**11:011d}",
+        sdi_code="ABCDEFG",
+        address="Corso Italia 5",
+        postal_code="00100",
+        city="Roma",
+        province="RM",
+        country="IT",
     )
     session.add(customer)
     session.flush()
@@ -42,62 +42,62 @@ def _fiscal_customer_id(session: Session) -> UUID:
 def test_an_invoice_records_where_it_was_imported_from(db_session: Session) -> None:
     row = Invoice(
         customer_id=_fiscal_customer_id(db_session),
-        tipo="fattura",
-        stato="emessa",
-        anno=2026,
-        numero=7,
-        data_emissione=date(2026, 5, 5),
-        importata_da="esterno",
-        imponibile=Decimal("2700.00"),
-        imposta=Decimal("0.00"),
+        type="invoice",
+        status="issued",
+        year=2026,
+        number=7,
+        issue_date=date(2026, 5, 5),
+        imported_from="external",
+        taxable_amount=Decimal("2700.00"),
+        vat_amount=Decimal("0.00"),
         # The stamp is declared and stored, never added: `totale = imponibile + imposta`
         # (slice 3 `totals.py:sum_totals`), because `DatiBollo/BolloVirtuale` says the
         # issuer settled it themselves.
-        bollo=Decimal("2.00"),
-        totale=Decimal("2700.00"),
+        stamp_duty=Decimal("2.00"),
+        total=Decimal("2700.00"),
     )
     db_session.add(row)
     db_session.flush()
-    assert db_session.get(Invoice, row.id).importata_da == "esterno"
+    assert db_session.get(Invoice, row.id).imported_from == "external"
 
 
 def test_a_register_gap_is_unique_per_year_and_number(db_session: Session) -> None:
-    db_session.add(InvoiceRegisterGap(anno=2026, numero=4, motivo="annullata altrove"))
+    db_session.add(InvoiceRegisterGap(year=2026, number=4, reason="annullata altrove"))
     db_session.flush()
-    db_session.add(InvoiceRegisterGap(anno=2026, numero=4, motivo="di nuovo"))
+    db_session.add(InvoiceRegisterGap(year=2026, number=4, reason="di nuovo"))
     with pytest.raises(IntegrityError):
         db_session.flush()
     db_session.rollback()
 
 
-def _default_azienda_id(session: Session) -> UUID:
+def _default_legal_entity_id(session: Session) -> UUID:
     """The register every row below sits on (REB-619): the session's seeded default."""
-    from pigrocrm.core.emitter.repository import LegalEntityRepository
+    from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 
-    azienda = LegalEntityRepository(session).default()
-    assert azienda is not None
-    return azienda.id
+    legal_entity = LegalEntityRepository(session).default()
+    assert legal_entity is not None
+    return legal_entity.id
 
 
-def _counter(session: Session, anno: int) -> InvoiceCounter | None:
-    return session.get(InvoiceCounter, (_default_azienda_id(session), anno))
+def _counter(session: Session, year: int) -> InvoiceCounter | None:
+    return session.get(InvoiceCounter, (_default_legal_entity_id(session), year))
 
 
 def _issued(
-    session: Session, *, anno: int, numero: int, giorno: date, importata: bool = True
+    session: Session, *, year: int, number: int, day: date, imported: bool = True
 ) -> Invoice:
     row = Invoice(
         customer_id=_fiscal_customer_id(session),
-        tipo="fattura",
-        stato="emessa",
-        anno=anno,
-        numero=numero,
-        data_emissione=giorno,
-        importata_da="esterno" if importata else None,
-        imponibile=Decimal("100.00"),
-        imposta=Decimal("0.00"),
-        bollo=Decimal("0.00"),
-        totale=Decimal("100.00"),
+        type="invoice",
+        status="issued",
+        year=year,
+        number=number,
+        issue_date=day,
+        imported_from="external" if imported else None,
+        taxable_amount=Decimal("100.00"),
+        vat_amount=Decimal("0.00"),
+        stamp_duty=Decimal("0.00"),
+        total=Decimal("100.00"),
     )
     session.add(row)
     session.flush()
@@ -107,18 +107,18 @@ def _issued(
 def test_neighbour_dates_look_both_ways(db_session: Session) -> None:
     from pigrocrm.core.invoices.repository import InvoiceRepository
 
-    _issued(db_session, anno=2026, numero=7, giorno=date(2026, 5, 5))
-    _issued(db_session, anno=2026, numero=11, giorno=date(2026, 7, 13))
+    _issued(db_session, year=2026, number=7, day=date(2026, 5, 5))
+    _issued(db_session, year=2026, number=11, day=date(2026, 7, 13))
     repo = InvoiceRepository(db_session)
-    azienda_id = _default_azienda_id(db_session)
-    assert repo.neighbour_dates(azienda_id, 2026, 9) == (date(2026, 5, 5), date(2026, 7, 13))
-    assert repo.neighbour_dates(azienda_id, 2026, 2) == (None, date(2026, 5, 5))
-    assert repo.neighbour_dates(azienda_id, 2026, 12) == (date(2026, 7, 13), None)
-    assert repo.numbers_present(azienda_id, 2026) == {7, 11}
-    assert repo.first_native_number(azienda_id, 2026) is None
-    _issued(db_session, anno=2026, numero=18, giorno=date(2026, 9, 10), importata=False)
-    assert repo.first_native_number(azienda_id, 2026) == 18
-    # Another azienda's register is empty: the reads are keyed, not merely filtered.
+    legal_entity_id = _default_legal_entity_id(db_session)
+    assert repo.neighbour_dates(legal_entity_id, 2026, 9) == (date(2026, 5, 5), date(2026, 7, 13))
+    assert repo.neighbour_dates(legal_entity_id, 2026, 2) == (None, date(2026, 5, 5))
+    assert repo.neighbour_dates(legal_entity_id, 2026, 12) == (date(2026, 7, 13), None)
+    assert repo.numbers_present(legal_entity_id, 2026) == {7, 11}
+    assert repo.first_native_number(legal_entity_id, 2026) is None
+    _issued(db_session, year=2026, number=18, day=date(2026, 9, 10), imported=False)
+    assert repo.first_native_number(legal_entity_id, 2026) == 18
+    # Another legal entity's register is empty: the reads are keyed, not merely filtered.
     assert repo.numbers_present(uuid4(), 2026) == set()
     assert repo.neighbour_dates(uuid4(), 2026, 9) == (None, None)
 
@@ -127,12 +127,12 @@ def test_gaps_round_trip(db_session: Session) -> None:
     from pigrocrm.core.invoices.repository import InvoiceRepository
 
     repo = InvoiceRepository(db_session)
-    azienda_id = _default_azienda_id(db_session)
-    repo.add_gap(InvoiceRegisterGap(anno=2026, numero=6, motivo="test"))
-    repo.add_gap(InvoiceRegisterGap(anno=2026, numero=1, motivo="test"))
-    assert repo.declared_gaps(azienda_id, 2026) == {1, 6}
-    assert [g.numero for g in repo.gaps(azienda_id, 2026)] == [1, 6]
-    assert repo.declared_gaps(azienda_id, 2025) == set()
+    legal_entity_id = _default_legal_entity_id(db_session)
+    repo.add_gap(InvoiceRegisterGap(year=2026, number=6, reason="test"))
+    repo.add_gap(InvoiceRegisterGap(year=2026, number=1, reason="test"))
+    assert repo.declared_gaps(legal_entity_id, 2026) == {1, 6}
+    assert [g.number for g in repo.gaps(legal_entity_id, 2026)] == [1, 6]
+    assert repo.declared_gaps(legal_entity_id, 2025) == set()
     assert repo.declared_gaps(uuid4(), 2026) == set()
 
 
@@ -143,35 +143,35 @@ def _svc(session: Session, tmp_path, *, settings=None, drive_reader_factory=None
     reason `_fiscal_customer_id` above is copied and not imported: `conftest` is an
     ambiguous top-level module name across this repository's three test roots.
     """
-    from pigrocrm.core.emitter.repository import LegalEntityRepository
-    from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-    from pigrocrm.core.emitter.service import LegalEntityService
     from pigrocrm.core.fiscal.repository import FiscalProfileRepository
     from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
     from pigrocrm.core.fiscal.service import FiscalProfileService
     from pigrocrm.core.invoices.service import InvoiceService
+    from pigrocrm.core.legal_entities.repository import LegalEntityRepository
+    from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+    from pigrocrm.core.legal_entities.service import LegalEntityService
     from pigrocrm.core.storage.local import LocalFileStorage
 
-    # The azienda first, always (REB-615: a bare default is already seeded and this
+    # The legal entity first, always (REB-615: a bare default is already seeded and this
     # fills in its identity), then its fiscal profile when it has none.
     LegalEntityService(session).upsert_default(
         LegalEntityUpsert(
-            ragione_sociale="Studio Rossi",
-            partita_iva="01234567890",
-            codice_fiscale="HMCRFT00A01H501K",
-            indirizzo="Via Vittorio Veneto 12",
-            cap="20124",
-            comune="Milano",
-            provincia="MI",
-            nazione="IT",
+            legal_name="Studio Rossi",
+            vat_number="01234567890",
+            tax_code="HMCRFT00A01H501K",
+            address="Via Vittorio Veneto 12",
+            postal_code="20124",
+            city="Milano",
+            province="MI",
+            country="IT",
             email="mario@example.com",
         ),
         ADMIN,
     )
-    azienda = LegalEntityRepository(session).default()
-    assert azienda is not None
-    if FiscalProfileRepository(session).get(azienda.id) is None:
-        FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
+    legal_entity = LegalEntityRepository(session).default()
+    assert legal_entity is not None
+    if FiscalProfileRepository(session).get(legal_entity.id) is None:
+        FiscalProfileService(session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
     return InvoiceService(
         session,
         LocalFileStorage(tmp_path),
@@ -180,36 +180,34 @@ def _svc(session: Session, tmp_path, *, settings=None, drive_reader_factory=None
     )
 
 
-def _payload(
-    customer_id: UUID, *, numero: int, giorno: date, **overrides: object
-) -> "InvoiceImport":  # noqa: F821
+def _payload(customer_id: UUID, *, number: int, day: date, **overrides: object) -> "InvoiceImport":  # noqa: F821
     from pigrocrm.core.invoices.schemas import InvoiceImport
 
     base: dict[str, object] = {
-        "anno": giorno.year,
-        "numero": numero,
-        "data_emissione": giorno,
-        "data_scadenza": date(giorno.year, giorno.month, 28),
+        "year": day.year,
+        "number": number,
+        "issue_date": day,
+        "due_date": date(day.year, day.month, 28),
         "customer_id": customer_id,
-        "causale": "900142/0426/Consulenza AI CTO progetto Aurora",
-        "righe": [
+        "memo": "900142/0426/Consulenza AI CTO progetto Aurora",
+        "lines": [
             {
-                "descrizione": "900142/0426/Consulenza AI CTO progetto Aurora",
-                "quantita": Decimal("9"),
-                "prezzo_unitario": Decimal("300"),
-                "prezzo_totale": Decimal("2700.00"),
-                "aliquota_iva": Decimal("0"),
-                "natura": "N2.2",
+                "description": "900142/0426/Consulenza AI CTO progetto Aurora",
+                "quantity": Decimal("9"),
+                "unit_price": Decimal("300"),
+                "total_price": Decimal("2700.00"),
+                "vat_rate": Decimal("0"),
+                "vat_nature": "N2.2",
             }
         ],
-        "imponibile": Decimal("2700.00"),
-        "imposta": Decimal("0.00"),
-        # Declared, and deliberately *not* inside `totale`: see `_check_declared_totals`.
-        "bollo": Decimal("2.00"),
-        "totale": Decimal("2700.00"),
-        "stato_pagamento": "incassato",
-        "data_incasso": date(giorno.year, giorno.month, 20),
-        "trasmessa_esternamente_il": giorno,
+        "taxable_amount": Decimal("2700.00"),
+        "vat_amount": Decimal("0.00"),
+        # Declared, and deliberately *not* inside `total`: see `_check_declared_totals`.
+        "stamp_duty": Decimal("2.00"),
+        "total": Decimal("2700.00"),
+        "payment_status": "paid",
+        "payment_date": date(day.year, day.month, 20),
+        "transmitted_externally_at": day,
     }
     base.update(overrides)
     return InvoiceImport(**base)
@@ -221,20 +219,20 @@ def test_an_imported_invoice_is_issued_numbered_and_moves_the_counter(
 
     service = _svc(db_session, tmp_path)
     customer_id = _fiscal_customer_id(db_session)
-    read = service.import_issued(_payload(customer_id, numero=7, giorno=date(2026, 5, 5)), ADMIN)
+    read = service.import_issued(_payload(customer_id, number=7, day=date(2026, 5, 5)), ADMIN)
 
-    assert (read.anno, read.numero, read.stato, read.tipo) == (2026, 7, "emessa", "fattura")
-    assert read.importata_da == "esterno"
-    assert read.totale == Decimal("2700.00") and read.bollo == Decimal("2.00")
-    assert read.stato_pagamento == "incassato" and read.data_incasso == date(2026, 5, 20)
+    assert (read.year, read.number, read.status, read.type) == (2026, 7, "issued", "invoice")
+    assert read.imported_from == "external"
+    assert read.total == Decimal("2700.00") and read.stamp_duty == Decimal("2.00")
+    assert read.payment_status == "paid" and read.payment_date == date(2026, 5, 20)
     assert read.xml_hash_sha256 is None and read.pdf_document_id is None
-    assert _counter(db_session, 2026).ultimo_numero == 7
+    assert _counter(db_session, 2026).last_number == 7
     lines = service.repo.lines(read.id)
-    assert [(riga.numero_linea, riga.prezzo_totale, riga.natura) for riga in lines] == [
+    assert [(line.line_number, line.total_price, line.vat_nature) for line in lines] == [
         (1, Decimal("2700.00"), "N2.2")
     ]
     row = db_session.get(Invoice, read.id)
-    assert row.snapshot is not None and row.snapshot["versione"] == 1
+    assert row.snapshot is not None and row.snapshot["version"] == 1
 
 
 def test_import_issued_accepts_xml_document_id_and_hash_gated_by_the_caller(
@@ -251,25 +249,25 @@ def test_import_issued_accepts_xml_document_id_and_hash_gated_by_the_caller(
     customer_id = _fiscal_customer_id(db_session)
     document_id = _pdf_document(db_session, tmp_path, customer_id)
     read = service.import_issued(
-        _payload(customer_id, numero=7, giorno=date(2026, 5, 5)),
+        _payload(customer_id, number=7, day=date(2026, 5, 5)),
         ADMIN,
         xml_document_id=document_id,
         xml_hash_sha256="a" * 64,
     )
     assert read.xml_document_id == document_id
     assert read.xml_hash_sha256 == "a" * 64
-    # Still `"esterno"`: widening `importata_da` is a separate, later follow-up
+    # Still `"external"`: widening `imported_from` is a separate, later follow-up
     # (design §5 item 4/§7 item 6), not this capability's.
-    assert read.importata_da == "esterno"
+    assert read.imported_from == "external"
 
 
 def test_the_counter_never_moves_backwards(db_session: Session, tmp_path) -> None:  # noqa: ANN001
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
-    service.import_issued(_payload(cid, numero=11, giorno=date(2026, 7, 13)), ADMIN)
-    service.import_issued(_payload(cid, numero=9, giorno=date(2026, 6, 5)), ADMIN)
-    assert _counter(db_session, 2026).ultimo_numero == 11
+    service.import_issued(_payload(cid, number=11, day=date(2026, 7, 13)), ADMIN)
+    service.import_issued(_payload(cid, number=9, day=date(2026, 6, 5)), ADMIN)
+    assert _counter(db_session, 2026).last_number == 11
 
 
 def test_a_duplicate_number_is_a_conflict(db_session: Session, tmp_path) -> None:  # noqa: ANN001
@@ -277,9 +275,9 @@ def test_a_duplicate_number_is_a_conflict(db_session: Session, tmp_path) -> None
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
-    service.import_issued(_payload(cid, numero=7, giorno=date(2026, 5, 5)), ADMIN)
+    service.import_issued(_payload(cid, number=7, day=date(2026, 5, 5)), ADMIN)
     with pytest.raises(Conflict):
-        service.import_issued(_payload(cid, numero=7, giorno=date(2026, 5, 5)), ADMIN)
+        service.import_issued(_payload(cid, number=7, day=date(2026, 5, 5)), ADMIN)
 
 
 def test_the_register_stays_chronological_against_both_neighbours(
@@ -289,14 +287,14 @@ def test_the_register_stays_chronological_against_both_neighbours(
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
-    service.import_issued(_payload(cid, numero=7, giorno=date(2026, 5, 5)), ADMIN)
-    service.import_issued(_payload(cid, numero=11, giorno=date(2026, 7, 13)), ADMIN)
+    service.import_issued(_payload(cid, number=7, day=date(2026, 5, 5)), ADMIN)
+    service.import_issued(_payload(cid, number=11, day=date(2026, 7, 13)), ADMIN)
     with pytest.raises(ValidationFailed) as before:
-        service.import_issued(_payload(cid, numero=9, giorno=date(2026, 5, 4)), ADMIN)
-    assert before.value.details["field"] == "data_emissione"
+        service.import_issued(_payload(cid, number=9, day=date(2026, 5, 4)), ADMIN)
+    assert before.value.details["field"] == "issue_date"
     with pytest.raises(ValidationFailed):
-        service.import_issued(_payload(cid, numero=9, giorno=date(2026, 7, 14)), ADMIN)
-    service.import_issued(_payload(cid, numero=9, giorno=date(2026, 6, 5)), ADMIN)
+        service.import_issued(_payload(cid, number=9, day=date(2026, 7, 14)), ADMIN)
+    service.import_issued(_payload(cid, number=9, day=date(2026, 6, 5)), ADMIN)
 
 
 def test_declared_totals_must_add_up_to_the_cent(db_session: Session, tmp_path) -> None:  # noqa: ANN001
@@ -306,17 +304,17 @@ def test_declared_totals_must_add_up_to_the_cent(db_session: Session, tmp_path) 
     cid = _fiscal_customer_id(db_session)
     with pytest.raises(ValidationFailed) as caught:
         service.import_issued(
-            _payload(cid, numero=7, giorno=date(2026, 5, 5), totale=Decimal("2699.99")), ADMIN
+            _payload(cid, number=7, day=date(2026, 5, 5), total=Decimal("2699.99")), ADMIN
         )
     assert "2700.00" in caught.value.message and "2699.99" in caught.value.message
     with pytest.raises(ValidationFailed):
         service.import_issued(
             _payload(
                 cid,
-                numero=7,
-                giorno=date(2026, 5, 5),
-                imponibile=Decimal("3400.00"),
-                totale=Decimal("3400.00"),
+                number=7,
+                day=date(2026, 5, 5),
+                taxable_amount=Decimal("3400.00"),
+                total=Decimal("3400.00"),
             ),
             ADMIN,
         )
@@ -325,7 +323,7 @@ def test_declared_totals_must_add_up_to_the_cent(db_session: Session, tmp_path) 
 def test_the_stamp_duty_is_declared_alongside_and_never_added_to_the_total(
     db_session: Session, tmp_path
 ) -> None:  # noqa: ANN001
-    """`imponibile + imposta == totale`, with `bollo` beside it -- the identity slice 3
+    """`imponibile + imposta == totale`, with `stamp_duty` beside it -- the identity slice 3
     stores (`sum_totals`) and the one the previous system's register shows («Totale» always equals
     «Imp. Reddito»). A caller who adds the stamp into the total is refused, and a
     negative stamp is refused too, even though nothing sums it.
@@ -336,17 +334,17 @@ def test_the_stamp_duty_is_declared_alongside_and_never_added_to_the_total(
     cid = _fiscal_customer_id(db_session)
     with pytest.raises(ValidationFailed) as summed:
         service.import_issued(
-            _payload(cid, numero=7, giorno=date(2026, 5, 5), totale=Decimal("3422.00")), ADMIN
+            _payload(cid, number=7, day=date(2026, 5, 5), total=Decimal("3422.00")), ADMIN
         )
-    assert summed.value.details["field"] == "totale"
+    assert summed.value.details["field"] == "total"
     with pytest.raises(ValidationFailed) as negative:
         service.import_issued(
-            _payload(cid, numero=7, giorno=date(2026, 5, 5), bollo=Decimal("-2.00")), ADMIN
+            _payload(cid, number=7, day=date(2026, 5, 5), stamp_duty=Decimal("-2.00")), ADMIN
         )
-    assert negative.value.details["field"] == "bollo"
+    assert negative.value.details["field"] == "stamp_duty"
 
-    read = service.import_issued(_payload(cid, numero=7, giorno=date(2026, 5, 5)), ADMIN)
-    assert (read.imponibile, read.imposta, read.bollo, read.totale) == (
+    read = service.import_issued(_payload(cid, number=7, day=date(2026, 5, 5)), ADMIN)
+    assert (read.taxable_amount, read.vat_amount, read.stamp_duty, read.total) == (
         Decimal("2700.00"),
         Decimal("0.00"),
         Decimal("2.00"),
@@ -357,56 +355,56 @@ def test_the_stamp_duty_is_declared_alongside_and_never_added_to_the_total(
 def test_a_future_date_and_a_collaborator_are_refused(db_session: Session, tmp_path) -> None:  # noqa: ANN001
     from datetime import timedelta
 
-    from pigrocrm.core.clock import oggi_in_italia
+    from pigrocrm.core.db.clock import today_local
     from pigrocrm.core.errors import PermissionDenied, ValidationFailed
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
-    domani = oggi_in_italia() + timedelta(days=1)
+    tomorrow = today_local() + timedelta(days=1)
     with pytest.raises(ValidationFailed):
-        service.import_issued(_payload(cid, numero=7, giorno=domani), ADMIN)
+        service.import_issued(_payload(cid, number=7, day=tomorrow), ADMIN)
     with pytest.raises(PermissionDenied):
         service.import_issued(
-            _payload(cid, numero=7, giorno=date(2026, 5, 5)),
-            Actor(id=None, type="user", role="collaboratore"),
+            _payload(cid, number=7, day=date(2026, 5, 5)),
+            Actor(id=None, type="user", role="collaborator"),
         )
 
 
 def test_an_external_transmission_date_is_checked_like_a_native_one(
     db_session: Session, tmp_path
 ) -> None:  # noqa: ANN001
-    """`trasmessa_esternamente_il` is immutable once written and it is what `annul`
+    """`transmitted_externally_at` is immutable once written and it is what `annul`
     reads to decide whether a correction is still possible, so an import cannot be the
     one door through which a future -- or pre-emission -- delivery date walks in. Same
     helper, same two refusals, as `mark_transmitted_externally`.
     """
     from datetime import timedelta
 
-    from pigrocrm.core.clock import oggi_in_italia
+    from pigrocrm.core.db.clock import today_local
     from pigrocrm.core.errors import ValidationFailed
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
-    domani = oggi_in_italia() + timedelta(days=1)
-    with pytest.raises(ValidationFailed) as futura:
+    tomorrow = today_local() + timedelta(days=1)
+    with pytest.raises(ValidationFailed) as future:
         service.import_issued(
-            _payload(cid, numero=7, giorno=date(2026, 5, 5), trasmessa_esternamente_il=domani),
+            _payload(cid, number=7, day=date(2026, 5, 5), transmitted_externally_at=tomorrow),
             ADMIN,
         )
-    assert futura.value.details["field"] == "trasmessa_esternamente_il"
-    with pytest.raises(ValidationFailed) as prima:
+    assert future.value.details["field"] == "transmitted_externally_at"
+    with pytest.raises(ValidationFailed) as before:
         service.import_issued(
             _payload(
                 cid,
-                numero=7,
-                giorno=date(2026, 5, 5),
-                trasmessa_esternamente_il=date(2026, 5, 4),
+                number=7,
+                day=date(2026, 5, 5),
+                transmitted_externally_at=date(2026, 5, 4),
             ),
             ADMIN,
         )
-    assert prima.value.details["field"] == "trasmessa_esternamente_il"
+    assert before.value.details["field"] == "transmitted_externally_at"
     # And nothing was written by either refusal.
-    assert db_session.execute(select(Invoice).where(Invoice.numero == 7)).first() is None
+    assert db_session.execute(select(Invoice).where(Invoice.number == 7)).first() is None
 
 
 def test_the_import_writes_one_activity(db_session: Session, tmp_path) -> None:  # noqa: ANN001
@@ -414,7 +412,7 @@ def test_the_import_writes_one_activity(db_session: Session, tmp_path) -> None: 
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
-    read = service.import_issued(_payload(cid, numero=7, giorno=date(2026, 5, 5)), ADMIN)
+    read = service.import_issued(_payload(cid, number=7, day=date(2026, 5, 5)), ADMIN)
     kinds = (
         db_session.execute(
             select(Activity.kind).where(
@@ -436,20 +434,20 @@ def test_a_collection_date_without_a_collected_state_is_refused(
     cid = _fiscal_customer_id(db_session)
     with pytest.raises(ValidationFailed) as caught:
         service.import_issued(
-            _payload(cid, numero=7, giorno=date(2026, 5, 5), stato_pagamento="da_incassare"),
+            _payload(cid, number=7, day=date(2026, 5, 5), payment_status="unpaid"),
             ADMIN,
         )
-    assert caught.value.details["field"] == "data_incasso"
+    assert caught.value.details["field"] == "payment_date"
 
 
-def test_anno_must_match_the_issue_dates_year(db_session: Session, tmp_path) -> None:  # noqa: ANN001
+def test_year_must_match_the_issue_dates_year(db_session: Session, tmp_path) -> None:  # noqa: ANN001
     from pigrocrm.core.errors import ValidationFailed
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
     with pytest.raises(ValidationFailed) as caught:
-        service.import_issued(_payload(cid, numero=7, giorno=date(2026, 5, 5), anno=2025), ADMIN)
-    assert caught.value.details["field"] == "anno"
+        service.import_issued(_payload(cid, number=7, day=date(2026, 5, 5), year=2025), ADMIN)
+    assert caught.value.details["field"] == "year"
 
 
 def test_a_missing_fiscal_profile_is_refused_before_any_row_is_flushed(
@@ -462,7 +460,7 @@ def test_a_missing_fiscal_profile_is_refused_before_any_row_is_flushed(
     failed and the register carried it anyway.
 
     It used to be the emitter profile that was missing; since REB-623 a customer cannot
-    exist without an azienda, so the first thing an import can miss is the profile.
+    exist without a legal entity, so the first thing an import can miss is the profile.
     """
     from pigrocrm.core.errors import NotFound
     from pigrocrm.core.fiscal.repository import FiscalProfileRepository
@@ -471,15 +469,18 @@ def test_a_missing_fiscal_profile_is_refused_before_any_row_is_flushed(
 
     service = InvoiceService(db_session, LocalFileStorage(tmp_path))
     cid = _fiscal_customer_id(db_session)
-    assert FiscalProfileRepository(db_session).get(_default_azienda_id(db_session)) is None
+    assert FiscalProfileRepository(db_session).get(_default_legal_entity_id(db_session)) is None
 
     with pytest.raises(NotFound) as caught:
-        service.import_issued(_payload(cid, numero=7, giorno=date(2026, 5, 5)), ADMIN)
+        service.import_issued(_payload(cid, number=7, day=date(2026, 5, 5)), ADMIN)
     assert caught.value.details["entity"] == "fiscal_profile"
     # No invoice, no lines, and not even the year's counter row: the refusal happened
     # above `lock_counter`, which is what inserts it.
     assert db_session.execute(select(Invoice)).first() is None
-    assert _counter(db_session, 2026) is None
+    # `lock_counter` ran before the refused write and its row belongs to the caller's
+    # transaction, but no number was consumed on it.
+    counter = _counter(db_session, 2026)
+    assert counter is None or counter.last_number == 0
     # And the session is still usable -- a query, not an exception, is what comes back.
     assert service.undeclared_gaps(2026) == []
 
@@ -487,22 +488,22 @@ def test_a_missing_fiscal_profile_is_refused_before_any_row_is_flushed(
 def test_a_number_beyond_the_register_is_refused_by_the_schema(
     db_session: Session, tmp_path
 ) -> None:  # noqa: ANN001
-    """`MAX_NUMERO` is a bound on `InvoiceImport` itself, so a document id slipped from
+    """`MAX_NUMBER` is a bound on `InvoiceImport` itself, so a document id slipped from
     the previous system (`900142`) never reaches the service: no lock, no counter row, no
     two-hundred-thousand-element `undeclared_gaps`. The counter is the witness -- it
     exists only if `lock_counter` ran.
     """
     from pydantic import ValidationError
 
-    from pigrocrm.core.invoices.schemas import MAX_NUMERO
+    from pigrocrm.core.invoices.schemas import MAX_NUMBER
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
     with pytest.raises(ValidationError):
-        service.import_issued(_payload(cid, numero=900142, giorno=date(2026, 5, 5)), ADMIN)
+        service.import_issued(_payload(cid, number=900142, day=date(2026, 5, 5)), ADMIN)
     assert _counter(db_session, 2026) is None
-    service.import_issued(_payload(cid, numero=MAX_NUMERO, giorno=date(2026, 5, 5)), ADMIN)
-    assert _counter(db_session, 2026).ultimo_numero == MAX_NUMERO
+    service.import_issued(_payload(cid, number=MAX_NUMBER, day=date(2026, 5, 5)), ADMIN)
+    assert _counter(db_session, 2026).last_number == MAX_NUMBER
 
 
 def test_a_declared_gap_refuses_the_import_of_that_number(db_session: Session, tmp_path) -> None:  # noqa: ANN001
@@ -510,9 +511,9 @@ def test_a_declared_gap_refuses_the_import_of_that_number(db_session: Session, t
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
-    service.repo.add_gap(InvoiceRegisterGap(anno=2026, numero=8, motivo="annullata altrove"))
+    service.repo.add_gap(InvoiceRegisterGap(year=2026, number=8, reason="annullata altrove"))
     with pytest.raises(Conflict):
-        service.import_issued(_payload(cid, numero=8, giorno=date(2026, 5, 5)), ADMIN)
+        service.import_issued(_payload(cid, number=8, day=date(2026, 5, 5)), ADMIN)
 
 
 def test_import_is_refused_above_the_first_native_number(db_session: Session, tmp_path) -> None:  # noqa: ANN001
@@ -520,10 +521,10 @@ def test_import_is_refused_above_the_first_native_number(db_session: Session, tm
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
-    _issued(db_session, anno=2026, numero=5, giorno=date(2026, 4, 1), importata=False)
+    _issued(db_session, year=2026, number=5, day=date(2026, 4, 1), imported=False)
     with pytest.raises(Conflict):
-        service.import_issued(_payload(cid, numero=6, giorno=date(2026, 4, 2)), ADMIN)
-    service.import_issued(_payload(cid, numero=3, giorno=date(2026, 3, 1)), ADMIN)
+        service.import_issued(_payload(cid, number=6, day=date(2026, 4, 2)), ADMIN)
+    service.import_issued(_payload(cid, number=3, day=date(2026, 3, 1)), ADMIN)
 
 
 def test_gaps_are_declared_with_a_reason_and_listed(db_session: Session, tmp_path) -> None:  # noqa: ANN001
@@ -533,18 +534,18 @@ def test_gaps_are_declared_with_a_reason_and_listed(db_session: Session, tmp_pat
     out = service.declare_gaps(
         2026,
         RegisterGapsDeclare(
-            buchi=[
-                {"numero": 1, "motivo": "annullata nel gestionale precedente"},
-                {"numero": 4, "motivo": "test di emissione"},
+            gaps=[
+                {"number": 1, "reason": "annullata nel gestionale precedente"},
+                {"number": 4, "reason": "test di emissione"},
             ]
         ),  # type: ignore[list-item]
         ADMIN,
     )
-    assert [(g.numero, g.motivo) for g in out] == [
+    assert [(g.number, g.reason) for g in out] == [
         (1, "annullata nel gestionale precedente"),
         (4, "test di emissione"),
     ]
-    assert [g.numero for g in service.register_gaps(2026, ADMIN)] == [1, 4]
+    assert [g.number for g in service.register_gaps(2026, ADMIN)] == [1, 4]
 
 
 def test_declaring_a_number_that_is_an_invoice_is_a_conflict(db_session: Session, tmp_path) -> None:  # noqa: ANN001
@@ -553,13 +554,13 @@ def test_declaring_a_number_that_is_an_invoice_is_a_conflict(db_session: Session
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
-    service.import_issued(_payload(cid, numero=7, giorno=date(2026, 5, 5)), ADMIN)
+    service.import_issued(_payload(cid, number=7, day=date(2026, 5, 5)), ADMIN)
     with pytest.raises(Conflict):
-        service.declare_gaps(2026, RegisterGapsDeclare(buchi=[{"numero": 7, "motivo": "x"}]), ADMIN)  # type: ignore[list-item]
+        service.declare_gaps(2026, RegisterGapsDeclare(gaps=[{"number": 7, "reason": "x"}]), ADMIN)  # type: ignore[list-item]
 
 
 def test_undeclared_gaps_are_named_and_block_native_issuing(db_session: Session, tmp_path) -> None:  # noqa: ANN001
-    from pigrocrm.core.clock import oggi_in_italia
+    from pigrocrm.core.db.clock import today_local
     from pigrocrm.core.errors import Conflict
     from pigrocrm.core.invoices.schemas import (
         InvoiceCreate,
@@ -568,18 +569,18 @@ def test_undeclared_gaps_are_named_and_block_native_issuing(db_session: Session,
         RegisterGapsDeclare,
     )
 
-    anno = oggi_in_italia().year
+    year = today_local().year
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
-    service.import_issued(_payload(cid, numero=2, giorno=date(anno, 2, 4)), ADMIN)
-    service.import_issued(_payload(cid, numero=5, giorno=date(anno, 4, 7)), ADMIN)
+    service.import_issued(_payload(cid, number=2, day=date(year, 2, 4)), ADMIN)
+    service.import_issued(_payload(cid, number=5, day=date(year, 4, 7)), ADMIN)
     # From 1, not from the lowest number imported: the 1 is a hole exactly as much as
     # the 3 and the 4 are, and in the previous system's real register it is *the* hole.
-    assert service.undeclared_gaps(anno) == [1, 3, 4]
+    assert service.undeclared_gaps(year) == [1, 3, 4]
 
     draft = service.create(
         InvoiceCreate(
-            customer_id=cid, righe=[InvoiceLineIn(descrizione="x", prezzo_unitario=Decimal("100"))]
+            customer_id=cid, lines=[InvoiceLineIn(description="x", unit_price=Decimal("100"))]
         ),
         ADMIN,
     )
@@ -588,19 +589,19 @@ def test_undeclared_gaps_are_named_and_block_native_issuing(db_session: Session,
     assert "3" in str(caught.value) and "4" in str(caught.value)
 
     service.declare_gaps(
-        anno,
+        year,
         RegisterGapsDeclare(
-            buchi=[
-                {"numero": 1, "motivo": "mai emessa"},
-                {"numero": 3, "motivo": "a"},
-                {"numero": 4, "motivo": "b"},
+            gaps=[
+                {"number": 1, "reason": "mai emessa"},
+                {"number": 3, "reason": "a"},
+                {"number": 4, "reason": "b"},
             ]
         ),  # type: ignore[list-item]
         ADMIN,
     )
-    assert service.undeclared_gaps(anno) == []
+    assert service.undeclared_gaps(year) == []
     issued = service.issue(draft.id, InvoiceIssue(), ADMIN)
-    assert issued.numero == 6
+    assert issued.number == 6
 
 
 def test_the_hole_at_one_is_not_silent(db_session: Session, tmp_path) -> None:  # noqa: ANN001
@@ -613,11 +614,11 @@ def test_the_hole_at_one_is_not_silent(db_session: Session, tmp_path) -> None:  
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
-    service.import_issued(_payload(cid, numero=2, giorno=date(2026, 2, 4)), ADMIN)
+    service.import_issued(_payload(cid, number=2, day=date(2026, 2, 4)), ADMIN)
     assert service.undeclared_gaps(2026) == [1]
     service.declare_gaps(
         2026,
-        RegisterGapsDeclare(buchi=[{"numero": 1, "motivo": "mai emessa"}]),  # type: ignore[list-item]
+        RegisterGapsDeclare(gaps=[{"number": 1, "reason": "mai emessa"}]),  # type: ignore[list-item]
         ADMIN,
     )
     assert service.undeclared_gaps(2026) == []
@@ -627,34 +628,34 @@ def test_a_long_gap_list_is_reported_whole_and_rendered_short(
     db_session: Session, tmp_path
 ) -> None:  # noqa: ANN001
     """The refusal is read by a person: the message names the first twenty numbers and
-    says how many there are, while `details["numeri"]` keeps every one of them for a
+    says how many there are, while `details["numbers"]` keeps every one of them for a
     caller that wants to act on the list.
     """
-    from pigrocrm.core.clock import oggi_in_italia
+    from pigrocrm.core.db.clock import today_local
     from pigrocrm.core.errors import Conflict
+    from pigrocrm.core.invoices.register import GAPS_SHOWN_IN_MESSAGE
     from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
-    from pigrocrm.core.invoices.service import GAPS_SHOWN_IN_MESSAGE
 
-    anno = oggi_in_italia().year
+    year = today_local().year
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
-    service.import_issued(_payload(cid, numero=30, giorno=date(anno, 2, 4)), ADMIN)
-    buchi = list(range(1, 30))
-    assert service.undeclared_gaps(anno) == buchi
+    service.import_issued(_payload(cid, number=30, day=date(year, 2, 4)), ADMIN)
+    gaps = list(range(1, 30))
+    assert service.undeclared_gaps(year) == gaps
 
     draft = service.create(
         InvoiceCreate(
-            customer_id=cid, righe=[InvoiceLineIn(descrizione="x", prezzo_unitario=Decimal("100"))]
+            customer_id=cid, lines=[InvoiceLineIn(description="x", unit_price=Decimal("100"))]
         ),
         ADMIN,
     )
     with pytest.raises(Conflict) as caught:
         service.issue(draft.id, InvoiceIssue(), ADMIN)
-    assert caught.value.details["numeri"] == buchi
-    assert f"({len(buchi)} in tutto)" in caught.value.message
+    assert caught.value.details["numbers"] == gaps
+    assert f"({len(gaps)} in tutto)" in caught.value.message
     assert str(GAPS_SHOWN_IN_MESSAGE) in caught.value.message
     # The twenty-first number is not spelled out.
-    assert f", {buchi[GAPS_SHOWN_IN_MESSAGE]}," not in caught.value.message
+    assert f", {gaps[GAPS_SHOWN_IN_MESSAGE]}," not in caught.value.message
 
 
 def test_a_partly_invalid_batch_of_gaps_writes_none_of_it(db_session: Session, tmp_path) -> None:  # noqa: ANN001
@@ -667,15 +668,15 @@ def test_a_partly_invalid_batch_of_gaps_writes_none_of_it(db_session: Session, t
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
-    service.import_issued(_payload(cid, numero=7, giorno=date(2026, 5, 5)), ADMIN)
+    service.import_issued(_payload(cid, number=7, day=date(2026, 5, 5)), ADMIN)
     with pytest.raises(Conflict):
         service.declare_gaps(
             2026,
             RegisterGapsDeclare(
-                buchi=[
-                    {"numero": 1, "motivo": "mai emessa"},
-                    {"numero": 4, "motivo": "annullata"},
-                    {"numero": 7, "motivo": "questa e' una fattura"},
+                gaps=[
+                    {"number": 1, "reason": "mai emessa"},
+                    {"number": 4, "reason": "cancelled"},
+                    {"number": 7, "reason": "questa e' una fattura"},
                 ]
             ),  # type: ignore[list-item]
             ADMIN,
@@ -694,7 +695,7 @@ def test_a_same_batch_duplicate_number_is_a_conflict_and_leaves_the_session_usab
     with pytest.raises(Conflict):
         service.declare_gaps(
             2026,
-            RegisterGapsDeclare(buchi=[{"numero": 3, "motivo": "a"}, {"numero": 3, "motivo": "b"}]),  # type: ignore[list-item]
+            RegisterGapsDeclare(gaps=[{"number": 3, "reason": "a"}, {"number": 3, "reason": "b"}]),  # type: ignore[list-item]
             ADMIN,
         )
     # The session must still answer a query after the Conflict: a poisoned
@@ -707,7 +708,7 @@ def test_a_same_batch_duplicate_number_is_a_conflict_and_leaves_the_session_usab
     service.register_gaps(2026, ADMIN)
 
 
-def test_anno_out_of_range_is_refused_before_any_write(db_session: Session, tmp_path) -> None:  # noqa: ANN001
+def test_year_out_of_range_is_refused_before_any_write(db_session: Session, tmp_path) -> None:  # noqa: ANN001
     from pigrocrm.core.errors import ValidationFailed
     from pigrocrm.core.invoices.schemas import RegisterGapsDeclare
 
@@ -715,15 +716,15 @@ def test_anno_out_of_range_is_refused_before_any_write(db_session: Session, tmp_
     with pytest.raises(ValidationFailed) as caught:
         service.declare_gaps(
             10**12,
-            RegisterGapsDeclare(buchi=[{"numero": 1, "motivo": "x"}]),  # type: ignore[list-item]
+            RegisterGapsDeclare(gaps=[{"number": 1, "reason": "x"}]),  # type: ignore[list-item]
             ADMIN,
         )
-    assert caught.value.details["field"] == "anno"
+    assert caught.value.details["field"] == "year"
     assert db_session.execute(select(InvoiceRegisterGap)).first() is None
 
 
 def _pdf_document(session: Session, tmp_path, customer_id: UUID, *, storage=None) -> UUID:  # noqa: ANN001
-    """A document of type `fattura` with one PDF version already uploaded.
+    """A document of type `invoice` with one PDF version already uploaded.
 
     `storage` defaults to a fresh `LocalFileStorage(tmp_path)`; a caller that wants
     the adopted PDF's bytes to actually download through the `InvoiceService` under
@@ -737,9 +738,7 @@ def _pdf_document(session: Session, tmp_path, customer_id: UUID, *, storage=None
 
     docs = DocumentService(session, storage or LocalFileStorage(tmp_path), get_settings())
     doc = docs.create(
-        DocumentCreate(
-            customer_id=customer_id, tipo="fattura", titolo="Fattura 7/2026 (importata)"
-        ),
+        DocumentCreate(customer_id=customer_id, type="invoice", title="Fattura 7/2026 (importata)"),
         ADMIN,
     )
     docs.add_version(doc.id, b"%PDF-1.4 fake", "application/pdf", ADMIN)
@@ -748,15 +747,13 @@ def _pdf_document(session: Session, tmp_path, customer_id: UUID, *, storage=None
 
 def test_the_original_pdf_is_adopted_not_rendered(db_session: Session, tmp_path) -> None:  # noqa: ANN001
     from pigrocrm.core.errors import Conflict
-    from pigrocrm.core.invoices.schemas import PdfSorgente
+    from pigrocrm.core.invoices.schemas import PdfSource
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
     doc_id = _pdf_document(db_session, tmp_path, cid, storage=service.storage)
     read = service.import_issued(
-        _payload(
-            cid, numero=7, giorno=date(2026, 5, 5), pdf_sorgente=PdfSorgente(document_id=doc_id)
-        ),
+        _payload(cid, number=7, day=date(2026, 5, 5), pdf_source=PdfSource(document_id=doc_id)),
         ADMIN,
     )
     assert read.pdf_document_id == doc_id
@@ -775,7 +772,7 @@ def test_a_pdf_of_another_customer_or_without_bytes_is_refused(
     from pigrocrm.core.documents.schemas import DocumentCreate
     from pigrocrm.core.documents.service import DocumentService
     from pigrocrm.core.errors import ValidationFailed
-    from pigrocrm.core.invoices.schemas import PdfSorgente
+    from pigrocrm.core.invoices.schemas import PdfSource
     from pigrocrm.core.storage.local import LocalFileStorage
 
     service = _svc(db_session, tmp_path)
@@ -786,15 +783,15 @@ def test_a_pdf_of_another_customer_or_without_bytes_is_refused(
         service.import_issued(
             _payload(
                 cid,
-                numero=7,
-                giorno=date(2026, 5, 5),
-                pdf_sorgente=PdfSorgente(document_id=foreign),
+                number=7,
+                day=date(2026, 5, 5),
+                pdf_source=PdfSource(document_id=foreign),
             ),
             ADMIN,
         )
-    assert db_session.execute(select(Invoice).where(Invoice.numero == 7)).first() is None
+    assert db_session.execute(select(Invoice).where(Invoice.number == 7)).first() is None
     empty = DocumentService(db_session, LocalFileStorage(tmp_path), get_settings()).create(
-        DocumentCreate(customer_id=cid, tipo="fattura", titolo="vuoto"), ADMIN
+        DocumentCreate(customer_id=cid, type="invoice", title="empty"), ADMIN
     )
     # numero=7 again, and that is the point: the refused call above validated the PDF
     # before writing anything, so the register does not carry a 7 and this call is not
@@ -803,9 +800,9 @@ def test_a_pdf_of_another_customer_or_without_bytes_is_refused(
         service.import_issued(
             _payload(
                 cid,
-                numero=7,
-                giorno=date(2026, 5, 5),
-                pdf_sorgente=PdfSorgente(document_id=empty.id),
+                number=7,
+                day=date(2026, 5, 5),
+                pdf_source=PdfSource(document_id=empty.id),
             ),
             ADMIN,
         )
@@ -901,16 +898,16 @@ def _drive_account(session: Session, *, roots: tuple[str, ...] = (ROOT_FOLDER,))
     from fakes.gmail_fixtures import TOKEN_KEY
 
     from pigrocrm.core.auth.models import User
+    from pigrocrm.core.crypto import seal
     from pigrocrm.core.drive.models import GoogleDriveAccount
     from pigrocrm.core.drive.schemas import DRIVE_SCOPE_FILE, DRIVE_SCOPE_READONLY
-    from pigrocrm.core.gmail.crypto import seal
 
     user = User(
         email=f"titolare-{uuid4().hex[:8]}@example.it",
-        nome="Titolare",
+        name="Titolare",
         password_hash="x",
-        ruolo="admin",
-        attivo=True,
+        role="admin",
+        active=True,
     )
     session.add(user)
     session.flush()
@@ -934,7 +931,7 @@ def _drive_account(session: Session, *, roots: tuple[str, ...] = (ROOT_FOLDER,))
 def _imported_documents(session: Session):  # noqa: ANN202
     from pigrocrm.core.documents.models import Document
 
-    return list(session.execute(select(Document).where(Document.tipo == "fattura")).scalars())
+    return list(session.execute(select(Document).where(Document.type == "invoice")).scalars())
 
 
 def test_the_original_pdf_can_come_straight_from_drive(
@@ -946,7 +943,7 @@ def test_the_original_pdf_can_come_straight_from_drive(
 
     What is asserted is the whole point of the feature: the PDF the customer actually
     received is what the CRM hands back, byte for byte, from a `documents` row of type
-    `fattura` whose title names the invoice -- not a PDF rendered today with today's
+    `invoice` whose title names the invoice -- not a PDF rendered today with today's
     layout, which would not be that document.
     """
     from fakes.gmail_fixtures import gmail_settings
@@ -954,7 +951,7 @@ def test_the_original_pdf_can_come_straight_from_drive(
     from pigrocrm.core.activities.models import Activity
     from pigrocrm.core.drive import reader as reader_module
     from pigrocrm.core.drive.transport import DriveTransport
-    from pigrocrm.core.invoices.schemas import PdfSorgente
+    from pigrocrm.core.invoices.schemas import PdfSource
 
     drive = _drive()
     providers: list[object] = []
@@ -990,9 +987,9 @@ def test_the_original_pdf_can_come_straight_from_drive(
     read = service.import_issued(
         _payload(
             cid,
-            numero=7,
-            giorno=date(2026, 5, 5),
-            pdf_sorgente=PdfSorgente(drive_file_id=DRIVE_PDF),
+            number=7,
+            day=date(2026, 5, 5),
+            pdf_source=PdfSource(drive_file_id=DRIVE_PDF),
         ),
         actor,
     )
@@ -1009,8 +1006,8 @@ def test_the_original_pdf_can_come_straight_from_drive(
     document = documents[0]
     assert document.id == read.pdf_document_id
     assert document.customer_id == cid
-    assert document.titolo == "Fattura 2026/7 (originale)"
-    assert document.versione_corrente == 1
+    assert document.title == "Fattura 2026/7 (originale)"
+    assert document.current_version == 1
     # Provenance is recorded, so in three years the answer to "where did this PDF come
     # from?" is the Drive id it was fetched from and not a shrug.
     payloads = [
@@ -1019,11 +1016,11 @@ def test_the_original_pdf_can_come_straight_from_drive(
             select(Activity.payload).where(
                 Activity.entity_type == "document",
                 Activity.entity_id == document.id,
-                Activity.kind == "document.importato",
+                Activity.kind == "document.imported",
             )
         ).scalars()
     ]
-    assert payloads and payloads[0]["origine"]["drive_file_id"] == DRIVE_PDF
+    assert payloads and payloads[0]["origin"]["drive_file_id"] == DRIVE_PDF
 
 
 def test_a_drive_file_outside_the_configured_roots_is_a_conflict(
@@ -1036,7 +1033,7 @@ def test_a_drive_file_outside_the_configured_roots_is_a_conflict(
     refusal is a Drive id, not an id of this CRM.
     """
     from pigrocrm.core.errors import Conflict
-    from pigrocrm.core.invoices.schemas import PdfSorgente
+    from pigrocrm.core.invoices.schemas import PdfSource
 
     drive = _drive()
     service = _svc(db_session, tmp_path, drive_reader_factory=_reader_factory(drive))
@@ -1046,24 +1043,24 @@ def test_a_drive_file_outside_the_configured_roots_is_a_conflict(
         service.import_issued(
             _payload(
                 cid,
-                numero=7,
-                giorno=date(2026, 5, 5),
-                pdf_sorgente=PdfSorgente(drive_file_id=OUTSIDE_PDF),
+                number=7,
+                day=date(2026, 5, 5),
+                pdf_source=PdfSource(drive_file_id=OUTSIDE_PDF),
             ),
             ADMIN,
         )
 
     assert caught.value.details["drive_file_id"] == OUTSIDE_PDF
-    assert db_session.execute(select(Invoice).where(Invoice.numero == 7)).first() is None
+    assert db_session.execute(select(Invoice).where(Invoice.number == 7)).first() is None
     assert _imported_documents(db_session) == []
 
 
 def test_a_drive_file_that_is_not_a_pdf_is_refused(db_session: Session, tmp_path) -> None:  # noqa: ANN001
     """Inside the roots, readable, and still not the original document: a text file is
     not the PDF the customer holds. Refused on the field the caller typed, so the
-    message points at `pdf_sorgente.drive_file_id` rather than at "a document"."""
+    message points at `pdf_source.drive_file_id` rather than at "a document"."""
     from pigrocrm.core.errors import ValidationFailed
-    from pigrocrm.core.invoices.schemas import PdfSorgente
+    from pigrocrm.core.invoices.schemas import PdfSource
 
     drive = _drive()
     service = _svc(db_session, tmp_path, drive_reader_factory=_reader_factory(drive))
@@ -1073,15 +1070,15 @@ def test_a_drive_file_that_is_not_a_pdf_is_refused(db_session: Session, tmp_path
         service.import_issued(
             _payload(
                 cid,
-                numero=7,
-                giorno=date(2026, 5, 5),
-                pdf_sorgente=PdfSorgente(drive_file_id=DRIVE_TXT),
+                number=7,
+                day=date(2026, 5, 5),
+                pdf_source=PdfSource(drive_file_id=DRIVE_TXT),
             ),
             ADMIN,
         )
 
-    assert caught.value.details["field"] == "pdf_sorgente.drive_file_id"
-    assert db_session.execute(select(Invoice).where(Invoice.numero == 7)).first() is None
+    assert caught.value.details["field"] == "pdf_source.drive_file_id"
+    assert db_session.execute(select(Invoice).where(Invoice.number == 7)).first() is None
     assert _imported_documents(db_session) == []
     # And it was refused *without downloading it*. The mime is a fact one `files.get`
     # already knows, so paying for the bytes to learn it spends the titolare's bandwidth
@@ -1101,20 +1098,20 @@ def test_a_register_refusal_after_the_drive_read_files_no_document(
     would be an orphan PDF filed against a customer forever.
     """
     from pigrocrm.core.errors import Conflict
-    from pigrocrm.core.invoices.schemas import PdfSorgente
+    from pigrocrm.core.invoices.schemas import PdfSource
 
     drive = _drive()
     service = _svc(db_session, tmp_path, drive_reader_factory=_reader_factory(drive))
     cid = _fiscal_customer_id(db_session)
-    service.import_issued(_payload(cid, numero=7, giorno=date(2026, 5, 5)), ADMIN)
+    service.import_issued(_payload(cid, number=7, day=date(2026, 5, 5)), ADMIN)
 
     with pytest.raises(Conflict):
         service.import_issued(
             _payload(
                 cid,
-                numero=7,
-                giorno=date(2026, 5, 5),
-                pdf_sorgente=PdfSorgente(drive_file_id=DRIVE_PDF),
+                number=7,
+                day=date(2026, 5, 5),
+                pdf_source=PdfSource(drive_file_id=DRIVE_PDF),
             ),
             ADMIN,
         )
@@ -1130,7 +1127,7 @@ def test_a_failed_commit_takes_the_imported_pdf_with_it(
     ordinary committing `create`, the document would survive the rollback of the
     invoice it was fetched for.
     """
-    from pigrocrm.core.invoices.schemas import PdfSorgente
+    from pigrocrm.core.invoices.schemas import PdfSource
 
     drive = _drive()
     service = _svc(db_session, tmp_path, drive_reader_factory=_reader_factory(drive))
@@ -1144,15 +1141,19 @@ def test_a_failed_commit_takes_the_imported_pdf_with_it(
         service.import_issued(
             _payload(
                 cid,
-                numero=7,
-                giorno=date(2026, 5, 5),
-                pdf_sorgente=PdfSorgente(drive_file_id=DRIVE_PDF),
+                number=7,
+                day=date(2026, 5, 5),
+                pdf_source=PdfSource(drive_file_id=DRIVE_PDF),
             ),
             ADMIN,
         )
     monkeypatch.undo()
+    # The service never rolls back a session it does not own: the caller whose commit
+    # failed does, and the `documents` row goes with the invoice because it was never
+    # committed on its own.
+    db_session.rollback()
 
-    assert db_session.execute(select(Invoice).where(Invoice.numero == 7)).first() is None
+    assert db_session.execute(select(Invoice).where(Invoice.number == 7)).first() is None
     assert _imported_documents(db_session) == []
 
 
@@ -1160,20 +1161,20 @@ def test_an_empty_pdf_on_drive_is_refused_among_the_pure_checks(
     db_session: Session, tmp_path
 ) -> None:  # noqa: ANN001
     """A zero-byte file inside the configured roots: readable, `application/pdf`, and
-    not a document. `DocumentService._check_upload` would refuse it too -- but only
+    not a document. `DocumentUploads.check_upload` would refuse it too -- but only
     from *inside* `import_bytes`, which runs after the `Invoice` has been flushed, and
-    the only rollback in `import_issued` wraps the final `commit`. So the refusal is
+    the SAVEPOINT `import_issued` writes in starts after the pure checks. So the refusal is
     hoisted here, among the pure checks, where it belongs: it is a fact about the file
     the caller named.
 
-    Three things must be absent afterwards, not one: the fattura, the imported
+    Three things must be absent afterwards, not one: the invoice, the imported
     document, and the counter row -- `lock_counter` creates it, so a refusal that
     escaped the transaction would leave a register year in existence because somebody
     typed a bad Drive id.
     """
     from pigrocrm.core.documents.models import Document
     from pigrocrm.core.errors import ValidationFailed
-    from pigrocrm.core.invoices.schemas import PdfSorgente
+    from pigrocrm.core.invoices.schemas import PdfSource
 
     drive = _drive()
     service = _svc(db_session, tmp_path, drive_reader_factory=_reader_factory(drive))
@@ -1183,15 +1184,15 @@ def test_an_empty_pdf_on_drive_is_refused_among_the_pure_checks(
         service.import_issued(
             _payload(
                 cid,
-                numero=7,
-                giorno=date(2026, 5, 5),
-                pdf_sorgente=PdfSorgente(drive_file_id=EMPTY_PDF),
+                number=7,
+                day=date(2026, 5, 5),
+                pdf_source=PdfSource(drive_file_id=EMPTY_PDF),
             ),
             ADMIN,
         )
 
-    assert caught.value.details["field"] == "pdf_sorgente.drive_file_id"
-    assert db_session.execute(select(Invoice).where(Invoice.numero == 7)).first() is None
+    assert caught.value.details["field"] == "pdf_source.drive_file_id"
+    assert db_session.execute(select(Invoice).where(Invoice.number == 7)).first() is None
     assert db_session.execute(select(Document)).first() is None
     assert _counter(db_session, 2026) is None
 
@@ -1204,9 +1205,9 @@ def test_a_refusal_from_inside_import_bytes_still_leaves_nothing_flushed(
     `import_bytes` runs *after* the `Invoice` and its lines have been flushed, and it
     can refuse for reasons that are not facts about the Drive file at all: here a
     required custom field defined on `document`, which every `documents` row must carry
-    and this one has no way to supply. Without a rollback at that call site the refused
-    fattura would sit flushed in the caller's session, and the next query in the same
-    transaction would find a fattura the caller had just been told did not exist --
+    and this one has no way to supply. Without a SAVEPOINT around the writes the refused
+    invoice would sit flushed in the caller's session, and the next query in the same
+    transaction would find a invoice the caller had just been told did not exist --
     the precise failure `import_issued`'s own docstring exists to describe.
 
     The assertion after the refusal is therefore made *through the same session*: it is
@@ -1216,7 +1217,7 @@ def test_a_refusal_from_inside_import_bytes_still_leaves_nothing_flushed(
     from pigrocrm.core.errors import ValidationFailed
     from pigrocrm.core.fields.schemas import FieldDefinitionCreate
     from pigrocrm.core.fields.service import FieldDefinitionService
-    from pigrocrm.core.invoices.schemas import PdfSorgente
+    from pigrocrm.core.invoices.schemas import PdfSource
 
     drive = _drive()
     service = _svc(db_session, tmp_path, drive_reader_factory=_reader_factory(drive))
@@ -1236,15 +1237,18 @@ def test_a_refusal_from_inside_import_bytes_still_leaves_nothing_flushed(
         service.import_issued(
             _payload(
                 cid,
-                numero=7,
-                giorno=date(2026, 5, 5),
-                pdf_sorgente=PdfSorgente(drive_file_id=DRIVE_PDF),
+                number=7,
+                day=date(2026, 5, 5),
+                pdf_source=PdfSource(drive_file_id=DRIVE_PDF),
             ),
             ADMIN,
         )
 
-    assert db_session.execute(select(Invoice).where(Invoice.numero == 7)).first() is None
+    assert db_session.execute(select(Invoice).where(Invoice.number == 7)).first() is None
     assert db_session.execute(select(Document)).first() is None
-    assert _counter(db_session, 2026) is None
+    # `lock_counter` ran before the refused write and its row belongs to the caller's
+    # transaction, but no number was consumed on it.
+    counter = _counter(db_session, 2026)
+    assert counter is None or counter.last_number == 0
     # And the session is still usable: a later read does not raise on a pending failure.
-    assert service.repo.numbers_present(_default_azienda_id(db_session), 2026) == set()
+    assert service.repo.numbers_present(_default_legal_entity_id(db_session), 2026) == set()

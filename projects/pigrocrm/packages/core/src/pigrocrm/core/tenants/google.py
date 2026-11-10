@@ -24,13 +24,12 @@ own key and never with a key stored in the space's database. See the DECISIONS r
 """
 
 import base64
-import binascii
 import re
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from pigrocrm.core.config import GOOGLE_TOKEN_KEY_BYTES
+from pigrocrm.core.crypto import KEY_BYTES, decode_aes256_key
 from pigrocrm.core.tenants.schemas import RESERVED_SLUGS, SLUG_PATTERN
 
 # Neither a slug (`[a-z0-9-]`) nor a jti (base64url, `[A-Za-z0-9_-]`) can contain it,
@@ -39,6 +38,10 @@ STATE_SEPARATOR = "."
 # HKDF's `info`: binds the derived key to its purpose and to one space. Versioned so a
 # second derivation, if one is ever needed, cannot collide with this one.
 _KEY_INFO = b"pigrocrm/google-token-key/v1/space:"
+# The same derivation for the Slack bot tokens (REB-739), under its own `info` so that a
+# Google key and a Slack key derived for one space are two different keys even from the
+# same root key.
+_SLACK_KEY_INFO = b"pigrocrm/slack-token-key/v1/space:"
 # What `gmail/oauth.py` mints: base64url, 32 characters today. Checked so that a state
 # with anything else after the slug is not relayed at all.
 _JTI = re.compile(r"[A-Za-z0-9_-]{1,128}")
@@ -70,21 +73,30 @@ def space_token_key(root_key: str, slug: str) -> str:
 
     HKDF-SHA256 over the root key, with the slug in `info`: 32 bytes, base64, the same
     shape `decode_google_token_key` expects of `PIGROCRM_GOOGLE_TOKEN_KEY`. The key
-    stays outside every database, like the root's (`gmail/crypto.py` says why that is
+    stays outside every database, like the root's (`core/crypto.py` says why that is
     the point), and a ciphertext copied into another space's database does not open
     there. Empty when the root has no valid key: the space then reads as Gmail not
     configured, rather than failing every request it serves.
     """
+    return _derive(root_key, _KEY_INFO + slug.encode("ascii"))
+
+
+def space_slack_token_key(root_key: str, slug: str) -> str:
+    """`space_token_key`'s twin for the Slack bot token: derived from
+    `PIGROCRM_SLACK_TOKEN_KEY` and the slug, so a bot token copied into another space's
+    database does not open there, and empty when the root's key is not a valid one."""
+    return _derive(root_key, _SLACK_KEY_INFO + slug.encode("ascii"))
+
+
+def _derive(root_key: str, info: bytes) -> str:
     try:
-        root = base64.b64decode(root_key, validate=True)
-    except (binascii.Error, ValueError):
-        return ""
-    if len(root) != GOOGLE_TOKEN_KEY_BYTES:
+        root = decode_aes256_key(root_key, "the root key")
+    except ValueError:
         return ""
     derived = HKDF(
         algorithm=hashes.SHA256(),
-        length=GOOGLE_TOKEN_KEY_BYTES,
+        length=KEY_BYTES,
         salt=None,
-        info=_KEY_INFO + slug.encode("ascii"),
+        info=info,
     ).derive(root)
     return base64.b64encode(derived).decode("ascii")

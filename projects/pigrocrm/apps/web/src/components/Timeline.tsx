@@ -1,8 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { Bot, CircleHelp, Cog, DoorOpen, User, type LucideIcon } from 'lucide-react'
-import { formatOccurredAt, humanize, labelForKind } from '@/components/activityLabels'
+import {
+  formatOccurredAtExact,
+  humanize,
+  labelForKind,
+  labelForPayloadKey,
+  labelForPayloadValue,
+} from '@/components/activityLabels'
 import { Badge } from '@rebase/ui/badge'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { api, toProblem, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
@@ -48,13 +54,13 @@ interface ActorMeta {
  * `Actor.rebase()`'s own docstring is explicit that it is never an agent, so it does
  * not share `mcp`'s treatment either (milestone A, REB-490).
  *
- * The four get deliberately different *visible* treatments, not just four
- * icons at the same weight: "did I do that, or did an agent?" is the first
- * question this whole timeline exists to answer, so the answer is a coloured,
- * labelled badge -- a word, not only a glyph someone has to recognise at 12px --
- * and the one the product most wants noticed (an agent acting on someone's
- * behalf) gets the same bold fill as a primary action, not a muted secondary tag
- * indistinguishable in weight from an ordinary user edit.
+ * "did I do that, or did an agent?" is the first question this whole timeline exists to
+ * answer, and since REB-781 so is "who, and from where": each entry carries the member's
+ * name (`ActivityRead.actor_name`, resolved from `actor_id`, a deactivated member's
+ * included) and a channel marker, a word and not only a glyph. The one the product most
+ * wants noticed, a change an agent made on someone's behalf, gets «via MCP» in the bold
+ * fill of a primary action; a browser change gets the quiet «dal web» beside it, so the
+ * two are never told apart by the absence of a marker.
  */
 const ACTOR_META: Record<string, ActorMeta> = {
   user: { label: 'Utente', icon: User, variant: 'outline' },
@@ -69,14 +75,68 @@ function actorMeta(actorType: string): ActorMeta {
   )
 }
 
-function ActorBadge({ actorType }: { actorType: string }) {
-  const { label, icon: Icon, variant } = actorMeta(actorType)
+/**
+ * What a person reads as the channel of a change. `user` and `mcp` are the two a member can
+ * make a change through, and each says so; `system` and `rebase` are named by the author
+ * label itself and add nothing. Keyed by the same `Actor.type` values as `ACTOR_META`.
+ */
+const CHANNEL_LABEL: Record<string, string> = { user: 'dal web', mcp: 'via MCP' }
+
+function ChannelBadge({ actorType }: { actorType: string }) {
+  const label = CHANNEL_LABEL[actorType]
+  if (label === undefined) return null
   return (
-    <Badge variant={variant} className="shrink-0 gap-1">
-      <Icon className="size-3" />
+    <Badge variant={actorMeta(actorType).variant} className="shrink-0">
       {label}
     </Badge>
   )
+}
+
+/**
+ * Who did it: the member's name, and the channel. A row with no name to give (`system`,
+ * `rebase`, or an id no user row holds any more) falls back to the label of its actor type,
+ * which is what the timeline said before names existed.
+ */
+function ActorLine({ entry }: { entry: ActivityEntry }) {
+  const { label, icon: Icon } = actorMeta(entry.actor_type)
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+      <Icon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      <span className="font-medium">{entry.actor_name ?? label}</span>
+      <ChannelBadge actorType={entry.actor_type} />
+    </div>
+  )
+}
+
+/**
+ * An automation's entry is the system's, and names the member whose action set it off in
+ * `payload.triggered_by`, with the channel that member used in `triggered_via` (§9.5). Both
+ * are read here and kept out of the generic dump, which would print an id.
+ */
+function TriggeredBy({ entry }: { entry: ActivityEntry }) {
+  const { triggered_by: member, triggered_via: via } = entry.payload
+  if (member === undefined || member === null) return null
+  const channel = typeof via === 'string' ? CHANNEL_LABEL[via] : undefined
+  return (
+    <p className="mt-1 text-sm text-muted-foreground">
+      Attivata da{' '}
+      <strong className="font-medium text-foreground">
+        {entry.triggered_by_name ?? 'un membro rimosso'}
+      </strong>
+      {channel !== undefined ? ` (${channel})` : null}
+    </p>
+  )
+}
+
+/**
+ * Kinds whose `from`/`to` were `da`/`a` before the English rename (migration 0068). The
+ * shape check below only ever matched the English keys, so these rendered through the
+ * generic «Da: … · A: …» line, the rule included; they keep doing so.
+ */
+const GENERIC_FROM_TO_KINDS: Record<string, true> = {
+  state_changed: true,
+  day_state_changed: true,
+  'automation.stage_moved': true,
 }
 
 /**
@@ -86,51 +146,79 @@ function ActorBadge({ actorType }: { actorType: string }) {
  * never seen can still carry a shape it recognises (or, worst case, falls through
  * to the generic dump below, never a crash, never `undefined`).
  *
- *  - `updated` writes `{"changed": [...]}` (customers/people/deals `service.py`).
+ *  - `updated` writes `{"changed": [...]}` (organizations/people/deals `service.py`).
  *  - `stage_changed` (deals only) writes `{"from": ..., "to": ...}`. Read by
  *    name, not by object key order: Postgres JSONB does not preserve insertion
  *    order (confirmed live -- the real API returned `{"to": ..., "from": ...}`
  *    for a payload the backend constructs as `{"from": ..., "to": ...}`), so
  *    anything that assumed the first key was always "from" would be reading the
  *    wrong side of the transition at random.
- *  - `created`'s payload is per-entity (`ragione_sociale` for a customer, `nome`
- *    for a person, `nome`+`stage` for a deal) and `deleted`/`restored` carry `{}`
+ *  - `created`'s payload is per-entity (`legal_name` for a customer, `name`
+ *    for a person, `name`+`stage` for a deal) and `deleted`/`restored` carry `{}`
  *    -- both land in the generic fallback, which is `null` for the empty case
  *    (the label above already says everything there is to say) and an
  *    ugly-but-true `snake_case: value` dump otherwise, which beats saying
  *    nothing about a real event.
  */
-function ActivityDetail({ payload }: { payload: ActivityEntry['payload'] }) {
+function ActivityDetail({
+  kind,
+  payload,
+  typeLabel,
+}: {
+  kind: string
+  payload: ActivityEntry['payload']
+  typeLabel?: (key: string) => string | undefined
+}) {
+  // The reminder type a defaults change is about, in the word the settings page uses.
+  const typeWord = typeof payload.type === 'string' ? typeLabel?.(payload.type) : undefined
   if (Array.isArray(payload.changed) && payload.changed.length > 0) {
     return (
       <p className="mt-1 text-sm text-muted-foreground">
-        Campi modificati: {payload.changed.map((field) => humanize(String(field))).join(', ')}
+        {typeWord ? `${typeWord} · ` : ''}
+        Campi modificati: {payload.changed.map((field) => labelForPayloadKey(String(field))).join(', ')}
       </p>
     )
   }
 
-  if ('from' in payload && 'to' in payload) {
+  if ('from' in payload && 'to' in payload && GENERIC_FROM_TO_KINDS[kind] !== true) {
     return (
       <p className="mt-1 text-sm text-muted-foreground">
-        Da <strong className="font-medium text-foreground">{String(payload.from)}</strong> a{' '}
-        <strong className="font-medium text-foreground">{String(payload.to)}</strong>
+        Da <strong className="font-medium text-foreground">{labelForPayloadValue(kind, 'from', payload.from)}</strong> a{' '}
+        <strong className="font-medium text-foreground">{labelForPayloadValue(kind, 'to', payload.to)}</strong>
       </p>
     )
   }
 
-  // `importata_da` is dropped rather than dumped: the `imported` label already says the
+  // `imported_from` is dropped rather than dumped: the `imported` label already says the
   // invoice was issued elsewhere, and the column's value names the system it came from
   // -- provenance the CRM keeps for itself, never product copy (`invoices/models.py`).
   // The rest of that payload (anno, numero, totale) are facts about the document and
   // stay. Filtered by key here, in the generic branch, so the same is true of any
   // future `kind` that records the same field.
-  const rest = Object.entries(payload).filter(([key]) => key !== 'importata_da')
-  if (rest.length === 0) return null
-  return (
-    <p className="mt-1 text-sm text-muted-foreground">
-      {rest.map(([key, value]) => `${humanize(key)}: ${String(value)}`).join(' · ')}
-    </p>
+  // The ids a payload carries to say which draft or which member it concerns are for the
+  // machine: dumping a UUID tells a reader nothing the label does not.
+  const hidden: Record<string, true> = {
+    imported_from: true,
+    triggered_by: true,
+    triggered_via: true,
+    draft_id: true,
+    user_id: true,
+    // Slack's own id of the workspace, which the name next to it already says.
+    team_id: true,
+    // A note event's id and door: the label says what happened, the actor line says who and
+    // how, and the text of a note is on the page, never repeated here.
+    note_id: true,
+    source: true,
+  }
+  const rest = Object.entries(payload).filter(
+    ([key]) => hidden[key] !== true && !(key === 'type' && typeWord !== undefined),
   )
+  const parts = [
+    ...(typeWord ? [typeWord] : []),
+    ...rest.map(([key, value]) => `${labelForPayloadKey(key)}: ${labelForPayloadValue(kind, key, value)}`),
+  ]
+  if (parts.length === 0) return null
+  return <p className="mt-1 text-sm text-muted-foreground">{parts.join(' · ')}</p>
 }
 
 // Three explicit branches, not a shared helper keyed off a path template: the
@@ -145,10 +233,10 @@ const TIMELINE_FETCHERS: Record<
   TimelineEntityType,
   (entityId: string, limit: number) => Promise<ActivityEntry[]>
 > = {
-  customer: (entityId, limit) =>
+  organization: (entityId, limit) =>
     unwrap(
-      api.GET('/api/customers/{customer_id}/timeline', {
-        params: { path: { customer_id: entityId }, query: { limit } },
+      api.GET('/api/organizations/{organization_id}/timeline', {
+        params: { path: { organization_id: entityId }, query: { limit } },
       }),
     ),
   person: (entityId, limit) =>
@@ -175,13 +263,23 @@ const TIMELINE_FETCHERS: Record<
         params: { path: { invoice_id: entityId }, query: { limit } },
       }),
     ),
+  contract: (entityId, limit) =>
+    unwrap(
+      api.GET('/api/contracts/{contract_id}/timeline', {
+        params: { path: { contract_id: entityId }, query: { limit } },
+      }),
+    ),
+  // The space's own settings have one history each and no id to name it.
+  slack: (_entityId, limit) => unwrap(api.GET('/api/slack/timeline', { params: { query: { limit } } })),
+  reminder_defaults: (_entityId, limit) =>
+    unwrap(api.GET('/api/reminders/defaults/timeline', { params: { query: { limit } } })),
 }
 
 interface TimelineProps {
   entityType: TimelineEntityType
   entityId: string
   /**
-   * The backend's own bound (routers/{customers,people,deals}.py's shared
+   * The backend's own bound (routers/{organizations,people,deals}.py's shared
    * `Query(ge=1, le=200)`, mirrored again in `ActivityService.timeline` itself so
    * the MCP `get_timeline` tool -- which calls that method directly, with no REST
    * schema in between -- cannot bypass it either): asking for more than 200 or
@@ -192,28 +290,28 @@ interface TimelineProps {
    * `toProblem` path, rather than having it masked here.
    */
   limit?: number
+  /**
+   * The reminder defaults' history names a reminder type by its code; the page that shows
+   * it holds the catalogue and says the word a person knows it by. Absent, the code is
+   * left out rather than printed as English.
+   */
+  typeLabel?: (key: string) => string | undefined
 }
 
 /**
- * One entry per row: which actor did it (a badge, always visible, never a subtle
- * icon-only difference), what happened (`kind`, humanized if this build does not
- * recognise it yet), when (localized Italian date and time), and whatever extra
- * the payload has to say.
+ * One entry per row: what happened (`kind`, humanized if this build does not recognise it
+ * yet), when (the exact Italian date and time, seconds included), who did it (the member's
+ * name) and from where (a «dal web» or «via MCP» marker, never an absence of one), and
+ * whatever extra the payload has to say.
  */
-export function Timeline({ entityType, entityId, limit = 50 }: TimelineProps) {
+export function Timeline({ entityType, entityId, limit = 50, typeLabel }: TimelineProps) {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: [...queryKeys.timeline(entityType, entityId), limit],
     queryFn: () => TIMELINE_FETCHERS[entityType](entityId, limit),
   })
 
   if (isLoading) {
-    return (
-      <div className="space-y-3" role="status" aria-label="Caricamento timeline">
-        {Array.from({ length: 4 }, (_, index) => (
-          <Skeleton key={index} className="h-16 w-full" />
-        ))}
-      </div>
-    )
+    return <LoadingState label="Caricamento timeline…" />
   }
 
   // A failed request is not the same claim as "nothing happened yet" -- showing
@@ -233,17 +331,16 @@ export function Timeline({ entityType, entityId, limit = 50 }: TimelineProps) {
   return (
     <ol className="space-y-3">
       {data.map((entry) => (
-        <li key={entry.id} className="flex items-start gap-3 border p-3">
-          <ActorBadge actorType={entry.actor_type} />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <span className="font-medium">{labelForKind(entry.kind)}</span>
-              <time dateTime={entry.occurred_at} className="shrink-0 text-xs text-muted-foreground">
-                {formatOccurredAt(entry.occurred_at)}
-              </time>
-            </div>
-            <ActivityDetail payload={entry.payload} />
+        <li key={entry.id} className="border p-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <span className="font-medium">{labelForKind(entry.kind)}</span>
+            <time dateTime={entry.occurred_at} className="shrink-0 text-xs text-muted-foreground">
+              {formatOccurredAtExact(entry.occurred_at)}
+            </time>
           </div>
+          <ActorLine entry={entry} />
+          <TriggeredBy entry={entry} />
+          <ActivityDetail kind={entry.kind} payload={entry.payload} typeLabel={typeLabel} />
         </li>
       ))}
     </ol>

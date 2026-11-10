@@ -79,8 +79,11 @@ Method = tuple[str, str]
 #    `FiscalProfileService.upsert` was until ORB-188: `LegalEntityService` has an
 #    `upsert` too) is the shape this table has used all along, and the reason the
 #    comparison test below compares the qualified bans as pairs and the rest as names.
-_VIETATE: dict[Method, str] = {
+_FORBIDDEN: dict[Method, str] = {
     ("InvoiceService", "issue"): "atto fiscale irreversibile (slice 3 §11)",
+    ("InvoiceService", "issue_and_render"): (
+        "`issue` followed by its artefacts: the one door a privileged tool and the REST route call"
+    ),
     ("InvoiceService", "annul"): "atto fiscale irreversibile (slice 3 §11)",
     ("InvoiceService", "mark_transmitted_externally"): "atto fiscale (slice 3 §11)",
     ("InvoiceService", "export_xml"): "esiste solo per una fattura emessa (slice 3 §11)",
@@ -118,14 +121,13 @@ _VIETATE: dict[Method, str] = {
     ),
     ("PeriodLockService", "close_period"): "chiusura di periodo (slice 4 §11)",
     ("PeriodLockService", "reopen_period"): "riapertura di periodo (slice 4 §11)",
-    ("AnalyticsService", "bind_time_to_invoice"): "precede l'emissione (slice 4 §11)",
     ("AnalyticsService", "get_fiscal_estimate"): "posizione fiscale del titolare (slice 4 §11)",
     ("GmailSyncService", "discover"): (
         "interroga Gmail sul dominio del cliente a carico della quota e del consenso "
         "del titolare, come `sync` e `backfill`; a differenza loro l'installazione puo' "
         "aprirla con `mcp_full_access`"
     ),
-    ("GmailSyncService", "suggest_customers"): (
+    ("GmailSyncService", "suggest_organizations"): (
         "propone come clienti i domini della posta inviata dal titolare (REB-223): "
         "interroga Gmail a carico della sua quota e del suo consenso come `discover`, e "
         "come lei l'installazione puo' aprirla con `mcp_full_access`"
@@ -135,6 +137,13 @@ _VIETATE: dict[Method, str] = {
         "della quota e del consenso del titolare, e ne restituisce il testo senza "
         "archiviare niente; l'installazione puo' aprirla con `mcp_full_access`"
     ),
+    ("StaffService", "create_staff_member"): (
+        "REB-977: pay is the most personal data the product holds (staff design § 4); the tool "
+        "exists only on an administrator's `full_access` token"
+    ),
+    ("StaffService", "update_staff_member"): "REB-977: same as `create_staff_member`",
+    ("StaffService", "get_staff_member"): "REB-977: same as `create_staff_member`",
+    ("StaffService", "list_staff"): "REB-977: same as `create_staff_member`",
     ("DocumentService", "import_bytes"): (
         "archivia byte che il CRM non ha prodotto, presi dal Drive del titolare a "
         "carico della sua quota e del suo consenso (slice 9 §4.2: `import_drive_file`); "
@@ -166,7 +175,8 @@ _VIETATE: dict[Method, str] = {
 #     of its own regardless -- it is the guard `list_children` and the two `read_*` apply
 #     internally, and reaching it would require the very `DriveReader` that
 #     `test_no_unconditional_module_can_even_obtain_a_drive_reader` denies.
-_FUORI_DAL_SETACCIO: dict[Method, str] = {
+_OUTSIDE_FROM_SIEVE: dict[Method, str] = {
+    ("TimeBilling", "bind_to_invoice"): "precede l'emissione (slice 4 §11); not a `*Service` class",
     ("DriveReader", "list_children"): (
         "elenca una cartella del Drive personale del titolare (slice 9 §4.2)"
     ),
@@ -190,6 +200,68 @@ _FUORI_DAL_SETACCIO: dict[Method, str] = {
 #    no-actor rule and is listed for the same reason: it is the intermediate step of
 #    `render_pdf`, not an operation of its own.
 _INTERNE: dict[Method, str] = {
+    (
+        "AnalyticsService",
+        "freeze_fiscal_estimates",
+    ): (
+        "REB-974: written by `FiscalProfileService.upsert` inside the profile change that moves "
+        "a legal entity to another pack, which `update_fiscal_profile` covers: not an operation"
+    ),
+    (
+        "GmailOAuthService",
+        "account_for_user",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GmailOAuthService",
+        "sibling_account",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GmailOAuthService",
+        "new_account",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GmailOAuthService",
+        "already_connected",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GmailOAuthService",
+        "sibling_mismatch",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GmailOAuthService",
+        "on_identity_changed",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GoogleDriveOAuthService",
+        "account_for_user",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GoogleDriveOAuthService",
+        "sibling_account",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GoogleDriveOAuthService",
+        "new_account",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GoogleDriveOAuthService",
+        "already_connected",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GoogleDriveOAuthService",
+        "sibling_mismatch",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GoogleDriveOAuthService",
+        "on_identity_changed",
+    ): "hook of `GoogleConsentFlow`, called by the flow itself with no actor: not an operation",
+    (
+        "GoogleDriveOAuthService",
+        "exchange_code",
+    ): (
+        "the Drive flow's own token exchange, called by "
+        "`GoogleConsentFlow.complete` after the person's redirect: not an operation"
+    ),
     ("ActivityService", "record"): "scrive la timeline per conto di un altro servizio",
     ("CostCategoryService", "require_active"): "validazione interna di CostService",
     ("DealService", "set_stage_in_transaction"): (
@@ -202,10 +274,9 @@ _INTERNE: dict[Method, str] = {
         "`packages/core/tests/test_in_transaction_callers.py` lo impone sull'AST di ogni "
         "sito di chiamata dei tre pacchetti: un tool che la esponesse sarebbe esattamente "
         "il bypass di autorizzazione che quella guardia esiste per impedire. Lo spostamento "
-        "di stage resta raggiungibile dall'agente sotto il suo nome vero, `move_deal`, "
+        "di stage resta raggiungibile dall'agente sotto il suo name vero, `move_deal`, "
         "che autorizza, registra e committa"
     ),
-    ("DocumentService", "storage_key_for"): "costruisce una chiave di storage",
     ("LegalEntityService", "as_template_values"): "alimenta il renderer dei template",
     ("LegalEntityService", "inherited"): (
         "lettura interna: l'azienda che un deal, un contratto, un documento o una fattura "
@@ -213,16 +284,16 @@ _INTERNE: dict[Method, str] = {
         "non e' un'azione a se'"
     ),
     ("LegalEntityService", "resolve"): (
-        "lettura interna: la riga che un `azienda_id` nomina, o la predefinita quando e' "
-        "`None`; e' cio' che ogni servizio chiama per se', e `describe_azienda` la espone"
+        "lettura interna: la riga che un `legal_entity_id` nomina, o la is_default quando e' "
+        "`None`; e' cio' che ogni servizio chiama per se', e `describe_legal_entity` la espone"
     ),
     ("LegalEntityService", "single"): (
         "lettura interna (REB-630): l'unica azienda attiva, o `None` quando lo spazio ne "
         "ha piu' di una e il chiamante non l'ha indicata; la chiamano la stima fiscale e "
-        "le soglie per risolvere il proprio `azienda_id`, non e' un'azione a se'"
+        "le soglie per risolvere il proprio `legal_entity_id`, non e' un'azione a se'"
     ),
     ("LegalEntityService", "require_single"): (
-        "lettura interna (REB-630): `single`, o il rifiuto che nomina `azienda_id`; la "
+        "lettura interna (REB-630): `single`, o il rifiuto che nomina `legal_entity_id`; la "
         "chiamano `get_fiscal_estimate`, `ceiling_headroom` e `simulate_ceiling`, i cui "
         "tool espongono gia' il parametro"
     ),
@@ -239,16 +310,11 @@ _INTERNE: dict[Method, str] = {
         "(slice 9 §3.2 regola 4). Gli altri due chiamanti sono adapter, non "
         "`packages/core`, ma nessuno dei due e' un tool o una resource di questa "
         "scansione: `import_issued_invoice` la usa per comporre "
-        "`buchi_non_dichiarati`, e vive in `privileged.py`, esente da questa scansione "
+        "`undeclared_gaps`, e vive in `privileged.py`, esente da questa scansione "
         "come il resto degli atti fiscali; `POST /api/invoices/import` la usa per lo "
         "stesso campo nella sua risposta REST, un adapter che questa scansione non "
         "copre affatto"
     ),
-    ("GmailOAuthService", "redirect_uri"): "e' l'URL fisso che Google confronta "
-    "carattere per carattere, non un'operazione",
-    ("GoogleDriveOAuthService", "redirect_uri"): "stessa ragione di "
-    "`GmailOAuthService.redirect_uri`: e' l'URL fisso che Google confronta carattere "
-    "per carattere, non un'operazione (slice 9 §5.1)",
     ("PeriodLockService", "assert_writable"): "guardia invocata dagli altri servizi",
     ("PeriodLockService", "is_closed"): "guardia invocata dagli altri servizi",
     ("PipelineService", "default_stage"): "risolve lo stage iniziale di un nuovo deal",
@@ -258,12 +324,13 @@ _INTERNE: dict[Method, str] = {
     "`sent_gmail_message_id`: colonne che nessuno schema accetta in ingresso perche' "
     "sono fatti, non input. Non prende `actor`, che e' la firma di \"non e' "
     "un'operazione che qualcuno compie\"",
+    ("ContractRegisterService", "variables_for"): "passo intermedio di render_pdf",
     ("TimeReportService", "variables_for"): "passo intermedio di render_pdf/build_xlsx",
     ("UserService", "count"): "conta gli utenti per il bootstrap del primo admin",
     # REB-362: none of these three takes an actor -- the mechanical signature this
     # category is named for. `ProposalService` is the real MCP-facing read (spec §10,
-    # "agents propose, humans confirm"): a proposal already carries `campi_proposti`/
-    # `estratto` for review, and once accepted, `id_risultato` names the row it
+    # "agents propose, humans confirm"): a proposal already carries `proposed_fields`/
+    # `excerpt` for review, and once accepted, `result_id` names the row it
     # produced -- so `get_proposal` is what an agent actually calls, never a direct
     # read of the `work_unit`/`approval` row underneath.
     ("WorkUnitService", "get"): "nessun actor: lettura interna dietro get_proposal",
@@ -273,6 +340,25 @@ _INTERNE: dict[Method, str] = {
         "transizioni del work_unit che ne e' risultato"
     ),
     ("ApprovalService", "get"): "nessun actor: lettura interna dietro get_proposal",
+    # REB-967: the writer's half of `DueItemService`. The service that owns a source (an
+    # invoice, a purchase, a tax) calls these inside its own transaction after its own
+    # authorisation; none takes an actor or commits. Settling and undoing a payment, and the
+    # two reads, are the tools.
+    ("DueItemService", "create"): "the writer's half: the owner of a source writes its item",
+    ("DueItemService", "drop"): "the writer's half: a credit note or an ended contract drops it",
+    ("DueItemService", "attach_dependency"): "the writer's half: links a waiting item",
+    ("DueItemService", "reschedule"): "the writer's half: the owner of an outgoing item moves it",
+    # REB-968: the invoice's half of the same writer. Emission, import, annulment and the
+    # invoice payment tool (`set_invoice_payment_state`) call these inside their own
+    # transaction; the tool is the door, never these.
+    ("DueItemService", "open_for_invoice"): "the writer's half: emission and import write the item",
+    ("DueItemService", "reconcile_invoice"): "the boot step gives an old invoice its item",
+    ("DueItemService", "record_invoice_payment"): "behind the tool set_invoice_payment_state",
+    (
+        "DueItemService",
+        "repair_invoice",
+    ): "the boot step brings an item back in step with its invoice",
+    ("DueItemService", "drop_for_invoice"): "the writer's half: annulment drops the item",
 }
 
 
@@ -281,51 +367,68 @@ _INTERNE: dict[Method, str] = {
 #    which inherits its owner's full role and never expires (residuo R10), so a tool that
 #    minted or revoked one would let a token extend or destroy its own access. Creating
 #    users is the same hole with a longer fuse.
-#    Tutto Gmail, tranne le tre letture, sta qui -- e la decisione e' stata presa in
-#    B1-14, che possiede la superficie MCP di 5B. La riga che la divide non e'
-#    "lettura contro scrittura" ma *di chi e' la risorsa, e di chi la decisione*:
+#    All of Gmail, except the three reads, is here -- and the decision was taken in B1-14,
+#    which owns 5B's MCP surface. The line that divides it is not "read versus write" but
+#    *whose resource this is, and whose decision*:
 #
-#      * quello che l'agente puo' fare e' leggere lo specchio gia' archiviato in
-#        `gmail_messages` e lo stato della credenziale (`list_gmail_messages`,
-#        `get_gmail_message`, `describe_gmail_account`). Nessuna delle tre chiama
-#        Google, nessuna consuma la quota Gmail di qualcuno, nessuna esercita un
-#        consenso: leggono righe che questo CRM ha gia' deciso di tenere;
-#      * quello che non puo' fare e' *andare a prendere* la posta (`sync`,
-#        `backfill`), collegare o scollegare una casella, decidere cosa il CRM
-#        conserva, e inviare. In ognuno di questi casi la risorsa o la decisione
-#        appartengono alla persona, non all'agente.
+#      * what the agent may do is read the mirror already archived in `gmail_messages` and
+#        the state of the credential (`list_gmail_messages`, `get_gmail_message`,
+#        `describe_gmail_account`). None of the three calls Google, none spends anybody's
+#        Gmail quota, none exercises a consent: they read rows this CRM already decided
+#        to keep;
+#      * what it may not do is *fetch* the mail (`sync`, `backfill`), connect or
+#        disconnect a mailbox, decide what the CRM keeps, and send. In each case the
+#        resource or the decision belongs to the person, not to the agent.
 #
-#    `start` restituisce un URL di consenso che solo un browser umano puo' percorrere
-#    -- un agente che lo ricevesse non potrebbe fare altro che passarlo a qualcuno --
-#    e `complete` richiede un `code` che esiste solo dentro quel redirect, quindi
-#    nessuno dei due e' eseguibile da un canale strumentale. `disconnect` e' il verso
-#    opposto: distrugge una credenziale verso un servizio *terzo* e, con
-#    `delete_messages`, la corrispondenza archiviata.
+#    `start` returns a consent URL that only a human browser can walk -- an agent that
+#    received it could do nothing but hand it to somebody -- and `complete` needs a `code`
+#    that exists only inside that redirect, so neither can be run from a tool channel.
+#    `disconnect` is the opposite direction: it destroys a credential towards a *third*
+#    service and, with `delete_messages`, the archived correspondence.
 #
-#    L'assenza dell'invio non e' registrata qui perche' in 5B-1 non esiste ancora un
-#    servizio che invii: il divieto strutturale sui nomi degli strumenti vive in
-#    `test_mcp_invoice_ban.py`, che possiede i divieti per costruzione.
+#    The absence of sending is not recorded here because in 5B-1 there is no service that
+#    sends yet: the structural ban on tool names lives in `test_mcp_invoice_ban.py`, which
+#    owns the bans by construction.
 _CREDENZIALI: dict[Method, str] = {
     ("UserService", "reset_password"): (
         "cambia la credenziale di una persona: e' l'operatore al terminale del server "
         "(`pigrocrm resetpassword`) a farlo, mai un agente, per la stessa ragione per cui "
         "`create` non e' un tool"
     ),
-    ("GmailOAuthService", "start"): "il consenso Google si da' da un browser, non da "
-    "un tool: l'URL di autorizzazione non e' percorribile da un agente",
+    ("PushSubscriptionService", "mine"): (
+        "elenca i browser su cui la persona ha attivato le notifiche push (REB-738): sono "
+        "dispositivi suoi, e l'endpoint di ciascuno e' un indirizzo capace di far "
+        "comparire una notifica su quello schermo, che un agente non ha motivo di leggere"
+    ),
+    ("PushSubscriptionService", "subscribe"): (
+        "iscrive un browser, e il browser e' un oggetto che solo il browser puo' fabbricare "
+        "(chiavi e endpoint nascono dal suo `pushManager.subscribe`, dopo il permesso che "
+        "la persona da' davanti allo schermo): nessun agente potrebbe fornirne uno vero, e "
+        "uno falso farebbe chiamare al server un indirizzo scelto da chi lo scrive"
+    ),
+    ("PushSubscriptionService", "unsubscribe"): (
+        "toglie un browser: il verso opposto di `subscribe`, della persona per la stessa ragione"
+    ),
     ("GmailOAuthService", "complete"): "il `code` esiste solo dentro il redirect di "
     "Google verso il callback: nessun agente puo' averlo",
     ("GmailOAuthService", "disconnect"): "revocare l'accesso a una casella di terzi (e "
     "cancellarne la corrispondenza) e' una decisione della persona",
-    ("GoogleDriveOAuthService", "start"): "stessa ragione di `GmailOAuthService.start` "
-    "(spec 9 §5.1): il consenso Google si da' da un browser, non da un tool -- l'URL di "
-    "autorizzazione non e' percorribile da un agente",
     ("GoogleDriveOAuthService", "complete"): "stessa ragione di "
     "`GmailOAuthService.complete`: il `code` esiste solo dentro il redirect di Google "
     "verso il callback, nessun agente puo' averlo",
     ("GoogleDriveOAuthService", "disconnect"): "stessa ragione di "
     "`GmailOAuthService.disconnect`: revocare l'accesso a un servizio di terzi e' una "
     "decisione della persona",
+    ("SlackOAuthService", "start"): "same reason as `GmailOAuthService.start` (REB-739): "
+    "installing the Slack app is consent given from a browser, not from a tool; an agent "
+    "cannot follow the authorization URL",
+    ("SlackOAuthService", "complete"): "same reason as `GmailOAuthService.complete`: the "
+    "`code` exists only inside Slack's redirect to the callback, no agent can have it",
+    ("SlackOAuthService", "disconnect"): "same reason as `GmailOAuthService.disconnect`: "
+    "removing the workspace (and with it the bot token and the matches) is a person's "
+    "decision",
+    ("SlackOAuthService", "redirect_uri"): "the fixed URL Slack compares with the ones "
+    "registered on the app, not an operation (REB-739)",
     ("GmailSyncService", "sync"): (
         "il consenso a leggere la casella e' della persona, e lo e' anche il momento in "
         "cui viene esercitato: `sync` va a prendere posta da un servizio terzo, sotto "
@@ -383,7 +486,7 @@ _CREDENZIALI: dict[Method, str] = {
     ("EmailSendService", "send"): (
         "**l'invio non sara' mai un tool**, ed e' la decisione permanente di questa "
         "fetta: B2-10 l'ha confermata invece di riaprirla. Un'email che parte "
-        "dall'indirizzo del titolare parla in suo nome a un cliente, non si richiama, e "
+        "dall'indirizzo del titolare parla in suo name a un cliente, non si richiama, e "
         "il destinatario e' una persona esterna al CRM: stessa famiglia di "
         "`GmailOAuthService.disconnect`, con in piu' che un agente che tenesse la "
         "*lettura* della posta e l'*invio* sullo stesso canale avrebbe la sorgente di "
@@ -407,8 +510,12 @@ _CREDENZIALI: dict[Method, str] = {
         "significherebbe offrire all'agente il ciclo di sync per un'altra porta"
     ),
     ("PatService", "create"): "un agente non conia le proprie credenziali",
-    ("PatService", "list"): "l'elenco dei token e' materiale di sicurezza",
+    ("PatService", "list_own"): "l'elenco dei token e' materiale di sicurezza",
     ("PatService", "revoke"): "revocare token e' amministrazione dell'account",
+    ("PatService", "set_full_access"): (
+        "un token non apre da solo i propri strumenti privilegiati: lo decide una persona (REB-810)"
+    ),
+    ("PatService", "list_team"): "l'elenco dei token dei colleghi e' materiale di sicurezza",
     ("PatService", "revoke_all_for"): "e' l'effetto della disattivazione, non un'operazione",
     ("PatService", "resolve"): "e' il passo di autenticazione, non un'operazione",
     ("RefreshTokenService", "issue"): "sessione del browser, non superficie agentica",
@@ -418,10 +525,10 @@ _CREDENZIALI: dict[Method, str] = {
     ("RefreshTokenService", "is_live"): "sessione del browser, non superficie agentica",
     ("MagicLinkService", "request"): "e' il passo di login via mail, non un'operazione",
     ("MagicLinkService", "enter"): "e' il passo di login via mail, non un'operazione",
-    # REB-376 (design 2026-09-23 §1-2): `IdentityService` vive nel registro, non in
-    # una singola CRM -- l'MCP server e' avviato per un solo spazio (`ScopedSessionProvider`)
-    # e non ha mai una sessione sul database del registro, quindi nessuno di questi
-    # metodi e' raggiungibile da un tool anche in linea di principio.
+    # REB-376 (design 2026-09-23 §1-2): `IdentityService` lives in the registry, not in
+    # a single CRM -- the MCP server is started for one space only (`ScopedSessionProvider`)
+    # and never has a session on the registry database, so none of these
+    # methods is reachable from a tool even in principle.
     ("IdentityService", "request"): "e' il passo di login via mail, un layer sopra -- come sopra",
     ("IdentityService", "enter"): "e' il passo di login via mail, un layer sopra -- come sopra",
     ("IdentityService", "upsert_and_issue"): (
@@ -443,11 +550,11 @@ _CREDENZIALI: dict[Method, str] = {
         "e' la verifica di liveness dietro il cookie del chooser (REB-377), sullo stesso "
         "registro senza sessione MCP -- come sopra"
     ),
-    # REB-290 (spec 2026-09-17 §6): ogni metodo di `InvitationService` e' dichiarato,
-    # non esposto. Invitare persone e' amministrazione dello spazio, la stessa ragione
-    # che gia' tiene `UserService` fuori dai tool; in piu' qui c'e' il token grezzo,
-    # che `create` e `resend` rispondono solo perche' il chiamante e' la rotaia che
-    # lo imbuca in una mail, e un canale agentico lo leggerebbe nel contesto.
+    # REB-290 (spec 2026-09-17 §6): every method of `InvitationService` is declared,
+    # not exposed. Inviting people is administration of the space, the same reason
+    # that already keeps `UserService` out of the tools; on top of that there is the raw
+    # token, which `create` and `resend` return only because the caller is the rail that
+    # puts it in an email, and an agentic channel would read it in its context.
     ("InvitationService", "create"): (
         "invitare una persona e' amministrazione dello spazio (come `UserService."
         "create`), e il token grezzo della risposta esiste solo per finire in una "
@@ -464,6 +571,22 @@ _CREDENZIALI: dict[Method, str] = {
         "peek",
     ): "e' la pagina d'accettazione che legge l'invito, non un'operazione",
     ("InvitationService", "accept"): "e' il passo d'ingresso dell'invitato, non un'operazione",
+    # REB-678: l'esito della mail di un invito e l'invito ritrovato dal chooser.
+    ("InvitationService", "record_mail"): (
+        "scrive la risposta del provider sulla riga dell'invito che la rotaia ha appena "
+        "spedito: nessuno la chiama a mano"
+    ),
+    ("InvitationService", "refresh_mail_status"): (
+        "legge il provider e aggiorna la lista degli inviti: e' parte della lettura di "
+        "`list`, che e' amministrativa"
+    ),
+    ("InvitationService", "offer_for"): (
+        "e' la riga che il chooser mostra a chi ha provato l'indirizzo, non un'operazione"
+    ),
+    ("InvitationService", "open_for"): (
+        "rigenera il token grezzo dell'invito per chi ha provato l'indirizzo: come "
+        "`resend`, il token esiste solo per la pagina d'accettazione"
+    ),
     ("UserService", "create"): "creare utenti e' amministrazione dell'account",
     ("UserService", "create_scoped"): (
         "la variante di `create` che un invito accettato usa per scrivere l'ambito "
@@ -475,7 +598,15 @@ _CREDENZIALI: dict[Method, str] = {
         "scelta dal suo profilo: un agente non decide che cosa arriva nella casella di "
         "chi lo ha collegato"
     ),
-    ("UserService", "list"): "l'anagrafica utenti non serve a nessun tool",
+    (
+        "UserService",
+        "list",
+    ): "the full user register (rates, scope, last login) is the admin's Team page",
+    ("UserService", "members"): (
+        "the picker's names for the web app (`/api/users/directory`); `list_members` reads "
+        "the same active users through `directory`, which adds the role, and the email "
+        "for an administrator (REB-809)"
+    ),
     ("UserService", "authenticate"): "e' il passo di login, non un'operazione",
 }
 
@@ -486,9 +617,54 @@ _CREDENZIALI: dict[Method, str] = {
 #    rates: an agent records and reads within a configuration, and a person decides what
 #    the configuration is. Exposing them would also mean an agent could rewrite the field
 #    definitions its own `describe_schema` output is derived from.
-_CONFIGURAZIONE: dict[Method, str] = {
+_CONFIGURATION: dict[Method, str] = {
+    ("StaffService", "set_payroll_pay_day"): (
+        "REB-977, staff design § 4: the day net pay leaves for a whole legal entity is set from "
+        "the staff page by a person; `update_staff_member`'s own override is the agent's"
+    ),
+    ("StaffService", "get_payroll_pay_day"): (
+        "REB-977: the legal entity's pay day is read with the staff page; the effective one is "
+        "on every staff member `get_staff_member` and `list_staff` answer"
+    ),
+    ("AiModelService", "get"): (
+        "Impostazioni > Modelli AI (REB-972): the provider, the model, the spend cap and the "
+        "notice of what the model receives are the admin's, read from the panel; the key is "
+        "never returned and a token never reads this configuration"
+    ),
+    ("AiModelService", "update"): (
+        "Impostazioni > Modelli AI: the key, the provider, the cap and the switch are a "
+        "credential and money, like every credential (REB-880): a person's act, never an agent's"
+    ),
+    ("AiModelService", "test"): (
+        "Impostazioni > Modelli AI: «Prova» spends the space's model on the saved settings; "
+        "a person's button, and an agent that read hostile text must not be able to press it"
+    ),
+    ("SlackService", "rematch"): (
+        "Impostazioni > Slack (REB-739): asks Slack, with the space's bot token, who each user "
+        "is. Who receives a message in a third party's workspace is a person's decision made "
+        "from the panel; an agent reads the state with `describe_slack`"
+    ),
+    ("SlackService", "link"): (
+        "Impostazioni > Slack: saying by hand who a user is in Slack changes who receives "
+        "their reminders in a third party's workspace; same reason as `rematch`"
+    ),
+    ("SlackService", "unlink"): ("Impostazioni > Slack: the way back from `link`, same reason"),
+    ("SlackService", "set_channel"): (
+        "Impostazioni > Slack: the channel the space's reminders are posted to is the admin's "
+        "choice from the panel, who first read the list from Slack (`channels`); same "
+        "reason as `rematch`"
+    ),
+    ("SlackService", "channels"): (
+        "Impostazioni > Slack: the list of channels the panel's picker reads from Slack, with "
+        "the bot token, to choose the channel (`set_channel`); it is not CRM data and an "
+        "agent does not choose the channel"
+    ),
+    ("SlackService", "mine"): (
+        'the hint on the Notifiche page ("your address was not found on Slack"): the same '
+        "fact, for every user, is what `describe_slack` reads"
+    ),
     ("LegalEntityService", "set_default"): (
-        "Impostazioni → Aziende: quale azienda e' la predefinita decide a chi vanno le "
+        "Impostazioni → Aziende: quale azienda e' la is_default decide a chi vanno le "
         "letture implicite di tutto lo spazio (REB-616, spec 2026-10-03 §3); una scelta "
         "dell'amministratore dal pannello, non di un agente"
     ),
@@ -510,6 +686,29 @@ _CONFIGURAZIONE: dict[Method, str] = {
         "ogni richiesta, prima che esista un actor"
     ),
     ("SpaceSettingsService", "effective"): "come `overrides`, gia' applicate a `Settings`",
+    ("SpaceSettingsService", "write_shape"): (
+        "the one writer of the profile and module rows (spec 2026-11-09, B1), called only by "
+        "`SpaceModulesService`; it does no authorisation of its own and has no tool"
+    ),
+    ("SpaceSettingsService", "lock"): (
+        "the advisory lock a settings write takes, called by `SpaceModulesService` before it "
+        "reads the state it changes; no authorisation, no data, no tool"
+    ),
+    ("SpaceModulesService", "set_profile"): (
+        "`set_space_profile` is a tool, in `tools/privileged.py` (an administrator's token with "
+        "`full_access`: the sweep does not read that module, `test_module_guard.py` does)"
+    ),
+    ("SpaceModulesService", "skip_onboarding"): (
+        "`skip_space_onboarding`, privileged as `set_space_profile` is"
+    ),
+    ("SpaceModulesService", "set_modules"): (
+        "`set_space_modules`, privileged as `set_space_profile` is"
+    ),
+    ("SpaceModulesService", "ensure_profile"): (
+        "the boot's and the engagements door's own write of a profile for a space that has none "
+        "(REB-955): it is no person's or agent's act, and an agent changes the profile with "
+        "`set_space_profile`"
+    ),
     ("SpaceSettingsService", "version"): (
         "an internal read (REB-622): the newest override row's `updated_at`, which `read` "
         "answers and `update` checks a save against; no actor, and nothing an agent would "
@@ -520,7 +719,7 @@ _CONFIGURAZIONE: dict[Method, str] = {
         "e' la stessa famiglia di `PipelineService.update`, un grado piu' seria. Un agente "
         "che potesse spegnere A1 e poi spostare un deal non lascerebbe traccia della "
         "differenza fra «l'automazione non e' scattata» e «l'ho disattivata io». "
-        "L'esclusione non e' cautela di questo file: e' l'unico nome di "
+        "L'esclusione non e' cautela di questo file: e' l'unico name di "
         "`MCP_EXCLUDED_SLICE6` (packages/core/tests/test_architecture.py), che la spec "
         "§11.1 fissa a esattamente uno, e la lettura corrispondente -- "
         "`describe_automations` -- ha un tool, quindi all'agente resta visibile tutto "
@@ -550,9 +749,17 @@ _CONFIGURAZIONE: dict[Method, str] = {
 #    2 §7): an agent that could pull a PDF or an XLSX down a tool channel would be moving
 #    the artefact out of the storage layer that versions and audits it.
 _BYTE: dict[Method, str] = {
+    ("AnalyticsService", "build_year_csv"): "l'MCP restituisce URL, mai byte",
     ("DocumentService", "download"): "l'MCP restituisce URL, mai byte",
     ("InvoiceService", "download"): "l'MCP restituisce URL, mai byte",
+    ("ContractRegisterService", "build_csv"): "l'MCP restituisce URL, mai byte",
+    ("ContractRegisterService", "render_pdf"): "l'MCP restituisce URL, mai byte",
     ("TimeReportService", "build_xlsx"): "l'MCP restituisce URL, mai byte",
+    # REB-758: the page sends the bytes of a FatturaPA file; an agent hands the same
+    # file over as a document, which `review_invoice_import` and `confirm_invoice_import`
+    # already read and write.
+    ("InvoiceService", "review_upload"): "l'MCP non porta mai byte: parte da un documento",
+    ("InvoiceService", "confirm_upload"): "l'MCP non porta mai byte: parte da un documento",
     ("TimeReportService", "render_pdf"): "l'MCP restituisce URL, mai byte",
 }
 
@@ -568,7 +775,7 @@ _BYTE: dict[Method, str] = {
 #    `DocumentService.regenerate`, `soft_delete` and `restore` were all recorded here as
 #    "non ha ancora un tool" / "e' una decisione della persona" -- and each turned out to
 #    be a plain read, or a reversible audited write whose inverse this surface already
-#    exposes for customers, deals, people, costs and time entries. `EmailDraftService.
+#    exposes for organizations, deals, people, costs and time entries. `EmailDraftService.
 #    create` and `SollecitiService.candidates` left the same way at B2-10, as
 #    `draft_email` and `list_payment_reminder_candidates`. `InvoiceService.soft_delete`
 #    left at ORB-37 as `discard_proforma`: "a person's decision" had described a draft
@@ -578,8 +785,8 @@ _BYTE: dict[Method, str] = {
 #    `EmailDraftService.delete` below is not because nothing is lost with it: a proforma
 #    never took a number, its reference sequence tolerates a gap, and `get_invoice`
 #    showed everything needed to recreate it. `InvoiceService.update` left at ORB-61 as
-#    `update_proforma`: its reason here was "note interne e campi custom, congelati dopo
-#    l'emissione: nessuna audience agentica", and it was true of the two fields the
+#    `update_proforma`: its reason here was "internal notes and custom fields, frozen
+#    after issuance: no agentic audience", and it was true of the two fields the
 #    method carried when it was written. The method now also moves a proforma's own
 #    document date (ORB-63) and its accrual period, the two header facts an agent that
 #    composes "la proforma di agosto" has to be able to state, and both are frozen by the
@@ -599,18 +806,70 @@ _BYTE: dict[Method, str] = {
 #    placeholder wearing the clothes of a decision; this category is for the ones that
 #    survive being asked why, and the only way to keep that true is to delete the ones
 #    that do not the moment the tool is written.
-_COPERTE_O_UMANE: dict[Method, str] = {
-    ("CustomerService", "create_from_suggestions"): (
+_COVERED_OR_HUMAN: dict[Method, str] = {
+    ("ProposalService", "accept"): "REB-806: deciding a proposal is a person's act. The "
+    "token that read the mail (text written by somebody else) would also have proposed it, "
+    "and proposing then accepting in one turn closes the chain. `Actor.require_person` "
+    "refuses every agent credential, over REST too, with or without `mcp_full_access`",
+    ("ProposalService", "reject"): "same as accept: rejecting is a person's decision too",
+    (
+        "ProposalService",
+        "reject_without_commit",
+    ): "the step of `reject` that an inbox act (REB-984) "
+    "runs inside its own transaction when a person discards an item with a proposal waiting; it is "
+    "person-only like `reject`, and an agent's act on such an item is refused before it",
+    ("DealService", "attach_rebase_ref"): (
+        "the leads route of the hub's door, under PIGROCRM_ENGAGEMENTS_TOKEN: it stamps a "
+        "request's reference on a deal the CRM already had, so the hub's link to it is found "
+        "again. A reference of the hub's own bookkeeping, set by the hub when it links a "
+        "request and never by an agent inside the space"
+    ),
+    ("NoteService", "revisions"): (
+        "the text a note had before each edit is read on the page; an agent reads the thread's "
+        "current text through the `get_*` tools, and the replaced one has no use for it"
+    ),
+    ("DealService", "get_many"): (
+        "read by the `hours_to_log` prompt to name the deals of the recent feed; a prompt "
+        "is not a tool, and an agent already reads a deal through `get_deal` and `search_deals`"
+    ),
+    ("InvoiceService", "unpaid_for_customer"): (
+        "read by the `status_organization` prompt for the receivables of one customer; an agent "
+        "already reads them through `list_invoices` and `get_receivables_dashboard`"
+    ),
+    ("ContractEmailService", "create"): "il testo che esce a name del titolare lo salva la "
+    "persona dalla pagina del contratto; l'agente scrive bozze con draft_email",
+    ("ContractEmailService", "update"): "come create: il testo di un modello e' della persona",
+    ("ContractEmailService", "prepare"): "prepara una bozza con gli allegati d'archivio e "
+    "precede l'invio, che non ha un tool MCP e non lo avra' mai (routers/email_drafts.py)",
+    ("ContractRegisterService", "csv_filename"): "il name del file che build_csv consegna",
+    ("OrganizationService", "create_from_suggestions"): (
         "crea insieme, in una transazione, i clienti spuntati nella lista delle proposte "
         "Gmail della Home e di Clienti (REB-223): un agente crea gli stessi clienti e le "
-        "stesse persone con `create_customer` e `create_person`, e il confine della "
+        "stesse persone con `create_organization` e `create_person`, e il confine della "
         "transazione e' quello della lista di caselle, che un agente non ha"
+    ),
+    ("OrganizationService", "share"): (
+        "makes an organization shared across the legal entities (REB-970): an agent with "
+        "`full_access` does it with `update_organization` and a null `legal_entity_id`, or "
+        "while confirming an invoice import; this is the person's button, and the service "
+        "refuses any other agent credential"
+    ),
+    ("OrganizationService", "add_person_from_mail"): (
+        "adds an address found at the customer's domain as a person of that customer "
+        "(REB-766): an agent finds the same addresses with "
+        "`discover_gmail_correspondents` and saves them with `create_person`; this "
+        "button only avoids copying the name and address"
     ),
     ("DigestService", "build"): (
         "compone il resoconto settimanale che `pigrocrm digest` manda per mail il lunedi' "
         "(REB-221): ogni numero che contiene e' gia' un tool o una resource (i tre "
         "cruscotti, le fatture, le ore, la pipeline), e un agente che vuole la settimana "
         "la legge da li' invece di ricevere una pagina di prosa"
+    ),
+    ("DigestService", "task_of"): (
+        "the Monday digest's «Da fare» section (REB-726): one person's overdue "
+        "activities and those due this week. An agent reads the same date windows "
+        "through `get_tasks_today` and `list_tasks`, without using email"
     ),
     ("AnalyticsService", "economic_overview"): (
         "la scheda economica della dashboard porta con se' la stima fiscale calcolata su "
@@ -629,7 +888,7 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "servizio, non il CRM, e l'unico adapter che vi arriva e' `POST /api/tenants`"
     ),
     ("TenantService", "availability"): (
-        "la domanda che la pagina di iscrizione fa mentre la persona scrive il nome: senza "
+        "la domanda che la pagina di iscrizione fa mentre la persona scrive il name: senza "
         "actor, sul registro degli spazi, non sul CRM"
     ),
     ("TenantService", "get"): (
@@ -649,10 +908,18 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "agent inside a space decides on the titolare's behalf, and no per-space schema "
         "changed for it (§2.6)"
     ),
+    ("LeadService", "file"): (
+        "the leads route of the same hub door (spec 2026-10-30 § 2, REB-866), under the "
+        "same PIGROCRM_ENGAGEMENTS_TOKEN: filing a company's request in rebase's space is "
+        "the hub's own act when the request is completed, in one space the installation "
+        "names (PIGROCRM_LEADS_SPACE), never something an agent inside a space decides, "
+        "and creating the customer, contact and deal is what `create_organization`, "
+        "`create_person` and `create_deal` already are for an agent"
+    ),
     ("EngagementService", "report"): (
         "reads a match's hours back for the same hub door (spec 2026-09-25 §2.4), never "
         "for an agent in the space: the deal's own hours are already `list_time_entries`, "
-        "and this route reads nothing else of the space -- not its customers, not its "
+        "and this route reads nothing else of the space -- not its organizations, not its "
         "other deals, not an invoice these hours do not sit on"
     ),
     ("TenantService", "count_for_owner"): (
@@ -660,31 +927,76 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "(`POST /api/tenants/member`, ORB-173) per dire a chi torna che ha gia' aperto degli "
         "spazi, prima che esista un actor; un agente dentro uno spazio non ha motivo di leggerlo"
     ),
+    ("TenantService", "count"): (
+        "the size of the registry of spaces, read by the public signup to enforce "
+        "`Settings.max_spaces`, before there is an actor: not a space's CRM data"
+    ),
+    ("TenantService", "slugs_for_owner"): (
+        "the spaces an address owns, read by the identity chooser and the magic link "
+        "before any space is open: the registry is not a space's surface"
+    ),
     ("DocumentService", "create"): "create_document_from_template e' l'unica creazione "
     "che non richieda di caricare byte",
     ("DocumentService", "update"): "titolo e campi custom: nessun agente ha motivo di "
     "riscriverli su un documento gia' reso",
     ("DocumentService", "add_version"): "richiede byte gia' resi, che l'MCP non produce",
     ("FiscalProfileService", "get"): "describe_fiscal_profile espone gia' il regime",
+    ("ContractService", "simulate_cap"): "lo raggiunge `simulate_ceiling` quando riceve un "
+    "`contract_id`: il tetto del contratto e' una parte della stessa risposta (REB-761)",
+    (
+        "ContractCapService",
+        "concentration_cap",
+    ): (
+        "reached through the `ContractService` facade, which keeps the method "
+        "name: `get_contract_concentration`"
+    ),
+    (
+        "ContractCapService",
+        "simulate_cap",
+    ): (
+        "reached through the `ContractService` facade, which keeps the method "
+        "name: `simulate_ceiling`"
+    ),
+    (
+        "ContractRenewalService",
+        "renew",
+    ): (
+        "reached through the `ContractService` facade, which keeps the method "
+        "name: `renew_contract`"
+    ),
+    (
+        "ContractConversionService",
+        "create",
+    ): (
+        "reached through the `ContractService` facade, which names it `create_from_deal`: "
+        "`convert_deal_to_contract`"
+    ),
+    (
+        "ContractConversionService",
+        "propose",
+    ): (
+        "reached through the `ContractService` facade, which names it `proposal_from_deal`: "
+        "`preview_deal_contract`"
+    ),
     ("TemplateService", "get"): "describe_template espone gia' il template",
     ("GoogleDriveAccountService", "space_storage"): (
         "read only by the admin's Drive page as part of Drive health; "
         "describe_drive_account already exposes its result through health (REB-562)"
     ),
-    # Le cinque righe qui sotto sono cio' che resta di 5B-2 dopo che **B2-10 ha deciso
-    # la superficie MCP di questa fetta**, come B1-14 aveva deciso quella di 5B-1.
-    # `EmailDraftService.create` e `SollecitiService.candidates` erano qui e non ci sono
-    # piu': sono `draft_email` e `list_payment_reminder_candidates`. La riga di
-    # separazione non e' lettura contro scrittura, ed e' bene dirla per intero perche' e'
-    # l'unica cosa che tiene insieme le esclusioni rimaste:
+    # The five rows below are what is left of 5B-2 after **B2-10 decided the MCP
+    # surface of this slice**, as B1-14 had decided that of 5B-1.
+    # `EmailDraftService.create` and `PaymentRemindersService.candidates` were here and
+    # are gone: they are `draft_email` and `list_payment_reminder_candidates`. The
+    # dividing line is not read versus write, and it is worth stating in full because it
+    # is the only thing holding the remaining exclusions together:
     #
-    #   * si espone la *preparazione* di un testo neutro che qualcuno ha chiesto. La
-    #     bozza e' inerte -- nessuno strumento di questa superficie puo' spedirla -- e la
-    #     meta' mancante e' una persona che la legge prima che parta. Che sia meta'
-    #     operazione e' il progetto: la revisione e' cio' che rende accettabile l'invio, e
-    #     una bozza e' l'artefatto che la rende economica;
-    #   * non si espone niente che *tocchi una bozza che l'agente non ha scritto*, e
-    #     niente che scriva una richiesta di denaro a nome del titolare.
+    #   * what is exposed is the *preparation* of a neutral text that someone asked for.
+    #     The draft is inert -- no tool on this surface can send it -- and the
+    #     missing half is a person who reads it before it goes out. That it is half an
+    #     operation is the design: review is what makes sending acceptable, and
+    #     a draft is the artifact that makes review cheap;
+    #   * nothing is exposed that *touches a draft the agent did not write*, and
+    #     nothing that writes a request for money in the owner's name.
     ("EmailDraftService", "update"): "riscrivere una bozza che l'agente non ha scritto "
     "romperebbe l'unica garanzia su cui poggia `draft_email`: che il testo che parte sia "
     "il testo che una persona ha letto. Un agente che potesse riscrivere una bozza gia' "
@@ -705,9 +1017,9 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     "partita di tutti -- inclusi i solleciti, che hanno l'IBAN del titolare dentro. Un "
     "agente non ne ha bisogno per preparare una bozza, che e' l'unica scrittura che gli "
     "e' concessa qui",
-    ("SollecitiService", "create_reminder"): "**preparare un sollecito non e' preparare "
+    ("PaymentRemindersService", "create_reminder"): "**preparare un sollecito non e' preparare "
     "un'email**, ed e' qui che passa la riga fra questa esclusione e `draft_email`. Il "
-    "testo non e' neutro: e' una richiesta di denaro a nome del titolare, con il suo IBAN "
+    "testo non e' neutro: e' una richiesta di denaro a name del titolare, con il suo IBAN "
     "dentro. E prepararlo *consuma* una delle tre posizioni che il registro concede per "
     "fattura (spec 7.3): un agente che preparasse solleciti spenderebbe il tetto che "
     "impedisce a una fattura contestata di diventare una persecuzione automatica, senza "
@@ -734,14 +1046,30 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     ),
     ("WorkUnitService", "transition"): (
         "moving a day through the state graph directly is exactly what invariant 3 "
-        "denies an agent; nothing in this codebase calls it outside its own tests -- "
-        "a future human-facing (non-agent) UI action is the only plausible caller, "
-        "and it does not exist yet"
+        "denies an agent; its only caller is the web app's day page, over "
+        "`POST /api/work-units/{id}/transitions`, and `FULL_ACCESS_ACTIONS` refuses "
+        "it to any agent credential on that route too (REB-745)"
     ),
-    ("WorkUnitService", "link_approval"): (
-        "same reason as `transition`: linking an approval outside `accept_proposal`'s "
-        "own atomic write would let an agent recover a flagged day, or attach "
-        "evidence to one, with no proposal behind it"
+    ("WorkUnitService", "move"): (
+        "the person's door to `transition`, refused to any agent credential "
+        "(`transition_work_unit`); its only caller is `POST /api/work-units/{id}/transitions` "
+        "(REB-746)"
+    ),
+    ("ApprovalService", "record"): (
+        "records a client's approval and moves the days it names in one write: "
+        "exactly the evidence an agent must not manufacture (invariant 3). A person "
+        "records it from the contract page over `POST /api/approvals`, refused to any "
+        "agent credential there too (REB-747); an agent's path is `propose_day`"
+    ),
+    ("ApprovalRequestService", "compose"): (
+        "writes the request for a client's approval, which only a person sends; "
+        "an agent proposes a day (`propose_day`) and never prepares mail to a client "
+        "(REB-749)"
+    ),
+    ("ApprovalRequestService", "prepare"): (
+        "records named days as proposed and files a draft to the client in one write: "
+        "refused to any agent credential (`request_approval`), and the send is "
+        "`POST /api/email-drafts/{id}/send`, which has no tool either (REB-749)"
     ),
     ("ApprovalService", "create"): (
         "recording an approval detached from the day it evidences is exactly what "
@@ -752,49 +1080,50 @@ _COPERTE_O_UMANE: dict[Method, str] = {
 }
 
 
-# Nessuna settima categoria di esclusioni *definitive*. Il task A8 ne aveva aperta una --
-# `_IN_ATTESA_DI_DECISIONE`, una sola voce, `SearchService.search_everything` --
-# dichiarandola provvisoria e scrivendo che A11 avrebbe dovuto **cancellarla**, non
-# aggiornarla. A11 ha registrato il tool `search_everything` (`tools/__init__.py`, sezione
-# "shared"), quindi il metodo e' ora raggiungibile e la riga e' sparita insieme alla sua
-# categoria. Se fosse rimasta, `test_no_declared_exclusion_is_actually_reachable` sarebbe
-# diventato rosso: e' quel test a rendere impossibile lasciare qui un'esclusione che non
-# esclude piu' niente.
+# No seventh category of *definitive* exclusions. Task A8 had opened one --
+# `_IN_ATTESA_DI_DECISIONE`, a single entry, `SearchService.search_everything` --
+# declaring it provisional and writing that A11 should have to **delete** it, not
+# update it. A11 registered the `search_everything` tool (`tools/families/shared.py`),
+# so the method is now reachable and the row disappeared together with its
+# category. Had it stayed, `test_no_declared_exclusion_is_actually_reachable` would
+# have gone red: that test is what makes it impossible to leave here an exclusion that
+# no longer excludes anything.
 #
-# Vale la pena dirlo perche' una categoria vuota lasciata in piedi "per il prossimo che
-# serve" e' esattamente il posto dove una decisione non presa si nasconde: l'elenco qui
-# sopra contiene solo scelte definitive, e chi ne aggiunge una provvisoria deve riaprire
-# un blocco a se' con il proprio nome, non riempire uno gia' pronto.
+# It is worth saying because an empty category left standing "for the next one that
+# needs it" is exactly the place where a decision not taken hides: the list above
+# only holds definitive choices, and whoever adds a provisional one must open a
+# separate block of its own with its own name, not fill one that is already ready.
 #
-# Il task 4 di questa stessa fetta (9B) aveva aperto un blocco cosi', `_IN_ATTESA_
-# DI_DRIVE_T7`, con una sola voce, `("GoogleDriveAccountService", "health")`: la
-# scrittura di `health` esisteva gia' ma il tool che la rende raggiungibile da un
-# agente, `describe_drive_account`, non ancora. Il task 7 (`tools/drive.py`) ha
-# registrato quel tool, quindi il metodo e' ora raggiungibile e la riga e' sparita
-# insieme alla sua categoria -- la stessa cancellazione, non aggiornamento, che A11
+# Task 4 of this same slice (9B) had opened a block like that, `_IN_ATTESA_
+# DI_DRIVE_T7`, with a single entry, `("GoogleDriveAccountService", "health")`: the
+# `health` write already existed but the tool that makes it reachable by an
+# agent, `describe_drive_account`, did not yet. Task 7 (`tools/drive.py`) registered
+# that tool, so the method is now reachable and the row disappeared together with
+# its category -- the same deletion, not an update, that A11 applied to
+# `_IN_ATTESA_DI_DECISIONE`.
 # ha applicato a `_IN_ATTESA_DI_DECISIONE`.
 # Provisional, like `_IN_ATTESA_DI_DECISIONE`/`_IN_ATTESA_DI_DRIVE_T7` before it, REB-359
 # left one: `_IN_ATTESA_DI_REB_362`, seven entries on `WorkUnitService`/`ApprovalService`,
 # declaring that REB-362 would either register a tool for each or say why not, and that
 # it must **delete** the block, not update it, the same discipline as the two above.
 # REB-362 registered `propose_contract`, `propose_day`, `get_proposal`, `list_proposals`,
-# `accept_proposal` and `reject_proposal` (`tools/__init__.py`, section "proposals"). Of
+# `accept_proposal` and `reject_proposal` (`tools/families/proposals.py`). Of
 # the seven: `WorkUnitService.get`/`transitions_for` and `ApprovalService.get` take no
 # `actor` and moved to `_INTERNE` above, next to every other no-actor read; the four
-# writes (`WorkUnitService.create`/`transition`/`link_approval`,
+# writes (`WorkUnitService.create`/`transition`,
 # `ApprovalService.create`) moved to `_COPERTE_O_UMANE` above, because REB-362's own
 # answer to "why no tool" is a permanent one, not "nobody wrote it yet" -- exposing any
 # of them would let an agent write the ledger directly, which is exactly what invariant
 # 3 forbids. So the block is gone, the same cancellazione as `_IN_ATTESA_DI_DECISIONE`.
 
 
-ESCLUSIONI: dict[Method, str] = {
-    **_VIETATE,
+EXCLUSIONS: dict[Method, str] = {
+    **_FORBIDDEN,
     **_INTERNE,
     **_CREDENZIALI,
-    **_CONFIGURAZIONE,
+    **_CONFIGURATION,
     **_BYTE,
-    **_COPERTE_O_UMANE,
+    **_COVERED_OR_HUMAN,
 }
 
 
@@ -832,6 +1161,57 @@ def _produced_by(func: ast.expr, known: set[str], factories: dict[str, str]) -> 
     return func.id if func.id in known else factories.get(func.id)
 
 
+def _own_nodes(scope: ast.AST) -> list[ast.AST]:
+    """The nodes of one function (or module) body, without entering the functions defined
+    inside it: those are scopes of their own. A nested `def` is itself returned, so the
+    caller can recurse into it."""
+    nodes: list[ast.AST] = []
+    todo = list(ast.iter_child_nodes(scope))
+    while todo:
+        node = todo.pop()
+        nodes.append(node)
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            todo.extend(ast.iter_child_nodes(node))
+    return nodes
+
+
+def _calls_in_scope(
+    scope: ast.AST, inherited: dict[str, str], known: set[str], factories: dict[str, str]
+) -> set[Method]:
+    """The `(service class, method)` pairs called in `scope`, with `svc = ServiceClass(...)`
+    bindings resolved per function and not per module (REB-807).
+
+    A name is bound in the function that assigns it, visible to the functions defined
+    inside, and shadowed by an assignment of the same name there. Module-wide, `service`
+    in `tools/contracts.py` was whichever of `ContractService`, `RateCardService` and
+    `ClauseNoteService` was assigned last, so a call on the other two read as a call on
+    the wrong class and a service method that is reachable looked like a hole.
+    """
+    nodes = _own_nodes(scope)
+    bindings = dict(inherited)
+    for node in nodes:
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            produced = _produced_by(node.value.func, known, factories)
+            if produced is not None:
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        bindings[target.id] = produced
+    found: set[Method] = set()
+    for node in nodes:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            found |= _calls_in_scope(node, bindings, known, factories)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            receiver = node.func.value
+            owner = None
+            if isinstance(receiver, ast.Call):
+                owner = _produced_by(receiver.func, known, factories)
+            elif isinstance(receiver, ast.Name):
+                owner = bindings.get(receiver.id)
+            if owner is not None:
+                found.add((owner, node.func.attr))
+    return found
+
+
 def _reachable(known: set[str]) -> set[Method]:
     """Every `(service class, method)` an agent can reach through `tools/` or
     `resources/`.
@@ -841,7 +1221,7 @@ def _reachable(known: set[str]) -> set[Method]:
     `ServiceClass(context.session).m(...)`, `svc = ServiceClass(...)` followed by
     `svc.m(...)`, and the module-private factories `_invoices(context)` /
     `_documents(context)` whose return annotation names the class. A name-only scan
-    would report `CustomerService.create` as covered because *some* `.create(` exists
+    would report `OrganizationService.create` as covered because *some* `.create(` exists
     somewhere under `tools/`, which is precisely the false green this file exists to
     avoid.
     """
@@ -859,26 +1239,7 @@ def _reachable(known: set[str]) -> set[Method]:
                     if isinstance(returns, ast.Name) and returns.id in known:
                         factories[node.name] = returns.id
 
-            bindings: dict[str, str] = {}
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
-                    produced = _produced_by(node.value.func, known, factories)
-                    if produced is not None:
-                        for target in node.targets:
-                            if isinstance(target, ast.Name):
-                                bindings[target.id] = produced
-
-            for node in ast.walk(tree):
-                if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
-                    continue
-                receiver = node.func.value
-                owner = None
-                if isinstance(receiver, ast.Call):
-                    owner = _produced_by(receiver.func, known, factories)
-                elif isinstance(receiver, ast.Name):
-                    owner = bindings.get(receiver.id)
-                if owner is not None:
-                    found.add((owner, node.func.attr))
+            found |= _calls_in_scope(tree, {}, known, factories)
     return found
 
 
@@ -895,9 +1256,9 @@ PUBLIC_METHODS = [(cls, method) for cls, methods in SERVICES.items() for method 
 
 
 def test_the_service_sweep_finds_the_services_it_should() -> None:
-    assert {"CustomerService", "InvoiceService", "TimeEntryService"} <= set(SERVICES)
+    assert {"OrganizationService", "InvoiceService", "TimeEntryService"} <= set(SERVICES)
     assert len(SERVICES) > 15
-    assert "create" in SERVICES["CustomerService"]
+    assert "create" in SERVICES["OrganizationService"]
     # Private helpers stay out: `_check_owner` is not part of anybody's surface.
     assert not [m for methods in SERVICES.values() for m in methods if m.startswith("_")]
 
@@ -907,15 +1268,15 @@ def test_the_reachability_walk_resolves_all_three_call_shapes() -> None:
     silently stopped understanding the factory shape, every method of `InvoiceService`
     and `DocumentService` would look unexposed and this file would demand exclusions for
     operations that have working tools."""
-    assert ("CustomerService", "create") in REACHABLE  # ServiceClass(...).m(...)
-    assert ("CustomerService", "list") in REACHABLE  # svc = ServiceClass(...); svc.m()
+    assert ("OrganizationService", "create") in REACHABLE  # ServiceClass(...).m(...)
+    assert ("OrganizationService", "list") in REACHABLE  # svc = ServiceClass(...); svc.m()
     assert ("InvoiceService", "create") in REACHABLE  # _invoices(context).m(...)
     assert ("PipelineService", "get") in REACHABLE  # reached only from resources/
 
 
 def test_the_walk_attributes_a_call_to_its_own_receiver() -> None:
     """The property that separates this from a substring scan. `.create(` appears under
-    `tools/` for customers, people, deals, costs, time entries and invoices -- and for
+    `tools/` for organizations, people, deals, costs, time entries and invoices -- and for
     none of the four services below, each of which defines a `create` of its own. A
     name-only scan would report all four as covered."""
     for service in ("UserService", "PatService", "PipelineService", "FieldDefinitionService"):
@@ -933,7 +1294,7 @@ def test_every_public_service_method_is_a_tool_or_a_named_exclusion(
     """The half of the product's claim that had no test. A new service method fails here
     until it has a tool or a reason -- which is the only moment at which writing the
     reason is cheap."""
-    assert (service, method) in REACHABLE or (service, method) in ESCLUSIONI, (
+    assert (service, method) in REACHABLE or (service, method) in EXCLUSIONS, (
         f"'{service}.{method}' non e' raggiungibile da nessun tool o resource MCP e non "
         "compare fra le esclusioni dichiarate in questo file. Il prodotto promette che "
         "un agente possa fare tutto quello che puo' fare una persona, meno un elenco "
@@ -942,7 +1303,7 @@ def test_every_public_service_method_is_a_tool_or_a_named_exclusion(
     )
 
 
-@pytest.mark.parametrize(("service", "method"), sorted(ESCLUSIONI), ids=lambda p: p)
+@pytest.mark.parametrize(("service", "method"), sorted(EXCLUSIONS), ids=lambda p: p)
 def test_every_declared_exclusion_still_names_a_real_method(service: str, method: str) -> None:
     """The other direction, which is what keeps the taxonomy from becoming folklore: a
     renamed or deleted service method must not leave a reason behind explaining why
@@ -953,7 +1314,7 @@ def test_every_declared_exclusion_still_names_a_real_method(service: str, method
     )
 
 
-@pytest.mark.parametrize(("service", "method"), sorted(ESCLUSIONI), ids=lambda p: p)
+@pytest.mark.parametrize(("service", "method"), sorted(EXCLUSIONS), ids=lambda p: p)
 def test_no_declared_exclusion_is_actually_reachable(service: str, method: str) -> None:
     """An exclusion that is reachable is a false statement, and the most expensive kind:
     it reads as a considered refusal while the operation is in fact exposed. This is what
@@ -974,20 +1335,20 @@ def test_the_forbidden_block_names_exactly_what_the_ban_test_bans() -> None:
     `LegalEntityService.upsert` standing in for `FiscalProfileService.upsert`, which
     is the exact confusion the qualified list exists to prevent.
 
-    `_FUORI_DAL_SETACCIO` counts on the same side of the equality as `_VIETATE`, which
+    `_OUTSIDE_FROM_SIEVE` counts on the same side of the equality as `_VIETATE`, which
     is what keeps it from becoming a place to hide a ban: a name moved there to avoid
     writing a category still has to appear in `FORBIDDEN_SERVICE_CALLS`, and
     `test_nothing_hides_in_the_out_of_sweep_block` checks its receivers really are
     outside the sweep rather than merely declared to be."""
-    dichiarate = {method for _, method in _VIETATE} | {method for _, method in _FUORI_DAL_SETACCIO}
-    assert dichiarate == set(FORBIDDEN_SERVICE_CALLS) | {
+    declared = {method for _, method in _FORBIDDEN} | {method for _, method in _OUTSIDE_FROM_SIEVE}
+    assert declared == set(FORBIDDEN_SERVICE_CALLS) | {
         method for _, method in FORBIDDEN_QUALIFIED_CALLS
     }
-    assert set(FORBIDDEN_QUALIFIED_CALLS) <= set(_VIETATE)
+    assert set(FORBIDDEN_QUALIFIED_CALLS) <= set(_FORBIDDEN)
 
 
 def test_nothing_hides_in_the_out_of_sweep_block() -> None:
-    """`_FUORI_DAL_SETACCIO` is an escape hatch, so it needs a lock.
+    """`_OUTSIDE_FROM_SIEVE` is an escape hatch, so it needs a lock.
 
     Its whole justification is that the receiver is not a class this file's inventory
     can enumerate. A `*Service` method listed there would be excluded from the
@@ -996,18 +1357,18 @@ def test_nothing_hides_in_the_out_of_sweep_block() -> None:
     still exists -- a reason with nothing holding it to reality, which is precisely what
     the six categories above were built to avoid.
     """
-    for service, method in _FUORI_DAL_SETACCIO:
+    for service, method in _OUTSIDE_FROM_SIEVE:
         assert service not in SERVICES, (
             f"'{service}' e' un servizio di packages/core: la sua esclusione va in una "
             "delle sei categorie sopra, dove il metodo viene verificato ancora esistente"
         )
-        assert (service, method) not in ESCLUSIONI
+        assert (service, method) not in EXCLUSIONS
     # And the block is not vacuous. That each name is a real method of a real class is
     # already proved elsewhere and better: `test_mcp_invoice_ban.py`'s
     # `test_the_privileged_module_is_the_only_place_they_appear` requires every one of
     # them to be *called* from a privileged module, which a deleted or renamed method
     # cannot be. This file stays a pure AST walk with no import from `packages/core`.
-    assert ("DriveReader", "read_text") in _FUORI_DAL_SETACCIO
+    assert ("DriveReader", "read_text") in _OUTSIDE_FROM_SIEVE
 
 
 def test_no_qualified_ban_is_reachable_from_a_resource_either() -> None:

@@ -40,15 +40,38 @@
     <link rel="stylesheet" href="./pigrocrm.css" />
     <!-- The reveal gate, the landing's (ORB-145): landing.css hides `[data-reveal]` only
       under `html.js`, and after three seconds nothing is hidden whatever the script did. -->
-    <script>
-      document.documentElement.classList.add('js')
-      setTimeout(function () { document.documentElement.classList.add('reveal-all') }, 3000)
-    </script>
+    <script src="/assets/reveal-gate.js"></script>
     <!-- The cookie notice and the measurement pixel, as on the landing: this is the
       second page an ad can land on (ORB-159), so it asks the same
       question and loads the SDK only on a yes. privacy.html names both. -->
     <script type="module" src="./consent.js"></script>
     <script type="module" src="./session.js"></script>
+    <!-- REB-701: the CRM as a SoftwareApplication, published by the Organization the
+      home describes (its @id, with its name and url so this page reads on its own).
+      Every value is said on this page or the home: the
+      description is this page's meta description, the four features are «Cosa c'è
+      dentro», and the price is the home's «Quanto costa entrare? Niente.» and this
+      page's «Gratis per chi è in community». No licence, rating, review or version:
+      the site states none of them, and each would be one more thing to keep true by
+      hand. Without a rating or a review Google shows no SoftwareApplication rich
+      result, and none is expected: the block is for what a crawler or an assistant
+      understands, and the Schema.org validator is the check it has to pass. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "@id": "https://letsrebase.com/pigrocrm#software",
+        "name": "PigroCRM",
+        "url": "https://letsrebase.com/pigrocrm",
+        "description": "PigroCRM: clienti, offerte, fatture e pagamenti in un posto solo, e un assistente AI che fa il lavoro noioso. Lo abbiamo costruito da freelance per i freelance. Gratis per chi è in rebase, open source per tutti.",
+        "applicationCategory": "BusinessApplication",
+        "inLanguage": "it-IT",
+        "featureList": ["Clienti e trattative", "Offerte e contratti", "Fatture e ore", "Un assistente AI"],
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
+        "isAccessibleForFree": true,
+        "publisher": { "@type": "Organization", "@id": "https://letsrebase.com/#organization", "name": "rebase", "url": "https://letsrebase.com/" }
+      }
+    </script>
   </head>
   <body>
     <canvas id="field" aria-hidden="true"></canvas>
@@ -126,9 +149,9 @@
       <!-- The four voices, the landing's, on white (ORB-164): a box on the light band
         between what is inside and the guide, so the page says who is already using
         this before it asks. Same names, faces and links as on the landing. -->
-      <section class="band" aria-labelledby="voci">
+      <section class="band" aria-labelledby="entries">
         <div class="wrap section">
-          <p class="kicker" id="voci" data-reveal>Hanno lavorato con noi</p>
+          <p class="kicker" id="entries" data-reveal>Hanno lavorato con noi</p>
           <h2 class="statement" data-reveal style="--d: 0.1s">Chi c<span class="accent">'è già.</span></h2>
           <div class="box voices-light" data-reveal style="--d: 0.2s">
             <div class="grid-2 voices">
@@ -174,7 +197,7 @@
       </section>
 
       <!-- The second perk. It is announced here and downloaded in the hub: the file is
-        behind the member session (`GET /api/hub/me/guida`), so this section links to the
+        behind the member session (`GET /api/hub/me/guide`), so this section links to the
         wizard and never to a PDF. Deliberately a section of its own rather than a fourth
         line inside the CRM's: ORB-68 is the card that makes the perks read as a set with
         the CRM as the largest of them, and it should absorb this block when it lands.
@@ -204,7 +227,7 @@
             <h2 class="measure-tight" id="orbita">Pronto a fare <span class="accent">rebase?</span></h2>
             <p class="actions">
               <a class="cta" href="/hub/freelance">Entra come talento</a>
-              <a class="cta secondary" href="/hub/aziende">Ho un progetto</a>
+              <a class="cta secondary" href="/hub/companies">Ho un progetto</a>
             </p>
             <p class="fine measure">
               Il CV resta nel nostro database, lo leggiamo noi e chi ti proporrà un progetto, e lo
@@ -220,7 +243,6 @@
           <a class="quiet-link" href="/">rebase</a>
           <a class="quiet-link" href="/privacy">Privacy</a>
           <a class="quiet-link" href="/terms">Termini</a>
-          <a class="quiet-link" href="https://humancraft.tech/">Humancraft</a>
         </p>
       </footer>
     </main>

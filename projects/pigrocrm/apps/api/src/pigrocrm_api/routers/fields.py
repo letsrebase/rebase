@@ -1,10 +1,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.orm import Session
 
-from pigrocrm.core.activities.schemas import ActivityRead
-from pigrocrm.core.activities.service import ActivityService
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.fields.schemas import (
     EntityType,
     FieldDefinitionCreate,
@@ -12,10 +12,16 @@ from pigrocrm.core.fields.schemas import (
     FieldDefinitionUpdate,
 )
 from pigrocrm.core.fields.service import FieldDefinitionService
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
+from pigrocrm_api.timeline import timeline_router
 
-router = APIRouter(prefix="/api/field-definitions", tags=["fields"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/field-definitions",
+    tags=["fields"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.post("", response_model=FieldDefinitionRead, status_code=status.HTTP_201_CREATED)
@@ -28,7 +34,6 @@ def create(
 @router.get("", response_model=list[FieldDefinitionRead])
 def list_fields(
     session: SessionDep,
-    actor: ActorDep,
     entity_type: Annotated[EntityType, Query()],
     include_archived: Annotated[bool, Query()] = False,
 ) -> list[FieldDefinitionRead]:
@@ -55,15 +60,19 @@ def unarchive(field_id: UUID, session: SessionDep, actor: ActorDep) -> FieldDefi
     return FieldDefinitionService(session).unarchive(field_id, actor)
 
 
-@router.get("/{field_id}/timeline", response_model=list[ActivityRead])
-def timeline(
-    field_id: UUID,
-    session: SessionDep,
-    actor: ActorDep,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-) -> list[ActivityRead]:
-    """Administrators only, matching exactly who may change a definition. A rename and
-    an archive are separate kinds here, so "it is called something else now" is never
-    confused with "it is gone from every form"."""
+def _admin_reads_field_timeline(_session: Session, _field_id: UUID, actor: Actor) -> None:
     actor.require_admin("read_field_definition_timeline")
-    return ActivityService(session).timeline("field_definition", field_id, limit)
+
+
+router.include_router(
+    timeline_router(
+        "field_definition",
+        id_param="field_id",
+        guard=_admin_reads_field_timeline,
+        description=(
+            "Administrators only, matching exactly who may change a definition. A rename and "
+            'an archive are separate kinds here, so "it is called something else now" is '
+            'never confused with "it is gone from every form".'
+        ),
+    )
+)

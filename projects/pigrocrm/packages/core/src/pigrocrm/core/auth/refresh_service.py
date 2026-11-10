@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.auth.refresh_models import RefreshToken
@@ -73,6 +73,14 @@ class RefreshTokenService:
         it used to mark the predecessor consumed, so that the two writes describe one
         event, and needs to keep it to sign the access token with.
         """
+        # The person's expired rows go with each mint (B-07): nothing else ever deletes a
+        # row of this table, which grows by one per fifteen minutes of activity, and an
+        # expired token is refused whatever its row says, so nothing reads them.
+        self.session.execute(
+            delete(RefreshToken).where(
+                RefreshToken.user_id == user_id, RefreshToken.expires_at < now
+            )
+        )
         jti = uuid4()
         expires_at = now + timedelta(days=settings.refresh_token_days)
         record = RefreshToken(jti=jti, user_id=user_id, expires_at=expires_at)

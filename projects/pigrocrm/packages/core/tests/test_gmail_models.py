@@ -23,7 +23,7 @@ from pigrocrm.core.gmail.schemas import (
 
 
 def _user(session: Session, email: str) -> User:
-    user = User(email=email, nome="Tester", password_hash="x", ruolo="admin", attivo=True)
+    user = User(email=email, name="Tester", password_hash="x", role="admin", active=True)
     session.add(user)
     session.flush()
     return user
@@ -179,10 +179,10 @@ def committed_state(db_engine: Engine) -> Iterator[tuple[UUID, str]]:
     with factory() as session:
         user = User(
             email=f"race-{uuid4()}@example.it",
-            nome="Race",
+            name="Race",
             password_hash="x",
-            ruolo="admin",
-            attivo=True,
+            role="admin",
+            active=True,
         )
         session.add(user)
         session.flush()
@@ -212,7 +212,7 @@ def test_two_simultaneous_redemptions_of_one_state_produce_exactly_one_success(
     """ "Single-use" is a claim about concurrency, so it is tested as one.
 
     Two connections issue the same conditional update at the same moment -- the shape
-    `GmailRepository.consume_state` will use in B1-6. Postgres serialises them on the
+    `OAuthStateRepository.consume` uses. Postgres serialises them on the
     row lock: the loser re-evaluates its `WHERE` against the winner's committed row,
     finds `consumed_at` no longer NULL, and updates nothing. Exactly one authorisation
     code is therefore exchangeable per state, even if a browser fires the callback

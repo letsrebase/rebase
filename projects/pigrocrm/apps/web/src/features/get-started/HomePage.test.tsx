@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { api } from '@/lib/api'
+import { spaceModules } from '@/lib/modules.testing'
 import { queryKeys } from '@/lib/query'
 import type { HomeSearch } from '@/features/dashboard/search'
 import { HomePage } from './HomePage'
@@ -20,13 +21,13 @@ vi.mock('@/lib/api', async (importOriginal) => {
   return { ...actual, api: { GET: vi.fn(), POST: vi.fn(), PUT: vi.fn(), DELETE: vi.fn() } }
 })
 
-const auth: { user: { id: string; email: string; nome: string; ruolo: string; attivo: boolean } } = {
-  user: { id: 'u1', email: 'ada@studio.it', nome: 'Ada', ruolo: 'admin', attivo: true },
+const auth: { user: { id: string; email: string; name: string; role: string; active: boolean } } = {
+  user: { id: 'u1', email: 'ada@studio.it', name: 'Ada', role: 'admin', active: true },
 }
 vi.mock('@/lib/auth', () => ({
   useAuth: () => ({ user: auth.user, isLoading: false, login: vi.fn(), logout: vi.fn(), enterWithLink: vi.fn() }),
-  useCanWrite: () => auth.user.ruolo !== 'readonly',
-  useCan: () => auth.user.ruolo === 'admin',
+  useCanWrite: () => auth.user.role !== 'readonly',
+  useCan: () => auth.user.role === 'admin',
 }))
 
 vi.mock('@rebase/ui/sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -45,17 +46,26 @@ vi.mock('@/features/dashboard/DashboardPage', () => ({
   ),
 }))
 
+vi.mock('@/features/dashboard/SoloHome', () => ({
+  SoloHome: ({ notice }: { notice?: ReactNode }) => (
+    <div data-testid="solo-home">
+      <h1>Home</h1>
+      {notice}
+    </div>
+  ),
+}))
+
 const EMPTY_PAGE = { items: [], next_cursor: null }
 const ONE = (id: string) => ({ items: [{ id }], next_cursor: null })
 const EMPTY: Record<string, unknown> = {
-  '/api/customers': EMPTY_PAGE,
+  '/api/organizations': EMPTY_PAGE,
   '/api/deals': EMPTY_PAGE,
   '/api/time-entries': EMPTY_PAGE,
   '/api/documents': EMPTY_PAGE,
   '/api/tokens': [],
   '/api/gmail/account': { configured: false, account: null, banner: null, banner_text: null, missing_scopes: [] },
 }
-const EMITTER = { ragione_sociale: 'Ada', partita_iva: '01234567890', codice_fiscale: null }
+const LEGAL_ENTITY = { legal_name: 'Ada', vat_number: '01234567890', tax_code: null }
 
 function answers(overrides: Record<string, unknown> = {}, failing: Record<string, number> = {}) {
   vi.mocked(api.GET).mockImplementation(
@@ -65,14 +75,14 @@ function answers(overrides: Record<string, unknown> = {}, failing: Record<string
           ? { error: { detail: 'boom' }, response: new Response(null, { status: failing[path] }) }
           : path in overrides
             ? { data: overrides[path], response: new Response(null, { status: 200 }) }
-            : path === '/api/aziende'
+            : path === '/api/legal-entities'
               ? { data: [], response: new Response(null, { status: 200 }) }
               : { data: EMPTY[path], response: new Response(null, { status: 200 }) },
       )) as never,
   )
 }
 
-const SEARCH: HomeSearch = { tab: 'economica', da: '2026-09-01', a: '2026-09-30', base: 'competenza' }
+const SEARCH: HomeSearch = { tab: 'economic', from: '2026-09-01', to: '2026-09-30', base: 'accrual' }
 
 function renderHome(search: HomeSearch = SEARCH, prepare?: (client: QueryClient) => void): QueryClient {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -92,7 +102,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  auth.user = { id: 'u1', email: 'ada@studio.it', nome: 'Ada', ruolo: 'admin', attivo: true }
+  auth.user = { id: 'u1', email: 'ada@studio.it', name: 'Ada', role: 'admin', active: true }
 })
 
 describe('the Home', () => {
@@ -105,25 +115,53 @@ describe('the Home', () => {
   })
 
   it('stays the start page with the fiscal data saved and a token: those are steps, not work', async () => {
-    answers({ '/api/aziende': [EMITTER], '/api/tokens': [{ id: 'k1' }] })
+    answers({ '/api/legal-entities': [LEGAL_ENTITY], '/api/tokens': [{ id: 'k1' }] })
     renderHome()
     expect(await screen.findByRole('heading', { name: 'Porta dentro il tuo lavoro' })).toBeInTheDocument()
     expect(screen.queryByTestId('dashboard')).toBeNull()
   })
 
   it('shows the Gmail outcome the consent flow came back with, next to the door', async () => {
-    renderHome({ ...SEARCH, esito: 'negato' })
+    renderHome({ ...SEARCH, outcome: 'denied' })
     expect(await screen.findByText('Autorizzazione negata: la casella non è stata collegata.')).toBeInTheDocument()
   })
 
   it('is the dashboard with «Completa lo spazio» once a customer exists', async () => {
-    answers({ '/api/customers': ONE('c1') })
+    answers({ '/api/organizations': ONE('c1') })
     renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Completa lo spazio' })).toBeInTheDocument()
     expect(screen.getByText(/1 di 4 primi passi fatti/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Vai ai primi passi/ })).toHaveAttribute('href', '/app/get-started')
     expect(screen.queryByRole('heading', { name: 'Porta dentro il tuo lavoro' })).toBeNull()
+  })
+
+  it('opens a solo space on the solo Home, with the same notices above it', async () => {
+    answers({ '/api/organizations': ONE('c1'), '/api/settings/modules': spaceModules([], 'solo') })
+    renderHome()
+    expect(await screen.findByTestId('solo-home')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Completa lo spazio' })).toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard')).toBeNull()
+  })
+
+  it('opens a company space on the dashboard tabs', async () => {
+    answers({ '/api/organizations': ONE('c1'), '/api/settings/modules': spaceModules([], 'company') })
+    renderHome()
+    expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
+    expect(screen.queryByTestId('solo-home')).toBeNull()
+  })
+
+  it('opens a space with no profile yet on the dashboard tabs', async () => {
+    answers({ '/api/organizations': ONE('c1'), '/api/settings/modules': spaceModules([], null) })
+    renderHome()
+    expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
+    expect(screen.queryByTestId('solo-home')).toBeNull()
+  })
+
+  it('opens on the dashboard tabs when the modules cannot be read', async () => {
+    answers({ '/api/organizations': ONE('c1') }, { '/api/settings/modules': 500 })
+    renderHome()
+    expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
   })
 
   it.each([
@@ -138,8 +176,8 @@ describe('the Home', () => {
 
   it('is the dashboard alone once every step is done', async () => {
     answers({
-      '/api/aziende': [EMITTER],
-      '/api/customers': ONE('c1'),
+      '/api/legal-entities': [LEGAL_ENTITY],
+      '/api/organizations': ONE('c1'),
       '/api/deals': ONE('d1'),
       '/api/documents': ONE('o1'),
     })
@@ -148,17 +186,38 @@ describe('the Home', () => {
     expect(screen.queryByRole('heading', { name: 'Completa lo spazio' })).toBeNull()
   })
 
+  it('tells whoever can decide that proposals wait, above the dashboard tab', async () => {
+    answers({
+      '/api/organizations': ONE('c1'),
+      '/api/proposals': { items: [{ id: 'p1' }, { id: 'p2' }] },
+    })
+    renderHome()
+    expect(await screen.findByRole('heading', { name: '2 proposte da rivedere' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Rivedi le proposte/ })).toHaveAttribute('href', '/app/proposals')
+  })
+
+  it('says nothing of proposals to a readonly user, and does not even read them', async () => {
+    auth.user.role = 'readonly'
+    answers({ '/api/organizations': ONE('c1'), '/api/proposals': { items: [{ id: 'p1' }] } })
+    renderHome()
+    expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
+    // The page has settled (the dashboard is drawn); a notice would have asked by now.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(api.GET).not.toHaveBeenCalledWith('/api/proposals', expect.anything())
+    expect(screen.queryByRole('heading', { name: '1 proposta da rivedere' })).toBeNull()
+  })
+
   it('does not ask a collaboratore to complete the one step only an admin can do', async () => {
-    auth.user.ruolo = 'collaboratore'
-    answers({ '/api/customers': ONE('c1'), '/api/deals': ONE('d1'), '/api/documents': ONE('o1') })
+    auth.user.role = 'collaborator'
+    answers({ '/api/organizations': ONE('c1'), '/api/deals': ONE('d1'), '/api/documents': ONE('o1') })
     renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Completa lo spazio' })).toBeNull()
   })
 
   it('does not ask a readonly user to complete anything', async () => {
-    auth.user.ruolo = 'readonly'
-    answers({ '/api/customers': ONE('c1') })
+    auth.user.role = 'readonly'
+    answers({ '/api/organizations': ONE('c1') })
     renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Completa lo spazio' })).toBeNull()
@@ -166,7 +225,7 @@ describe('the Home', () => {
 
   it('holds its choice for the visit: a customer the assistant creates meanwhile does not take the start page, or a token on it, away', async () => {
     vi.mocked(api.POST).mockResolvedValue({
-      data: { id: 't2', nome: 'Claude Code', prefix: 'pgc_zzzz9999', last_used_at: null, revoked_at: null, created_at: '2026-09-23T10:00:00Z', token: 'pgc_x' },
+      data: { id: 't2', name: 'Claude Code', prefix: 'pgc_zzzz9999', last_used_at: null, revoked_at: null, created_at: '2026-09-23T10:00:00Z', token: 'pgc_x' },
       response: new Response(null, { status: 201 }),
     } as never)
     const client = renderHome()
@@ -174,7 +233,7 @@ describe('the Home', () => {
     expect(await screen.findByDisplayValue('pgc_x')).toBeInTheDocument()
     // The assistant, asked by a step's prompt, has created the first customer; the reads
     // refresh, as they do when the person comes back to the tab.
-    answers({ '/api/customers': ONE('c1'), '/api/tokens': [{ id: 't2' }] })
+    answers({ '/api/organizations': ONE('c1'), '/api/tokens': [{ id: 't2' }] })
     await client.invalidateQueries()
     await waitFor(() => expect(screen.getByText(/1 di 4/)).toBeInTheDocument())
     expect(screen.getByDisplayValue('pgc_x')).toBeInTheDocument()
@@ -184,11 +243,11 @@ describe('the Home', () => {
   it('does not decide on a cached «empty» that a refetch is about to replace', async () => {
     // The first customer was just created on its own page: the four reads are cached as
     // «nothing» and invalidated, and the Home mounts while they refetch.
-    answers({ '/api/customers': ONE('c1') })
+    answers({ '/api/organizations': ONE('c1') })
     const SCOPE = { scope: 'first-steps', limit: 1 }
     renderHome(SEARCH, (client) => {
       for (const key of [
-        queryKeys.customers(SCOPE),
+        queryKeys.organizations(SCOPE),
         queryKeys.deals(SCOPE),
         queryKeys.timeEntries(SCOPE),
         queryKeys.documents(SCOPE),
@@ -203,8 +262,8 @@ describe('the Home', () => {
   })
 
   it('shows the Gmail outcome on the dashboard too, if the two sides read the space differently', async () => {
-    answers({ '/api/customers': ONE('c1') })
-    renderHome({ ...SEARCH, esito: 'collegato' })
+    answers({ '/api/organizations': ONE('c1') })
+    renderHome({ ...SEARCH, outcome: 'connected' })
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
     expect(screen.getByText('Casella Google collegata.')).toBeInTheDocument()
   })
@@ -213,9 +272,9 @@ describe('the Home', () => {
     let calls = 0
     const base = vi.mocked(api.GET).getMockImplementation()
     vi.mocked(api.GET).mockImplementation(((path: string, init?: unknown) => {
-      // Only the first-steps probe (`limit: 1`): the invoice door reads the customers too.
+      // Only the first-steps probe (`limit: 1`): the invoice door reads the organizations too.
       const probe = (init as { params?: { query?: { limit?: number } } } | undefined)?.params?.query?.limit === 1
-      if (path === '/api/customers' && probe && calls++ === 0) {
+      if (path === '/api/organizations' && probe && calls++ === 0) {
         return Promise.resolve({ error: { detail: 'boom' }, response: new Response(null, { status: 502 }) })
       }
       return (base as (p: string, i?: unknown) => unknown)(path, init)
@@ -232,7 +291,7 @@ describe('the Home', () => {
   })
 
   it('does not hold a choice made on a failed read: the next read that succeeds decides', async () => {
-    answers({}, { '/api/customers': 500 })
+    answers({}, { '/api/organizations': 500 })
     const client = renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
     answers()
@@ -242,7 +301,7 @@ describe('the Home', () => {
   })
 
   it('falls back to the dashboard when a read fails, rather than guess the space is empty', async () => {
-    answers({}, { '/api/customers': 500 })
+    answers({}, { '/api/organizations': 500 })
     renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
   })

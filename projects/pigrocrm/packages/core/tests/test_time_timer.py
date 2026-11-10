@@ -22,7 +22,7 @@ from pigrocrm.core.timetracking.timer import TimerService, elapsed_hours
 
 
 def _writer(user_id: UUID) -> Actor:
-    return Actor(id=user_id, type="user", role="collaboratore")
+    return Actor(id=user_id, type="user", role="collaborator")
 
 
 def test_elapsed_hours_rounds_to_hundredths_and_never_below_the_minimum() -> None:
@@ -42,7 +42,7 @@ def test_a_person_has_one_timer_and_sees_only_their_own(
     actor = _writer(seeded_user_id)
     assert service.current(actor) is None
 
-    started = service.start(TimerStart(deal_id=seeded_deal_id, descrizione="Call"), actor)
+    started = service.start(TimerStart(deal_id=seeded_deal_id, description="Call"), actor)
     assert started.deal_id == seeded_deal_id
     assert service.current(actor) is not None
 
@@ -61,7 +61,7 @@ def test_stopping_writes_an_entry_through_the_ordinary_path_and_removes_the_time
 ) -> None:
     service = TimerService(db_session)
     actor = _writer(seeded_user_id)
-    service.start(TimerStart(descrizione="Analisi requisiti", fatturabile=False), actor)
+    service.start(TimerStart(description="Analisi requisiti", billable=False), actor)
     # Back-date the start by hand: the clock is real, the test is not going to wait.
     row = db_session.execute(
         TimeTimer.__table__.select().where(TimeTimer.user_id == seeded_user_id)
@@ -80,9 +80,9 @@ def test_stopping_writes_an_entry_through_the_ordinary_path_and_removes_the_time
     entry = service.stop(TimerStop(deal_id=seeded_deal_id), actor)
     assert entry.deal_id == seeded_deal_id
     assert entry.user_id == seeded_user_id
-    assert entry.descrizione == "Analisi requisiti"
-    assert entry.fatturabile is False
-    assert entry.ore == Decimal("0.75")
+    assert entry.description == "Analisi requisiti"
+    assert entry.billable is False
+    assert entry.hours == Decimal("0.75")
     assert service.current(actor) is None
 
     # The entry is a real one: listed like any other, with its activity row.
@@ -96,12 +96,12 @@ def test_an_empty_description_gets_an_honest_default_and_update_changes_the_runn
     service = TimerService(db_session)
     actor = _writer(seeded_user_id)
     service.start(TimerStart(), actor)
-    updated = service.update(TimerUpdate(deal_id=seeded_deal_id, fatturabile=False), actor)
-    assert updated.deal_id == seeded_deal_id and updated.fatturabile is False
+    updated = service.update(TimerUpdate(deal_id=seeded_deal_id, billable=False), actor)
+    assert updated.deal_id == seeded_deal_id and updated.billable is False
 
     entry = service.stop(TimerStop(), actor)
-    assert entry.descrizione == timer_module.DEFAULT_DESCRIZIONE
-    assert entry.ore == Decimal("0.01")
+    assert entry.description == timer_module.DEFAULT_DESCRIPTION
+    assert entry.hours == Decimal("0.01")
 
 
 def test_a_reader_may_look_but_not_start(db_session: Session, seeded_user_id: UUID) -> None:

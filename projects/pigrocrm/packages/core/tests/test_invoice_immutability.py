@@ -9,16 +9,14 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
+from frozen_clock import freeze_today
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
-from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-from pigrocrm.core.emitter.service import LegalEntityService
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.errors import Conflict, ImmutableField, PermissionDenied, ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -32,29 +30,37 @@ from pigrocrm.core.invoices.schemas import (
     PaymentState,
 )
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
-COLLABORATORE = Actor(id=None, type="user", role="collaboratore")
-# `oggi_in_italia()`, not `date.today()`: this test's own oracle must agree with the
-# service's (see `clock.py` and Task 10's report -- this host runs JST, not
+COLLABORATOR = Actor(id=None, type="user", role="collaborator")
+# `today_local()`, not `date.today()`: this test's own oracle must agree with the
+# service's (see `db/clock.py` and Task 10's report -- this host runs JST, not
 # Europe/Rome, so the two would silently diverge otherwise).
-TODAY = oggi_in_italia()
+TODAY = today_local()
+
+
+@pytest.fixture(autouse=True)
+def _pinned_today(monkeypatch: pytest.MonkeyPatch) -> None:
+    freeze_today(monkeypatch, TODAY)
 
 
 @pytest.fixture
 def service(db_session: Session, tmp_path) -> InvoiceService:  # type: ignore[no-untyped-def]
-    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
+    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
     LegalEntityService(db_session).upsert_default(
         LegalEntityUpsert(
-            ragione_sociale="Studio Rossi",
-            partita_iva="01234567890",
-            codice_fiscale="HMCRFT00A01H501K",
-            indirizzo="Via Vittorio Veneto 12",
-            cap="20124",
-            comune="Milano",
-            provincia="MI",
-            nazione="IT",
+            legal_name="Studio Rossi",
+            vat_number="01234567890",
+            tax_code="HMCRFT00A01H501K",
+            address="Via Vittorio Veneto 12",
+            postal_code="20124",
+            city="Milano",
+            province="MI",
+            country="IT",
             email="mario@example.com",
         ),
         ADMIN,
@@ -64,15 +70,15 @@ def service(db_session: Session, tmp_path) -> InvoiceService:  # type: ignore[no
 
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
-    customer = Customer(
-        ragione_sociale="Acme S.r.l.",
-        partita_iva="12345678901",
-        codice_sdi="ABCDEFG",
-        indirizzo="Corso Italia 5",
-        cap="00100",
-        comune="Roma",
-        provincia="RM",
-        nazione="IT",
+    customer = Organization(
+        legal_name="Acme S.r.l.",
+        vat_number="12345678901",
+        sdi_code="ABCDEFG",
+        address="Corso Italia 5",
+        postal_code="00100",
+        city="Roma",
+        province="RM",
+        country="IT",
     )
     db_session.add(customer)
     db_session.flush()
@@ -83,8 +89,8 @@ def _issue(service: InvoiceService, customer_id: UUID) -> UUID:
     draft = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            causale="Consulenza",
-            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("1000.00"))],
+            memo="Consulenza",
+            lines=[InvoiceLineIn(description="Consulenza", unit_price=Decimal("1000.00"))],
         ),
         ADMIN,
     )
@@ -100,12 +106,12 @@ def test_annulling_keeps_the_number_and_the_row_readable(
     """The equivalent of a struck-through page in a paper register, and what preserves
     the gap-free property of spec 3: without it, "no gaps" would be worth nothing."""
     invoice_id = _issue(service, customer_id)
-    annulled = service.annul(invoice_id, InvoiceAnnul(motivo="importo errato"), ADMIN)
-    assert annulled.stato == "annullata"
-    assert annulled.numero == 1
-    assert annulled.annullata_il == TODAY
-    assert annulled.motivo_annullamento == "importo errato"
-    assert annulled.totale == Decimal("1000.00")
+    annulled = service.annul(invoice_id, InvoiceAnnul(reason="importo errato"), ADMIN)
+    assert annulled.status == "cancelled"
+    assert annulled.number == 1
+    assert annulled.cancelled_at == TODAY
+    assert annulled.cancellation_reason == "importo errato"
+    assert annulled.total == Decimal("1000.00")
     assert len(service.lines(invoice_id, ADMIN)) == 1
 
 
@@ -113,45 +119,45 @@ def test_a_corrected_invoice_takes_the_next_number_not_the_annulled_one(
     service: InvoiceService, customer_id: UUID
 ) -> None:
     first = _issue(service, customer_id)
-    service.annul(first, InvoiceAnnul(motivo="importo errato"), ADMIN)
-    assert service.get(_issue(service, customer_id), ADMIN).numero == 2
+    service.annul(first, InvoiceAnnul(reason="importo errato"), ADMIN)
+    assert service.get(_issue(service, customer_id), ADMIN).number == 2
 
 
 def test_an_annulment_needs_a_reason(service: InvoiceService, customer_id: UUID) -> None:
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        InvoiceAnnul(motivo="")
+        InvoiceAnnul(reason="")
 
 
 def test_a_draft_cannot_be_annulled(service: InvoiceService, customer_id: UUID) -> None:
     """It has no number to preserve, so it is deleted, not struck through."""
     draft = service.create(InvoiceCreate(customer_id=customer_id), ADMIN)
     with pytest.raises(Conflict):
-        service.annul(draft.id, InvoiceAnnul(motivo="ripensamento"), ADMIN)
+        service.annul(draft.id, InvoiceAnnul(reason="ripensamento"), ADMIN)
 
 
 def test_annulling_twice_is_refused(service: InvoiceService, customer_id: UUID) -> None:
     invoice_id = _issue(service, customer_id)
-    service.annul(invoice_id, InvoiceAnnul(motivo="importo errato"), ADMIN)
+    service.annul(invoice_id, InvoiceAnnul(reason="importo errato"), ADMIN)
     with pytest.raises(Conflict):
-        service.annul(invoice_id, InvoiceAnnul(motivo="ancora"), ADMIN)
+        service.annul(invoice_id, InvoiceAnnul(reason="ancora"), ADMIN)
 
 
 def test_annulling_requires_admin(service: InvoiceService, customer_id: UUID) -> None:
     invoice_id = _issue(service, customer_id)
     with pytest.raises(PermissionDenied):
-        service.annul(invoice_id, InvoiceAnnul(motivo="importo errato"), COLLABORATORE)
+        service.annul(invoice_id, InvoiceAnnul(reason="importo errato"), COLLABORATOR)
 
 
 def test_annulling_records_an_activity_with_the_reason(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
     invoice_id = _issue(service, customer_id)
-    service.annul(invoice_id, InvoiceAnnul(motivo="importo errato"), ADMIN)
+    service.annul(invoice_id, InvoiceAnnul(reason="importo errato"), ADMIN)
     entries = ActivityService(db_session).timeline("invoice", invoice_id)
     annulled = [entry for entry in entries if entry.kind == "annulled"]
-    assert annulled and annulled[0].payload["motivo"] == "importo errato"
+    assert annulled and annulled[0].payload["reason"] == "importo errato"
 
 
 # --- transmission: the fact that decides which correction route exists --------------
@@ -162,11 +168,11 @@ def test_marking_transmitted_is_a_one_way_door(service: InvoiceService, customer
     rather than optimistic -- without it the system could not tell an invoice that
     never left from one already deposited with the Agenzia delle Entrate."""
     invoice_id = _issue(service, customer_id)
-    marked = service.mark_transmitted_externally(invoice_id, InvoiceTransmitted(data=TODAY), ADMIN)
-    assert marked.trasmessa_esternamente_il == TODAY
+    marked = service.mark_transmitted_externally(invoice_id, InvoiceTransmitted(date=TODAY), ADMIN)
+    assert marked.transmitted_externally_at == TODAY
     with pytest.raises(ImmutableField) as caught:
-        service.mark_transmitted_externally(invoice_id, InvoiceTransmitted(data=TODAY), ADMIN)
-    assert caught.value.details["field"] == "trasmessa_esternamente_il"
+        service.mark_transmitted_externally(invoice_id, InvoiceTransmitted(date=TODAY), ADMIN)
+    assert caught.value.details["field"] == "transmitted_externally_at"
 
 
 def test_a_transmitted_invoice_cannot_be_annulled(
@@ -176,9 +182,9 @@ def test_a_transmitted_invoice_cannot_be_annulled(
     -- so it happens outside PigroCRM and the application says so, instead of offering
     a button that pretends to solve it."""
     invoice_id = _issue(service, customer_id)
-    service.mark_transmitted_externally(invoice_id, InvoiceTransmitted(data=TODAY), ADMIN)
+    service.mark_transmitted_externally(invoice_id, InvoiceTransmitted(date=TODAY), ADMIN)
     with pytest.raises(Conflict) as caught:
-        service.annul(invoice_id, InvoiceAnnul(motivo="importo errato"), ADMIN)
+        service.annul(invoice_id, InvoiceAnnul(reason="importo errato"), ADMIN)
     assert "nota di credito" in caught.value.message
 
 
@@ -186,9 +192,9 @@ def test_a_future_transmission_date_is_refused(service: InvoiceService, customer
     invoice_id = _issue(service, customer_id)
     with pytest.raises(ValidationFailed) as caught:
         service.mark_transmitted_externally(
-            invoice_id, InvoiceTransmitted(data=TODAY + timedelta(days=1)), ADMIN
+            invoice_id, InvoiceTransmitted(date=TODAY + timedelta(days=1)), ADMIN
         )
-    assert caught.value.details["field"] == "trasmessa_esternamente_il"
+    assert caught.value.details["field"] == "transmitted_externally_at"
 
 
 def test_a_transmission_date_before_the_issue_date_is_refused(
@@ -197,28 +203,28 @@ def test_a_transmission_date_before_the_issue_date_is_refused(
     draft = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("100.00"))],
+            lines=[InvoiceLineIn(description="Consulenza", unit_price=Decimal("100.00"))],
         ),
         ADMIN,
     )
-    issued = service.issue(draft.id, InvoiceIssue(data_emissione=TODAY), ADMIN)
+    issued = service.issue(draft.id, InvoiceIssue(issue_date=TODAY), ADMIN)
     with pytest.raises(ValidationFailed):
         service.mark_transmitted_externally(
-            issued.id, InvoiceTransmitted(data=TODAY - timedelta(days=1)), ADMIN
+            issued.id, InvoiceTransmitted(date=TODAY - timedelta(days=1)), ADMIN
         )
 
 
 def test_a_draft_cannot_be_marked_transmitted(service: InvoiceService, customer_id: UUID) -> None:
     draft = service.create(InvoiceCreate(customer_id=customer_id), ADMIN)
     with pytest.raises(Conflict):
-        service.mark_transmitted_externally(draft.id, InvoiceTransmitted(data=TODAY), ADMIN)
+        service.mark_transmitted_externally(draft.id, InvoiceTransmitted(date=TODAY), ADMIN)
 
 
 def test_marking_transmitted_requires_admin(service: InvoiceService, customer_id: UUID) -> None:
     invoice_id = _issue(service, customer_id)
     with pytest.raises(PermissionDenied):
         service.mark_transmitted_externally(
-            invoice_id, InvoiceTransmitted(data=TODAY), COLLABORATORE
+            invoice_id, InvoiceTransmitted(date=TODAY), COLLABORATOR
         )
 
 
@@ -233,15 +239,15 @@ def test_collection_stays_mutable_on_an_annulled_invoice_is_refused_but_on_an_is
     live = _issue(service, customer_id)
     assert (
         service.set_payment_state(
-            live, PaymentState(stato_pagamento="incassato", data_incasso=TODAY), ADMIN
-        ).stato_pagamento
-        == "incassato"
+            live, PaymentState(payment_status="paid", payment_date=TODAY), ADMIN
+        ).payment_status
+        == "paid"
     )
     annulled = _issue(service, customer_id)
-    service.annul(annulled, InvoiceAnnul(motivo="importo errato"), ADMIN)
+    service.annul(annulled, InvoiceAnnul(reason="importo errato"), ADMIN)
     with pytest.raises(Conflict):
         service.set_payment_state(
-            annulled, PaymentState(stato_pagamento="incassato", data_incasso=TODAY), ADMIN
+            annulled, PaymentState(payment_status="paid", payment_date=TODAY), ADMIN
         )
 
 
@@ -250,11 +256,11 @@ def test_the_internal_notes_and_custom_fields_stay_mutable_forever(
 ) -> None:
     """They appear on no artefact, so they are not part of the document."""
     invoice_id = _issue(service, customer_id)
-    service.annul(invoice_id, InvoiceAnnul(motivo="importo errato"), ADMIN)
+    service.annul(invoice_id, InvoiceAnnul(reason="importo errato"), ADMIN)
     assert (
         service.update(
-            invoice_id, InvoiceUpdate(note_interne="sostituita da 2/2026"), ADMIN
-        ).note_interne
+            invoice_id, InvoiceUpdate(internal_notes="sostituita da 2/2026"), ADMIN
+        ).internal_notes
         == "sostituita da 2/2026"
     )
 
@@ -276,7 +282,7 @@ def test_an_annulled_invoice_still_cannot_be_soft_deleted(
     service: InvoiceService, db_session: Session, customer_id: UUID
 ) -> None:
     invoice_id = _issue(service, customer_id)
-    service.annul(invoice_id, InvoiceAnnul(motivo="importo errato"), ADMIN)
+    service.annul(invoice_id, InvoiceAnnul(reason="importo errato"), ADMIN)
     with pytest.raises(IntegrityError):
         db_session.execute(
             text("UPDATE invoices SET deleted_at = now() WHERE id = :id"), {"id": invoice_id}

@@ -17,12 +17,12 @@ empty on both sides.
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.timetracking.models import TimeEntry
 
-_WORK = (Customer, Deal, TimeEntry, Document)
+_WORK = (Organization, Deal, TimeEntry, Document)
 
 
 def space_is_empty(session: Session) -> bool:

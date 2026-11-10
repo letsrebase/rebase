@@ -2,6 +2,7 @@ import { Copy } from 'lucide-react'
 import { useId, useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { Button } from '@rebase/ui/button'
+import { Checkbox } from '@rebase/ui/checkbox'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Textarea } from '@rebase/ui/textarea'
@@ -14,12 +15,12 @@ import {
   mcpServersJson,
   serverName,
 } from './connectSnippets'
-import { useCreateToken, type CreatedToken } from './queries'
+import { useCreateToken, useTokenOptions, type CreatedToken } from './queries'
 
 /**
  * Everything a client needs to talk to this installation's MCP server over HTTP
  * (ORB-170): the endpoint, a token minted right here, and the two shapes a
- * configuration takes. Shared by the sidebar's «Collega un agente» dialog and the
+ * configuration takes. Shared by the «Collega un agente» dialog of the Agents page and the
  * start page's «Fai lavorare l'assistente» block (spec 2026-09-16 §4.2, REB-222), so
  * the two cannot drift.
  *
@@ -31,30 +32,40 @@ import { useCreateToken, type CreatedToken } from './queries'
 export function ConnectAgentPanel({
   issued,
   onIssued,
+  fullAccessByDefault = false,
 }: {
   issued: CreatedToken | null
   onIssued: (created: CreatedToken) => void
+  /** Starts the «Accesso completo» box ticked, for a door whose whole purpose needs it
+   *  (registering an issued invoice). Still shown, still the person's to untick, and
+   *  still only effective where the space offers it. */
+  fullAccessByDefault?: boolean
 }) {
-  const [nome, setNome] = useState('Claude Code')
+  const [name, setName] = useState('Claude Code')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   const create = useCreateToken()
-  // The dialog and the start page can both be on screen (the sidebar's «Collega un
-  // agente» over an empty space's Home): fixed ids would appear twice and a label
-  // would name the input behind the dialog.
+  // The invoice, rate and period-lock tools are chosen per token (REB-810) and closed
+  // unless asked for, here as in the tokens page. Unknown counts as closed: the server
+  // refuses an opening the space does not offer.
+  const [fullAccess, setFullAccess] = useState(fullAccessByDefault)
+  const options = useTokenOptions()
+  const fullAccessAvailable = options.data?.full_access_available === true
+  // Two of these can be mounted at once (the start page's and a dialog's): fixed ids
+  // would appear twice and a label would name the input behind the dialog.
   const ids = useId()
   const id = (name: string) => `${ids}-${name}`
 
   const url = mcpEndpoint(window.location.origin, tenantPrefix)
-  const name = serverName(tenantPrefix)
+  const serverLabel = serverName(tenantPrefix)
   const token = issued?.token ?? TOKEN_PLACEHOLDER
-  const command = claudeCodeCommand(name, url, token)
-  const json = mcpServersJson(name, url, token)
+  const command = claudeCodeCommand(serverLabel, url, token)
+  const json = mcpServersJson(serverLabel, url, token)
   const fieldError = problem ? fieldErrorFrom(problem) : null
-  const banner = problem && fieldError?.field !== 'nome' ? problem.detail : null
+  const banner = problem && fieldError?.field !== 'name' ? problem.detail : null
 
   function mint() {
     setProblem(null)
-    create.mutate(nome, {
+    create.mutate({ name, full_access: fullAccess && fullAccessAvailable }, {
       onSuccess: (created) => onIssued(created),
       onError: (error) => setProblem(toProblem(error)),
     })
@@ -116,17 +127,31 @@ export function ConnectAgentPanel({
           <div className="flex gap-2">
             <Input
               id={id('token-nome')}
-              aria-invalid={fieldError?.field === 'nome'}
-              value={nome}
-              onChange={(event) => setNome(event.target.value)}
+              aria-invalid={fieldError?.field === 'name'}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
             />
             <Button onClick={mint} disabled={create.isPending}>
               Crea il token
             </Button>
           </div>
-          {fieldError?.field === 'nome' && (
+          {fieldError?.field === 'name' && (
             <p className="text-sm text-destructive">{fieldError.message}</p>
           )}
+          <div className="flex items-center gap-2 pt-1">
+            <Checkbox
+              id={id('token-full-access')}
+              checked={fullAccess && fullAccessAvailable}
+              disabled={!fullAccessAvailable}
+              onCheckedChange={(checked) => setFullAccess(checked === true)}
+            />
+            <Label htmlFor={id('token-full-access')}>Accesso completo</Label>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {fullAccessAvailable
+              ? 'Per emettere o registrare fatture, cambiare tariffe e chiudere i mesi: atti che non si annullano. Chiuso, se non lo spunti.'
+              : 'Chiuso per questo spazio: lo apre un amministratore in Impostazioni → Spazio. Senza, l’agente non ha gli strumenti per fatture, tariffe e chiusura dei mesi.'}
+          </p>
         </div>
       )}
 

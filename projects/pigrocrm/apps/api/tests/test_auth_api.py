@@ -1,3 +1,4 @@
+import types
 from datetime import datetime, timedelta
 
 import pytest
@@ -13,13 +14,17 @@ from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.errors import NotFound
 from pigrocrm_api.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_session
 from pigrocrm_api.main import create_app
-from pigrocrm_api.ratelimit import REQUESTS_PER_MINUTE
+from pigrocrm_api.ratelimit import (
+    FREE_BEARER_FAILURES,
+    FREE_FAILURES,
+    REQUESTS_PER_MINUTE,
+)
 
 CREDENTIALS = {"email": "admin@pigro.it", "password": "supersegreta1"}
 
 
 def _create_deactivated_user(session: Session, email: str) -> None:
-    """A user who authenticated correctly right up until an admin flipped `attivo`
+    """A user who authenticated correctly right up until an admin flipped `active`
     off -- must fail login exactly like a wrong password or an unknown email, per
     UserService.authenticate's own anti-enumeration contract."""
     users = UserService(session)
@@ -27,14 +32,14 @@ def _create_deactivated_user(session: Session, email: str) -> None:
     # space's last one, even from the system actor, and this helper's test is about
     # the login answer, not about the guard.
     users.create(
-        UserCreate(email="superstite-auth@pigro.it", password=None, nome="S", ruolo="admin"),
+        UserCreate(email="superstite-auth@pigro.it", password=None, name="S", role="admin"),
         Actor.system(),
     )
     user = users.create(
-        UserCreate(email=email, password="supersegreta1", nome="Disattivato", ruolo="admin"),
+        UserCreate(email=email, password="supersegreta1", name="Disattivato", role="admin"),
         Actor.system(),
     )
-    users.update(user.id, UserUpdate(attivo=False), Actor.system())
+    users.update(user.id, UserUpdate(active=False), Actor.system())
 
 
 def _present_refresh_cookie(client: TestClient, token: str) -> None:
@@ -140,6 +145,11 @@ def test_login_is_throttled_per_client_before_the_password_is_checked(
     `PIGROCRM_LOGIN_REQUESTS_PER_MINUTE` left exported from the e2e environment would
     otherwise turn these ten verifies into six hundred."""
     budget = 10
+    # A frozen clock: eleven argon2 verifies take seconds on a loaded machine, and the
+    # bucket refills while they run.
+    monkeypatch.setattr(
+        "pigrocrm_api.ratelimit.time", types.SimpleNamespace(monotonic=lambda: 1000.0)
+    )
     client.app.dependency_overrides[get_settings] = lambda: Settings(  # type: ignore[call-arg]
         _env_file=None, login_requests_per_minute=budget
     )
@@ -153,10 +163,16 @@ def test_login_is_throttled_per_client_before_the_password_is_checked(
 
     monkeypatch.setattr(UserService, "authenticate", counting_authenticate)
 
-    for _ in range(budget):
-        response = client.post("/api/auth/login", json={**CREDENTIALS, "password": "sbagliata"})
+    # A different account each time: the same account failing again and again earns its
+    # own backoff (`test_repeated_failures_on_one_account_back_off`), and this test is
+    # about the client's budget.
+    for attempt in range(budget):
+        wrong = {"email": f"nessuno{attempt}@pigro.it", "password": "sbagliata"}
+        response = client.post("/api/auth/login", json=wrong)
         assert response.status_code == 401, response.text
-    refused = client.post("/api/auth/login", json={**CREDENTIALS, "password": "sbagliata"})
+    refused = client.post(
+        "/api/auth/login", json={"email": "nessuno@pigro.it", "password": "sbagliata"}
+    )
     assert refused.status_code == 429, refused.text
     assert refused.headers["Retry-After"] == "60"
     assert calls == budget
@@ -169,6 +185,122 @@ def test_login_is_throttled_per_client_before_the_password_is_checked(
     )
     assert other.status_code == 401, other.text
     assert calls == budget + 1
+
+
+def test_repeated_failures_on_one_account_back_off(
+    client: TestClient, admin_user, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The per-client bucket alone lets one client try ten passwords a minute at one
+    account for ever. Past `FREE_FAILURES` wrong passwords the (client, account) pair is
+    refused with a 429 and a `Retry-After`, and the refusal costs no argon2 verify. Another
+    client, and another account of the same client, are unaffected."""
+    calls = 0
+    real_authenticate = UserService.authenticate
+
+    def counting_authenticate(self: UserService, email: str, password: str) -> object:
+        nonlocal calls
+        calls += 1
+        return real_authenticate(self, email, password)
+
+    monkeypatch.setattr(UserService, "authenticate", counting_authenticate)
+    wrong = {**CREDENTIALS, "password": "sbagliata"}
+    # The failure after the free ones is itself answered 401 and is what starts the wait.
+    for _ in range(FREE_FAILURES + 1):
+        assert client.post("/api/auth/login", json=wrong).status_code == 401
+    locked = client.post("/api/auth/login", json=wrong)
+    assert locked.status_code == 429, locked.text
+    assert int(locked.headers["Retry-After"]) >= 1
+    # Locked means locked: the right password is refused too, until the wait is over.
+    assert client.post("/api/auth/login", json=CREDENTIALS).status_code == 429
+    assert calls == FREE_FAILURES + 1
+    other_client = client.post(
+        "/api/auth/login", json=CREDENTIALS, headers={"X-Real-IP": "10.0.0.9"}
+    )
+    assert other_client.status_code == 200, other_client.text
+    other_account = client.post(
+        "/api/auth/login", json={"email": "altro@pigro.it", "password": "sbagliata"}
+    )
+    assert other_account.status_code == 401
+
+
+def test_a_successful_login_forgets_earlier_failures(client: TestClient, admin_user) -> None:
+    wrong = {**CREDENTIALS, "password": "sbagliata"}
+    for _ in range(FREE_FAILURES):
+        assert client.post("/api/auth/login", json=wrong).status_code == 401
+    # Still free: a success is not refused, and it wipes the count.
+    assert client.post("/api/auth/login", json=CREDENTIALS).status_code == 200
+    for _ in range(FREE_FAILURES):
+        assert client.post("/api/auth/login", json=wrong).status_code == 401
+
+
+def test_verify_and_refresh_are_throttled_per_client(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Spending a link or a refresh token is not free to guess at: each has a bucket of
+    its own (generous in production, since the SPA renews on every 401; pinned small here
+    so a slow machine's refill cannot make the count flaky), and a 429 past it carries a
+    `Retry-After`. A wrong link is a plain 401 within the budget."""
+    budget = 3
+    monkeypatch.setattr("pigrocrm_api.routers.auth.VERIFY_REQUESTS_PER_MINUTE", budget)
+    monkeypatch.setattr("pigrocrm_api.routers.auth.REFRESH_REQUESTS_PER_MINUTE", budget)
+    for _ in range(budget):
+        assert client.post("/api/auth/verify", json={"t": "non-un-link"}).status_code == 401
+    refused = client.post("/api/auth/verify", json={"t": "non-un-link"})
+    assert refused.status_code == 429, refused.text
+    assert refused.headers["Retry-After"] == "60"
+
+    for _ in range(budget):
+        assert client.post("/api/auth/refresh").status_code == 401
+    refused = client.post("/api/auth/refresh")
+    assert refused.status_code == 429, refused.text
+
+
+def test_a_run_of_bad_bearers_backs_off_without_touching_the_cookie_path(
+    client: TestClient, admin_user
+) -> None:
+    """A bad PAT costs a lookup, and nothing limited how many a client could try. Past
+    `FREE_BEARER_FAILURES` the client address is answered 429 for a while, and the answer
+    is the same for any route that authenticates."""
+    bad = {"Authorization": "Bearer pgc_inventato"}
+    for _ in range(FREE_BEARER_FAILURES + 1):
+        assert client.get("/api/auth/me", headers=bad).status_code == 401
+    locked = client.get("/api/auth/me", headers=bad)
+    assert locked.status_code == 429, locked.text
+    assert int(locked.headers["Retry-After"]) >= 1
+    # Another client is untouched.
+    other = client.get("/api/auth/me", headers={**bad, "X-Real-IP": "10.0.0.11"})
+    assert other.status_code == 401
+
+
+def test_a_valid_token_is_never_refused_by_the_lock_its_neighbours_earned(
+    logged_in: TestClient,
+) -> None:
+    """The backoff is per client address, so a revoked token in a cron job behind the same
+    egress must not lock out the working ones: a token that resolves passes whatever the
+    address has failed with."""
+    raw = logged_in.post("/api/tokens", json={"name": "Claude"}).json()["token"]
+    bare = TestClient(logged_in.app)
+    bad = {"Authorization": "Bearer pgc_inventato"}
+    for _ in range(FREE_BEARER_FAILURES + 2):
+        bare.get("/api/auth/me", headers=bad)
+    assert bare.get("/api/auth/me", headers=bad).status_code == 429
+    good = bare.get("/api/auth/me", headers={"Authorization": f"Bearer {raw}"})
+    assert good.status_code == 200, good.text
+
+
+def test_a_throttled_refusal_is_logged_without_the_email_or_the_token(
+    client: TestClient, admin_user, caplog: pytest.LogCaptureFixture
+) -> None:
+    wrong = {**CREDENTIALS, "password": "una-password-sbagliata"}
+    with caplog.at_level("WARNING", logger="pigrocrm_api.security"):
+        for _ in range(FREE_FAILURES + 2):
+            client.post("/api/auth/login", json=wrong)
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("unauthorized scope=login" in message for message in messages)
+    assert any("throttled scope=login" in message for message in messages)
+    joined = "\n".join(messages)
+    assert CREDENTIALS["email"] not in joined
+    assert wrong["password"] not in joined
 
 
 def test_the_login_budget_is_the_setting(client: TestClient, admin_user) -> None:
@@ -233,11 +365,11 @@ def test_me_requires_authentication(client: TestClient) -> None:
 def test_me_returns_the_current_user(logged_in: TestClient) -> None:
     body = logged_in.get("/api/auth/me").json()
     assert body["email"] == "admin@pigro.it"
-    assert body["ruolo"] == "admin"
+    assert body["role"] == "admin"
 
 
 def test_update_me_requires_authentication(client: TestClient) -> None:
-    response = client.patch("/api/auth/me", json={"digest_settimanale": False})
+    response = client.patch("/api/auth/me", json={"weekly_digest": False})
     assert response.status_code == 401
 
 
@@ -246,13 +378,13 @@ def test_a_non_admin_can_switch_off_their_own_weekly_report(
 ) -> None:
     """Spec 2026-09-16 §3.6: the mail's own opt-out link must work for whoever
     received it -- `PATCH /api/auth/me` (`UserService.update_own_digest`) takes no
-    `actor.require_admin`, unlike `PATCH /api/users/{id}`, which a `collaboratore`
+    `actor.require_admin`, unlike `PATCH /api/users/{id}`, which a `collaborator`
     cannot call at all."""
-    response = collaborator_client.patch("/api/auth/me", json={"digest_settimanale": False})
+    response = collaborator_client.patch("/api/auth/me", json={"weekly_digest": False})
     assert response.status_code == 200
-    assert response.json()["digest_settimanale"] is False
+    assert response.json()["weekly_digest"] is False
 
-    assert collaborator_client.get("/api/auth/me").json()["digest_settimanale"] is False
+    assert collaborator_client.get("/api/auth/me").json()["weekly_digest"] is False
 
 
 def test_update_me_is_401_when_the_session_outlives_the_row(
@@ -266,12 +398,12 @@ def test_update_me_is_401_when_the_session_outlives_the_row(
     that translation is what this endpoint is left holding.
     """
 
-    def sparito(self: UserService, actor: Actor, value: bool) -> None:
+    def vanished(self: UserService, actor: Actor, value: bool) -> None:
         raise NotFound("user", "sparito")
 
-    monkeypatch.setattr(UserService, "update_own_digest", sparito)
+    monkeypatch.setattr(UserService, "update_own_digest", vanished)
 
-    response = logged_in.patch("/api/auth/me", json={"digest_settimanale": False})
+    response = logged_in.patch("/api/auth/me", json={"weekly_digest": False})
 
     assert response.status_code == 401
 
@@ -428,7 +560,7 @@ def test_logout_consumes_every_refresh_token_the_browser_sends(
 
 def test_a_personal_access_token_authenticates_too(logged_in: TestClient) -> None:
     """The same API serves the browser and the agent; only the credential differs."""
-    raw = logged_in.post("/api/tokens", json={"nome": "Claude"}).json()["token"]
+    raw = logged_in.post("/api/tokens", json={"name": "Claude"}).json()["token"]
 
     bare = TestClient(logged_in.app)
     response = bare.get("/api/auth/me", headers={"Authorization": f"Bearer {raw}"})
@@ -524,7 +656,7 @@ def test_login_with_a_nul_byte_does_not_reveal_whether_the_email_exists(
 # --- a link by mail (spec 2026-09-12 §6.2) --------------------------------------------
 
 from pigrocrm.core.mail import RecordingSender  # noqa: E402
-from pigrocrm_api.routers.auth import get_sender  # noqa: E402
+from pigrocrm_api.sessions import get_sender  # noqa: E402
 
 ADMIN_EMAIL = CREDENTIALS["email"]
 
@@ -598,7 +730,7 @@ def test_the_link_request_is_throttled_per_client(client: TestClient, admin_user
     assert other.status_code == 503, other.text
 
 
-def test_entra_sets_the_cookies_and_me_answers(
+def test_verify_sets_the_cookies_and_me_answers(
     client: TestClient, admin_user, sender: RecordingSender
 ) -> None:
     client.post("/api/auth/link", json={"email": ADMIN_EMAIL})
@@ -614,7 +746,7 @@ def test_entra_sets_the_cookies_and_me_answers(
     assert again.status_code == 401 and "link" in again.json()["detail"]
 
 
-def test_entra_with_garbage_is_401(client: TestClient) -> None:
+def test_verify_with_garbage_is_401(client: TestClient) -> None:
     assert client.post("/api/auth/verify", json={"t": "x"}).status_code == 401
 
 

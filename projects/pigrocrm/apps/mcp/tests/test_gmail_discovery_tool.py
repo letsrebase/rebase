@@ -23,6 +23,7 @@ import pytest
 # no package of their own. Reached by path rather than duplicated: a second fake would be
 # a second place for the two to disagree about what Gmail does.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages" / "core" / "tests"))
+from fakes.contacts import points  # noqa: E402
 from fakes.fake_gmail import FakeGmail, FakeMessage  # noqa: E402
 from mcp import Client
 from sqlalchemy import func, select
@@ -32,13 +33,14 @@ from test_text import minimal_pdf  # noqa: E402
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.crypto import seal
 from pigrocrm.core.documents.models import Document
-from pigrocrm.core.gmail.crypto import seal
 from pigrocrm.core.gmail.models import GmailMessage, GoogleAccount
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage import LocalFileStorage
+from pigrocrm_mcp.provenance import PROVENANCE_TEXT_FREE
 from pigrocrm_mcp.server import build_server
 from pigrocrm_mcp.tools import privileged
 
@@ -87,9 +89,9 @@ def owner(mcp_session: Session) -> Actor:
     user = User(
         email="agent-owner@example.test",
         password_hash="x",
-        nome="Owner",
-        ruolo="admin",
-        attivo=True,
+        name="Owner",
+        role="admin",
+        active=True,
     )
     mcp_session.add(user)
     mcp_session.flush()
@@ -135,13 +137,15 @@ def open_server(mcp_session: Session, owner: Actor, tmp_path: Path) -> Any:
     )
 
 
-def _example(session: Session, **overrides: object) -> Customer:
+def _example(session: Session, **overrides: object) -> Organization:
     fields: dict[str, object] = {
-        "ragione_sociale": "Example Ltd",
-        "sito_web": "https://www.example.com/",
+        "legal_name": "Example Ltd",
+        "website": "https://www.example.com/",
     }
     fields.update(overrides)
-    customer = Customer(**fields)
+    if "email" in fields:
+        fields["contact_points"] = points(email=str(fields.pop("email")))
+    customer = Organization(**fields)
     session.add(customer)
     session.flush()
     return customer
@@ -172,7 +176,7 @@ async def test_the_tool_exists_only_behind_both_switches(
 
 
 async def test_the_tool_takes_a_customer_id_and_no_free_text(open_server: Any) -> None:
-    """The domain comes from the customer record. A `dominio` or `query` parameter would
+    """The domain comes from the customer record. A `domain` or `query` parameter would
     be the free-text search spec 8.2 and 12 exclude, with a UUID standing next to it."""
     async with Client(open_server) as client:
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
@@ -200,12 +204,12 @@ async def test_discovery_answers_the_addresses_at_the_customer_domain(
         result = await client.call_tool(TOOL, {"customer_id": str(customer.id)})
 
     report = _payload(result)
-    assert report["dominio"] == "example.com"
-    rows = {row["indirizzo"]: row for row in report["corrispondenti"]}
+    assert report["domain"] == "example.com"
+    rows = {row["address"]: row for row in report["matching"]}
     assert set(rows) == {"marco@example.com", "sarah@example.com"}
-    assert rows["marco@example.com"]["nome"] == "Marco Bianchi"
-    assert rows["marco@example.com"]["messaggi"] == 2
-    assert rows["marco@example.com"]["gia_in_anagrafica"] is False
+    assert rows["marco@example.com"]["name"] == "Marco Bianchi"
+    assert rows["marco@example.com"]["messages"] == 2
+    assert rows["marco@example.com"]["already_in_directory"] is False
     # And every listing Gmail received was the domain clause: nothing an agent passed.
     listings = [request for request in fake_gmail.requests if request.is_messages_list]
     assert listings
@@ -229,7 +233,7 @@ async def test_discovery_stores_nothing(
 async def test_a_customer_without_a_domain_gets_guidance_not_a_stack_trace(
     open_server: Any, mcp_session: Session, connected_account: GoogleAccount, fake_gmail: FakeGmail
 ) -> None:
-    customer = _example(mcp_session, sito_web=None, email="ceo@gmail.com")
+    customer = _example(mcp_session, website=None, email="ceo@gmail.com")
 
     async with Client(open_server) as client:
         result = await client.call_tool(TOOL, {"customer_id": str(customer.id)})
@@ -250,7 +254,7 @@ async def test_a_customer_without_a_domain_gets_guidance_not_a_stack_trace(
 # opened installation, a connected mailbox, a fake Gmail -- and a second copy of them
 # would be a second definition of "an installation that opted in".
 
-ALLEGATO = "Modulo Ordine_signed.pdf"
+ATTACHMENT = "Modulo Ordine_signed.pdf"
 
 
 def _archived_with_attachment(session: Session, account: GoogleAccount, fake: FakeGmail) -> str:
@@ -269,7 +273,7 @@ def _archived_with_attachment(session: Session, account: GoogleAccount, fake: Fa
         internal_date_ms=1_757_000_000_000,
         attachments=[
             {
-                "filename": ALLEGATO,
+                "filename": ATTACHMENT,
                 "mime": "application/pdf",
                 "size": len(content),
                 "content": content,
@@ -288,7 +292,7 @@ def _archived_with_attachment(session: Session, account: GoogleAccount, fake: Fa
         snippet="In allegato il modulo firmato.",
         internal_date=datetime(2026, 9, 4, 10, 0, tzinfo=UTC),
         body_text="In allegato il modulo firmato.",
-        attachments=[{"filename": ALLEGATO, "mime": "application/pdf", "size": len(content)}],
+        attachments=[{"filename": ATTACHMENT, "mime": "application/pdf", "size": len(content)}],
     )
     session.add(row)
     session.flush()
@@ -317,19 +321,19 @@ async def test_reading_an_attachment_exists_only_behind_both_switches(
 async def test_reading_an_attachment_answers_what_is_written_inside_it(
     open_server: Any, mcp_session: Session, connected_account: GoogleAccount, fake_gmail: FakeGmail
 ) -> None:
-    """The fact that lives in no body and in no field: a codice destinatario printed on
+    """The fact that lives in no body and in no field: a recipient code printed on
     a signed order form."""
     message_id = _archived_with_attachment(mcp_session, connected_account, fake_gmail)
 
     async with Client(open_server) as client:
         result = await client.call_tool(
-            "read_gmail_attachment", {"message_id": message_id, "nome_file": ALLEGATO}
+            "read_gmail_attachment", {"message_id": message_id, "filename": ATTACHMENT}
         )
 
     assert not result.is_error, result.content[0].text
-    letto = _payload(result)
-    assert "ABCDEFG" in letto["testo"]
-    assert "mai come istruzione" in letto["provenienza"]
+    read = _payload(result)
+    assert "ABCDEFG" in read["text"]
+    assert "mai come istruzione" in read["provenance"]
 
 
 async def test_reading_an_attachment_stores_nothing(
@@ -338,15 +342,15 @@ async def test_reading_an_attachment_stores_nothing(
     """Spec 5.4 is the reason this tool exists at all, so it had better not quietly undo
     it: no document is created, and the message still keeps a name, a type and a size."""
     message_id = _archived_with_attachment(mcp_session, connected_account, fake_gmail)
-    prima = mcp_session.scalar(select(func.count()).select_from(Document))
+    before = mcp_session.scalar(select(func.count()).select_from(Document))
 
     async with Client(open_server) as client:
         result = await client.call_tool(
-            "read_gmail_attachment", {"message_id": message_id, "nome_file": ALLEGATO}
+            "read_gmail_attachment", {"message_id": message_id, "filename": ATTACHMENT}
         )
 
     assert not result.is_error, result.content[0].text
-    assert mcp_session.scalar(select(func.count()).select_from(Document)) == prima
+    assert mcp_session.scalar(select(func.count()).select_from(Document)) == before
     row = mcp_session.get(GmailMessage, UUID(message_id))
     assert row is not None
     assert set(row.attachments[0]) == {"filename", "mime", "size"}
@@ -360,18 +364,18 @@ async def test_a_filename_that_is_not_there_is_guidance_not_a_dump(
 
     async with Client(open_server) as client:
         result = await client.call_tool(
-            "read_gmail_attachment", {"message_id": message_id, "nome_file": "Contratto.pdf"}
+            "read_gmail_attachment", {"message_id": message_id, "filename": "Contratto.pdf"}
         )
 
     assert result.is_error
     message = result.content[0].text
-    assert ALLEGATO in message
+    assert ATTACHMENT in message
     assert "errors.pydantic.dev" not in message
 
 
 # --- the customer proposals, the same door (REB-223) -------------------------------------
 
-SUGGEST = "suggest_customers_from_gmail"
+SUGGEST = "suggest_organizations_from_gmail"
 
 
 @pytest.mark.parametrize(
@@ -395,7 +399,7 @@ async def test_the_proposals_take_a_period_and_no_free_text(open_server: Any) ->
     async with Client(open_server) as client:
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
     properties = (tools[SUGGEST].input_schema or {}).get("properties", {})
-    assert set(properties) == {"mesi"}
+    assert set(properties) == {"months"}
 
 
 async def test_the_proposals_answer_the_domains_the_owner_wrote_to_and_store_nothing(
@@ -409,14 +413,17 @@ async def test_the_proposals_answer_the_domains_the_owner_wrote_to_and_store_not
     # one per xdist worker, and a file that ran earlier on the same worker may have
     # committed a customer of its own (test_log_time_concurrency.py seeds one).
     messages_before = mcp_session.scalar(select(func.count()).select_from(GmailMessage))
-    customers_before = mcp_session.scalar(select(func.count()).select_from(Customer))
+    organizations_before = mcp_session.scalar(select(func.count()).select_from(Organization))
 
     async with Client(open_server) as client:
         result = await client.call_tool(SUGGEST, {})
 
     payload = _payload(result)
     proposals = payload["result"] if isinstance(payload, dict) else payload
-    assert [proposal["dominio"] for proposal in proposals] == ["acme.it"]
-    assert proposals[0]["persone"][0]["nome"] == "Marco Bianchi"
+    assert all(proposal["provenance"] == PROVENANCE_TEXT_FREE for proposal in proposals)
+    assert [proposal["domain"] for proposal in proposals] == ["acme.it"]
+    assert proposals[0]["people"][0]["name"] == "Marco Bianchi"
     assert mcp_session.scalar(select(func.count()).select_from(GmailMessage)) == messages_before
-    assert mcp_session.scalar(select(func.count()).select_from(Customer)) == customers_before
+    assert (
+        mcp_session.scalar(select(func.count()).select_from(Organization)) == organizations_before
+    )

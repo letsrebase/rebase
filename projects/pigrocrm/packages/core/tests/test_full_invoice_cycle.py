@@ -19,13 +19,13 @@ import pytest
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.emitter.schemas import LegalEntityUpsert
-from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
 from pigrocrm.core.invoices.service import InvoiceService
+from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
+from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage.local import LocalFileStorage
 
 # Two different actors on purpose: the agent's work and the human's must be
@@ -41,18 +41,18 @@ def storage(tmp_path) -> LocalFileStorage:  # type: ignore[no-untyped-def]
 
 @pytest.fixture
 def configured(db_session: Session, storage: LocalFileStorage) -> InvoiceService:
-    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(codice_regime="RF19"), HUMAN)
+    FiscalProfileService(db_session).upsert(FiscalProfileUpsert(regime_code="RF19"), HUMAN)
     LegalEntityService(db_session).upsert_default(
         LegalEntityUpsert(
-            ragione_sociale="Studio Rossi",
-            partita_iva="12345678901",
-            codice_fiscale="RSSMRA80A01H501U",
-            indirizzo="Via Roma 1",
-            cap="20100",
-            comune="Milano",
-            provincia="MI",
-            nazione="IT",
-            pec="studio@pec.it",
+            legal_name="Studio Rossi",
+            vat_number="12345678901",
+            tax_code="RSSMRA80A01H501U",
+            address="Via Roma 1",
+            postal_code="20100",
+            city="Milano",
+            province="MI",
+            country="IT",
+            certified_email="studio@pec.it",
         ),
         HUMAN,
     )
@@ -61,15 +61,15 @@ def configured(db_session: Session, storage: LocalFileStorage) -> InvoiceService
 
 @pytest.fixture
 def customer_id(db_session: Session) -> UUID:
-    customer = Customer(
-        ragione_sociale="Acme S.r.l.",
-        partita_iva="98765432109",
-        codice_sdi="ABCDEFG",
-        indirizzo="Corso Italia 5",
-        cap="00100",
-        comune="Roma",
-        provincia="RM",
-        nazione="IT",
+    customer = Organization(
+        legal_name="Acme S.r.l.",
+        vat_number="98765432109",
+        sdi_code="ABCDEFG",
+        address="Corso Italia 5",
+        postal_code="00100",
+        city="Roma",
+        province="RM",
+        country="IT",
     )
     db_session.add(customer)
     db_session.flush()
@@ -87,22 +87,22 @@ def test_an_agent_prepares_a_human_issues_and_both_artefacts_exist(
     proforma = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            tipo="proforma",
-            causale="Consulenza CTO, agosto",
-            righe=[
+            type="proforma",
+            memo="Consulenza CTO, agosto",
+            lines=[
                 InvoiceLineIn(
-                    descrizione="Advisory",
-                    quantita=Decimal("10.000000"),
-                    unita_misura="ore",
-                    prezzo_unitario=Decimal("150.000000"),
+                    description="Advisory",
+                    quantity=Decimal("10.000000"),
+                    unit_of_measure="hours",
+                    unit_price=Decimal("150.000000"),
                 )
             ],
         ),
         AGENT,
     )
-    assert proforma.tipo == "proforma"
-    assert proforma.numero is None, "una proforma non consuma un numero fiscale"
-    assert proforma.riferimento is not None
+    assert proforma.type == "proforma"
+    assert proforma.number is None, "una proforma non consuma un numero fiscale"
+    assert proforma.reference is not None
 
     # The amount is agreed. Still no register number: confirming a proforma is a
     # commercial act, not a fiscal one, which is why an agent may do it.
@@ -110,9 +110,9 @@ def test_an_agent_prepares_a_human_issues_and_both_artefacts_exist(
 
     # 2. The human's half. Issuing is the act an agent cannot perform.
     issued = service.issue(proforma.id, InvoiceIssue(), HUMAN)
-    assert issued.tipo == "fattura"
-    assert issued.numero == 1
-    assert issued.anno is not None
+    assert issued.type == "invoice"
+    assert issued.number == 1
+    assert issued.year is not None
 
     # 3. The caller produces the artefacts -- `issue` deliberately does not, so that it
     #    stays one transaction. A cycle that stopped at step 2 would leave a fiscally
@@ -138,8 +138,8 @@ def test_an_agent_prepares_a_human_issues_and_both_artefacts_exist(
 
     # 5. The proforma is consumed, not deleted: the trail from one to the other survives.
     source = service.get(proforma.id, HUMAN)
-    assert source.stato == "consumata"
-    assert stored.origine_proforma_id == proforma.id
+    assert source.status == "consumed"
+    assert stored.origin_proforma_id == proforma.id
 
 
 def test_regenerating_reproduces_the_same_bytes(
@@ -156,12 +156,12 @@ def test_regenerating_reproduces_the_same_bytes(
     invoice = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            tipo="fattura",
-            righe=[
+            type="invoice",
+            lines=[
                 InvoiceLineIn(
-                    descrizione="Advisory",
-                    quantita=Decimal("1.000000"),
-                    prezzo_unitario=Decimal("500.000000"),
+                    description="Advisory",
+                    quantity=Decimal("1.000000"),
+                    unit_price=Decimal("500.000000"),
                 )
             ],
         ),
@@ -189,12 +189,12 @@ def test_the_timeline_tells_the_agent_and_the_human_apart(
     proforma = service.create(
         InvoiceCreate(
             customer_id=customer_id,
-            tipo="proforma",
-            righe=[
+            type="proforma",
+            lines=[
                 InvoiceLineIn(
-                    descrizione="Advisory",
-                    quantita=Decimal("1.000000"),
-                    prezzo_unitario=Decimal("100.000000"),
+                    description="Advisory",
+                    quantity=Decimal("1.000000"),
+                    unit_price=Decimal("100.000000"),
                 )
             ],
         ),

@@ -2,7 +2,7 @@ import { DndContext, PointerSensor, useDroppable, useSensor, useSensors } from '
 import type { DragEndEvent } from '@dnd-kit/core'
 import { Badge } from '@rebase/ui/badge'
 import { KanbanCard } from './KanbanCard'
-import { sumValorePrevisto } from './columns'
+import { sumExpectedValue } from './columns'
 import type { Deal, Stage } from './queries'
 
 function Column({
@@ -10,11 +10,13 @@ function Column({
   deals,
   onOpen,
   canDrag,
+  ownerName,
 }: {
   stage: Stage
   deals: Deal[]
   onOpen: (id: string) => void
   canDrag: boolean
+  ownerName?: (ownerId: string | null) => string | null
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id })
 
@@ -22,10 +24,10 @@ function Column({
     <div className="flex w-72 shrink-0 flex-col">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h2 className="font-semibold">{stage.nome}</h2>
+          <h2 className="font-semibold">{stage.name}</h2>
           <Badge variant="secondary">{deals.length}</Badge>
         </div>
-        <span className="text-xs text-muted-foreground">{sumValorePrevisto(deals)}</span>
+        <span className="text-xs text-muted-foreground">{sumExpectedValue(deals)}</span>
       </div>
 
       <div
@@ -38,7 +40,13 @@ function Column({
           <p className="py-6 text-center text-sm text-muted-foreground">Nessun deal</p>
         ) : (
           deals.map((deal) => (
-            <KanbanCard key={deal.id} deal={deal} onOpen={onOpen} canDrag={canDrag} />
+            <KanbanCard
+              key={deal.id}
+              deal={deal}
+              onOpen={onOpen}
+              canDrag={canDrag}
+              ownerName={ownerName?.(deal.owner_id)}
+            />
           ))
         )}
       </div>
@@ -81,9 +89,18 @@ interface Props {
   /** See `KanbanCard`'s own doc. Defaults to `true` so the required test file
    *  (which never passes it) keeps exercising the normal, draggable board. */
   canDrag?: boolean
+  /** Names an owner for the card (REB-780); without it cards show no owner. */
+  ownerName?: (ownerId: string | null) => string | null
 }
 
-export function KanbanBoard({ stages, deals, onMove, onOpen, canDrag = true }: Props) {
+export function KanbanBoard({
+  stages,
+  deals,
+  onMove,
+  onOpen,
+  canDrag = true,
+  ownerName,
+}: Props) {
   // A small activation distance keeps a click on a card (to open it) from also
   // registering as a drag.
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
@@ -106,7 +123,7 @@ export function KanbanBoard({ stages, deals, onMove, onOpen, canDrag = true }: P
           ones read as one giant mostly-blank box. */}
       <div className="flex items-start gap-4 overflow-x-auto pb-4">
         {[...stages]
-          .sort((a, b) => a.posizione - b.posizione)
+          .sort((a, b) => a.position - b.position)
           .map((stage) => (
             <Column
               key={stage.id}
@@ -114,6 +131,7 @@ export function KanbanBoard({ stages, deals, onMove, onOpen, canDrag = true }: P
               deals={deals.filter((deal) => deal.pipeline_stage_id === stage.id)}
               onOpen={onOpen}
               canDrag={canDrag}
+              ownerName={ownerName}
             />
           ))}
       </div>

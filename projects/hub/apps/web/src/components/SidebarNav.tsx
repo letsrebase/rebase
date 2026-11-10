@@ -5,6 +5,7 @@ import {
   Boxes,
   Briefcase,
   Cloud,
+  Cpu,
   Handshake,
   Home,
   LogIn,
@@ -16,7 +17,7 @@ import {
   UserRound,
   Users,
 } from 'lucide-react'
-import { BrandMark } from '@/components/BrandMark'
+import { BrandMark } from '@rebase/ui/brand-mark'
 import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
 import type { Me } from '@/lib/api'
@@ -47,6 +48,7 @@ const ADMIN_NAV = [
     { to: '/admin/access', label: 'Accessi', icon: LogIn },
     { to: '/admin/admins', label: 'Amministratori', icon: ShieldCheck },
     { to: '/admin/agents', label: 'Agenti', icon: Plug },
+    { to: '/admin/ai-models', label: 'Modelli AI', icon: Cpu },
   ],
 ] as const
 

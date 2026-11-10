@@ -29,12 +29,11 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import DocumentVersion
-from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.gmail.attach import describe_attachments
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage
@@ -42,12 +41,15 @@ from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.rfc822 import new_message_id
 from pigrocrm.core.gmail.schemas import (
     EDITABLE_SEND_STATES,
+    MAX_RECIPIENTS,
     EmailDraftCreate,
     EmailDraftListQuery,
     EmailDraftPage,
     EmailDraftRead,
     EmailDraftUpdate,
 )
+from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 ENTITY = "email_draft"
@@ -64,8 +66,8 @@ _ALREADY_GONE = "questa email è già inviata o in invio: duplicala per modifica
 # against "some row with this id": `entity_id` carries no foreign key (it points at one
 # of three tables), so this mapping is the only thing standing between a caller's UUID
 # and a draft filed against a row of the wrong kind.
-_ENTITY_TABLES: dict[str, type[Customer] | type[Person] | type[Deal]] = {
-    "customer": Customer,
+_ENTITY_TABLES: dict[str, type[Organization] | type[Person] | type[Deal]] = {
+    "organization": Organization,
     "person": Person,
     "deal": Deal,
 }
@@ -115,35 +117,38 @@ class EmailDraftService:
         self.session = session
         self.settings = settings
         self.repo = GmailRepository(session)
+        self.activities = ActivityService(session)
 
     # ---- the pieces the write paths share ------------------------------------------
 
-    def _domain(self, entity_type: str, entity_id: UUID, azienda_id: UUID | None = None) -> str:
+    def _domain(
+        self, entity_type: str, entity_id: UUID, legal_entity_id: UUID | None = None
+    ) -> str:
         """The right-hand side of the `Message-ID`, from the installation's own identity.
 
         `public_url` first, because that is the origin this CRM answers on and the one
         Google already compares character by character for the OAuth redirect. The
-        website of the azienda the draft speaks for second (REB-627, spec §1.8), because
+        website of the legal entity the draft speaks for second (REB-627, spec §1.8), because
         an installation reachable only on a LAN still has an identity its clients
         recognise. `localhost.invalid` last, and it is a deliberate admission rather
         than a default that looks plausible.
         """
-        site = self._emitter_site(entity_type, entity_id, azienda_id)
+        site = self._legal_entity_site(entity_type, entity_id, legal_entity_id)
         for candidate in (self.settings.public_url, site):
             host = urlparse(candidate).hostname if "//" in candidate else candidate.strip()
             if host and "." in host:
                 return host.lower()
         return _FALLBACK_DOMAIN
 
-    def _emitter_site(
-        self, entity_type: str, entity_id: UUID, azienda_id: UUID | None = None
+    def _legal_entity_site(
+        self, entity_type: str, entity_id: UUID, legal_entity_id: UUID | None = None
     ) -> str:
-        azienda = (
-            self.session.get(LegalEntity, azienda_id)
-            if azienda_id is not None
-            else self.repo.azienda_for(entity_type, entity_id)
+        legal_entity = (
+            self.session.get(LegalEntity, legal_entity_id)
+            if legal_entity_id is not None
+            else self.repo.legal_entity_for(entity_type, entity_id)
         )
-        return (azienda.sito_web if azienda is not None else None) or ""
+        return (legal_entity.website if legal_entity is not None else None) or ""
 
     def _get(self, draft_id: UUID) -> EmailDraft:
         draft = self.session.get(EmailDraft, draft_id)
@@ -179,13 +184,23 @@ class EmailDraftService:
             raise NotFound("gmail_message", message_id)
 
     @staticmethod
-    def _check_recipients(addresses: list[str]) -> None:
-        """One recipient at least, checked before the row is written rather than at send
-        time: a draft that cannot be sent is not a draft, it is a trap with a Send
-        button. The *shape* of each address is `build_rfc822`'s job (B2-2) and is checked
-        again there, because that is the point at which the string becomes a header."""
-        if not addresses:
+    def _check_recipients(to: list[str], cc: list[str]) -> None:
+        """One recipient at least, and not more than `MAX_RECIPIENTS` in To and Cc
+        together, checked before the row is written rather than at send time: a draft
+        that cannot be sent is not a draft, it is a trap with a Send button. The schemas
+        cap each list; this is the cap on the two together, which no single field can
+        express. The *shape* of each address is `build_rfc822`'s job (B2-2) and is
+        checked again there, because that is the point at which the string becomes a
+        header."""
+        if not to:
             raise ValidationFailed(ENTITY, "to", "serve almeno un destinatario")
+        if len(to) + len(cc) > MAX_RECIPIENTS:
+            raise ValidationFailed(
+                ENTITY,
+                "to",
+                f"al massimo {MAX_RECIPIENTS} destinatari tra A e Cc",
+                expected=f"al massimo {MAX_RECIPIENTS} destinatari",
+            )
 
     def _require_editable(self, draft: EmailDraft) -> None:
         if draft.send_state not in _EDITABLE:
@@ -194,15 +209,15 @@ class EmailDraftService:
     # ---- the surface ----------------------------------------------------------------
 
     def create(
-        self, data: EmailDraftCreate, actor: Actor, *, azienda_id: UUID | None = None
+        self, data: EmailDraftCreate, actor: Actor, *, legal_entity_id: UUID | None = None
     ) -> EmailDraftRead:
-        """`azienda_id` names the azienda the draft speaks for when it is not the
+        """`legal_entity_id` names the legal entity the draft speaks for when it is not the
         record's own: a payment reminder is filed under the customer but signs as the
-        invoice's azienda, and its Message-ID domain follows (REB-627)."""
+        invoice's legal entity, and its Message-ID domain follows (REB-627)."""
         actor.require_write("create_email_draft")
         self._check_entity(data.entity_type, data.entity_id)
         self._check_reply_target(data.in_reply_to_message_id)
-        self._check_recipients(list(data.to_addresses))
+        self._check_recipients(list(data.to_addresses), list(data.cc_addresses))
         attachments = self._check_attachments(list(data.attachment_version_ids))
 
         draft = EmailDraft(
@@ -214,12 +229,21 @@ class EmailDraftService:
             body_markdown=data.body_markdown,
             attachment_version_ids=attachments,
             message_id_header=new_message_id(
-                self._domain(data.entity_type, data.entity_id, azienda_id)
+                self._domain(data.entity_type, data.entity_id, legal_entity_id)
             ),
             in_reply_to_message_id=data.in_reply_to_message_id,
-            send_state="bozza",
+            send_state="draft",
         )
         self.session.add(draft)
+        self.session.flush()  # the id is minted at insert; the entry below names it
+        # On the record the draft is about, as the send is (`EmailSendService`), where a
+        # person looking at that customer's or deal's timeline will look. It says that a
+        # draft exists and who made it, not what it says: the body is the member's words
+        # to the customer, and the timeline is read by more people, for longer, than a
+        # draft lives (REB-781).
+        self.activities.record(
+            data.entity_type, data.entity_id, "gmail.draft_created", actor, {"draft_id": draft.id}
+        )
 
         # Committed here, not left to the caller: "the draft is durable" is a claim about
         # what survives the request dying, and a row that is only flushed does not.
@@ -235,11 +259,14 @@ class EmailDraftService:
         self._require_editable(draft)
 
         values: dict[str, Any] = {}
-        if data.to_addresses is not None:
-            self._check_recipients(list(data.to_addresses))
-            values["to_addresses"] = list(data.to_addresses)
-        if data.cc_addresses is not None:
-            values["cc_addresses"] = list(data.cc_addresses)
+        if data.to_addresses is not None or data.cc_addresses is not None:
+            to = list(draft.to_addresses if data.to_addresses is None else data.to_addresses)
+            cc = list(draft.cc_addresses if data.cc_addresses is None else data.cc_addresses)
+            self._check_recipients(to, cc)
+            if data.to_addresses is not None:
+                values["to_addresses"] = to
+            if data.cc_addresses is not None:
+                values["cc_addresses"] = cc
         if data.subject is not None:
             values["subject"] = data.subject
         if data.body_markdown is not None:
@@ -248,11 +275,11 @@ class EmailDraftService:
             values["attachment_version_ids"] = self._check_attachments(
                 list(data.attachment_version_ids)
             )
-        if not values and draft.send_state == "bozza":
+        if not values and draft.send_state == "draft":
             # Nothing asked of a draft that is already a draft: no write, so the revision
             # somebody is reading stays the true one. Still read again past the copy loaded
             # above and held to the rule the write follows: a send may have claimed the
-            # draft since, and a 200 carrying `bozza` and the old text would then describe
+            # draft since, and a 200 carrying `draft` and the old text would then describe
             # a row that no longer exists.
             current = self.session.execute(
                 select(EmailDraft)
@@ -267,7 +294,7 @@ class EmailDraftService:
         # `message_id_header` is deliberately untouched: minting a new one on every edit
         # would make the reconciliation of spec 6.3 look for a message that was never
         # sent under that name. A failed draft that is edited becomes a draft again --
-        # keeping `fallito` would leave an error sentence next to text it no longer
+        # keeping `failed` would leave an error sentence next to text it no longer
         # describes, which reads as a failure that has just happened. The write does both.
         if not self.repo.update_editable_draft(draft_id, values):
             state = self.session.execute(
@@ -276,6 +303,13 @@ class EmailDraftService:
             if state is None:
                 raise NotFound(ENTITY, draft_id)
             raise Conflict(ENTITY, _ALREADY_GONE, send_state=state)
+        self.activities.record(
+            draft.entity_type,
+            draft.entity_id,
+            "gmail.draft_edited",
+            actor,
+            {"draft_id": draft_id, "changed": sorted(values)},
+        )
         self.session.commit()
         # The write was a Core UPDATE, so the copy loaded above is stale. Expired rather
         # than trusted, and read back as committed.
@@ -306,6 +340,13 @@ class EmailDraftService:
             if state is None:
                 raise NotFound(ENTITY, draft_id)
             raise Conflict(ENTITY, _ALREADY_GONE, send_state=state)
+        self.activities.record(
+            draft.entity_type,
+            draft.entity_id,
+            "gmail.draft_deleted",
+            actor,
+            {"draft_id": draft_id},
+        )
         self.session.commit()
         # The write was a Core DELETE, so the copy loaded above does not know the row is
         # gone: an ORM `Session.delete` would leave the session's identity map having
@@ -320,7 +361,7 @@ class EmailDraftService:
         return self._get(draft_id)
 
     # `list` must stay the last method defined in this class -- the same unconditional
-    # rule as `CustomerService.list`: defining a method named `list` rebinds that name in
+    # rule as `OrganizationService.list`: defining a method named `list` rebinds that name in
     # the class namespace, so any later method annotated `-> list[...]` would resolve
     # `list` to this method instead of the builtin and fail at import time.
     def list(self, query: EmailDraftListQuery, actor: Actor) -> EmailDraftPage:
@@ -332,7 +373,7 @@ class EmailDraftService:
         if query.send_state is not None:
             conditions.append(EmailDraft.send_state == query.send_state)
         if query.unsent:
-            conditions.append(EmailDraft.send_state != "inviato")
+            conditions.append(EmailDraft.send_state != "sent")
 
         total = self.session.execute(
             select(func.count()).select_from(EmailDraft).where(*conditions)

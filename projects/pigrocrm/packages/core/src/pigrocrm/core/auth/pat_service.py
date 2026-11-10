@@ -1,6 +1,6 @@
 import hashlib
 import secrets
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -9,10 +9,10 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
-from pigrocrm.core.actor import Actor, Role
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.auth.pat_models import PersonalAccessToken
-from pigrocrm.core.auth.scope import scope_of
+from pigrocrm.core.auth.scope import as_role, scope_of
 from pigrocrm.core.auth.service import ENTITY as USER_ENTITY
 from pigrocrm.core.auth.service import require_verified_identity
 from pigrocrm.core.config import Settings, get_settings
@@ -20,6 +20,8 @@ from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 
 PAT_PREFIX = "pgc_"
 PREFIX_VISIBLE_CHARS = 8
+# How stale `last_used_at` may be before a request moves it (PAPI-10).
+LAST_USED_RESOLUTION = timedelta(minutes=1)
 # Used for every way `resolve()` can fail -- unknown token, revoked token, or a token
 # whose owning user was deactivated -- so the three are indistinguishable from the
 # outside. A leaked PAT must not double as an oracle for "is this still worth using":
@@ -40,18 +42,29 @@ INVALID_TOKEN = "token non valido o revocato"
 
 
 def _audit_payload(record: PersonalAccessToken) -> dict[str, object]:
-    return {"token_id": record.id, "nome": record.nome}
+    return {"token_id": record.id, "name": record.name, "full_access": record.full_access}
 
 
 class PatRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    nome: str
+    name: str
     prefix: str
+    # What the owner chose for this token (REB-810). The token reaches the privileged
+    # surface only where the space's own switch is open too, which `resolve` decides.
+    full_access: bool
     last_used_at: datetime | None
     revoked_at: datetime | None
     created_at: datetime
+
+
+class TeamPatRead(PatRead):
+    """A colleague's live token as an administrator sees it: whose it is, so that the one
+    that should not reach the invoice tools can be closed without asking its owner."""
+
+    user_id: UUID
+    owner_name: str
 
 
 def _digest(raw: str) -> str:
@@ -70,19 +83,26 @@ class PatService:
         # inheriting whatever `.env` the process happened to load.
         self.settings = settings or get_settings()
 
-    def create(self, nome: str, actor: Actor) -> tuple[PatRead, str]:
+    def create(self, name: str, actor: Actor, *, full_access: bool = False) -> tuple[PatRead, str]:
         if actor.id is None:
             raise ValidationFailed("token", "actor", "serve un utente autenticato")
         # A token outlives the revocation the first link by mail performs, so an
         # address nobody has proven yet cannot mint one (spec 2026-09-12 §6.4).
         require_verified_identity(self.session, actor, "create_token")
+        if full_access:
+            # A token that opens the privileged surface is a person's decision, and an
+            # agent credential can mint tokens over REST like any other write: without
+            # this, the token a person kept closed could mint an open one for itself.
+            actor.require_person("create_full_access_token")
+            self._require_ceiling_open()
 
         raw = PAT_PREFIX + secrets.token_urlsafe(32)
         record = PersonalAccessToken(
             user_id=actor.id,
-            nome=nome,
+            name=name,
             token_hash=_digest(raw),
             prefix=raw[: len(PAT_PREFIX) + PREFIX_VISIBLE_CHARS],
+            full_access=full_access,
         )
         self.session.add(record)
         try:
@@ -124,6 +144,77 @@ class PatService:
         )
         self.session.commit()
 
+    def _require_ceiling_open(self) -> None:
+        """A token cannot be given what its space does not offer. Stored closed instead
+        of refused it would be a flag nobody can see doing anything, and the day an
+        administrator opens the switch every such token would open with it."""
+        if not self.settings.mcp_full_access:
+            raise ValidationFailed(
+                "token",
+                "full_access",
+                "l'accesso completo è chiuso per questo spazio: lo apre un amministratore "
+                "in Impostazioni → Spazio",
+            )
+
+    def set_full_access(self, pat_id: UUID, full_access: bool, actor: Actor) -> PatRead:
+        """Opens or closes one token's privileged surface (REB-810). Its owner may, and so
+        may an administrator, who is the one asked to close a token that should not be
+        reaching the invoice tools. No agent credential may, not even the owner's own
+        token: a token that could open itself would make the choice the owner made
+        meaningless, so this is refused before the role is looked at (`require_person`).
+
+        Closing is always allowed; opening needs the space's switch open (the ceiling). A
+        revoked token has nothing left to decide. The change is recorded against the
+        token's owner, with the actor who made it, so the timeline says whether the owner
+        or an administrator did it. A call that changes nothing records nothing.
+        """
+        actor.require_person("set_token_full_access")
+        record = self.session.get(PersonalAccessToken, pat_id)
+        if record is None:
+            raise NotFound("personal_access_token", pat_id)
+        if record.user_id != actor.id:
+            # Another member's token is account administration, like changing the member
+            # (`UserService.update`): a scoped admin has the role and not the whole space.
+            actor.require_unscoped_admin("set_token_full_access")
+        if record.revoked_at is not None:
+            raise Conflict("personal_access_token", "token revocato: non si può più modificare")
+        if record.full_access == full_access:
+            return PatRead.model_validate(record)
+        if full_access:
+            self._require_ceiling_open()
+        record.full_access = full_access
+        self.session.flush()
+        self.activities.record(
+            USER_ENTITY,
+            record.user_id,
+            "pat_full_access_changed",
+            actor,
+            {**_audit_payload(record), "full_access_before": not full_access},
+        )
+        self.session.commit()
+        return PatRead.model_validate(record)
+
+    def list_team(self, actor: Actor) -> list[TeamPatRead]:
+        """The live tokens of the members other than the caller, for an administrator."""
+        actor.require_unscoped_admin("list_team_tokens")
+        stmt = (
+            select(PersonalAccessToken, User.name)
+            .join(User, User.id == PersonalAccessToken.user_id)
+            .where(
+                PersonalAccessToken.revoked_at.is_(None),
+                PersonalAccessToken.user_id != actor.id,
+            )
+            .order_by(User.name, PersonalAccessToken.created_at.desc())
+        )
+        return [
+            TeamPatRead(
+                **PatRead.model_validate(record).model_dump(),
+                user_id=record.user_id,
+                owner_name=name,
+            )
+            for record, name in self.session.execute(stmt)
+        ]
+
     def revoke_all_for(self, user_id: UUID, actor: Actor) -> None:
         """Ends every live token of one user, inside the caller's transaction: flushes,
         never commits. That is `ActivityService.record`'s contract extended to the rows
@@ -162,41 +253,49 @@ class PatService:
             raise ValidationFailed("token", "token", INVALID_TOKEN)
 
         # `populate_existing` forces a fresh read of the owner even when this session
-        # already holds it: the role and `attivo` that build the Actor below are the
+        # already holds it: the role and `active` that build the Actor below are the
         # CURRENT ones, never a copy a previous `resolve` cached. Over HTTP each
         # request opens its own session and reads fresh anyway; the flag makes that
         # true for every caller, which is the guarantee hub's `admin_tokens.resolve`
         # was given in REB-278 (#225) and the shape copied here. The behavior is
         # pinned by `test_a_second_resolve_on_the_same_session_sees_the_current_role`.
         user = self.session.get(User, record.user_id, populate_existing=True)
-        if user is None or not user.attivo:
+        if user is None or not user.active:
             # Same message and details as above, on purpose -- see INVALID_TOKEN.
             raise ValidationFailed("token", "token", INVALID_TOKEN)
 
         # Captured before the assignment below overwrites it: `None` here means this
         # token has never been presented before, which is the moment the credential
         # stopped being a string in a config file and became a live key to the CRM.
-        first_use = record.last_used_at is None
-        record.last_used_at = datetime.now(UTC)
+        now = datetime.now(UTC)
+        last_used = record.last_used_at
+        first_use = last_used is None
+        # At most once a minute (PAPI-10): this runs on every request an agent makes, and a
+        # write per read would take a row lock on the token for each of parallel calls.
+        # "When was this token last used" stays true to within `LAST_USED_RESOLUTION`.
+        if last_used is None or now - last_used >= LAST_USED_RESOLUTION:
+            record.last_used_at = now
 
-        role: Role = user.ruolo  # type: ignore[assignment]
+        role = as_role(user.role)
         # type="mcp": a PAT identifies an agent, which is what makes the timeline honest.
         #
         # `full_access` is stamped here, and this is the only place it is decided. It
         # travels on the actor rather than being consulted at the point of use, so a REST
         # request presenting this token behaves exactly like the MCP transport -- the
         # asymmetry that once let a `curl` issue an invoice while the tool was
-        # unregistered. Closed unless the installation opted in; see
-        # `AGENT_FORBIDDEN_ACTIONS` for what that opens and why it is a decision about a
-        # machine rather than about a role.
+        # unregistered. Two things must be open (REB-810): the token's own flag, chosen by
+        # its owner and closed unless asked for, and the space's `mcp_full_access`, which
+        # is the ceiling: an installation that never opened it has no privileged surface
+        # at all, whatever a token says. See `FULL_ACCESS_ACTIONS` for what that
+        # opens and why it is a decision about a machine rather than about a role.
         resolved = Actor(
             id=user.id,
             type="mcp",
             role=role,
-            full_access=self.settings.mcp_full_access,
+            full_access=record.full_access and self.settings.mcp_full_access,
             # The owner's scope travels on the credential (REB-634): an agent sees the
-            # aziende its person sees, read fresh here like the role.
-            aziende=scope_of(user),
+            # legal entities its person sees, read fresh here like the role.
+            legal_entities=scope_of(user),
         )
         # Only the *first* use is recorded, not every one. `resolve()` runs on every
         # single request an agent makes, so an entry per call would double the write
@@ -255,16 +354,7 @@ class PatService:
         )
         self.session.commit()
 
-    # `list` is the last method in this class on purpose, and must stay that way. A
-    # method named `list` rebinds that name in the *class* namespace, so any method
-    # defined below it whose return annotation is a bare `list[...]` would resolve
-    # `list` to this method instead of the builtin and fail at import time with
-    # `TypeError: 'function' object is not subscriptable`. It used to sit in the
-    # middle of this class, which was survivable only because nothing below it
-    # happened to be annotated that way; adding `_record_use_after_revocation` above
-    # is what made keeping the rule cheaper than remembering the exception.
-    # `test_module_imports.py` is the real guard.
-    def list(self, actor: Actor) -> list[PatRead]:
+    def list_own(self, actor: Actor) -> list[PatRead]:
         stmt = (
             select(PersonalAccessToken)
             .where(PersonalAccessToken.user_id == actor.id)

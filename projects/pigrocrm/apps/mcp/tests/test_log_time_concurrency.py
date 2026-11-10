@@ -23,9 +23,9 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm_mcp.context import McpContext, ScopedSessionProvider
 from pigrocrm_mcp.tools import timetracking
@@ -33,35 +33,62 @@ from pigrocrm_mcp.tools import timetracking
 CONCURRENCY = 20
 
 
-def _seed_committed_deal_and_user(mcp_engine: Engine) -> tuple[UUID, UUID]:
+def _seed_committed_deal_and_user(mcp_engine: Engine) -> tuple[UUID, UUID, UUID, UUID]:
     session: Session = session_factory(mcp_engine)()
     try:
         stage = PipelineStage(
-            nome=f"Aperto {uuid4()}", posizione=0, probabilita_default=10, tipo="open"
+            name=f"Aperto {uuid4()}", position=0, default_probability=10, type="open"
         )
-        customer = Customer(ragione_sociale=f"Cliente concorrenza {uuid4()}")
-        user = User(email=f"worker-{uuid4()}@example.test", password_hash="x", nome="Worker")
+        customer = Organization(legal_name=f"Cliente concorrenza {uuid4()}")
+        user = User(email=f"worker-{uuid4()}@example.test", password_hash="x", name="Worker")
         session.add_all([stage, customer, user])
         session.flush()
         deal = Deal(
-            nome="Progetto concorrenza",
+            name="Progetto concorrenza",
             customer_id=customer.id,
             pipeline_stage_id=stage.id,
-            probabilita=10,
+            probability=10,
         )
         session.add(deal)
         session.commit()
-        return deal.id, user.id
+        return deal.id, user.id, customer.id, stage.id
     finally:
         session.close()
+
+
+def _remove_committed_rows(
+    mcp_engine: Engine, deal_id: UUID, user_id: UUID, customer_id: UUID, stage_id: UUID
+) -> None:
+    """The rows are committed on purpose (twenty connections must see them), so nothing
+    rolls them back: a user left behind shows up as a second person in every later test
+    that lists the space's users, and the unbilled hours as an extra reminder."""
+    with session_factory(mcp_engine)() as cleanup:
+        ids = {"deal": deal_id, "user": user_id, "customer": customer_id, "stage": stage_id}
+        for statement in (
+            "DELETE FROM activities WHERE actor_id = :user",
+            "DELETE FROM time_entries WHERE deal_id = :deal",
+            "DELETE FROM deals WHERE id = :deal",
+            "DELETE FROM organizations WHERE id = :customer",
+            "DELETE FROM pipeline_stages WHERE id = :stage",
+            "DELETE FROM users WHERE id = :user",
+        ):
+            cleanup.execute(text(statement), ids)
+        cleanup.commit()
 
 
 def test_twenty_concurrent_log_time_calls_produce_twenty_rows(
     mcp_engine: Engine, mcp_storage
 ) -> None:
-    deal_id, user_id = _seed_committed_deal_and_user(mcp_engine)
+    deal_id, user_id, customer_id, stage_id = _seed_committed_deal_and_user(mcp_engine)
+    try:
+        _run_concurrent_log_time(mcp_engine, mcp_storage, deal_id, user_id)
+    finally:
+        _remove_committed_rows(mcp_engine, deal_id, user_id, customer_id, stage_id)
+
+
+def _run_concurrent_log_time(mcp_engine: Engine, mcp_storage, deal_id: UUID, user_id: UUID) -> None:
     provider = ScopedSessionProvider(session_factory(mcp_engine))
-    actor = Actor(id=user_id, type="mcp", role="collaboratore")
+    actor = Actor(id=user_id, type="mcp", role="collaborator")
     context = McpContext(provider, lambda: actor, mcp_storage)
     barrier = threading.Barrier(CONCURRENCY)
 
@@ -73,9 +100,9 @@ def test_twenty_concurrent_log_time_calls_produce_twenty_rows(
                 {
                     "deal_id": deal_id,
                     "user_id": user_id,
-                    "data": date(2026, 3, 10),
-                    "ore": "1.00",
-                    "descrizione": f"Voce {index}",
+                    "date": date(2026, 3, 10),
+                    "hours": "1.00",
+                    "description": f"Voce {index}",
                 },
             )["id"]
 

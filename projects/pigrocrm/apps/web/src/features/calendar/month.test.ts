@@ -46,8 +46,8 @@ describe('monthCells', () => {
   })
 
   it('is always whole weeks, so the grid is a rectangle', () => {
-    for (const mese of ['2026-01', '2026-02', '2026-09', '2026-11', '2024-02']) {
-      expect(monthCells(mese).length % 7).toBe(0)
+    for (const month of ['2026-01', '2026-02', '2026-09', '2026-11', '2024-02']) {
+      expect(monthCells(month).length % 7).toBe(0)
     }
   })
 

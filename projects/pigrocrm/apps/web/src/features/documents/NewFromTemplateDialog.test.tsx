@@ -9,25 +9,25 @@ import type { Template, TemplateDescription } from './queries'
 
 const TEMPLATE: Template = {
   id: 't-1',
-  nome: 'Consulenza CTO',
-  tipo: 'offerta',
-  corpo_markdown: 'Oggetto: {{oggetto}}',
-  variabili_dichiarate: [],
-  attivo: true,
+  name: 'Consulenza CTO',
+  type: 'offer',
+  body_markdown: 'Oggetto: {{oggetto}}',
+  declared_variables: [],
+  active: true,
   created_at: '2026-08-10T09:00:00Z',
   updated_at: '2026-08-10T09:00:00Z',
 }
 
 const DESCRIPTION: TemplateDescription = {
   id: 't-1',
-  nome: 'Consulenza CTO',
-  tipo: 'offerta',
-  variabili: [
-    { nome: 'oggetto', etichetta: 'Oggetto', tipo: 'text', obbligatoria: true, options: [] },
-    { nome: 'urgente', etichetta: 'Urgente', tipo: 'checkbox', obbligatoria: false, options: [] },
+  name: 'Consulenza CTO',
+  type: 'offer',
+  variables: [
+    { name: 'subject', label: 'Oggetto', type: 'text', required: true, options: [] },
+    { name: 'urgente', label: 'Urgente', type: 'checkbox', required: false, options: [] },
   ],
-  percorsi_usati: [['oggetto'], ['cliente', 'ragione_sociale']],
-  variabili_non_usate: [],
+  used_journeys: [['subject'], ['organization', 'legal_name']],
+  variables_not_used: [],
 }
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -66,8 +66,8 @@ function routeGet(routes: Record<string, unknown>) {
 
 describe('variablesToFields', () => {
   it('maps a declared variable onto the FieldDefinition DynamicFieldRenderer expects', () => {
-    expect(variablesToFields(DESCRIPTION.variabili)).toEqual([
-      { key: 'oggetto', label: 'Oggetto', type: 'text', required: true, options: [] },
+    expect(variablesToFields(DESCRIPTION.variables)).toEqual([
+      { key: 'subject', label: 'Oggetto', type: 'text', required: true, options: [] },
       { key: 'urgente', label: 'Urgente', type: 'checkbox', required: false, options: [] },
     ])
   })
@@ -80,6 +80,31 @@ describe('NewFromTemplateDialog', () => {
       wrapper,
     })
     expect(await screen.findByText('Consulenza CTO')).toBeInTheDocument()
+  })
+
+  it('offers only the templates that can make a document, with their type in Italian', async () => {
+    const reminder: Template = { ...TEMPLATE, id: 't-2', name: 'Sollecito di pagamento', type: 'payment_reminder' }
+    const email: Template = { ...TEMPLATE, id: 't-3', name: 'Corpo email', type: 'email' }
+    const report: Template = { ...TEMPLATE, id: 't-4', name: 'Foglio ore', type: 'hours_report' }
+    routeGet({ '/api/templates': { items: [TEMPLATE, reminder, email, report], next_cursor: null } })
+    render(<NewFromTemplateDialog open onOpenChange={() => {}} owner={{ customerId: 'c-1' }} />, {
+      wrapper,
+    })
+    expect(await screen.findByText('Consulenza CTO')).toBeInTheDocument()
+    expect(screen.getByText('Foglio ore')).toBeInTheDocument()
+    expect(screen.getByText('Rapporto ore')).toBeInTheDocument()
+    expect(screen.queryByText('Sollecito di pagamento')).not.toBeInTheDocument()
+    expect(screen.queryByText('Corpo email')).not.toBeInTheDocument()
+  })
+
+  it('says there is no template when only email and reminder templates exist', async () => {
+    const reminder: Template = { ...TEMPLATE, id: 't-2', name: 'Sollecito di pagamento', type: 'payment_reminder' }
+    routeGet({ '/api/templates': { items: [reminder], next_cursor: null } })
+    render(<NewFromTemplateDialog open onOpenChange={() => {}} owner={{ customerId: 'c-1' }} />, {
+      wrapper,
+    })
+    expect(await screen.findByText(/Nessun template/)).toBeInTheDocument()
+    expect(screen.queryByText('Sollecito di pagamento')).not.toBeInTheDocument()
   })
 
   it('shows the declared variables once a template is chosen', async () => {
@@ -100,11 +125,11 @@ describe('NewFromTemplateDialog', () => {
       '/describe': DESCRIPTION,
       '/api/templates': { items: [TEMPLATE], next_cursor: null },
     })
-    let sentBody: { variabili: Record<string, unknown> } | undefined
+    let sentBody: { variables: Record<string, unknown> } | undefined
     mockPost.mockImplementation((path: unknown, options: unknown) => {
       if (String(path).includes('/preview')) return ok({ markdown: 'Oggetto: Advisory' })
       if (String(path).includes('/from-template')) {
-        sentBody = (options as { body: { variabili: Record<string, unknown> } }).body
+        sentBody = (options as { body: { variables: Record<string, unknown> } }).body
         return ok({ id: 'doc-1' })
       }
       return ok(undefined)
@@ -121,8 +146,8 @@ describe('NewFromTemplateDialog', () => {
       expect(sentBody).toBeDefined()
       // `false` is a value, never a blank: an unchecked box the user looked at is an
       // answer, and `mode="create"` is what makes DynamicForm seed it.
-      expect(sentBody?.variabili.urgente).toBe(false)
-      expect(sentBody?.variabili.oggetto).toBe('Advisory')
+      expect(sentBody?.variables['urgente']).toBe(false)
+      expect(sentBody?.variables.subject).toBe('Advisory')
     })
   })
 
@@ -154,7 +179,7 @@ describe('NewFromTemplateDialog', () => {
             {
               code: 'validation_failed',
               detail: 'template.oggetto: variabile obbligatoria mancante',
-              field: 'oggetto',
+              field: 'subject',
               reason: 'variabile obbligatoria mancante: Oggetto',
             },
             422,

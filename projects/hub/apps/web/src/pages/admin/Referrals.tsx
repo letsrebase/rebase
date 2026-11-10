@@ -1,37 +1,37 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
-import { admin, type ReferralLedgerItem, type ReferralSettings, type RewardStato } from '@/lib/api'
+import { admin, type ReferralLedgerItem, type ReferralSettings, type RewardStatus } from '@/lib/api'
+import { failureMessage, pageItems, useCursorList } from '@/lib/adminList'
 import { matchHeadingId } from '@/lib/contracts'
 import {
   REFERRAL_STATE_LABELS,
   REFERRAL_VERIFIED_VIA_LABELS,
   formatDate,
   formatDateTime,
-  formatEuro,
   formatRate,
 } from '@/lib/format'
-import { Empty, Header, StateFilter } from './lists'
+import { formatMoney } from '@rebase/ui/format'
+import { keys } from '@/lib/query-keys'
+import { Empty, Header, LoadingState, LoadMore, StateFilter } from './list-kit'
 
-const LEDGER_KEY = ['referrals'] as const
-const SETTINGS_KEY = ['referral-settings'] as const
-const STATES: readonly RewardStato[] = ['da_confermare', 'confermato', 'pagato']
-const STATE_LABELS: Record<string, string> = { ...REFERRAL_STATE_LABELS, in_attesa: 'In attesa' }
+const STATES: readonly RewardStatus[] = ['to_confirm', 'confirmed', 'paid']
+const STATE_LABELS: Record<string, string> = { ...REFERRAL_STATE_LABELS, pending: 'In attesa' }
 const KIND_LABELS: Record<string, string> = { freelancer: 'Freelance', company: 'Azienda' }
-const NEXT_STATE: Record<RewardStato, RewardStato | null> = {
-  da_confermare: 'confermato',
-  confermato: 'pagato',
-  pagato: null,
+const NEXT_STATE: Record<RewardStatus, RewardStatus | null> = {
+  to_confirm: 'confirmed',
+  confirmed: 'paid',
+  paid: null,
 }
-const NEXT_LABEL: Record<RewardStato, string> = { da_confermare: 'Conferma', confermato: 'Segna pagato', pagato: '' }
+const NEXT_LABEL: Record<RewardStatus, string> = { to_confirm: 'Conferma', confirmed: 'Segna pagato', paid: '' }
 
 function RateForm() {
-  const settings = useQuery({ queryKey: SETTINGS_KEY, queryFn: () => admin.referralSettings() })
+  const settings = useQuery({ queryKey: keys.referralSettings, queryFn: () => admin.referralSettings() })
   if (!settings.data) return null
   return <RateFields data={settings.data} />
 }
@@ -53,7 +53,7 @@ function RateFields({ data }: { data: ReferralSettings }) {
         (Number(rateCompany) / 100).toFixed(4),
       ),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: SETTINGS_KEY })
+      void client.invalidateQueries({ queryKey: keys.referralSettings })
     },
   })
 
@@ -94,9 +94,9 @@ function RateFields({ data }: { data: ReferralSettings }) {
       <Button type="submit" disabled={save.isPending}>
         {save.isPending ? 'Salvo…' : 'Salva percentuali'}
       </Button>
-      {data.updated_by_nome && (
+      {data.updated_by_name && (
         <p className="text-xs text-muted-foreground sm:col-span-4">
-          Ultimo aggiornamento di {data.updated_by_nome}, {formatDate(data.updated_at)}.
+          Ultimo aggiornamento di {data.updated_by_name}, {formatDate(data.updated_at)}.
         </p>
       )}
       {save.isError && (
@@ -115,6 +115,7 @@ function PriceForm({ rewardId, onPriced }: { rewardId: string; onPriced: () => v
     mutationFn: () => admin.setReferralPrice(rewardId, base, euroReward),
     onSuccess: onPriced,
   })
+  const priceFailure = failureMessage(price.error, 'Non riesco a salvare il prezzo.')
   return (
     <div className="flex flex-wrap items-end gap-2">
       <div className="space-y-1">
@@ -154,6 +155,11 @@ function PriceForm({ rewardId, onPriced }: { rewardId: string; onPriced: () => v
       >
         {price.isPending ? 'Prezzo…' : 'Prezza'}
       </Button>
+      {priceFailure && (
+        <p role="alert" className="w-full text-xs text-destructive">
+          {priceFailure}
+        </p>
+      )}
     </div>
   )
 }
@@ -162,14 +168,14 @@ function PriceForm({ rewardId, onPriced }: { rewardId: string; onPriced: () => v
  *  deleted it: that page answers not found, so the name stays, unlinked, and says so. */
 function ReferredName({ item }: { item: ReferralLedgerItem }) {
   const className = 'font-medium hover:underline'
-  if (item.referred_deleted) return <p className="font-medium">{item.referred_nome}</p>
+  if (item.referred_deleted) return <p className="font-medium">{item.referred_name}</p>
   return item.kind === 'freelancer' ? (
     <Link to="/admin/freelance/$id" params={{ id: item.referred_id }} className={className}>
-      {item.referred_nome}
+      {item.referred_name}
     </Link>
   ) : (
     <Link to="/admin/companies/$id" params={{ id: item.referred_id }} className={className}>
-      {item.referred_nome}
+      {item.referred_name}
     </Link>
   )
 }
@@ -183,20 +189,20 @@ function MatchCell({ item }: { item: ReferralLedgerItem }) {
   return (
     <>
       {item.match_freelancer_deleted ? (
-        <p className="font-medium">{item.match_nome_azienda}</p>
+        <p className="font-medium">{item.match_company_name}</p>
       ) : (
         <Link
           to="/admin/freelance/$id/contracts"
           params={{ id: item.match_freelancer_id }}
           hash={matchHeadingId(item.match_id)}
-          aria-label={`Dettaglio del match con ${item.match_nome_azienda} come ${item.match_figura_richiesta}`}
+          aria-label={`Dettaglio del match con ${item.match_company_name} come ${item.match_requested_role}`}
           className="font-medium hover:underline"
         >
-          {item.match_nome_azienda}
+          {item.match_company_name}
         </Link>
       )}
       <p className="text-xs text-muted-foreground">
-        {item.match_figura_richiesta} · {item.match_freelancer_nome}
+        {item.match_requested_role} · {item.match_freelancer_name}
       </p>
     </>
   )
@@ -211,12 +217,12 @@ function RewardCell({ item, onPriced }: { item: ReferralLedgerItem; onPriced: ()
     if (item.projected_amount !== null && item.projected_rate !== null) {
       return (
         <>
-          <p className="font-medium text-muted-foreground tabular-nums">{formatEuro(item.projected_amount)}</p>
+          <p className="font-medium text-muted-foreground tabular-nums">{formatMoney(item.projected_amount)}</p>
           <p className="text-xs text-muted-foreground">{`Stima al ${formatRate(item.projected_rate)}, se il match firma`}</p>
         </>
       )
     }
-    if (item.referral_stato === 'da_verificare') {
+    if (item.referral_status === 'to_verify') {
       return (
         <p className="ml-auto max-w-56 text-sm whitespace-normal text-muted-foreground">
           {item.kind === 'company'
@@ -240,9 +246,9 @@ function RewardCell({ item, onPriced }: { item: ReferralLedgerItem; onPriced: ()
   }
   return (
     <>
-      <p className="font-medium tabular-nums">{formatEuro(item.reward_amount)}</p>
+      <p className="font-medium tabular-nums">{formatMoney(item.reward_amount)}</p>
       <p className="text-xs text-muted-foreground tabular-nums">
-        {formatEuro(item.base_amount)} · {item.rate !== null ? formatRate(item.rate) : '-'}
+        {formatMoney(item.base_amount)} · {item.rate !== null ? formatRate(item.rate) : '-'}
       </p>
     </>
   )
@@ -285,8 +291,8 @@ function EvidenceCell({ item }: { item: ReferralLedgerItem }) {
             ? 'Ha già fatto accesso'
             : 'Non ha mai fatto accesso'}
       </p>
-      <p className={item.referral_stato === 'da_verificare' ? 'font-medium' : 'text-muted-foreground'}>
-        {item.referral_stato === 'da_verificare' || item.verified_at === null || item.verified_via === null
+      <p className={item.referral_status === 'to_verify' ? 'font-medium' : 'text-muted-foreground'}>
+        {item.referral_status === 'to_verify' || item.verified_at === null || item.verified_via === null
           ? 'Non ancora verificato'
           : `${REFERRAL_VERIFIED_VIA_LABELS[item.verified_via] ?? item.verified_via} · ${formatDate(item.verified_at)}`}
       </p>
@@ -297,13 +303,14 @@ function EvidenceCell({ item }: { item: ReferralLedgerItem }) {
 function ReferralRow({ item }: { item: ReferralLedgerItem }) {
   const client = useQueryClient()
   const move = useMutation({
-    mutationFn: ({ id, stato }: { id: string; stato: RewardStato }) => admin.setReferralState(id, stato),
-    onSuccess: () => void client.invalidateQueries({ queryKey: LEDGER_KEY }),
+    mutationFn: ({ id, status }: { id: string; status: RewardStatus }) => admin.setReferralState(id, status),
+    onSuccess: () => void client.invalidateQueries({ queryKey: keys.referrals() }),
   })
+  const moveFailure = failureMessage(move.error, 'Non riesco a cambiare lo stato.')
   const rewardId = item.reward_id
-  const next = item.stato ? NEXT_STATE[item.stato] : null
+  const next = item.status ? NEXT_STATE[item.status] : null
   const estimated = rewardId === null && item.projected_amount !== null
-  const pending = rewardId === null && item.referral_stato === 'da_verificare'
+  const pending = rewardId === null && item.referral_status === 'to_verify'
 
   return (
     <TableRow>
@@ -322,10 +329,10 @@ function ReferralRow({ item }: { item: ReferralLedgerItem }) {
             params={{ id: item.referrer_freelancer_id }}
             className="font-medium hover:underline"
           >
-            {item.referrer_nome}
+            {item.referrer_name}
           </Link>
         ) : (
-          <p className="font-medium">{item.referrer_nome}</p>
+          <p className="font-medium">{item.referrer_name}</p>
         )}
         <p className="text-xs text-muted-foreground">{item.referrer_email}</p>
       </TableCell>
@@ -333,26 +340,31 @@ function ReferralRow({ item }: { item: ReferralLedgerItem }) {
         <MatchCell item={item} />
       </TableCell>
       <TableCell className="text-right align-top">
-        <RewardCell item={item} onPriced={() => void client.invalidateQueries({ queryKey: LEDGER_KEY })} />
+        <RewardCell item={item} onPriced={() => void client.invalidateQueries({ queryKey: keys.referrals() })} />
       </TableCell>
       <TableCell className="align-top">
         {/* A hairline pill for an estimate, a filled one for a state a reward is really in. */}
         <Badge variant={estimated || pending ? 'outline' : 'pill'}>
-          {STATE_LABELS[item.stato ?? (pending ? 'da_verificare' : estimated ? 'previsto' : 'in_attesa')] ?? item.stato}
+          {STATE_LABELS[item.status ?? (pending ? 'to_verify' : estimated ? 'expected' : 'pending')] ?? item.status}
         </Badge>
       </TableCell>
       <TableCell className="text-right align-top text-muted-foreground">{formatDate(item.created_at)}</TableCell>
       <TableCell className="text-right align-top">
-        {rewardId !== null && next && (item.stato === 'da_confermare' ? item.reward_amount !== null : true) && (
+        {rewardId !== null && next && (item.status === 'to_confirm' ? item.reward_amount !== null : true) && (
           <Button
             type="button"
             variant="outline"
             size="sm"
             disabled={move.isPending}
-            onClick={() => move.mutate({ id: rewardId, stato: next })}
+            onClick={() => move.mutate({ id: rewardId, status: next })}
           >
-            {item.stato ? NEXT_LABEL[item.stato] : ''}
+            {item.status ? NEXT_LABEL[item.status] : ''}
           </Button>
+        )}
+        {moveFailure && (
+          <p role="alert" className="mt-1 text-xs text-destructive">
+            {moveFailure}
+          </p>
         )}
       </TableCell>
     </TableRow>
@@ -363,42 +375,26 @@ function ReferralRow({ item }: { item: ReferralLedgerItem }) {
  * The referral ledger (P-REB-44): every reward a signed first letter earned, newest
  * first, with the two rates that decide how much right above it -- a database row an
  * admin edits here, never an environment variable (design record 2026-09-26). A
- * reward with no computed figure (an `a corpo` letter with no estimated days) gets
+ * reward with no computed figure (a `lump_sum` letter with no estimated days) gets
  * one typed in by hand instead of the usual line, and moves only once it has one. An
  * admin confirms a reward, then marks it paid once the transfer happened outside the
  * hub -- tracking only, nothing here pays anyone.
  */
 export function AdminReferrals() {
-  const [stato, setStato] = useState<RewardStato | undefined>(undefined)
-  const list = useInfiniteQuery({
-    queryKey: [...LEDGER_KEY, stato] as const,
-    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
-      admin.referrals({ stato, cursor: pageParam }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  const [status, setStatus] = useState<RewardStatus | undefined>(undefined)
+  const { list, items } = useCursorList({
+    queryKey: keys.referrals(status),
+    fetchPage: (cursor) => admin.referrals({ status, cursor }),
+    itemsOf: pageItems,
   })
-  const items = useMemo(() => list.data?.pages.flatMap((page) => page.items) ?? [], [list.data])
-  const { hasNextPage, fetchNextPage } = list
-
-  const sentinelRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    if (!hasNextPage || typeof IntersectionObserver === 'undefined') return
-    const node = sentinelRef.current
-    if (!node) return
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0]?.isIntersecting) void fetchNextPage()
-    })
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [hasNextPage, fetchNextPage])
 
   return (
     <>
       <Header title="Referral" count={items.length}>
         <StateFilter
           states={STATES}
-          value={stato}
-          onChange={(value) => setStato(value as RewardStato | undefined)}
+          value={status}
+          onChange={(value) => setStatus(value as RewardStatus | undefined)}
           labels={STATE_LABELS}
         />
       </Header>
@@ -408,14 +404,14 @@ export function AdminReferrals() {
       {list.isError ? (
         <Empty>Non riesco a leggere il registro.</Empty>
       ) : list.isPending ? (
-        <Empty>Caricamento…</Empty>
+        <LoadingState />
       ) : items.length === 0 ? (
-        <Empty>{stato ? 'Nessun referral in questo stato.' : 'Nessun referral ancora.'}</Empty>
+        <Empty>{status ? 'Nessun referral in questo stato.' : 'Nessun referral ancora.'}</Empty>
       ) : (
         <>
           <div className="px-6 pt-6 pb-6">
             <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
-              <Table>
+              <Table scrollLabel="Referral">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Segnalato</TableHead>
@@ -437,20 +433,12 @@ export function AdminReferrals() {
               </Table>
             </div>
           </div>
-          <div ref={sentinelRef} />
           {list.hasNextPage && (
-            <div className="flex flex-col items-center gap-2 px-6 py-5">
-              <p className="text-sm text-muted-foreground">Mostrati {items.length} referral, ce ne sono altri.</p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={list.isFetchingNextPage}
-                onClick={() => void list.fetchNextPage()}
-              >
-                {list.isFetchingNextPage ? 'Carico…' : 'Mostra altri'}
-              </Button>
-            </div>
+            <LoadMore
+              label={`Mostrati ${items.length} referral, ce ne sono altri.`}
+              isFetchingMore={list.isFetchingNextPage}
+              onLoadMore={() => void list.fetchNextPage()}
+            />
           )}
         </>
       )}

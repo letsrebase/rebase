@@ -68,7 +68,7 @@ export function TimeEntryForm({
   const update = useUpdateTimeEntry(entryId ?? '')
   const remove = useDeleteTimeEntry()
 
-  // Same "reset synchronously when `open` toggles" pattern as CustomerForm/DealForm:
+  // Same "reset synchronously when `open` toggles" pattern as OrganizationForm/DealForm:
   // this component stays mounted across dialog opens, so a plain useState initializer
   // would only ever run once.
   const [wasOpen, setWasOpen] = useState(open)
@@ -167,10 +167,10 @@ export function TimeEntryForm({
         {isCreate && rates.data && (
           <p className="text-sm text-muted-foreground">
             Tariffa che verrà congelata su questa voce:{' '}
-            <strong>{formatRateValue(rates.data.tariffa)}</strong>{' '}
-            {rates.data.tariffa === null
+            <strong>{formatRateValue(rates.data.rate)}</strong>{' '}
+            {rates.data.rate === null
               ? '— la voce sarà registrata senza tariffa'
-              : `(${rates.data.tariffa_origine})`}
+              : `(${rates.data.rate_source})`}
           </p>
         )}
 

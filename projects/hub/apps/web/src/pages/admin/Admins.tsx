@@ -1,41 +1,29 @@
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ShieldOff, UserPlus } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
+import { SEARCH_DEBOUNCE_MS, failureMessage, pageItems, useCursorList, useDebounce } from '@/lib/adminList'
 import { ApiError, admin, type Admin } from '@/lib/api'
 import { formatDate } from '@/lib/format'
-import { Empty, Header } from './lists'
-
-const ADMINS_KEY = ['admins'] as const
-const SEARCH_DEBOUNCE_MS = 300
+import { keys } from '@/lib/query-keys'
+import { Empty, Header, LoadingState, LoadMore } from './list-kit'
 
 interface Draft {
   email: string
-  nome: string
-  cognome: string
+  first_name: string
+  last_name: string
 }
 
-const EMPTY: Draft = { email: '', nome: '', cognome: '' }
-
-/** The value it settles to `delayMs` after the caller stops changing it -- the search
- *  box's own text, so a query is not sent on every keystroke (REB-313). */
-function useDebounce<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delayMs)
-    return () => clearTimeout(timer)
-  }, [value, delayMs])
-  return debounced
-}
+const EMPTY: Draft = { email: '', first_name: '', last_name: '' }
 
 /**
  * Who reads this area, and the one form that grants or revokes the role (ORB-123,
  * REB-279): typing an email promotes whatever `users` row already answers to it, or
- * creates a bare one from `nome`/`cognome` when none exists yet -- those two fields
+ * creates a bare one from `first_name`/`last_name` when none exists yet -- those two fields
  * only matter for a brand-new address, and the server ignores them harmlessly for one
  * it already knows. There is no password anywhere on this page any more: the magic
  * link is the only way in, for a member and an admin alike. Demoting is one click on
@@ -50,52 +38,37 @@ export function AdminAdmins() {
   const client = useQueryClient()
   const [query, setQuery] = useState('')
   const debouncedQuery = useDebounce(query, SEARCH_DEBOUNCE_MS)
-  const list = useInfiniteQuery({
-    queryKey: [...ADMINS_KEY, debouncedQuery] as const,
-    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
-      admin.admins({ q: debouncedQuery || undefined, cursor: pageParam }),
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
+  const { list, items } = useCursorList({
+    queryKey: keys.admins(debouncedQuery),
+    fetchPage: (cursor) => admin.admins({ q: debouncedQuery || undefined, cursor }),
+    itemsOf: pageItems,
   })
-  const items = useMemo(() => list.data?.pages.flatMap((page) => page.items) ?? [], [list.data])
-  const { hasNextPage, fetchNextPage } = list
-
-  const sentinelRef = useRef<HTMLDivElement | null>(null)
-  useEffect(() => {
-    if (!hasNextPage || typeof IntersectionObserver === 'undefined') return
-    const node = sentinelRef.current
-    if (!node) return
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0]?.isIntersecting) void fetchNextPage()
-    })
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [hasNextPage, fetchNextPage])
 
   const [draft, setDraft] = useState<Draft>(EMPTY)
-  const [done, setDone] = useState<{ verb: 'promosso' | 'rimosso'; email: string } | null>(null)
+  const [done, setDone] = useState<{ verb: 'promoted' | 'removed'; email: string } | null>(null)
 
   const promote = useMutation({
     mutationFn: (data: Draft) =>
       admin.promote({
         email: data.email.trim(),
-        nome: data.nome.trim() || undefined,
-        cognome: data.cognome.trim() || undefined,
+        first_name: data.first_name.trim() || undefined,
+        last_name: data.last_name.trim() || undefined,
       }),
     onSuccess: (saved) => {
       setDraft(EMPTY)
-      setDone({ verb: 'promosso', email: saved.email })
-      void client.invalidateQueries({ queryKey: ADMINS_KEY })
+      setDone({ verb: 'promoted', email: saved.email })
+      void client.invalidateQueries({ queryKey: keys.admins() })
     },
   })
   const demote = useMutation({
     mutationFn: (id: string) => admin.demote(id),
     onSuccess: (saved) => {
-      setDone({ verb: 'rimosso', email: saved.email })
-      void client.invalidateQueries({ queryKey: ADMINS_KEY })
+      setDone({ verb: 'removed', email: saved.email })
+      void client.invalidateQueries({ queryKey: keys.admins() })
     },
   })
 
+  const demoteFailure = failureMessage(demote.error, 'Non riesco a rimuovere questo amministratore.')
   const failure = promote.error instanceof ApiError ? promote.error : null
   const message = failure
     ? failure.message
@@ -143,27 +116,27 @@ export function AdminAdmins() {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="admin-nome">Nome</Label>
+          <Label htmlFor="admin-first-name">Nome</Label>
           <Input
-            id="admin-nome"
+            id="admin-first-name"
             maxLength={120}
             autoComplete="off"
             placeholder="Solo per un indirizzo nuovo"
-            value={draft.nome}
-            onChange={(event) => field('nome')(event.target.value)}
-            aria-invalid={wrong('nome')}
+            value={draft.first_name}
+            onChange={(event) => field('first_name')(event.target.value)}
+            aria-invalid={wrong('first_name')}
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="admin-cognome">Cognome</Label>
+          <Label htmlFor="admin-last-name">Cognome</Label>
           <Input
-            id="admin-cognome"
+            id="admin-last-name"
             maxLength={120}
             autoComplete="off"
             placeholder="Solo per un indirizzo nuovo"
-            value={draft.cognome}
-            onChange={(event) => field('cognome')(event.target.value)}
-            aria-invalid={wrong('cognome')}
+            value={draft.last_name}
+            onChange={(event) => field('last_name')(event.target.value)}
+            aria-invalid={wrong('last_name')}
           />
         </div>
         <Button type="submit" disabled={promote.isPending}>
@@ -179,29 +152,35 @@ export function AdminAdmins() {
 
       {/* Always mounted: a live region that appears already filled is often not read out. */}
       <p role="status" aria-live="polite" className={done ? 'border-b px-6 py-3 text-sm' : undefined}>
-        {done?.verb === 'promosso' && (
+        {done?.verb === 'promoted' && (
           <>
             Amministratore promosso: <span className="font-medium">{done.email}</span>.
           </>
         )}
-        {done?.verb === 'rimosso' && (
+        {done?.verb === 'removed' && (
           <>
             Non è più amministratore: <span className="font-medium">{done.email}</span>.
           </>
         )}
       </p>
 
+      {demoteFailure && (
+        <p role="alert" className="border-b px-6 py-3 text-sm text-destructive">
+          {demoteFailure}
+        </p>
+      )}
+
       {list.isError ? (
         <Empty>Non riesco a leggere la lista.</Empty>
       ) : list.isPending ? (
-        <Empty>Caricamento…</Empty>
+        <LoadingState />
       ) : items.length === 0 ? (
         <Empty>{debouncedQuery ? 'Nessun risultato per questa ricerca.' : 'Nessun amministratore ancora.'}</Empty>
       ) : (
         <>
           <div className="px-6 pt-6 pb-6">
             <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
-              <Table>
+              <Table scrollLabel="Amministratori">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Chi</TableHead>
@@ -216,11 +195,11 @@ export function AdminAdmins() {
                   {items.map((row: Admin) => (
                     <TableRow key={row.id}>
                       <TableCell>
-                        <p className="font-medium">{row.nome}</p>
+                        <p className="font-medium">{row.first_name}</p>
                         <p className="text-xs text-muted-foreground">{row.email}</p>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="pill">{row.attivo ? 'Attivo' : 'Disattivato'}</Badge>
+                        <Badge variant="pill">{row.active ? 'Attivo' : 'Disattivato'}</Badge>
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">{formatDate(row.created_at)}</TableCell>
                       <TableCell className="text-right">
@@ -235,7 +214,7 @@ export function AdminAdmins() {
                           Rimuovi
                           <span className="sr-only">
                             {' '}
-                            {row.nome} ({row.email}) da amministratore
+                            {row.first_name} ({row.email}) da amministratore
                           </span>
                         </Button>
                       </TableCell>
@@ -245,22 +224,12 @@ export function AdminAdmins() {
               </Table>
             </div>
           </div>
-          <div ref={sentinelRef} />
           {list.hasNextPage && (
-            <div className="flex flex-col items-center gap-2 px-6 py-5">
-              <p className="text-sm text-muted-foreground">
-                Mostrati {items.length} amministratori, ce ne sono altri.
-              </p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={list.isFetchingNextPage}
-                onClick={() => void list.fetchNextPage()}
-              >
-                {list.isFetchingNextPage ? 'Carico…' : 'Mostra altri'}
-              </Button>
-            </div>
+            <LoadMore
+              label={`Mostrati ${items.length} amministratori, ce ne sono altri.`}
+              isFetchingMore={list.isFetchingNextPage}
+              onLoadMore={() => void list.fetchNextPage()}
+            />
           )}
         </>
       )}

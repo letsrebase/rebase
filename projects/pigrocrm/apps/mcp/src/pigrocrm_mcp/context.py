@@ -29,6 +29,10 @@ class McpContext:
     session_provider: SessionProvider
     actor_provider: ActorProvider
     storage: DocumentStorage
+    # The modules the space has on, fixed when the server is built (it is rebuilt when the
+    # settings change): what a core tool that reads across modules leaves out. `None`:
+    # every module, the way a context built without settings (a test's) reads.
+    modules: frozenset[str] | None = None
 
     @property
     def session(self) -> Session:
@@ -63,8 +67,17 @@ class ScopedSessionProvider:
     one from an unscoped read would reintroduce exactly that leak.
     """
 
-    def __init__(self, factory: sessionmaker[Session]) -> None:
-        self._factory = factory
+    def __init__(
+        self, factory: sessionmaker[Session] | Callable[[], sessionmaker[Session]]
+    ) -> None:
+        """A `sessionmaker`, or a callable that answers one: the registry may dispose and
+        rebuild a space's engine between two calls, so a space's provider resolves its
+        factory per call (`registry.session_factory(slug)`) and never captures one."""
+        self._resolve: Callable[[], sessionmaker[Session]] = (
+            (lambda: cast("sessionmaker[Session]", factory))
+            if isinstance(factory, sessionmaker)
+            else factory
+        )
 
     def __call__(self) -> Session:
         try:
@@ -79,7 +92,7 @@ class ScopedSessionProvider:
         """A session the *caller* owns and closes, outside any scope.
 
         Not a second way to get the call's session -- the opposite. The document storage
-        (`LazyUserDriveStorage`, when the titolare's own Drive is the document store)
+        (`LazyUserDriveStorage`, when the owner's own Drive is the document store)
         resolves its account by opening a session, reading one row and closing it again,
         at each operation; it must therefore be given something that opens a session it
         may close, which `__call__` deliberately is not. Handing it the call's own
@@ -91,11 +104,11 @@ class ScopedSessionProvider:
         reaches `scope` -- with `getattr` -- so a plain callable provider (this package's
         own test fixture) stays a plain callable.
         """
-        return self._factory()
+        return self._resolve()()
 
     @contextmanager
     def scope(self) -> Iterator[Session]:
-        session = self._factory()
+        session = self._resolve()()
         token = _CURRENT_SESSION.set(session)
         try:
             yield session

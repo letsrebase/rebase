@@ -28,9 +28,9 @@ from pigrocrm.core.auth.invitation_models import Invitation
 from pigrocrm.core.auth.schemas import UserCreate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings, get_settings
-from pigrocrm.core.mail import RecordingSender
+from pigrocrm.core.mail import MailState, RecordingSender
 from pigrocrm_api.ratelimit import REQUESTS_PER_MINUTE
-from pigrocrm_api.routers.auth import get_sender
+from pigrocrm_api.sessions import get_sender
 
 PUBLIC_URL = "https://pigro.test"
 INVITED = "nuova@pigro.it"
@@ -51,8 +51,8 @@ def sender(client: TestClient) -> RecordingSender:
     return recording
 
 
-def _invite(client: TestClient, email: str = INVITED, nome: str | None = "Luca") -> dict:
-    response = client.post("/api/users/invites", json={"email": email, "nome": nome})
+def _invite(client: TestClient, email: str = INVITED, name: str | None = "Luca") -> dict:
+    response = client.post("/api/users/invites", json={"email": email, "name": name})
     assert response.status_code == 201, response.text
     return response.json()
 
@@ -69,7 +69,7 @@ def test_an_invitation_is_created_mailed_and_listed(
 ) -> None:
     invite = _invite(logged_in)
     assert invite["email"] == INVITED
-    assert invite["ruolo"] == "collaboratore" and invite["nome"] == "Luca"
+    assert invite["role"] == "collaborator" and invite["name"] == "Luca"
     # The raw token is never in the response: the only copy of it leaves by mail.
     assert "token" not in str(invite).lower()
     assert len(sender.sent) == 1
@@ -89,20 +89,20 @@ def test_an_invitation_is_created_mailed_and_listed(
 def test_without_a_sender_the_endpoint_refuses_without_writing(logged_in: TestClient) -> None:
     """An installation that cannot mail does not half-create an invitation: no row,
     so nothing to find in the list and no token with no mail carrying it."""
-    response = logged_in.post("/api/users/invites", json={"email": INVITED, "nome": None})
+    response = logged_in.post("/api/users/invites", json={"email": INVITED, "name": None})
     assert response.status_code == 503
     assert "RESEND_API_KEY" in response.json()["detail"]
     assert logged_in.get("/api/users/invites").json() == []
 
 
-def test_a_collaboratore_cannot_invite(
+def test_to_collaborator_cannot_invite(
     collaborator_client: TestClient, sender: RecordingSender
 ) -> None:
     """403 through the problem document, on every one of the four admin routes. The
     `sender` fixture is what lets the role be the *first* refusal: with no sender
     the POST would answer 503, which is the installation's answer, not the caller's."""
     client = collaborator_client
-    refused = client.post("/api/users/invites", json={"email": INVITED, "nome": None})
+    refused = client.post("/api/users/invites", json={"email": INVITED, "name": None})
     assert refused.status_code == 403, refused.text
     problem = refused.json()
     assert problem["type"] == "https://pigrocrm.dev/errors/permission_denied"
@@ -122,17 +122,17 @@ def test_a_pending_duplicate_and_an_active_user_are_both_409(
     logged_in: TestClient, sender: RecordingSender, api_session: Session
 ) -> None:
     _invite(logged_in)
-    twice = logged_in.post("/api/users/invites", json={"email": INVITED, "nome": "Luca"})
+    twice = logged_in.post("/api/users/invites", json={"email": INVITED, "name": "Luca"})
     assert twice.status_code == 409
     assert twice.json()["code"] == "conflict"
     assert "invito in attesa" in twice.json()["detail"]
     assert len(sender.sent) == 1  # the refusal sent nothing
 
     UserService(api_session).create(
-        UserCreate(email="gia@pigro.it", password="lunghissima1", nome="Già", ruolo="readonly"),
+        UserCreate(email="gia@pigro.it", password="lunghissima1", name="Già", role="readonly"),
         Actor.system(),
     )
-    member = logged_in.post("/api/users/invites", json={"email": "gia@pigro.it", "nome": None})
+    member = logged_in.post("/api/users/invites", json={"email": "gia@pigro.it", "name": None})
     assert member.status_code == 409
     assert "persona attiva" in member.json()["detail"]
 
@@ -189,7 +189,7 @@ def test_the_peek_shows_the_invitation_and_does_not_spend_it(
     raw = _token_from(sender.sent[0].text)
     peek = logged_in.get("/api/auth/invite", params={"t": raw})
     assert peek.status_code == 200, peek.text
-    assert peek.json() == {"spazio": "PigroCRM", "invitato_da": "Admin", "nome": "Luca"}
+    assert peek.json() == {"space": "PigroCRM", "inviter_name": "Admin", "name": "Luca"}
     # Reading is not spending: two peeks and the accept still work.
     assert logged_in.get("/api/auth/invite", params={"t": raw}).status_code == 200
     assert logged_in.post("/api/auth/invite", json={"t": raw}).status_code == 200
@@ -210,8 +210,8 @@ def test_accept_creates_the_user_and_opens_the_session(
     accepted = logged_in.post("/api/auth/invite", json={"t": raw})
     assert accepted.status_code == 200, accepted.text
     body = accepted.json()
-    assert body["email"] == INVITED and body["ruolo"] == "collaboratore"
-    assert body["attivo"] is True
+    assert body["email"] == INVITED and body["role"] == "collaborator"
+    assert body["active"] is True
     # Same cookie pair `login` sets.
     cookies = accepted.headers.get_list("set-cookie")
     assert any("pigrocrm_access=" in c for c in cookies)
@@ -227,14 +227,14 @@ def test_accept_creates_the_user_and_opens_the_session(
 def test_accept_without_a_name_when_the_invitation_carried_none(
     logged_in: TestClient, sender: RecordingSender
 ) -> None:
-    _invite(logged_in, nome=None)
+    _invite(logged_in, name=None)
     raw = _token_from(sender.sent[0].text)
     refused = logged_in.post("/api/auth/invite", json={"t": raw})
     assert refused.status_code == 422
-    assert "nome" in refused.json()["detail"]
-    accepted = logged_in.post("/api/auth/invite", json={"t": raw, "nome": "Nominato"})
+    assert "name" in refused.json()["detail"]
+    accepted = logged_in.post("/api/auth/invite", json={"t": raw, "name": "Nominato"})
     assert accepted.status_code == 200
-    assert accepted.json()["nome"] == "Nominato"
+    assert accepted.json()["name"] == "Nominato"
 
 
 def test_an_expired_invitation_answers_410(
@@ -275,3 +275,189 @@ def test_a_nul_byte_in_the_token_is_a_clean_422_not_a_500(logged_in: TestClient)
     to bind a NUL byte at all; `SafeStr` is what turns that into a 422."""
     assert logged_in.get("/api/auth/invite", params={"t": "ab\x00cd"}).status_code == 422
     assert logged_in.post("/api/auth/invite", json={"t": "ab\x00cd"}).status_code == 422
+
+
+# --- what became of the mail (REB-678) ------------------------------------------------
+#
+# The invitation to the Rebase space went to a mistyped address: the provider took it
+# (201), the address bounced, the resend was suppressed, and nothing the admin could see
+# said any of it. These hold the Team panel's half: the answer of the handoff is on the
+# row, the provider is asked about the mails still on their way, and a mail that has
+# ended is never asked about again.
+
+
+class CountingSender(RecordingSender):
+    """A `RecordingSender` that keeps every mail id it was asked about."""
+
+    def __init__(self, *, accepts: bool = True, readable: bool = True) -> None:
+        super().__init__(accepts=accepts, readable=readable)
+        self.looked: list[str] = []
+
+    def status(self, mail_id: str) -> MailState | None:
+        self.looked.append(mail_id)
+        return super().status(mail_id)
+
+
+def _serve(client: TestClient, recording: RecordingSender) -> None:
+    client.app.dependency_overrides[get_sender] = lambda: recording  # type: ignore[attr-defined]
+    client.app.dependency_overrides[get_settings] = lambda: Settings(  # type: ignore[attr-defined]
+        public_url=PUBLIC_URL,
+        _env_file=None,  # type: ignore[call-arg]
+    )
+
+
+def _mail_status(client: TestClient, invitation_id: str) -> str | None:
+    rows = {row["id"]: row for row in client.get("/api/users/invites").json()}
+    return rows[invitation_id]["mail_status"]
+
+
+def test_a_created_invitation_says_the_provider_took_its_mail(
+    logged_in: TestClient, sender: RecordingSender
+) -> None:
+    invite = _invite(logged_in)
+    assert invite["mail_status"] == "sent" and invite["mail_sent_at"] is not None
+    # The provider's own handle is the server's: it never reaches the browser.
+    assert "mail_id" not in invite and "recorded-1" not in str(invite)
+    assert _mail_status(logged_in, invite["id"]) == "sent"
+
+
+def test_an_invitation_whose_mail_the_provider_refused_says_so_and_a_resend_mends_it(
+    logged_in: TestClient, client: TestClient
+) -> None:
+    """The row is there, the link nobody got is dead weight, and the admin must be told
+    in the answer itself and not by a line in a log: `failed`, with a resend that starts
+    the mail over."""
+    refusing = CountingSender(accepts=False)
+    _serve(client, refusing)
+    invite = _invite(logged_in)
+    assert invite["mail_status"] == "failed"
+    assert refusing.sent == []
+    assert _mail_status(logged_in, invite["id"]) == "failed"
+
+    refusing.accepts = True
+    resent = logged_in.post(f"/api/users/invites/{invite['id']}/resend")
+    assert resent.status_code == 200, resent.text
+    assert resent.json()["mail_status"] == "sent"
+    assert len(refusing.sent) == 1
+    assert _mail_status(logged_in, invite["id"]) == "sent"
+
+
+def test_the_list_learns_that_a_mail_bounced_and_never_asks_again(
+    logged_in: TestClient, client: TestClient
+) -> None:
+    """The 201 said the provider took the mail and the bounce came after it: asking the
+    provider for the mails still on their way is how the panel hears. A mail that has
+    ended (`bounced`) is where it ends, whatever the provider says next."""
+    counting = CountingSender()
+    _serve(client, counting)
+    invite = _invite(logged_in)
+    counting.states["recorded-1"] = "bounced"
+    assert _mail_status(logged_in, invite["id"]) == "bounced"
+    assert counting.looked == ["recorded-1"]
+
+    counting.states["recorded-1"] = "delivered"
+    assert _mail_status(logged_in, invite["id"]) == "bounced"
+    assert counting.looked == ["recorded-1"]
+
+
+def test_a_mail_on_its_way_is_asked_about_until_it_is_delivered(
+    logged_in: TestClient, client: TestClient
+) -> None:
+    counting = CountingSender()
+    _serve(client, counting)
+    invite = _invite(logged_in)
+    assert _mail_status(logged_in, invite["id"]) == "sent"
+    counting.states["recorded-1"] = "delayed"
+    assert _mail_status(logged_in, invite["id"]) == "delayed"
+    counting.states["recorded-1"] = "delivered"
+    assert _mail_status(logged_in, invite["id"]) == "delivered"
+    assert _mail_status(logged_in, invite["id"]) == "delivered"
+    assert counting.looked == ["recorded-1"] * 3
+
+
+def test_a_resend_starts_the_mail_over_and_the_old_verdict_does_not_follow(
+    logged_in: TestClient, client: TestClient, api_session: Session
+) -> None:
+    """A resend to an address that bounced is a new mail with a new id: the row must not
+    keep saying `bounced` for it, nor ask the provider about the old one."""
+    counting = CountingSender()
+    _serve(client, counting)
+    invite = _invite(logged_in)
+    counting.states["recorded-1"] = "bounced"
+    assert _mail_status(logged_in, invite["id"]) == "bounced"
+
+    resent = logged_in.post(f"/api/users/invites/{invite['id']}/resend")
+    assert resent.json()["mail_status"] == "sent"
+    counting.looked.clear()
+    counting.states["recorded-2"] = "suppressed"
+    assert _mail_status(logged_in, invite["id"]) == "suppressed"
+    assert counting.looked == ["recorded-2"]
+    row = api_session.scalar(select(Invitation).where(Invitation.id == invite["id"]))
+    assert row is not None
+    api_session.refresh(row)
+    assert row.mail_id == "recorded-2"
+
+
+def test_a_mail_sent_more_than_a_day_ago_is_not_asked_about(
+    logged_in: TestClient, client: TestClient, api_session: Session
+) -> None:
+    counting = CountingSender()
+    _serve(client, counting)
+    invite = _invite(logged_in)
+    row = api_session.scalar(select(Invitation).where(Invitation.id == invite["id"]))
+    assert row is not None
+    row.mail_sent_at = datetime.now(UTC) - timedelta(days=2)
+    api_session.commit()
+    assert _mail_status(logged_in, invite["id"]) == "sent"
+    assert counting.looked == []
+
+
+def test_one_look_at_the_list_asks_about_five_mails_at_most(
+    logged_in: TestClient, client: TestClient
+) -> None:
+    counting = CountingSender()
+    _serve(client, counting)
+    for number in range(7):
+        _invite(logged_in, email=f"persona{number}@pigro.it")
+    assert logged_in.get("/api/users/invites").status_code == 200
+    assert len(counting.looked) == 5
+    # The next look asks about the newest five still open, not the same ones twice
+    # over: each answered `sent` again, so they are the same five. The cap is per look.
+    assert logged_in.get("/api/users/invites").status_code == 200
+    assert len(counting.looked) == 10
+
+
+def test_a_provider_that_cannot_be_asked_costs_one_question_and_leaves_the_rows_alone(
+    logged_in: TestClient, client: TestClient
+) -> None:
+    """A key that may only send, or a provider that is down, answers every question the
+    same way: the round ends at the first, and the admin does not wait for five."""
+    mute = CountingSender(readable=False)
+    _serve(client, mute)
+    first = _invite(logged_in, email="uno@pigro.it")
+    _invite(logged_in, email="due@pigro.it")
+    _invite(logged_in, email="tre@pigro.it")
+    rows = logged_in.get("/api/users/invites").json()
+    assert len(mute.looked) == 1
+    assert {row["mail_status"] for row in rows} == {"sent"}
+    assert first["id"] in {row["id"] for row in rows}
+
+
+def test_to_collaborator_listing_asks_the_provider_nothing(
+    collaborator_client: TestClient, client: TestClient
+) -> None:
+    counting = CountingSender()
+    _serve(client, counting)
+    assert collaborator_client.get("/api/users/invites").status_code == 403
+    assert counting.looked == []
+
+
+def test_an_installation_without_a_sender_lists_what_the_rows_say(
+    logged_in: TestClient, client: TestClient, api_session: Session
+) -> None:
+    counting = CountingSender()
+    _serve(client, counting)
+    invite = _invite(logged_in)
+    client.app.dependency_overrides[get_sender] = lambda: None  # type: ignore[attr-defined]
+    assert _mail_status(logged_in, invite["id"]) == "sent"
+    assert counting.looked == []

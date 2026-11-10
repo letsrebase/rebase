@@ -4,9 +4,10 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { useIsAdmin } from '@/lib/auth'
 import { toIsoDate } from '@/lib/dates'
+import { dealStatusLabel } from '@/lib/dealStatus'
 import { PeriodTotals, PnlRows } from './PnlRows'
 import { ToInvoiceDialog } from './ToInvoiceDialog'
 import { PNL_BASE_LABELS, PNL_BASES, useDealPnl, usePeriodPnl, type PnlBase } from './queries'
@@ -29,12 +30,12 @@ function DealEconomics({ dealId }: { dealId: string }) {
   // The banner and nothing else: a conto economico rendered under a failed read would
   // show a screenful of dashes that look like real zeroes.
   if (pnl.isError) return <QueryErrorBanner error={pnl.error} />
-  if (pnl.isLoading || !pnl.data) return <Skeleton className="h-64 w-full" />
+  if (pnl.isLoading || !pnl.data) return <LoadingState />
 
   // The string the API sent, compared as a string. `Number(...) > 0` on a decimal field
   // is exactly the accidental arithmetic `lib/no-float-money.test.ts` exists to catch,
   // and `"0.00"` is the only spelling `Numeric(12,2)` serialises for zero.
-  const somethingToInvoice = pnl.data.ore_fatturabili_non_fatturate !== '0.00'
+  const somethingToInvoice = pnl.data.billable_uninvoiced_hours !== '0.00'
 
   return (
     <div className="space-y-6">
@@ -42,8 +43,8 @@ function DealEconomics({ dealId }: { dealId: string }) {
         <CardContent className="pt-6">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-semibold">Conto economico</h2>
-            <Badge variant={pnl.data.stato === 'chiuso' ? 'default' : 'secondary'}>
-              {pnl.data.stato}
+            <Badge variant={pnl.data.status === 'closed' ? 'default' : 'secondary'}>
+              {dealStatusLabel(pnl.data.status)}
             </Badge>
           </div>
           <PnlRows pnl={pnl.data} />
@@ -73,12 +74,12 @@ function DealEconomics({ dealId }: { dealId: string }) {
 /** One sentence per reading, under the chips: the row's hint names the base, this says
  *  what the base does to the figure, and only one of the two is on screen at a time. */
 const BASE_NOTE: Record<PnlBase, string> = {
-  emissione: 'Ricavi attribuiti alla data di emissione della fattura.',
-  competenza:
+  issue: 'Ricavi attribuiti alla data di emissione della fattura.',
+  accrual:
     'Ricavi attribuiti al periodo di competenza della fattura, o alla data di emissione quando manca.',
 }
 
-function CustomerEconomics({ customerId }: { customerId: string }) {
+function OrganizationEconomics({ customerId }: { customerId: string }) {
   // A customer's economics is the sum of their deals, served by the same period endpoint
   // with a `customer_id` filter -- never a second aggregation written here, which is how
   // two totals begin to disagree. The window defaults to the current calendar year
@@ -86,8 +87,8 @@ function CustomerEconomics({ customerId }: { customerId: string }) {
   // the report cannot open on next year late on 31 December.
   const year = new Date().getFullYear()
   // The reading is state and not a search param: it is a way of looking at one card,
-  // and `emissione` is what the spec recorded, so the tab opens on it every time.
-  const [base, setBase] = useState<PnlBase>('emissione')
+  // and `issue` is what the spec recorded, so the tab opens on it every time.
+  const [base, setBase] = useState<PnlBase>('issue')
   const pnl = usePeriodPnl({
     from: toIsoDate(new Date(year, 0, 1)),
     to: toIsoDate(new Date(year, 11, 31)),
@@ -125,7 +126,7 @@ function CustomerEconomics({ customerId }: { customerId: string }) {
           // would show a screenful of dashes that look like real zeroes.
           <QueryErrorBanner error={pnl.error} />
         ) : pnl.isLoading || !pnl.data ? (
-          <Skeleton className="h-48 w-full" />
+          <LoadingState />
         ) : (
           <PeriodTotals pnl={pnl.data} base={base} />
         )}
@@ -146,6 +147,6 @@ export function EconomicsTab(props: EconomicsTabProps) {
   return 'dealId' in props ? (
     <DealEconomics dealId={props.dealId} />
   ) : (
-    <CustomerEconomics customerId={props.customerId} />
+    <OrganizationEconomics customerId={props.customerId} />
   )
 }

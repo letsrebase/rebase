@@ -11,23 +11,28 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.activities.repository import ActivityRepository
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.automations.repository import AutomationConfigRepository
+from pigrocrm.core.automations.runs import recent_runs
 from pigrocrm.core.automations.schemas import (
-    AUTOMATION_KINDS,
     KIND_CONFIG_CHANGED,
     RULE_DESCRIPTIONS,
     AutomationConfigRead,
     AutomationConfigUpdate,
-    AutomationRule,
+    AutomationRuleCode,
     AutomationRuleDescription,
-    AutomationRun,
     AutomationsDescription,
 )
 
 ENTITY = "automation_config"
+RULE_CODES: tuple[AutomationRuleCode, ...] = (
+    "A1",
+    "A2",
+    "sent_offer_follow_up",
+    "stalled_deal",
+    "overdue_invoice",
+)
 _RUN_LIMIT = 20
 
 
@@ -36,10 +41,9 @@ class AutomationConfigService:
         self.session = session
         self.repo = AutomationConfigRepository(session)
         self.activities = ActivityService(session)
-        self.activity_repo = ActivityRepository(session)
 
     def describe_automations(self, actor: Actor) -> AutomationsDescription:
-        """The two rules, their state, and the last twenty executions with their outcome.
+        """The rules, their state, and the last twenty executions with their outcome.
 
         No authorisation check: it is a read of what the system does by itself, every role
         may see it, and spec §13 states this slice adds no authorisation rule. `actor` is
@@ -54,35 +58,30 @@ class AutomationConfigService:
         config = AutomationConfigRead.model_validate(row)
         rules = [
             AutomationRuleDescription(
-                codice=code,
-                titolo=RULE_DESCRIPTIONS[code][0],
-                descrizione=RULE_DESCRIPTIONS[code][1],
-                attiva=self._is_active(config, code),
+                code=code,
+                title=RULE_DESCRIPTIONS[code][0],
+                description=RULE_DESCRIPTIONS[code][1],
+                active=self._is_active(config, code),
             )
-            for code in ("A1", "A2")
+            for code in RULE_CODES
         ]
-        runs = [
-            AutomationRun(
-                kind=activity.kind,
-                occurred_at=activity.occurred_at,
-                # `None` unless the activity really is about a deal. A bare `entity_id`
-                # here would give the `automation_config` row's own id for a configuration
-                # change, which renders as a link to a deal that does not exist.
-                deal_id=activity.entity_id if activity.entity_type == "deal" else None,
-                regola=activity.payload.get("regola"),
-                motivo=activity.payload.get("motivo"),
-                payload=activity.payload,
-            )
-            for activity in self.activity_repo.by_kind(AUTOMATION_KINDS, _RUN_LIMIT)
-        ]
+        runs = recent_runs(self.session, _RUN_LIMIT)
         self.session.commit()
-        return AutomationsDescription(configurazione=config, regole=rules, esecuzioni=runs)
+        return AutomationsDescription(configuration=config, rules=rules, runs=runs)
 
     @staticmethod
-    def _is_active(config: AutomationConfigRead, code: AutomationRule) -> bool:
-        if code == "A1":
-            return config.a1_offerta_accettata_vince_deal
-        return config.a2_offerta_inviata_avanza_deal
+    def _is_active(config: AutomationConfigRead, code: AutomationRuleCode) -> bool:
+        match code:
+            case "A1":
+                return config.a1_wins_accepted_offer_deal
+            case "A2":
+                return config.a2_advances_sent_offer_deal
+            case "sent_offer_follow_up":
+                return config.a3_sent_offer_follow_up
+            case "stalled_deal":
+                return config.a4_stalled_deal
+            case "overdue_invoice":
+                return config.a5_overdue_invoice
 
     def update_automation_config(
         self, data: AutomationConfigUpdate, actor: Actor
@@ -108,10 +107,11 @@ class AutomationConfigService:
             if value is None:
                 continue
             current = getattr(row, field)
-            # `is not` on booleans, and only a real difference is recorded: an audit entry
-            # that lists every field on every save is an audit entry nobody reads.
-            if current is not value:
-                changes[field] = {"da": current, "a": value}
+            # Only a real difference is recorded: an audit entry that lists every field on
+            # every save is an audit entry nobody reads. `!=` and not `is not`, because the
+            # threshold is an int and two equal ints are not promised to be one object.
+            if current != value:
+                changes[field] = {"from": current, "to": value}
                 setattr(row, field, value)
 
         if changes:

@@ -43,12 +43,12 @@ describe('useCosts', () => {
   it('forwards its filters and asks for a full page', async () => {
     const { wrapper } = harness()
     mockGet.mockReturnValueOnce(ok({ items: [], next_cursor: null }))
-    renderHook(() => useCosts({ deal_id: 'd-1', solo_generali: false }), { wrapper })
+    renderHook(() => useCosts({ deal_id: 'd-1', only_general: false }), { wrapper })
     await waitFor(() => expect(mockGet).toHaveBeenCalled())
     expect(mockGet).toHaveBeenCalledWith(
       '/api/costs',
       expect.objectContaining({
-        params: { query: { deal_id: 'd-1', solo_generali: false, limit: 200 } },
+        params: { query: { deal_id: 'd-1', only_general: false, limit: 200 } },
       }),
     )
   })
@@ -83,7 +83,7 @@ describe('useCreateCost', () => {
     const { wrapper, invalidate } = harness()
     mockPost.mockReturnValueOnce(ok({ id: 'c-1', deal_id: 'd-1' }))
     const { result } = renderHook(() => useCreateCost(), { wrapper })
-    result.current.mutate({ deal_id: 'd-1', importo: '10.00' })
+    result.current.mutate({ deal_id: 'd-1', amount: '10.00' })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['costs', {}] })
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['deal-time-summary', 'd-1'] })
@@ -93,7 +93,7 @@ describe('useCreateCost', () => {
     const { wrapper, invalidate } = harness()
     mockPost.mockReturnValueOnce(ok({ id: 'c-2', deal_id: null }))
     const { result } = renderHook(() => useCreateCost(), { wrapper })
-    result.current.mutate({ importo: '10.00' })
+    result.current.mutate({ amount: '10.00' })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['costs', {}] })
     expect(invalidate).toHaveBeenCalledTimes(1)
@@ -105,11 +105,11 @@ describe('useUpdateCost', () => {
     const { wrapper } = harness()
     mockPatch.mockReturnValueOnce(ok({ id: 'c-1', deal_id: 'd-1' }))
     const { result } = renderHook(() => useUpdateCost('c-1'), { wrapper })
-    result.current.mutate({ importo: '12.00' })
+    result.current.mutate({ amount: '12.00' })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(mockPatch).toHaveBeenCalledWith(
       '/api/costs/{cost_id}',
-      expect.objectContaining({ params: { path: { cost_id: 'c-1' } }, body: { importo: '12.00' } }),
+      expect.objectContaining({ params: { path: { cost_id: 'c-1' } }, body: { amount: '12.00' } }),
     )
   })
 })

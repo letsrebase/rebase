@@ -10,7 +10,7 @@ uv sync --frozen
 pnpm install --frozen-lockfile
 ```
 
-Python 3.13, Node 22 and Docker. PigroCRM's document rendering also needs Pandoc and
+Python 3.13, Node 24 and Docker. PigroCRM's document rendering also needs Pandoc and
 Typst on `PATH`; without them about thirty tests fail with
 `strumento di composizione non installato`. On Nix, `nix develop` provides everything
 but Docker (see the README).
@@ -58,7 +58,7 @@ conventions are in `docs/tracker.md`.
 Conventional Commits, English, first person, written the way a person writes:
 
 ```
-feat(spazi): the root installation has a space name of its own
+feat(core): the root installation has a space name of its own
 fix(web): the sidebar is as tall as the window, not the page
 ```
 

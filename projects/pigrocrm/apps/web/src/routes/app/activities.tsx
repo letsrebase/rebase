@@ -1,0 +1,74 @@
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { attributionOf } from '@/lib/attribution'
+import { legacyParam } from '@/lib/legacySearch'
+import { TaskPage } from '@/features/tasks/TaskPage'
+import { EVERYONE, ME } from '@/features/tasks/filters'
+import { isView, viewOf, type View } from '@/features/tasks/view'
+
+const LEGACY_VIEWS: Record<string, View> = { 'oggi': 'today', 'tutte': 'all' }
+const LEGACY_ASSIGNEES: Record<string, string> = { 'io': ME, 'tutte': EVERYONE }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function TaskRoute() {
+  const search = Route.useSearch()
+  const { open, assigned } = search
+  const view = viewOf(search)
+  const navigate = useNavigate()
+  // `key`: arriving with another id while the page is open is a remount, so the dialog
+  // opens for it instead of staying dismissed from the previous one.
+  return (
+    <TaskPage
+      key={`${open ?? ''}|${assigned ?? ''}`}
+      view={view}
+      onViewChange={(next) =>
+        void navigate({ to: '/app/activities', search: { assigned, view: next }, replace: true })
+      }
+      openId={open}
+      initialAssignee={assigned}
+      onDismissOpen={() =>
+        // The view stays the one the address implied: taking `?open=` off must not move
+        // the page from the table to «Oggi».
+        void navigate({ to: '/app/activities', search: { assigned, view }, replace: true })
+      }
+    />
+  )
+}
+
+// Only `Route` is exported: a route file exporting anything else opts that route out of
+// the router plugin's automatic code-splitting, which is why the page lives in `features/`.
+export const Route = createFileRoute('/app/activities')({
+  component: TaskRoute,
+  // `?open=<id>` is how the global search opens one task in its dialog. Anything that
+  // is not a UUID is dropped, so a hand-edited URL is the plain page and not a request the
+  // API refuses.
+  //
+  // `?assigned=` is whose tasks the page opens on: «io», «tutte» or a user id. The Oggi
+  // view's «le altre sono nella pagina Attività» carries the person it was showing, so the
+  // rows it left out are the ones listed.
+  //
+  // `?view=` is the tab: «oggi» or «tutte» (`vistaOf` says what an address without it means).
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { open?: string; assigned?: string; view?: View; from?: string } => {
+    // Links already sent (push payloads, the Monday digest, bookmarks) carry the Italian words of
+    // before the English rename of 2026-11-02 (the open, assigned and view parameters, and the
+    // words io, tutte, oggi).
+    // Each opens the same screen as the word it became.
+    const open = legacyParam(search, 'open', 'apri')
+    const assignedRaw = legacyParam(search, 'assigned', 'assegnata')
+    const assigned = LEGACY_ASSIGNEES[String(assignedRaw)] ?? assignedRaw
+    const viewRaw = legacyParam(search, 'view', 'vista')
+    const view = LEGACY_VIEWS[String(viewRaw)] ?? viewRaw
+    return {
+    open: typeof open === 'string' && UUID_RE.test(open) ? open : undefined,
+    assigned:
+      typeof assigned === 'string' &&
+      (assigned === ME || assigned === EVERYONE || UUID_RE.test(assigned)) ? assigned : undefined,
+    view: isView(view) ? view : undefined,
+    // `?from=digest` rides along from the digest mail's link (`?da=digest` in mails sent before
+    // the English rename), where PostHog reads the return.
+    from: attributionOf(search),
+    }
+  },
+})

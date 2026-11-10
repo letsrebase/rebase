@@ -1,11 +1,12 @@
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
+from pigrocrm.core.proposals.models import Proposal
 
 
 class ActivityRepository:
@@ -26,12 +27,19 @@ class ActivityRepository:
         )
         return list(self.session.execute(stmt).scalars())
 
-    def recent(self, limit: int = 50) -> list[Activity]:
+    def recent(
+        self,
+        limit: int = 50,
+        entity_types: Collection[str] | None = None,
+        excluded_types: Collection[str] = (),
+        visible_proposals: ColumnElement[bool] | None = None,
+    ) -> list[Activity]:
         """The global activity feed of §6.1: newest first, across every entity.
 
-        Not paginated, and fifty rows at most. A complete history of activity is the
-        entity's own `timeline`, which already exists; a paginated global feed would be a
-        second way to browse the same rows, with its own cursor to get wrong.
+        Not paginated, and fifty rows at most, optionally narrowed to `entity_types` (REB-811).
+        A complete history of activity is the entity's own `timeline`, which already exists; a
+        paginated global feed would be a second way to browse the same rows, with its own
+        cursor to get wrong.
 
         Served by `ix_activities_recent` once a space's feed is large enough for the
         planner to want it; nothing asserts the plan since REB-580, because a space's
@@ -42,11 +50,23 @@ class ActivityRepository:
         reason: `occurred_at` has microsecond resolution and rows written in one
         transaction can share it.
         """
+        statement = select(Activity)
+        if entity_types is not None:
+            statement = statement.where(Activity.entity_type.in_(entity_types))
+        if excluded_types:
+            statement = statement.where(Activity.entity_type.not_in(excluded_types))
+        if visible_proposals is not None:
+            # A proposal's timeline is its source's (REB-972): the row of one the caller may not
+            # see (another user's unclassified item, a proposal with an owner) is not in the feed.
+            statement = statement.where(
+                or_(
+                    Activity.entity_type != "proposal",
+                    Activity.entity_id.in_(select(Proposal.id).where(visible_proposals)),
+                )
+            )
         return list(
             self.session.execute(
-                select(Activity)
-                .order_by(Activity.occurred_at.desc(), Activity.id.desc())
-                .limit(limit)
+                statement.order_by(Activity.occurred_at.desc(), Activity.id.desc()).limit(limit)
             ).scalars()
         )
 
@@ -72,7 +92,7 @@ class ActivityRepository:
         return self._newest(kinds, limit)
 
     def by_kind_between(
-        self, kinds: Sequence[str], da: datetime, a: datetime, limit: int = 20
+        self, kinds: Sequence[str], date_from: datetime, date_to: datetime, limit: int = 20
     ) -> list[Activity]:
         """The same read as `by_kind`, restricted to the instants `[da, a)`.
 
@@ -90,7 +110,7 @@ class ActivityRepository:
         """
         if not kinds:
             return []
-        return self._newest(kinds, limit, window=(da, a))
+        return self._newest(kinds, limit, window=(date_from, date_to))
 
     def _newest(
         self,
@@ -103,8 +123,8 @@ class ActivityRepository:
         tie-break is the property both of them are relied on for."""
         stmt = select(Activity).where(Activity.kind.in_(list(kinds)))
         if window is not None:
-            da, a = window
-            stmt = stmt.where(Activity.occurred_at >= da, Activity.occurred_at < a)
+            date_from, date_to = window
+            stmt = stmt.where(Activity.occurred_at >= date_from, Activity.occurred_at < date_to)
         return list(
             self.session.execute(
                 stmt.order_by(Activity.occurred_at.desc(), Activity.id.desc()).limit(limit)

@@ -1,80 +1,106 @@
-FROM python:3.13-slim-trixie
+# The build context is the repository root, not this directory (see the `context:` key in
+# docker-compose.yml): the uv workspace root (pyproject.toml and the one uv.lock shared by
+# every Python project in the monorepo) lives one level above this project. The image
+# mirrors the repository's own layout, so every relative path inside the project keeps
+# meaning in the container exactly what it means in a checkout.
+#
+# Two stages: `build` resolves and installs the virtualenv with uv, `runtime` is Python, the
+# document renderer and the finished /app, with no compiler and no build cache in it.
 
-# Pinned to the exact versions `pigrocrm.core.render` was built and verified against
-# (real compiles, real PDFs read back with `pdftotext` -- see
-# packages/core/tests/test_render_pdf.py and test_template_escaping.py): Pandoc
-# 3.8.2.1 and Typst 0.14.2, not the older pair `.reference-*/Dockerfile` used
-# (Pandoc 3.1.12.2 / Typst 0.11.0). Typst's own diagnostic format
-# (`render/diagnostics.py`'s `_LOCATION_RE`) and the auto-typography workaround
-# (`render/pdf.py`'s `_defeat_typst_autotypography`) were both confirmed against
-# 0.14.2 specifically, not assumed stable across major Typst releases. Typst embeds
-# Libertinus Serif, so no separate font package is needed here.
-ARG TYPST_VERSION=0.14.2
-ARG PANDOC_VERSION=3.8.2.1
+FROM ghcr.io/astral-sh/uv:0.13.7 AS uv
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      libpq5 ca-certificates curl xz-utils poppler-utils \
-    && curl -fL "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz" \
-       | tar -xz -C /tmp \
-    && mv /tmp/pandoc-${PANDOC_VERSION}/bin/pandoc /usr/local/bin/pandoc \
-    && chmod +x /usr/local/bin/pandoc \
-    && curl -fL "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" \
-       | tar -xJ -C /tmp \
-    && mv /tmp/typst-x86_64-unknown-linux-musl/typst /usr/local/bin/typst \
-    && chmod +x /usr/local/bin/typst \
-    && apt-get purge -y curl xz-utils && apt-get autoremove -y \
-    && rm -rf /var/lib/apt/lists/* /tmp/pandoc-${PANDOC_VERSION} /tmp/typst-x86_64-unknown-linux-musl
+FROM python:3.13-slim-trixie AS build
 
-COPY --from=ghcr.io/astral-sh/uv:0.9.24 /uv /usr/local/bin/uv
+COPY --from=uv /uv /usr/local/bin/uv
+
+# `copy`, because the cache mount below is another filesystem than the virtualenv and uv's
+# default hardlinks would fall back to copies with a warning for every package. Bytecode is
+# compiled here, once, so a container with a read-only root filesystem starts as fast as
+# one that can write `__pycache__`.
+ENV UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1
 
 WORKDIR /app
-# The build context is the repository root, not this directory (see the `context:`
-# key in docker-compose.yml). It has to be: the uv workspace root -- pyproject.toml
-# and the one uv.lock shared by every Python project in the monorepo -- lives one
-# level above this project. The image mirrors the repository's own layout, so every
-# relative path inside the project keeps meaning in the container exactly what it
-# means in a checkout.
 COPY pyproject.toml uv.lock ./
 COPY projects/pigrocrm/packages/core/pyproject.toml projects/pigrocrm/packages/core/
 COPY projects/pigrocrm/apps/api/pyproject.toml projects/pigrocrm/apps/api/
 COPY projects/pigrocrm/apps/mcp/pyproject.toml projects/pigrocrm/apps/mcp/
 # `--package` twice, rather than syncing the whole workspace: this image gets this
-# project's dependency closure and not every Python project's. `pigrocrm-mcp` is here
-# on purpose -- the MCP server ships inside the API image and is run on demand, see
-# the comment at the top of docker-compose.yml.
+# project's dependency closure and not every Python project's. `pigrocrm-mcp` is here on
+# purpose: the MCP server ships inside the API image (the `mcp` service of
+# docker-compose.yml runs it, and an operator can run it on demand over stdio).
 #
-# Adding a Python package to the workspace adds a member uv expects to find in this
-# build context too. When that happens this build fails loudly with "Workspace member
-# ... is missing a pyproject.toml", naming it, and the fix is one more COPY line
-# above. Loud is the point: the alternative -- copying the whole tree before
-# resolving -- would silently give up the dependency layer cache instead.
-RUN uv sync --frozen --no-dev --no-install-workspace --package pigrocrm-api --package pigrocrm-mcp
+# Adding a Python package to the workspace adds a member uv expects to find in this build
+# context too. When that happens this build fails loudly with "Workspace member ... is
+# missing a pyproject.toml", naming it, and the fix is one more COPY line above. Loud is
+# the point: copying the whole tree before resolving would silently give up the
+# dependency layer cache instead.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-workspace --package pigrocrm-api --package pigrocrm-mcp
 
 COPY projects/pigrocrm/packages ./projects/pigrocrm/packages
 COPY projects/pigrocrm/apps/api ./projects/pigrocrm/apps/api
 COPY projects/pigrocrm/apps/mcp ./projects/pigrocrm/apps/mcp
-RUN uv sync --frozen --no-dev --package pigrocrm-api --package pigrocrm-mcp
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --package pigrocrm-api --package pigrocrm-mcp
 
-EXPOSE 8000
-# Migrations run at start-up: one instance, so there is no concurrent-migration risk.
-# `alembic upgrade head` here knows only the root database; every space's database is
-# migrated by `ensure-space-defaults` right after, before it is furnished (ORB-189:
-# 0.13.0 shipped a migration the login depends on to spaces that never received it).
-# Both run as the owner, PIGROCRM_ADMIN_DATABASE_URL; `ensure-space-defaults` also
-# creates and grants `pigrocrm_app`, the role PIGROCRM_DATABASE_URL names and uvicorn
-# then connects as, on the root and on every space (REB-634).
+
+FROM python:3.13-slim-trixie AS runtime
+
+# Pinned to the exact versions `pigrocrm.core.render` was built and verified against: Pandoc
+# 3.8.2.1 and Typst 0.14.2 (packages/core/tests/test_render_pdf.py and
+# test_template_escaping.py compile real PDFs and read them back). Typst's diagnostic format
+# (`render/diagnostics.py`'s `_LOCATION_RE`) and the auto-typography workaround
+# (`render/pdf.py`'s `_defeat_typst_autotypography`) were both confirmed against 0.14.2
+# specifically, not assumed stable across major releases. Typst embeds Libertinus Serif, so
+# no separate font package is needed.
 #
-# `--no-sync` on both calls is load-bearing, not decoration: without it, `uv run`
-# re-evaluates the environment against pyproject.toml's *default* group selection --
-# which includes the `dev` group (mypy, ruff, pytest, ...) since nothing here opts
-# out of it the way the two build-time `uv sync --frozen --no-dev` calls above do --
-# and finds the image's venv (built with --no-dev) "out of date", so it syncs dev
-# dependencies in over the network on every single container start. Confirmed live:
-# the very first `docker compose up` of this image, before this flag was added,
-# printed "Downloading mypy (13.5MiB)" / "Downloading ruff (10.4MiB)" to its own
-# startup log. That is dev tooling landing inside a running "production" container
-# after all, just one step later than a `docker build` layer -- and on a host with
-# no route to PyPI, or one where it is slow, this is the difference between the
-# container starting and not. `--no-sync` makes uv trust the image's own venv
-# exactly as built and skip that check entirely.
-CMD ["sh", "-c", "cd projects/pigrocrm/packages/core && uv run --no-sync alembic upgrade head && cd /app && uv run --no-sync python -m pigrocrm.core.cli ensure-space-defaults && uv run --no-sync uvicorn pigrocrm_api.main:app --host 0.0.0.0 --port 8000"]
+# This file is the one place the pair is written: `flake.nix` and `_python-gate.yml` read
+# these four lines, and `projects/hub/Dockerfile.api` repeats them (a test fails when the
+# two images disagree). A bump of a version moves its checksum, taken from the release's
+# own asset (`sha256sum`), and the build stops on a mismatch.
+ARG TYPST_VERSION=0.14.2
+ARG PANDOC_VERSION=3.8.2.1
+ARG PANDOC_SHA256=b362815e21d8ad3629c124aa92baf54558da086ad72374b4f6fdd97b9f3275b0
+ARG TYPST_SHA256=a6044cbad2a954deb921167e257e120ac0a16b20339ec01121194ff9d394996d
+
+# No libpq5 (`psycopg[binary]` carries its own) and no poppler: the tests read a rendered PDF
+# back with `pdftotext`, production reads PDFs with pypdf (`core/text.py`).
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl xz-utils \
+    && curl -fsSL -o /tmp/pandoc.tar.gz "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz" \
+    && echo "${PANDOC_SHA256}  /tmp/pandoc.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/pandoc.tar.gz -C /tmp \
+    && mv "/tmp/pandoc-${PANDOC_VERSION}/bin/pandoc" /usr/local/bin/pandoc \
+    && curl -fsSL -o /tmp/typst.tar.xz "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" \
+    && echo "${TYPST_SHA256}  /tmp/typst.tar.xz" | sha256sum -c - \
+    && tar -xJf /tmp/typst.tar.xz -C /tmp \
+    && mv /tmp/typst-x86_64-unknown-linux-musl/typst /usr/local/bin/typst \
+    && chmod +x /usr/local/bin/pandoc /usr/local/bin/typst \
+    && apt-get purge -y curl xz-utils && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/* /tmp/*
+
+# An unprivileged user for every process of the image. The documents directory is a bind
+# mount from the host: `migrate` in docker-compose.yml hands it to this uid once at every
+# deploy, so there is nothing to do by hand on the host.
+# `uv` stays for the operator: every runbook, the host's crontab and `docker exec` one-offs run
+# `uv run --no-sync <command>` in the container. The service commands do not use it.
+COPY --from=uv /uv /usr/local/bin/uv
+
+RUN useradd --system --uid 10001 --user-group --no-create-home --home-dir /nonexistent app
+
+WORKDIR /app
+COPY --from=build /app /app
+RUN mkdir -p var/documents && chown app:app var/documents
+
+# The image's own virtualenv first on the PATH: `uvicorn`, `alembic` and `python` are the
+# ones uv installed, called directly. The service commands never use `uv run`: even with
+# `--no-sync` it re-evaluates the environment against pyproject.toml's default groups (the
+# `dev` group included), and without the flag, in an image built `--no-dev`, it would sync dev
+# tooling over the network at every start. An operator's one-off keeps `--no-sync`.
+# `XDG_CACHE_HOME` points at /tmp, the one writable path of a container run read-only.
+ENV PATH="/app/.venv/bin:${PATH}" XDG_CACHE_HOME=/tmp PYTHONUNBUFFERED=1
+
+USER app
+EXPOSE 8000
+# Migrations are not here: they run in the `migrate` service of docker-compose.yml, one
+# container before this one, as the owner role (see there). This image only serves.
+CMD ["uvicorn", "pigrocrm_api.main:app", "--host", "0.0.0.0", "--port", "8000"]

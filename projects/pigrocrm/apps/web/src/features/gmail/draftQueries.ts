@@ -32,10 +32,10 @@ export type SendState = EmailDraftRead['send_state']
  * server sends and deletes only from these, and a copy that drifted would offer an
  * «Invia» the API refuses, or hide one it would have accepted.
  *
- * `fallito` is in it on purpose (spec 6.3(a)): a refused send leaves the draft intact
+ * `failed` is in it on purpose (spec 6.3(a)): a refused send leaves the draft intact
  * with the error beside it, and pressing «Invia» again is how it leaves.
  */
-export const SENDABLE_STATES: readonly SendState[] = ['bozza', 'fallito']
+export const SENDABLE_STATES: readonly SendState[] = ['draft', 'failed']
 
 export function isSendable(state: SendState): boolean {
   return SENDABLE_STATES.includes(state)
@@ -52,7 +52,7 @@ export const draftKeys = {
     ['email-drafts', 'entity', entityType, entityId] as const,
 }
 
-/** How often the list is read again while a draft is `in_invio`: a send in flight on
+/** How often the list is read again while a draft is `sending`: a send in flight on
  *  another tab, or one whose request died after the claim, settles on the server and
  *  nowhere else, and a card that never read it again would say «Invio in corso» forever. */
 const IN_FLIGHT_POLL_MS = 10_000
@@ -88,7 +88,7 @@ export function useDraftsForEntity(args: { entityType: GmailEntityType; entityId
       return { ...page, readSeq }
     },
     refetchInterval: (query) =>
-      query.state.data?.items.some((draft) => draft.send_state === 'in_invio')
+      query.state.data?.items.some((draft) => draft.send_state === 'sending')
         ? IN_FLIGHT_POLL_MS
         : false,
   })
@@ -122,14 +122,14 @@ export function patchCachedDraft(
 /**
  * The drafts, whatever happened, the correspondence, and the mailbox's own state: a send
  * that answered writes an outbound message row the Email tab shows, a send that did
- * *not* answer has still moved the draft to `fallito` or `incerto` on the server, and a
+ * *not* answer has still moved the draft to `failed` or `uncertain` on the server, and a
  * token refresh that failed may have marked the mailbox revoked. Settled rather than
  * succeeded is the point: invalidating only on success would leave a refused draft on
  * screen as «Bozza», inviting the same press again.
  */
 function invalidateOutcome(queryClient: QueryClient) {
   void queryClient.invalidateQueries({ queryKey: draftKeys.all })
-  void queryClient.invalidateQueries({ queryKey: ['gmail', 'messages'] })
+  void queryClient.invalidateQueries({ queryKey: gmailKeys.allMessages })
   void queryClient.invalidateQueries({ queryKey: gmailKeys.health })
 }
 
@@ -184,7 +184,7 @@ export function useSendDraft() {
  * A separate mutation from `useSendDraft` for the same reason it is a separate endpoint
  * (`routers/email_drafts.py`): a "riprova" that re-posted the send would offer the
  * recipient a second copy of a message that may already be in their inbox, which is the
- * exact defect `incerto` exists to name.
+ * exact defect `uncertain` exists to name.
  */
 export function useReconcileDraft() {
   const queryClient = useQueryClient()

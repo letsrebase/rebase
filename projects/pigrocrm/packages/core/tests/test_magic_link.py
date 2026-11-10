@@ -21,7 +21,7 @@ SETTINGS = Settings(_env_file=None)  # type: ignore[call-arg]
 def _user(session: Session, email: str = "ada@x.it") -> UserService:
     service = UserService(session)
     service.create(
-        UserCreate(email=email, password="lunghissima1", nome="Ada", ruolo="admin"),
+        UserCreate(email=email, password="lunghissima1", name="Ada", role="admin"),
         Actor.system(),
     )
     return service
@@ -55,7 +55,7 @@ def test_enter_spends_the_token_once_and_verifies_the_address(db_session: Sessio
     assert user is not None and user.email == "ada@x.it"
     assert links.enter(raw) is None  # spent
     row = UserRepository(db_session).get_by_email("ada@x.it")
-    assert row is not None and row.email_verificata_il is not None
+    assert row is not None and row.email_verified_at is not None
 
 
 def test_the_first_entry_revokes_the_sessions_issued_before_it(db_session: Session) -> None:
@@ -91,15 +91,15 @@ def test_an_expired_or_unknown_or_inactive_link_answers_none(db_session: Session
     # REB-292: Ada is the space's only admin, and even the system actor may not
     # take the last one. A survivor first; this test is about the link, not the guard.
     service.create(
-        UserCreate(email="superstite@x.it", password=None, nome="S", ruolo="admin"),
+        UserCreate(email="superstite@x.it", password=None, name="S", role="admin"),
         Actor.system(),
     )
     user = UserRepository(db_session).get_by_email("ada@x.it")
     assert user is not None
-    service.update(user.id, UserUpdate(attivo=False), Actor.system())
+    service.update(user.id, UserUpdate(active=False), Actor.system())
     assert links.enter(raw2) is None
     # Spent all the same: reactivating the account does not revive the link.
-    service.update(user.id, UserUpdate(attivo=True), Actor.system())
+    service.update(user.id, UserUpdate(active=True), Actor.system())
     assert links.enter(raw2) is None
 
 

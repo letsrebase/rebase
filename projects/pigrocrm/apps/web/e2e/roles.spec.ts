@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { login, loginAsAdmin, logout } from './helpers'
 
 /**
- * `collaboratore` sits deliberately in the middle of this product's three roles:
+ * `collaborator` sits deliberately in the middle of this product's three roles:
  * it can write records (unlike `readonly`) but administers nothing
  * (`SettingsLayout.tsx`'s own docstring: Campi/Pipeline/Utenti are admin-only at
  * the service layer). Access tokens are the one screen that specifically must
@@ -12,7 +12,7 @@ import { login, loginAsAdmin, logout } from './helpers'
  * could never do that at all, which is exactly the mistake `routes/app/token.tsx`'s
  * own comment calls out.
  */
-test('a collaboratore is not offered Settings and cannot reach it by URL, but can reach their own tokens', async ({
+test('a collaboratore is offered only their own Settings groups and cannot reach the admin ones by URL, but can reach their own tokens', async ({
   page,
 }) => {
   const email = `collaboratore-${Date.now()}@pigro.it`
@@ -21,10 +21,10 @@ test('a collaboratore is not offered Settings and cannot reach it by URL, but ca
   // Admin creates the collaboratore. The Utenti panel has no «Nuovo utente» form with a
   // password any more: people enter with an invitation by mail (UsersPanel, REB-291), and
   // no mail leaves the e2e stack. `POST /api/users` is still how an admin creates an
-  // account with a password, and `aziende.spec.ts` seeds its second member the same way.
+  // account with a password, and `legal_entities.spec.ts` seeds its second member the same way.
   await loginAsAdmin(page)
   const created = await page.request.post('/api/users', {
-    data: { email, password, nome: 'Collaboratore E2E', ruolo: 'collaboratore' },
+    data: { email, password, name: 'Collaboratore E2E', role: 'collaborator' },
   })
   expect(created.status(), await created.text()).toBe(201)
 
@@ -32,8 +32,14 @@ test('a collaboratore is not offered Settings and cannot reach it by URL, but ca
 
   await login(page, email, password)
 
-  // Not offered: AppShell's nav only renders the Impostazioni link `isAdmin &&`.
-  await expect(page.getByRole('link', { name: 'Impostazioni' })).not.toBeVisible()
+  // Offered, but only the groups this role can open (REB-771): «Personale» and
+  // «Collegamenti», never the admin groups.
+  await page.getByRole('button', { name: 'Impostazioni' }).click()
+  await expect(page.getByRole('link', { name: 'Personale' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Collegamenti' })).toBeVisible()
+  for (const name of ['Spazio e persone', 'Clienti e deal', 'Fatturazione e costi']) {
+    await expect(page.getByRole('link', { name })).not.toBeVisible()
+  }
 
   // Cannot reach it by typing the URL either -- SettingsLayout itself refuses,
   // in place, with no redirect (routes/app.tsx's own guard only checks "is
@@ -44,7 +50,7 @@ test('a collaboratore is not offered Settings and cannot reach it by URL, but ca
 
   // ...but *can* reach, and fully use, their own access tokens.
   await page.goto('/app/token')
-  await expect(page.getByRole('heading', { name: 'Token di accesso' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Agenti' })).toBeVisible()
   await page.getByRole('button', { name: /nuovo token/i }).click()
   const tokenDialog = page.getByRole('dialog')
   await tokenDialog.getByLabel('Nome').fill('Token E2E collaboratore')

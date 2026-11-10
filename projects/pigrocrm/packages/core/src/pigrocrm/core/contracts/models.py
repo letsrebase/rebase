@@ -3,7 +3,7 @@
 
 `Deal` (`deals/models.py`) is the closest existing entity and is the wrong shape on
 every axis that matters: no validity period, no renewal type, and its own docstring
-frames it as a pre-sale opportunity that becomes `chiuso_il` when it leaves the
+frames it as a pre-sale opportunity that becomes `closed_at` when it leaves the
 pipeline. A contract outlives any one sales cycle and can renew into a new term with
 its own rate card -- genuinely new tables, not a widening of `Deal`.
 
@@ -41,106 +41,126 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB, ExcludeConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
-from pigrocrm.core.emitter.models import default_azienda_id
+from pigrocrm.core.legal_entities.models import default_legal_entity_id
 
 # Closed sets spelled `String(n)` + a CHECK, never a Postgres `ENUM` -- the same
-# convention `documents.tipo`/`invoices.tipo` already use, for the same reason: a
+# convention `documents.type`/`invoices.type` already use, for the same reason: a
 # future value costs a schema constant rather than an `ALTER TYPE` migration.
-RENEWAL_TYPES: tuple[str, ...] = ("nessuno", "esplicito", "opzione_controparte", "tacito")
-RATE_CARD_TIPI: tuple[str, ...] = ("ricorrente_fisso", "giornaliero", "orario", "una_tantum")
-RATE_CARD_UNITA: tuple[str, ...] = ("ora", "giorno", "mese", "anno", "forfait")
-RATE_CARD_PERIODI: tuple[str, ...] = ("mensile", "trimestrale", "annuale", "una_tantum")
+RENEWAL_TYPES: tuple[str, ...] = ("none", "explicit", "counterparty_option", "tacit")
+RATE_CARD_TYPES: tuple[str, ...] = ("fixed_recurring", "daily", "hourly", "one_off")
+# The cards a worked day is priced by; at most one is in force on a date.
+RATE_CARD_DAY_HOUR_TYPES: tuple[str, ...] = ("daily", "hourly")
+RATE_CARD_UNIT: tuple[str, ...] = ("hour", "day", "month", "year", "flat")
+RATE_CARD_PERIODS: tuple[str, ...] = ("monthly", "quarterly", "annual", "one_off")
 
 
 class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     """One customer engagement with its own validity period and renewal clause --
     mastro's `contract` (`contract.ts:109-262`), spec §3.
 
-    `tipo_rinnovo`/`stato` are Italian values matching every other closed set already
-    on this schema (`invoices.stato`); `cadenza_fatturazione` carries no CHECK on
+    `renewal_type`/`status` are Italian values matching every other closed set already
+    on this schema (`invoices.status`); `billing_cadence` carries no CHECK on
     purpose -- its exact value set is the implementing issue's own concern to pin
     against real engagements, not invented here (spec §3's own note).
 
-    `contratto_precedente_id` is the renewal chain (`contract.ts:244-261`) and is
-    deliberately left unset by this spike: nothing here writes it. The column exists
-    so a later, dedicated renewal-automation issue has somewhere to write.
+    `previous_contract_id` is the renewal chain (`contract.ts:244-261`): written only
+    by `ContractService.renew` (REB-763), unique, so a contract is renewed once.
     """
 
     __tablename__ = "contracts"
 
     customer_id: Mapped[UUID] = mapped_column(
-        ForeignKey("customers.id"), nullable=False, index=True
+        ForeignKey("organizations.id"), nullable=False, index=True
     )
-    # The customer's azienda at creation (REB-623, §1.7), kept from then on.
-    azienda_id: Mapped[UUID] = mapped_column(
-        ForeignKey("emitter_profile.id"), nullable=False, index=True, default=default_azienda_id
+    # The customer's legal entity at creation (REB-623, §1.7), kept from then on.
+    legal_entity_id: Mapped[UUID] = mapped_column(
+        ForeignKey("legal_entities.id"),
+        nullable=False,
+        index=True,
+        default=default_legal_entity_id,
     )
-    titolo: Mapped[str] = mapped_column(String(255), nullable=False)
-    inizio: Mapped[date] = mapped_column(Date, nullable=False)
-    fine: Mapped[date | None] = mapped_column(Date, default=None)
-    tipo_rinnovo: Mapped[str] = mapped_column(String(20), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    start: Mapped[date] = mapped_column(Date, nullable=False)
+    end: Mapped[date | None] = mapped_column(Date, default=None)
+    renewal_type: Mapped[str] = mapped_column(String(20), nullable=False)
     # Required by a CHECK whenever `tipo_rinnovo <> 'nessuno'` -- see __table_args__.
-    preavviso_rinnovo_giorni: Mapped[int | None] = mapped_column(Integer, default=None)
-    preavviso_disdetta_giorni: Mapped[int] = mapped_column(Integer, nullable=False)
-    # Reuses `Customer.giorni_pagamento`/`pagamento_fine_mese`'s exact shape
+    renewal_notice_days: Mapped[int | None] = mapped_column(Integer, default=None)
+    termination_notice_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Reuses `Organization.payment_days`/`payment_end_of_month`'s exact shape
     # (REB-326) rather than a second payment-terms representation. Null cascades to
-    # the customer's own term, the same way `Customer.giorni_pagamento` null already
-    # cascades to `FiscalProfile.giorni_scadenza`. Unlike `Customer`'s own copy,
-    # `pagamento_fine_mese` is nullable here and tied to `giorni_pagamento` by the
+    # the customer's own term, the same way `Organization.payment_days` null already
+    # cascades to `FiscalProfile.due_days`. Unlike `Organization`'s own copy,
+    # `payment_end_of_month` is nullable here and tied to `payment_days` by the
     # "together" CHECK below -- the override is atomic: a contract states both of its
     # own payment-term facts or neither.
-    giorni_pagamento: Mapped[int | None] = mapped_column(Integer, default=None)
-    pagamento_fine_mese: Mapped[bool | None] = mapped_column(Boolean, default=None)
-    cadenza_fatturazione: Mapped[str] = mapped_column(String(20), nullable=False)
-    divisa: Mapped[str] = mapped_column(
+    payment_days: Mapped[int | None] = mapped_column(Integer, default=None)
+    payment_end_of_month: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    billing_cadence: Mapped[str] = mapped_column(String(20), nullable=False)
+    currency: Mapped[str] = mapped_column(
         String(3), nullable=False, default="EUR", server_default=text("'EUR'")
     )
     requires_prior_approval: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
-    # The rivalsa INPS election (spec §9), read at invoice-line-construction time by a
+    # The social security surcharge election (spec §9), read at invoice-line-construction time by a
     # later issue; nothing here consumes it yet.
     applies_social_charge: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # REB-761: the share of the legal entity's invoiced revenue its customer must not reach over
+    # this
+    # contract's own anniversary year, as a percentage the way its owner reads it
+    # (`50.00`, the `FiscalProfile` rates' own shape), `NULL` for no cap. A clause of the
+    # contract and not of the regime (mastro's invariant 2): it survives a change of pack.
+    # What it is compared with is `ContractService.concentration_cap`'s share.
+    customer_share_cap: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=None)
     # mastro's `ExpensePolicy` (`contract.ts:90-99`), kept as a tagged JSONB union
     # rather than flattened: unlike payment terms, this one genuinely needs a payload
     # (a cap amount) on only one of its variants. Not deeply validated here -- the
     # rebillable-expenses issue (§7) is what reads and enforces its shape.
-    politica_spese: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    stato: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="bozza", server_default=text("'bozza'")
+    expense_policy: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="draft", server_default=text("'draft'")
     )
-    contratto_precedente_id: Mapped[UUID | None] = mapped_column(
+    previous_contract_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("contracts.id"), default=None, unique=True
     )
+    # The deal this contract was converted from (spec 2026-11-03 §8), written only by
+    # `ContractService.create_from_deal`. Unique: a deal becomes at most one contract. A
+    # renewal does not carry it; the chain is `previous_contract_id`.
+    deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"), default=None, unique=True)
     note: Mapped[str | None] = mapped_column(Text, default=None)
     custom_fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
     __table_args__ = (
         CheckConstraint(
-            f"tipo_rinnovo IN {RENEWAL_TYPES!r}",
-            name="ck_contracts_tipo_rinnovo",
+            f"renewal_type IN {RENEWAL_TYPES!r}",
+            name="ck_contracts_renewal_type",
         ),
         # The "together" shape this schema already uses for
-        # `ck_invoices_anno_numero_together`/`ck_invoices_snapshot_together`
+        # `ck_invoices_year_number_together`/`ck_invoices_snapshot_together`
         # (invoices/models.py): a contract either states both of its own payment-term
-        # facts or neither, never `giorni_pagamento` paired with a
-        # `pagamento_fine_mese` the contract never set.
+        # facts or neither, never `payment_days` paired with a
+        # `payment_end_of_month` the contract never set.
         CheckConstraint(
-            "(giorni_pagamento IS NULL) = (pagamento_fine_mese IS NULL)",
+            "(payment_days IS NULL) = (payment_end_of_month IS NULL)",
             name="ck_contracts_payment_terms_together",
         ),
         CheckConstraint(
-            "tipo_rinnovo = 'nessuno' OR preavviso_rinnovo_giorni IS NOT NULL",
-            name="ck_contracts_preavviso_rinnovo_required",
+            "renewal_type = 'none' OR renewal_notice_days IS NOT NULL",
+            name="ck_contracts_notice_renewal_required",
         ),
-        CheckConstraint("fine IS NULL OR inizio <= fine", name="ck_contracts_fine_ordered"),
+        CheckConstraint('"end" IS NULL OR start <= "end"', name="ck_contracts_end_ordered"),
+        # A cap of 0 forbids the customer and one of 100 never binds: neither is a clause.
+        CheckConstraint(
+            "customer_share_cap IS NULL OR (customer_share_cap > 0 AND customer_share_cap < 100)",
+            name="ck_contracts_customer_share_cap_range",
+        ),
         Index("ix_contracts_custom_fields", "custom_fields", postgresql_using="gin"),
         # Residuo R9: one `(column, id)` B-tree per key CONTRACT_SORTS admits.
         Index("ix_contracts_created_at_id", "created_at", "id"),
         Index("ix_contracts_updated_at_id", "updated_at", "id"),
-        Index("ix_contracts_titolo_id", "titolo", "id"),
+        Index("ix_contracts_title_id", "title", "id"),
     )
 
 
@@ -159,52 +179,69 @@ class RateCard(Base, PrimaryKeyMixin, TimestampMixin):
     contract_id: Mapped[UUID] = mapped_column(
         ForeignKey("contracts.id"), nullable=False, index=True
     )
-    valido_da: Mapped[date] = mapped_column(Date, nullable=False)
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
     # Null is the open (current) card -- mastro's own convention.
-    valido_a: Mapped[date | None] = mapped_column(Date, default=None)
-    tipo: Mapped[str] = mapped_column(String(20), nullable=False)
-    importo: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    unita: Mapped[str] = mapped_column(String(10), nullable=False)
-    frazioni_ammesse: Mapped[list[Decimal]] = mapped_column(
+    valid_to: Mapped[date | None] = mapped_column(Date, default=None)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    unit: Mapped[str] = mapped_column(String(10), nullable=False)
+    allowed_fractions: Mapped[list[Decimal]] = mapped_column(
         ARRAY(Numeric(4, 2)),
         nullable=False,
         default=lambda: [Decimal("1")],
         server_default=text("ARRAY[1]::numeric(4,2)[]"),
     )
     # Meaningful, and CHECK-enforceable, only for `tipo = 'orario'`.
-    ore_minime: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), default=None)
+    minimum_hours: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), default=None)
     # Meaningful, and CHECK-enforceable, only for `tipo = 'ricorrente_fisso'`.
-    periodo_erogazione: Mapped[str | None] = mapped_column(String(20), default=None)
+    # A fee card's period; a day or hour card carries one only together with
+    # `expected_quantity` (the forecast a converted deal line brought).
+    delivery_period: Mapped[str | None] = mapped_column(String(20), default=None)
+    # The days or hours expected per delivery period; day and hour cards only.
+    expected_quantity: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), default=None)
 
     __table_args__ = (
-        CheckConstraint(f"tipo IN {RATE_CARD_TIPI!r}", name="ck_rate_cards_tipo"),
-        CheckConstraint(f"unita IN {RATE_CARD_UNITA!r}", name="ck_rate_cards_unita"),
+        CheckConstraint(f"type IN {RATE_CARD_TYPES!r}", name="ck_rate_cards_type"),
+        CheckConstraint(f"unit IN {RATE_CARD_UNIT!r}", name="ck_rate_cards_unit"),
         CheckConstraint(
-            f"periodo_erogazione IS NULL OR periodo_erogazione IN {RATE_CARD_PERIODI!r}",
-            name="ck_rate_cards_periodo_erogazione_values",
+            f"delivery_period IS NULL OR delivery_period IN {RATE_CARD_PERIODS!r}",
+            name="ck_rate_cards_delivery_period_values",
         ),
         CheckConstraint(
-            "tipo = 'orario' OR ore_minime IS NULL",
-            name="ck_rate_cards_ore_minime_only_orario",
+            "type = 'hourly' OR minimum_hours IS NULL",
+            name="ck_rate_cards_minimum_hours_only_hourly",
         ),
         CheckConstraint(
-            "tipo = 'ricorrente_fisso' OR periodo_erogazione IS NULL",
-            name="ck_rate_cards_periodo_only_ricorrente_fisso",
+            "type = 'fixed_recurring' OR delivery_period IS NULL "
+            "OR (type IN ('daily', 'hourly') AND expected_quantity IS NOT NULL "
+            "AND delivery_period IN ('one_off', 'monthly', 'annual'))",
+            name="ck_rate_cards_period_only_fixed_recurring",
         ),
         CheckConstraint(
-            "valido_a IS NULL OR valido_da <= valido_a",
+            "type IN ('daily', 'hourly') OR expected_quantity IS NULL",
+            name="ck_rate_cards_quantity_only_day_hour",
+        ),
+        CheckConstraint(
+            "type NOT IN ('daily', 'hourly') OR expected_quantity IS NULL "
+            "OR delivery_period IS NOT NULL",
+            name="ck_rate_cards_quantity_with_period",
+        ),
+        CheckConstraint(
+            "valid_to IS NULL OR valid_from <= valid_to",
             name="ck_rate_cards_validity_ordered",
         ),
-        # Non-overlapping validity per contract, database-enforced: a NULL bound in
+        # Non-overlapping validity of the day and hour cards per contract (the one rate a
+        # worked day is priced by); fee cards overlap freely. Database-enforced: a NULL bound in
         # `daterange(...)` is Postgres's own "unbounded on this side", which is
         # exactly the open-ended-current-card semantics `valido_a IS NULL` already
-        # carries. `'[]'` (both bounds inclusive) matches how `valido_da`/`valido_a`
+        # carries. `'[]'` (both bounds inclusive) matches how `valid_from`/`valid_to`
         # are read elsewhere -- two cards are "adjacent, not overlapping" when the
-        # second's `valido_da` is the day after the first's `valido_a`.
+        # second's `valid_from` is the day after the first's `valid_to`.
         ExcludeConstraint(
             (column("contract_id"), "="),
-            (func.daterange(column("valido_da"), column("valido_a"), text("'[]'")), "&&"),
+            (func.daterange(column("valid_from"), column("valid_to"), text("'[]'")), "&&"),
             using="gist",
+            where=text("type IN ('daily', 'hourly')"),
             name="ck_rate_cards_no_overlap",
         ),
     )
@@ -223,7 +260,7 @@ class RenewalAssumption(Base, PrimaryKeyMixin, TimestampMixin):
     to one contract instead of the whole installation. No `SoftDeleteMixin`, matching
     `RateCard`: an owned fact of its contract, cleared by overwriting it, not archived.
 
-    `probabilita` is `Integer`, 0-100, matching `Deal.probabilita`'s own shape
+    `probability` is `Integer`, 0-100, matching `Deal.probability`'s own shape
     (deals/models.py) rather than mastro's `number` 0-1 fraction -- the same percentage
     concept already has one representation on this schema, and a second one beside it
     is exactly the duplication this project's own rule forbids. The projection divides
@@ -235,16 +272,45 @@ class RenewalAssumption(Base, PrimaryKeyMixin, TimestampMixin):
     contract_id: Mapped[UUID] = mapped_column(
         ForeignKey("contracts.id"), nullable=False, unique=True
     )
-    probabilita: Mapped[int] = mapped_column(Integer, nullable=False)
-    volume_atteso: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    orizzonte_al: Mapped[date] = mapped_column(Date, nullable=False)
+    probability: Mapped[int] = mapped_column(Integer, nullable=False)
+    expected_volume: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    horizon_until: Mapped[date] = mapped_column(Date, nullable=False)
 
     __table_args__ = (
         CheckConstraint(
-            "probabilita >= 0 AND probabilita <= 100",
-            name="ck_renewal_assumptions_probabilita_range",
+            "probability >= 0 AND probability <= 100",
+            name="ck_renewal_assumptions_probability_range",
         ),
         CheckConstraint(
-            "volume_atteso >= 0", name="ck_renewal_assumptions_volume_atteso_non_negative"
+            "expected_volume >= 0", name="ck_renewal_assumptions_expected_volume_not_negative"
         ),
     )
+
+
+class ClauseNote(Base, PrimaryKeyMixin, TimestampMixin):
+    """A reading of one clause of a contract, written down next to the words it was read
+    from -- mastro's `clause_note` (`clause-note.ts`), REB-762.
+
+    A real clause sometimes admits more than one honest reading (a renewal clause that is
+    both «ends unless the client elects to renew» and «either party may refuse renewal
+    with notice»), and the system must not pretend to know which governs. This is where
+    the interpretation actually adopted lives, with the verbatim text it came from, so a
+    later dispute rereads a decision instead of re-guessing one. It is read with the
+    contract (`ContractDetail.note_clauses`), so an agent that opens the contract sees
+    what the person decided about its clauses.
+
+    Owned by its contract, like a rate card: no `SoftDeleteMixin` and no delete, a wrong
+    note is corrected by editing it. `clause_reference` is free text, since numbering
+    follows whatever convention the contract itself uses.
+    """
+
+    __tablename__ = "clause_notes"
+
+    contract_id: Mapped[UUID] = mapped_column(
+        ForeignKey("contracts.id"), nullable=False, index=True
+    )
+    # e.g. "Art. 8.3 Rinnovo".
+    clause_reference: Mapped[str] = mapped_column(String(200), nullable=False)
+    literal_text: Mapped[str] = mapped_column(Text, nullable=False)
+    adopted_interpretation: Mapped[str] = mapped_column(Text, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, default=None)

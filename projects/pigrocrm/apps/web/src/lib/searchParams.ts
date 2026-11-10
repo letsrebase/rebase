@@ -3,7 +3,7 @@
  *
  * The router's default parser is `JSON.parse` per value, so a
  * `<Link search={{ scadute: true }}>` arrives here as a real boolean. A hand-typed,
- * bookmarked or hand-edited URL does not: `?scadute=vero` arrives as the string `"vero"`,
+ * bookmarked or hand-edited URL does not: `?overdue=vero` arrives as the string `"vero"`,
  * and the obvious `Boolean(value)` is `true` for **every** non-empty string -- `"false"`
  * and `"0"` included. That turns "no filter" into a filter, on a list whose whole promise
  * is that it shows the rows the count beside it counted.
@@ -12,7 +12,7 @@
  * `"true"`, and `undefined` -- the *absence* of a filter -- for everything else, `false`
  * included. `undefined` rather than `false` matters twice: it is what keeps the parameter
  * out of the URL that TanStack rebuilds, and it is what keeps it out of the query object
- * `openapi-fetch` serialises, so `?scadute=false` never reaches an API that treats the
+ * `openapi-fetch` serialises, so `?overdue=false` never reaches an API that treats the
  * presence of the key as the filter.
  *
  * Shared by `routes/app/deal/list.tsx` and `routes/app/invoices/index.tsx` rather than

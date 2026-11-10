@@ -62,24 +62,30 @@ jobs:
     name: ${{ inputs.job-name }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Inputs reach the shell through `env`, so a value is data to it and never text
+    # an expression pastes into a command line.
+    env:
+      FILTER: ${{ inputs.filter }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # No version pinned here: pnpm/action-setup reads `packageManager` from the
-      # root package.json, which is the single place the version is decided.
-      - uses: pnpm/action-setup@v6
+      # root package.json, and setup-node reads `.nvmrc`: each is decided in one place.
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - run: pnpm install --frozen-lockfile --filter ${{ inputs.filter }}...
+      - run: pnpm install --frozen-lockfile --filter "${FILTER}..."
 
       - name: Lint
         if: inputs.lint
-        run: pnpm --filter ${{ inputs.filter }} lint
+        run: pnpm --filter "$FILTER" lint
 
       # Order is load-bearing, and was learned the hard way in this repository's
       # first workflow. A bare `tsc --noEmit` needs src/routeTree.gen.ts to exist:
@@ -95,12 +101,12 @@ jobs:
         if: inputs.test
         env:
           SHARD: ${{ inputs.shard }}
-        run: pnpm --filter ${{ inputs.filter }} test ${SHARD:+--shard=$SHARD}
+        run: pnpm --filter "$FILTER" test ${SHARD:+--shard=$SHARD}
 
       - name: Build
         if: inputs.build
-        run: pnpm --filter ${{ inputs.filter }} build
+        run: pnpm --filter "$FILTER" build
 
       - name: Type check
         if: inputs.typecheck
-        run: pnpm --filter ${{ inputs.filter }} exec tsc --noEmit
+        run: pnpm --filter "$FILTER" exec tsc --noEmit

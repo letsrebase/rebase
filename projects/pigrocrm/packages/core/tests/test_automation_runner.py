@@ -34,11 +34,11 @@ from pigrocrm.core.automations.schemas import (
     AutomationConfigUpdate,
     AutomationSkipReason,
 )
-from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.documents.models import Document
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.pipeline.schemas import PipelineStageRead
 from pigrocrm.core.pipeline.service import PipelineService
@@ -55,14 +55,14 @@ def stages(db_session: Session) -> dict[str, PipelineStageRead]:
 
 @pytest.fixture
 def deal(db_session: Session, stages: dict[str, PipelineStageRead]) -> Deal:
-    customer = Customer(ragione_sociale="Cliente Srl", nazione="IT", custom_fields={})
+    customer = Organization(legal_name="Cliente Srl", country="IT", custom_fields={})
     db_session.add(customer)
     db_session.flush()
     row = Deal(
-        nome="Impianto",
+        name="Impianto",
         customer_id=customer.id,
         pipeline_stage_id=stages["lead"].id,
-        probabilita=10,
+        probability=10,
         custom_fields={},
     )
     db_session.add(row)
@@ -70,13 +70,13 @@ def deal(db_session: Session, stages: dict[str, PipelineStageRead]) -> Deal:
     return row
 
 
-def _offer(db_session: Session, deal: Deal, stato: str) -> Document:
+def _offer(db_session: Session, deal: Deal, status: str) -> Document:
     document = Document(
         deal_id=deal.id,
-        tipo="offerta",
-        titolo="Offerta impianti",
-        stato=stato,
-        versione_corrente=1,
+        type="offer",
+        title="Offerta impianti",
+        status=status,
+        current_version=1,
         custom_fields={},
     )
     db_session.add(document)
@@ -94,22 +94,22 @@ def _kinds(db_session: Session, kind: str) -> list[Activity]:
 def test_a1_moves_the_deal_to_won(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> None:
-    document = _offer(db_session, deal, "accettata")
-    AutomationRunner(db_session).on_offer_state_changed(document, "inviata", ADMIN)
+    document = _offer(db_session, deal, "accepted")
+    AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
     db_session.flush()
-    assert deal.pipeline_stage_id == stages["vinto"].id
-    assert deal.probabilita == 100
+    assert deal.pipeline_stage_id == stages["won"].id
+    assert deal.probability == 100
 
 
 def test_a1_writes_exactly_one_activity_attributed_to_the_system(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> None:
-    """§16 criterion 8. One entry, `actor_type='system'`, and `attivata_da` naming the
+    """§16 criterion 8. One entry, `actor_type='system'`, and `triggered_by` naming the
     human -- the timeline says "the system did it" *and* "because you accepted that
     offer". `Actor.system()` carries `id=None`, which is why the trigger's actor lives in
     the payload."""
-    document = _offer(db_session, deal, "accettata")
-    AutomationRunner(db_session).on_offer_state_changed(document, "inviata", ADMIN)
+    document = _offer(db_session, deal, "accepted")
+    AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
     db_session.flush()
 
     moved = _kinds(db_session, KIND_STAGE_MOVED)
@@ -119,11 +119,11 @@ def test_a1_writes_exactly_one_activity_attributed_to_the_system(
     assert entry.entity_id == deal.id
     assert entry.actor_type == "system"
     assert entry.actor_id is None
-    assert entry.payload["regola"] == "A1"
-    assert entry.payload["documento_id"] == str(document.id)
-    assert entry.payload["attivata_da"] == str(ADMIN.id)
-    assert entry.payload["da"] == "Lead"
-    assert entry.payload["a"] == "Vinto"
+    assert entry.payload["rule"] == "A1"
+    assert entry.payload["document_id"] == str(document.id)
+    assert entry.payload["triggered_by"] == str(ADMIN.id)
+    assert entry.payload["from"] == "Lead"
+    assert entry.payload["to"] == "Vinto"
 
 
 def test_a1_does_not_write_a_second_stage_changed_entry(
@@ -132,19 +132,19 @@ def test_a1_does_not_write_a_second_stage_changed_entry(
     """§9.3: one entry for the movement, not two. Calling `move_stage` from the runner
     would produce a parallel `stage_changed` and the timeline would show one movement
     twice."""
-    document = _offer(db_session, deal, "accettata")
-    AutomationRunner(db_session).on_offer_state_changed(document, "inviata", ADMIN)
+    document = _offer(db_session, deal, "accepted")
+    AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
     db_session.flush()
     assert _kinds(db_session, "stage_changed") == []
 
 
-def test_a1_ignores_a_transition_that_is_not_inviata_to_accettata(
+def test_to_1_ignores_to_transition_that_is_not_sent_to_accepted(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> None:
-    """`rifiutata` moves nothing: an offer refused is almost always followed by a revision,
+    """`rejected` moves nothing: an offer refused is almost always followed by a revision,
     and marking the deal lost would force reopening it to tell the truth (§9.2)."""
-    document = _offer(db_session, deal, "rifiutata")
-    AutomationRunner(db_session).on_offer_state_changed(document, "inviata", ADMIN)
+    document = _offer(db_session, deal, "rejected")
+    AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
     db_session.flush()
     assert deal.pipeline_stage_id == stages["lead"].id
     assert _kinds(db_session, KIND_STAGE_MOVED) == []
@@ -153,21 +153,21 @@ def test_a1_ignores_a_transition_that_is_not_inviata_to_accettata(
 
 
 def test_a1_on_an_offer_without_a_deal_does_nothing(db_session: Session) -> None:
-    customer = Customer(ragione_sociale="Cliente Srl", nazione="IT", custom_fields={})
+    customer = Organization(legal_name="Cliente Srl", country="IT", custom_fields={})
     db_session.add(customer)
     db_session.flush()
     document = Document(
         customer_id=customer.id,
-        tipo="offerta",
-        titolo="Offerta",
-        stato="accettata",
-        versione_corrente=1,
+        type="offer",
+        title="Offerta",
+        status="accepted",
+        current_version=1,
         custom_fields={},
     )
     db_session.add(document)
     db_session.flush()
 
-    AutomationRunner(db_session).on_offer_state_changed(document, "inviata", ADMIN)
+    AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
     db_session.flush()
     assert _kinds(db_session, KIND_STAGE_MOVED) == []
     assert _kinds(db_session, KIND_NOT_EXECUTED) == []
@@ -179,15 +179,15 @@ def test_a1_on_an_offer_whose_deal_was_soft_deleted_records_nothing(
     """The other "there was nothing to move" case, and the reason it is not one of the
     four: the four reasons describe an automation declining, and here no rule was ever
     selected. A soft-deleted deal is the same class of non-event as an offer attached to a
-    customer -- recording `stage_bersaglio_assente` would be a lie about *which* thing is
+    customer -- recording `target_stage_missing` would be a lie about *which* thing is
     missing, and it is the target stage's name."""
     from datetime import UTC, datetime
 
-    document = _offer(db_session, deal, "accettata")
+    document = _offer(db_session, deal, "accepted")
     deal.deleted_at = datetime.now(UTC)
     db_session.flush()
 
-    AutomationRunner(db_session).on_offer_state_changed(document, "inviata", ADMIN)
+    AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
     db_session.flush()
     assert _kinds(db_session, KIND_STAGE_MOVED) == []
     assert _kinds(db_session, KIND_NOT_EXECUTED) == []
@@ -198,13 +198,13 @@ def test_a1_resolves_by_code_and_not_by_name(
 ) -> None:
     """The stage renamed, the automation unaffected. This is what `code` is for
     (slice 1 §5.4, residuo R11)."""
-    won = db_session.get(PipelineStage, stages["vinto"].id)
+    won = db_session.get(PipelineStage, stages["won"].id)
     assert won is not None
-    won.nome = "Chiuso positivo"
+    won.name = "Chiuso positivo"
     db_session.flush()
 
-    document = _offer(db_session, deal, "accettata")
-    AutomationRunner(db_session).on_offer_state_changed(document, "inviata", ADMIN)
+    document = _offer(db_session, deal, "accepted")
+    AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
     db_session.flush()
     assert deal.pipeline_stage_id == won.id
 
@@ -212,13 +212,13 @@ def test_a1_resolves_by_code_and_not_by_name(
 def test_a1_falls_back_to_the_single_won_stage_when_the_code_is_gone(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> None:
-    won = db_session.get(PipelineStage, stages["vinto"].id)
+    won = db_session.get(PipelineStage, stages["won"].id)
     assert won is not None
     won.code = None
     db_session.flush()
 
-    document = _offer(db_session, deal, "accettata")
-    AutomationRunner(db_session).on_offer_state_changed(document, "inviata", ADMIN)
+    document = _offer(db_session, deal, "accepted")
+    AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
     db_session.flush()
     assert deal.pipeline_stage_id == won.id
 
@@ -226,26 +226,24 @@ def test_a1_falls_back_to_the_single_won_stage_when_the_code_is_gone(
 def test_a1_refuses_to_guess_between_two_won_stages(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> None:
-    """Residuo **R14**: nothing forbids two `tipo='won'` stages, and no migration in this
+    """Residuo **R14**: nothing forbids two `type='won'` stages, and no migration in this
     slice adds a constraint -- it would refuse data an installation may have created for a
     reason. So the automation does not guess; it declines and says why."""
-    won = db_session.get(PipelineStage, stages["vinto"].id)
+    won = db_session.get(PipelineStage, stages["won"].id)
     assert won is not None
     won.code = None
-    db_session.add(
-        PipelineStage(nome="Vinto bis", posizione=6, probabilita_default=100, tipo="won")
-    )
+    db_session.add(PipelineStage(name="Vinto bis", position=6, default_probability=100, type="won"))
     db_session.flush()
 
-    document = _offer(db_session, deal, "accettata")
-    AutomationRunner(db_session).on_offer_state_changed(document, "inviata", ADMIN)
+    document = _offer(db_session, deal, "accepted")
+    AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
     db_session.flush()
 
     assert deal.pipeline_stage_id == stages["lead"].id
     skipped = _kinds(db_session, KIND_NOT_EXECUTED)
     assert len(skipped) == 1
-    assert skipped[0].payload["motivo"] == "stage_bersaglio_ambiguo"
-    assert skipped[0].payload["regola"] == "A1"
+    assert skipped[0].payload["reason"] == "target_stage_ambiguous"
+    assert skipped[0].payload["rule"] == "A1"
 
 
 def test_a1_declines_when_there_is_no_won_stage_at_all(
@@ -253,17 +251,17 @@ def test_a1_declines_when_there_is_no_won_stage_at_all(
 ) -> None:
     """§16 criterion 7's second half: accepting the offer **succeeds**, and the
     non-execution is recorded."""
-    won = db_session.get(PipelineStage, stages["vinto"].id)
+    won = db_session.get(PipelineStage, stages["won"].id)
     assert won is not None
     db_session.delete(won)
     db_session.flush()
 
-    document = _offer(db_session, deal, "accettata")
-    AutomationRunner(db_session).on_offer_state_changed(document, "inviata", ADMIN)
+    document = _offer(db_session, deal, "accepted")
+    AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
     db_session.flush()
 
     skipped = _kinds(db_session, KIND_NOT_EXECUTED)
-    assert skipped[0].payload["motivo"] == "stage_bersaglio_assente"
+    assert skipped[0].payload["reason"] == "target_stage_missing"
 
 
 def test_a1_on_a_deal_already_won_is_a_recorded_no_op(
@@ -272,16 +270,16 @@ def test_a1_on_a_deal_already_won_is_a_recorded_no_op(
     """§16 criterion 8: idempotence is *inherited*, not added (§9.4). The effect is a
     state, not an increment, so a second accepted offer produces one move and one recorded
     no-op -- and no execution-log table is needed to know that."""
-    deal.pipeline_stage_id = stages["vinto"].id
+    deal.pipeline_stage_id = stages["won"].id
     db_session.flush()
 
-    document = _offer(db_session, deal, "accettata")
-    AutomationRunner(db_session).on_offer_state_changed(document, "inviata", ADMIN)
+    document = _offer(db_session, deal, "accepted")
+    AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
     db_session.flush()
 
     assert _kinds(db_session, KIND_STAGE_MOVED) == []
     skipped = _kinds(db_session, KIND_NOT_EXECUTED)
-    assert skipped[0].payload["motivo"] == "gia_nello_stato"
+    assert skipped[0].payload["reason"] == "already_in_state"
 
 
 def test_a1_declines_when_the_rule_is_switched_off(
@@ -290,16 +288,16 @@ def test_a1_declines_when_the_rule_is_switched_off(
     """§16 criterion 9. Disabled means disabled, and it says so rather than staying
     silent -- otherwise "off" and "broken" look identical."""
     AutomationConfigService(db_session).update_automation_config(
-        AutomationConfigUpdate(a1_offerta_accettata_vince_deal=False), ADMIN
+        AutomationConfigUpdate(a1_wins_accepted_offer_deal=False), ADMIN
     )
 
-    document = _offer(db_session, deal, "accettata")
-    AutomationRunner(db_session).on_offer_state_changed(document, "inviata", ADMIN)
+    document = _offer(db_session, deal, "accepted")
+    AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
     db_session.flush()
 
     assert deal.pipeline_stage_id == stages["lead"].id
     skipped = _kinds(db_session, KIND_NOT_EXECUTED)
-    assert skipped[0].payload["motivo"] == "regola_disattivata"
+    assert skipped[0].payload["reason"] == "rule_disabled"
 
 
 def test_switching_a1_off_leaves_a2_alone(
@@ -308,12 +306,12 @@ def test_switching_a1_off_leaves_a2_alone(
     """The two switches are two switches. Reading the wrong column is a defect that looks
     exactly like a working automation until somebody disables the other rule."""
     AutomationConfigService(db_session).update_automation_config(
-        AutomationConfigUpdate(a1_offerta_accettata_vince_deal=False), ADMIN
+        AutomationConfigUpdate(a1_wins_accepted_offer_deal=False), ADMIN
     )
-    document = _offer(db_session, deal, "inviata")
-    AutomationRunner(db_session).on_offer_state_changed(document, "bozza", ADMIN)
+    document = _offer(db_session, deal, "sent")
+    AutomationRunner(db_session).on_offer_state_changed(document, "draft", ADMIN)
     db_session.flush()
-    assert deal.pipeline_stage_id == stages["offerta"].id
+    assert deal.pipeline_stage_id == stages["offer"].id
 
 
 # -- A2 --------------------------------------------------------------------------
@@ -322,10 +320,10 @@ def test_switching_a1_off_leaves_a2_alone(
 def test_a2_advances_the_deal_to_the_offer_stage(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> None:
-    document = _offer(db_session, deal, "inviata")
-    AutomationRunner(db_session).on_offer_state_changed(document, "bozza", ADMIN)
+    document = _offer(db_session, deal, "sent")
+    AutomationRunner(db_session).on_offer_state_changed(document, "draft", ADMIN)
     db_session.flush()
-    assert deal.pipeline_stage_id == stages["offerta"].id
+    assert deal.pipeline_stage_id == stages["offer"].id
 
 
 def test_a2_never_moves_a_deal_backwards(
@@ -333,37 +331,37 @@ def test_a2_never_moves_a_deal_backwards(
 ) -> None:
     """§9.2: a deal already in Negoziazione must not retreat because a second offer was
     sent. An automation that moves things backwards gets switched off on day one."""
-    deal.pipeline_stage_id = stages["negoziazione"].id
+    deal.pipeline_stage_id = stages["negotiation"].id
     db_session.flush()
 
-    document = _offer(db_session, deal, "inviata")
-    AutomationRunner(db_session).on_offer_state_changed(document, "bozza", ADMIN)
+    document = _offer(db_session, deal, "sent")
+    AutomationRunner(db_session).on_offer_state_changed(document, "draft", ADMIN)
     db_session.flush()
 
-    assert deal.pipeline_stage_id == stages["negoziazione"].id
+    assert deal.pipeline_stage_id == stages["negotiation"].id
     skipped = _kinds(db_session, KIND_NOT_EXECUTED)
-    assert skipped[0].payload["motivo"] == "gia_nello_stato"
+    assert skipped[0].payload["reason"] == "already_in_state"
 
 
-def test_a2_has_no_tipo_fallback(
+def test_to_2_has_no_type_fallback(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> None:
     """§9.2, the asymmetry that is easy to miss: "Offerta" is `open` like every other open
-    stage, so there is nothing for a `tipo` fallback to select. Two rules with the same
+    stage, so there is nothing for a `type` fallback to select. Two rules with the same
     shape and two different resolutions -- confusing them would move a deal into some
     arbitrary open stage."""
-    offer_stage = db_session.get(PipelineStage, stages["offerta"].id)
+    offer_stage = db_session.get(PipelineStage, stages["offer"].id)
     assert offer_stage is not None
     offer_stage.code = None
     db_session.flush()
 
-    document = _offer(db_session, deal, "inviata")
-    AutomationRunner(db_session).on_offer_state_changed(document, "bozza", ADMIN)
+    document = _offer(db_session, deal, "sent")
+    AutomationRunner(db_session).on_offer_state_changed(document, "draft", ADMIN)
     db_session.flush()
 
     assert deal.pipeline_stage_id == stages["lead"].id
     skipped = _kinds(db_session, KIND_NOT_EXECUTED)
-    assert skipped[0].payload["motivo"] == "stage_bersaglio_assente"
+    assert skipped[0].payload["reason"] == "target_stage_missing"
 
 
 def test_a2_is_not_triggered_by_a_reopened_offer(
@@ -371,8 +369,8 @@ def test_a2_is_not_triggered_by_a_reopened_offer(
 ) -> None:
     """`inviata -> bozza` is a legal transition (`OFFER_TRANSITIONS`), and it is not a
     send."""
-    document = _offer(db_session, deal, "bozza")
-    AutomationRunner(db_session).on_offer_state_changed(document, "inviata", ADMIN)
+    document = _offer(db_session, deal, "draft")
+    AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
     db_session.flush()
     assert deal.pipeline_stage_id == stages["lead"].id
     assert _kinds(db_session, KIND_STAGE_MOVED) == []
@@ -382,26 +380,26 @@ def test_a2_respects_its_own_switch(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> None:
     AutomationConfigService(db_session).update_automation_config(
-        AutomationConfigUpdate(a2_offerta_inviata_avanza_deal=False), ADMIN
+        AutomationConfigUpdate(a2_advances_sent_offer_deal=False), ADMIN
     )
-    document = _offer(db_session, deal, "inviata")
-    AutomationRunner(db_session).on_offer_state_changed(document, "bozza", ADMIN)
+    document = _offer(db_session, deal, "sent")
+    AutomationRunner(db_session).on_offer_state_changed(document, "draft", ADMIN)
     db_session.flush()
 
     assert deal.pipeline_stage_id == stages["lead"].id
-    assert _kinds(db_session, KIND_NOT_EXECUTED)[0].payload["motivo"] == "regola_disattivata"
+    assert _kinds(db_session, KIND_NOT_EXECUTED)[0].payload["reason"] == "rule_disabled"
 
 
 def test_switching_a2_off_leaves_a1_alone(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> None:
     AutomationConfigService(db_session).update_automation_config(
-        AutomationConfigUpdate(a2_offerta_inviata_avanza_deal=False), ADMIN
+        AutomationConfigUpdate(a2_advances_sent_offer_deal=False), ADMIN
     )
-    document = _offer(db_session, deal, "accettata")
-    AutomationRunner(db_session).on_offer_state_changed(document, "inviata", ADMIN)
+    document = _offer(db_session, deal, "accepted")
+    AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
     db_session.flush()
-    assert deal.pipeline_stage_id == stages["vinto"].id
+    assert deal.pipeline_stage_id == stages["won"].id
 
 
 # -- the four declared reasons, enumerated ---------------------------------------
@@ -414,51 +412,49 @@ def test_switching_a2_off_leaves_a1_alone(
 Scenario = Callable[[Session, Deal, dict[str, PipelineStageRead]], tuple[Document, str]]
 
 
-def _scenario_stage_assente(
+def _scenario_stage_absent(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> tuple[Document, str]:
-    won = db_session.get(PipelineStage, stages["vinto"].id)
+    won = db_session.get(PipelineStage, stages["won"].id)
     assert won is not None
     db_session.delete(won)
     db_session.flush()
-    return _offer(db_session, deal, "accettata"), "inviata"
+    return _offer(db_session, deal, "accepted"), "sent"
 
 
-def _scenario_stage_ambiguo(
+def _scenario_stage_ambiguous(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> tuple[Document, str]:
-    won = db_session.get(PipelineStage, stages["vinto"].id)
+    won = db_session.get(PipelineStage, stages["won"].id)
     assert won is not None
     won.code = None
-    db_session.add(
-        PipelineStage(nome="Vinto bis", posizione=6, probabilita_default=100, tipo="won")
-    )
+    db_session.add(PipelineStage(name="Vinto bis", position=6, default_probability=100, type="won"))
     db_session.flush()
-    return _offer(db_session, deal, "accettata"), "inviata"
+    return _offer(db_session, deal, "accepted"), "sent"
 
 
-def _scenario_gia_nello_stato(
+def _scenario_already_in_state(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> tuple[Document, str]:
-    deal.pipeline_stage_id = stages["vinto"].id
+    deal.pipeline_stage_id = stages["won"].id
     db_session.flush()
-    return _offer(db_session, deal, "accettata"), "inviata"
+    return _offer(db_session, deal, "accepted"), "sent"
 
 
-def _scenario_regola_disattivata(
+def _scenario_rule_disabled(
     db_session: Session, deal: Deal, stages: dict[str, PipelineStageRead]
 ) -> tuple[Document, str]:
     AutomationConfigService(db_session).update_automation_config(
-        AutomationConfigUpdate(a1_offerta_accettata_vince_deal=False), ADMIN
+        AutomationConfigUpdate(a1_wins_accepted_offer_deal=False), ADMIN
     )
-    return _offer(db_session, deal, "accettata"), "inviata"
+    return _offer(db_session, deal, "accepted"), "sent"
 
 
 SCENARIOS: dict[str, Scenario] = {
-    "stage_bersaglio_assente": _scenario_stage_assente,
-    "stage_bersaglio_ambiguo": _scenario_stage_ambiguo,
-    "gia_nello_stato": _scenario_gia_nello_stato,
-    "regola_disattivata": _scenario_regola_disattivata,
+    "target_stage_missing": _scenario_stage_absent,
+    "target_stage_ambiguous": _scenario_stage_ambiguous,
+    "already_in_state": _scenario_already_in_state,
+    "rule_disabled": _scenario_rule_disabled,
 }
 
 
@@ -476,11 +472,11 @@ def test_each_declared_reason_is_reachable_and_named_in_the_activity(
 
     skipped = _kinds(db_session, KIND_NOT_EXECUTED)
     assert len(skipped) == 1
-    assert skipped[0].payload["motivo"] == reason
-    assert skipped[0].payload["regola"] == "A1"
+    assert skipped[0].payload["reason"] == reason
+    assert skipped[0].payload["rule"] == "A1"
     assert skipped[0].entity_id == deal.id
     assert skipped[0].actor_type == "system"
-    assert skipped[0].payload["attivata_da"] == str(ADMIN.id)
+    assert skipped[0].payload["triggered_by"] == str(ADMIN.id)
     assert _kinds(db_session, KIND_STAGE_MOVED) == []
 
 
@@ -490,7 +486,7 @@ def test_a_triggered_run_always_ends_in_a_move_or_a_named_reason(
 ) -> None:
     """The fifth-path guard, stated as a count. A trigger fired; exactly one activity of
     the two automation kinds must exist afterwards, and if it is a non-execution its
-    `motivo` must be one of the four. A condition that falls through silently produces
+    `reason` must be one of the four. A condition that falls through silently produces
     zero, and that is the defect."""
     document, previous = SCENARIOS[reason](db_session, deal, stages)
     AutomationRunner(db_session).on_offer_state_changed(document, previous, ADMIN)
@@ -500,7 +496,7 @@ def test_a_triggered_run_always_ends_in_a_move_or_a_named_reason(
     assert len(entries) == 1
     entry = entries[0]
     if entry.kind == KIND_NOT_EXECUTED:
-        assert entry.payload["motivo"] in get_args(AutomationSkipReason)
+        assert entry.payload["reason"] in get_args(AutomationSkipReason)
 
 
 def test_an_outcome_cannot_decline_without_saying_why() -> None:
@@ -509,13 +505,13 @@ def test_an_outcome_cannot_decline_without_saying_why() -> None:
     to hold it -- and a `ValueError` raised inside the runner is an *undeclared*
     exception, which propagates and rolls the trigger back. A silent skip therefore cannot
     reach a user as a successfully accepted offer."""
-    with pytest.raises(ValueError, match="motivo"):
+    with pytest.raises(ValueError, match="reason"):
         AutomationOutcome(rule="A1", moved=False, reason=None)
-    with pytest.raises(ValueError, match="motivo"):
-        AutomationOutcome(rule="A1", moved=True, reason="gia_nello_stato")
+    with pytest.raises(ValueError, match="reason"):
+        AutomationOutcome(rule="A1", moved=True, reason="already_in_state")
     # The two legal shapes, for contrast.
     assert AutomationOutcome(rule="A1", moved=True, reason=None).moved
-    assert AutomationOutcome(rule="A2", moved=False, reason="gia_nello_stato").reason
+    assert AutomationOutcome(rule="A2", moved=False, reason="already_in_state").reason
 
 
 # -- the exception policy --------------------------------------------------------
@@ -527,8 +523,8 @@ def test_the_runner_never_commits(
     """The property everything else rests on. If the runner committed, the offer's own
     state change would be persisted before the trigger finished -- and §9.3's "there is no
     halfway" would be false."""
-    document = _offer(db_session, deal, "accettata")
-    AutomationRunner(db_session).on_offer_state_changed(document, "inviata", ADMIN)
+    document = _offer(db_session, deal, "accepted")
+    AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
     db_session.rollback()
     assert db_session.get(Deal, deal.id) is None
 
@@ -547,10 +543,10 @@ def test_an_undeclared_exception_propagates(
         raise RuntimeError("disk on fire")
 
     monkeypatch.setattr(DealService, "set_stage_in_transaction", explode)
-    document = _offer(db_session, deal, "accettata")
+    document = _offer(db_session, deal, "accepted")
 
     with pytest.raises(RuntimeError, match="disk on fire"):
-        AutomationRunner(db_session).on_offer_state_changed(document, "inviata", ADMIN)
+        AutomationRunner(db_session).on_offer_state_changed(document, "sent", ADMIN)
 
 
 def test_no_exception_handler_swallows_anything_in_the_runner() -> None:

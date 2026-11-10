@@ -16,7 +16,7 @@ reaction.
 credential is not a broken deploy, and teaching the operator that the probe goes red for
 things they cannot fix from the deploy layer teaches them to ignore the probe.
 
-One new `activities` kind lives here: `gmail.impostazioni_modificate`, beyond the nine
+One new `activities` kind lives here: `gmail.settings_changed`, beyond the nine
 the design lists. Turning the body store off changes what the CRM will remember of
 somebody's correspondence, which is worth a trace; `activities.kind` is open by project
 (slice 1 §5.8), so a new one costs no migration.
@@ -47,7 +47,7 @@ CONSENT_WARNING_HOURS = 48
 
 _NO_ACCOUNT = "nessuna casella Google collegata"
 _NOT_A_USER = "solo un utente può usare una casella Google"
-_SETTINGS_ACTION = "modificare le impostazioni Gmail"
+_SETTINGS_ACTION = "update_gmail_settings"
 
 _REVOKED_TEXT = (
     "Il consenso Google per {email} è stato revocato: la sincronizzazione e l'invio "
@@ -214,7 +214,7 @@ class GoogleAccountService:
         self.activities.record(
             "google_account",
             account.id,
-            "gmail.credenziale_revocata",
+            "gmail.credential_revoked",
             actor,
             # The address and nothing else. Not the upstream body, which is the thing
             # The previous system truncated to 400 characters and put on screen.
@@ -235,7 +235,7 @@ class GoogleAccountService:
         self.activities.record(
             "google_account",
             account.id,
-            "gmail.impostazioni_modificate",
+            "gmail.settings_changed",
             actor,
             {"gmail_store_bodies": enabled},
         )

@@ -1,0 +1,95 @@
+import { Link } from '@tanstack/react-router'
+import { QueryErrorBanner } from '@/components/QueryErrorBanner'
+import { LoadingState } from '@/components/LoadingState'
+import { TaskItem } from '@/features/tasks/TaskItem'
+import { useTaskToday } from '@/features/tasks/queries'
+import { useAuth } from '@/lib/auth'
+
+/** How many rows the band draws before it says «e altre N». */
+export const BAND_ROWS = 5
+
+/**
+ * The Home's «Da fare» band (REB-874): the tasks that are late and the ones due today,
+ * above the analysis tabs, so the first screen of the product says what asks for a person
+ * before it says how the books are doing.
+ *
+ * The cut is «mine and nobody's», the one the sidebar's overdue count and the Tasks page
+ * open on since REB-871: `assigned_to` is the signed-in person plus `include_unassigned`,
+ * which is how a task an agent created without naming anybody still shows up. The
+ * counts in the heading are the server's real totals; the rows are the first
+ * `BAND_ROWS` of «in ritardo» then «oggi», each an `TaskItem`, so «Fatto», «Modifica»
+ * and the link to the record work here exactly as on the Tasks page. Every tasks
+ * write invalidates the `queryKeys.activitiesAll` prefix this reads under, so «Fatto» takes the row
+ * out, and the sidebar count with it, in one refetch.
+ *
+ * With nothing to do it is one line and not an empty card: a panel that says «0» in a box
+ * is noise on the screen that opens the product.
+ */
+export function DaFareBand() {
+  const { user } = useAuth()
+  const panel = useTaskToday(
+    { assigned_to: user?.id, include_unassigned: true, limit: BAND_ROWS },
+    { enabled: Boolean(user?.id) },
+  )
+
+  if (panel.isError) {
+    return (
+      <div className="px-8 pb-6">
+        <QueryErrorBanner error={panel.error} />
+      </div>
+    )
+  }
+  if (!panel.data) {
+    return (
+      <div className="px-8 pb-6">
+        <LoadingState />
+      </div>
+    )
+  }
+
+  const { overdue: late, today_due: today } = panel.data
+  const total = late.total + today.total
+  if (total === 0) {
+    return (
+      <p className="px-8 pb-6 text-sm text-muted-foreground">
+        Niente in ritardo né in scadenza oggi.
+      </p>
+    )
+  }
+
+  const rows = [
+    ...late.items.map((task) => ({ task, isLate: true })),
+    ...today.items.map((task) => ({ task, isLate: false })),
+  ].slice(0, BAND_ROWS)
+  const rest = total - rows.length
+
+  return (
+    <section aria-labelledby="home-da-fare" className="px-8 pb-6">
+      <div className="space-y-3 border bg-background p-4">
+        <h2 id="home-da-fare" className="text-base font-semibold">
+          Da fare:{' '}
+          {late.total > 0 && <span className="text-destructive">{late.total} in ritardo</span>}
+          {late.total > 0 && today.total > 0 && ', '}
+          {today.total > 0 && <span>{today.total} oggi</span>}
+        </h2>
+        <ul className="space-y-3 text-sm">
+          {rows.map(({ task, isLate }) => (
+            // The late ones say their day, which is what makes them late; today's do not
+            // repeat it.
+            <TaskItem key={task.id} task={task} showDueDate={isLate} />
+          ))}
+        </ul>
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <span className="text-muted-foreground">{rest > 0 ? `e altre ${rest}` : null}</span>
+          <Link
+            to="/app/activities"
+            search={{ view: 'all' }}
+            className="underline underline-offset-4"
+          >
+            Tutte le attività
+          </Link>
+        </div>
+      </div>
+    </section>
+  )
+}

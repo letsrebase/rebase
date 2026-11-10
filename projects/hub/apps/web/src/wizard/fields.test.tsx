@@ -53,11 +53,11 @@ describe('the custom properties the wizard fields draw with', () => {
     const { container } = render(
       <>
         <ChoiceField
-          value="ibrido"
+          value="hybrid"
           onChange={() => {}}
           options={[
-            { value: 'remoto', label: 'Da remoto', hint: 'Nessun giorno fisso in sede.' },
-            { value: 'ibrido', label: 'Ibrido', hint: 'Qualche giorno in sede.' },
+            { value: 'remote', label: 'Da remoto', hint: 'Nessun giorno fisso in sede.' },
+            { value: 'hybrid', label: 'Ibrido', hint: 'Qualche giorno in sede.' },
           ]}
         />
         <FileField value={null} onChange={() => {}} accept=".pdf" hint="PDF" />

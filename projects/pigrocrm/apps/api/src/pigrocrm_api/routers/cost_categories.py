@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
 from pigrocrm.core.timetracking.categories import CostCategoryService
 from pigrocrm.core.timetracking.schemas import (
@@ -9,18 +9,20 @@ from pigrocrm.core.timetracking.schemas import (
     CostCategoryRead,
     CostCategoryUpdate,
 )
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor, module_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
 router = APIRouter(
-    prefix="/api/cost-categories", tags=["cost-categories"], responses=PROBLEM_RESPONSES
+    prefix="/api/cost-categories",
+    tags=["cost-categories"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor), module_guard("costs")],
 )
 
 
 @router.get("", response_model=list[CostCategoryRead])
 def list_cost_categories(
     session: SessionDep,
-    actor: ActorDep,
     include_archived: Annotated[bool, Query()] = False,
 ) -> list[CostCategoryRead]:
     return CostCategoryService(session).list_cost_categories(include_archived=include_archived)

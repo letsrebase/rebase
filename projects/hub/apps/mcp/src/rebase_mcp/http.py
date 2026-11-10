@@ -19,7 +19,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping
-from contextlib import asynccontextmanager
+from contextlib import AbstractContextManager, asynccontextmanager, closing
 from typing import Any
 
 import anyio
@@ -28,18 +28,18 @@ from mcp.server.transport_security import TransportSecuritySettings
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.types import ASGIApp
 
-from rebase_core.admin_tokens import INVALID_TOKEN, AdminRead, AdminTokenService, is_token
+from rebase_core.admin_tokens import AdminRead, AdminTokenService, is_token
 from rebase_core.config import Settings, get_settings
-from rebase_core.contracts.render import ContractRenderer
+from rebase_core.crm_link import CrmLeadService
 from rebase_core.db import create_engine_from_settings, session_factory
+from rebase_core.dependencies import Dependencies, build_dependencies
 from rebase_core.engagements import EngagementService
 from rebase_core.errors import DomainError
-from rebase_core.http import HttpCall, urllib_call, urllib_engagements_call
-from rebase_core.llm import call_from_settings
-from rebase_core.mail import EmailSender, sender_from_settings
-from rebase_core.signing import signing_from_settings
+from rebase_core.http import HttpCall, urllib_call
+from rebase_core.ratelimit import UNKNOWN_CLIENT, RateLimiter, client_key
 from rebase_mcp.actor import ADMIN_STATE_KEY, AdminFromRequest, request_admin
 from rebase_mcp.server import build_server
+from rebase_mcp.settings import McpSettings
 
 Scope = MutableMapping[str, Any]
 Receive = Callable[[], Awaitable[MutableMapping[str, Any]]]
@@ -47,59 +47,89 @@ Send = Callable[[MutableMapping[str, Any]], Awaitable[None]]
 
 MCP_PATH = "/mcp"
 HEALTH_PATH = "/health"
-NOT_FOUND = "non trovato"
-INTERNAL_ERROR = "errore interno"
+NOT_FOUND = "not found"
+INTERNAL_ERROR = "internal error"
+TOO_MANY_BEARERS = "Too many invalid tokens from here. Try again in a minute."
+INVALID_TOKEN_ANSWER = "Invalid token"
+BEARER_WINDOW_SECONDS = 60
 
 logger = logging.getLogger(__name__)
 
 
 class McpHttpApp:
     """`factory` is a callable answering the session factory, so the API can hand the
-    one it builds lazily and a test can hand its own."""
+    one it builds lazily and a test can hand its own. `mcp_settings` carries the Host
+    names the transport answers to and the failed-bearer allowance (REB-889)."""
 
     def __init__(
         self,
         factory: Callable[[], sessionmaker[Session]],
         settings: Settings,
         http: HttpCall,
+        mcp_settings: McpSettings | None = None,
     ) -> None:
         self._factory = factory
         self._settings = settings
         self._http = http
-        self._sender: EmailSender | None = None
+        self._mcp_settings = mcp_settings or McpSettings()
+        self._bad_bearers = RateLimiter(
+            self._mcp_settings.bad_bearers_per_minute, BEARER_WINDOW_SECONDS
+        )
+        self._dependencies: Dependencies | None = None
         self._app: ASGIApp | None = None
+
+    def _deps(self) -> Dependencies:
+        """The collaborators the tools need, built once from the settings
+        (`rebase_core.dependencies`, the same set stdio builds)."""
+        if self._dependencies is None:
+            self._dependencies = build_dependencies(self._settings, self._open, http=self._http)
+        return self._dependencies
 
     def engagements(self, session: Session) -> EngagementService:
         """The service behind `link_match_to_pigro` and `get_match_report` (REB-501): the
         injected client, so a test's fake reaches them too, except that production's
         ten-second `urllib_call` becomes `urllib_engagements_call`, whose 90 seconds
-        leave room for a link that opens a new space (the API's `_engagements_call`)."""
-        http = urllib_engagements_call if self._http is urllib_call else self._http
-        return EngagementService(session, self._settings, http, sender=self._sender)
+        leave room for a link that opens a new space."""
+        return self._deps().engagements(session)
+
+    def crm_leads(self, session: Session) -> CrmLeadService:
+        """The service behind `link_company_to_pigro` (REB-869), over the same seam as
+        `engagements`, asking «Modelli AI» for the `crm_lead` draft only when one is
+        needed."""
+        return self._deps().crm_leads(session)
+
+    def _open(self) -> AbstractContextManager[Session]:
+        """A session for the model seam, which reads «Modelli AI» on each call."""
+        return closing(self._factory()())
 
     def _server(self) -> ASGIApp:
         if self._app is None:
-            renderer = ContractRenderer()
-            settings = self._settings
-            self._sender = sender_from_settings(settings)
+            deps = self._deps()
             server = build_server(
                 self._factory(),
                 request_admin,
-                settings=settings,
+                settings=self._settings,
                 http=self._http,
                 middleware=[AdminFromRequest()],
-                renderer=renderer,
-                signing=signing_from_settings(settings, renderer),
-                llm=call_from_settings(settings),
-                sender=self._sender,
-                engagements=self.engagements,
+                renderer=deps.renderer,
+                signing=deps.signing,
+                card_llm=deps.card_llm,
+                sender=deps.sender,
+                engagements=deps.engagements,
+                crm_leads=deps.crm_leads,
             )
             self._starlette = server.streamable_http_app(
                 streamable_http_path=MCP_PATH,
                 stateless_http=True,
                 json_response=True,
-                # Behind nginx the Host header is the public name; nginx binds it.
-                transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+                # nginx binds the public Host (`proxy_set_header Host $host`), so the
+                # defaults name the public hosts, the loopback and the compose service;
+                # a Host outside them is refused, whatever the bind address is (REB-889).
+                transport_security=TransportSecuritySettings(
+                    enable_dns_rebinding_protection=True,
+                    allowed_hosts=self._mcp_settings.hosts,
+                    allowed_origins=self._mcp_settings.origins,
+                ),
             )
             self._app = self._starlette
         return self._app
@@ -144,13 +174,11 @@ class McpHttpApp:
         """What uvicorn speaks: the session manager runs between startup and shutdown.
         A test that drives the app through `httpx2.ASGITransport`, which has no
         lifespan, enters `lifespan()` itself instead."""
-        message = await receive()
-        assert message["type"] == "lifespan.startup"
+        _expect(await receive(), "lifespan.startup")
         try:
             async with self.lifespan():
                 await send({"type": "lifespan.startup.complete"})
-                message = await receive()
-                assert message["type"] == "lifespan.shutdown"
+                _expect(await receive(), "lifespan.shutdown")
         except Exception as exc:
             logger.exception("the MCP server could not start")
             await send({"type": "lifespan.startup.failed", "message": str(exc)})
@@ -172,10 +200,21 @@ class McpHttpApp:
         if path.rstrip("/") not in ("", MCP_PATH):
             await _json(send, 404, {"detail": NOT_FOUND})
             return
+        client = client_key(_observed_address(scope))
+        if not self._bad_bearers.has_room(client):
+            await _json(
+                send,
+                429,
+                {"detail": TOO_MANY_BEARERS},
+                {"retry-after": str(BEARER_WINDOW_SECONDS)},
+            )
+            return
         try:
             admin = await anyio.to_thread.run_sync(self._authenticate, _bearer_of(scope))
         except DomainError:
-            await _json(send, 401, {"detail": INVALID_TOKEN}, {"www-authenticate": "Bearer"})
+            # Only a failure is charged: a busy agent with a good token never meets this.
+            self._bad_bearers.spend(client)
+            await _json(send, 401, {"detail": INVALID_TOKEN_ANSWER}, {"www-authenticate": "Bearer"})
             return
         except Exception:
             logger.exception("failed to authenticate an MCP request over HTTP")
@@ -192,6 +231,27 @@ class McpHttpApp:
             return AdminTokenService(session).resolve(raw)
         finally:
             session.close()
+
+
+def _expect(message: MutableMapping[str, Any], kind: str) -> None:
+    """The lifespan protocol's next message must be `kind`; anything else is a server
+    that does not speak ASGI, and failing loudly beats serving on."""
+    if message["type"] != kind:
+        raise RuntimeError(f"expected the ASGI message {kind!r}, got {message['type']!r}")
+
+
+def _observed_address(scope: Scope) -> str:
+    """The caller's address as nginx saw it (`X-Real-IP`, else the last hop of
+    `X-Forwarded-For`: the first is whatever the caller typed), else the socket's peer."""
+    headers: dict[bytes, bytes] = {name.lower(): value for name, value in scope.get("headers", [])}
+    real_ip = headers.get(b"x-real-ip", b"").decode("latin-1").strip()
+    if real_ip:
+        return real_ip
+    forwarded = headers.get(b"x-forwarded-for", b"").decode("latin-1")
+    if forwarded:
+        return forwarded.split(",")[-1].strip()
+    client = scope.get("client")
+    return client[0] if client else UNKNOWN_CLIENT
 
 
 def _bearer_of(scope: Scope) -> str | None:

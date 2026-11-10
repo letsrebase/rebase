@@ -1,7 +1,7 @@
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel
 
 from pigrocrm.core.templates.schemas import (
@@ -10,19 +10,24 @@ from pigrocrm.core.templates.schemas import (
     TemplateListQuery,
     TemplatePage,
     TemplateRead,
-    TemplateTipo,
+    TemplateType,
     TemplateUpdate,
 )
 from pigrocrm.core.templates.service import TemplateService
-from pigrocrm.core.validation import SafeStr
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
+from pigrocrm_api.query_params import KeysetParams, SearchParams
 
-router = APIRouter(prefix="/api/templates", tags=["templates"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/templates",
+    tags=["templates"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 class PreviewBody(BaseModel):
-    variabili: dict[str, Any] = {}
+    variables: dict[str, Any] = {}
 
 
 class PreviewResult(BaseModel):
@@ -69,7 +74,7 @@ def describe(template_id: UUID, session: SessionDep, actor: ActorDep) -> Templat
 def preview(
     template_id: UUID, body: PreviewBody, session: SessionDep, actor: ActorDep
 ) -> PreviewResult:
-    markdown = TemplateService(session).preview(template_id, body.variabili, actor)
+    markdown = TemplateService(session).preview(template_id, body.variables, actor)
     return PreviewResult(markdown=markdown)
 
 
@@ -81,21 +86,13 @@ def preview(
 # There is no such annotation left below this point, but the ordering is kept
 # anyway so the rule stays mechanically obvious to the next person editing this
 # file, rather than "safe by accident."
+class TemplateListParams(KeysetParams, SearchParams):
+    type: TemplateType | None = None
+    include_inactive: bool = False
+
+
 @router.get("", response_model=TemplatePage)
 def list_templates(
-    session: SessionDep,
-    actor: ActorDep,
-    search: Annotated[SafeStr | None, Query()] = None,
-    tipo: Annotated[TemplateTipo | None, Query()] = None,
-    include_inactive: Annotated[bool, Query()] = False,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    cursor: Annotated[UUID | None, Query()] = None,
+    session: SessionDep, actor: ActorDep, params: Annotated[TemplateListParams, Query()]
 ) -> TemplatePage:
-    query = TemplateListQuery(
-        search=search,
-        tipo=tipo,
-        include_inactive=include_inactive,
-        limit=limit,
-        cursor=cursor,
-    )
-    return TemplateService(session).list(query, actor)
+    return TemplateService(session).list(params.to_query(TemplateListQuery), actor)

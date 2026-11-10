@@ -1,0 +1,323 @@
+"""The one door to PigroCRM's API: the call, what its answer means, the sweep and the write
+(REB-892, HCORE-08).
+
+Three clients reach the CRM: the registry of spaces (`rebase_core.pigro`, a `GET`), the
+engagements door (`rebase_core.engagements`, a `PUT` and a `GET`) and the leads door
+(`rebase_core.crm_link`, a `PUT`). They differ in a path, a token and the row they write,
+and in nothing else, so this module holds what they share and takes those three as
+parameters.
+
+**The `PUT`** (`PigroDoor.put`) never raises: whatever happens, a refused connection, a
+timeout, a status, a body that is too long or not the shape, is an `Outcome` to write on the
+row. The status maps to the state the row is left in (`200`/`201` is `linked`; a status
+the caller names as refused is `rejected`, which only a person asks again; a `503` and any
+other is `error`, which the sweep retries) and to the cause the row stores (`CAUSE_*`, or
+the CRM's own sentence when its answer carries one). The bearer travels only over HTTPS
+(`speaks_https`), plain HTTP only to this machine.
+
+**The `GET`** (`PigroDoor.get`) raises `PigroUnavailable` with the sentence the admin area
+shows, or `Gone` for a status the caller names (the report's `409`).
+
+**The lock discipline** is the house rule of REB-868 and REB-498: *no database lock is held
+across a network call*. A caller locks the row to read what is sent and to stamp the attempt,
+commits (`committed`), calls the CRM with nothing held, then locks the row again, in the same
+order, to write what the CRM answered (`write`) over the row as it is by then. `sweep_round`
+reads its rows with no lock, lets go of the transaction, and gives every row to the caller's
+own `link` in a transaction of its own.
+"""
+
+import json
+import logging
+import urllib.error
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass
+from typing import NamedTuple
+from urllib.parse import urlsplit
+from uuid import UUID
+
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from rebase_core.http import MAX_BODY_BYTES, HttpCall
+from rebase_core.match_words import ERROR, HTTPS_ONLY, LINKED, REJECTED
+
+_log = logging.getLogger(__name__)
+
+# What an admin reads when the CRM does not answer as it should, shared by every client of
+# the door so they all say the same words. `ANSWERED_STATUS` is a format, filled with the
+# status the CRM answered.
+NOT_ANSWERING = "Pigro non risponde."
+ANSWERED_STATUS = "Pigro non ha risposto ({status})."
+TOO_LONG = "Pigro ha risposto qualcosa di troppo lungo."
+NOT_THE_SHAPE = "Pigro ha risposto qualcosa che non è un elenco."
+
+# What a failed or refused call stores in `pigro_error` / `crm_error`: the cause alone,
+# never a sentence of its own, since the card wraps it (spec § 3.5): «Pigro non ha
+# risposto: HTTP 503.», «Pigro ha rifiutato il collegamento: <the CRM's sentence>». A seam
+# sentence there would say «Pigro» twice. The CRM's own sentence is the cause whenever its
+# answer carries one, on a 409, a 422 or a 503.
+CAUSE_STATUS = "HTTP {status}"
+CAUSE_TIMEOUT = "timeout"
+CAUSE_REFUSED = "connessione rifiutata"
+CAUSE_UNREACHABLE = "nessuna connessione"
+CAUSE_TOO_LONG = "risposta troppo lunga"
+CAUSE_NOT_THE_SHAPE = "risposta non leggibile"
+# A field of the body the CRM's door refused, named, never in FastAPI's English.
+CAUSE_FIELD = "{field}: non valido"
+# A refusal's sentence as stored on a row: the CRM's own words, bounded, since a body of a
+# megabyte is still a body the seam lets through.
+ERROR_MAX_LENGTH = 500
+# Where plain HTTP is still acceptable: a CRM running on this machine, in development.
+LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1"})
+_PUT_OK = (200, 201)
+_NOT_NOW = 503
+
+
+class PigroUnavailable(Exception):
+    """The CRM did not answer as it should: no answer, a status other than the one asked
+    for, or a body that is not the shape. The message is the sentence the admin area
+    shows."""
+
+
+class Gone(Exception):
+    """A `GET` answered with a status the caller named as meaning «the thing is gone» (the
+    report's `409`: the deal was deleted in the space), with the cause a row stores."""
+
+    def __init__(self, cause: str) -> None:
+        super().__init__(cause)
+        self.cause = cause
+
+
+@dataclass(frozen=True)
+class Outcome[Answer: BaseModel]:
+    """What one `PUT` came to: the state to write, the sentence for anything but a link,
+    and the CRM's answer for a link. `gone` marks a status the caller named as the thing
+    having been deleted on the CRM's side, which its `link` writes even over `linked`."""
+
+    status: str
+    error: str | None = None
+    answer: Answer | None = None
+    gone: bool = False
+
+
+class SweepCount(NamedTuple):
+    """A sweep round's count, for its line: `linked` is how many rows it took to
+    `linked`, `failed` how many it tried and left otherwise (an `error`, a `rejected`,
+    or a call that raised)."""
+
+    linked: int
+    failed: int
+
+
+def speaks_https(url: str) -> bool:
+    """Whether the bearer may travel to `url`: HTTPS, or plain HTTP to this machine."""
+    parts = urlsplit(url)
+    if parts.scheme == "https":
+        return bool(parts.hostname)
+    return parts.scheme == "http" and parts.hostname in LOCAL_HOSTS
+
+
+def too_long(raw: bytes) -> bool:
+    """Whether an answer passes the seam's cap (the seam reads one byte beyond it)."""
+    return len(raw) > MAX_BODY_BYTES
+
+
+def cause_of(raw: bytes, status: int) -> str:
+    """What a call the CRM refused, or answered «not now», stores: the CRM's own sentence,
+    or the bare status (`CAUSE_STATUS`)."""
+    return crm_sentence(raw) or CAUSE_STATUS.format(status=status)
+
+
+def failure_cause(exc: Exception) -> str:
+    """The cause of a call that never got an answer: `urllib` wraps the socket's own
+    error in `URLError`, a read that stalls raises `TimeoutError` bare."""
+    reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+    if isinstance(reason, TimeoutError):
+        return CAUSE_TIMEOUT
+    if isinstance(reason, ConnectionRefusedError):
+        return CAUSE_REFUSED
+    return CAUSE_UNREACHABLE
+
+
+def crm_sentence(raw: bytes) -> str | None:
+    """The CRM's own sentence in an answer, `None` when it carries none. A `Conflict`'s
+    problem document (`code` `conflict`) by its `reason`: its `detail` is `entity:
+    reason`, «engagement: Il deal di questa lettera è stato eliminato nello spazio.»,
+    and an admin reads the sentence, not the entity. Any other problem document by its
+    `detail`, which for a `ValidationFailed` is `entity.field: reason` and keeps the
+    field's name. FastAPI's own list of errors, whose words are English and repeat the
+    value, as `field: non valido` for each field it names."""
+    if not raw or too_long(raw):
+        return None
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(body, dict):
+        return None
+    reason = body.get("reason")
+    if body.get("code") == "conflict" and isinstance(reason, str) and reason.strip():
+        return reason.strip()[:ERROR_MAX_LENGTH]
+    detail = body.get("detail")
+    if isinstance(detail, str) and detail.strip():
+        return detail.strip()[:ERROR_MAX_LENGTH]
+    if isinstance(detail, list):
+        fields = dict.fromkeys(
+            ".".join(str(part) for part in error["loc"] if part != "body")
+            for error in detail
+            if isinstance(error, dict) and isinstance(error.get("loc"), list)
+        )
+        named = [CAUSE_FIELD.format(field=field) for field in fields if field]
+        if named:
+            return "; ".join(named)[:ERROR_MAX_LENGTH]
+    return None
+
+
+@dataclass(frozen=True)
+class PigroDoor:
+    """The CRM at `api_url`, reached with `token` through `http`: the seam is
+    `urllib_engagements_call` for the doors that may provision a space and `urllib_call`
+    for the registry; a test hands a fake."""
+
+    api_url: str
+    token: str
+    http: HttpCall
+
+    def url(self, path: str) -> str:
+        return f"{self.api_url.rstrip('/')}{path}"
+
+    def headers(self, *, with_body: bool = False) -> dict[str, str]:
+        headers = {"Authorization": f"Bearer {self.token}", "Accept": "application/json"}
+        if with_body:
+            headers["Content-Type"] = "application/json"
+        return headers
+
+    def put[A: BaseModel](
+        self,
+        path: str,
+        body: Mapping[str, object],
+        answer: type[A],
+        *,
+        subject: str,
+        refused: Collection[int] = (422,),
+        gone: Collection[int] = (),
+    ) -> Outcome[A]:
+        """The one `PUT`, with no row lock held and only over HTTPS. Never raises:
+        whatever happens is an outcome to write. `answer` is the model a `200`/`201` must
+        parse as; `refused` the statuses that are a `rejected` (the CRM's refusal of this
+        very request, which only a person asks again); `gone` those among them that mean
+        the thing was deleted on the CRM's side (checked first, and marked on the
+        outcome). `subject` names the call in the log («the link of match ...»), never the
+        token or an address."""
+        if not speaks_https(self.api_url):
+            return Outcome(ERROR, HTTPS_ONLY)
+        try:
+            status, raw = self.http(
+                "PUT", self.url(path), self.headers(with_body=True), _json(body)
+            )
+        except Exception as exc:  # noqa: BLE001 - never raises: any failure is an outcome
+            _log.warning("the CRM did not answer %s (%s)", subject, type(exc).__name__)
+            return Outcome(ERROR, failure_cause(exc))
+        if status in _PUT_OK:
+            if too_long(raw):
+                return Outcome(ERROR, CAUSE_TOO_LONG)
+            try:
+                return Outcome(LINKED, answer=answer.model_validate_json(raw))
+            except ValueError:  # pydantic's `ValidationError` is one
+                return Outcome(ERROR, CAUSE_NOT_THE_SHAPE)
+        if status in gone:
+            return Outcome(REJECTED, cause_of(raw, status), gone=True)
+        if status in refused:
+            return Outcome(REJECTED, cause_of(raw, status))
+        if status == _NOT_NOW:
+            # The door's «not now» (its lock busy, the space unreachable), in its words.
+            return Outcome(ERROR, cause_of(raw, status))
+        return Outcome(ERROR, CAUSE_STATUS.format(status=status))
+
+    def get[T](self, path: str, parse: Callable[[bytes], T], *, gone: Collection[int] = ()) -> T:
+        """One `GET`, parsed by `parse`, which raises a `ValueError` (Pydantic's
+        `ValidationError` is one) for a body that is not the shape. `PigroUnavailable`
+        with the admin's sentence for no answer, a status other than `200`, a body past
+        the cap or one that is not the shape; `Gone` for a status in `gone`."""
+        try:
+            status, raw = self.http("GET", self.url(path), self.headers(), b"")
+        except Exception as exc:  # noqa: BLE001 - a refused connection, a DNS miss, a timeout
+            raise PigroUnavailable(NOT_ANSWERING) from exc
+        if status in gone:
+            raise Gone(cause_of(raw, status))
+        if status != 200:
+            raise PigroUnavailable(ANSWERED_STATUS.format(status=status))
+        if too_long(raw):
+            raise PigroUnavailable(TOO_LONG)
+        try:
+            return parse(raw)
+        except ValueError as exc:
+            raise PigroUnavailable(NOT_THE_SHAPE) from exc
+
+
+def _json(body: Mapping[str, object]) -> bytes:
+    return json.dumps(body).encode()
+
+
+def write[Row, A: BaseModel](
+    row: Row,
+    outcome: Outcome[A],
+    *,
+    state: str,
+    error: str,
+    copy: Callable[[Row, A], None],
+) -> None:
+    """The outcome on the row: `state` and `error` are the names of its two columns (`pigro_status`
+    and `pigro_error`, `crm_status` and `crm_error`); a link's answer is copied by `copy`,
+    which sets the row's own columns for it and leaves the error cleared. An outcome with no
+    answer leaves what the row already holds of the last link and sets only the cause."""
+    setattr(row, state, outcome.status)
+    if outcome.answer is None:
+        setattr(row, error, outcome.error)
+        return
+    copy(row, outcome.answer)
+    setattr(row, error, None)
+
+
+@contextmanager
+def committed(session: Session) -> Iterator[None]:
+    """One short transaction of a link: committed when the block ends, rolled back and
+    re-raised when it fails, so no lock outlives the step that took it."""
+    try:
+        yield
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
+
+def sweep_round(
+    session: Session,
+    ids: Sequence[UUID],
+    link: Callable[[UUID], bool | None],
+    *,
+    what: str,
+) -> SweepCount:
+    """The recovery round: `link` on every id, each on its own, a failure logged under
+    `what` («match», «request») without stopping the rest. `ids` were read with no lock;
+    the transaction that read them is let go before the first call, so nothing is held
+    while the CRM answers. `link` says `True` for a row it took to `linked`, `False`
+    for one it left otherwise and `None` for one that needed nothing (counted in neither)."""
+    session.rollback()
+    linked = failed = 0
+    for row_id in ids:
+        try:
+            done = link(row_id)
+        except Exception:
+            session.rollback()
+            _log.warning("%s %s could not be linked to the CRM", what, row_id, exc_info=True)
+            failed += 1
+            continue
+        if done is None:
+            continue
+        if done:
+            linked += 1
+        else:
+            failed += 1
+    return SweepCount(linked=linked, failed=failed)

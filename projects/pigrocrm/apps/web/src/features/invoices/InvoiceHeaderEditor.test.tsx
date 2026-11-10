@@ -27,24 +27,24 @@ function failed(error: unknown, status: number) {
 
 const DRAFT = {
   id: 'inv-1',
-  tipo: 'fattura',
-  stato: 'bozza',
-  data_emissione: null,
-  data_scadenza: null,
-  scadenza_prevista: '2026-10-31',
-  competenza_da: null,
-  competenza_a: null,
+  type: 'invoice',
+  status: 'draft',
+  issue_date: null,
+  due_date: null,
+  expected_due_date: '2026-10-31',
+  accrual_from: null,
+  accrual_to: null,
 } as unknown as Invoice
 
 const PROFORMA = {
   id: 'pf-1',
-  tipo: 'proforma',
-  stato: 'bozza',
-  data_emissione: '2026-09-09',
-  data_scadenza: '2026-11-15',
-  scadenza_prevista: '2026-11-15',
-  competenza_da: '2026-08-01',
-  competenza_a: '2026-08-31',
+  type: 'proforma',
+  status: 'draft',
+  issue_date: '2026-09-09',
+  due_date: '2026-11-15',
+  expected_due_date: '2026-11-15',
+  accrual_from: '2026-08-01',
+  accrual_to: '2026-08-31',
 } as unknown as Invoice
 
 function wrap(children: ReactNode) {
@@ -98,9 +98,9 @@ describe('InvoiceHeaderEditor', () => {
     await waitFor(() => expect(api.PATCH).toHaveBeenCalled())
     expect(vi.mocked(api.PATCH).mock.calls[0]?.[0]).toBe('/api/invoices/{invoice_id}')
     expect(sent()).toEqual({
-      data_emissione: '2026-09-01',
-      competenza_da: '2026-07-01',
-      competenza_a: '2026-07-31',
+      issue_date: '2026-09-01',
+      accrual_from: '2026-07-01',
+      accrual_to: '2026-07-31',
     })
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Date salvate'))
   })
@@ -108,7 +108,7 @@ describe('InvoiceHeaderEditor', () => {
   /**
    * REB-326: the due date used to be «emission plus the profile's days» and nothing on
    * the page could say otherwise. The input is offered on both document kinds; empty, it
-   * shows the date the customer's terms would give today (`scadenza_prevista`, the
+   * shows the date the customer's terms would give today (`expected_due_date`, the
    * server's forecast) so a wrong term is caught before «Emetti» prints it.
    */
   it('asks both documents for a due date and starts from the stored one', () => {
@@ -127,7 +127,7 @@ describe('InvoiceHeaderEditor', () => {
     setDate('Scadenza', '2026-12-01')
     await userEvent.click(screen.getByRole('button', { name: 'Salva date' }))
     await waitFor(() => expect(api.PATCH).toHaveBeenCalled())
-    expect(sent()).toMatchObject({ data_scadenza: '2026-12-01' })
+    expect(sent()).toMatchObject({ due_date: '2026-12-01' })
   })
 
   it('sends an explicit null when the due date is cleared, so the terms decide again', async () => {
@@ -135,7 +135,7 @@ describe('InvoiceHeaderEditor', () => {
     setDate('Scadenza', '')
     await userEvent.click(screen.getByRole('button', { name: 'Salva date' }))
     await waitFor(() => expect(api.PATCH).toHaveBeenCalled())
-    expect(sent()).toMatchObject({ data_scadenza: null })
+    expect(sent()).toMatchObject({ due_date: null })
   })
 
   it('never sends a date for a fattura, whose date is not this form’s to set', async () => {
@@ -145,7 +145,7 @@ describe('InvoiceHeaderEditor', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva date' }))
 
     await waitFor(() => expect(api.PATCH).toHaveBeenCalled())
-    expect(sent()).toEqual({ competenza_da: '2026-08-01', competenza_a: '2026-08-31' })
+    expect(sent()).toEqual({ accrual_from: '2026-08-01', accrual_to: '2026-08-31' })
   })
 
   it('sends an explicit null when the period is cleared, so the server clears it too', async () => {
@@ -157,7 +157,7 @@ describe('InvoiceHeaderEditor', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva date' }))
 
     await waitFor(() => expect(api.PATCH).toHaveBeenCalled())
-    expect(sent()).toMatchObject({ competenza_da: null, competenza_a: null })
+    expect(sent()).toMatchObject({ accrual_from: null, accrual_to: null })
   })
 
   it('refuses a lone end before asking the server', async () => {

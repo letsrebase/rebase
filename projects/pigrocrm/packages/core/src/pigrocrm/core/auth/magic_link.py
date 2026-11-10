@@ -35,7 +35,7 @@ class MagicLinkService:
         """The raw token for an active user with this address, or `None`. Sweeps the
         person's spent and expired tokens first: nothing needs a cron."""
         user = self.users.get_by_email(email.strip().lower())
-        if user is None or not user.attivo:
+        if user is None or not user.active:
             return None
         now = datetime.now(UTC)
         self.session.execute(
@@ -57,7 +57,7 @@ class MagicLinkService:
 
     def enter(self, raw: str) -> UserRead | None:
         """The user, or `None` for a wrong, spent or expired link, or an inactive user.
-        The first entry of a user writes `email_verificata_il` and revokes every refresh
+        The first entry of a user writes `email_verified_at` and revokes every refresh
         token issued before it: the address was a claim until this click. Refresh tokens
         only: an access token issued before it stays valid for the rest of its
         `access_token_minutes`, and that window is the accepted cost."""
@@ -81,11 +81,11 @@ class MagicLinkService:
         # Spent before the user is checked: a link of a deactivated user must not stay
         # live for the rest of its fifteen minutes in case the account comes back.
         user = self.users.get(token.user_id)
-        if user is None or not user.attivo:
+        if user is None or not user.active:
             self.session.commit()
             return None
-        if user.email_verificata_il is None:
-            user.email_verificata_il = now
+        if user.email_verified_at is None:
+            user.email_verified_at = now
             self.session.flush()
             # Commits, and takes the flush above with it.
             RefreshTokenService(self.session).revoke_all(user.id, now)

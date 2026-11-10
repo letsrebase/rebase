@@ -15,7 +15,7 @@ share a surname, three share a timestamp -- because a keyset over a non-unique c
 exactly what the composite cursor exists for, and a fixture whose values are all distinct
 cannot catch a tie-breaking bug: a bare-id cursor pages it correctly by accident. They are
 also deliberately *not* in insertion order, so an implementation that quietly ordered by
-`id` alone would be visible. And `people.cognome` is null on four of the nine rows, so a
+`id` alone would be visible. And `people.last_name` is null on four of the nine rows, so a
 one-row page has to cross the null boundary in both directions -- the boundary where
 `NULLS FIRST`/`NULLS LAST` and the descending expression disagree, and where task A3's
 `desc(nullslast(...))`/`nullslast(desc(...))` defect lived.
@@ -46,17 +46,17 @@ from sqlalchemy import Engine, delete, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.clock import oggi_in_italia
-from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.customers.schemas import CustomerListQuery
-from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db import SortDirection, session_factory
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.schemas import DealListQuery
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.schemas import DocumentListQuery
 from pigrocrm.core.documents.service import DocumentService
+from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.organizations.schemas import OrganizationListQuery
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.people.schemas import PersonListQuery
 from pigrocrm.core.people.service import PersonService
@@ -110,7 +110,7 @@ _UPDATED_DAYS: tuple[int, ...] = (2, 2, 5, 0, 9, 5, 0, 2, 9)
 
 # Derived from the Italian clock, never `datetime.now()`: no literal year appears in a
 # test in this repository. The time of day is arbitrary; only the differences matter.
-_ANCHOR = datetime.combine(oggi_in_italia(), time(12, 0), tzinfo=UTC)
+_ANCHOR = datetime.combine(today_local(), time(12, 0), tzinfo=UTC)
 
 _ROWS = len(_TEXT_VALUES)
 
@@ -129,13 +129,30 @@ def _stamps(index: int) -> tuple[datetime, datetime]:
     )
 
 
-def _seed_customers(session: Session, storage: LocalFileStorage) -> list[Seeded]:
+def _seed_organizations(session: Session, storage: LocalFileStorage) -> list[Seeded]:
     seeded: list[Seeded] = []
-    for index, nome in enumerate(_TEXT_VALUES):
+    for index, value in enumerate(_TEXT_VALUES):
         created, updated = _stamps(index)
-        row = Customer(
-            ragione_sociale=nome,
-            nazione="IT",
+        row = Organization(
+            legal_name=value,
+            country="IT",
+            custom_fields={},
+            created_at=created,
+            updated_at=updated,
+        )
+        session.add(row)
+        session.flush()
+        seeded.append((row.id, {"legal_name": value, "created_at": created, "updated_at": updated}))
+    return seeded
+
+
+def _seed_people(session: Session, storage: LocalFileStorage) -> list[Seeded]:
+    seeded: list[Seeded] = []
+    for index, last_name in enumerate(_NULLABLE_VALUES):
+        created, updated = _stamps(index)
+        row = Person(
+            first_name="Marco",
+            last_name=last_name,
             custom_fields={},
             created_at=created,
             updated_at=updated,
@@ -143,77 +160,58 @@ def _seed_customers(session: Session, storage: LocalFileStorage) -> list[Seeded]
         session.add(row)
         session.flush()
         seeded.append(
-            (row.id, {"ragione_sociale": nome, "created_at": created, "updated_at": updated})
+            (row.id, {"last_name": last_name, "created_at": created, "updated_at": updated})
         )
-    return seeded
-
-
-def _seed_people(session: Session, storage: LocalFileStorage) -> list[Seeded]:
-    seeded: list[Seeded] = []
-    for index, cognome in enumerate(_NULLABLE_VALUES):
-        created, updated = _stamps(index)
-        row = Person(
-            nome="Marco",
-            cognome=cognome,
-            custom_fields={},
-            created_at=created,
-            updated_at=updated,
-        )
-        session.add(row)
-        session.flush()
-        seeded.append((row.id, {"cognome": cognome, "created_at": created, "updated_at": updated}))
     return seeded
 
 
 def _seed_deals(session: Session, storage: LocalFileStorage) -> list[Seeded]:
-    customer = Customer(ragione_sociale="Committente Srl", nazione="IT", custom_fields={})
-    stage = PipelineStage(
-        nome=f"Aperto {uuid4()}", posizione=0, probabilita_default=10, tipo="open"
-    )
+    customer = Organization(legal_name="Committente Srl", country="IT", custom_fields={})
+    stage = PipelineStage(name=f"Aperto {uuid4()}", position=0, default_probability=10, type="open")
     session.add_all([customer, stage])
     session.flush()
 
     seeded: list[Seeded] = []
-    for index, nome in enumerate(_TEXT_VALUES):
+    for index, value in enumerate(_TEXT_VALUES):
         created, updated = _stamps(index)
         row = Deal(
-            nome=nome,
+            name=value,
             customer_id=customer.id,
             pipeline_stage_id=stage.id,
-            probabilita=10,
+            probability=10,
             created_at=created,
             updated_at=updated,
         )
         session.add(row)
         session.flush()
-        seeded.append((row.id, {"nome": nome, "created_at": created, "updated_at": updated}))
+        seeded.append((row.id, {"name": value, "created_at": created, "updated_at": updated}))
     return seeded
 
 
 def _seed_documents(session: Session, storage: LocalFileStorage) -> list[Seeded]:
-    customer = Customer(ragione_sociale="Committente Srl", nazione="IT", custom_fields={})
+    customer = Organization(legal_name="Committente Srl", country="IT", custom_fields={})
     session.add(customer)
     session.flush()
 
     seeded: list[Seeded] = []
-    for index, titolo in enumerate(_TEXT_VALUES):
+    for index, title in enumerate(_TEXT_VALUES):
         created, updated = _stamps(index)
         row = Document(
             customer_id=customer.id,
-            tipo="documento",
-            titolo=titolo,
-            versione_corrente=0,
+            type="document",
+            title=title,
+            current_version=0,
             custom_fields={},
             created_at=created,
             updated_at=updated,
         )
         session.add(row)
         session.flush()
-        seeded.append((row.id, {"titolo": titolo, "created_at": created, "updated_at": updated}))
+        seeded.append((row.id, {"title": title, "created_at": created, "updated_at": updated}))
     return seeded
 
 
-def _page_customers(
+def _page_organizations(
     session: Session,
     storage: LocalFileStorage,
     sort: str,
@@ -221,8 +219,8 @@ def _page_customers(
     limit: int,
     cursor: str | None,
 ) -> tuple[list[UUID], str | None]:
-    page = CustomerService(session).list(
-        CustomerListQuery(sort=sort, dir=direction, limit=limit, cursor=cursor), ADMIN
+    page = OrganizationService(session).list(
+        OrganizationListQuery(sort=sort, dir=direction, limit=limit, cursor=cursor), ADMIN
     )
     return [item.id for item in page.items], page.next_cursor
 
@@ -270,19 +268,19 @@ def _page_documents(
 
 
 # Every entity that has a sort whitelist, with every key that whitelist admits. Kept as
-# literals rather than read off `CUSTOMER_SORTS.keys()` and friends: a key silently
+# literals rather than read off `ORGANIZATION_SORTS.keys()` and friends: a key silently
 # dropped from a whitelist would then silently drop its own test too.
 _ENTITIES: dict[
     str, tuple[Callable[[Session, LocalFileStorage], list[Seeded]], Pager, tuple[str, ...]]
 ] = {
-    "customers": (
-        _seed_customers,
-        _page_customers,
-        ("created_at", "updated_at", "ragione_sociale"),
+    "organizations": (
+        _seed_organizations,
+        _page_organizations,
+        ("created_at", "updated_at", "legal_name"),
     ),
-    "people": (_seed_people, _page_people, ("created_at", "updated_at", "cognome")),
-    "deals": (_seed_deals, _page_deals, ("created_at", "updated_at", "nome")),
-    "documents": (_seed_documents, _page_documents, ("created_at", "updated_at", "titolo")),
+    "people": (_seed_people, _page_people, ("created_at", "updated_at", "last_name")),
+    "deals": (_seed_deals, _page_deals, ("created_at", "updated_at", "name")),
+    "documents": (_seed_documents, _page_documents, ("created_at", "updated_at", "title")),
 }
 
 _CASES: tuple[tuple[str, str, SortDirection], ...] = tuple(
@@ -400,7 +398,7 @@ _INITIAL = 300
 
 
 @pytest.fixture
-def committed_customers(db_engine: Engine) -> Iterator[set[UUID]]:
+def committed_organizations(db_engine: Engine) -> Iterator[set[UUID]]:
     """Real committed rows on their own connections, removed afterwards.
 
     Not the `db_session` fixture: its outer transaction makes two sessions on one
@@ -410,9 +408,7 @@ def committed_customers(db_engine: Engine) -> Iterator[set[UUID]]:
     created: set[UUID] = set()
     with factory() as session:
         for index in range(_INITIAL):
-            row = Customer(
-                ragione_sociale=f"KEYSET {index:05d} Srl", nazione="IT", custom_fields={}
-            )
+            row = Organization(legal_name=f"KEYSET {index:05d} Srl", country="IT", custom_fields={})
             session.add(row)
             session.flush()
             created.add(row.id)
@@ -421,19 +417,21 @@ def committed_customers(db_engine: Engine) -> Iterator[set[UUID]]:
         yield created
     finally:
         with factory() as session:
-            session.execute(delete(Customer).where(Customer.ragione_sociale.like("KEYSET %")))
+            session.execute(delete(Organization).where(Organization.legal_name.like("KEYSET %")))
             session.commit()
 
 
 def _all_keyset_ids(session: Session) -> set[UUID]:
     return set(
-        session.scalars(select(Customer.id).where(Customer.ragione_sociale.like("KEYSET %"))).all()
+        session.scalars(
+            select(Organization.id).where(Organization.legal_name.like("KEYSET %"))
+        ).all()
     )
 
 
 @pytest.mark.parametrize("direction", ["asc", "desc"])
 def test_paging_under_concurrent_inserts_loses_nothing_and_repeats_nothing(
-    db_engine: Engine, committed_customers: set[UUID], direction: SortDirection
+    db_engine: Engine, committed_organizations: set[UUID], direction: SortDirection
 ) -> None:
     """Both directions, because `desc` is a genuinely different arm of `keyset_predicate`
     and a backward index scan in the planner.
@@ -450,15 +448,15 @@ def test_paging_under_concurrent_inserts_loses_nothing_and_repeats_nothing(
         present_at_start = _all_keyset_ids(reader)
         assert len(present_at_start) == _INITIAL
 
-        service = CustomerService(reader)
+        service = OrganizationService(reader)
         seen: list[UUID] = []
         cursor: str | None = None
         inserted = 0
         while True:
             page = service.list(
-                CustomerListQuery(
+                OrganizationListQuery(
                     search="KEYSET",
-                    sort="ragione_sociale",
+                    sort="legal_name",
                     dir=direction,
                     limit=_PAGE,
                     cursor=cursor,
@@ -472,9 +470,9 @@ def test_paging_under_concurrent_inserts_loses_nothing_and_repeats_nothing(
             if inserted < 8:
                 prefix = "KEYSET 00000" if inserted % 2 == 0 else "KEYSET 99999"
                 writer.add(
-                    Customer(
-                        ragione_sociale=f"{prefix} intruso {direction} {inserted} Srl",
-                        nazione="IT",
+                    Organization(
+                        legal_name=f"{prefix} intruso {direction} {inserted} Srl",
+                        country="IT",
                         custom_fields={},
                     )
                 )
@@ -501,7 +499,7 @@ def test_paging_under_concurrent_inserts_loses_nothing_and_repeats_nothing(
 
 
 def test_the_scan_terminates_rather_than_looping(
-    db_engine: Engine, committed_customers: set[UUID]
+    db_engine: Engine, committed_organizations: set[UUID]
 ) -> None:
     """A keyset predicate that is `>=` instead of `>` returns the cursor row again on
     every page; at a page size of one it never advances at all and the loops above never
@@ -513,12 +511,12 @@ def test_the_scan_terminates_rather_than_looping(
     """
     ten_of_them = "KEYSET 0000"  # matches KEYSET 00000..00009 and nothing else
     with session_factory(db_engine)() as reader:
-        service = CustomerService(reader)
+        service = OrganizationService(reader)
         cursor: str | None = None
         for _ in range(15):
             page = service.list(
-                CustomerListQuery(
-                    search=ten_of_them, sort="ragione_sociale", limit=1, cursor=cursor
+                OrganizationListQuery(
+                    search=ten_of_them, sort="legal_name", limit=1, cursor=cursor
                 ),
                 ADMIN,
             )

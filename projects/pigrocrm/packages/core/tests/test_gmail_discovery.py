@@ -62,7 +62,7 @@ def test_the_discovery_query_is_one_the_list_url_accepts() -> None:
 
 
 @pytest.mark.parametrize(
-    ("sito_web", "expected"),
+    ("website", "expected"),
     [
         ("https://www.example.com/", "example.com"),
         ("http://example.com", "example.com"),
@@ -71,43 +71,61 @@ def test_the_discovery_query_is_one_the_list_url_accepts() -> None:
         ("HTTPS://WWW.Example.com", "example.com"),
     ],
 )
-def test_the_domain_is_read_from_the_website(sito_web: str, expected: str) -> None:
-    assert customer_domain(sito_web=sito_web, email=None) == expected
+def test_the_domain_is_read_from_the_website(website: str, expected: str) -> None:
+    assert customer_domain(website=website, email=None) == expected
 
 
 def test_without_a_website_the_domain_is_read_from_the_customer_email() -> None:
-    assert customer_domain(sito_web=None, email="info@example.com") == "example.com"
+    assert customer_domain(website=None, email="info@example.com") == "example.com"
 
 
 def test_the_website_wins_over_the_email_when_both_exist() -> None:
-    assert customer_domain(sito_web="https://example.com", email="x@gmail.com") == "example.com"
+    assert customer_domain(website="https://example.com", email="x@gmail.com") == "example.com"
 
 
 @pytest.mark.parametrize("email", ["ceo@gmail.com", "ceo@outlook.com", "ceo@yahoo.it"])
 def test_a_webmail_domain_is_not_a_customer_domain(email: str) -> None:
     """`from:@gmail.com` is half the planet. The result would not be one customer's
     correspondents, so it is refused rather than answered."""
-    assert customer_domain(sito_web=None, email=email) is None
+    assert customer_domain(website=None, email=email) is None
+
+
+def test_a_company_address_among_the_other_emails_gives_the_domain() -> None:
+    assert (
+        customer_domain(
+            website=None,
+            email="ceo@gmail.com",
+            other_emails=["ceo@gmail.com", "ceo@outlook.com", "info@example.com"],
+        )
+        == "example.com"
+    )
+    assert customer_domain(website=None, email="ceo@gmail.com", other_emails=["x@yahoo.it"]) is None
 
 
 def test_nothing_to_derive_from_is_none_not_an_error() -> None:
-    assert customer_domain(sito_web=None, email=None) is None
-    assert customer_domain(sito_web="", email="") is None
+    assert customer_domain(website=None, email=None) is None
+    assert customer_domain(website="", email="") is None
 
 
 # --- the service ----------------------------------------------------------------------
 
 from datetime import UTC, datetime, timedelta  # noqa: E402
 
+from fakes.contacts import points  # noqa: E402
 from fakes.fake_gmail import FakeGmail, FakeMessage  # noqa: E402
 from fakes.gmail_fixtures import MAILBOX, actor_for, connected_account, sync_service  # noqa: E402
 from sqlalchemy import func, select  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 from pigrocrm.core.actor import Actor  # noqa: E402
-from pigrocrm.core.customers.models import Customer  # noqa: E402
+from pigrocrm.core.contact_points.models import ContactPoint  # noqa: E402
+from pigrocrm.core.contact_points.schemas import ContactPointIn  # noqa: E402
+from pigrocrm.core.contact_points.service import prepare  # noqa: E402
 from pigrocrm.core.errors import AgentForbidden, Conflict, NotFound  # noqa: E402
+from pigrocrm.core.gmail import sync as sync_module  # noqa: E402
+from pigrocrm.core.gmail.errors import GmailUnavailable  # noqa: E402
 from pigrocrm.core.gmail.models import GmailMessage  # noqa: E402
+from pigrocrm.core.organizations.models import Organization  # noqa: E402
 
 DOMAIN_CLAUSE = "(from:@example.com OR to:@example.com)"
 
@@ -130,13 +148,15 @@ def _mail(
     )
 
 
-def _example(session: Session, **overrides: object) -> Customer:
+def _example(session: Session, **overrides: object) -> Organization:
     fields: dict[str, object] = {
-        "ragione_sociale": "Example Ltd",
-        "sito_web": "https://www.example.com/",
+        "legal_name": "Example Ltd",
+        "website": "https://www.example.com/",
     }
     fields.update(overrides)
-    customer = Customer(**fields)
+    if "email" in fields:
+        fields["contact_points"] = points(email=str(fields.pop("email")))
+    customer = Organization(**fields)
     session.add(customer)
     session.flush()
     return customer
@@ -160,18 +180,33 @@ def test_discovery_answers_who_at_the_domain_wrote_or_was_written_to(db_session:
 
     report = sync_service(db_session, fake).discover(customer.id, actor=actor_for(account))
 
-    assert report.dominio == "example.com"
+    assert report.domain == "example.com"
     assert report.threads_scanned == 1
-    found = {row.indirizzo: row for row in report.corrispondenti}
+    found = {row.address: row for row in report.matching}
     assert set(found) == {"marco@example.com", "sarah@example.com"}
     marco = found["marco@example.com"]
-    assert marco.nome == "Marco Bianchi"
-    assert marco.messaggi == 2
-    assert marco.ultimo_messaggio == datetime.fromtimestamp(
+    assert marco.name == "Marco Bianchi"
+    assert marco.messages == 2
+    # Two messages in one conversation: the page counts conversations, so this is one.
+    assert marco.conversations == 1
+    assert marco.last_message == datetime.fromtimestamp(
         fake.messages["m2"].internal_date_ms / 1000, tz=UTC
     )
-    assert found["sarah@example.com"].nome == "Sarah Miller"
-    assert found["sarah@example.com"].messaggi == 1
+    assert found["sarah@example.com"].name == "Sarah Miller"
+    assert found["sarah@example.com"].messages == 1
+
+
+def test_a_display_name_longer_than_a_person_takes_is_clipped(db_session: Session) -> None:
+    """The page sends the name back to add the address as a person, and that request
+    refuses what the schema does not hold."""
+    account = connected_account(db_session)
+    customer = _example(db_session)
+    fake = FakeGmail()
+    fake.messages["m1"] = _mail(1, frm=f"{'A' * 400} <marco@example.com>", to=MAILBOX, thread="t1")
+
+    report = sync_service(db_session, fake).discover(customer.id, actor=actor_for(account))
+
+    assert [len(row.name) for row in report.matching] == [255]
 
 
 def test_the_most_frequent_correspondent_comes_first(db_session: Session) -> None:
@@ -184,7 +219,7 @@ def test_the_most_frequent_correspondent_comes_first(db_session: Session) -> Non
 
     report = sync_service(db_session, fake).discover(customer.id, actor=actor_for(account))
 
-    assert [row.indirizzo for row in report.corrispondenti] == [
+    assert [row.address for row in report.matching] == [
         "marco@example.com",
         "sarah@example.com",
     ]
@@ -234,7 +269,7 @@ def test_the_connected_mailbox_is_never_reported_as_a_correspondent(db_session: 
 
     report = sync_service(db_session, fake).discover(customer.id, actor=actor_for(account))
 
-    assert [row.indirizzo for row in report.corrispondenti] == ["marco@example.com"]
+    assert [row.address for row in report.matching] == ["marco@example.com"]
 
 
 def test_addresses_already_in_the_crm_are_marked_as_known(db_session: Session) -> None:
@@ -243,7 +278,13 @@ def test_addresses_already_in_the_crm_are_marked_as_known(db_session: Session) -
 
     account = connected_account(db_session)
     customer = _example(db_session)
-    db_session.add(Person(nome="Marco", email="Marco@Example.com", customer_id=customer.id))
+    db_session.add(
+        Person(
+            first_name="Marco",
+            contact_points=points(email="Marco@Example.com"),
+            customer_id=customer.id,
+        )
+    )
     db_session.flush()
     fake = FakeGmail()
     fake.messages["m1"] = _mail(1, frm="marco@example.com", to=MAILBOX, thread="t1")
@@ -251,13 +292,13 @@ def test_addresses_already_in_the_crm_are_marked_as_known(db_session: Session) -
 
     report = sync_service(db_session, fake).discover(customer.id, actor=actor_for(account))
 
-    known = {row.indirizzo: row.gia_in_anagrafica for row in report.corrispondenti}
+    known = {row.address: row.already_in_directory for row in report.matching}
     assert known == {"marco@example.com": True, "sarah@example.com": False}
 
 
 def test_a_customer_with_no_domain_is_a_conflict_not_an_empty_answer(db_session: Session) -> None:
     account = connected_account(db_session)
-    customer = _example(db_session, sito_web=None, email="ceo@gmail.com")
+    customer = _example(db_session, website=None, email="ceo@gmail.com")
     with pytest.raises(Conflict):
         sync_service(db_session, FakeGmail()).discover(customer.id, actor=actor_for(account))
 
@@ -287,4 +328,121 @@ def test_an_agent_without_full_access_is_refused_before_gmail_is_asked(
 
     trusted = Actor(id=account.user_id, type="mcp", role="admin", full_access=True)
     report = sync_service(db_session, fake).discover(customer.id, actor=trusted)
-    assert [row.indirizzo for row in report.corrispondenti] == ["marco@example.com"]
+    assert [row.address for row in report.matching] == ["marco@example.com"]
+
+
+def test_gmail_failing_is_a_sentence_to_retry_not_a_server_error(db_session: Session) -> None:
+    """A press on the customer's Email tab reaches this (REB-766): Gmail failing after
+    every retry answers the same retry sentence the proposals do, never a 500."""
+    account = connected_account(db_session)
+    customer = _example(db_session)
+    fake = FakeGmail()
+    service = sync_service(db_session, fake)
+    service._access_token = lambda _account: "ya29.token"  # type: ignore[method-assign]
+    fake.fail_with = [(503, b"{}", {})] * 10
+    with pytest.raises(GmailUnavailable):
+        service.discover(customer.id, actor=actor_for(account))
+
+
+def test_only_the_most_recent_conversations_are_read(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The read stops at the cap, so a customer with years of mail does not turn one
+    press into a minutes-long request."""
+    monkeypatch.setattr(sync_module, "DISCOVER_MAX_THREADS", 2)
+    account = connected_account(db_session)
+    customer = _example(db_session)
+    fake = FakeGmail()
+    for index, who in enumerate(("nuovo", "medio", "vecchio"), start=1):
+        fake.messages[f"m{index}"] = _mail(
+            index, frm=f"{who}@example.com", to=MAILBOX, thread=f"t{index}", days_ago=index
+        )
+
+    report = sync_service(db_session, fake).discover(customer.id, actor=actor_for(account))
+
+    # Which two is Gmail's order (newest first); the fake lists oldest first, so the
+    # test claims the cap and not the order.
+    assert report.threads_scanned == 2
+    assert len(report.matching) == 2
+
+
+def _labelled_emails(*given: tuple[str, str]) -> list[ContactPoint]:
+    """Email points in the order given, `(address, label)`, the first one primary."""
+    return [
+        ContactPoint(
+            kind=point.kind,
+            value=point.value,
+            normalized=point.normalized,
+            label=point.label,
+            note=point.note,
+            is_primary=point.is_primary,
+            position=position,
+        )
+        for position, point in enumerate(
+            prepare(
+                "organization",
+                [ContactPointIn(kind="email", value=a, label=label) for a, label in given],  # type: ignore[arg-type]
+            )
+        )
+    ]
+
+
+def _with_emails(session: Session, *given: tuple[str, str]) -> Organization:
+    customer = Organization(
+        legal_name="Example Ltd", website=None, contact_points=_labelled_emails(*given)
+    )
+    session.add(customer)
+    session.flush()
+    return customer
+
+
+def test_discovery_reads_the_domain_of_an_extra_work_address(db_session: Session) -> None:
+    """The primary is a webmail address: the company's own address, kept as another work
+    point, still says where the company is."""
+    account = connected_account(db_session)
+    customer = _with_emails(db_session, ("ceo@gmail.com", "personal"), ("info@example.com", "work"))
+    fake = FakeGmail()
+    fake.messages["m1"] = _mail(1, frm="marco@example.com", to=MAILBOX, thread="t1")
+
+    report = sync_service(db_session, fake).discover(customer.id, actor=actor_for(account))
+
+    assert report.domain == "example.com"
+
+
+@pytest.mark.parametrize("label", ["billing", "personal"])
+def test_a_billing_or_personal_address_never_gives_the_domain(
+    db_session: Session, label: str
+) -> None:
+    """An accountant's invoicing mailbox is not the customer's domain."""
+    account = connected_account(db_session)
+    customer = _with_emails(
+        db_session, ("ceo@gmail.com", "personal"), ("fatture@studiocontabile.it", label)
+    )
+    with pytest.raises(Conflict):
+        sync_service(db_session, FakeGmail()).discover(customer.id, actor=actor_for(account))
+
+
+def test_a_person_is_added_from_mail_at_the_domain_of_an_extra_work_address(
+    db_session: Session,
+) -> None:
+    from pigrocrm.core.organizations.schemas import PersonFromSuggestion
+    from pigrocrm.core.organizations.service import OrganizationService
+
+    account = connected_account(db_session)
+    customer = _with_emails(
+        db_session,
+        ("ceo@gmail.com", "personal"),
+        ("fatture@studiocontabile.it", "billing"),
+        ("info@example.com", "other"),
+    )
+    actor = actor_for(account)
+    service = OrganizationService(db_session)
+
+    person = service.add_person_from_mail(
+        customer.id, PersonFromSuggestion(address="marco@example.com", name="Marco Bianchi"), actor
+    )
+    assert person.email == "marco@example.com"
+    with pytest.raises(ValidationFailed):
+        service.add_person_from_mail(
+            customer.id, PersonFromSuggestion(address="altri@studiocontabile.it"), actor
+        )

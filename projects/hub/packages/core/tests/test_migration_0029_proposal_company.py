@@ -50,7 +50,7 @@ def _grant(connection: Connection, user_id: str, company_id: str, admin_id: str,
 
 
 def _proposal(
-    connection: Connection, user_id: str | None, origine: str, age: str, errore: str | None = None
+    connection: Connection, user_id: str | None, origin: str, age: str, error: str | None = None
 ) -> str:
     return str(
         connection.execute(
@@ -60,7 +60,7 @@ def _proposal(
                 "errore, created_at) VALUES (gen_random_uuid(), 'd', 'r', '{}', '[]', '{}', "
                 "'m', 0, 0, 0, :o, :u, :e, now() - CAST(:age AS interval)) RETURNING id"
             ),
-            {"o": origine, "u": user_id, "e": errore, "age": age},
+            {"o": origin, "u": user_id, "e": error, "age": age},
         ).scalar_one()
     )
 
@@ -114,6 +114,7 @@ def test_migration_0029_backfills_only_what_is_not_a_guess_and_runs_again() -> N
             command.upgrade(config, "head")
             command.downgrade(config, "0028")
         command.upgrade(config, "head")
+        command.downgrade(config, "0029")  # the schema this revision was written for
         with engine.begin() as connection:
             # The revision again over the column it already added.
             connection.execute(text("UPDATE alembic_version SET version_num = '0028'"))

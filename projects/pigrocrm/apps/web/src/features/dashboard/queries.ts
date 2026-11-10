@@ -4,7 +4,7 @@ import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { queryKeys } from '@/lib/query'
-import type { Periodo } from './periodo'
+import type { Period } from './period'
 import type { CashBase } from './search'
 
 export type CommercialDashboard = components['schemas']['CommercialDashboard']
@@ -15,7 +15,15 @@ export type FiscalEstimate = components['schemas']['FiscalEstimate']
 export type PipelineStageSummary = components['schemas']['PipelineStageSummary']
 export type PendingOffer = components['schemas']['PendingOffer']
 export type ReceivablesDashboard = components['schemas']['ReceivablesDashboard']
-export type FasciaScadenza = components['schemas']['FasciaScadenza']
+export type BandDueDate = components['schemas']['BandDueDate']
+export type CeilingHeadroom = components['schemas']['CeilingHeadroom']
+export type CeilingStatus = components['schemas']['CeilingStatusRead']
+export type CeilingSimulation = components['schemas']['CeilingSimulation']
+export type DaysAnalysis = components['schemas']['DaysAnalysis']
+export type DaysMonth = components['schemas']['DaysMonth']
+export type DaysRate = components['schemas']['DaysRate']
+export type YearOverview = components['schemas']['YearOverview']
+export type YearRegisterRow = components['schemas']['YearRegisterRow']
 export type AutomationsDescription = components['schemas']['AutomationsDescription']
 export type AutomationConfigUpdate = components['schemas']['AutomationConfigUpdate']
 
@@ -27,41 +35,43 @@ export type AutomationConfigUpdate = components['schemas']['AutomationConfigUpda
 export const DASHBOARD_STALE_MS = 60_000
 
 /**
- * The sidebar's azienda as the parameter every dashboard read takes (REB-632, spec
- * 2026-10-03 §5): `azienda_id` when one is selected, nothing in «tutte», where the
- * server adds every azienda up. It is spread into the request and into the key alike,
+ * The sidebar's legal entity as the parameter every dashboard read takes (REB-632, spec
+ * 2026-10-03 §5): `legal_entity_id` when one is selected, nothing in «tutte», where the
+ * server adds every legal entity up. It is spread into the request and into the key alike,
  * so a switch of the sidebar is a new cache entry and a fresh request, with no
  * invalidation to forget. Not in the URL: the selection is a session choice (§5).
  */
-function useLegalEntityParam(): { azienda_id?: string } {
+function useLegalEntityParam(): { legal_entity_id?: string } {
   const { selected } = useLegalEntity()
-  return selected === null ? {} : { azienda_id: selected }
+  return selected === null ? {} : { legal_entity_id: selected }
 }
 
-export function useCommercialDashboard(periodo: Periodo) {
-  const params = { ...periodo, ...useLegalEntityParam() }
+export function useCommercialDashboard(period: Period) {
+  const params = { ...period, ...useLegalEntityParam() }
   return useQuery({
-    queryKey: queryKeys.dashboard('commerciale', params),
+    queryKey: queryKeys.dashboard('commercial', params),
     queryFn: () => unwrap(api.GET('/api/dashboard/sales', { params: { query: params } })),
     staleTime: DASHBOARD_STALE_MS,
   })
 }
 
-export function useEconomicDashboard(periodo: Periodo) {
-  const params = { ...periodo, ...useLegalEntityParam() }
+/** The days of the period (REB-756): by month and state, the realised rate and the trend of
+ *  days worked without approval. Every figure comes computed; the period is both dates. */
+export function useDaysAnalysis(period: Period) {
+  const params = { ...period, ...useLegalEntityParam() }
   return useQuery({
-    queryKey: queryKeys.dashboard('economica', params),
-    queryFn: () => unwrap(api.GET('/api/dashboard/economic', { params: { query: params } })),
+    queryKey: queryKeys.dashboard('work_units', params),
+    queryFn: () => unwrap(api.GET('/api/analytics/days', { params: { query: params } })),
     staleTime: DASHBOARD_STALE_MS,
   })
 }
 
 /** Slice 8 part A (REB-329): no period, so the key carries none. What is owed is owed
- *  today, and the response's `oggi` says which day the buckets were measured from. */
+ *  today, and the response's `today` says which day the buckets were measured from. */
 export function useReceivablesDashboard() {
   const params = useLegalEntityParam()
   return useQuery({
-    queryKey: queryKeys.dashboard('scadenziario', params),
+    queryKey: queryKeys.dashboard('receivables', params),
     queryFn: () => unwrap(api.GET('/api/dashboard/receivables', { params: { query: params } })),
     staleTime: DASHBOARD_STALE_MS,
   })
@@ -71,13 +81,13 @@ export function useReceivablesDashboard() {
  *  fiscal estimate only exists per year), so the picker's `da` names the year. `base`
  *  is which month each document falls in (ORB-133), part of the key because the same
  *  year answers differently under the two readings. */
-export function useEconomicOverview(anno: number, base: CashBase) {
+export function useEconomicOverview(year: number, base: CashBase) {
   const scope = useLegalEntityParam()
   return useQuery({
-    queryKey: queryKeys.dashboard('panoramica', { anno: String(anno), base, ...scope }),
+    queryKey: queryKeys.dashboard('panoramica', { year: String(year), base, ...scope }),
     queryFn: () =>
       unwrap(
-        api.GET('/api/analytics/overview', { params: { query: { anno, base, ...scope } } }),
+        api.GET('/api/analytics/overview', { params: { query: { year, base, ...scope } } }),
       ),
     staleTime: DASHBOARD_STALE_MS,
   })
@@ -94,19 +104,110 @@ export function useEconomicOverview(anno: number, base: CashBase) {
  * No `staleTime` override: unlike the aggregates above, this one is read once per visit
  * under the cards and the default in `lib/query.ts` is the right answer for it.
  *
- * One azienda's (REB-632): the one `aziendaId` names, or the sidebar's when the caller
- * names none. In «tutte» on a space with several aziende the economic tab asks once
- * per azienda, by id, because the server has no space-wide estimate to give (spec
- * §1.9); with one azienda nothing is sent and the server resolves it alone.
+ * One legal entity's (REB-632): the one `legalEntityId` names, or the sidebar's when the caller
+ * names none. In «tutte» on a space with several legal entities the economic tab asks once
+ * per legal entity, by id, because the server has no space-wide estimate to give (spec
+ * §1.9); with one legal entity nothing is sent and the server resolves it alone.
+ *
+ * `enabled` false sends nothing at all (REB-788): the estimate is an administrator's
+ * read, and a role the table in `lib/permissions.ts` refuses it must not ask and take
+ * a 403 for the answer.
  */
-export function useFiscalEstimate(anno: number, aziendaId?: string | null) {
-  const { selected } = useLegalEntity()
-  const azienda = aziendaId === undefined ? selected : aziendaId
-  const query = azienda === null ? { anno } : { anno, azienda_id: azienda }
+export function useFiscalEstimate(year: number, legalEntityId?: string | null, enabled = true) {
+  const { selected, loaded } = useLegalEntity()
+  const legal_entity = legalEntityId === undefined ? selected : legalEntityId
+  const query = legal_entity === null ? { year } : { year, legal_entity_id: legal_entity }
   return useQuery({
-    queryKey: queryKeys.fiscalEstimate(anno, azienda),
+    queryKey: queryKeys.fiscalEstimate(year, legal_entity),
     queryFn: () => unwrap(api.GET('/api/analytics/fiscal', { params: { query } })),
+    enabled: enabled && (legal_entity !== null || loaded),
   })
+}
+
+/**
+ * How much room is left under each of a legal entity's ceilings in `year` (REB-755). One
+ * legal entity's, like the estimate: the one `legalEntityId` names, or the sidebar's when the
+ * caller names none. `thresholds` comes back empty for a legal entity the flat-rate regime's
+ * thresholds do not apply to, and the panel then draws nothing.
+ */
+export function useCeilingHeadroom(year: number, legalEntityId?: string | null) {
+  const { selected, loaded } = useLegalEntity()
+  const legal_entity = legalEntityId === undefined ? selected : legalEntityId
+  const query = legal_entity === null ? { year } : { year, legal_entity_id: legal_entity }
+  return useQuery({
+    queryKey: queryKeys.ceilings(year, legal_entity),
+    queryFn: () => unwrap(api.GET('/api/analytics/ceilings', { params: { query } })),
+    // Asked without a legal entity only once the list of legal entities has answered: before
+    // that `several` is false on every space, and on one with two the server refuses (422).
+    enabled: legal_entity !== null || loaded,
+  })
+}
+
+/** What a person typed into the «ci sta?» simulator, already in the API's own spelling. */
+export type CeilingSimulationInput = {
+  budgeted_value?: string
+  budgeted_hours?: string
+  hourly_rate?: string
+  /** The day the revenue arrives, `YYYY-MM-DD`: the year the contract's cap is read over. */
+  expected_date?: string
+  /** A contract with a cap on the customer's share, to read the same addition against. */
+  contract_id?: string
+}
+
+/**
+ * The «ci sta?» answer for one estimate, asked only once the person presses «Simula»
+ * (`input` is `null` until then): a request per keystroke would answer questions nobody
+ * finished asking. Nothing is saved on the server, and the answer is as fresh as the
+ * revenue it adds to, so it is kept no longer than the screen shows it.
+ */
+export function useCeilingSimulation(
+  year: number,
+  input: CeilingSimulationInput | null,
+  legalEntityId?: string | null,
+  /** Which press of «Simula» this is: part of the key, so pressing it again with the same
+   *  inputs asks the server again instead of showing the answer already held. */
+  attempt = 0,
+) {
+  const { selected } = useLegalEntity()
+  const legal_entity = legalEntityId === undefined ? selected : legalEntityId
+  const params: Record<string, string> = {
+    year: String(year),
+    attempt: String(attempt),
+    ...(legal_entity === null ? {} : { legal_entity_id: legal_entity }),
+    ...input,
+  }
+  return useQuery({
+    enabled: input !== null,
+    queryKey: queryKeys.ceilingSimulation(params),
+    queryFn: () =>
+      unwrap(
+        api.GET('/api/analytics/ceilings/simulate', {
+          params: { query: { ...input, year, ...(legal_entity === null ? {} : { legal_entity_id: legal_entity }) } },
+        }),
+      ),
+    gcTime: 0,
+  })
+}
+
+/** One legal entity's register for `year` (REB-757): revenue by regime and tax treatment and
+ *  the issued invoices, with the stamp duty and the surcharge apart. */
+export function useYearOverview(year: number, legalEntityId?: string | null) {
+  const { selected, loaded } = useLegalEntity()
+  const legal_entity = legalEntityId === undefined ? selected : legalEntityId
+  const query = legal_entity === null ? { year } : { year, legal_entity_id: legal_entity }
+  return useQuery({
+    queryKey: queryKeys.yearOverview(year, legal_entity),
+    queryFn: () => unwrap(api.GET('/api/analytics/year', { params: { query } })),
+    staleTime: DASHBOARD_STALE_MS,
+    enabled: legal_entity !== null || loaded,
+  })
+}
+
+/** The API path of the year's CSV, to download through `DownloadButton`. */
+export function yearCsvPath(year: number, legalEntityId: string | null): string {
+  const query = new URLSearchParams({ year: String(year) })
+  if (legalEntityId !== null) query.set('legal_entity_id', legalEntityId)
+  return `/api/analytics/year/csv?${query.toString()}`
 }
 
 export function useAutomations() {
@@ -120,14 +221,16 @@ export function useUpdateAutomationConfig() {
   const client = useQueryClient()
   return useMutation({
     mutationFn: (body: AutomationConfigUpdate) => unwrap(api.PUT('/api/automation-config', { body })),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: queryKeys.automations() })
+    onSuccess: async () => {
       // The commercial dashboard's signal count reflects whether A1 has been firing, so a
       // configuration change is a reason to re-read it. By the `['dashboard']` prefix
       // rather than an exact key: a mutation cannot know which period the user is looking
       // at, and the prefix covers every cached period and every tab.
-      void client.invalidateQueries({ queryKey: ['dashboard'] })
+      void client.invalidateQueries({ queryKey: queryKeys.dashboardAll })
       toast.success('Configurazione aggiornata')
+      // Awaited, last: a caller's own `onSuccess` runs once the description is fresh, so a
+      // box that held a typed number can let go of it without flashing the old one.
+      await client.invalidateQueries({ queryKey: queryKeys.automations() })
     },
     // No `onError` that copies the failure into component state: the panel renders it from
     // this mutation's own `error`, so a later success clears it by construction. An error

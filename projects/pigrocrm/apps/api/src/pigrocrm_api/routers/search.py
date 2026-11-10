@@ -14,8 +14,9 @@ a read-only surface, which is the place nobody looks for one.
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
+from pigrocrm.core.modules import enabled_modules
 from pigrocrm.core.search.schemas import (
     MAX_TERM_LENGTH,
     MIN_TERM_LENGTH,
@@ -25,17 +26,23 @@ from pigrocrm.core.search.schemas import (
 )
 from pigrocrm.core.search.service import SearchService
 from pigrocrm.core.validation import SafeStr
-from pigrocrm_api.deps import ActorDep, SessionDep
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
-router = APIRouter(prefix="/api/search", tags=["search"], responses=PROBLEM_RESPONSES)
+router = APIRouter(
+    prefix="/api/search",
+    tags=["search"],
+    responses=PROBLEM_RESPONSES,
+    dependencies=[Depends(get_actor)],
+)
 
 
 @router.get("", response_model=SearchResults)
 def search(
     session: SessionDep,
     actor: ActorDep,
-    # `q` in the query string, `termine` in the schema: spec §11.2's endpoint block fixes
+    settings: SettingsDep,
+    # `q` in the query string, `term` in the schema: spec §11.2's endpoint block fixes
     # the parameter name and §8 fixes the field name, and they differ. Renaming either to
     # match the other would put one of the two specs out of date silently.
     #
@@ -51,10 +58,12 @@ def search(
     # raw `DataError` with the session poisoned.
     q: Annotated[SafeStr, Query(min_length=MIN_TERM_LENGTH, max_length=MAX_TERM_LENGTH)],
     limit: Annotated[int, Query(ge=1, le=20)] = PER_CLASS_LIMIT,
-    azienda_id: Annotated[
-        UUID | None, Query(description="Solo i risultati di questa azienda; omesso, tutti")
+    legal_entity_id: Annotated[
+        UUID | None, Query(description="Only this legal entity's results; omitted, all")
     ] = None,
 ) -> SearchResults:
     return SearchService(session).search_everything(
-        SearchQuery(termine=q, limite=limit, azienda_id=azienda_id), actor
+        SearchQuery(term=q, limit=limit, legal_entity_id=legal_entity_id),
+        actor,
+        modules=enabled_modules(settings),
     )

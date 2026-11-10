@@ -25,10 +25,10 @@ function failed(error: unknown, status: number) {
 
 const STAGE = {
   id: 's1',
-  nome: 'Lead',
-  posizione: 0,
-  probabilita_default: 10,
-  tipo: 'open' as const,
+  name: 'Lead',
+  position: 0,
+  default_probability: 10,
+  type: 'open' as const,
   code: 'lead',
 }
 
@@ -57,9 +57,9 @@ beforeEach(() => {
  *  loaded full `pnpm --filter web test` run this shape lost the race (REB-405), the
  *  same headroom `vite.config.ts`'s own `testTimeout: 20_000` comment already
  *  describes for the suite as a whole. Matching that headroom here. */
-async function openRowMenu(nome: string) {
+async function openRowMenu(name: string) {
   await userEvent.click(
-    await screen.findByRole('button', { name: `Azioni per ${nome}` }, { timeout: 10_000 }),
+    await screen.findByRole('button', { name: `Azioni per ${name}` }, { timeout: 10_000 }),
   )
   // Radix opens the menu content into a portal, so the trigger's click resolving does
   // not itself guarantee the content has mounted: wait for the menu here so every
@@ -94,7 +94,7 @@ describe('PipelinePanel', () => {
   it('reports the stage type as a pill, tinted by the type the backend guarantees', async () => {
     vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([STAGE])))
     renderPanel()
-    // `DEAL_STAGE_TONE` keys on `tipo`, not on the (renameable) name, so this stays
+    // `DEAL_STAGE_TONE` keys on `type`, not on the (renameable) name, so this stays
     // right for a tenant that calls its open stage anything at all.
     expect(await screen.findByText('Aperto')).toHaveAttribute('data-tone', 'muted')
   })
@@ -184,7 +184,7 @@ describe('PipelinePanel', () => {
       expect(api.POST).toHaveBeenCalledWith(
         '/api/pipeline-stages',
         expect.objectContaining({
-          body: expect.objectContaining({ nome: 'Trattativa', tipo: 'open' }),
+          body: expect.objectContaining({ name: 'Trattativa', type: 'open' }),
         }),
       ),
     )

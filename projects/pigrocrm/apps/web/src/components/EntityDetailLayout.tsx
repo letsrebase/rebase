@@ -26,20 +26,31 @@ interface EntityDetailLayoutProps {
    * user to look for something that does not exist for this entity.
    */
   documents?: ReactNode
-  /** Optional, like `documents`: only customers and deals have invoices, and a person
+  /** Optional, like `documents`: only organizations and deals have invoices, and a person
    *  never will. An absent prop means the tab is not rendered at all, rather than a tab
    *  that opens onto an empty explanation of why it is empty. */
   invoices?: ReactNode
   /**
+   * The Contratti tab's contents: only a customer has contracts, so the tab exists only
+   * when a page passes it, for the reason given on `documents` above.
+   */
+  contracts?: ReactNode
+  /**
    * The Ore tab's contents. Optional because only a Deal has hours: an hour is
    * attached to a deal, always and only (`time_entries.deal_id` is required), so
-   * neither a Customer nor a Person can have this tab. Absent means the tab is not
+   * neither an Organization nor a Person can have this tab. Absent means the tab is not
    * rendered at all rather than rendered empty -- an empty tab invites the user to look
    * for something that does not exist for this entity.
    */
   hours?: ReactNode
   /**
-   * The Economia tab's contents -- a Deal's own profit and loss, or a Customer's as the
+   * The Costi tab's contents, for a deal whose Ore tab is not there (the `time` module is
+   * off while `costs` is on, REB-953): the costs of a deal sit under Ore, and this is where
+   * they are reached when it is gone. Absent means no tab, like every slot above.
+   */
+  costs?: ReactNode
+  /**
+   * The Economia tab's contents -- a Deal's own profit and loss, or an Organization's as the
    * sum of their deals. Filled by slice 4B; absent for the whole of 4A, which is why it
    * is optional rather than required. A tab showing zeros is worse than no tab: the
    * user understands "not yet", and cannot tell a real zero from a missing feature.
@@ -55,6 +66,12 @@ interface EntityDetailLayoutProps {
    * person's customer and that customer's live deals (`gmail/links.py`).
    */
   emails?: ReactNode
+  /**
+   * The Tasks tab's contents: what is still to be done about this record (REB-721), as
+   * opposed to the Timeline, which is what already happened to it. Optional like every
+   * slot above, and the same reasoning: an absent prop is no tab at all.
+   */
+  tasks?: ReactNode
   entityType: TimelineEntityType
   entityId: string
   /**
@@ -69,10 +86,10 @@ interface EntityDetailLayoutProps {
 }
 
 /**
- * One layout for Customer, Person and Deal: the same *Panoramica · Timeline ·
- * Collegamenti* shape for all three, so the product is predictable to learn.
+ * One layout for Organization, Person and Deal: the same *Overview · Timeline ·
+ * Links* shape for all three, so the product is predictable to learn.
  * Three similar pages drift apart from each other over time; one shared
- * component cannot. Later slices add Documenti, Attività and Fatture as further
+ * component cannot. Later slices add Documents, Tasks and Invoices as further
  * tabs here, once, for all three entities at once -- never as a fourth near-copy
  * of this file.
  */
@@ -85,9 +102,12 @@ export function EntityDetailLayout({
   links,
   documents,
   invoices,
+  contracts,
   hours,
+  costs,
   economics,
   emails,
+  tasks,
   entityType,
   entityId,
   timelineLimit,
@@ -105,15 +125,20 @@ export function EntityDetailLayout({
         tabs={
           <TabsList variant="line">
             <TabsTrigger value="panoramica">Panoramica</TabsTrigger>
-            {documents && <TabsTrigger value="documenti">Documenti</TabsTrigger>}
-            {invoices && <TabsTrigger value="fatture">Fatture</TabsTrigger>}
-            {hours && <TabsTrigger value="ore">Ore</TabsTrigger>}
-            {economics && <TabsTrigger value="economia">Economia</TabsTrigger>}
+            {documents && <TabsTrigger value="documents">Documenti</TabsTrigger>}
+            {invoices && <TabsTrigger value="invoices">Fatture</TabsTrigger>}
+            {contracts && <TabsTrigger value="contracts">Contratti</TabsTrigger>}
+            {hours && <TabsTrigger value="hours">Ore</TabsTrigger>}
+            {costs && <TabsTrigger value="costs">Costi</TabsTrigger>}
+            {economics && <TabsTrigger value="economics">Economia</TabsTrigger>}
+            {/* Before the Email and the Timeline tabs: those two are a record of what
+                already happened, and this is what is still to be done. */}
+            {tasks && <TabsTrigger value="tasks">Attività</TabsTrigger>}
             {/* Immediately before Timeline: both are a record of what already happened,
                 and everything to the left of them is a thing the user maintains. */}
             {emails && <TabsTrigger value="email">Email</TabsTrigger>}
             <TabsTrigger value="timeline">Timeline</TabsTrigger>
-            <TabsTrigger value="collegamenti">Collegamenti</TabsTrigger>
+            <TabsTrigger value="links">Collegamenti</TabsTrigger>
           </TabsList>
         }
       />
@@ -123,23 +148,38 @@ export function EntityDetailLayout({
           {overview}
         </TabsContent>
         {documents && (
-          <TabsContent value="documenti" className="mt-6">
+          <TabsContent value="documents" className="mt-6">
             {documents}
           </TabsContent>
         )}
         {invoices && (
-          <TabsContent value="fatture" className="mt-6">
+          <TabsContent value="invoices" className="mt-6">
             {invoices}
           </TabsContent>
         )}
+        {contracts && (
+          <TabsContent value="contracts" className="mt-6">
+            {contracts}
+          </TabsContent>
+        )}
         {hours && (
-          <TabsContent value="ore" className="mt-6">
+          <TabsContent value="hours" className="mt-6">
             {hours}
           </TabsContent>
         )}
+        {costs && (
+          <TabsContent value="costs" className="mt-6">
+            {costs}
+          </TabsContent>
+        )}
         {economics && (
-          <TabsContent value="economia" className="mt-6">
+          <TabsContent value="economics" className="mt-6">
             {economics}
+          </TabsContent>
+        )}
+        {tasks && (
+          <TabsContent value="tasks" className="mt-6">
+            {tasks}
           </TabsContent>
         )}
         {emails && (
@@ -150,7 +190,7 @@ export function EntityDetailLayout({
         <TabsContent value="timeline" className="mt-6">
           <Timeline entityType={entityType} entityId={entityId} limit={timelineLimit} />
         </TabsContent>
-        <TabsContent value="collegamenti" className="mt-6">
+        <TabsContent value="links" className="mt-6">
           {links ?? <p className="text-muted-foreground">Nessun collegamento.</p>}
         </TabsContent>
       </div>

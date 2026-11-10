@@ -2,7 +2,7 @@
 
 Residual A14: every service used `data.model_dump(exclude_none=True)`, which collapses
 "the caller supplied `null`" into "the caller omitted the key" -- so no `Update` schema
-could clear a numeric or date column. On `deals.ore_preventivate` that is a correctness
+could clear a numeric or date column. On `deals.budgeted_hours` that is a correctness
 defect and not a convenience: `NULL` means "nobody estimated" and `0` means "estimated
 zero hours", the budget report of slice 4 §9.2 treats them as opposite, and only `0` was
 writable.
@@ -38,17 +38,27 @@ def supplied_changes(data: BaseModel, *, exclude: set[str] | None = None) -> dic
     return data.model_dump(exclude_unset=True, exclude=exclude or set())
 
 
+def changed_keys(row: Any, changes: dict[str, Any]) -> list[str]:
+    """The names in `changes` whose value is not the one `row` holds now, sorted.
+
+    Read before the caller `setattr`s anything: an update's timeline entry names what
+    changed, not what was sent (REB-827), so a form that submits every field and edits
+    one records that one.
+    """
+    return sorted(key for key, value in changes.items() if getattr(row, key) != value)
+
+
 def reject_cleared_columns(entity: str, model: type[Any], changes: dict[str, Any]) -> None:
     """Refuse a `null` aimed at a column the database declares `NOT NULL`.
 
     The consequence `exclude_none` was accidentally covering up. Every `Update` schema
     in this project spells *every* field `T | None = None`, because that is what makes a
     field optional in a partial update -- including the fields that back a `NOT NULL`
-    column, such as `deals.nome` or `costs.importo`. While `exclude_none` was the
+    column, such as `deals.name` or `costs.amount`. While `exclude_none` was the
     contract those nulls were silently dropped; under `exclude_unset` they reach
     `setattr` and then `flush()`, and a `NOT NULL` violation does not merely fail the
     call -- it poisons the caller's `Session` for every statement after it, which is the
-    failure mode this codebase already paid for on `customers.partita_iva` and guards
+    failure mode this codebase already paid for on `organizations.vat_number` and guards
     against by hand in `LegalEntityService._check_fiscal`.
 
     Nullability is read from the mapper rather than from a hand-written list per

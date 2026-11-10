@@ -1,0 +1,19 @@
+{
+  // The service worker's own program: `lib: webworker` and no `dom`, which the main
+  // tsconfig cannot have at the same time (sw/index.ts explains). `policy.ts` is plain
+  // enough for both, and is checked by each.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "WebWorker"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["sw"]
+}

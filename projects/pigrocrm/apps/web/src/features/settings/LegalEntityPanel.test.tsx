@@ -20,47 +20,49 @@ function failed(error: unknown, status: number) {
   return { error, response: new Response(null, { status }) } as never
 }
 
-const AZIENDA: LegalEntityRecord = {
+const LEGAL_ENTITY: LegalEntityRecord = {
   id: 'a-1',
-  nome: 'Studio Rossi',
-  predefinita: true,
-  attiva: true,
-  ragione_sociale: 'Studio Rossi',
-  partita_iva: '12345678901',
-  codice_fiscale: null,
-  indirizzo: 'Via Roma 1',
-  cap: '20100',
-  comune: 'Milano',
-  provincia: 'MI',
-  nazione: 'IT',
-  pec: 'studio@pec.it',
-  codice_sdi: null,
-  telefono: null,
+  name: 'Studio Rossi',
+  is_default: true,
+  active: true,
+  legal_name: 'Studio Rossi',
+  vat_number: '12345678901',
+  tax_code: null,
+  address: 'Via Roma 1',
+  postal_code: '20100',
+  city: 'Milano',
+  province: 'MI',
+  country: 'IT',
+  certified_email: 'studio@pec.it',
+  sdi_code: null,
+  phone: null,
   email: null,
-  sito_web: null,
+  website: null,
   logo_key: null,
-  firma_key: null,
-  firma_email: null,
-  regime_fiscale: 'RF19',
+  signature_key: null,
+  email_signature: null,
+  tax_regime: 'RF19',
+  fiscal_year_end_month: 12,
+  fiscal_year_end_day: 31,
   created_at: '2026-08-20T09:00:00Z',
   updated_at: '2026-08-20T09:00:00Z',
 }
 
-function renderPanel(azienda: LegalEntityRecord = AZIENDA) {
+function renderPanel(legal_entity: LegalEntityRecord = LEGAL_ENTITY) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const tree = (record: LegalEntityRecord) => (
     <QueryClientProvider client={client}>
-      <LegalEntityPanel azienda={record} />
+      <LegalEntityPanel legal_entity={record} />
     </QueryClientProvider>
   )
-  const result = render(tree(azienda))
+  const result = render(tree(legal_entity))
   return { ...result, rerenderWith: (record: LegalEntityRecord) => result.rerender(tree(record)) }
 }
 
 function saveCall() {
   return vi.mocked(api.PUT).mock.calls[0] as unknown as [
     string,
-    { params: { path: { azienda_id: string } }; body: Record<string, unknown> },
+    { params: { path: { legal_entity_id: string } }; body: Record<string, unknown> },
   ]
 }
 
@@ -84,40 +86,40 @@ describe('LegalEntityPanel', () => {
    * read of its own here; the page that owns the list hands the row down.
    */
   it('shows a fresh azienda with its name and the Italian default nation', () => {
-    renderPanel({ ...AZIENDA, partita_iva: null, indirizzo: null, pec: null, regime_fiscale: null })
+    renderPanel({ ...LEGAL_ENTITY, vat_number: null, address: null, certified_email: null, tax_regime: null })
     expect(screen.getByLabelText(/Ragione sociale/)).toHaveValue('Studio Rossi')
     expect(screen.getByLabelText('Partita IVA')).toHaveValue('')
     expect(screen.getByLabelText('Nazione')).toHaveValue('IT')
   })
 
   it('saves to the azienda by id and sends an emptied field as an empty string', async () => {
-    vi.mocked(api.PUT).mockResolvedValue(ok({ ...AZIENDA, pec: '' }))
+    vi.mocked(api.PUT).mockResolvedValue(ok({ ...LEGAL_ENTITY, certified_email: '' }))
     renderPanel()
     await userEvent.clear(screen.getByLabelText('PEC'))
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(1))
     const [path, options] = saveCall()
-    expect(path).toBe('/api/aziende/{azienda_id}')
-    expect(options.params.path.azienda_id).toBe('a-1')
-    expect(options.body.pec).toBe('')
-    expect(options.body.nome).toBe('Studio Rossi')
+    expect(path).toBe('/api/legal-entities/{legal_entity_id}')
+    expect(options.params.path.legal_entity_id).toBe('a-1')
+    expect(options.body.certified_email).toBe('')
+    expect(options.body.name).toBe('Studio Rossi')
   })
 
   it('follows a newer row while untouched and keeps a draft once typing started', async () => {
-    vi.mocked(api.PUT).mockResolvedValue(ok(AZIENDA))
+    vi.mocked(api.PUT).mockResolvedValue(ok(LEGAL_ENTITY))
     const { rerenderWith } = renderPanel()
     // Another admin saved: the refetched row is newer and the form has no draft.
-    rerenderWith({ ...AZIENDA, comune: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
+    rerenderWith({ ...LEGAL_ENTITY, city: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
     expect(screen.getByLabelText('Comune')).toHaveValue('Torino')
     await userEvent.type(screen.getByLabelText('PEC'), 'x')
-    rerenderWith({ ...AZIENDA, comune: 'Genova', updated_at: '2026-08-22T09:00:00Z' })
+    rerenderWith({ ...LEGAL_ENTITY, city: 'Genova', updated_at: '2026-08-22T09:00:00Z' })
     expect(screen.getByLabelText('PEC')).toHaveValue('studio@pec.itx')
     expect(screen.getByLabelText('Comune')).toHaveValue('Torino')
     // What Salva writes is the reseeded row plus the draft, never the stale one.
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(1))
-    expect(saveCall()[1].body.comune).toBe('Torino')
-    expect(saveCall()[1].body.pec).toBe('studio@pec.itx')
+    expect(saveCall()[1].body.city).toBe('Torino')
+    expect(saveCall()[1].body.certified_email).toBe('studio@pec.itx')
   })
 
   it('locks the fields while a save is in flight, so nothing typed then is lost', async () => {
@@ -126,7 +128,7 @@ describe('LegalEntityPanel', () => {
     renderPanel()
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(screen.getByLabelText('PEC')).toBeDisabled())
-    finish(ok(AZIENDA))
+    finish(ok(LEGAL_ENTITY))
     await waitFor(() => expect(screen.getByLabelText('PEC')).toBeEnabled())
   })
 
@@ -136,8 +138,8 @@ describe('LegalEntityPanel', () => {
         {
           code: 'validation_failed',
           detail: 'partita_iva deve essere di 11 cifre',
-          entity: 'emitter_profile',
-          field: 'partita_iva',
+          entity: 'legal_entities',
+          field: 'vat_number',
         },
         422,
       ),
@@ -156,18 +158,18 @@ describe('LegalEntityPanel', () => {
     status: 409,
     detail: 'qualcun altro ha salvato nel frattempo: ricarica e riprova',
     code: 'stale_row',
-    entity: 'emitter_profile',
+    entity: 'legal_entities',
     updated_at: '2026-08-21T09:00:00Z',
   }
 
   it('sends the version of the row the form was seeded from, and the newer one once it followed it', async () => {
-    vi.mocked(api.PUT).mockResolvedValue(ok(AZIENDA))
+    vi.mocked(api.PUT).mockResolvedValue(ok(LEGAL_ENTITY))
     const { rerenderWith } = renderPanel()
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(1))
     expect(saveCall()[1].body.updated_at).toBe('2026-08-20T09:00:00Z')
     // Untouched, the form followed the newer row: the next save is built on it.
-    rerenderWith({ ...AZIENDA, comune: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
+    rerenderWith({ ...LEGAL_ENTITY, city: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(2))
     const [, options] = vi.mocked(api.PUT).mock.calls[1] as unknown as [string, { body: Record<string, unknown> }]
@@ -177,7 +179,7 @@ describe('LegalEntityPanel', () => {
   it('shows the saved row and carries its version while the list has not refetched yet', async () => {
     // The answer is the row as saved; the prop still holds the previous row for a
     // round trip, and that older row must not be adopted back over the saved values.
-    const saved = { ...AZIENDA, comune: 'Torino', updated_at: '2026-08-21T09:00:00Z' }
+    const saved = { ...LEGAL_ENTITY, city: 'Torino', updated_at: '2026-08-21T09:00:00Z' }
     vi.mocked(api.PUT).mockResolvedValue(ok(saved))
     renderPanel()
     await userEvent.clear(screen.getByLabelText('Comune'))
@@ -189,16 +191,16 @@ describe('LegalEntityPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(2))
     const [, options] = vi.mocked(api.PUT).mock.calls[1] as unknown as [string, { body: Record<string, unknown> }]
-    expect(options.body).toMatchObject({ comune: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
+    expect(options.body).toMatchObject({ city: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
   })
 
   it('keeps the seeded version under an open draft, so a newer row is not overwritten in silence', async () => {
-    vi.mocked(api.PUT).mockResolvedValue(ok(AZIENDA))
+    vi.mocked(api.PUT).mockResolvedValue(ok(LEGAL_ENTITY))
     const { rerenderWith } = renderPanel()
     await userEvent.type(screen.getByLabelText('PEC'), 'x')
     // Another admin saved while the draft was open: the form keeps its values and its
     // version, and the server, not this form, decides what happens to the save.
-    rerenderWith({ ...AZIENDA, comune: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
+    rerenderWith({ ...LEGAL_ENTITY, city: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
     expect(screen.getByLabelText('Comune')).toHaveValue('Milano')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(1))
@@ -208,10 +210,10 @@ describe('LegalEntityPanel', () => {
   it('Ricarica adopts a newer row that had already arrived under the draft', async () => {
     // A background refetch brought the other admin's row while the draft was open; the
     // reload fetches the same row again, and it must be adopted all the same.
-    vi.mocked(api.PUT).mockResolvedValueOnce(failed(STALE, 409)).mockResolvedValue(ok(AZIENDA))
+    vi.mocked(api.PUT).mockResolvedValueOnce(failed(STALE, 409)).mockResolvedValue(ok(LEGAL_ENTITY))
     const { rerenderWith } = renderPanel()
     await userEvent.type(screen.getByLabelText('PEC'), 'x')
-    rerenderWith({ ...AZIENDA, comune: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
+    rerenderWith({ ...LEGAL_ENTITY, city: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
     expect(screen.getByLabelText('Comune')).toHaveValue('Milano')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await screen.findByRole('button', { name: 'Ricarica' })
@@ -235,7 +237,7 @@ describe('LegalEntityPanel', () => {
     await userEvent.type(screen.getByLabelText('PEC'), 'x')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await userEvent.click(await screen.findByRole('button', { name: 'Ricarica' }))
-    rerenderWith({ ...AZIENDA, comune: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
+    rerenderWith({ ...LEGAL_ENTITY, city: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(2))
     expect(screen.getAllByRole('alert')[0]).toHaveTextContent('Riga ricaricata.')
@@ -243,7 +245,7 @@ describe('LegalEntityPanel', () => {
   })
 
   it('on a stale refusal offers Ricarica, which takes the newer row under the touched fields', async () => {
-    vi.mocked(api.PUT).mockResolvedValueOnce(failed(STALE, 409)).mockResolvedValue(ok(AZIENDA))
+    vi.mocked(api.PUT).mockResolvedValueOnce(failed(STALE, 409)).mockResolvedValue(ok(LEGAL_ENTITY))
     const { rerenderWith } = renderPanel()
     await userEvent.type(screen.getByLabelText('PEC'), 'x')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
@@ -254,7 +256,7 @@ describe('LegalEntityPanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Ricarica' }))
     // The refetch brings the other admin's row: the untouched field follows it, the
     // touched one keeps the draft, and the banner says so until the next save lands.
-    rerenderWith({ ...AZIENDA, comune: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
+    rerenderWith({ ...LEGAL_ENTITY, city: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
     expect(screen.getByLabelText('Comune')).toHaveValue('Torino')
     expect(screen.getByLabelText('PEC')).toHaveValue('studio@pec.itx')
     expect(screen.getByRole('alert')).toHaveTextContent('Riga ricaricata.')
@@ -263,8 +265,8 @@ describe('LegalEntityPanel', () => {
     await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(2))
     const [, options] = vi.mocked(api.PUT).mock.calls[1] as unknown as [string, { body: Record<string, unknown> }]
     expect(options.body).toMatchObject({
-      comune: 'Torino',
-      pec: 'studio@pec.itx',
+      city: 'Torino',
+      certified_email: 'studio@pec.itx',
       updated_at: '2026-08-21T09:00:00Z',
     })
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())

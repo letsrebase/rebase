@@ -1,85 +1,19 @@
+from collections.abc import Mapping, Sequence
+from difflib import get_close_matches
+from typing import Any
+
 import pydantic
-from pydantic_core import ErrorDetails
 
 from pigrocrm.core.errors import DomainError, ValidationFailed
-
-# error type (pydantic-core's own `type` string, see `ValidationError.errors()`) ->
-# (reason in Italian, expected value in Italian). Covers the shapes this project's
-# own MCP tool arguments can actually produce: every native field on
-# Customer/Person/DealCreate|Update is int, float, Decimal, bool, date, UUID, or a
-# plain string -- there is no exotic pydantic type in this schema surface that
-# would fall outside this table and need its own entry.
-_PYDANTIC_REASON_BY_TYPE: dict[str, tuple[str, str | None]] = {
-    "int_parsing": ("non è un numero intero", "un numero intero"),
-    "int_type": ("non è un numero intero", "un numero intero"),
-    "float_parsing": ("non è un numero", "un numero"),
-    "float_type": ("non è un numero", "un numero"),
-    "decimal_parsing": ("non è un importo numerico", "un importo numerico"),
-    "string_type": ("deve essere un testo", "un valore testuale"),
-    "bool_parsing": ("non è un valore booleano", "true oppure false"),
-    "bool_type": ("non è un valore booleano", "true oppure false"),
-    "date_parsing": ("non è una data valida", "una data ISO (YYYY-MM-DD)"),
-    "date_from_datetime_parsing": ("non è una data valida", "una data ISO (YYYY-MM-DD)"),
-    "uuid_parsing": ("non è un identificativo valido", "un identificativo valido (UUID)"),
-    "uuid_type": ("non è un identificativo valido", "un identificativo valido (UUID)"),
-    "extra_forbidden": (
-        "campo non riconosciuto da questo strumento",
-        "uno dei campi elencati nello schema dello strumento",
-    ),
-    "missing": ("campo obbligatorio mancante", "un valore"),
-}
-
-# error type -> (the `ctx` key pydantic-core stores the bound under, the Italian
-# comparison phrase). A range violation (e.g. `limit` over 200) needs the actual
-# number restated, not just "out of range" -- `ctx` is where pydantic-core puts it
-# (confirmed against the installed package: `ValidationError.errors()`, never
-# `str(exc)`, which is the one that carries the `errors.pydantic.dev` footer this
-# module exists to keep out of an agent-facing message).
-_COMPARISON_BOUND_BY_TYPE: dict[str, tuple[str, str]] = {
-    "less_than_equal": ("le", "minore o uguale a"),
-    "less_than": ("lt", "minore di"),
-    "greater_than_equal": ("ge", "maggiore o uguale a"),
-    "greater_than": ("gt", "maggiore di"),
-}
-
-
-def _field_path(error: ErrorDetails) -> str:
-    return ".".join(str(part) for part in error["loc"]) or "valore"
-
-
-def _pydantic_error_to_validation_failed(exc: pydantic.ValidationError) -> ValidationFailed:
-    """Translates pydantic-core's own error shape into this project's structured,
-    Italian `ValidationFailed` -- the same family `to_agent_message` already
-    renders every hand-raised domain error from, so an argument-conversion
-    failure reads identically to one the core layer raised on purpose.
-
-    Renders only the first error even when pydantic reports several: a model
-    correcting one field and retrying is the same one-fix-at-a-time workflow
-    `validate_custom_fields` already assumes for custom fields elsewhere in this
-    project.
-    """
-    error = exc.errors()[0]
-    field = _field_path(error)
-    error_type = error["type"]
-
-    comparison = _COMPARISON_BOUND_BY_TYPE.get(error_type)
-    if comparison is not None:
-        ctx_key, phrase = comparison
-        bound = (error.get("ctx") or {}).get(ctx_key)
-        return ValidationFailed(
-            "input", field, f"deve essere {phrase} {bound}", expected=f"un valore {phrase} {bound}"
-        )
-
-    reason, expected = _PYDANTIC_REASON_BY_TYPE.get(error_type, (error["msg"], None))
-    return ValidationFailed("input", field, reason, expected=expected)
+from pigrocrm.core.validation_messages import validation_failed_from_error
 
 
 def _malformed_identifier_error() -> ValidationFailed:
     return ValidationFailed(
         "input",
-        "identificativo",
-        "non è un identificativo valido",
-        expected="un identificativo valido (UUID); usa lo strumento di ricerca per trovarlo",
+        "id",
+        "is not a valid identifier",
+        expected="a valid identifier (UUID); use the search tool to find it",
     )
 
 
@@ -92,8 +26,8 @@ def to_domain_error(exc: ValueError) -> DomainError:
     package is a plain `str`, converted by hand) and `pydantic.ValidationError`
     (raised when a tool constructs one of `pigrocrm.core`'s own Create/Update/
     ListQuery schemas from caller-supplied data -- e.g. `DealUpdate(**changes)`
-    inside `tools/deals.py`, or `CustomerListQuery(limit=...)` inside
-    `search_customers`).
+    inside `tools/deals.py`, or `OrganizationListQuery(limit=...)` inside
+    `search_organizations`).
 
     `pydantic.ValidationError` **is** a `ValueError` subclass -- confirmed against
     the installed pydantic, not assumed -- so it is checked first: a caller of
@@ -101,18 +35,18 @@ def to_domain_error(exc: ValueError) -> DomainError:
     failure as a malformed identifier instead of naming the real field and reason.
     """
     if isinstance(exc, pydantic.ValidationError):
-        return _pydantic_error_to_validation_failed(exc)
+        return validation_failed_from_error(exc.errors()[0])
     return _malformed_identifier_error()
 
 
 HINT_BY_CODE: dict[str, str] = {
-    "not_found": "Verifica l'identificativo, oppure cerca l'entità con lo strumento di ricerca.",
-    "validation_failed": "Correggi il valore indicato e riprova.",
+    "not_found": "Check the identifier, or look the entity up with the search tool.",
+    "validation_failed": "Fix the indicated value and try again.",
     "conflict": (
-        "Lo stato attuale impedisce l'operazione: risolvi il conflitto descritto e riprova."
+        "The current state prevents the operation: resolve the described conflict and try again."
     ),
-    "permission_denied": "Servono permessi diversi: chiedi all'utente di procedere manualmente.",
-    "immutable_field": "Questo campo non è modificabile: archivia e ricrea invece di aggiornare.",
+    "permission_denied": "Different permissions are needed: ask the user to proceed manually.",
+    "immutable_field": "This field cannot be modified: archive and recreate instead of updating.",
 }
 
 
@@ -126,12 +60,12 @@ def to_agent_message(exc: DomainError) -> str:
 
     expected = exc.details.get("expected")
     if expected:
-        lines.append(f"Valore atteso: {expected}.")
+        lines.append(f"Expected value: {expected}.")
 
     if exc.code == "permission_denied":
         required = ", ".join(exc.details.get("required_roles", []))
-        actual = exc.details.get("actual_role", "sconosciuto")
-        lines.append(f"Ruolo attuale: {actual}. Ruoli sufficienti: {required}.")
+        actual = exc.details.get("actual_role", "unknown")
+        lines.append(f"Current role: {actual}. Sufficient roles: {required}.")
 
     extras = {
         key: value
@@ -139,7 +73,103 @@ def to_agent_message(exc: DomainError) -> str:
         if key not in {"expected", "required_roles", "actual_role", "entity", "field", "reason"}
     }
     if extras:
-        lines.append("Contesto: " + ", ".join(f"{k}={v}" for k, v in sorted(extras.items())))
+        lines.append("Context: " + ", ".join(f"{k}={v}" for k, v in sorted(extras.items())))
 
-    lines.append(HINT_BY_CODE.get(exc.code, "Rivedi i parametri e riprova."))
+    lines.append(HINT_BY_CODE.get(exc.code, "Review the parameters and try again."))
     return " ".join(lines)
+
+
+def _parameters_of(schema: Mapping[str, Any]) -> str:
+    """The parameters a tool takes, as one clause an agent can copy names from."""
+    properties = list(schema.get("properties", {}))
+    required = set(schema.get("required", []))
+    mandatory = [name for name in properties if name in required]
+    optional = [name for name in properties if name not in required]
+    parts = []
+    if mandatory:
+        parts.append("required " + ", ".join(f"`{name}`" for name in mandatory))
+    if optional:
+        parts.append("optional " + ", ".join(f"`{name}`" for name in optional))
+    return "parameters " + "; ".join(parts) if parts else "no parameters"
+
+
+PERSON_FLAT = ("email", "phone", "linkedin")
+CUSTOMER_FLAT = ("email", "phone")
+# Arguments a tool used to take and no longer does, with what to send instead: a misspelling
+# guess cannot find `value_lines` from `expected_value`.
+REMOVED_ARGUMENTS: dict[tuple[str, str], str] = {
+    ("create_deal", "expected_value"): (
+        "the deal's value is the total of its `value_lines`: send `value_lines` (a list of "
+        "lines with `unit`, `delivery_period`, `unit_price`; `preview_deal_value` shows the "
+        "total they give), never `expected_value`"
+    ),
+    **{
+        (tool, name): (
+            f"{who} are its `contact_points`: send a list of `{{kind, value, label, note, "
+            f"is_primary}}`, never `{name}` (the first of a kind is its primary)"
+        )
+        for tool, who, names in (
+            ("create_person", "a person's emails, phones and LinkedIn profiles", PERSON_FLAT),
+            ("update_person", "a person's emails, phones and LinkedIn profiles", PERSON_FLAT),
+            ("create_organization", "a customer's emails and phones", CUSTOMER_FLAT),
+            ("update_organization", "a customer's emails and phones", CUSTOMER_FLAT),
+        )
+        for name in names
+    },
+}
+
+
+def refuse_removed_changes(tool: str, changes: Mapping[str, Any]) -> None:
+    """The `changes` of an `update_*` that names a field the tool no longer takes: refused
+    with what to send instead, as a removed parameter is, rather than as the schema's bare
+    «field not recognised»."""
+    for name in changes:
+        if (tool, name) in REMOVED_ARGUMENTS:
+            raise ValidationFailed(
+                "input",
+                f"changes.{name}",
+                f"field removed from `{tool}`",
+                expected=REMOVED_ARGUMENTS[(tool, name)],
+            )
+
+
+def unknown_argument_error(
+    tool: str, names: Sequence[str], schema: Mapping[str, Any]
+) -> DomainError:
+    """A parameter the tool does not have (REB-808). The SDK ignores it silently, so a
+    misspelt `limit` on a search answered with every row, and a misspelt `stage_id` read
+    as a missing one. Names the first, offers the closest real name, and lists them all."""
+    name = names[0]
+    if (tool, name) in REMOVED_ARGUMENTS:
+        return ValidationFailed(
+            "input",
+            name,
+            f"parameter removed from `{tool}`",
+            expected=REMOVED_ARGUMENTS[(tool, name)],
+        )
+    close = get_close_matches(name, list(schema.get("properties", {})), n=1)
+    suggestion = f" (maybe `{close[0]}`)" if close else ""
+    return ValidationFailed(
+        "input",
+        name,
+        f"parameter not recognized by `{tool}`{suggestion}",
+        expected=_parameters_of(schema),
+    )
+
+
+def argument_error(
+    tool: str, exc: pydantic.ValidationError, schema: Mapping[str, Any]
+) -> DomainError:
+    """What the SDK's own validation of a tool's arguments, which runs before any tool
+    body and so before `_guard`, answers instead of its English dump (REB-808): the same
+    `ValidationFailed` the guard renders for a bad value inside a tool, and for a
+    parameter that is missing, the list of the ones the tool takes."""
+    failed = validation_failed_from_error(exc.errors()[0])
+    if exc.errors()[0]["type"] == "missing":
+        return ValidationFailed(
+            "input",
+            str(failed.details["field"]),
+            f"required field missing in `{tool}`",
+            expected=_parameters_of(schema),
+        )
+    return failed

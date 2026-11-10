@@ -213,3 +213,15 @@ test("reports a clean week without tables", () => {
   assert.match(markdown, /\*\*0 critical, 0 high, 0 medium\*\*/);
   assert.doesNotMatch(markdown, /\| Source \|/);
 });
+
+test("the public text withholds own-code findings and unfixed advisories, counts only", () => {
+  const built = buildReport(allFixtures());
+  const full = renderReport({ rows: built.rows, errors: built.errors, meta: { ...meta, scanned: built.scanned } });
+  const pub = renderReport({ rows: built.rows, errors: built.errors, meta: { ...meta, scanned: built.scanned }, withhold: true });
+  assert.match(full.markdown, /registerHandoff\.ts:22/);
+  assert.doesNotMatch(pub.markdown, /registerHandoff|HardcodedNonCryptoSecret/, "no file:line of our own code in public");
+  assert.doesNotMatch(pub.markdown, /no fix yet/, "no unfixed advisory row in public");
+  assert.match(pub.markdown, /\*\*Withheld from this public text:\*\* \d+ critical, \d+ high, \d+ medium/);
+  assert.match(pub.markdown, /LODASH-1040724/, "a fixable advisory stays");
+  assert.deepEqual(pub.summary, full.summary, "the counts stay whole");
+});

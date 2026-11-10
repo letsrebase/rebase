@@ -20,7 +20,7 @@ from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 
 # The timeline `entity_type` for a field definition. Its own value, not the
 # `entity_type` *column* on the row (which says which entity the custom field belongs
-# to, "customer"/"person"/"deal") -- the two are different questions and both end up
+# to, "organization"/"person"/"deal") -- the two are different questions and both end up
 # in the audit entry, the first as `Activity.entity_type` and the second inside the
 # payload.
 ENTITY = "field_definition"
@@ -94,17 +94,17 @@ class FieldDefinitionService:
         # module scope: `schema_registry` imports this class
         # (`schema_registry.py:19`), so a top-level import is a real cycle -- the
         # same call-time resolution `server.py` uses for `register_entity_tools`.
-        from pigrocrm.core.schema_registry import native_fields
+        from pigrocrm.core.schema_registry import reserved_field_names
 
-        native = native_fields(data.entity_type)
-        if data.key in native:
+        reserved = reserved_field_names(data.entity_type)
+        if data.key in reserved:
             raise ValidationFailed(
                 "field_definition",
                 "key",
                 "collide con una colonna nativa dell'entità",
                 expected=(
                     f"una chiave diversa da {data.key!r}: è già una colonna nativa di "
-                    f"{data.entity_type}. Colonne native: {', '.join(sorted(native))}"
+                    f"{data.entity_type}. Nomi riservati: {', '.join(sorted(reserved))}"
                 ),
             )
 
@@ -184,7 +184,7 @@ class FieldDefinitionService:
         field.archived = True
         # Only when it really changed state: archiving an already-archived definition
         # is a no-op, and an entry for it would claim a decision nobody took. Same
-        # reasoning as `CustomerService.restore`.
+        # reasoning as `OrganizationService.restore`.
         if not was_archived:
             self.activities.record(ENTITY, field.id, "archived", actor, _identity(field))
         self.session.commit()

@@ -13,35 +13,35 @@ import pytest
 
 from pigrocrm.core.invoices.totals import (
     ComputedLine,
-    build_riepilogo,
+    build_recap,
     format_amount_2,
     format_amount_8,
     format_rate,
     line_total,
-    round_money,
     sum_totals,
 )
+from pigrocrm.core.money import round_money
 
 
 def _line(
-    numero: int,
-    prezzo_totale: str,
-    aliquota: str,
-    natura: str | None = None,
-    riferimento: str | None = None,
+    number: int,
+    total_price: str,
+    rate: str,
+    vat_nature: str | None = None,
+    reference: str | None = None,
 ) -> ComputedLine:
     return ComputedLine(
-        numero_linea=numero,
-        descrizione=f"riga {numero}",
-        quantita=Decimal("1.000000"),
-        unita_misura=None,
-        prezzo_unitario=Decimal(prezzo_totale),
-        sconto_percentuale=None,
-        sconto_importo=None,
-        prezzo_totale=Decimal(prezzo_totale),
-        aliquota_iva=Decimal(aliquota),
-        natura=natura,
-        riferimento_normativo=riferimento,
+        line_number=number,
+        description=f"riga {number}",
+        quantity=Decimal("1.000000"),
+        unit_of_measure=None,
+        unit_price=Decimal(total_price),
+        discount_percentage=None,
+        discount_amount=None,
+        total_price=Decimal(total_price),
+        vat_rate=Decimal(rate),
+        vat_nature=vat_nature,
+        legal_reference=reference,
     )
 
 
@@ -56,28 +56,28 @@ def test_a_half_cent_rounds_up_not_to_even() -> None:
 
 def test_line_total_is_quantity_times_price_rounded_to_the_cent() -> None:
     assert line_total(
-        quantita=Decimal("3.000000"),
-        prezzo_unitario=Decimal("33.333333"),
-        sconto_percentuale=None,
-        sconto_importo=None,
+        quantity=Decimal("3.000000"),
+        unit_price=Decimal("33.333333"),
+        discount_percentage=None,
+        discount_amount=None,
     ) == Decimal("100.00")
 
 
 def test_line_total_applies_a_percentage_discount_then_a_fixed_one() -> None:
     assert line_total(
-        quantita=Decimal("2.000000"),
-        prezzo_unitario=Decimal("100.000000"),
-        sconto_percentuale=Decimal("10.00"),
-        sconto_importo=Decimal("5.00"),
+        quantity=Decimal("2.000000"),
+        unit_price=Decimal("100.000000"),
+        discount_percentage=Decimal("10.00"),
+        discount_amount=Decimal("5.00"),
     ) == Decimal("175.00")
 
 
 def test_a_negative_line_is_allowed_because_a_discount_is_a_line() -> None:
     assert line_total(
-        quantita=Decimal("1.000000"),
-        prezzo_unitario=Decimal("-50.000000"),
-        sconto_percentuale=None,
-        sconto_importo=None,
+        quantity=Decimal("1.000000"),
+        unit_price=Decimal("-50.000000"),
+        discount_percentage=None,
+        discount_amount=None,
     ) == Decimal("-50.00")
 
 
@@ -86,9 +86,9 @@ def test_a_group_base_is_the_sum_of_already_rounded_line_totals() -> None:
     rounding is 0.02, but each printed line reads 0.01, so the SdI's own check
     (ImponibileImporto == sum of the group's PrezzoTotale) wants 0.03. Rounding the
     exact sum instead is a discarded file."""
-    righe = [_line(1, "0.01", "22.00"), _line(2, "0.01", "22.00"), _line(3, "0.01", "22.00")]
-    (group,) = build_riepilogo(righe)
-    assert group.imponibile == Decimal("0.03")
+    lines = [_line(1, "0.01", "22.00"), _line(2, "0.01", "22.00"), _line(3, "0.01", "22.00")]
+    (group,) = build_recap(lines)
+    assert group.taxable_amount == Decimal("0.03")
 
 
 def test_group_tax_is_computed_from_the_group_not_summed_from_the_lines() -> None:
@@ -96,10 +96,10 @@ def test_group_tax_is_computed_from_the_group_not_summed_from_the_lines() -> Non
     Three lines of 3.33 at 22%: per line the tax rounds to 0.73 each, summing to
     2.19, while the group's 9.99 x 22% is 2.1978 -> 2.20. The SdI checks the group
     product, so 2.20 is the only acceptable answer."""
-    righe = [_line(1, "3.33", "22.00"), _line(2, "3.33", "22.00"), _line(3, "3.33", "22.00")]
-    (group,) = build_riepilogo(righe)
-    assert group.imponibile == Decimal("9.99")
-    assert group.imposta == Decimal("2.20")
+    lines = [_line(1, "3.33", "22.00"), _line(2, "3.33", "22.00"), _line(3, "3.33", "22.00")]
+    (group,) = build_recap(lines)
+    assert group.taxable_amount == Decimal("9.99")
+    assert group.vat_amount == Decimal("2.20")
     assert sum(round_money(Decimal("3.33") * Decimal("22") / 100) for _ in range(3)) == Decimal(
         "2.19"
     )
@@ -107,43 +107,46 @@ def test_group_tax_is_computed_from_the_group_not_summed_from_the_lines() -> Non
 
 def test_two_rates_on_one_invoice_produce_one_group_each() -> None:
     """Spec 14.8, the synthetic RF01 case: 22% and 10% on the same invoice."""
-    righe = [
+    lines = [
         _line(1, "100.00", "22.00"),
         _line(2, "50.00", "10.00"),
         _line(3, "25.00", "22.00"),
     ]
-    groups = build_riepilogo(righe)
-    assert [(g.aliquota_iva, g.imponibile, g.imposta) for g in groups] == [
+    groups = build_recap(lines)
+    assert [(g.vat_rate, g.taxable_amount, g.vat_amount) for g in groups] == [
         (Decimal("10.00"), Decimal("50.00"), Decimal("5.00")),
         (Decimal("22.00"), Decimal("125.00"), Decimal("27.50")),
     ]
-    imponibile, imposta, totale = sum_totals(groups)
-    assert (imponibile, imposta, totale) == (
+    taxable_amount, vat_amount, total = sum_totals(groups)
+    assert (taxable_amount, vat_amount, total) == (
         Decimal("175.00"),
         Decimal("32.50"),
         Decimal("207.50"),
     )
 
 
-def test_same_rate_different_natura_are_distinct_groups() -> None:
+def test_same_rate_different_vat_nature_are_distinct_groups() -> None:
     """Spec 6.1 rule 5: the group key is (aliquota, natura), because the two carry
     different RiferimentoNormativo values and the SdI reads them per group."""
-    righe = [
-        _line(1, "100.00", "0.00", natura="N2.2", riferimento="art. 1 L. 190/2014"),
-        _line(2, "40.00", "0.00", natura="N1", riferimento="art. 15 DPR 633/72"),
+    lines = [
+        _line(1, "100.00", "0.00", vat_nature="N2.2", reference="art. 1 L. 190/2014"),
+        _line(2, "40.00", "0.00", vat_nature="N1", reference="art. 15 DPR 633/72"),
     ]
-    groups = build_riepilogo(righe)
-    assert [(g.natura, g.imponibile) for g in groups] == [
+    groups = build_recap(lines)
+    assert [(g.vat_nature, g.taxable_amount) for g in groups] == [
         ("N1", Decimal("40.00")),
         ("N2.2", Decimal("100.00")),
     ]
 
 
-def test_the_forfettario_shape_is_all_zeroes_and_still_sums() -> None:
-    righe = [_line(1, "1500.00", "0.00", natura="N2.2"), _line(2, "-100.00", "0.00", natura="N2.2")]
-    groups = build_riepilogo(righe)
-    imponibile, imposta, totale = sum_totals(groups)
-    assert (imponibile, imposta, totale) == (
+def test_the_flat_rate_shape_is_all_zeroes_and_still_sums() -> None:
+    lines = [
+        _line(1, "1500.00", "0.00", vat_nature="N2.2"),
+        _line(2, "-100.00", "0.00", vat_nature="N2.2"),
+    ]
+    groups = build_recap(lines)
+    taxable_amount, vat_amount, total = sum_totals(groups)
+    assert (taxable_amount, vat_amount, total) == (
         Decimal("1400.00"),
         Decimal("0.00"),
         Decimal("1400.00"),

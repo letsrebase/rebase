@@ -1,14 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { SETTINGS_TABS } from '@/features/settings/tabs'
+import { SETTINGS_GROUPS } from '@/features/settings/tabs'
+import { canWrite } from '@/lib/permissions'
+import { seedModules } from '@/lib/modules.testing'
+import type { ModuleKey } from '@/lib/modules'
 import { readAndClearRegisterHandoffEmail } from '@/lib/registerHandoff'
 import { LegalEntityContext, type LegalEntityRecord, type LegalEntityValue } from '@/lib/legalEntity'
 import { AppShell } from './AppShell'
-import { SIDEBAR_GROUPS_KEY } from './sidebarGroups'
 
-const mockRoute = vi.hoisted(() => ({ pathname: '/app/customers', search: '' }))
+const mockRoute = vi.hoisted(() => ({ pathname: '/app/organizations', search: '' }))
 
 /**
  * `Link` is substituted rather than mounted in a router, as everywhere else in this
@@ -23,12 +25,16 @@ vi.mock('@tanstack/react-router', () => ({
     className,
     activeProps,
     activeOptions,
+    'aria-current': ariaCurrent,
+    'data-status': dataStatus,
   }: {
     children: React.ReactNode
     to: string
     className?: string
     activeProps?: Record<string, unknown>
     activeOptions?: { exact?: boolean; includeSearch?: boolean }
+    'aria-current'?: 'page'
+    'data-status'?: string
   }) => {
     // `activeOptions.exact` is honoured, because the shell relies on it: without it "/app"
     // is a prefix of every other route and Home would be the current page everywhere.
@@ -41,7 +47,13 @@ vi.mock('@tanstack/react-router', () => ({
     const search = activeOptions?.includeSearch === false || mockRoute.search === ''
     const active = path && search
     return (
-      <a href={to} className={className} {...(active ? activeProps : {})}>
+      <a
+        href={to}
+        className={className}
+        aria-current={ariaCurrent}
+        data-status={dataStatus}
+        {...(active ? activeProps : {})}
+      >
         {children}
       </a>
     )
@@ -49,19 +61,16 @@ vi.mock('@tanstack/react-router', () => ({
   useRouterState: () => ({ location: { pathname: mockRoute.pathname } }),
   // The command palette the shell mounts navigates; nothing here asserts on where.
   useNavigate: () => vi.fn(),
-  // The connect-agent dialog the shell now mounts guards against navigating away with an
-  // unsaved token; nothing here exercises the guard itself.
-  useBlocker: vi.fn(),
 }))
 
-// The connect-agent dialog copies text via `sonner`'s toast; nothing here asserts on the
-// toast copy, only that clicking a copy button does not throw for want of a mock.
+// The shell toasts a refusal to enter another space, which is what the switcher's tests read.
 vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
-const mockAuth = vi.hoisted(() => ({ ruolo: 'admin' as string }))
+const mockAuth = vi.hoisted(() => ({ role: 'admin' as string, id: undefined as string | undefined }))
 vi.mock('@/lib/auth', () => ({
-  useAuth: () => ({ user: { nome: 'Mario', email: 'm@example.com', ruolo: mockAuth.ruolo }, logout: vi.fn() }),
-  useIsAdmin: () => mockAuth.ruolo === 'admin',
+  useAuth: () => ({ user: { id: mockAuth.id, name: 'Mario', email: 'm@example.com', role: mockAuth.role }, logout: vi.fn() }),
+  useIsAdmin: () => mockAuth.role === 'admin',
+  useCanWrite: () => canWrite(mockAuth.role as Parameters<typeof canWrite>[0]),
 }))
 
 vi.mock('@/lib/tenant', async (importOriginal) => {
@@ -89,15 +98,23 @@ const mockGo = vi.fn()
  * provider is part of the harness rather than of any one test. Its query is disabled
  * below three characters, so nothing here issues a request.
  */
-function renderShell(children: React.ReactNode = <div />, azienda?: LegalEntityValue) {
+function renderShell(
+  children: React.ReactNode = <div />,
+  legal_entity?: LegalEntityValue,
+  modulesOff?: readonly ModuleKey[],
+  profile?: 'solo' | 'company',
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  // The space's modules (REB-953): seeded, so the sidebar has the answer on its first render
+  // and asks the API for nothing; absent, they are not known and every entry is drawn.
+  if (modulesOff !== undefined) seedModules(client, modulesOff, profile)
   // A fresh element on every call: re-rendering the *same* element object is a React
   // bail-out, which would make `refresh()` (the stand-in for a navigation) do nothing.
-  // Without `azienda` the shell runs on the context's default, a one-azienda space.
+  // Without `legal_entity` the shell runs on the context's default, a one-legal-entity space.
   const tree = () => (
     <QueryClientProvider client={client}>
-      {azienda ? (
-        <LegalEntityContext value={azienda}>
+      {legal_entity ? (
+        <LegalEntityContext value={legal_entity}>
           <AppShell go={mockGo}>{children}</AppShell>
         </LegalEntityContext>
       ) : (
@@ -114,9 +131,9 @@ function renderShell(children: React.ReactNode = <div />, azienda?: LegalEntityV
  * default here because it is the layout most of these assertions are about; the two
  * below-`lg` tests set it themselves.
  */
-function setViewport(desktop: boolean) {
+function setViewport(desktop: boolean, phone = false) {
   window.matchMedia = ((query: string) => ({
-    matches: desktop && query.includes('min-width'),
+    matches: query.includes('max-width') ? phone : desktop && query.includes('min-width'),
     media: query,
     onchange: null,
     addEventListener: () => {},
@@ -127,14 +144,22 @@ function setViewport(desktop: boolean) {
   })) as unknown as typeof window.matchMedia
 }
 
+/** Lets the promises a mocked request resolved with be turned into rendered state. */
+async function settle() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+}
+
 function sidebar() {
   return within(screen.getByRole('navigation', { name: 'Navigazione principale' }))
 }
 
 beforeEach(() => {
   setViewport(true)
-  mockAuth.ruolo = 'admin'
-  mockRoute.pathname = '/app/customers'
+  mockAuth.role = 'admin'
+  mockAuth.id = undefined
+  mockRoute.pathname = '/app/organizations'
   mockRoute.search = ''
   localStorage.clear()
   sessionStorage.clear()
@@ -147,6 +172,36 @@ beforeEach(() => {
 })
 
 describe('AppShell', () => {
+  /** REB-953 (spec 2026-11-09 B4): an entry disappears when its module is off. */
+  it('draws no «Deal» with deals off, nor «Ore», which needs the deals', () => {
+    renderShell(<div />, undefined, ['deals'])
+    const links = sidebar().getAllByRole('link').map((link) => link.textContent)
+    expect(links).not.toContain('Deal')
+    expect(links).not.toContain('Ore')
+    expect(links).toContain('Giornate')
+    expect(links).toContain('Clienti')
+    // The captions stay while the section still has an entry.
+    expect(sidebar().getAllByRole('group').map((group) => group.getAttribute('aria-label'))).toEqual([
+      'Da fare',
+      'Vendite',
+      'Amministrazione',
+    ])
+  })
+
+  it('draws no «Giornate» with contracts off, and keeps «Deal» and «Ore»', () => {
+    renderShell(<div />, undefined, ['contracts'])
+    const links = sidebar().getAllByRole('link').map((link) => link.textContent)
+    expect(links).not.toContain('Giornate')
+    expect(links).toContain('Deal')
+    expect(links).toContain('Ore')
+  })
+
+  it('draws every entry again with the modules on', () => {
+    renderShell(<div />, undefined, [])
+    const links = sidebar().getAllByRole('link').map((link) => link.textContent)
+    expect(links).toEqual(expect.arrayContaining(['Deal', 'Ore', 'Giornate']))
+  })
+
   it('is exactly as tall as its parent, never as tall as the page', () => {
     const { container } = renderShell()
     const root = container.firstElementChild as HTMLElement
@@ -155,17 +210,123 @@ describe('AppShell', () => {
     expect(root.className).not.toMatch(/\bh-dvh\b/)
   })
 
-  it('shows the top-level entries and the group headers in Italian', () => {
+  it('reads Home, three captioned sections, then Agenti and Impostazioni at the foot (REB-873)', () => {
     renderShell()
     const nav = sidebar()
-    for (const label of ['Home', 'Primi passi', 'Token']) {
-      expect(nav.getByRole('link', { name: label })).toBeInTheDocument()
+    // The links in the order the brief draws them; «Impostazioni» is a button that opens
+    // its sub-items, so it is not among them.
+    expect(nav.getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Home',
+      'Attività',
+      'Calendario',
+      'Avvisi',
+      'In arrivo',
+      'Proposte',
+      'Clienti',
+      'Persone',
+      'Deal',
+      'Fatture',
+      'Ore',
+      'Giornate',
+      'Agenti',
+    ])
+    expect(nav.getAllByRole('group').map((group) => group.getAttribute('aria-label'))).toEqual([
+      'Da fare',
+      'Vendite',
+      'Amministrazione',
+    ])
+    expect(within(nav.getByRole('group', { name: 'Da fare' })).getAllByRole('link').map((l) => l.textContent)).toEqual([
+      'Attività',
+      'Calendario',
+      'Avvisi',
+      'In arrivo',
+      'Proposte',
+    ])
+    expect(within(nav.getByRole('group', { name: 'Vendite' })).getAllByRole('link').map((l) => l.textContent)).toEqual([
+      'Clienti',
+      'Persone',
+      'Deal',
+    ])
+    expect(within(nav.getByRole('group', { name: 'Amministrazione' })).getAllByRole('link').map((l) => l.textContent)).toEqual([
+      'Fatture',
+      'Ore',
+      'Giornate',
+    ])
+    // Agents and Settings come after every section, Settings last.
+    const lastLink = nav.getByRole('link', { name: 'Agenti' })
+    const settings = nav.getByRole('button', { name: 'Impostazioni' })
+    expect(lastLink.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    for (const caption of ['Da fare', 'Vendite', 'Amministrazione']) {
+      expect(nav.getByText(caption)).toBeInTheDocument()
     }
-    // «Primi passi» right under Home (ORB-180), before the groups.
-    expect(nav.getAllByRole('link').slice(0, 2).map((l) => l.textContent)).toEqual(['Home', 'Primi passi'])
-    for (const label of ['Vendite', 'Amministrazione', 'Impostazioni']) {
-      expect(nav.getByRole('button', { name: label })).toBeInTheDocument()
+  })
+
+  it('has no entry for Oggi, Primi passi, Token or «Collega un agente»: they moved', () => {
+    renderShell()
+    const nav = sidebar()
+    for (const name of ['Oggi', 'Primi passi', 'Token', 'Collega un agente']) {
+      expect(nav.queryByRole('link', { name })).not.toBeInTheDocument()
+      expect(nav.queryByRole('button', { name })).not.toBeInTheDocument()
     }
+    expect(screen.queryByRole('button', { name: 'Collega un agente' })).not.toBeInTheDocument()
+  })
+
+  it('points Agenti at the token route and Attività at the page Oggi now lives on', () => {
+    renderShell()
+    expect(sidebar().getByRole('link', { name: 'Agenti' })).toHaveAttribute('href', '/app/token')
+    expect(sidebar().getByRole('link', { name: 'Attività' })).toHaveAttribute('href', '/app/activities')
+  })
+
+  it('draws the captions as plain text, never as controls, with every entry on screen', async () => {
+    // Whatever route is current: nothing is folded away, so there is nothing to open.
+    mockRoute.pathname = '/app/hours'
+    renderShell()
+    const nav = sidebar()
+    for (const caption of ['Da fare', 'Vendite', 'Amministrazione']) {
+      expect(nav.queryByRole('button', { name: caption })).not.toBeInTheDocument()
+      expect(nav.getByText(caption).closest('button')).toBeNull()
+    }
+    for (const entry of ['Attività', 'Clienti', 'Persone', 'Deal', 'Fatture', 'Ore', 'Giornate']) {
+      expect(nav.getByRole('link', { name: entry })).toBeInTheDocument()
+    }
+    // A click on a caption does nothing, and nothing about the sidebar is written down.
+    await userEvent.click(nav.getByText('Vendite'))
+    expect(nav.getByRole('link', { name: 'Clienti' })).toBeInTheDocument()
+    expect(localStorage.length).toBe(0)
+  })
+
+  it('shows the overdue count beside «Attività» (REB-725, REB-873)', async () => {
+    mockAuth.id = 'u-1'
+    GET.mockImplementation(async (path: string) =>
+      path === '/api/activities/today'
+        ? { data: { overdue: { total: 3, items: [] } }, response: { status: 200 } }
+        : { data: [], response: { status: 200 } },
+    )
+    renderShell()
+
+    const tasksLink = await sidebar().findByRole('link', { name: /^Attività\s*3 in ritardo$/ })
+    expect(tasksLink).toBeInTheDocument()
+    // Asked for the signed-in user's own, a single row: the sidebar wants the number.
+    expect(GET).toHaveBeenCalledWith('/api/activities/today', {
+      params: { query: { assigned_to: 'u-1', include_unassigned: true, limit: 1 } },
+    })
+  })
+
+  it('draws no count beside «Attività» when nothing is overdue', async () => {
+    mockAuth.id = 'u-1'
+    GET.mockImplementation(async (path: string) =>
+      path === '/api/activities/today'
+        ? { data: { overdue: { total: 0, items: [] } }, response: { status: 200 } }
+        : { data: [], response: { status: 200 } },
+    )
+    renderShell()
+
+    await waitFor(() =>
+      expect(GET).toHaveBeenCalledWith('/api/activities/today', expect.anything()),
+    )
+    // The answer has to have been rendered, not only asked for, before an absence means anything.
+    await settle()
+    expect(sidebar().getByRole('link', { name: 'Attività' })).toHaveAccessibleName('Attività')
   })
 
   it('offers the global search in the sidebar, with the shortcut visible', () => {
@@ -184,6 +345,18 @@ describe('AppShell', () => {
     expect(screen.getByRole('search', { name: 'Ricerca globale' })).toBeInTheDocument()
   })
 
+  it('names the search button by the words it shows, shortcut included (REB-986)', () => {
+    // WCAG 2.5.3, axe `label-content-name-mismatch`: an `aria-label` of «Cerca in tutto il
+    // CRM» did not contain the «Ctrl K» the button also shows, so a voice user saying what
+    // they read had no name to say. The name is the content, and it starts with «Cerca»;
+    // the landmark around it already says «Ricerca globale».
+    renderShell()
+    const button = within(screen.getByRole('search', { name: 'Ricerca globale' })).getByRole('button')
+    expect(button).not.toHaveAttribute('aria-label')
+    expect(button.textContent).toMatch(/^Cerca/)
+    expect(screen.getByRole('button', { name: /^Cerca/ })).toBe(button)
+  })
+
   it('keeps the current page marked while the URL carries search parameters', () => {
     // What the 1440 screenshot of this pass caught: on Home the sidebar's Home entry was
     // not highlighted at all, because the dashboard writes its tab and period into the
@@ -195,7 +368,7 @@ describe('AppShell', () => {
   })
 
   it('keeps a sub-item marked while its list carries a filter in the URL', () => {
-    mockRoute.pathname = '/app/customers'
+    mockRoute.pathname = '/app/organizations'
     mockRoute.search = '?q=acme'
     renderShell()
     expect(sidebar().getByRole('link', { name: 'Clienti' })).toHaveAttribute(
@@ -223,87 +396,71 @@ describe('AppShell', () => {
     expect(await screen.findByRole('dialog')).toBeInTheDocument()
   })
 
-  it('opens the group that contains the current route and marks the sub-item', () => {
+  it('marks the entry of the current route, and not its neighbours', () => {
     renderShell()
     const nav = sidebar()
-    expect(nav.getByRole('button', { name: 'Vendite' })).toHaveAttribute('aria-expanded', 'true')
     expect(nav.getByRole('link', { name: 'Clienti' })).toHaveAttribute('aria-current', 'page')
     // A detail page under the section keeps the section marked, which is why the
-    // sub-item is matched by prefix and not by equality.
+    // entry is matched by prefix and not by equality.
     expect(nav.getByRole('link', { name: 'Persone' })).not.toHaveAttribute('aria-current')
   })
 
-  it('keeps the other groups closed, with their sub-items out of the DOM', () => {
+  it('keeps «Impostazioni» closed away from the settings, with its sub-items out of the DOM', () => {
     renderShell()
-    const nav = sidebar()
-    expect(nav.getByRole('button', { name: 'Amministrazione' })).toHaveAttribute(
+    expect(sidebar().getByRole('button', { name: 'Impostazioni' })).toHaveAttribute(
       'aria-expanded',
       'false',
     )
-    expect(nav.queryByRole('link', { name: 'Fatture' })).not.toBeInTheDocument()
+    expect(sidebar().queryByRole('link', { name: 'Personale' })).not.toBeInTheDocument()
   })
 
-  it('opens a group on click and persists it', async () => {
-    const { unmount } = renderShell()
-    await userEvent.click(sidebar().getByRole('button', { name: 'Amministrazione' }))
-    expect(sidebar().getByRole('link', { name: 'Ore' })).toBeInTheDocument()
-    expect(JSON.parse(localStorage.getItem(SIDEBAR_GROUPS_KEY) ?? '{}')).toMatchObject({
-      amministrazione: true,
-    })
-
-    // Persisted means it survives a reload, not just a re-render.
-    unmount()
+  it('opens «Impostazioni» on a click and closes it on a second one', async () => {
     renderShell()
-    expect(sidebar().getByRole('button', { name: 'Amministrazione' })).toHaveAttribute(
+    await userEvent.click(sidebar().getByRole('button', { name: 'Impostazioni' }))
+    expect(sidebar().getByRole('button', { name: 'Impostazioni' })).toHaveAttribute(
       'aria-expanded',
       'true',
     )
-    expect(sidebar().getByRole('link', { name: 'Ore' })).toBeInTheDocument()
+    expect(sidebar().getByRole('link', { name: 'Personale' })).toBeInTheDocument()
+    await userEvent.click(sidebar().getByRole('button', { name: 'Impostazioni' }))
+    expect(sidebar().queryByRole('link', { name: 'Personale' })).not.toBeInTheDocument()
+    // Not stored: it is a press of this visit, not a preference.
+    expect(localStorage.length).toBe(0)
   })
 
-  it('closes a group on a second click and persists that too', async () => {
-    localStorage.setItem(SIDEBAR_GROUPS_KEY, JSON.stringify({ amministrazione: true }))
+  it('lets you close «Impostazioni» on one of its own pages, so the chevron is never a no-op', async () => {
+    // The route opens it, but does not nail it open: a header whose aria-expanded cannot
+    // change is a control that lies about being one.
+    mockRoute.pathname = '/app/settings/profile'
     renderShell()
-    await userEvent.click(sidebar().getByRole('button', { name: 'Amministrazione' }))
-    expect(sidebar().queryByRole('link', { name: 'Ore' })).not.toBeInTheDocument()
-    expect(JSON.parse(localStorage.getItem(SIDEBAR_GROUPS_KEY) ?? '{}')).toMatchObject({
-      amministrazione: false,
-    })
-  })
-
-  it('lets you close the group of the current route, so the chevron is never a no-op', async () => {
-    // The route opens its own group, but it does not nail it open: a header whose
-    // aria-expanded cannot change is a control that lies about being one.
-    renderShell()
-    await userEvent.click(sidebar().getByRole('button', { name: 'Vendite' }))
-    expect(sidebar().getByRole('button', { name: 'Vendite' })).toHaveAttribute(
+    await userEvent.click(sidebar().getByRole('button', { name: 'Impostazioni' }))
+    expect(sidebar().getByRole('button', { name: 'Impostazioni' })).toHaveAttribute(
       'aria-expanded',
       'false',
     )
-    expect(sidebar().queryByRole('link', { name: 'Clienti' })).not.toBeInTheDocument()
+    expect(sidebar().queryByRole('link', { name: 'Personale' })).not.toBeInTheDocument()
   })
 
-  it('survives a corrupt stored preference', () => {
-    localStorage.setItem(SIDEBAR_GROUPS_KEY, 'non è json')
-    renderShell()
-    expect(sidebar().getByRole('button', { name: 'Amministrazione' })).toHaveAttribute(
-      'aria-expanded',
-      'false',
-    )
-  })
-
-  it('lists one sub-item per settings tab, in the same order', async () => {
-    // Against the shared `SETTINGS_TABS` and not against a handful of labels typed out
-    // here: a tab added to the settings page and forgotten in the sidebar is exactly the
-    // drift this list exists to prevent.
+  it('lists one sub-item per settings group, each linking to its first section', async () => {
+    // Against the shared `SETTINGS_GROUPS` and not against labels typed out here: a group
+    // added to the settings page and forgotten in the sidebar is exactly the drift this
+    // list exists to prevent.
     renderShell()
     await userEvent.click(sidebar().getByRole('button', { name: 'Impostazioni' }))
     const subItems = sidebar()
       .getAllByRole('link')
       .filter((link) => link.getAttribute('href')?.startsWith('/app/settings/'))
     expect(subItems.map((link) => link.textContent)).toEqual(
-      SETTINGS_TABS.map((tab) => tab.label),
+      SETTINGS_GROUPS.map((group) => group.label),
     )
+    expect(subItems.map((link) => link.getAttribute('href'))).toEqual([
+      '/app/settings/profile',
+      '/app/settings/space',
+      '/app/settings/fields',
+      '/app/settings/legal-entities',
+      '/app/settings/gmail',
+      '/app/settings/reminders',
+    ])
   })
 
   it('opens Impostazioni when the current route is one of its tabs', () => {
@@ -314,63 +471,208 @@ describe('AppShell', () => {
       'aria-expanded',
       'true',
     )
-    expect(nav.getByRole('link', { name: 'Tariffe' })).toHaveAttribute('aria-current', 'page')
+    const current = nav.getByRole('link', { name: 'Fatturazione e costi' })
+    expect(current).toHaveAttribute('aria-current', 'page')
+    expect(current).toHaveAttribute('data-status', 'active')
+    expect(nav.getByRole('link', { name: 'Personale' })).not.toHaveAttribute('aria-current')
   })
 
-  it.each(['collaboratore', 'readonly'])('hides Impostazioni from a %s', (ruolo) => {
-    // The group button itself is gone, not merely closed: a non-admin who cannot open
-    // any settings tab should not see a control that would only fail on click.
-    mockAuth.ruolo = ruolo
+  it.each([
+    ['collaborator', ['Personale', 'Collegamenti'], ['/app/settings/profile', '/app/settings/drive']],
+    ['readonly', ['Personale'], ['/app/settings/profile']],
+  ])('shows a %s only the Impostazioni groups it can open', async (role, labels, hrefs) => {
+    // The group is there for every role (REB-771); each role sees only the groups with a
+    // section it may open, so no link would fail on click.
+    mockAuth.role = role as string
     renderShell()
-    expect(sidebar().queryByRole('button', { name: 'Impostazioni' })).not.toBeInTheDocument()
+    await userEvent.click(sidebar().getByRole('button', { name: 'Impostazioni' }))
+    const subItems = sidebar()
+      .getAllByRole('link')
+      .filter((link) => link.getAttribute('href')?.startsWith('/app/settings/'))
+    expect(subItems.map((link) => link.textContent)).toEqual(labels)
+    expect(subItems.map((link) => link.getAttribute('href'))).toEqual(hrefs)
   })
 
-  it.each(['collaboratore', 'readonly'])(
-    'keeps the %s navigation surface intact: four top-level entries and both groups',
-    (ruolo) => {
+  it.each(['admin', 'collaborator', 'readonly'])(
+    'links the collapsed rail\'s Impostazioni icon to Profilo for a %s',
+    async (role) => {
+      mockAuth.role = role
+      renderShell()
+      await userEvent.click(screen.getByRole('button', { name: 'Comprimi il menu' }))
+      expect(sidebar().getByRole('link', { name: 'Impostazioni' })).toHaveAttribute(
+        'href',
+        '/app/settings/profile',
+      )
+    },
+  )
+
+  it.each(['collaborator', 'readonly'])(
+    'keeps the %s navigation surface intact: every entry and the three sections',
+    (role) => {
       // REB-294 hid controls, never navigation a role may read -- the readonly person's
       // reading surface is unchanged. Asserted for both non-admin roles in one test
       // because they are meant to see the same shell; only Impostazioni separates them,
       // and that is pinned by its own test above.
-      mockAuth.ruolo = ruolo
+      mockAuth.role = role
       renderShell()
       const nav = sidebar()
-      for (const label of ['Home', 'Primi passi', 'Calendario', 'Token']) {
+      for (const label of ['Home', 'Attività', 'Calendario', 'Avvisi', 'Proposte', 'Agenti']) {
         expect(nav.getByRole('link', { name: label })).toBeInTheDocument()
       }
-      for (const label of ['Vendite', 'Amministrazione']) {
-        expect(nav.getByRole('button', { name: label })).toBeInTheDocument()
+      for (const label of ['Da fare', 'Vendite', 'Amministrazione']) {
+        expect(nav.getByRole('group', { name: label })).toBeInTheDocument()
       }
+      expect(nav.getByRole('button', { name: 'Impostazioni' })).toBeInTheDocument()
     },
   )
 
   /**
    * A personal access token is not an admin setting -- `PatService` scopes it by
-   * `actor.id`, not role -- so unlike Impostazioni it stays a top-level entry, outside the
-   * admin-gated group. Checked for both non-admin roles the backend has, since
+   * `actor.id`, not role -- so unlike Impostazioni «Agenti» is not gated and not one of
+   * its sub-items. Checked for both non-admin roles the backend has, since
    * "collaboratore" and "readonly" are two different guard checks that could each
    * independently regress.
    */
-  it.each(['collaboratore', 'readonly'])('shows Token to a %s, not just to an admin', (ruolo) => {
-    mockAuth.ruolo = ruolo
+  it.each(['collaborator', 'readonly'])('shows Agenti to a %s, not just to an admin', (role) => {
+    mockAuth.role = role
     renderShell()
-    expect(sidebar().getByRole('link', { name: 'Token' })).toBeInTheDocument()
+    expect(sidebar().getByRole('link', { name: 'Agenti' })).toBeInTheDocument()
   })
 
-  it('collapses to an icon rail: no group headers, every section still one click away', async () => {
+  /**
+   * The Reminders page (REB-734) is every role's own list, so it sits outside any gate: in
+   * «Da fare», right after the calendar and right before Proposals, which stays the last
+   * entry of the section (REB-750) and opens `/app/proposals`.
+   */
+  it.each(['admin', 'collaborator', 'readonly'])('shows Avvisi to a %s, after Calendario and before In arrivo and Proposte', (role) => {
+    mockAuth.role = role
+    renderShell()
+    const links = sidebar().getAllByRole('link')
+    const names = links.map((link) => link.textContent)
+    expect(names.indexOf('Avvisi')).toBe(names.indexOf('Calendario') + 1)
+    // «In arrivo» (REB-984) sits between them: what arrived, before what an agent proposed.
+    expect(names.indexOf('In arrivo')).toBe(names.indexOf('Avvisi') + 1)
+    expect(names.indexOf('Proposte')).toBe(names.indexOf('In arrivo') + 1)
+    expect(links[names.indexOf('In arrivo')]).toHaveAttribute('href', '/app/inbox')
+    expect(links[names.indexOf('Avvisi')]).toHaveAttribute('href', '/app/reminders')
+    expect(links[names.indexOf('Proposte')]).toHaveAttribute('href', '/app/proposals')
+  })
+
+  it('keeps Avvisi and Proposte one click away in the collapsed icon rail', async () => {
+    renderShell()
+    await userEvent.click(screen.getByRole('button', { name: 'Comprimi il menu' }))
+    expect(sidebar().getByRole('link', { name: 'Avvisi' })).toHaveAttribute('href', '/app/reminders')
+    expect(sidebar().getByRole('link', { name: 'Proposte' })).toHaveAttribute('href', '/app/proposals')
+  })
+
+  /** What the API answers for the list: two open, one snoozed and one acknowledged. */
+  function answerReminders(statuses: Array<'open' | 'snoozed' | 'acknowledged'>) {
+    const list = statuses.map((status, index) => ({
+      key: `task_due:${index}`,
+      type: 'task_due',
+      label: 'Attività in scadenza',
+      severity: 'warning',
+      measure: 0,
+      title: `Attività ${index}`,
+      detail: '',
+      entity: 'task',
+      entity_id: `3f0c2a10-0000-4000-8000-00000000000${index}`,
+      customer_id: null,
+      status,
+      snoozed_until: status === 'snoozed' ? '2026-10-27' : null,
+      delivered_at: null,
+    }))
+    GET.mockImplementation((path: string) =>
+      Promise.resolve({ data: path === '/api/reminders' ? list : [], response: { status: 200 } }),
+    )
+  }
+
+  it('counts only the open reminders on the Avvisi entry, not the snoozed or acknowledged ones', async () => {
+    answerReminders(['open', 'snoozed', 'open', 'acknowledged'])
+    renderShell()
+    const entry = await sidebar().findByRole('link', { name: /Avvisi/ })
+    await waitFor(() => expect(entry).toHaveTextContent('2'))
+    expect(entry).toHaveAccessibleName('Avvisi, 2 da leggere')
+  })
+
+  it('draws no badge when nothing is open', async () => {
+    answerReminders(['snoozed', 'acknowledged'])
+    renderShell()
+    await waitFor(() => expect(GET).toHaveBeenCalledWith('/api/reminders'))
+    expect(sidebar().getByRole('link', { name: 'Avvisi' })).toHaveTextContent(/^Avvisi$/)
+  })
+
+  it('draws no badge when the list fails to load', async () => {
+    GET.mockImplementation((path: string) =>
+      Promise.resolve(
+        path === '/api/reminders'
+          ? { error: { detail: 'Il database non risponde.' }, response: { status: 500 } }
+          : { data: [], response: { status: 200 } },
+      ),
+    )
+    renderShell()
+    await waitFor(() => expect(GET).toHaveBeenCalledWith('/api/reminders'))
+    expect(sidebar().getByRole('link', { name: 'Avvisi' })).toHaveTextContent(/^Avvisi$/)
+  })
+
+  it('keeps the count on the icon in the collapsed rail, and in the link name', async () => {
+    answerReminders(['open', 'open', 'open'])
+    renderShell()
+    await userEvent.click(screen.getByRole('button', { name: 'Comprimi il menu' }))
+    const entry = await sidebar().findByRole('link', { name: 'Avvisi, 3 da leggere' })
+    expect(entry).toHaveAttribute('href', '/app/reminders')
+    // The number itself is drawn on the icon's corner, not as a label beside it.
+    expect(within(entry).getByText('3')).toHaveClass('absolute')
+  })
+
+  it('caps a long count at 99+', async () => {
+    answerReminders(Array.from({ length: 120 }, () => 'open' as const))
+    renderShell()
+    const entry = await sidebar().findByRole('link', { name: /Avvisi/ })
+    await waitFor(() => expect(within(entry).getByText('99+')).toBeInTheDocument())
+  })
+
+  it('collapses to an icon rail: the captions are separators, every entry still one click away', async () => {
     renderShell()
     await userEvent.click(screen.getByRole('button', { name: 'Comprimi il menu' }))
     const nav = sidebar()
+    // No caption text in the rail, a separator in its place, and the group keeps its name.
+    for (const caption of ['Da fare', 'Vendite', 'Amministrazione']) {
+      expect(nav.queryByText(caption)).not.toBeInTheDocument()
+      expect(nav.getByRole('group', { name: caption })).toBeInTheDocument()
+    }
     expect(nav.queryByRole('button', { name: 'Vendite' })).not.toBeInTheDocument()
-    // The sub-items of the collapsible groups become icon links in the rail...
-    for (const label of ['Home', 'Primi passi', 'Clienti', 'Deal', 'Fatture', 'Ore', 'Token']) {
+    for (const label of [
+      'Home',
+      'Attività',
+      'Calendario',
+      'Clienti',
+      'Persone',
+      'Deal',
+      'Fatture',
+      'Ore',
+      'Giornate',
+      'Agenti',
+    ]) {
       expect(nav.getByRole('link', { name: label })).toBeInTheDocument()
     }
-    expect(nav.getAllByRole('link', { name: 'Primi passi' })).toHaveLength(1)
     // ...except the settings tabs, which are tabs of one page and collapse to one link.
     expect(nav.getByRole('link', { name: 'Impostazioni' })).toBeInTheDocument()
     expect(nav.queryByRole('link', { name: 'Campi' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Espandi il menu' })).toBeInTheDocument()
+  })
+
+  it('keeps the overdue count on the Attività icon in the collapsed rail', async () => {
+    mockAuth.id = 'u-1'
+    GET.mockImplementation(async (path: string) =>
+      path === '/api/activities/today'
+        ? { data: { overdue: { total: 2, items: [] } }, response: { status: 200 } }
+        : { data: [], response: { status: 200 } },
+    )
+    renderShell()
+    await userEvent.click(screen.getByRole('button', { name: 'Comprimi il menu' }))
+    const entry = await sidebar().findByRole('link', { name: /^Attività\s*2 in ritardo$/ })
+    expect(within(entry).getByText('2', { selector: '[aria-hidden]' }).parentElement).toHaveClass('absolute')
   })
 
   it('draws a focus ring the dark sidebar can actually show', () => {
@@ -390,25 +692,25 @@ describe('AppShell', () => {
     // 272px of the 390px a phone has is not a layout, it is a menu.
     setViewport(false)
     renderShell()
-    expect(sidebar().queryByRole('button', { name: 'Vendite' })).not.toBeInTheDocument()
+    expect(sidebar().queryByText('Vendite')).not.toBeInTheDocument()
     expect(sidebar().getByRole('link', { name: 'Clienti' })).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Espandi il menu' }))
-    expect(sidebar().getByRole('button', { name: 'Vendite' })).toBeInTheDocument()
+    expect(sidebar().getByText('Vendite')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Chiudi il menu' }))
-    expect(sidebar().queryByRole('button', { name: 'Vendite' })).not.toBeInTheDocument()
+    expect(sidebar().queryByText('Vendite')).not.toBeInTheDocument()
   })
 
   it('closes the overlay when the route changes, so it never covers the page you asked for', async () => {
     setViewport(false)
     const { refresh } = renderShell()
     await userEvent.click(screen.getByRole('button', { name: 'Espandi il menu' }))
-    expect(sidebar().getByRole('button', { name: 'Vendite' })).toBeInTheDocument()
+    expect(sidebar().getByText('Vendite')).toBeInTheDocument()
 
     mockRoute.pathname = '/app/hours'
     refresh()
-    expect(sidebar().queryByRole('button', { name: 'Vendite' })).not.toBeInTheDocument()
+    expect(sidebar().queryByText('Vendite')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Chiudi il menu' })).not.toBeInTheDocument()
   })
 
@@ -445,20 +747,20 @@ describe('AppShell', () => {
     // that shows a role writes it out (`features/settings/UsersPanel.tsx`), and the 1440
     // screenshot of this pass had the raw enum sitting under Ivan's name.
     renderShell()
-    expect(screen.getByRole('button', { name: 'Menu del profilo' })).toHaveTextContent(
+    expect(screen.getByRole('button', { name: /menu del profilo/i })).toHaveTextContent(
       'amministratore',
     )
   })
 
   it('keeps the profile menu', async () => {
     renderShell()
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
     expect(await screen.findByRole('menuitem', { name: /esci/i })).toBeInTheDocument()
   })
 
   /**
-   * The whole «Impostazioni» group is admin-only in the sidebar, and the profile tab is
-   * inside it -- so for a non-admin this menu entry is the only way to their own profile
+   * The profile tab is inside «Impostazioni», whose «Personale» entry is the same page;
+   * this menu entry is the shortest way to their own profile
    * from inside the app, and the weekly report's opt-out link (spec 2026-09-16 §3.6) was
    * the only way to it from outside. Checked for both non-admin roles, as «Token» is:
    * "collaboratore" and "readonly" are two different guards.
@@ -468,13 +770,13 @@ describe('AppShell', () => {
    * its child, the role among them. Scoping to the menu is what keeps this from finding
    * the settings sub-item of the same name that an admin also has in the sidebar.
    */
-  it.each(['admin', 'collaboratore', 'readonly'])(
+  it.each(['admin', 'collaborator', 'readonly'])(
     'offers «Profilo» to a %s, linking to the profile tab',
-    async (ruolo) => {
-      mockAuth.ruolo = ruolo
+    async (role) => {
+      mockAuth.role = role
       renderShell()
 
-      await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+      await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
 
       const menu = within(await screen.findByRole('menu'))
       expect(menu.getByRole('link', { name: 'Profilo' })).toHaveAttribute(
@@ -492,10 +794,10 @@ describe('AppShell', () => {
    * the sidebar's «Impostazioni».
    */
   it('offers «Google Drive» to a collaboratore in the profile menu', async () => {
-    mockAuth.ruolo = 'collaboratore'
+    mockAuth.role = 'collaborator'
     renderShell()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
 
     const menu = within(await screen.findByRole('menu'))
     expect(menu.getByRole('link', { name: 'Google Drive' })).toHaveAttribute(
@@ -504,11 +806,11 @@ describe('AppShell', () => {
     )
   })
 
-  it.each(['admin', 'readonly'])('offers no «Google Drive» in the profile menu to a %s', async (ruolo) => {
-    mockAuth.ruolo = ruolo
+  it.each(['admin', 'readonly'])('offers no «Google Drive» in the profile menu to a %s', async (role) => {
+    mockAuth.role = role
     renderShell()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
 
     const menu = within(await screen.findByRole('menu'))
     expect(menu.getByRole('link', { name: 'Profilo' })).toBeInTheDocument()
@@ -516,10 +818,10 @@ describe('AppShell', () => {
   })
 
   it('leaves «Impostazioni dello spazio» to an admin', async () => {
-    mockAuth.ruolo = 'collaboratore'
+    mockAuth.role = 'collaborator'
     renderShell()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
 
     const menu = within(await screen.findByRole('menu'))
     expect(menu.getByRole('link', { name: 'Profilo' })).toBeInTheDocument()
@@ -527,29 +829,64 @@ describe('AppShell', () => {
   })
 
   /**
-   * «Collega un agente» is not gated by role, for the same reason Token is not: the token
-   * it mints belongs to whoever creates it, not to the space.
+   * «Primi passi» left the sidebar for the profile menu (REB-873), and only once the space
+   * has data: until then the Home is that very page. The predicate is the Home's own, the
+   * four work reads (`useSpaceHasData`), so a customer, a deal, an hour or a document is
+   * what turns the entry on.
    */
-  it.each(['admin', 'collaboratore', 'readonly'])('offers «Collega un agente» to a %s, above the profile', (ruolo) => {
-    mockAuth.ruolo = ruolo
-    renderShell()
-    const button = screen.getByRole('button', { name: 'Collega un agente' })
-    expect(button).toBeInTheDocument()
-    // Above the profile block: the button comes before the profile trigger in the DOM.
-    const profile = screen.getByRole('button', { name: 'Menu del profilo' })
-    expect(button.compareDocumentPosition(profile) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  })
+  const WORK_PATHS = ['/api/organizations', '/api/deals', '/api/time-entries', '/api/documents']
+  function answerWork(has: string | null) {
+    GET.mockImplementation((path: string) =>
+      Promise.resolve({
+        data: WORK_PATHS.includes(path)
+          ? { items: path === has ? [{ id: 'x' }] : [], next_cursor: null }
+          : [],
+        response: { status: 200 },
+      }),
+    )
+  }
 
-  it('opens the connect dialog from the sidebar', async () => {
-    renderShell()
-    await userEvent.click(screen.getByRole('button', { name: 'Collega un agente' }))
-    expect(screen.getByRole('dialog', { name: 'Collega un agente' })).toBeInTheDocument()
-  })
+  it.each(['admin', 'collaborator', 'readonly'])(
+    'offers «Primi passi» to a %s in the profile menu once the space has data',
+    async (role) => {
+      mockAuth.role = role
+      answerWork('/api/organizations')
+      renderShell()
 
-  it('keeps the entry in the rail as an icon with its name', async () => {
+      await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
+      const menu = within(await screen.findByRole('menu'))
+      expect(await menu.findByRole('link', { name: 'Primi passi' })).toHaveAttribute(
+        'href',
+        '/app/get-started',
+      )
+    },
+  )
+
+  it.each(WORK_PATHS)(
+    'turns «Primi passi» on when the space has any work at %s, the Home\'s own predicate',
+    async (path) => {
+      answerWork(path)
+      renderShell()
+      await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
+      const menu = within(await screen.findByRole('menu'))
+      expect(await menu.findByRole('link', { name: 'Primi passi' })).toBeInTheDocument()
+    },
+  )
+
+  it('offers no «Primi passi» while the space is empty: the Home is that page', async () => {
+    answerWork(null)
     renderShell()
-    await userEvent.click(screen.getByRole('button', { name: 'Comprimi il menu' }))
-    expect(screen.getByRole('button', { name: 'Collega un agente' })).toBeInTheDocument()
+    // Let the four reads be asked and answered before asserting an absence: while they are
+    // pending the verdict is unknown, which also keeps the entry out of the menu.
+    for (const path of WORK_PATHS) {
+      await waitFor(() => expect(GET).toHaveBeenCalledWith(path, expect.anything()))
+    }
+    await settle()
+
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
+    const menu = within(await screen.findByRole('menu'))
+    expect(menu.getByRole('link', { name: 'Profilo' })).toBeInTheDocument()
+    expect(menu.queryByRole('link', { name: 'Primi passi' })).not.toBeInTheDocument()
   })
 })
 
@@ -561,26 +898,26 @@ describe('the space switcher', () => {
   it('lists another space the identity may enter, excluding the one already open', async () => {
     GET.mockResolvedValue({
       data: [
-        { slug: 'studio', ruolo: 'admin' },
-        { slug: 'altro', ruolo: 'collaboratore' },
+        { slug: 'studio', role: 'admin' },
+        { slug: 'altro', role: 'collaborator' },
       ],
       response: { status: 200 },
     })
     renderShell()
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
     const menu = within(await screen.findByRole('menu'))
     expect(await menu.findByRole('menuitem', { name: /altro/ })).toBeInTheDocument()
     expect(menu.queryByRole('menuitem', { name: /^studio/ })).not.toBeInTheDocument()
   })
 
   it('enters another space on click and navigates to its own basepath', async () => {
-    GET.mockResolvedValue({ data: [{ slug: 'altro', ruolo: 'collaboratore' }], response: { status: 200 } })
+    GET.mockResolvedValue({ data: [{ slug: 'altro', role: 'collaborator' }], response: { status: 200 } })
     POST.mockResolvedValue({
-      data: { id: 'u1', email: 'ada@altro.it', nome: 'Ada', ruolo: 'collaboratore' },
+      data: { id: 'u1', email: 'ada@altro.it', name: 'Ada', role: 'collaborator' },
       response: { status: 200 },
     })
     renderShell()
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
     const menu = within(await screen.findByRole('menu'))
     await userEvent.click(await menu.findByRole('menuitem', { name: /altro/ }))
     await waitFor(() =>
@@ -592,13 +929,13 @@ describe('the space switcher', () => {
   })
 
   it('reports the API sentence when entering another space fails', async () => {
-    GET.mockResolvedValue({ data: [{ slug: 'altro', ruolo: 'admin' }], response: { status: 200 } })
+    GET.mockResolvedValue({ data: [{ slug: 'altro', role: 'admin' }], response: { status: 200 } })
     POST.mockResolvedValue({
       error: { detail: 'Questo spazio non esiste, o non lo hai mai raggiunto.' },
       response: { status: 404 },
     })
     renderShell()
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
     const menu = within(await screen.findByRole('menu'))
     await userEvent.click(await menu.findByRole('menuitem', { name: /altro/ }))
     await waitFor(() =>
@@ -610,7 +947,7 @@ describe('the space switcher', () => {
 
   it('offers to create a new space from the menu, leaving the signed-in email in the handoff, not the URL', async () => {
     renderShell()
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
     const menu = within(await screen.findByRole('menu'))
     await userEvent.click(await menu.findByRole('menuitem', { name: 'Crea un nuovo spazio' }))
     expect(mockGo).toHaveBeenCalledWith('/app/register')
@@ -626,43 +963,79 @@ describe('the space switcher', () => {
       if (path === '/api/identity/spaces') {
         spacesCalls += 1
         return Promise.resolve({
-          data: spacesCalls === 1 ? [] : [{ slug: 'altro', ruolo: 'collaboratore' }],
+          data: spacesCalls === 1 ? [] : [{ slug: 'altro', role: 'collaborator' }],
           response: { status: 200 },
         })
       }
       return Promise.resolve({ data: { slug: null }, response: { status: 200 } })
     })
     renderShell()
-    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
     const menu = within(await screen.findByRole('menu'))
     expect(await menu.findByRole('menuitem', { name: /altro/ })).toBeInTheDocument()
     expect(spacesCalls).toBeGreaterThanOrEqual(2)
   })
+
+  // REB-678: an invitation whose mail never came is in the switcher too, and choosing it
+  // goes to the acceptance page rather than entering a space this address has no seat in.
+  it('lists an invitation beside the spaces, marked as one', async () => {
+    GET.mockResolvedValue({
+      data: [{ slug: 'rebase', role: 'collaborator', invitation: true, inviter_name: 'Ivan' }],
+      response: { status: 200 },
+    })
+    renderShell()
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
+    const menu = within(await screen.findByRole('menu'))
+    expect(await menu.findByRole('menuitem', { name: /rebase/ })).toHaveTextContent('Invito')
+  })
+
+  it('opens an invitation on the space’s own acceptance page, entering nothing', async () => {
+    GET.mockResolvedValue({
+      data: [{ slug: 'rebase', role: 'collaborator', invitation: true }],
+      response: { status: 200 },
+    })
+    POST.mockResolvedValue({
+      data: { url: '/rebase/app/invite?t=abc' },
+      response: { status: 200 },
+    })
+    renderShell()
+    await userEvent.click(screen.getByRole('button', { name: /menu del profilo/i }))
+    const menu = within(await screen.findByRole('menu'))
+    await userEvent.click(await menu.findByRole('menuitem', { name: /rebase/ }))
+    await waitFor(() =>
+      expect(POST).toHaveBeenCalledWith('/api/identity/invite/{slug}', {
+        params: { path: { slug: 'rebase' } },
+      }),
+    )
+    await waitFor(() => expect(mockGo).toHaveBeenCalledWith('/rebase/app/invite?t=abc'))
+    expect(POST).not.toHaveBeenCalledWith('/api/identity/enter/{slug}', expect.anything())
+  })
 })
 
 describe('the azienda selector (REB-625)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, attiva: true } as LegalEntityRecord
-  const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, attiva: true } as LegalEntityRecord
+  const HUMANCRAFT = { id: 'a1', name: 'humancraft', is_default: true, active: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', name: 'rebase', is_default: false, active: true } as LegalEntityRecord
 
-  function twoAziende(selected: string | null): LegalEntityValue {
+  function twoLegalEntities(selected: string | null): LegalEntityValue {
     return {
-      aziende: [HUMANCRAFT, REBASE],
+      legal_entities: [HUMANCRAFT, REBASE],
       selected,
       select: vi.fn(),
       several: true,
       scoped: false,
       pinned: false,
+      loaded: true,
       byId: (id) => [HUMANCRAFT, REBASE].find((a) => a.id === id),
     }
   }
 
-  it('is not drawn in a one-azienda space, which is every space until milestone 5', () => {
+  it('is not drawn in a one-legal-entity space, which is every space until milestone 5', () => {
     renderShell()
     expect(screen.queryByRole('combobox', { name: 'Azienda' })).not.toBeInTheDocument()
   })
 
   it('sits between the search and the navigation, offers «Tutte le aziende» first and selects by id', async () => {
-    const value = twoAziende(null)
+    const value = twoLegalEntities(null)
     renderShell(<div />, value)
     const trigger = screen.getByRole('combobox', { name: 'Azienda' })
     expect(trigger).toHaveTextContent('Tutte le aziende')
@@ -680,7 +1053,7 @@ describe('the azienda selector (REB-625)', () => {
   })
 
   it('shows the selected azienda and goes back to every one of them', async () => {
-    const value = twoAziende('a2')
+    const value = twoLegalEntities('a2')
     renderShell(<div />, value)
     const trigger = screen.getByRole('combobox', { name: 'Azienda' })
     expect(trigger).toHaveTextContent('rebase')
@@ -691,12 +1064,13 @@ describe('the azienda selector (REB-625)', () => {
 
   it('draws a scoped person’s one azienda as a label, not a control (REB-635)', () => {
     const value: LegalEntityValue = {
-      aziende: [REBASE],
+      legal_entities: [REBASE],
       selected: 'a2',
       select: vi.fn(),
       several: false,
       scoped: true,
       pinned: true,
+      loaded: true,
       byId: (id) => (id === 'a2' ? REBASE : undefined),
     }
     renderShell(<div />, value)
@@ -707,5 +1081,131 @@ describe('the azienda selector (REB-625)', () => {
     const nav = screen.getByRole('navigation', { name: 'Navigazione principale' })
     expect(search.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(label.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})
+
+
+/** REB-959 (spec 2026-11-09 B6): below 640px the bottom bar replaces the sidebar. */
+describe('AppShell on a phone', () => {
+  beforeEach(() => setViewport(false, true))
+
+  const bar = () => within(screen.getByRole('navigation', { name: 'Navigazione principale' }))
+  const labels = () => bar().getAllByRole('listitem').map((item) => item.textContent?.replace(/\d+ in ritardo$/, '').trim())
+
+  it('draws the bottom bar and no sidebar, with the «+» in the centre', () => {
+    renderShell(<div />, undefined, [], 'company')
+    expect(screen.queryByRole('button', { name: 'Espandi il menu' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Comprimi il menu' })).not.toBeInTheDocument()
+    expect(labels()).toEqual(['Home', 'Attività', '', 'Deal', 'Altro'])
+    expect(bar().getByRole('button', { name: 'Aggiungi' })).toBeInTheDocument()
+  })
+
+  it('puts «Giornate» third for a solo space', () => {
+    renderShell(<div />, undefined, [], 'solo')
+    expect(labels()).toEqual(['Home', 'Attività', '', 'Giornate', 'Altro'])
+  })
+
+  it('has four places with deals and contracts off, and shows neither', () => {
+    renderShell(<div />, undefined, ['deals', 'contracts'], 'company')
+    expect(labels()).toEqual(['Home', 'Attività', '', 'Altro'])
+  })
+
+  it('offers an activity and a note always, and a day and hours only with their modules on', async () => {
+    renderShell(<div />, undefined, [], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
+    const sheet = within(await screen.findByRole('dialog', { name: 'Aggiungi' }))
+    expect(sheet.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'AttivitàUna cosa da fare, con una scadenza',
+      'NotaSu un cliente, una persona o un deal',
+      'GiornataUn giorno lavorato su un contratto',
+      'OreOre lavorate su un deal',
+      'Carica un documentoUna foto o un file, in In arrivo',
+      'Chiudi',
+    ])
+  })
+
+  it('offers no hours with time off and no day with contracts off', async () => {
+    renderShell(<div />, undefined, ['deals', 'contracts'], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
+    const sheet = within(await screen.findByRole('dialog', { name: 'Aggiungi' }))
+    const names = sheet.getAllByRole('button').map((button) => button.textContent)
+    expect(names.some((name) => name?.startsWith('Giornata'))).toBe(false)
+    expect(names.some((name) => name?.startsWith('Ore'))).toBe(false)
+    expect(names.some((name) => name?.startsWith('Attività'))).toBe(true)
+  })
+
+  it('offers a day with time off alone, and no hours', async () => {
+    renderShell(<div />, undefined, ['time'], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
+    const names = within(await screen.findByRole('dialog', { name: 'Aggiungi' }))
+      .getAllByRole('button')
+      .map((button) => button.textContent)
+    expect(names.some((name) => name?.startsWith('Giornata'))).toBe(true)
+    expect(names.some((name) => name?.startsWith('Ore'))).toBe(false)
+  })
+
+  it('offers hours with contracts off alone, and no day; «Altro» has no «Giornate» either', async () => {
+    renderShell(<div />, undefined, ['contracts'], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
+    const sheet = within(await screen.findByRole('dialog', { name: 'Aggiungi' }))
+    const names = sheet.getAllByRole('button').map((button) => button.textContent)
+    expect(names.some((name) => name?.startsWith('Ore'))).toBe(true)
+    expect(names.some((name) => name?.startsWith('Giornata'))).toBe(false)
+    await userEvent.keyboard('{Escape}')
+    await userEvent.click(bar().getByRole('button', { name: 'Altro' }))
+    const links = within(await screen.findByRole('dialog', { name: 'Altro' }))
+      .getAllByRole('link')
+      .map((link) => link.textContent)
+    expect(links).toContain('Ore')
+    expect(links).not.toContain('Giornate')
+  })
+
+  it('does not name «deal» in the note entry with deals off', async () => {
+    renderShell(<div />, undefined, ['deals'], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
+    const sheet = within(await screen.findByRole('dialog', { name: 'Aggiungi' }))
+    expect(sheet.getByText('Su un cliente o una persona')).toBeInTheDocument()
+  })
+
+  it('closes «Altro» when the route changes under it', async () => {
+    const { refresh } = renderShell(<div />, undefined, [], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Altro' }))
+    expect(await screen.findByRole('dialog', { name: 'Altro' })).toBeInTheDocument()
+    mockRoute.pathname = '/app/settings/profile'
+    refresh()
+    expect(screen.queryByRole('dialog', { name: 'Altro' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the sidebar rail between 640px and lg: the bar is for phones only', () => {
+    setViewport(false, false)
+    renderShell(<div />, undefined, [], 'company')
+    expect(screen.queryByRole('button', { name: 'Aggiungi' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Espandi il menu' })).toBeInTheDocument()
+  })
+
+  it('opens the new activity form from «+» without leaving the page', async () => {
+    renderShell(<div />, undefined, [], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Aggiungi' }))
+    await userEvent.click(await screen.findByRole('button', { name: /^Attività\s*Una cosa/ }))
+    expect(await screen.findByRole('heading', { name: 'Nuova attività' })).toBeInTheDocument()
+    expect(mockGo).not.toHaveBeenCalled()
+  })
+
+  it('lists in «Altro» the places the bar does not draw, never one of an off module', async () => {
+    renderShell(<div />, undefined, ['deals'], 'company')
+    await userEvent.click(bar().getByRole('button', { name: 'Altro' }))
+    const sheet = within(await screen.findByRole('dialog', { name: 'Altro' }))
+    const links = sheet.getAllByRole('link').map((link) => link.textContent)
+    expect(links).toEqual(
+      expect.arrayContaining(['Calendario', 'Clienti', 'Persone', 'Fatture', 'Agenti', 'Impostazioni']),
+    )
+    expect(links).not.toContain('Deal')
+    expect(links).not.toContain('Ore')
+  })
+
+  it('has no «+» for a role that cannot write', () => {
+    mockAuth.role = 'readonly'
+    renderShell(<div />, undefined, [], 'company')
+    expect(bar().queryByRole('button', { name: 'Aggiungi' })).not.toBeInTheDocument()
   })
 })

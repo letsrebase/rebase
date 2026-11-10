@@ -6,14 +6,14 @@ import type { Cost, CostCategory } from './queries'
 
 /* Written out in full rather than cast: a double cast switches the type check off, so
    the day `CostCategory` grows a required field this fixture would keep compiling and
-   say nothing. The column reads only `id` and `nome`; the rest costs four lines. */
+   say nothing. The column reads only `id` and `name`; the rest costs four lines. */
 const CATEGORIES: CostCategory[] = [
   {
     id: 'cat-1',
-    nome: 'Consulenze',
-    posizione: 0,
+    name: 'Consulenze',
+    position: 0,
     code: null,
-    archiviata: false,
+    archived: false,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   },
@@ -21,13 +21,13 @@ const CATEGORIES: CostCategory[] = [
 
 const COST: Cost = {
   id: 'k1',
-  azienda_id: null,
+  legal_entity_id: null,
   deal_id: null,
   category_id: 'cat-1',
-  data: '2026-03-05',
-  importo: '2500.50',
-  descrizione: 'Consulenza fiscale',
-  fornitore: 'Studio Rossi',
+  date: '2026-03-05',
+  amount: '2500.50',
+  description: 'Consulenza fiscale',
+  supplier: 'Studio Rossi',
   document_id: null,
   custom_fields: {},
   created_at: '2026-03-05T00:00:00Z',
@@ -50,7 +50,7 @@ function renderCell(id: string, cost: Cost) {
 
 describe('how a cost row reads', () => {
   it('puts a calendar icon before the date, in Italian day/month/year order', () => {
-    const { container } = renderCell('data', COST)
+    const { container } = renderCell('date', COST)
     expect(screen.getByText('05/03/2026')).toBeInTheDocument()
     expect(container.querySelector('svg')).not.toBeNull()
   })
@@ -58,12 +58,12 @@ describe('how a cost row reads', () => {
   /** The header has to sit over the digits it labels, which only the column can say --
    *  a cell that right-aligned itself would leave its own header on the left. */
   it('declares the amount a right-aligned column', () => {
-    const column = buildCostColumns(CATEGORIES, []).find((candidate) => candidate.id === 'importo')
+    const column = buildCostColumns(CATEGORIES, []).find((candidate) => candidate.id === 'amount')
     expect(column?.meta).toEqual({ align: 'right' })
   })
 
   it('right-aligns the amount inside its cell too', () => {
-    renderCell('importo', COST)
+    renderCell('amount', COST)
     expect(screen.getByText(/2\.500,50/).className).toContain('text-right')
   })
 
@@ -71,7 +71,7 @@ describe('how a cost row reads', () => {
    *  labelled rather than being treated as an error -- and the label survives the move
    *  into a right-aligned cell. */
   it('keeps saying «(rimborso)» beside a negative amount', () => {
-    renderCell('importo', { ...COST, importo: '-45.50' })
+    renderCell('amount', { ...COST, amount: '-45.50' })
     expect(screen.getByText(/\(rimborso\)/)).toBeInTheDocument()
   })
 })
