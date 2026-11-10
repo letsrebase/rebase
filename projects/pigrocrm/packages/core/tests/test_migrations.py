@@ -3154,7 +3154,7 @@ def test_0079_creates_the_staff_tables_under_the_scope_policy_and_downgrade_drop
     with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
-        upgrade(config, "0080")
+        upgrade(config, "0078")
         assert _tables_shape(url, both) == (set(), set(), set())
         assert _entity_visible_names(url) == (False, False)
         upgrade(config, "0079")
@@ -3213,8 +3213,9 @@ def test_0081_adds_the_hub_freelancer_id_and_the_engagements_table_and_downgrade
                 freelancer = connection.execute(
                     text(
                         "INSERT INTO organizations "
-                        "(id, legal_name, country, roles, hub_freelancer_id) "
-                        "VALUES (gen_random_uuid(), 'F', 'IT', ARRAY['freelancer']::varchar[], "
+                        "(id, legal_name, country, custom_fields, roles, hub_freelancer_id) "
+                        "VALUES (gen_random_uuid(), 'F', 'IT', '{}', "
+                        "ARRAY['freelancer']::varchar[], "
                         "gen_random_uuid()) RETURNING id"
                     )
                 ).scalar_one()
@@ -3239,8 +3240,9 @@ def test_0081_adds_the_hub_freelancer_id_and_the_engagements_table_and_downgrade
             with pytest.raises(IntegrityError), engine.begin() as connection:
                 connection.execute(
                     text(
-                        "INSERT INTO organizations (id, legal_name, country, hub_freelancer_id) "
-                        "VALUES (gen_random_uuid(), 'C', 'IT', gen_random_uuid())"
+                        "INSERT INTO organizations "
+                        "(id, legal_name, country, custom_fields, hub_freelancer_id) "
+                        "VALUES (gen_random_uuid(), 'C', 'IT', '{}', gen_random_uuid())"
                     )
                 )
         finally:

@@ -133,6 +133,12 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "get_due_item",
         "settle_due_item",
         "reverse_settlement",
+        # Engagements with freelancers (collaborators design § 6): the administrator's token reads
+        # them, updates a draft and asks when a freelancer is free. Creating one, ending one and
+        # the tax data are in the full-access set below.
+        "read_engagements",
+        "update_engagement",
+        "get_freelancer_availability",
     }
 )
 
@@ -261,6 +267,9 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         # Decisions a person takes about what an agent proposed (REB-806).
         "accept_proposal",
         "reject_proposal",
+        # The freelancer's signature makes an engagement active: a person records it, never the
+        # credential that read the letter's text (collaborators design § 6).
+        "activate_engagement",
         # Connections to third parties, and mail that leaves in the owner's name.
         "connect_gmail",
         "disconnect_gmail",
@@ -349,6 +358,16 @@ ACTION_LABELS: dict[str, str] = {
     "read_fiscal_due_items": "leggere le scadenze di imposte, IVA, ritenute e stipendi",
     "share_organization": "condividere un'anagrafica fra le aziende",
     "list_duplicate_organizations": "elencare le anagrafiche con la stessa partita IVA",
+    "read_engagements": "leggere gli incarichi con i freelance",
+    "update_engagement": "modificare un incarico con un freelance",
+    "get_freelancer_availability": "vedere quando un freelance e' libero",
+    "create_engagement": "creare un incarico con un freelance",
+    "cancel_engagement": "annullare un incarico con un freelance",
+    "close_engagement": "chiudere un incarico con un freelance",
+    "send_engagement_for_signature": "mandare un incarico in firma",
+    "activate_engagement": "registrare la firma di un incarico",
+    "set_freelancer_tax_data": "salvare i dati fiscali di un freelance",
+    "set_organization_hub_freelancer": "collegare un'anagrafica a un freelance dell'hub",
     "skip_space_onboarding": "rimandare le domande su come lavora lo spazio",
     "create_staff_member": "registrare una persona dell'azienda con il suo compenso",
     "update_staff_member": "modificare una persona dell'azienda o il suo compenso",
