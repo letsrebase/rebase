@@ -65,7 +65,8 @@ def _cost_defaults_to_total(context: DefaultExecutionContext) -> Decimal:
     """A row written without a cost costs its total: what every cost did, and what a row with
     no pack decision (a shared purchase, a receipt, an expense) costs. The service always
     writes the figure; this is for a row built by hand."""
-    amount: Decimal = context.get_current_parameters()["amount"]
+    # SQLAlchemy ships `get_current_parameters` without annotations.
+    amount: Decimal = context.get_current_parameters()["amount"]  # type: ignore[no-untyped-call]
     return amount
 
 
