@@ -1,16 +1,16 @@
 # Brief: «Cassa» and «Scadenziario» (PigroCRM)
 
-Status: awaiting Lorenzo's answers on the artifact `pigrocrm-cash-and-schedule`; draft
-2026-11-10. Card: REB-1000. Design:
+Status: approved by Lorenzo on 2026-11-10, on the artifact `pigrocrm-cash-and-schedule`
+(«possiamo andare con i tuoi consigli per tutto»: option A on all six questions, the
+recommended ones). Card: REB-1000. Design:
 `projects/pigrocrm/docs/superpowers/specs/2026-11-09-due-items-bank-and-cash-schedule-design.md`
 § 4 (the cash schedule), § 6 (surfaces) and what they cite (§ 1 due items, § 2 bank
 accounts and statements, § 3 matching, § 5 permissions); frame:
 `2026-11-09-space-profiles-modules-and-the-money-picture-design.md` § A3 (the due item
 states), § A5 (fiscal rules are cited or marked), § A7 (every new surface passes this gate)
-and § B5, § B6 (Home per profile, the phone shell). The rules this brief creates are written
-as proposed under «What a component can violate» until the answers are recorded in
-`docs/design/DECISIONS.md`; the build cards read this file and those rows, never the
-artifact.
+and § B5, § B6 (Home per profile, the phone shell). The rule this brief creates is the last row of
+`docs/design/DECISIONS.md` dated 2026-11-10; the build cards read this file and that row,
+never the artifact, which is closed once the answers are recorded.
 
 Everything here is drawn on `shared/ui/tokens.css` and the primitives of `@rebase/ui`:
 squared, 1px ink lines, Outfit, Prussian sidebar, Watermelon Deep only on the primary action
@@ -26,7 +26,7 @@ the fiscal pack return.
 
 ## Settled before asking
 
-A question already answered is a defect to ask again. These are not in the questions.
+A question already answered is a defect to ask again. These were not in the questions.
 
 | Point | Settled as | Source |
 |---|---|---|
@@ -50,28 +50,26 @@ A question already answered is a defect to ask again. These are not in the quest
 | Cross-link, never sum | «Cassa» and the economic tab link to each other and are never added together; one month can read differently on them by design. | Design § 4 |
 | Freshness | The schedule keeps the `Freshness` line («Aggiornato alle 11:42», «Aggiorna») the receivables tab has. | `features/dashboard/ReceivablesTab.tsx:73` |
 
-## Questions for Lorenzo
+## What Lorenzo decided
 
-Each has two options drawn at the same scale on the artifact, with the same data. All six
-are about structure or look; none is about fiscal law.
+Lorenzo, 2026-11-10: «possiamo andare con i tuoi consigli per tutto», that is option A on
+every question, as recommended on the artifact. The options B are not built.
 
-| # | Question | A | B | Recommendation |
-|---|---|---|---|---|
-| 1 | How is the week-by-week schedule drawn? | A weekly table; the items of the selected week open in the side panel. On the phone, one card per week. | A 13-column strip on top (in above the axis, out below, balance beneath), then every item grouped by week. On the phone, a small strip and the grouped list. | **A.** The weeks are what a person acts on, and a ruled table with a panel is the idiom already approved for «In arrivo»; the red balance and the band already say where the gap is. |
-| 2 | Does the balance at the end of each week include the forecasts? | One balance with the forecasts in; the forecast part of each flow is drawn lighter above it. | Two balances: «Saldo certo» (expected only) and «Saldo con previsioni». | **A.** The design speaks of one projected balance and one alert, and the lighter «previsti» lines already separate the guesses. |
-| 3 | What does the projected balance do with money already overdue? | Leaves it out; two figures above the weeks («In ritardo da incassare», «In ritardo da pagare») and a note name it. | Counts it in the first week, on a first row «Già scaduto». | **A.** No source says when late money moves, and a balance should not invent it. |
-| 4 | How does a solo space see its own taxes, with no outgoing column and no projected balance? | A small table «Le tue tasse» under the weeks, each tax with date, state and amount, «non tolte dal saldo». | One line under the balance: the next tax date and amount, with a link to the tab «Anno». | **A.** The design lists the solo's own taxes among what the page shows, and a freelancer plans around each date. |
-| 5 | Where is the work on bank movements done? | On the account: one queue of movements across statements (tabs «Movimenti» and «Estratti conto»). | Statement by statement: the account lists statements, each opens a page with its movements. | **A.** The thing that needs a person is a movement, and the same movement can belong to two statements (design § 2, dedup), so one queue never asks twice. |
-| 6 | What do the money figures at the top of the phone Home lead with? | Four figures of now: «Saldo oggi», «Da incassare», «Da pagare» (each with its late part), «Prossimi 7 giorni». | A small ledger of the next 4 weeks under the balance, then «Da incassare» and «Da pagare». | **A.** A phone Home answers how things stand today in numbers; the weeks are what «Cassa» is for, one tap away. |
+| # | Question | Decision |
+|---|---|---|
+| 1 | How is the week-by-week schedule drawn? | A weekly table; the items of the selected week open in the side panel. On the phone, one card per week. |
+| 2 | Does the balance at the end of each week include the forecasts? | One balance with the forecasts in; the forecast part of each flow is drawn lighter above it. No «Saldo certo» column. |
+| 3 | What does the projected balance do with money already overdue? | It leaves it out. Two figures above the weeks, «In ritardo da incassare» and «In ritardo da pagare», and a note under the table name what it does not count. |
+| 4 | How does a solo space see its own taxes? | A small table «Le tue tasse» under the weeks, each tax with date, state and amount, marked «non tolte dal saldo». |
+| 5 | Where is the work on bank movements done? | On the account: one queue of movements across statements, under the tabs «Movimenti» and «Estratti conto». There is no statement page. |
+| 6 | What do the money figures at the top of the phone Home lead with? | Four figures of now: «Saldo oggi», «Da incassare» and «Da pagare» (each with its late part), «Prossimi 7 giorni». |
 
-What each option optimises and costs is on the artifact next to the drawing. Two points to
-read with the questions:
+Two points to read with the decisions:
 
-- Question 3 changes a rule the server follows (what the projected balance contains). The
-  screen only shows the figure; the answer is recorded as a rule for the build card of the
-  schedule, not as a drawing.
-- Question 2 and question 3 are drawn on the weeks table of option A of question 1 so the
-  options of each stay comparable; they apply to either option of question 1.
+- Decision 3 is a rule the server follows (what the projected balance contains), not only a
+  drawing: the schedule's read returns the two late figures apart and a projected balance
+  that does not contain late items.
+- Decisions 2 and 3 were drawn on the weeks table of decision 1; they hold there.
 
 ## «Cassa» and the tab «Scadenziario»
 
@@ -118,18 +116,19 @@ as the mailbox band of REB-973 has none. Then the balances: a total card «Saldo
 le aziende» and one card per account (name, bank, entity under «Tutte», the amount in the
 account's own currency, and the date it is true as of: «al 30/09/2026», with a gold dot and
 «da 41 giorni» once it is older than the account's cadence says). Then the horizon select
-(13 weeks by default), the legend of expected and forecast, and the weeks (question 1), with
+(13 weeks by default), the legend of expected and forecast, and the weeks (a table, decision 1), with
 the `Freshness` line. Below, as today and still on the same page: «Da incassare» and «Da
 pagare», each a big number, the line «Di cui scaduto», the six bands and its table of late
 items (the receivables one keeps its «Solleciti» column; the payables one has none), side
-by side from 1024 px and stacked below it. «Il saldo non conta ciò che è già scaduto» or the
-row «Già scaduto» follows question 3. A line says how «Cassa» and the economic tab differ and
+by side from 1024 px and stacked below it. Above the weeks, two figures, «In ritardo da incassare» and «In ritardo da pagare» (count, total,
+how old the oldest is), and under the table «Il saldo non conta ciò che è già scaduto» with the
+two totals and a link to the late items (decision 3). A line says how «Cassa» and the economic tab differ and
 links to the tab «Economica». The tab is the same body under the Home header: the Home keeps
 its title and its tabs, and the horizon and the period picker stay as they are today (none on
 this tab).
 
 **Phone.** Under «Altro», first the band, then the figures: a card with «Saldo oggi» and its
-accounts (each with its date), then the weeks as one card each (question 1), then «Da
+accounts (each with its date), then the weeks as one card each (decision 1), then «Da
 incassare» and «Da pagare» as cards. The strong action is the same, as a sticky button on the
 account page rather than here: on the phone a statement is added through «Carica un
 documento» in the centre «+» (REB-973 classifies it as a bank statement, § 2 of the incoming
@@ -151,11 +150,11 @@ sales item's date never moves (design § 1.1), so the panel offers no way to cha
 | Forecast, estimated | The lighter figure and the word «previsti»; the pill «Previsto» (`muted`); a date that follows another item reads «circa» and the sentence of the rule. |
 | Below zero | The balance in `danger` with its sign and the words «sotto zero» (not colour alone); the band names the first such week. A floor the space sets reads the same. |
 | Stale balance | The account card says «al 30/09/2026, da 41 giorni» with the gold dot, and the missing-statement band follows. The projected balance is still shown, from the stale figure, with the account named in the band. |
-| Overdue | The `danger` pill «Scaduto da 12 giorni» on the item, the first band of «Da incassare» or «Da pagare», and the line in the schedule that question 3 decides. |
+| Overdue | The `danger` pill «Scaduto da 12 giorni» on the item, the first band of «Da incassare» or «Da pagare», and, in the schedule, the two late figures above the weeks and the note under them (decision 3). |
 | Many | The weeks are 13 rows and never page; the items of a week open in the panel, up to 50 with «Mostra altri». A long counterparty wraps in the panel and ellipsises in a cell with the full name on hover. Many accounts: four cards, then «Tutti i conti (7)». |
 | Several entities | The selector in the sidebar filters; under «Tutte le aziende» the account cards name their entity and the items a muted line; with one entity neither exists. An account in another currency is shown in it («1.350,00 USD») and the total says it is converted. |
 | Module `cash` off | No «Cassa» in the sidebar or in «Altro», no balances, no band about statements, no projected balance; the tab «Scadenziario» shows the due items in both directions, the two bands and the late lists. |
-| Solo | No «Uscite» column, no balance by week, no «Saldo previsto»; «Saldo oggi» for the accounts, the weeks with «Entrate» only (expected and forecast), the late receivables, and the taxes as question 4 decides. |
+| Solo | No «Uscite» column, no balance by week, no «Saldo previsto»; «Saldo oggi» for the accounts, the weeks with «Entrate» only (expected and forecast), the late receivables, and the table «Le tue tasse» (decision 4). |
 | Permissions | Admin: everything. Collaborator and read-only: the items of sales invoices, purchases and recurring expenses, and no balance, no account card and no projected balance (§ 5 makes the accounts an administrator's); the tax, IVA, withholding and payroll kinds are not in their list and not in their totals. Read-only sees no button. A balance the viewer may not read is a missing block, never «0,00 €». |
 
 ## The Home's money figures on the phone
@@ -177,7 +176,7 @@ Non-goals    The company Home's other tabs, the onboarding and the solo Home bey
              money block, which the REB-956 decision left as drawn.
 ```
 
-**Phone** (question 6, option A as recommended). The band when it applies; «Saldo oggi»,
+**Phone** (decision 6). The band when it applies; «Saldo oggi»,
 large; two cards side by side, «Da incassare» and «Da pagare», each with its late part;
 «Prossimi 7 giorni» with «entrano» over «escono»; then today's activities, as REB-956
 decided. A tap on any figure opens «Cassa» (the weeks), or the invoices list for the late
@@ -221,8 +220,9 @@ Non-goals    Banking APIs and their credential flow; reading a statement; the co
 Servizi srl», «Modifica il conto» and the one strong button «Carica estratto conto». Three
 cards: the balance with its date, the account (bank, entity, IBAN) and how statements arrive
 (the mailbox of purpose `statements` or a manual upload, the cadence, the sender
-addresses). Then the coverage strip. Then, by question 5, either tabs «Movimenti» and
-«Estratti conto» (option A) or the statements table alone (option B). «Modifica il conto» and
+addresses). Then the coverage strip. Then the tabs «Movimenti» (the default, filtered to «Da abbinare»)
+and «Estratti conto» (decision 5); a statement row filters «Movimenti» to that statement and
+has no page of its own. «Modifica il conto» and
 a new account use a dense two-column dialog: name, bank, IBAN, currency, opening balance and
 its date, how statements arrive, the cadence, the senders; «Archivia il conto» in the same
 dialog, with the sentence «I movimenti restano». «Carica estratto conto» is a dialog with the
@@ -231,8 +231,8 @@ dichiara il periodo: va indicato, non si indovina»), and afterwards «41 movime
 presenti».
 
 **Phone.** One column: the balance card with its date, the coverage strip (12 thin cells),
-then the movements as cards under a segmented control (option A: «Da abbinare / Tutti /
-Estratti») or the statements as cards (option B). Upload is the sticky button of the page.
+then the movements as cards under a segmented control («Da abbinare / Tutti /
+Estratti»). Upload is the sticky button of the page.
 
 | State | What is drawn |
 |---|---|
@@ -249,7 +249,7 @@ Estratti») or the statements as cards (option B). Upload is the sticky button o
 ## A statement's movements
 
 ```
-Subject      The lines of a statement (or of an account, by question 5): date,
+Subject      The lines of a statement (read as a queue across the account's statements, decision 5): date,
              description, counterparty, amount, and what each is matched to.
 Audience     As the account page.
 The job      Get every movement to a state: matched, a giroconto, ignored; never left
@@ -286,7 +286,7 @@ line, the date and the state under it; a card opens the matching sheet.
 | Ignored | `muted` «Ignorato» and the reason, kept on the row («uso personale»). |
 | Other currency | A movement in a currency other than the document's is never matched automatically; it is proposed (design § 2), and the row says so. |
 | Many | 50 at a time. Two identical same-day payments are two rows (design § 2). |
-| Permissions | Admin. A collaborator never reaches these rows (see «Where the design is silent or inconsistent»). |
+| Permissions | Admin. A collaborator never reaches these rows (see «Open points»). |
 
 ## The matching panel
 
@@ -336,7 +336,7 @@ movement, refused in a closed month with the same message a cost gets, design §
 
 ## What a component can violate
 
-Proposed until the answers are recorded; the ones that depend on a question say which.
+The rules the build must keep, each checkable; those that follow from a decision name it.
 
 - The schedule is one component mounted by the tab «Scadenziario» and by «Cassa»; the Home
   tab id stays `receivables` (bookmarks) and only its content changes.
@@ -346,11 +346,17 @@ Proposed until the answers are recorded; the ones that depend on a question say 
 - Forecast and expected never share a look: any figure or row that comes from a forecast, and
   any date that follows another item, carries the lighter treatment and a word, in the table,
   the panel, the phone card and the Home figure.
-- A balance below zero is `danger` with its sign and the words «sotto zero». (Question 2:
-  with option B both balances do; the band names which crossed.)
+- There is one projected balance per week, forecasts included (decision 2): no «Saldo certo»
+  column, on the table or on the phone card. A balance below zero is `danger` with its sign
+  and the words «sotto zero».
+- The projected balance contains no overdue item, and the two late figures are drawn above the
+  weeks with the note under them (decision 3); no «Già scaduto» row is drawn.
+- The weeks are a table with the selected week's items in the panel, and the strip of 13
+  columns is not drawn (decision 1).
 - The solo profile has no «Uscite» column, no balance by week, no «Saldo previsto» and no
-  outgoing figure on the phone Home, with a solo fixture test; its taxes are drawn as
-  question 4 decides and are never subtracted from a balance.
+  outgoing figure on the phone Home, with a solo fixture test; its taxes are the
+  table «Le tue tasse» (decision 4), marked «non tolte dal saldo», and are never subtracted from
+  a balance.
 - A balance the viewer may not read is absent, never zero or a dash; no card, link or count
   leads a non-admin to an account, a statement or a movement.
 - Every balance names the date it is true as of; one older than the account's cadence says
@@ -362,6 +368,10 @@ Proposed until the answers are recorded; the ones that depend on a question say 
 - A loading state is `LoadingState` and a sentence, an error is `QueryErrorBanner` and
   nothing under it; no `Skeleton`.
 - Under one entity there is no entity column, name or selector.
+- The movements are one queue per account across its statements; a statement has no page of
+  its own and a movement present in two statements is one row (decision 5).
+- The phone Home leads with the four figures of decision 6, each tappable to «Cassa», and no
+  ledger.
 - An automatic match shows its reason and is undoable; a movement from a statement not yet
   confirmed is never shown as matched automatically; a known IBAN alone never checks a row.
 - The «da N giorni» turning `danger`, the 7-day grace of a missing statement and the horizon
@@ -381,8 +391,8 @@ push back on any.
 - «Cassa» is the last entry of «Amministrazione» (after «Giornate», the order the money
   moves: register, hours, days, bank), with its own icon, and in «Altro» it follows «In
   arrivo» and the other entries in section order. Its route is `/app/cash`, the account
-  `/app/cash/accounts/$accountId` and a statement (question 5, option B)
-  `/app/cash/accounts/$accountId/statements/$statementId`.
+  `/app/cash/accounts/$accountId` and the movements and statements are
+  tabs of the account page (decision 5), so there is no statement route.
 - The tab id `receivables` and its label «Scadenziario» stay; the tab keeps the six bands and
   the late-invoice table of today and gains the payables mirror and the weeks.
 - The weeks start on Monday, the current week is whole (today and the days after it count,
@@ -411,34 +421,54 @@ push back on any.
 - The phone's «Altro» reaches «Cassa»; tapping a Home figure opens it. No new place in the
   bottom bar and no new entry in the «+».
 
-## Where the design is silent or inconsistent
+## Open points
 
-Reported so the owner of each document can answer; none is papered over here.
+Gaps and contradictions found in the design and the code while drawing this, and what is
+unresolved. The page cards inherit them; none is papered over. Paths are in the repository.
 
-1. **Overdue money in the projected balance.** § 4 says «overdue both ways» and a projected
-   balance per week, and does not say whether late money is in the balance or on which
-   week. This is question 3.
-2. **The solo's taxes.** § 4 says the solo profile sees «its own taxes» and «no outgoing
-   column»; a tax is an outgoing item. This is question 4.
-3. **Who may see what.** § 5 makes `list_bank_accounts`, `list_statements` and
-   `list_bank_movements` administrator reads, but `import_statement`, `match_movement`,
-   `unmatch_movement` and `mark_movement` collaborator acts, and a collaborator who cannot
-   list the accounts cannot pick one. And `match_movement` on an outgoing item would settle
-   it, which `settle_due_item` makes an administrator's act (design § 5, REB-967). It does not
-   say whether `get_cash_schedule` returns the balance to a non-admin. This brief draws the
-   account, statement, movement and matching screens and every balance for an administrator
-   only, and leaves a collaborator with the items; if the design wants collaborators to
-   import and match, the account read has to change first.
-4. **The `cash` module and the tab.** Frame § A2 lists «the cash schedule» under `cash`;
-   frame § B5, `lib/modules.ts` (`TAB_MODULES`) and design «Scope» keep the tab
-   «Scadenziario» in the core and give `cash` only the bank side and «Cassa». This brief
+1. **Overdue money in the projected balance.** The design said «overdue both ways» and a
+   projected balance per week (`projects/pigrocrm/docs/superpowers/specs/2026-11-09-due-items-bank-and-cash-schedule-design.md`
+   lines 293-298) and not whether late money is in the balance. Decided (decision 3): left out
+   and named. The server read has to return the two late figures apart; the design text of §
+   4 should say it.
+2. **The solo's taxes.** Design § 4 lines 302-304 give the solo profile «its own taxes» and
+   «no outgoing column»; a tax is an outgoing item. Decided (decision 4): a separate table,
+   not subtracted. The read needs the solo's own tax items, which are restricted kinds
+   (`due_items/models.py`, `RESTRICTED_SOURCE_KINDS`), so a solo space with one administrator
+   sees them and a solo collaborator would not.
+3. **Who may see what.** Design § 5 lines 317-327 make `list_bank_accounts`,
+   `list_statements` and `list_bank_movements` administrator reads, but `import_statement`,
+   `match_movement`, `unmatch_movement` and `mark_movement` collaborator acts; a collaborator
+   who cannot list the accounts cannot pick one. `match_movement` on an outgoing item would
+   also settle it, which `settle_outgoing_due_item` makes an administrator's act
+   (`apps/web/src/lib/permissions.ts:104-106`, DECISIONS 2026-11-09 row on REB-967). The
+   design does not say whether `get_cash_schedule` returns the balance to a non-admin. The
+   brief draws every balance, account, statement, movement and matching screen for an
+   administrator only. **Open:** if collaborators are to import and match, the account read
+   and the outgoing-settlement rule have to change first.
+4. **The `cash` module and the tab.** Frame § A2 (line 105 of the frame) lists «the cash
+   schedule» under `cash`; frame § B5 (lines 377-386), `apps/web/src/lib/modules.ts:80-84`
+   (`TAB_MODULES`) and design «Scope» keep the tab «Scadenziario» in the core. The brief
    follows the second reading: with `cash` off the tab shows due items without balances.
-5. **Currency for the total.** § 4 says an account in another currency is converted for the
-   total «as in § 2», and § 2 and frame § A5 mark the ECB rate as the source «to verify». The
-   mockup shows the converted figure as an example and the screen says only that the total
-   is converted.
+   **Open:** the frame's A2 wording should be corrected.
+5. **Currency for the total.** Design § 4 line 300 converts another currency «as in § 2»;
+   § 2 lines 256-258 and the frame's register (line 249) mark the ECB rate «to verify». The
+   mockup's converted figure is an example, and the screen says only that the total is
+   converted. **Open:** the source and date of the rate, before the build.
 6. **Week boundaries.** «13 weeks ahead» gives no first day of the week or rule for the
-   current week (see Inferred).
+   current week. The brief infers Monday and a whole current week, and the server owns it.
+7. **Import from «In arrivo».** The inbox classifies a statement and waits (the inbox brief,
+   «Module not built yet» row); the action that files it into an account is not drawn in
+   either brief. **Open:** the card that builds the `statements` purpose or the import
+   cards draws «Importa nel conto…» on the inbox panel.
+8. **Alert thresholds and texts.** The balance floor, the 14-day unmatched threshold and the
+   7-day grace are the server's (design § 2, § 3, § 4); who sets them and where (design § 5,
+   «set the alert thresholds and the balance floor», an administrator) has no screen.
+   **Open:** a settings section for them.
+9. **Not verifiable yet.** The statement formats and the banks' export formats are «to
+   verify» (frame register lines 246-248), so no reader-specific screen is drawn beyond the
+   format name the reader returns; the matching and statement screens are drawn on invented
+   data only.
 
 ## Not in this brief
 
