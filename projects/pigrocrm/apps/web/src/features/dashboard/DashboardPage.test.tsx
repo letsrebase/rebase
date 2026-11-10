@@ -120,9 +120,33 @@ const EMPTY_YEAR = {
   cancelled: 0,
 }
 
+/** A company space with nothing open: the schedule says so in one sentence. */
+const EMPTY_SCHEDULE = {
+  calculated_at: '2026-03-15T10:00:00Z',
+  today: '2026-03-15',
+  legal_entity_id: null,
+  horizon_weeks: 13,
+  horizon_options: [4, 13, 26],
+  profile: 'company',
+  cash_enabled: true,
+  currency: 'EUR',
+  show_outgoing: true,
+  show_balance: false,
+  accounts: null,
+  total_balance: null,
+  late_receivable: { count: 0, total: '0.00', oldest_days: null },
+  late_payable: { count: 0, total: '0.00', oldest_days: null },
+  weeks: [],
+  taxes: null,
+  alerts: [],
+  has_open_items: false,
+}
+
 const BY_PATH: Record<string, unknown> = {
   '/api/dashboard/sales': EMPTY_DASHBOARD,
   '/api/dashboard/receivables': EMPTY_RECEIVABLES,
+  '/api/cash/schedule': EMPTY_SCHEDULE,
+  '/api/cash/payables': EMPTY_RECEIVABLES,
   '/api/analytics/overview': EMPTY_OVERVIEW,
   '/api/analytics/fiscal': EMPTY_ESTIMATE,
   // No ceiling applies: the panel under the figures draws nothing (REB-755).
@@ -343,14 +367,14 @@ describe('DashboardPage, four tabs', () => {
     expect(screen.getByLabelText('Dal')).toBeInTheDocument()
   })
 
-  /** REB-329: the scadenziario has no period, so the picker would change nothing on
-   *  screen; it is not drawn, and the tab reads its own endpoint and no other. */
-  it('mounts the scadenziario without a period picker, reading its own endpoint', async () => {
+  /** REB-329, REB-1025: the scadenziario has no period, so the picker would change nothing on
+   *  screen; it is not drawn. Its body is the cash schedule, which reads its own endpoint. */
+  it('mounts the scadenziario without a period picker, as the cash schedule', async () => {
     renderPage({ ...SEARCH, tab: 'receivables' })
-    expect(await screen.findByText(/scadenziario per fascia/i)).toBeInTheDocument()
+    expect(await screen.findByText('Niente da incassare né da pagare nelle prossime 13 settimane.')).toBeInTheDocument()
     expect(screen.queryByLabelText('Dal')).not.toBeInTheDocument()
     // No period, and in «tutte» no azienda either: an empty query (REB-632).
-    expect(api.GET).toHaveBeenCalledWith('/api/dashboard/receivables', { params: { query: {} } })
+    expect(api.GET).toHaveBeenCalledWith('/api/cash/schedule', { params: { query: {} } })
     expect(api.GET).not.toHaveBeenCalledWith('/api/dashboard/sales', expect.anything())
   })
 })
