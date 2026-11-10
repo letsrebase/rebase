@@ -80,7 +80,9 @@ DEFAULT_BUDGET_BYTES = 101_750
 # REB-995: 119.7 KB, up from 118.6 KB, for `merge_organizations` (a full-access administrator's,
 # 1.0 KB): the survivor, the loser and the preview switch, and a docstring that says what it
 # rewrites, which is the only warning an agent reads.
-FULL_ACCESS_BUDGET_BYTES = 119_700
+# REB-1004: 120.2 KB, up from 119.7 KB, for `get_tax_calendar` (a full-access administrator\'s,
+# 477 bytes).
+FULL_ACCESS_BUDGET_BYTES = 120_200
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.
