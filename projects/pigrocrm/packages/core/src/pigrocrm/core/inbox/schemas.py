@@ -2,12 +2,13 @@
 through `InboxService.download` only, and never over MCP (design § 6)."""
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from pigrocrm.core.inbox.filetypes import FileType
+from pigrocrm.core.validation import SafeStr
 
 InboxItemState = Literal["new", "proposed", "filed", "duplicate", "discarded"]
 InboxItemKind = Literal[
@@ -22,6 +23,22 @@ InboxItemKind = Literal[
     "archive",
     "other",
 ]
+
+InboxPickableKind = Literal[
+    "sales_invoice",
+    "supplier_invoice",
+    "credit_note",
+    "receipt",
+    "bank_statement",
+    "contract",
+    "tax_document",
+    "payslip",
+    "other",
+]
+"""The kinds a person or an agent may say an item is: every kind but `archive`, which only a
+ZIP that was opened has."""
+
+REASON_MAX_LENGTH = 500
 
 
 class InboxItemRead(BaseModel):
@@ -87,3 +104,39 @@ class InboxListQuery(BaseModel):
 class InboxItemPage(BaseModel):
     items: list[InboxItemRead]
     next_cursor: UUID | None
+
+
+class InboxDiscard(BaseModel):
+    """Why a person puts an item aside: the sentence stays on the item, which stays readable."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    reason: SafeStr = Field(
+        min_length=1, max_length=REASON_MAX_LENGTH, description="Why it is discarded"
+    )
+
+
+class InboxDuplicate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    original_id: UUID = Field(description="The item this one is a copy of")
+
+
+class InboxKindSet(BaseModel):
+    """What an item is, as a person or an agent says it, and for which legal entity."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: InboxPickableKind | None = Field(
+        default=None, description="What it is; omitted, the item's kind stays as it is"
+    )
+    legal_entity_id: UUID | None = Field(
+        default=None,
+        description="The legal entity the document is for; omitted, the item's stays as it is",
+    )
+
+    @model_validator(mode="after")
+    def _says_something(self) -> Self:
+        if self.kind is None and self.legal_entity_id is None:
+            raise ValueError("indica il tipo, l'azienda o tutti e due")
+        return self

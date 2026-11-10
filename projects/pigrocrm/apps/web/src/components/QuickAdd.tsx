@@ -1,7 +1,8 @@
 import { useRouterState } from '@tanstack/react-router'
-import { CalendarPlus, Clock, ListChecks, StickyNote, type LucideIcon } from 'lucide-react'
+import { CalendarPlus, Clock, FileInput, ListChecks, StickyNote, type LucideIcon } from 'lucide-react'
 import { useState } from 'react'
 import { DayForm } from '@/features/days/DayForm'
+import { QuickUpload } from '@/features/inbox/QuickUpload'
 import { TaskDialog } from '@/features/tasks/TaskDialog'
 import {
   Dialog,
@@ -21,7 +22,7 @@ import { useModules } from '@/lib/modules'
 import { QuickHours } from './QuickHours'
 import { QuickNote } from './QuickNote'
 
-type Action = 'task' | 'note' | 'day' | 'hours'
+type Action = 'task' | 'note' | 'day' | 'hours' | 'document'
 
 /**
  * «+» of the phone's bottom bar (spec 2026-11-09 B6, REB-959): what can be added from
@@ -65,6 +66,14 @@ export function QuickAdd({
     ...(modules.on('time')
       ? [{ action: 'hours' as const, label: 'Ore', hint: 'Ore lavorate su un deal', icon: Clock }]
       : []),
+    // The inbox is core, never behind a module: a photo or a PDF of a document goes in at once
+    // and is read afterwards (REB-984).
+    {
+      action: 'document',
+      label: 'Carica un documento',
+      hint: 'Una foto o un file, in In arrivo',
+      icon: FileInput,
+    },
   ]
 
   return (
@@ -112,6 +121,7 @@ export function QuickAdd({
         </DialogContent>
       </Dialog>
       <QuickHours open={action === 'hours'} onOpenChange={(next) => !next && close()} />
+      <QuickUpload open={action === 'document'} onOpenChange={(next) => !next && close()} />
     </>
   )
 }

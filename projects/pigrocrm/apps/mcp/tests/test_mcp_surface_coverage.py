@@ -812,6 +812,12 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
     "and proposing then accepting in one turn closes the chain. `Actor.require_person` "
     "refuses every agent credential, over REST too, with or without `mcp_full_access`",
     ("ProposalService", "reject"): "same as accept: rejecting is a person's decision too",
+    (
+        "ProposalService",
+        "reject_without_commit",
+    ): "the step of `reject` that an inbox act (REB-984) "
+    "runs inside its own transaction when a person discards an item with a proposal waiting; it is "
+    "person-only like `reject`, and an agent's act on such an item is refused before it",
     ("DealService", "attach_rebase_ref"): (
         "the leads route of the hub's door, under PIGROCRM_ENGAGEMENTS_TOKEN: it stamps a "
         "request's reference on a deal the CRM already had, so the hub's link to it is found "

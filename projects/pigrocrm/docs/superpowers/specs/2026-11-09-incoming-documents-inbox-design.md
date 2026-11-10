@@ -455,6 +455,36 @@ Frame A8 classification, tool by tool:
 | connect or disconnect a mailbox, set purposes, pause, resume, backfill, the task-from-mail switch | person only, like `update_gmail_settings`, `sync_gmail`, `backfill_gmail` (`agent_actions.py:211-215`) |
 | model settings | an admin person's act |
 
+**As built (REB-984, the page and the acts on an item).** `/app/inbox` (`features/inbox/`) is the brief's
+page: a table with the open item in a 330 px panel from `lg`, cards and a full-screen sheet below, three
+tabs (the states each lists are `TABS` in `labels.ts`), filters for the kind, the origin and the company, and
+50 rows at a time. The count beside «In arrivo» (the sidebar and the phone's «Altro») is the new and proposed
+items one request of 200 reads for each state, so it is the reader's own and says «99+» past that. The API gives
+no total, so «Mostra altri» says how many are shown. The amount column is read from the pending proposals
+(`GET /api/proposals`), since `InboxItemRead` carries none: an item with no proposal has none to show, and the
+panel states what a FatturaPA says. «Leggi i documenti in attesa» is drawn for an unscoped administrator with the
+model on, the only reader of `GET /api/settings/ai-model`; nobody else can know the model is on, so nobody else
+is offered it (an item's own «Leggi con il modello» follows the same rule). Upload is one request per file, so a
+refusal belongs to a file: a refused file stays as a red row until dismissed, a file over 100 MiB never leaves the
+browser, and the phone's «Carica un documento» adds without navigating and toasts «Apri». There is no progress bar:
+`fetch` cannot report an upload's progress, and the row says «Lo leggo…» while the request, which uploads and reads,
+runs.
+
+Three acts on an item that waits, which design § 6 classifies as collaborator acts an agent may do, are
+`InboxService.discard`, `mark_duplicate` and `set_kind` (REST `POST /api/inbox/items/{id}/discard`, `/duplicate`
+and `/kind`; MCP `discard_inbox_item`, `mark_inbox_item_duplicate` and `set_inbox_item_kind`). Each reads the
+item under a row lock with the visibility of § 1, is idempotent for the same request, answers 409 for an item that
+is no longer waiting, and records an activity entry (`discarded`, `marked_duplicate`, `kind_set`) on the item, whose
+timeline is where «by whom» lives. Discarding needs a reason and keeps the file; marking a copy points at an item
+the caller sees that is not a copy itself, and the copies the item had follow it to the new original; saying what an
+item is takes one of the kinds of § 1 but `archive` (`sales_invoice` only for an XML or `.p7m`) and may carry the
+legal entity, which makes the item visible by the usual entity scope, to a legal entity the caller sees. A
+kind a FatturaPA decided is certain data and stays (409), and its company may still be chosen. A proposal waiting on
+the item is rejected by a person's act and makes an agent's refuse (REB-806), so an agent never decides one. A file
+uploaded again after a discard is a duplicate of the discarded item and stays discarded (§ 3.3; tested). Nothing is
+filed: with no module that files a kind, the page words the third act «Indica il tipo…», and the bulk bar
+(«Scarta…» and «Assegna all'azienda…») runs the same acts one item after the other.
+
 ## 7. What is tested
 
 The query guards per purpose (no Gmail list query without its clause, by AST and by request;

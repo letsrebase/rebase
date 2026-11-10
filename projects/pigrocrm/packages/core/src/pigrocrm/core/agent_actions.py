@@ -107,6 +107,12 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "produce_invoice_artifacts",
         # An agent proposes; a person decides (`accept_proposal` is person-only).
         "create_proposal",
+        # What an item of the inbox is, and putting one aside (design 2026-11-09, § 6,
+        # «classify»): nothing is filed or written as a record, and a proposal waiting on the
+        # item is a person's to decide, so a call on such an item is refused for an agent.
+        "set_inbox_item_kind",
+        "discard_inbox_item",
+        "mark_inbox_item_duplicate",
         # The emitter and its fiscal profile: setup, not history (ORB-188). The profile
         # write is a total replacement that can be replaced again and an issued invoice
         # keeps its own copy.
@@ -323,6 +329,9 @@ ACTION_LABELS: dict[str, str] = {
     "set_space_modules": "accendere o spegnere i moduli dello spazio",
     "upload_inbox_file": "caricare un documento in arrivo",
     "classify_inbox_item": "leggere un documento in arrivo",
+    "set_inbox_item_kind": "dire che cos'e' un documento in arrivo",
+    "discard_inbox_item": "scartare un documento in arrivo",
+    "mark_inbox_item_duplicate": "segnare un documento in arrivo come doppione",
     "read_ai_model_settings": "leggere le impostazioni del modello",
     "update_ai_model_settings": "cambiare le impostazioni del modello",
     "test_ai_model": "provare il modello",

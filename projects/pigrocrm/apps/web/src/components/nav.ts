@@ -5,6 +5,7 @@ import {
   CalendarCheck,
   CalendarDays,
   Clock,
+  FileInput,
   Handshake,
   Inbox,
   LayoutDashboard,
@@ -31,8 +32,8 @@ export const HOME = { to: '/app', label: 'Home', icon: LayoutDashboard, exact: t
  *
  * «Da fare» is what asks for a person's attention, in the order they reach for it: the
  * tasks (late ones counted beside it), the calendar that draws the dated ones by day,
- * the reminders still unread (REB-734) and the proposals an agent left for a decision
- * (REB-750). «Amministrazione» reads in the order the money is supposed to move: the
+ * the reminders still unread (REB-734), the files that arrived and wait for a person
+ * («In arrivo», REB-984) and the proposals an agent left for a decision (REB-750). «Amministrazione» reads in the order the money is supposed to move: the
  * register, the hours the next invoice is built from, the contract days (REB-745). None of
  * it is admin-gated: every write behind these pages is gated at the service, where the
  * refusal belongs. The Payment reminders page left the menu on 2026-09-09 at Ivan's request; its
@@ -46,6 +47,7 @@ export const SECTIONS = [
       { to: '/app/activities', label: 'Attività', icon: ListChecks },
       { to: '/app/calendar', label: 'Calendario', icon: CalendarDays },
       { to: '/app/reminders', label: 'Avvisi', icon: Bell },
+      { to: '/app/inbox', label: 'In arrivo', icon: FileInput },
       { to: '/app/proposals', label: 'Proposte', icon: Inbox },
     ],
   },
@@ -102,10 +104,17 @@ export function phoneThirdPlace(access: ModuleAccess): typeof PHONE_DEALS | type
  */
 export function phoneMoreItems(access: ModuleAccess) {
   const drawn = new Set<string>([HOME.to, '/app/activities', phoneThirdPlace(access)?.to ?? ''])
-  return visibleSections(access).flatMap((section) =>
+  const items = visibleSections(access).flatMap((section) =>
     section.items.filter((item) => !drawn.has(item.to)),
   )
+  // «In arrivo» leads «Altro» (the inbox brief, REB-973): the phone has no sidebar to carry its
+  // count, so it is the first thing in the one place the count is drawn.
+  return [...items.filter((item) => item.to === INBOX_PATH), ...items.filter((item) => item.to !== INBOX_PATH)]
 }
+
+/** The inbox's page, whose entry carries the count of items waiting. */
+export const INBOX_PATH = '/app/inbox'
+
 
 /**
  * «Agenti», at the foot with «Impostazioni» (REB-873): the personal access tokens and the

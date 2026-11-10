@@ -75,6 +75,9 @@ FREE_TEXT_TOOLS: frozenset[str] = frozenset(
         "list_inbox_items",
         "get_inbox_item",
         "propose_inbox_item",
+        "set_inbox_item_kind",
+        "discard_inbox_item",
+        "mark_inbox_item_duplicate",
         # Documents and invoices (a customer's name, a reason line, a note).
         "list_documents",
         "get_document",

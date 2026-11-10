@@ -63,14 +63,18 @@ SURFACES: dict[str, dict[str, Any]] = {
 # `confirm_invoice_import` (measured at 113,377 bytes).
 # REB-972: 100.2 KB, up from 99.4 KB, for `propose_inbox_item` and the `classified` filter of
 # `list_inbox_items` (an agent's way to propose what a PDF in the inbox says), measured at 100,168.
-DEFAULT_BUDGET_BYTES = 100_200
+# REB-984: 101.7 KB, up from 100.2 KB, for `set_inbox_item_kind`, `discard_inbox_item` and
+# `mark_inbox_item_duplicate` (every token's, 1.4 KB): the three acts design § 6 classifies as a
+# collaborator's an agent may do, measured at 101,612 bytes. The kinds are listed once.
+DEFAULT_BUDGET_BYTES = 101_700
 # REB-957: 111.9 KB, up from 111.6 KB, for `skip_space_onboarding` (a full-access
 # administrator's), measured at 111,786 bytes; `describe_space`'s `onboarding` fits the default.
 # REB-977: 116.2 KB, up from 113.4 KB, for `create_staff_member`, `update_staff_member`,
 # `get_staff_member` and `list_staff` (a full-access administrator's, 2.8 KB): pay has a dozen
 # fields, and `update_staff_member` lists them by name and type, which is how an agent learns them.
 # REB-972: 117.0 KB, up from 116.2 KB, the same tool, measured at 116,956 bytes.
-FULL_ACCESS_BUDGET_BYTES = 117_000
+# REB-984: 118.5 KB, up from 117.0 KB, the same three tools, measured at 118,400 bytes.
+FULL_ACCESS_BUDGET_BYTES = 118_500
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.
@@ -101,6 +105,10 @@ _IRREVERSIBLE = {
     "set_offer_state",
     # A won deal becomes one contract and its lines are locked for good: no tool turns it back.
     "convert_deal_to_contract",
+    # An inbox item put aside, or marked as a copy: it stays readable, and nothing on this
+    # surface takes either back.
+    "discard_inbox_item",
+    "mark_inbox_item_duplicate",
 }
 # A `create_*` that is not additive: `close_previous` shortens the rate card in force.
 _CREATES_THAT_OVERWRITE = {"create_rate_card"}
