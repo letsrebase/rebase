@@ -3759,7 +3759,7 @@ def test_0090_adds_the_forecast_key_and_lets_a_waiting_item_carry_its_offset(
 
 
 def _payroll_columns(url: str) -> set[str]:
-    """Which of the columns 0099 adds exist."""
+    """Which of the columns 0091 adds exist."""
     engine = create_engine(url)
     try:
         with engine.connect() as connection:
@@ -3786,7 +3786,7 @@ _PAYROLL_COLUMNS = {
 }
 
 
-def test_0099_adds_the_payroll_inputs_the_payslips_and_the_staff_counterparty(
+def test_0091_adds_the_payroll_inputs_the_payslips_and_the_staff_counterparty(
     pigrocrm_postgres: Any,
 ) -> None:
     """REB-1008: three nullable staff columns, the payslip table under the forced row policy
@@ -3798,7 +3798,7 @@ def test_0099_adds_the_payroll_inputs_the_payslips_and_the_staff_counterparty(
         upgrade(config, "0090")
         assert _payroll_columns(url) == set()
         assert _tables_shape(url, {"staff_payslips"}) == (set(), set(), set())
-        upgrade(config, "0099")
+        upgrade(config, "0091")
         assert _payroll_columns(url) == _PAYROLL_COLUMNS
         assert _tables_shape(url, {"staff_payslips"}) == (
             {"staff_payslips"},
@@ -3808,5 +3808,5 @@ def test_0099_adds_the_payroll_inputs_the_payslips_and_the_staff_counterparty(
         downgrade(config, "0090")
         assert _payroll_columns(url) == set()
         assert _tables_shape(url, {"staff_payslips"}) == (set(), set(), set())
-        upgrade(config, "0099")
+        upgrade(config, "0091")
         assert _payroll_columns(url) == _PAYROLL_COLUMNS
