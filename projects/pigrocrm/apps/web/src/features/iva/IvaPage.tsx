@@ -107,7 +107,6 @@ function IvaBody({
   const number = period?.number ?? null
   const sales = useSalesRegister(year, number, entityId)
   const purchases = usePurchaseRegister(year, number, entityId)
-  const tab: IvaRegisterTab = search.register ?? 'sales'
 
   const pill = period === undefined ? null : periodPill(period)
   const header = (
@@ -169,10 +168,11 @@ function IvaBody({
     )
   }
 
+  const order: IvaRegisterTab[] = wide ? ['sales', 'purchases'] : ['purchases', 'sales']
+  const tab: IvaRegisterTab = search.register ?? order[0] ?? 'sales'
   const answered = sales.totalCount !== undefined && purchases.totalCount !== undefined
   const failed = sales.isError || purchases.isError
   const count = (total: number | undefined) => (total === undefined ? '' : ` (${total})`)
-  const order: IvaRegisterTab[] = wide ? ['sales', 'purchases'] : ['purchases', 'sales']
   const tabLabels: Record<IvaRegisterTab, string> = {
     sales: `Registro vendite${count(sales.totalCount)}`,
     purchases: `Registro acquisti${count(purchases.totalCount)}`,

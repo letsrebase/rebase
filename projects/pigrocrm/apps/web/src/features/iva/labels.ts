@@ -10,16 +10,17 @@ export const OUTCOME_LABELS: Record<IvaLadder['outcome'], string> = {
   nil: 'Nulla da versare',
 }
 
-export const STATE_LABELS: Record<IvaPeriod['state'], string> = {
+/** The pill of a period that has not ended: an ended one wears what became of its result. */
+type RunningState = Exclude<IvaPeriod['state'], 'ended'>
+
+export const STATE_LABELS: Record<RunningState, string> = {
   future: 'Non ancora iniziato',
   open: 'Aperto',
-  ended: 'Concluso',
 }
 
-export const STATE_TONES: Record<IvaPeriod['state'], StatusTone> = {
+export const STATE_TONES: Record<RunningState, StatusTone> = {
   future: 'muted',
   open: 'gold',
-  ended: 'ink',
 }
 
 export const OUTCOME_TONES: Record<IvaLadder['outcome'], StatusTone> = {
@@ -42,7 +43,7 @@ export const PAYMENT_TONES: Record<NonNullable<IvaPeriod['payment_state']>, Stat
 /** The pill a period wears: «Aperto» while it runs, then what became of its result (the payment
  *  state of its due item when it owes, the outcome otherwise). A period nothing settled yet says so. */
 export function periodPill(period: IvaPeriod): { tone: StatusTone; label: string } {
-  if (period.state !== 'ended') {
+  if (period.state === 'open' || period.state === 'future') {
     return { tone: STATE_TONES[period.state], label: STATE_LABELS[period.state] }
   }
   if (period.ladder === null || !period.settled) {

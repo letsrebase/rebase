@@ -518,6 +518,8 @@ class IvaPeriodRead(BaseModel):
     payment_due_on: date | None
     due_item_id: UUID | None
     payment_state: IvaPaymentState | None
+    # A settled period whose registers now add up to other lines than the stored ones.
+    registers_changed: bool
     carry_forward_limit: Decimal | None
 
 

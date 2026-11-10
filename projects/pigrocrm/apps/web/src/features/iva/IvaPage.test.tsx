@@ -67,6 +67,7 @@ function period(number: number, overrides: Record<string, unknown> = {}) {
     payment_due_on: '2026-05-18',
     due_item_id: 'd1',
     payment_state: 'expected',
+    registers_changed: false,
     carry_forward_limit: null,
     ...overrides,
   }
@@ -432,6 +433,18 @@ describe('«IVA» on a desk', () => {
 })
 
 describe('«IVA» states', () => {
+  it('says the registers changed after a settlement and that an unsettled ended period is provisional', async () => {
+    answering({ periods: ok([period(1, { registers_changed: true })]) })
+    renderPage()
+    expect(await screen.findByText(/I registri sono cambiati dopo la liquidazione/)).toBeInTheDocument()
+  })
+
+  it('says an ended period nothing settled yet shows today’s figures', async () => {
+    answering({ periods: ok([period(2, { settled: false, due_item_id: null, payment_state: null })]) })
+    renderPage()
+    expect(await screen.findByText(/Non ancora liquidato: le cifre sono quelle di oggi/)).toBeInTheDocument()
+  })
+
   it('shows a wait with a sentence while the periods are read', async () => {
     vi.mocked(api.GET).mockImplementation((() => new Promise(() => {})) as never)
     renderPage()
@@ -502,13 +515,15 @@ describe('«IVA» on a phone', () => {
     const ladder = await screen.findByRole('region', { name: 'Liquidazione' })
     expect(within(ladder).getByText(/Da versare · 4° trimestre 2026/)).toBeInTheDocument()
     expect(screen.queryByRole('table', { name: /Registro/ })).not.toBeInTheDocument()
+    // The first segment of the phone's control is the one selected.
+    expect(screen.getByRole('tab', { name: /Registro acquisti/ })).toHaveAttribute('aria-selected', 'true')
     const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent)
     expect(tabs).toEqual(['Registro acquisti (2)', 'Registro vendite (5)'])
-    const cards = await screen.findByRole('list', { name: 'Registro vendite' })
-    expect(within(cards).getAllByRole('listitem')).toHaveLength(5)
-    expect(screen.getByText('IVA esigibile del periodo')).toBeInTheDocument()
+    const cards = await screen.findByRole('list', { name: 'Registro acquisti' })
+    expect(within(cards).getAllByRole('listitem')).toHaveLength(2)
+    expect(screen.getByText('IVA detraibile del periodo')).toBeInTheDocument()
     // The summary is one card per rate on a phone, with the same figures.
     const summary = screen.getByRole('region', { name: 'Riepilogo per aliquota' })
-    expect(within(summary).getAllByRole('listitem')).toHaveLength(2)
+    expect(within(summary).getAllByRole('listitem')).toHaveLength(1)
   })
 })

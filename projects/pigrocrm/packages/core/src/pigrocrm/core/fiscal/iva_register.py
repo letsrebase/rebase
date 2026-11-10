@@ -76,6 +76,7 @@ REGISTER_ACTION = "get_iva_register"
 _MONTHS_PER_YEAR = 12
 _QUARTERS = 4
 _ONE_DAY = dt.timedelta(days=1)
+PAGE_LIMIT_MAX = 200
 
 
 class _Cycle:
@@ -100,6 +101,22 @@ class _Cycle:
     @property
     def last_number(self) -> int:
         return _QUARTERS if self.frequency == "quarterly" else _MONTHS_PER_YEAR
+
+
+def _check_page(limit: int, offset: int) -> None:
+    """The bounds REST states, held here so an agent's `limit` and `offset` meet them too: a zero
+    `limit` would answer a `next_offset` that never moves."""
+    if not 1 <= limit <= PAGE_LIMIT_MAX:
+        raise ValidationFailed(
+            ENTITY,
+            "limit",
+            "il numero di righe per pagina non e' valido",
+            expected=f"un numero da 1 a {PAGE_LIMIT_MAX}",
+        )
+    if offset < 0:
+        raise ValidationFailed(
+            ENTITY, "offset", "la riga da cui partire non e' valida", expected="0 o piu'"
+        )
 
 
 def iva_entities(session: Session, actor: Actor) -> list[IvaEntityRead]:
@@ -153,6 +170,7 @@ class IvaRegisterService:
         register declares it will never carry, by number, `limit` at a time from `offset`, with
         the summary by rate and the totals of the whole period."""
         actor.require_admin(REGISTER_ACTION)
+        _check_page(limit, offset)
         cycle, bounds = self._required(year, number, legal_entity_id)
         rows = self._sales_rows(cycle.legal_entity_id, year, bounds)
         issued = [row for row in rows if row.status == "issued"]
@@ -203,6 +221,7 @@ class IvaRegisterService:
         it by their `iva_period`, with each group at its deductible share, `limit` at a time
         from `offset`, with the summary by rate and share and the totals of the whole period."""
         actor.require_admin(REGISTER_ACTION)
+        _check_page(limit, offset)
         cycle, bounds = self._required(year, number, legal_entity_id)
         rows = self._purchase_rows(cycle.legal_entity_id, bounds)
         summary: dict[tuple[Decimal, str | None, Decimal], list[Decimal]] = defaultdict(
@@ -331,12 +350,14 @@ class IvaRegisterService:
             payment_due_on=None,
             due_item_id=None,
             payment_state=None,
+            registers_changed=False,
             carry_forward_limit=cycle.law.carry_forward_limit if number in carry_periods else None,
         )
         row = cycle.stored.get(number)
         if row is not None:
             read.settled = True
             read.ladder = IvaLadderRead.model_validate(row, from_attributes=True)
+            read.registers_changed = self._registers_changed(cycle.legal_entity_id, bounds, row)
             read.payment_due_on = row.payment_due_on
             item = self.due_items.repo.by_source(SOURCE_KIND, row.id)
             if item is not None and item.state in ("expected", "settled"):
@@ -350,9 +371,23 @@ class IvaRegisterService:
         read.ladder = self._running_ladder(cycle, bounds, number)
         return read
 
+    def _registers_changed(self, legal_entity_id: UUID, bounds: Bounds, row: IvaSettlement) -> bool:
+        """Whether the registers now add up to other lines than the ones the settlement stored:
+        a document registered or changed in the period since (nothing locks a period yet), which
+        the daily pass has not reached or a recorded payment froze."""
+        sales = sales_vat(self.session, legal_entity_id, bounds)
+        reverse_charge, deductible = purchase_vat(self.session, legal_entity_id, bounds)
+        return (sales, reverse_charge, deductible) != (
+            row.sales_vat,
+            row.reverse_charge_vat,
+            row.purchase_vat,
+        )
+
     def _running_ladder(self, cycle: _Cycle, bounds: Bounds, number: int) -> IvaLadderRead | None:
-        """The period's figures from its documents and the previous period's stored result;
-        `None` when that previous period is not stored while an earlier one is."""
+        """The period's figures from its documents and the previous period's stored result. `None`
+        when the carry-in is unknown: the previous period is not stored while an earlier one is,
+        or nothing is stored and earlier periods of the year exist (the settlement would chain
+        from the first of them)."""
         previous = self.session.scalars(
             select(IvaSettlement)
             .where(
@@ -362,6 +397,8 @@ class IvaRegisterService:
             .order_by(IvaSettlement.period_end.desc())
             .limit(1)
         ).first()
+        if previous is None and number > 1:
+            return None
         if previous is not None and previous.period_end + _ONE_DAY != bounds.start:
             return None
         sales = sales_vat(self.session, cycle.legal_entity_id, bounds)

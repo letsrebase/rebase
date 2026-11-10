@@ -62,6 +62,16 @@ function Figure({ period, ladder }: { period: IvaPeriod; ladder: IvaLadder | nul
           In corso: il risultato cambia finché il periodo non è finito.
         </p>
       )}
+      {period.state === 'ended' && !period.settled && (
+        <p className="text-sm text-muted-foreground">
+          Non ancora liquidato: le cifre sono quelle di oggi e possono cambiare.
+        </p>
+      )}
+      {period.registers_changed && (
+        <p className="text-sm text-muted-foreground">
+          I registri sono cambiati dopo la liquidazione: le cifre mostrate sono quelle liquidate.
+        </p>
+      )}
       {ladder.outcome === 'carried' && (
         <p className="text-sm text-muted-foreground">{carriedReason(period.carry_forward_limit)}</p>
       )}

@@ -525,3 +525,84 @@ def test_another_legal_entitys_documents_are_not_in_the_register(db_session: Ses
     assert service.read_sales_register(2026, 1, ADMIN, legal_entity_id=mine).items == []
     assert service.read_purchase_register(2026, 1, ADMIN, legal_entity_id=mine).items == []
     assert len(service.read_sales_register(2026, 1, ADMIN, legal_entity_id=other).items) == 1
+
+
+# --- review findings ---------------------------------------------------------------------------
+
+
+def test_a_period_is_open_through_its_last_day_and_ended_the_day_after(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entity = _entity(db_session)
+    service = IvaRegisterService(db_session)
+
+    _today(monkeypatch, D(2026, 3, 31))
+    assert service.list_periods(2026, ADMIN, legal_entity_id=entity)[0].state == "open"
+    _today(monkeypatch, D(2026, 4, 1))
+    assert service.list_periods(2026, ADMIN, legal_entity_id=entity)[0].state == "ended"
+
+
+def test_a_year_keeps_the_frequency_it_was_settled_in(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _today(monkeypatch, D(2026, 7, 10))
+    entity = _entity(db_session, frequency="monthly")
+    _sale(db_session, entity, D(2026, 1, 20), 1)
+    IvaSettlementService(db_session).settle_iva_period(
+        IvaPeriod(year=2026, number=1), ADMIN, legal_entity_id=entity
+    )
+    db_session.execute(
+        FiscalProfile.__table__.update()
+        .where(FiscalProfile.legal_entity_id == entity)
+        .values(iva_frequency="quarterly")
+    )
+
+    periods = IvaRegisterService(db_session).list_periods(2026, ADMIN, legal_entity_id=entity)
+
+    assert [p.number for p in periods] == list(range(1, 13))
+    assert periods[0].frequency == "monthly"
+
+
+def test_nothing_stored_and_an_earlier_period_in_the_year_leaves_the_carry_in_unknown(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _today(monkeypatch, D(2026, 11, 10))
+    entity = _entity(db_session)
+    _purchase(db_session, entity, D(2026, 2, 10), "400.00")  # a credit the settlement would carry
+
+    periods = IvaRegisterService(db_session).list_periods(2026, ADMIN, legal_entity_id=entity)
+
+    assert periods[0].ladder is not None  # the first period carries nothing in
+    assert [p.ladder is None for p in periods[1:]] == [True, True, True]
+
+
+def test_a_settled_period_says_when_its_registers_changed_since(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _today(monkeypatch, D(2026, 7, 10))
+    entity = _entity(db_session)
+    _sale(db_session, entity, D(2026, 2, 1), 1)
+    IvaSettlementService(db_session).settle_iva_period(
+        IvaPeriod(year=2026, number=1), ADMIN, legal_entity_id=entity
+    )
+    service = IvaRegisterService(db_session)
+    assert service.list_periods(2026, ADMIN, legal_entity_id=entity)[0].registers_changed is False
+
+    _purchase(db_session, entity, D(2026, 2, 20), "50.00")
+
+    assert service.list_periods(2026, ADMIN, legal_entity_id=entity)[0].registers_changed is True
+
+
+def test_the_page_bounds_are_refused_for_every_caller(db_session: Session) -> None:
+    entity = _entity(db_session)
+    service = IvaRegisterService(db_session)
+
+    for limit, offset in ((0, 0), (201, 0), (50, -1)):
+        with pytest.raises(ValidationFailed):
+            service.read_sales_register(
+                2026, 1, ADMIN, legal_entity_id=entity, limit=limit, offset=offset
+            )
+        with pytest.raises(ValidationFailed):
+            service.read_purchase_register(
+                2026, 1, ADMIN, legal_entity_id=entity, limit=limit, offset=offset
+            )
