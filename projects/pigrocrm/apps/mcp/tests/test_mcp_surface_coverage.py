@@ -341,6 +341,17 @@ _INTERNE: dict[Method, str] = {
     ("DueItemService", "drop"): "the writer's half: a credit note or an ended contract drops it",
     ("DueItemService", "attach_dependency"): "the writer's half: links a waiting item",
     ("DueItemService", "reschedule"): "the writer's half: the owner of an outgoing item moves it",
+    # REB-968: the invoice's half of the same writer. Emission, import, annulment and the
+    # invoice payment tool (`set_invoice_payment_state`) call these inside their own
+    # transaction; the tool is the door, never these.
+    ("DueItemService", "open_for_invoice"): "the writer's half: emission and import write the item",
+    ("DueItemService", "reconcile_invoice"): "the boot step gives an old invoice its item",
+    ("DueItemService", "record_invoice_payment"): "behind the tool set_invoice_payment_state",
+    (
+        "DueItemService",
+        "repair_invoice",
+    ): "the boot step brings an item back in step with its invoice",
+    ("DueItemService", "drop_for_invoice"): "the writer's half: annulment drops the item",
 }
 
 

@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.db.transactions import savepoint
+from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.errors import Conflict, ImmutableField, ValidationFailed
 from pigrocrm.core.fiscal.regime import RegimeStrategy
 from pigrocrm.core.fiscal.schemas import FiscalSnapshot
@@ -199,6 +200,9 @@ class InvoiceEmission:
                     "origin_proforma_id": str(source.id) if from_proforma else None,
                 },
             )
+            # The invoice's due item, in the same SAVEPOINT as its number: an issued
+            # invoice with no item would vanish from every receivable.
+            DueItemService(ctx.session).open_for_invoice(target, paid_on=None, actor=actor)
         ctx.session.commit()
         # The artefacts belong to the caller's second transaction, not to this method:
         # when `issue` rendered them itself it stopped being one transaction, and the
@@ -361,6 +365,7 @@ class InvoiceEmission:
         # The days billed on it are billable again, as the hours are: an annulled invoice
         # keeps its number but not its revenue (REB-751).
         release_days_of_invoice(ctx.session, invoice.id, actor, ANNULLED_INVOICE_REASON)
+        DueItemService(ctx.session).drop_for_invoice(invoice.id)
         ctx.session.commit()
         return ctx.read(invoice)
 

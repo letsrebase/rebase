@@ -1,9 +1,10 @@
 """The `pigrocrm` command (`pigrocrm.core.cli:main`).
 
 One module per family: `admin` (createadmin, resetpassword), `spaces` (ensure-space-defaults,
-rebuild-identity-index, seed-templates), `cron` (digest, reminders, automations), `gmail`
-(gmail-sync), `backfill` (owner-backfill, duplicate-organizations, vapid-keys). What they
-share, the walk over the root installation and the registry's spaces, is `spaces_walk`.
+reconcile-due-items, rebuild-identity-index, seed-templates), `cron` (digest, reminders,
+automations), `gmail` (gmail-sync), `backfill` (owner-backfill, duplicate-organizations,
+vapid-keys). What they share, the walk over the root installation and the registry's spaces, is
+`spaces_walk`.
 """
 
 import argparse
@@ -14,7 +15,12 @@ from pigrocrm.core.cli.admin import createadmin, resetpassword
 from pigrocrm.core.cli.backfill import duplicate_organizations, owner_backfill, vapid_keys
 from pigrocrm.core.cli.cron import automations, digest, reminders
 from pigrocrm.core.cli.gmail import gmail_sync
-from pigrocrm.core.cli.spaces import ensure_space_defaults, rebuild_identity_index, seed_templates
+from pigrocrm.core.cli.spaces import (
+    ensure_space_defaults,
+    rebuild_identity_index,
+    reconcile_due_items,
+    seed_templates,
+)
 from pigrocrm.core.config import get_settings
 
 
@@ -32,6 +38,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Give every space in the registry the default statuses, templates and categories, if "
         "missing",
     )
+    reconcile = sub.add_parser(
+        "reconcile-due-items",
+        help="Give the invoices written by the previous release their due item, or bring a "
+        "disagreeing one back in step; the root and every space, or one",
+    )
+    reconcile.add_argument("--slug", help="A single space, instead of the whole registry")
     sub.add_parser(
         "rebuild-identity-index",
         help="Index in identities every address found in the users of every space",
@@ -135,6 +147,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return seed_templates(settings)
         case "ensure-space-defaults":
             return ensure_space_defaults(settings)
+        case "reconcile-due-items":
+            return reconcile_due_items(settings, slug=args.slug)
         case "rebuild-identity-index":
             return rebuild_identity_index(settings)
         case "gmail-sync":

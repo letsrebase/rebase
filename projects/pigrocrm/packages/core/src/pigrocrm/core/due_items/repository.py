@@ -16,6 +16,7 @@ from pigrocrm.core.due_items.models import (
 )
 from pigrocrm.core.due_items.schemas import DueItemListQuery
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.organizations.models import Organization
 
 ZERO = Decimal("0.00")
@@ -75,6 +76,29 @@ class DueItemRepository:
             )
         ).one()
         return Totals(Decimal(settled), last)
+
+    def by_source(self, source_kind: str, source_id: UUID) -> DueItem | None:
+        """The live-or-dropped item a document wrote, `None` when it has none. A document
+        writes at most one item per kind; the invoice's is found by this."""
+        return (
+            self.session.execute(
+                select(DueItem)
+                .where(DueItem.source_kind == source_kind, DueItem.source_id == source_id)
+                .order_by(DueItem.created_at, DueItem.id)
+            )
+            .scalars()
+            .first()
+        )
+
+    def lock_invoice(self, invoice_id: UUID) -> None:
+        """Takes the invoice's row lock. A sales item is settled from two doors, the invoice's
+        and the item's; both take the invoice first, so they queue rather than deadlock."""
+        self.session.execute(
+            select(Invoice.id).where(Invoice.id == invoice_id).with_for_update()
+        ).first()
+
+    def live_settlements(self, item_id: UUID) -> list[DueItemSettlement]:
+        return [row for row in self.settlements(item_id) if row.reversed_at is None]
 
     def dependents(self, item_id: UUID) -> list[DueItem]:
         """The items whose date follows this one and can still move: a settled or dropped

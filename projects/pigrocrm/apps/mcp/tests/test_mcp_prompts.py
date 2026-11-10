@@ -47,6 +47,8 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.db import Base, session_factory, today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
+from pigrocrm.core.due_items.schemas import SettlementCreate
+from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.organizations.models import Organization
@@ -707,6 +709,32 @@ async def test_status_customer_does_not_repeat_the_deals_the_card_already_carrie
     )
     assert prompt_corpus.open_deal_name not in _text_of(rendered)
     assert prompt_corpus.open_deal_name in _resource_text(rendered)
+
+
+async def test_status_customer_prints_what_is_still_owed_on_a_partly_paid_invoice(
+    mcp_server: Any, seeded_customer: _Identified, mcp_engine: Engine
+) -> None:
+    """The briefing reads the due item, not the invoice's frozen total: 4000 paid 1000 is 3000
+    still owed, with the total beside it, and the invoice nobody paid keeps its old line."""
+    with session_factory(mcp_engine)() as session:
+        invoice = session.query(Invoice).filter(Invoice.memo == f"{_PREFIX} saldo").one()
+        item = DueItemService(session).repo.by_source("sales_invoice", invoice.id)
+        assert item is not None
+        DueItemService(session).settle(
+            item.id,
+            SettlementCreate(amount=Decimal("1000.00"), settled_on=today_local()),
+            Actor(id=None, type="system", role="admin"),
+        )
+    text_block = _text_of(
+        await mcp_server.get_prompt(
+            "organization-status", {"organization_id": str(seeded_customer.id)}
+        )
+    )
+    assert (
+        f"- {_YEAR}/9001 — 3000,00 € still owed of 4000,00 € (total incl. VAT), "
+        f"due {_YEAR}-03-31" in text_block
+    )
+    assert f"- {_YEAR}/9002 — 750,00 € (total incl. VAT), due no due date" in text_block
 
 
 async def test_status_customer_lists_the_unpaid_invoices_with_their_deadline(

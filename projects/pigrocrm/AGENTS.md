@@ -176,6 +176,25 @@ and a dependent share the legal entity of their item by composite foreign key, s
 tables is the plain `legal_entity_visible(legal_entity_id)`. A source kind is a string validated in
 code (`SOURCE_KINDS`), never a CHECK.
 
+**An issued invoice's due item is the truth, and the invoice's `payment_status` and `payment_date`
+are its projection (REB-968).** Emission, import and `set_payment_state` call `DueItemService`
+(`open_for_invoice`, `record_invoice_payment`, `drop_for_invoice`), and `settle` and
+`reverse_settlement` project onto the invoice, so the two columns have no other writer. «Da incassare»,
+the six buckets, the payment reminders, the `invoice_overdue` detector, the automation and the
+digest join the invoice to its item (`due_items/sales.py`: `join_sales_item`, `remaining_amount`,
+`still_owed`) and read its remaining amount and due date; the ceiling, `monthly_paid` and the
+digest's «Incassate» read each settlement by its own date (the ceiling counts a settlement's share of
+`taxable_amount`). The readers that want only the state (the list filter, the calendar, the year CSV)
+keep the projected columns. A test that builds an issued `Invoice` row by hand gets its item from
+`fakes/hand_built_invoices.py`, the stand-in for the boot step; `ensure-space-defaults` runs
+`reconcile_sales_invoices` on every space and on the root: it gives each issued invoice without an item
+its item (a paid one settled on its `payment_date`, else its issue date) and brings an item that disagrees
+with its invoice back in step (`repair_invoice`: the old API marked it paid or unpaid, moved the date or
+annulled it after the item existed), idempotently. The old API keeps serving while `migrate` runs, so
+`pigrocrm reconcile-due-items` runs the same step again as the api container starts (compose `command`),
+after the old one is gone, and may run from cron; it answers 1 when a space failed, while the boot step
+follows the boot's convention (a line on stderr, exit 0).
+
 **A router authenticates with `dependencies=[Depends(get_actor)]`, not per handler.** A
 handler that never names the actor is still behind it, and `test_routes_authenticate.py`
 asks every route of the OpenAPI document once with no credential. The open routes are the

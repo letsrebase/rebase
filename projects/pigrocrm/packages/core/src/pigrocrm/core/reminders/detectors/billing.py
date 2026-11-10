@@ -43,6 +43,8 @@ from sqlalchemy import ColumnElement, Date, and_, cast, exists, func, or_, selec
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.due_items.models import DueItem
+from pigrocrm.core.due_items.sales import join_sales_item, remaining_amount, still_owed
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.fiscal.pack import PACK_NON_IT
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
@@ -114,14 +116,25 @@ def detect_overdue(ctx: DetectorContext) -> list[Detection]:
     than one: due today is not overdue."""
     cutoff = ctx.today - timedelta(days=max(ctx.bound(OVERDUE), 1))
     rows = ctx.session.execute(
-        select(*_LIST)
+        join_sales_item(
+            select(
+                Invoice.id,
+                Invoice.year,
+                Invoice.number,
+                remaining_amount().label("remaining"),
+                Invoice.legal_entity_id,
+                Invoice.customer_id,
+                Invoice.issue_date,
+                DueItem.due_date,
+            )
+        )
         .where(
             *_issued(),
-            Invoice.payment_status == "unpaid",
-            Invoice.due_date.is_not(None),
-            Invoice.due_date <= cutoff,
+            still_owed(),
+            DueItem.due_date.is_not(None),
+            DueItem.due_date <= cutoff,
         )
-        .order_by(Invoice.due_date, Invoice.id)
+        .order_by(DueItem.due_date, Invoice.id)
     ).all()
     links = _links(ctx, (row.id for row in rows))
     found: list[Detection] = []
@@ -137,7 +150,7 @@ def detect_overdue(ctx: DetectorContext) -> list[Detection]:
                 recipients=ctx.directory.recipients(link.owners, row.legal_entity_id),
                 title=f"Incasso in ritardo: {_label(row.year, row.number)}",
                 detail=(
-                    f"{euro(row.total)} da incassare, scaduta il "
+                    f"{euro(row.remaining)} da incassare, scaduta il "
                     f"{day_short(row.due_date)} ({format_days_ago(late)}){_who(link)}"
                 ),
                 entity="invoice",
