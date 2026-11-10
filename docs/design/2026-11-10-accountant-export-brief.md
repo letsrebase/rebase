@@ -1,11 +1,13 @@
 # Brief: «Esporta per il commercialista» (PigroCRM)
 
-Status: awaiting Lorenzo's answers on the artifact `pigrocrm-accountant-export`; draft 2026-11-10.
-Card: REB-1013. Design: `projects/pigrocrm/docs/superpowers/specs/2026-11-09-accountant-export-design.md`
+Status: approved by Lorenzo on 2026-11-10, on the artifact `pigrocrm-accountant-export`
+(the recommended option on all six questions, below). Card: REB-1013. Design:
+`projects/pigrocrm/docs/superpowers/specs/2026-11-09-accountant-export-design.md`
 §§ 1 to 4 (REB-966); frame: `2026-11-09-space-profiles-modules-and-the-money-picture-design.md`
 § A2 (modules), § A5 (the fiscal register, «to verify»), § A7 (this gate) and § B6 (the phone
-shell). The rules this brief creates are written to `docs/design/DECISIONS.md` once Lorenzo has
-answered; the build card reads this file and those rows, never the artifact.
+shell). The rule this brief creates is the last row of `docs/design/DECISIONS.md` dated
+2026-11-10; the build cards read this file and that row, never the artifact. The open points at
+the end are inherited by the page cards.
 
 Everything here is drawn on `shared/ui/tokens.css` and the primitives of `@rebase/ui`:
 squared, 1px ink lines, Outfit, Prussian sidebar, Watermelon Deep only on the primary action
@@ -39,19 +41,19 @@ states a fiscal rule.
 | Not the books | The page shows labels, counts and states the server sends; it computes no figure | frame § A5, § A6 |
 | Strings | Italian, 20% longer than English: the long label is drawn | taste standing rules |
 
-## Questions for Lorenzo
+## What Lorenzo decided
 
-The artifact draws each option on the page area at the same scale, desktop and phone where the
-choice differs. The recommendation is in the last column.
+Lorenzo, 2026-11-10, on the artifact `pigrocrm-accountant-export`: «possiamo andare con i tuoi
+consigli per tutto», so each question takes the recommendation.
 
-| # | Question | A | B | Recommendation |
-|---|---|---|---|---|
-| 1 | Build then deliver, or build and deliver in one press? | «Crea esportazione», then deliver (link, download, Drive) from the export's panel. Optimises one place for every delivery and a deliberate build. Costs two presses for the common case | The form ends in a delivery choice and «Crea e scarica». Optimises the common case in one press. Costs delivery in two places and one export per delivery | A: delivery is already a per-export act (a link belongs to one export), so one place beats two |
-| 2 | Does the checklist show every check or only the open points? | Every check, one row each, «A posto» or «Da vedere». Optimises seeing what was checked, one to one with the index. Costs six rows above the button | Only the open points, under one line that counts them; all clear is one line. Optimises a short block. Costs a passed check being invisible | A: a clear period can be trusted only if the list shows what was looked at |
-| 3 | Which company does the export follow? | The sidebar's selection; the page only shows it (and «Tutte le aziende» there makes the all-companies export). Optimises one selector for the whole app. Costs the broadest export being the sidebar's default | A field on the form, preset from the sidebar, «Tutte le aziende» a separate option never preselected. Optimises a deliberate subject for a file that leaves the building. Costs a second selector | B: the subject is read on the form before «Crea», and the broadest export is never the default |
-| 4 | Does the parts list name the parts a company does not get? | Only the parts that apply; the index names the omissions. Optimises a list equal to the ZIP and the «a module that is off is gone» rule. Costs no reason on the page | Every part, the omitted ones muted with their reason. Optimises answering «why is it missing» before the ZIP exists. Costs naming parts and modules that do not apply | A: an off module is gone from every surface, and the index is where the accountant reads omissions |
-| 5 | Where does an admin see the live share links? | In the panel of the export each belongs to. Optimises no extra tab. Costs opening exports one by one to know what is alive | Also a third tab «Link condivisi», every link with openings and «Revoca». Optimises one look at every live credential. Costs a tab and a list | B: a link is a credential, so the live ones are a standing question, not one asked per export |
-| 6 | Where does the «variazioni paghe» export live? | A «Tipo» switch in the same form, one list for both kinds. Optimises one machine and one list (same delivery rules). Costs a form that changes shape and a mixed list | A tab «Variazioni paghe» with its own form and list. Optimises keeping the consultant's file apart. Costs a fourth tab that mirrors the others | A: the delivery rules are identical, and a «Tipo» chip tells the two kinds apart |
+| # | Question | Decision |
+|---|---|---|
+| 1 | Build then deliver, or build and deliver in one press? | A: «Crea esportazione», then deliver (link, download, Drive) from the export's panel; no delivery choice in the form |
+| 2 | Does the checklist show every check or only the open points? | A: every check, one row each, «A posto» or «Da vedere» |
+| 3 | Which company does the export follow? | B: a field on the form, preset from the sidebar; «Tutte le aziende» is a separate option, never preselected |
+| 4 | Does the parts list name the parts a company does not get? | A: only the parts that apply; the ZIP's index names the omissions |
+| 5 | Where does an admin see the live share links? | B: also a third tab «Link condivisi», every link with openings and «Revoca» |
+| 6 | Where does the «variazioni paghe» export live? | A: a «Tipo» switch in the same form, one list for both kinds, a «Tipo» chip in the list |
 
 ## «Esporta per il commercialista»
 
@@ -91,11 +93,11 @@ Non-goals    Sending the export by mail; importers for specific accounting softw
 title, one sentence («Un archivio ZIP per azienda e periodo: registri, documenti, movimenti e
 imposte, con l'elenco di ciò che manca.») and no button: the page's job is a form, so its one
 strong button sits bottom right of the form (taste axis 6), not top right. Tabs as «In arrivo»
-has them: «Prepara» and «Esportazioni» with its count, plus «Link condivisi» (question 5 B) and
-«Variazioni paghe» (question 6 B). The tab is in the URL, with the open export, like
+has them: «Prepara», «Esportazioni» with its count and «Link condivisi» (answer 5: every link of
+the space, with openings and «Revoca»; the export's panel keeps «Crea un link» and its own links). The tab is in the URL, with the open export, like
 `/app/inbox?tab=&item=` (inferred).
 
-«Prepara» is a dense form. Fields: «Azienda» (only from the second company on; question 3),
+«Prepara» is a dense form. Fields: «Tipo» (the accountant's export or «Variazioni paghe», answer 6; its form has no checklist block and a monthly period), «Azienda» (only from the second company on, answer 3: a field of its own, preset from the sidebar, with «Tutte le aziende» a separate option never preselected and, for the all-companies export, a band that says it includes the purchases with no company),
 «Periodo» as a segmented «Mese / Trimestre / Anno» and a select of the periods, with the
 range written beside it («dal 01/07/2026 al 30/09/2026»). «Cosa contiene» is the list of parts
 the server says apply (design § 1: the two registers, the IVA settlement, integration
@@ -104,7 +106,7 @@ taxes and F24, withholdings paid for others), each with where it comes from and 
 It is read-only: the admin chooses no part except the opt-in «Parti paghe» block (three
 checkboxes, off by default: «Cedolini», «F24 delle paghe», «Ritenute sulle paghe»), drawn only
 when the staff module is on, with the sentence that says they never travel on a plain link.
-Then «Il periodo è pronto?» (question 2): the six checks of design § 2, each with a state and,
+Then «Il periodo è pronto?»: every check of design § 2 as a row, the fine ones included, each with a state and,
 where there is something to do, a link to the place that fixes it («Apri In arrivo», «Apri
 Fatture»). A check of a module that is off is not drawn. The action bar says that open points
 do not stop the export, and ends in «Crea esportazione».
@@ -118,7 +120,9 @@ checklist as it was when the export was made, «Consegna» and, under it, the li
 panel's one strong button is «Crea un link per il commercialista», since the link is how the
 file reaches the accountant (design § 3); «Scarica lo ZIP» (with the size) and «Scrivi su Drive»
 are quiet buttons. It ends with the retention line («Si conserva fino al 10/12/2027, poi viene
-eliminata e ne resta traccia»).
+eliminata e ne resta traccia»). A «Tipo» chip («Commercialista» or «Variazioni paghe») sits under the period in the first column when the space has the staff module.
+
+«Link condivisi» is a gridded table of every link of the space with the same side panel: columns «Esportazione» (company, period, creation date), «Scade», «Aperture» (right-aligned), «Stato». The panel has the link's openings (date, time, address) and «Revoca». Expired and revoked links stay in the list as muted rows.
 
 The link dialog has «Scade tra» (a select: 1, 3, 7 by default, 14, 30 days; inferred
 presets) and «Crea il link». With payroll parts in the export the dialog becomes «Link con
@@ -131,7 +135,7 @@ address) and «Revoca», which acts at once with a toast and no confirmation (de
 one-click).
 
 **Phone.** The page is in «Altro», after «Fatture», «Ore» and «Giornate», for an admin only.
-A segmented «Prepara / Esportazioni» (plus the tabs of questions 5 and 6 as segments) over one
+A segmented «Prepara / Esportazioni / Link» over one
 column of cards: «Azienda» and «Periodo» cards, a «Cosa contiene» card that says «10 parti»
 and opens the list, the checklist as one card per check, and a sticky «Crea esportazione». An
 export opens full screen with its state, «Consegna» as three full-width buttons (the link one
@@ -146,8 +150,8 @@ entry: an export is not a quick add.
 | Error | `QueryErrorBanner` and nothing under it. A checklist that could not be read is that banner in its place and never «Tutto in ordine»; «Crea esportazione» stays, since the build reads the period itself (inferred). A failed build is a danger pill «Non riuscita» with the reason in one line and «Riprova», which makes a new export |
 | Many / long content | 50 rows at a time. A company name of 60 characters is ellipsised with the full name on hover. A check that lists invoices shows the first five numbers and «e altre 12», the full list being in the index. A split export says «3 file ZIP» and offers each file |
 | Open points | Gold, never danger: the export is allowed. The row says «4 aperti», the panel keeps the snapshot as of its creation, and a later fix does not rewrite it |
-| Module off | The parts and checks of a module that is off are not drawn (question 4 A) or are muted with the reason (4 B). The «Parti paghe» block is absent while the staff module is off |
-| Profile or pack not applicable | A flat-rate company has no IVA settlement and a `non-it` one no IVA register (design § 1): those parts are absent from the list, or muted, per question 4. A `solo` space with few modules simply has a shorter list; a one-company space never sees the word «Azienda» |
+| Module off | The parts and checks of a module that is off are not drawn, and nothing on the page names the module (answer 4). The «Parti paghe» block is absent while the staff module is off |
+| Profile or pack not applicable | A flat-rate company has no IVA settlement and a `non-it` one no IVA register (design § 1): those parts are absent from the list, and the index in the ZIP names each omission. A `solo` space with few modules simply has a shorter list; a one-company space never sees the word «Azienda» |
 | Nothing to show | A period with no documents is still exportable; the panel shows each part with 0 rows. The checklist has no row for a check that does not apply |
 | Drive | With Google Drive storage: «Scrivi su Drive» and, once done, «Scritta il 10/11/2026 10:40 in commercialista/lumen-studio/2026-t3/20261110t1040/». With local storage: one sentence («Questo spazio salva i file sul server, non su Google Drive: la consegna su Drive non è disponibile.») and no button. With Drive unreachable: a red band and the link «Apri Google Drive» |
 | Share link | Created (shown once), `Attivo`, `Scaduto` (kept in the list as a muted row), `Revocato`. A payroll export offers only the code link and Drive |
@@ -158,7 +162,7 @@ Permissions, from `apps/web/src/lib/permissions.ts` and design § 3, § 5:
 
 | Who | Sees the entry | On the page |
 |---|---|---|
-| Admin, scope all | Yes | Everything; «Tutte le aziende» per question 3 |
+| Admin, scope all | Yes | Everything; «Tutte le aziende» as a separate option (answer 3) |
 | Admin scoped to some companies | Yes | Only their companies, no «Tutte le aziende»; one company is a pinned label, as `LegalEntitySelect` does |
 | Collaborator, readonly | No | A stale link gets the sentence `toProblem` writes for a 403, naming the role |
 | Agent with `full_access` | n/a | Has the tools of design § 5; «Scrivi su Drive» is a person's act and is on no tool |
@@ -187,9 +191,16 @@ navigation and no account prompt.
 - Open points never disable «Crea esportazione» and are gold, never danger. The snapshot on an
   export is never recomputed after it was made.
 - An export is never replaced: a rebuild is a new row. No «Sostituisci».
-- The page draws no part, check or sentence for a module that is off or not built (question 4
-  A; under 4 B it is a muted row with its reason). Which parts apply comes from the server:
-  the page holds no list of fiscal packs.
+- The page draws no part, check or sentence for a module that is off or not built, and never a
+  muted row naming one (answer 4). Which parts apply comes from the server: the page holds no
+  list of fiscal packs, and the index in the ZIP is where omissions are named.
+- Every link of the space is listed in the tab «Link condivisi», with its export, expiry,
+  openings and state, and «Revoca» is there as in the export's panel (answer 5).
+- The «variazioni paghe» export is a «Tipo» of the form and a chip in the list; it has no tab
+  of its own (answer 6).
+- Delivery is done on a stored export, from its panel: no delivery choice in the form and no
+  «Crea e scarica» (answer 1). Every check is a row with its state, the fine ones included
+  (answer 2).
 - The page computes no fiscal figure: counts, sizes and states are the server's.
 - Every status goes through `StatusPill` with a `Record` from status to tone beside the labels
   (`building` gold, `ready` ink, `failed` danger, `deleted` muted; link `active` ink,
@@ -198,8 +209,8 @@ navigation and no account prompt.
   spinner.
 - «Scrivi su Drive» is drawn only when the storage backend is Google Drive; with local storage
   the sentence stands in its place, never a disabled button without a reason.
-- «Tutte le aziende» is never the preselected value of the form (question 3 B), or is named in
-  a band the moment it is the page's subject (3 A).
+- «Tutte le aziende» is never the preselected value of the form (answer 3): it is a separate
+  option, named in a band the moment it is the page's subject, and absent for a scoped admin.
 - Dates `10/11/2026`, sizes `38,4 MiB`, tabular numerals in every column of figures. Italian
   strings are the long ones: the entry label fits at 17 rem and in the rail.
 - One strong button per tab; Watermelon Deep on it and on errors only.
@@ -221,7 +232,7 @@ back on any.
 - The period picker defaults to the last complete period of the entity's IVA periodicity (a
   quarter for a quarterly entity, otherwise a month) and also lists the current one tagged
   «(in corso)». The periodicity is C3's data; if the build cannot read it, the default is the
-  last complete month. «Anno» is read as the calendar year here; see the gaps.
+  last complete month. «Anno» is read as the calendar year here; see the open points.
 - The parts list is read-only and carries no row counts before the build; counts live in the
   index shown in the panel.
 - The six checks use the design's own words; their states are «A posto» (ink), «Da vedere»
@@ -232,28 +243,49 @@ back on any.
   as «only the maker».
 - «variazioni paghe» is drawn monthly and without a checklist block, because design § 4 gives it
   neither; its parts are the staff changes and the expense notes to reimburse (absences only if
-  C7 adds them).
+  C7 adds them). It is a «Tipo» of the same form and list (answer 6), not a tab.
 - An export that was deleted at 13 months stays as a muted row (the «trace» of design § 3).
 - The Drive wording and the sentence for a Drive that cannot be reached, reusing the
   `space_storage` reading the Drive settings tab already has.
 
-## Gaps found in the sources
+## Open points
 
-- **«Write to Drive» against «a storage prefix of its own».** Design § 3 says an export is a row
-  with its files under a prefix of its own, and that «write to Drive» means the space's storage
-  when it is Google Drive. With Drive storage both are Drive, so the page cannot tell an admin
-  whether the export is already there or whether «Scrivi su Drive» copies it to
-  `commercialista/...`. Drawn as a copy; the build card should confirm.
-- **A year.** Design § 1 says «a year». DECISIONS 2026-11-09 (REB-964) puts the fiscal year end
-  on the legal entity. The picker is drawn on the calendar year; if a fiscal year can differ,
-  its label needs the dates, as the quarter's does.
-- **The recipient page.** Design § 3 says the link is «opened without an account» and a payroll
-  link asks a code; it designs no page for either. Drawn minimal above.
-- **«variazioni paghe».** No period and no checklist in design § 4.
-- **Who sees a link.** § 3 says «shown to the admin who made it» (see above).
-- **Frame § A2 and the page.** A module that is off is «gone from the sidebar, the phone bar,
-  the Home and the search results»; it does not say whether a page that lists parts names
-  one. That is question 4.
+Gaps and contradictions in the sources, reported when the brief was written and not settled by
+Lorenzo's answers. The build cards inherit them; each needs an answer in the design or in the
+card that builds the piece. Paths are from the repository root.
+
+- **«Write to Drive» against «a storage prefix of its own».**
+  `projects/pigrocrm/docs/superpowers/specs/2026-11-09-accountant-export-design.md:101` says
+  «write to Drive» means the space's storage when it is Google Drive, while `:106` to `:108` say
+  an export is a row with its files under a storage prefix of its own. With Drive storage both
+  are Drive, so the page cannot tell an admin whether the export is already there or whether
+  «Scrivi su Drive» copies it to `commercialista/...`. Drawn as a copy; the delivery card
+  should confirm.
+- **A year.** The same design says «a year» (`:20`); DECISIONS 2026-11-09 (REB-964,
+  `docs/design/DECISIONS.md:280`) puts the fiscal year end on the legal entity. The picker is
+  drawn on the calendar year; if a fiscal year can differ, its label needs the dates, as the
+  quarter's does.
+- **The recipient page.** Design `:91` says the link is «opened without an account» and `:98`
+  that a payroll link asks a code; it designs no page for either, and the card names none.
+  Drawn minimal in this brief (inferred); it is a surface the share-link card builds.
+- **«variazioni paghe».** Design `:113` to `:118` gives it no period and no checklist; drawn
+  monthly with no checklist block.
+- **Who sees a link.** Design `:94` says the openings are «shown to the admin who made it».
+  Answer 5 B (a tab of every link) reads this as the admin side, any admin whose scope covers
+  the company; if only the maker may see them, the tab lists the maker's links.
+- **Frame § A2 and the page.** `2026-11-09-space-profiles-modules-and-the-money-picture-design.md:81`
+  to `:83` says an off module is gone from the sidebar, the phone bar, the Home and the search;
+  it does not say whether a page that lists parts may name one. Lorenzo's answer to question 4
+  settles it for this page (never named), and the index names the omissions.
+- **The sidebar's role gate.** `projects/pigrocrm/apps/web/src/components/nav.ts:38` says no
+  entry is admin gated; this entry is the first, so the build adds a role filter beside the
+  module filter (see «Inferred, not asked»).
+- **`PageHeader` and the form's button.** `projects/pigrocrm/apps/web/src/components/PageHeader.tsx:17`
+  says a page's primary button goes top right; this page puts its strong button at the foot of
+  the form (taste axis 6). Flagged for the review of the build, not asked.
+- **Not verified in this brief.** The entry label «Esporta per il commercialista» at the real
+  17 rem sidebar width and in the collapsed rail: the artifact draws the sidebar wider than the
+  kit's; the build proves it by a render.
 
 ## Not in this brief
 
