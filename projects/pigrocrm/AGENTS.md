@@ -214,7 +214,10 @@ with its invoice back in step (`repair_invoice`: the old API marked it paid or u
 annulled it after the item existed), idempotently. The old API keeps serving while `migrate` runs, so
 `pigrocrm reconcile-due-items` runs the same step again as the api container starts (compose `command`),
 after the old one is gone, and may run from cron; it answers 1 when a space failed, while the boot step
-follows the boot's convention (a line on stderr, exit 0).
+follows the boot's convention (a line on stderr, exit 0). It also refreshes the forecast due items of what
+active engagements pay their freelancers (`EngagementForecastService.refresh_all`, REB-1003), which is what
+moves the horizon of an open-ended engagement forward and pairs a client invoice written elsewhere: it
+needs a daily run to keep that horizon, the container start alone only moves it at a release.
 **What a customer pays is `net_receivable`, and what a sale carries beyond its lines is `invoices/charges.py` (REB-994).**
 `compute_charges` is the one place that decides, from the stored lines, the frozen profile and the customer
 (`customer_kind`, `is_withholding_agent`, `country`), the withholding (the pack's `SalesWithholding`: 20%, only on the

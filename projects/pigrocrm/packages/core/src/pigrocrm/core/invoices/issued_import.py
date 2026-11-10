@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.collaborators.forecast import EngagementForecastService
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.due_items.service import DueItemService
@@ -199,6 +200,7 @@ class IssuedInvoiceImporter:
                 paid_on=data.payment_date if data.payment_status == "paid" else None,
                 actor=actor,
             )
+            EngagementForecastService(ctx.session).pair_invoice(invoice)
             if pdf_source is not None:
                 invoice.pdf_document_id = self._original_pdf_document(
                     invoice, data, pdf_source, actor

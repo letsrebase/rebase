@@ -150,6 +150,7 @@ class DueItemService:
                 source_kind=data.source_kind,
                 source_id=data.source_id,
                 source_rule=data.source_rule,
+                forecast_key=data.forecast_key,
                 own_date=data.own_date,
                 due_date=resolved.date,
                 due_date_estimated=resolved.estimated,
@@ -215,6 +216,28 @@ class DueItemService:
                 "solo una scadenza aperta che aspetta un pagamento non ancora noto ne ha uno",
                 id=str(item.id),
             )
+        return self._point_at(item, depends_on_id)
+
+    def repoint_dependency(self, item_id: UUID, depends_on_id: UUID) -> DueItemRead:
+        """Moves an open `after_settlement` item that already follows one item to follow
+        another: the engagement it serves was linked to another client, or a later invoice now
+        covers the same period. Without a change it is a no-op."""
+        item = self._locked(item_id)
+        if (
+            item.rule_kind != "after_settlement"
+            or item.depends_on_id is None
+            or item.state not in OPEN_STATES
+        ):
+            raise Conflict(
+                ENTITY,
+                "solo una scadenza aperta che segue un pagamento puo' passare a seguirne un altro",
+                id=str(item.id),
+            )
+        if item.depends_on_id == depends_on_id:
+            return self._read(item)
+        return self._point_at(item, depends_on_id)
+
+    def _point_at(self, item: DueItem, depends_on_id: UUID) -> DueItemRead:
         dependency = self.repo.get_locked(depends_on_id)
         if dependency is None:
             raise NotFound(ENTITY, depends_on_id)

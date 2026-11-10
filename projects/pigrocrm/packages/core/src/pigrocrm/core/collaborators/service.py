@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.collaborators import rules
+from pigrocrm.core.collaborators.forecast import EngagementForecastService
 from pigrocrm.core.collaborators.models import LIVE_STATES, Engagement
 from pigrocrm.core.collaborators.repository import EngagementRepository
 from pigrocrm.core.collaborators.rules import ENTITY, Commitment
@@ -162,6 +163,8 @@ class EngagementService:
         for key in changed:
             setattr(engagement, key, changes[key])
         self.session.flush()
+        # What the freelancer is forecast to be paid follows the days and the client links.
+        EngagementForecastService(self.session).sync(engagement)
         self.activities.record(ENTITY, engagement.id, "updated", actor, {"changed": changed})
         self.session.commit()
         return self._read(engagement)
@@ -214,6 +217,8 @@ class EngagementService:
             )
         engagement.state = state
         self.session.flush()
+        # Signed or closed, the engagement owes the freelancer its forecasts; cancelled, none.
+        EngagementForecastService(self.session).sync(engagement)
         self.activities.record(
             ENTITY, engagement.id, "state_changed", actor, {"from": previous, "to": state}
         )

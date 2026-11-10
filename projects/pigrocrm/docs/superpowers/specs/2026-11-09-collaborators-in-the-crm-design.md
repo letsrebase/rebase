@@ -253,9 +253,36 @@ The letter carries `payment_rule` (`fixed_term` or `on_collection`) and, for the
   `engagement-letter-occasional.md`). The framework agreements' 7.2, both at version 1.1, say
   a letter may do this with the risk staying rebase's, which keeps the substance of the
   conflict the read was to settle. A letter under an agreement signed before carries the
-  parties' consent itself, as an exception to 7.2, so no agreement is re-signed. One gap with
-  the formula above: the printed text names no fixed-term floor, so for such a letter C5
-  either drops the `max` half or the letter text gains it first.
+  parties' consent itself, as an exception to 7.2, so no agreement is re-signed. The printed
+  text names no fixed-term floor, so **C5 drops the `max` half** for such a letter (REB-1003):
+  an `on_collection` letter stores no fixed term (the table says so), and its item is
+  `after_settlement` with `collection_days` as the offset and `not_after` alone, so the formula
+  that runs is `min( client settlement + collection_days, date the invoice or receipt is
+  received + 60 days )`. The letter text is unchanged.
+
+**What the forecast writes** (REB-1003, `collaborators/forecast.py`). An `active` or `concluded`
+engagement writes one forecast out per billing point, keyed by engagement and billing date
+(`due_items.forecast_key`, unique among live forecasts). A day or hour letter bills each month at
+month end for `days_per_week` times the month's working days over five (an hour is 1/8 of a day),
+never past `expected_days` in all; a flat fee bills once, at the end of the month its `ends_on`
+falls in. Nothing is forecast without `days_per_week` (a day or hour letter) or an end (a flat
+one). An open-ended letter is forecast twelve months ahead, and `pigrocrm reconcile-due-items`
+moves that horizon. A billing point whose 60-day backstop has passed is not forecast again.
+`fixed_term` is dated by `due_date_from_terms` from the billing date. The billing date stands for
+the day the invoice or receipt is received until the document arrives, which is what the
+`not_after` backstop counts from.
+
+**Pairing** is the sales invoice of the engagement's deal, or of a contract whose work units are on
+its lines, whose accrual period covers the billing period (an invoice with no period, issued up
+to 31 days after it, counts): the latest one when several do. Issuing or importing a client
+invoice pairs the waiting forecasts of its customer, so an invoice written elsewhere is paired by
+the next `reconcile-due-items`. An engagement naming only a client organisation, not a deal or a
+contract, is not paired. A later invoice for the same period takes the pairing over, and an engagement linked to
+another client forgets the old one's invoice. An invoice with no period belongs to the period
+that ended last before it was issued. The forecast is written in the freelancer's legal entity
+(else the contract's, the client's, the default): one that differs from the entity that
+invoices the client is never paired, and says nothing. A client invoice annulled after pairing
+is not re-paired.
 
 ### Withholding and net
 

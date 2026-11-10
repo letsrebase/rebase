@@ -265,7 +265,7 @@ The register as of today, from the conversation:
 | Banco BPM business banking export format (it may be «YouBusiness Web», not «YouWeb») | to verify | |
 | CAMT.053 availability per bank | to verify | |
 | ECB reference rate as the source for converting balances | to verify | |
-| A freelancer is paid no later than 60 days from receipt of the invoice or receipt (law 81/2017 art. 3, as framework agreement 7.1 prints it); 30 days when counted from month end is the hub's own reading (`contracts/fields.py:35-40`) | to verify | the hub's framework text only |
+| A client may not agree a payment term past 60 days from receiving the freelancer's invoice or request for payment: such a clause is abusive and void (law 81/2017 art. 3 c. 1, in force; the text read on normattiva.it on 2026-11-10). A term counted from the document date is within it, since receipt is never earlier; 30 days counted from month end never passes it either (the longest case, 30 January, lands on 31 March, 60 days) | verified | normattiva.it, L. 22 maggio 2017 n. 81 art. 3 c. 1, checked 2026-11-10 (REB-1003) |
 | INPS «gestione separata» share on occasional work above 5,000 euro a year, withheld by the payer (decree-law 269/2003 art. 44 c. 2, as clause 5.7 of the occasional framework prints it) | to verify | the hub's occasional framework text only |
 | Stamp duty of 2 euro on an occasional receipt above 77.47 euro (clause 6.3 of the occasional framework) | to verify | the hub's occasional framework text only |
 

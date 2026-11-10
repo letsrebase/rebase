@@ -132,15 +132,15 @@ class DueItem(Base, PrimaryKeyMixin, TimestampMixin):
             "depends_on_id IS NULL OR depends_on_id <> id", name="ck_due_items_no_self"
         ),
         # The rule's own columns agree with its kind: a fixed date depends on nothing, every
-        # other kind names its dependency, the day of the month belongs to one kind and the
-        # offset to another.
+        # other kind names its dependency (or, for `after_settlement`, waits for it with its
+        # backstop and the offset it will date from), the day of the month belongs to one kind
+        # and the offset to another.
         CheckConstraint(
             "(rule_kind = 'fixed' AND depends_on_id IS NULL AND rule_day_of_month IS NULL "
             "AND rule_not_after IS NULL AND rule_offset_days = 0) OR "
             "(rule_kind <> 'fixed' AND depends_on_id IS NOT NULL) OR "
             "(rule_kind = 'after_settlement' AND depends_on_id IS NULL "
-            "AND rule_not_after IS NOT NULL AND rule_offset_days = 0 "
-            "AND rule_day_of_month IS NULL)",
+            "AND rule_not_after IS NOT NULL AND rule_day_of_month IS NULL)",
             name="ck_due_items_rule_columns",
         ),
         CheckConstraint(
@@ -160,6 +160,14 @@ class DueItem(Base, PrimaryKeyMixin, TimestampMixin):
         Index("ix_due_items_schedule", "legal_entity_id", "state", "due_date"),
         Index("ix_due_items_source", "source_kind", "source_id"),
         Index("ix_due_items_depends_on_id", "depends_on_id"),
+        # One live forecast per key: a race between two writers of the same source cannot
+        # double it (spec 2026-11-09, due items, § 1.2).
+        Index(
+            "uq_due_items_forecast_key",
+            "forecast_key",
+            unique=True,
+            postgresql_where=text("state = 'forecast' AND forecast_key IS NOT NULL"),
+        ),
     )
 
     legal_entity_id: Mapped[UUID] = mapped_column(
@@ -186,6 +194,9 @@ class DueItem(Base, PrimaryKeyMixin, TimestampMixin):
     source_id: Mapped[UUID | None] = mapped_column(default=None)
     # The rule that produced a forecast, by name (`contract_recurring_fee`, ...).
     source_rule: Mapped[str | None] = mapped_column(String(60), default=None)
+    # The identity of a forecast: a uuid5 of its source kind, source and period, so the same
+    # forecast is found again and never written twice.
+    forecast_key: Mapped[UUID | None] = mapped_column(default=None)
     own_date: Mapped[dt.date | None] = mapped_column(Date, default=None)
     due_date: Mapped[dt.date | None] = mapped_column(Date, default=None)
     due_date_estimated: Mapped[bool] = mapped_column(

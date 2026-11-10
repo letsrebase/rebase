@@ -356,6 +356,7 @@ _INTERNE: dict[Method, str] = {
     ("DueItemService", "create"): "the writer's half: the owner of a source writes its item",
     ("DueItemService", "drop"): "the writer's half: a credit note or an ended contract drops it",
     ("DueItemService", "attach_dependency"): "the writer's half: links a waiting item",
+    ("DueItemService", "repoint_dependency"): "the writer's half: moves a followed item",
     ("DueItemService", "reschedule"): "the writer's half: the owner of an outgoing item moves it",
     # REB-998: the writer's half of the bank data, no actor and no commit. The tools that read
     # and import statements and match movements come with the cards that add them, with their own
@@ -375,6 +376,13 @@ _INTERNE: dict[Method, str] = {
         "repair_invoice",
     ): "the boot step brings an item back in step with its invoice",
     ("DueItemService", "drop_for_invoice"): "the writer's half: annulment drops the item",
+    # REB-1003: the forecasts of what an engagement pays the freelancer. The engagement's own
+    # transitions and updates, the client invoice's emission and the cron write them: nobody
+    # asks for one, a person changes the engagement and the forecast follows.
+    ("EngagementForecastService", "sync"): "behind the engagement's updates and state changes",
+    ("EngagementForecastService", "pair"): "behind sync and the invoice's emission",
+    ("EngagementForecastService", "pair_invoice"): "the writer's half: emission and import pair",
+    ("EngagementForecastService", "refresh_all"): "the cron step of reconcile-due-items",
 }
 
 

@@ -90,6 +90,21 @@ class DueItemRepository:
             .first()
         )
 
+    def forecasts_of(self, source_kind: str, source_id: UUID) -> list[DueItem]:
+        """The live forecasts one source wrote (`state = 'forecast'`), by forecast key."""
+        return list(
+            self.session.execute(
+                select(DueItem)
+                .where(
+                    DueItem.source_kind == source_kind,
+                    DueItem.source_id == source_id,
+                    DueItem.state == "forecast",
+                )
+                .order_by(DueItem.due_date.asc().nulls_last(), DueItem.id)
+                .with_for_update()
+            ).scalars()
+        )
+
     def lock_invoice(self, invoice_id: UUID) -> None:
         """Takes the invoice's row lock. A sales item is settled from two doors, the invoice's
         and the item's; both take the invoice first, so they queue rather than deadlock."""
