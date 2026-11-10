@@ -1,9 +1,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from pydantic import Field
 
+from pigrocrm.core.engagements.registry import EngagementRegistry
 from pigrocrm.core.organizations.roles import RoleFilter
 from pigrocrm.core.organizations.schemas import (
     DuplicateGroupRead,
@@ -20,7 +21,7 @@ from pigrocrm.core.organizations.schemas import (
 from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.people.schemas import PersonRead
 from pigrocrm.core.validation import SafeStr
-from pigrocrm_api.deps import ActorDep, SessionDep, get_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, TenantsRegistryDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import (
     LEGAL_ENTITY_QUERY_DESCRIPTION,
@@ -29,6 +30,7 @@ from pigrocrm_api.query_params import (
     SortedParams,
     sort_field,
 )
+from pigrocrm_api.tenancy import tenant_slug
 from pigrocrm_api.timeline import timeline_router
 
 router = APIRouter(
@@ -128,7 +130,12 @@ def restore(organization_id: UUID, session: SessionDep, actor: ActorDep) -> Orga
 
 @router.post("/{organization_id}/merge", response_model=OrganizationMergeRead)
 def merge(
-    organization_id: UUID, data: OrganizationMerge, session: SessionDep, actor: ActorDep
+    request: Request,
+    organization_id: UUID,
+    data: OrganizationMerge,
+    session: SessionDep,
+    actor: ActorDep,
+    registry: TenantsRegistryDep,
 ) -> OrganizationMergeRead:
     """Folds the organization named by `loser_id` into the one in the path: every deal, contract,
     invoice, person, contact point, document, task, note, timeline entry, Gmail link, draft, due
@@ -137,7 +144,11 @@ def merge(
     space only. `dry_run` is true unless sent as false and answers what would move without
     writing anything. Pairs to merge come from `GET /api/organizations/duplicates`."""
     return OrganizationService(session).merge(
-        organization_id, data.loser_id, actor, dry_run=data.dry_run
+        organization_id,
+        data.loser_id,
+        actor,
+        dry_run=data.dry_run,
+        registry=EngagementRegistry(registry, tenant_slug(request)),
     )
 
 

@@ -41,6 +41,7 @@ from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.engagements.models import RebaseEngagement
+from pigrocrm.core.engagements.registry import EngagementRegistry
 from pigrocrm.core.engagements.schemas import (
     EngagementRead,
     EngagementUpsert,
@@ -557,6 +558,206 @@ def test_second_call_answers_the_same_ids_and_creates_nothing(door: Door) -> Non
         space.commit()
     third = door.service().ensure(match_id, _upsert())
     assert third.customer_id == first.customer_id
+
+
+MERGER = Actor(id=None, type="user", role="admin")  # type: ignore[arg-type]
+
+
+class _RegistryThatFailsToCommit(EngagementRegistry):
+    def commit(self) -> None:
+        raise RuntimeError("the registry went away")
+
+
+def _survivor(door: Door, slug: str) -> UUID:
+    """The same company typed a second time by the freelancer, in the space `slug`."""
+    with _space(door, slug) as space:
+        return (
+            OrganizationService(space)
+            .create(OrganizationCreate(legal_name="rebase srl"), Actor.system())
+            .id
+        )
+
+
+def _fold(
+    door: Door,
+    slug: str,
+    survivor_id: UUID,
+    loser_id: UUID,
+    *,
+    dry_run: bool,
+    registry_class: type[EngagementRegistry] = EngagementRegistry,
+    space_fails_to_commit: bool = False,
+) -> Any:
+    """`OrganizationService.merge` in the space `slug` with the registry's own session beside
+    the space's, as the routes and the MCP tool give it."""
+    with _space(door, slug) as space, session_factory(door.registry)() as registry:
+        if space_fails_to_commit:
+
+            def fail() -> None:
+                raise RuntimeError("the space went away")
+
+            space.commit = fail  # type: ignore[method-assign]
+        return OrganizationService(space).merge(
+            survivor_id,
+            loser_id,
+            MERGER,
+            dry_run=dry_run,
+            registry=registry_class(registry, slug),
+        )
+
+
+def test_a_merge_points_the_registry_at_the_survivor_and_a_retry_answers_it(door: Door) -> None:
+    """REB-1031: the hub retries an old match after the freelancer folded the customer «rebase»
+    into another row of the same company. The door answers the row's ids (the test above pins
+    that), so the merge is what must write the row: the survivor comes back, and nothing is made."""
+    from pigrocrm.core.contracts.models import Contract
+
+    match_id = uuid4()
+    first = door.service().ensure(match_id, _upsert())
+    survivor = _survivor(door, "ada-lovelace")
+
+    done = _fold(door, "ada-lovelace", survivor, first.customer_id, dry_run=False)
+
+    assert done.moved["rebase_engagements"] == 1
+    row = _row(door, match_id)
+    assert row is not None and row.customer_id == survivor
+    assert (row.deal_id, row.contract_id) == (first.deal_id, first.contract_id)
+
+    retry = door.service().ensure(match_id, _upsert())
+
+    assert retry.created is False and retry.space_created is False
+    assert (retry.slug, retry.customer_id, retry.deal_id, retry.contract_id) == (
+        first.slug,
+        survivor,
+        first.deal_id,
+        first.contract_id,
+    )
+    assert _owned(door) == ["ada-lovelace"]
+    with _space(door, "ada-lovelace") as space:
+        # The survivor and the archived loser: the retry made no third customer.
+        assert _count(space, Organization) == 2
+        assert _count(space, Deal) == 1
+        assert space.scalar(select(func.count()).select_from(Contract)) == 1
+        deal = space.get(Deal, first.deal_id)
+        assert deal is not None and deal.customer_id == survivor
+
+
+def test_the_preview_counts_the_registry_row_and_writes_nothing_there(door: Door) -> None:
+    match_id = uuid4()
+    first = door.service().ensure(match_id, _upsert())
+    survivor = _survivor(door, "ada-lovelace")
+
+    preview = _fold(door, "ada-lovelace", survivor, first.customer_id, dry_run=True)
+
+    assert preview.dry_run is True and preview.moved["rebase_engagements"] == 1
+    row = _row(door, match_id)
+    assert row is not None and row.customer_id == first.customer_id
+    assert door.service().ensure(match_id, _upsert()).customer_id == first.customer_id
+
+
+def test_a_merge_leaves_the_registry_rows_of_other_spaces_alone(door: Door) -> None:
+    mine = door.service().ensure(uuid4(), _upsert())
+    other_match = uuid4()
+    other = door.service().ensure(
+        other_match,
+        _upsert(
+            freelancer={"email": "grace@studio.it", "first_name": "Grace", "last_name": "Hopper"}
+        ),
+    )
+    assert other.slug == "grace-hopper"
+    # An id never recurs across spaces by chance, so it is put there: only the space the merge
+    # serves is read.
+    with session_factory(door.registry)() as registry:
+        registry.execute(
+            update(RebaseEngagement)
+            .where(RebaseEngagement.match_id == other_match)
+            .values(customer_id=mine.customer_id)
+        )
+        registry.commit()
+    survivor = _survivor(door, "ada-lovelace")
+
+    done = _fold(door, "ada-lovelace", survivor, mine.customer_id, dry_run=False)
+
+    assert done.moved["rebase_engagements"] == 1
+    row = _row(door, other_match)
+    assert row is not None and row.customer_id == mine.customer_id
+
+
+def test_a_registry_that_fails_leaves_the_merge_undone_and_runnable(door: Door) -> None:
+    match_id = uuid4()
+    first = door.service().ensure(match_id, _upsert())
+    survivor = _survivor(door, "ada-lovelace")
+
+    with pytest.raises(RuntimeError, match="went away"):
+        _fold(
+            door,
+            "ada-lovelace",
+            survivor,
+            first.customer_id,
+            dry_run=False,
+            registry_class=_RegistryThatFailsToCommit,
+        )
+
+    row = _row(door, match_id)
+    assert row is not None and row.customer_id == first.customer_id
+    with _space(door, "ada-lovelace") as space:
+        loser = space.get(Organization, first.customer_id)
+        assert loser is not None and loser.deleted_at is None
+        deal = space.get(Deal, first.deal_id)
+        assert deal is not None and deal.customer_id == first.customer_id
+
+    again = _fold(door, "ada-lovelace", survivor, first.customer_id, dry_run=False)
+
+    assert again.moved["rebase_engagements"] == 1
+    assert door.service().ensure(match_id, _upsert()).customer_id == survivor
+
+
+def test_a_space_that_fails_after_the_registry_leaves_the_merge_runnable(door: Door) -> None:
+    """The order the merge commits in: the registry first. When the space then fails, the
+    registry names the survivor, a live row of the same company, and both organizations are
+    still live in the space, so the merge runs again and finishes."""
+    match_id = uuid4()
+    first = door.service().ensure(match_id, _upsert())
+    survivor = _survivor(door, "ada-lovelace")
+
+    with pytest.raises(RuntimeError, match="space went away"):
+        _fold(
+            door,
+            "ada-lovelace",
+            survivor,
+            first.customer_id,
+            dry_run=False,
+            space_fails_to_commit=True,
+        )
+
+    row = _row(door, match_id)
+    assert row is not None and row.customer_id == survivor
+    with _space(door, "ada-lovelace") as space:
+        for organization_id in (survivor, first.customer_id):
+            organization = space.get(Organization, organization_id)
+            assert organization is not None and organization.deleted_at is None
+        deal = space.get(Deal, first.deal_id)
+        assert deal is not None and deal.customer_id == first.customer_id
+
+    again = _fold(door, "ada-lovelace", survivor, first.customer_id, dry_run=False)
+
+    assert again.moved.get("rebase_engagements") is None  # the registry was already right
+    assert again.moved["deals"] == 1
+    retry = door.service().ensure(match_id, _upsert())
+    assert retry.customer_id == survivor and retry.created is False
+
+
+def test_the_root_and_a_space_the_registry_does_not_know_have_no_rows_to_point(
+    door: Door,
+) -> None:
+    first = door.service().ensure(uuid4(), _upsert())
+    survivor = uuid4()
+    with session_factory(door.registry)() as registry:
+        for slug in (None, "nobody-here"):
+            nobody = EngagementRegistry(registry, slug)
+            assert nobody.count(first.customer_id) == 0
+            assert nobody.repoint(first.customer_id, survivor) == 0
+        assert EngagementRegistry(registry, "ada-lovelace").count(first.customer_id) == 1
 
 
 def test_owned_space_is_reused_oldest_first(door: Door) -> None:

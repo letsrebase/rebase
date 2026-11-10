@@ -39,6 +39,11 @@ class McpContext:
     # is only for the space `PIGROCRM_LEADS_SPACE` names) needs.
     settings: Settings | None = None
     space: str | None = None
+    # Opens a session on the tenants registry, which the root's own tools never need: only
+    # a tool that writes a row kept there about this space (`merge_organizations` points the
+    # engagements door's customer at the survivor, REB-1031). The HTTP transport gives every
+    # space's server one; stdio serves the root installation, which has no such rows.
+    registry_session: Callable[[], Session] | None = None
 
     @property
     def session(self) -> Session:
