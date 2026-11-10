@@ -98,6 +98,10 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "cancel_purchase",
         "delete_purchase",
         "restore_purchase",
+        # The recurrence rule of money going out (due items design, § 1.2): a purchase's
+        # sibling, so the same class.
+        "create_recurring_expense",
+        "stop_recurring_expense",
         # Invoices up to, and not including, the fiscal acts.
         "create_invoice",
         "update_invoice",
@@ -432,6 +436,8 @@ ACTION_LABELS: dict[str, str] = {
     "get_export_download_url": "scaricare l'esportazione per il commercialista",
     "list_staff": "leggere l'elenco delle persone dell'azienda e i loro compensi",
     "set_declared_tax_figure": "registrare le cifre della dichiarazione dei redditi",
+    "create_recurring_expense": "registrare una spesa ricorrente",
+    "stop_recurring_expense": "terminare una spesa ricorrente",
     "settle_iva_period": "liquidare l'IVA di un periodo",
     "list_iva_settlements": "leggere le liquidazioni IVA",
     "set_payroll_pay_day": "impostare il giorno di paga dell'azienda",

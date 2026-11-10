@@ -150,7 +150,15 @@ def test_a_stale_credential_is_still_a_401_not_a_leak_of_which_modules_are_on(
     ("module", "paths"),
     [
         ("contracts", ["/api/contracts", "/api/work-units", "/api/analytics/days"]),
-        ("purchases", ["/api/purchases", "/api/cost-categories", "/api/iva-settlements"]),
+        (
+            "purchases",
+            [
+                "/api/purchases",
+                "/api/cost-categories",
+                "/api/iva-settlements",
+                "/api/recurring-expenses",
+            ],
+        ),
         (
             "taxes",
             [

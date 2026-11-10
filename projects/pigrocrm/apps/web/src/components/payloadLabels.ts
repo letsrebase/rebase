@@ -37,6 +37,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   buyer_pack_version: 'Versione del pacchetto fiscale',
   buyer_regime_code: 'Regime fiscale di chi acquista',
   cancellation_reason: 'Motivo annullamento',
+  cadence: 'Cadenza',
   cancelled_at: 'Annullata il',
   certified_email: 'Pec',
   channel: 'Canale',

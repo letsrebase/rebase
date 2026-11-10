@@ -75,7 +75,10 @@ SURFACES: dict[str, dict[str, Any]] = {
 # schema (no `null` branches, no patterns), which is how an agent learns them.
 # REB-1008: 105.25 KB, up from 104.8 KB, for `list_payroll_totals` (every token's, 444 bytes): the
 # «Stipendi» line a token that may not read payroll reads in its place, measured at 105,244.
-DEFAULT_BUDGET_BYTES = 105_250
+# REB-1022: 106.8 KB, up from 105.25 KB, for `list_recurring_expenses`, `create_recurring_expense`
+# and `stop_recurring_expense` (every token's, 1.5 KB): a rule has a supplier, a category, an
+# amount, a cadence and two dates, measured at 106,747.
+DEFAULT_BUDGET_BYTES = 106_800
 # REB-957: 111.9 KB, up from 111.6 KB, for `skip_space_onboarding` (a full-access
 # administrator's), measured at 111,786 bytes; `describe_space`'s `onboarding` fits the default.
 # REB-977: 116.2 KB, up from 113.4 KB, for `create_staff_member`, `update_staff_member`,
@@ -99,7 +102,8 @@ DEFAULT_BUDGET_BYTES = 105_250
 # `get_export_download_url` (a full-access administrator's), measured at 126,346.
 # REB-1021: 127.0 KB, up from 126.4 KB, for `list_iva_settlements` (a full-access
 # administrator's, a year and a company) and the profile's `iva_frequency`, measured at 126,947.
-FULL_ACCESS_BUDGET_BYTES = 127_000
+# REB-1022: 128.5 KB, up from 127.0 KB, the same three tools, measured at 128,444.
+FULL_ACCESS_BUDGET_BYTES = 128_500
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

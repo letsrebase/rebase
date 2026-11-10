@@ -102,6 +102,10 @@ FREE_TEXT_TOOLS: frozenset[str] = frozenset(
         "get_due_item",
         "settle_due_item",
         "reverse_settlement",
+        # Recurring expenses: the description is typed by whoever wrote the rule.
+        "list_recurring_expenses",
+        "create_recurring_expense",
+        "stop_recurring_expense",
         # Staff: names and the collective agreement, typed by whoever recorded them.
         "create_staff_member",
         "update_staff_member",

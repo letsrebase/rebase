@@ -4140,3 +4140,21 @@ def test_0097_adds_the_imap_connection_to_mailboxes_and_downgrade_removes_it(
             assert columns.isdisjoint({"imap_host", "password_ciphertext", "last_error"})
         finally:
             engine.dispose()
+
+
+def test_0098_creates_the_recurring_expenses_table_under_the_row_policy(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1022: a new table under the row policy of every table that reaches a legal entity;
+    it reverses and comes back."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0097")
+        assert _table_shape(url, "recurring_expenses")[0] is False
+        upgrade(config, "0098")
+        assert _table_shape(url, "recurring_expenses") == (True, True, {"legal_entity_scope"})
+        downgrade(config, "0097")
+        assert _table_shape(url, "recurring_expenses")[0] is False
+        upgrade(config, "0098")
+        assert _table_shape(url, "recurring_expenses")[0] is True

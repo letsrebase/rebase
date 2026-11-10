@@ -273,6 +273,20 @@ go on), and `--dry-run` rolls it back. A change to a customer's terms or to the 
 for the next pass. No code bills a recurring fee yet: a fee invoice replaces its forecast only when its
 line names the card and the period (`InvoiceLineIn`), otherwise the forecast stands until its date passes.
 The test-only triggers in the root `conftest.py` delete the forecasts of a hand-deleted invoice or contract.
+**Recurring expenses forecast money out from a rule due items owns (REB-1022).** `RecurringExpense`
+(`recurring_expenses`, migration 0098, behind `module_guard("purchases")`) is a supplier, a total
+amount (VAT included), a `cadence` (`monthly` to `annual`), the first due date, an optional last one and
+`stopped_on`; `RecurringExpenseService` creates, lists and stops it (REST `/api/recurring-expenses`, tools
+`create_recurring_expense`, `list_recurring_expenses`, `stop_recurring_expense`, all classified like a
+purchase). `ForecastService.refresh_recurring_expense` writes one `forecast` out per due date inside
+`HORIZON_DAYS`, source kind `recurring_expense`, keyed `forecast_key("recurring_expense", rule, date)`,
+dated on the due date itself. **A purchase of the period replaces it**: a registered, uncancelled,
+unarchived purchase of that supplier with a positive amount, in the rule's company or shared, dated in
+the calendar month, bimonth, quarter, half-year or year the due date falls in. `PurchaseService` rereads
+the supplier's rules in its own transaction on create, update, cancel, archive and restore, and
+`refresh_forecasts` (so `pigrocrm automations`) rereads every active rule and every rule that still has a
+forecast, isolated per rule. Until the purchases cards write a due item for a purchase, the purchase is
+what replaces the forecast and no item stands in for it on the schedule.
 **Staff and directors are written by `StaffService`, and pay is an administrator's before anything else
 (REB-977).** `staff_members` and `payroll_settings` belong to the module `staff` (default off for both
 profiles, on for a space with no profile): REST `/api/staff` carries `module_guard("staff")` and the
