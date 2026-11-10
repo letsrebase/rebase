@@ -349,6 +349,7 @@ is `require_person`, so a token is refused whatever it carries. Tests use `tests
 fake server on the loopback with a real TLS handshake: pass `resolve=loopback` and `fake.client_context()`,
 never a flag in production code. `mail-sync` reads IMAP beside Gmail; a sink per purpose (`MessageSink`) is
 how REB-1016 plugs in.
+
 **«Esporta per il commercialista» is `/app/export` and draws what the server says (REB-1028).** `features/export/` is an
 administrator's page (the entry names `action: 'build_accountant_export'` in `components/nav.ts`, so the sidebar and «Altro» hide it
 from other roles by the `lib/permissions.ts` table, which `permissions.test.ts` pins to the core's `require_admin` strings; the first
