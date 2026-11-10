@@ -322,4 +322,5 @@ class DaysReportService:
 
 
 def _to_days(hours: Decimal) -> Decimal:
-    return (hours / HOURS_PER_DAY).quantize(CENT)
+    """Hours at 8 a day, exact: an hour is 0.125 of a day, and only the amount is rounded."""
+    return hours / HOURS_PER_DAY

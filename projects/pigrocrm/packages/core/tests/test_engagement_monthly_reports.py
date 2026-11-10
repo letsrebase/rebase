@@ -258,6 +258,27 @@ def test_a_day_cannot_be_held_once_the_tacit_date_passed(db_session: Session) ->
         service.approve(engagement.id, "2026-10", MonthlyReportApproval(), ADMIN).state
         == "approved"
     )
+    # Approving first and holding after the deadline is the same thing, and is refused too.
+    with pytest.raises(Conflict, match="termine per contestare"):
+        service.approve(
+            engagement.id,
+            "2026-10",
+            MonthlyReportApproval(held_dates=[D(2026, 10, 5)], objection="ormai tardi"),
+            ADMIN,
+        )
+
+
+def test_deciding_again_keeps_the_first_decision_and_can_lift_a_hold(db_session: Session) -> None:
+    engagement = _engagement(db_session)
+    service = MonthlyReportService(db_session)
+    service.request(
+        engagement.id, MonthlyReportRequest(month="2026-10", received_on=D(2026, 11, 18)), ADMIN
+    )
+    held = MonthlyReportApproval(held_dates=[D(2026, 10, 5)], objection="Assente")
+    first = service.approve(engagement.id, "2026-10", held, ADMIN)
+    # The deadline has not passed (20 November, tacit date 27 November): the hold may change.
+    again = service.approve(engagement.id, "2026-10", MonthlyReportApproval(), ADMIN)
+    assert again.held_dates == [] and again.decided_on == first.decided_on
 
 
 # ---- the report, with a door that answers what the freelancer's space holds ------------------
@@ -458,6 +479,31 @@ def test_an_hourly_letter_pays_approved_hours_and_old_entries_are_days_at_eight_
         Decimal("6.50"),
         Decimal("2600.00"),
     )
+
+
+def test_old_hours_become_days_without_rounding_each_entry(
+    db_session: Session, fake_door: type[FakeDoor]
+) -> None:
+    engagement = _engagement(db_session)
+    entries = [
+        ReportEntry(
+            date=D(2026, 10, day),
+            hours=Decimal("1.00"),
+            description="ora",
+            billable=True,
+            invoice=None,
+        )
+        for day in (5, 6, 7)
+    ]
+    fake_door.answer = _answer(hours=entries)
+    service = MonthlyReportService(db_session)
+    service.request(
+        engagement.id, MonthlyReportRequest(month="2026-10", received_on=D(2026, 11, 18)), ADMIN
+    )
+    service.approve(engagement.id, "2026-10", MonthlyReportApproval(), ADMIN)
+    report = _reader(db_session).report(engagement.id, ADMIN)
+    # Three hours are 0.375 of a day: 150.00 at 400 a day, not 144.00.
+    assert (report.payable_quantity, report.payable_amount) == (Decimal("0.375"), Decimal("150.00"))
 
 
 def test_a_flat_fee_has_days_but_no_amount_to_read_from_them(

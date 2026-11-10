@@ -28,6 +28,7 @@ from pigrocrm.core.collaborators.schemas import (
     MonthlyReportRead,
     MonthlyReportRequest,
 )
+from pigrocrm.core.config import Settings
 from pigrocrm.core.db import today_local
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 
@@ -68,15 +69,16 @@ def monthly_reports_of(session: Session, engagement_id: UUID) -> list[MonthlyRep
 
 
 class MonthlyReportService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, settings: Settings | None = None) -> None:
         self.session = session
+        self.settings = settings
         self.repo = EngagementRepository(session)
         self.activities = ActivityService(session)
 
     def for_engagement(self, engagement_id: UUID, actor: Actor) -> MonthlyReportPage:
         actor.require_admin("read_engagement_report")
         self._engagement(engagement_id)
-        today = today_local()
+        today = today_local(self.settings)
         return MonthlyReportPage(
             items=[
                 read_monthly_report(row, today)
@@ -94,7 +96,7 @@ class MonthlyReportService:
         actor.require_admin("record_monthly_report")
         engagement = self._engagement(engagement_id, lock=True)
         month = rules.parse_month(data.month)
-        today = today_local()
+        today = today_local(self.settings)
         if engagement.state not in REPORTING_STATES:
             raise Conflict(
                 ENTITY,
@@ -161,9 +163,10 @@ class MonthlyReportService:
         self, engagement_id: UUID, month_label: str, data: MonthlyReportApproval, actor: Actor
     ) -> MonthlyReportRead:
         """A person's decision: the month is approved and the days in `held_dates` are held,
-        with the reason, while the rest is payable. Deciding again changes the holds. A day
-        cannot be held once the tacit date passed with no objection: the report counts as
-        approved by then (framework 6.2)."""
+        with the reason, while the rest is payable. Deciding again changes the holds and keeps
+        the first decision's date and person. A day cannot be newly held once the tacit date has
+        passed, whether or not the month was already approved: with no objection in time the
+        report counts as approved (framework 6.2)."""
         actor.require_person("approve_monthly_report")
         actor.require_admin("approve_monthly_report")
         self._engagement(engagement_id, lock=True)
@@ -175,7 +178,7 @@ class MonthlyReportService:
         )
         if row is None:
             raise NotFound(MONTHLY_REPORT_ENTITY, month_label)
-        today = today_local()
+        today = today_local(self.settings)
         held = sorted(set(data.held_dates))
         objection = data.objection.strip() if data.objection else None
         if held and not objection:
@@ -200,20 +203,18 @@ class MonthlyReportService:
                 expected=f"da {month.isoformat()} a {(end - dt.timedelta(days=1)).isoformat()}: "
                 f"{', '.join(outside)}",
             )
-        if (
-            held
-            and row.state == "requested"
-            and rules.effective_state(row.state, row.tacit_on, today) == "tacit"
-        ):
+        added = set(held) - {dt.date.fromisoformat(value) for value in row.held_dates}
+        if added and today > row.tacit_on:
             raise Conflict(
                 MONTHLY_REPORT_ENTITY,
                 "il termine per contestare e' scaduto: il rendiconto vale come approvato",
                 tacit_on=row.tacit_on.isoformat(),
             )
         previous: dict[str, Any] = {"held": len(row.held_dates), "state": row.state}
-        row.state = "approved"
-        row.decided_on = today
-        row.decided_by = actor.id
+        if row.decided_on is None:
+            row.state = "approved"
+            row.decided_on = today
+            row.decided_by = actor.id
         row.objection = objection
         row.held_dates = [day.isoformat() for day in held]
         self.session.flush()

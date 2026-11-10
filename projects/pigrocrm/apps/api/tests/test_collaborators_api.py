@@ -327,7 +327,7 @@ def test_an_admin_records_and_approves_a_months_monthly_report_and_no_agent_toke
     without `full_access`, reads the list and is refused both writes."""
     _module(api_session)
     who = _freelancer(api_session)
-    made = _create(logged_in, who, starts_on="2026-10-01", ends_on="2026-10-30")
+    made = _create(logged_in, who, starts_on="2026-08-01", ends_on="2026-09-30")
     _activate(logged_in, made["id"])
     base = f"/api/engagements/{made['id']}/monthly-reports"
     assert logged_in.put("/api/settings/space", json={"mcp_full_access": True}).status_code == 200
@@ -344,28 +344,36 @@ def test_an_admin_records_and_approves_a_months_monthly_report_and_no_agent_toke
         assert refused.status_code == 403 and refused.json()["code"] == "agent_forbidden"
         assert agent.get(base).status_code == 200
 
-    recorded = logged_in.post(base, json={"month": "2026-10", "received_on": "2026-11-03"})
+    recorded = logged_in.post(base, json={"month": "2026-08", "received_on": "2026-09-01"})
     assert recorded.status_code == 201, recorded.text
-    assert (recorded.json()["label"], recorded.json()["tacit_on"]) == ("2026-10", "2026-11-12")
-    assert logged_in.post(base, json={"month": "2026-10"}).status_code == 409
+    assert (recorded.json()["label"], recorded.json()["tacit_on"]) == ("2026-08", "2026-09-10")
+    assert logged_in.post(base, json={"month": "2026-08"}).status_code == 409
     assert logged_in.post(base, json={"month": "2026-9"}).status_code == 422
+    # Received today: its tacit date is still ahead, so a part can be held.
+    assert logged_in.post(base, json={"month": "2026-09"}).status_code == 201
 
     for agent in (token(full_access=False), token(full_access=True)):
-        refused = agent.post(f"{base}/2026-10/approval", json={})
+        refused = agent.post(f"{base}/2026-08/approval", json={})
         assert refused.status_code == 403 and refused.json()["code"] == "agent_forbidden"
 
-    approved = logged_in.post(
-        f"{base}/2026-10/approval",
-        json={"held_dates": ["2026-10-06"], "objection": "Il cliente non li riconosce"},
+    late = logged_in.post(
+        f"{base}/2026-08/approval",
+        json={"held_dates": ["2026-08-06"], "objection": "Il cliente non li riconosce"},
     )
-    # Received on 3 November, the tacit date (12 November) is past: nothing can be held now.
-    assert approved.status_code == 409, approved.text
-    approved = logged_in.post(f"{base}/2026-10/approval", json={})
+    # The tacit date (10 September) is past: nothing can be held any more.
+    assert late.status_code == 409, late.text
+    approved = logged_in.post(f"{base}/2026-08/approval", json={})
     assert approved.status_code == 200, approved.text
     assert (approved.json()["state"], approved.json()["held_dates"]) == ("approved", [])
-    assert logged_in.post(f"{base}/2026-09/approval", json={}).status_code == 404
+    held = logged_in.post(
+        f"{base}/2026-09/approval",
+        json={"held_dates": ["2026-09-07"], "objection": "Il cliente non li riconosce"},
+    )
+    assert held.status_code == 200, held.text
+    assert held.json()["held_dates"] == ["2026-09-07"]
+    assert logged_in.post(f"{base}/2026-07/approval", json={}).status_code == 404
     listed = logged_in.get(base).json()
-    assert [item["label"] for item in listed["items"]] == ["2026-10"]
+    assert [item["label"] for item in listed["items"]] == ["2026-08", "2026-09"]
 
 
 def test_the_days_report_is_read_only_from_the_space_that_holds_the_engagements(

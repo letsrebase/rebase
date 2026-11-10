@@ -159,10 +159,10 @@ def engagement_report(
 
 @router.get("/engagements/{engagement_id}/monthly-reports", response_model=MonthlyReportPage)
 def list_monthly_reports(
-    engagement_id: UUID, session: SessionDep, actor: ActorDep
+    engagement_id: UUID, session: SessionDep, actor: ActorDep, settings: SettingsDep
 ) -> MonthlyReportPage:
     """The monthly reports recorded for the engagement, oldest month first."""
-    return MonthlyReportService(session).for_engagement(engagement_id, actor)
+    return MonthlyReportService(session, settings).for_engagement(engagement_id, actor)
 
 
 @router.post(
@@ -171,11 +171,15 @@ def list_monthly_reports(
     status_code=status.HTTP_201_CREATED,
 )
 def request_monthly_report(
-    engagement_id: UUID, data: MonthlyReportRequest, session: SessionDep, actor: ActorDep
+    engagement_id: UUID,
+    data: MonthlyReportRequest,
+    session: SessionDep,
+    actor: ActorDep,
+    settings: SettingsDep,
 ) -> MonthlyReportRead:
     """Records that the freelancer's report of a finished month reached rebase. With no reasoned
     objection within seven working days it counts as approved. A person's act, never an agent's."""
-    return MonthlyReportService(session).request(engagement_id, data, actor)
+    return MonthlyReportService(session, settings).request(engagement_id, data, actor)
 
 
 @router.post(
@@ -188,10 +192,11 @@ def approve_monthly_report(
     data: MonthlyReportApproval,
     session: SessionDep,
     actor: ActorDep,
+    settings: SettingsDep,
 ) -> MonthlyReportRead:
     """Approves the month: its days read payable, except the `held_dates` the client contested
     (with the reason in `objection`). A person's act, never an agent's, whatever the token."""
-    return MonthlyReportService(session).approve(engagement_id, month, data, actor)
+    return MonthlyReportService(session, settings).approve(engagement_id, month, data, actor)
 
 
 @router.get("/freelancers/availability", response_model=FreelancerAvailability)
