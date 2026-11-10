@@ -362,6 +362,21 @@ def test_update_can_detach_a_person_from_a_customer(db_session: Session) -> None
     assert detached.customer_id is None
 
 
+def test_update_names_the_field_that_changed_not_the_fields_it_was_sent(
+    db_session: Session,
+) -> None:
+    from pigrocrm.core.activities.service import ActivityService
+
+    service = PersonService(db_session)
+    person = service.create(PersonCreate(first_name="Mario", last_name="Rossi"), ADMIN)
+    service.update(person.id, PersonUpdate(first_name="Mario", last_name="Bianchi"), ADMIN)
+
+    updates = [
+        e for e in ActivityService(db_session).timeline("person", person.id) if e.kind == "updated"
+    ]
+    assert [e.payload["changed"] for e in updates] == [["last_name"]]
+
+
 def test_detach_wins_over_a_valid_customer_id_supplied_in_the_same_update(
     db_session: Session,
 ) -> None:

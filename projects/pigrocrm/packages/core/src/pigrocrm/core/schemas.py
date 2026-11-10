@@ -38,6 +38,16 @@ def supplied_changes(data: BaseModel, *, exclude: set[str] | None = None) -> dic
     return data.model_dump(exclude_unset=True, exclude=exclude or set())
 
 
+def changed_keys(row: Any, changes: dict[str, Any]) -> list[str]:
+    """The names in `changes` whose value is not the one `row` holds now, sorted.
+
+    Read before the caller `setattr`s anything: an update's timeline entry names what
+    changed, not what was sent (REB-827), so a form that submits every field and edits
+    one records that one.
+    """
+    return sorted(key for key, value in changes.items() if getattr(row, key) != value)
+
+
 def reject_cleared_columns(entity: str, model: type[Any], changes: dict[str, Any]) -> None:
     """Refuse a `null` aimed at a column the database declares `NOT NULL`.
 

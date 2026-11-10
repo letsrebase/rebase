@@ -400,6 +400,24 @@ def test_update_records_only_the_changed_fields(db_session: Session) -> None:
     assert updates[0].payload["changed"] == ["contact_points"]
 
 
+def test_update_names_the_field_that_changed_not_the_fields_it_was_sent(
+    db_session: Session,
+) -> None:
+    """A form submits every field and the person edits one (REB-827)."""
+    from pigrocrm.core.activities.service import ActivityService
+
+    service = OrganizationService(db_session)
+    customer = service.create(OrganizationCreate(legal_name="ACME", city="Roma"), ADMIN)
+    service.update(customer.id, OrganizationUpdate(legal_name="ACME", city="Milano"), ADMIN)
+
+    updates = [
+        e
+        for e in ActivityService(db_session).timeline("organization", customer.id)
+        if e.kind == "updated"
+    ]
+    assert [e.payload["changed"] for e in updates] == [["city"]]
+
+
 def test_readonly_cannot_write_but_can_read(db_session: Session) -> None:
     service = OrganizationService(db_session)
     customer = service.create(OrganizationCreate(legal_name="ACME"), ADMIN)
