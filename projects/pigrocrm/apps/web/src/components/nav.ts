@@ -1,6 +1,7 @@
 import {
   Bell,
   Bot,
+  BriefcaseBusiness,
   Building2,
   CalendarCheck,
   CalendarDays,
@@ -90,6 +91,14 @@ export const SECTIONS = [
       { to: '/app/vat', label: 'IVA', icon: Percent, action: 'list_iva_periods', gate: 'iva' },
       { to: '/app/hours', label: 'Ore', icon: Clock },
       { to: '/app/days', label: 'Giornate', icon: CalendarCheck },
+      // The freelancers' engagements (the approved brief, 2026-11-10): after «Giornate», drawn for
+      // an administrator alone (`read_engagements`), with the count of what waits for a person beside it.
+      {
+        to: '/app/engagements',
+        action: 'read_engagements',
+        label: 'Incarichi',
+        icon: BriefcaseBusiness,
+      },
       { to: '/app/taxes', label: 'Tasse', icon: Landmark },
       // The people the company pays (the approved brief of 2026-11-10, REB-1027): pay is an
       // administrator's, so the entry is theirs alone, as the service is.
@@ -206,6 +215,9 @@ export function phoneMoreItems(
 
 /** The inbox's page, whose entry carries the count of items waiting. */
 export const INBOX_PATH = '/app/inbox'
+
+/** The engagements' page, whose entry carries the count of engagements waiting for a person. */
+export const ENGAGEMENTS_PATH = '/app/engagements'
 
 
 /**

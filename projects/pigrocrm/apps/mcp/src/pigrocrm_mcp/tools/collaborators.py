@@ -11,6 +11,7 @@ from uuid import UUID
 from pigrocrm.core.collaborators.days_report import DaysReportService
 from pigrocrm.core.collaborators.letter_service import LetterService
 from pigrocrm.core.collaborators.schemas import (
+    EngagementBucket,
     EngagementCreate,
     EngagementListQuery,
     EngagementUpdate,
@@ -22,7 +23,7 @@ from pigrocrm.core.documenso.client import signing_configured
 from pigrocrm.core.errors import SigningUnavailable, ValidationFailed
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools.changes import refuse_empty, report
-from pigrocrm_mcp.tools.params import iso_date, required_iso_date
+from pigrocrm_mcp.tools.params import iso_date, literal_arg, required_iso_date
 
 
 def _uuid(name: str, value: str | None) -> UUID | None:
@@ -151,6 +152,7 @@ def search(
     client_organization_id: str | None,
     deal_id: str | None,
     contract_id: str | None,
+    bucket: str | None,
     limit: int,
     cursor: str | None,
 ) -> dict[str, Any]:
@@ -160,6 +162,7 @@ def search(
         client_organization_id=_uuid("client_organization_id", client_organization_id),
         deal_id=_uuid("deal_id", deal_id),
         contract_id=_uuid("contract_id", contract_id),
+        bucket=literal_arg("bucket", bucket, EngagementBucket),
         limit=limit,
         cursor=_uuid("cursor", cursor),
     )

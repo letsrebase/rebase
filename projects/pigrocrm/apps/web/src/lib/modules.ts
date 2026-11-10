@@ -71,6 +71,9 @@ export const ROUTE_MODULES: ReadonlyArray<{ path: string; modules: readonly Modu
   // open point, not an answer).
   { path: '/app/vat', modules: ['purchases'] },
   { path: '/app/settings/cost-categories', modules: ['purchases'] },
+  // collaborators: the freelancers' engagements, «Incarichi» in the sidebar and in «Altro» (the
+  // module's label is «Collaboratori»; the entry is what a person looks for, REB-1035).
+  { path: '/app/engagements', modules: ['collaborators'] },
 ]
 
 /** The modules a path needs; `[]` for a page of the core. */

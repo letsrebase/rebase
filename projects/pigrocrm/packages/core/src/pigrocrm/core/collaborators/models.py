@@ -39,8 +39,11 @@ ENGAGEMENT_STATES: tuple[str, ...] = (
     "cancelled",
 )
 # The states in which an engagement still binds the freelancer's time: what a new engagement
-# is warned against. Only `active` is a commitment availability shows.
+# is warned against, and what availability counts, so a strip and the warning never disagree.
 LIVE_STATES: tuple[str, ...] = ("draft", "awaiting_signature", "active")
+# The states in which a month's report is received and decided: nothing is reported on a draft
+# or on one that never began.
+REPORTING_STATES: tuple[str, ...] = ("active", "concluded")
 
 FEE_UNITS: tuple[str, ...] = ("day", "hour", "flat")
 LETTER_TYPES: tuple[str, ...] = ("ordinary", "occasional")

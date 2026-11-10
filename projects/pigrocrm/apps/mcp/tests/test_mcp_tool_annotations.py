@@ -81,7 +81,9 @@ SURFACES: dict[str, dict[str, Any]] = {
 # REB-1032: 107.65 KB, up from 106.8 KB, for `list_fee_occurrences` (every token's, 854 bytes): the
 # occurrences of a contract's recurring fee with the date `bill_contract_fee` takes, measured at
 # 107,601.
-DEFAULT_BUDGET_BYTES = 107_650
+# REB-1035: 107.68 KB, up from 107.65 KB, for `source_id` on `list_due_items` (every token's, 65
+# bytes), measured at 107,672.
+DEFAULT_BUDGET_BYTES = 107_680
 # REB-957: 111.9 KB, up from 111.6 KB, for `skip_space_onboarding` (a full-access
 # administrator's), measured at 111,786 bytes; `describe_space`'s `onboarding` fits the default.
 # REB-977: 116.2 KB, up from 113.4 KB, for `create_staff_member`, `update_staff_member`,
@@ -110,7 +112,9 @@ DEFAULT_BUDGET_BYTES = 107_650
 # administrator's: a year, a period, a register and a page), measured at 129,771.
 # REB-1032: 131.75 KB, up from 129.8 KB, for `bill_contract_fee` (a full-access administrator's) and
 # `list_fee_occurrences` above, measured at 131,724.
-FULL_ACCESS_BUDGET_BYTES = 131_750
+# REB-1035: 131.8 KB, up from 131.75 KB, the same parameter and `bucket` on `list_engagements`,
+# measured at 131,795.
+FULL_ACCESS_BUDGET_BYTES = 131_800
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

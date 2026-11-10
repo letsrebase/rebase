@@ -102,6 +102,28 @@ class EngagementWarning(BaseModel):
     peak_days_per_week: Decimal | None
 
 
+WaitingCode = Literal[
+    "letter_not_created",
+    "letter_not_sent",
+    "report_undecided",
+    "missing_days_per_week",
+    "missing_client",
+]
+EngagementBucket = Literal["todo", "ongoing", "closed"]
+
+
+class EngagementWaiting(BaseModel):
+    """One thing the engagement waits for a person to do. A draft waits until its letter is
+    written (`letter_not_created`) and sent (`letter_not_sent`); a live one waits for the
+    `days_per_week` or the client link an import left out; an active or concluded one waits for
+    a person to decide a month received and not yet decided (`report_undecided`, with the month
+    and the last day an objection counts)."""
+
+    code: WaitingCode
+    month: dt.date | None = None
+    tacit_on: dt.date | None = None
+
+
 class EngagementRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -135,6 +157,15 @@ class EngagementRead(BaseModel):
     missing: list[str]
     # Filled on a create, an update and a get of a live engagement.
     warnings: list[EngagementWarning] = Field(default_factory=list)
+    # What waits for a person, and the names the list draws. `client_name` is `None` with no
+    # client and when `redacted`; `letter_document_id` is the stored letter, once it is written.
+    waiting: list[EngagementWaiting] = Field(default_factory=list)
+    freelancer_name: str | None = None
+    client_name: str | None = None
+    letter_document_id: UUID | None = None
+    # The CRM's day, which decides what is late, what has ended and whether a start is still ahead:
+    # a screen never asks the browser's clock.
+    today: dt.date | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -145,6 +176,13 @@ class EngagementListQuery(BaseModel):
     client_organization_id: UUID | None = None
     deal_id: UUID | None = None
     contract_id: UUID | None = None
+    bucket: EngagementBucket | None = Field(
+        default=None,
+        description=(
+            "todo: waits for a person; ongoing: out for signature or active with nothing "
+            "waiting; closed: concluded or cancelled with nothing waiting"
+        ),
+    )
     limit: int = Field(default=50, ge=1, le=200)
     cursor: UUID | None = None
 
@@ -152,6 +190,14 @@ class EngagementListQuery(BaseModel):
 class EngagementPage(BaseModel):
     items: list[EngagementRead]
     next_cursor: UUID | None
+
+
+class EngagementCounts(BaseModel):
+    """How many engagements each bucket of the list holds; `todo` is the count on the entry."""
+
+    todo: int
+    ongoing: int
+    closed: int
 
 
 class EngagementClose(BaseModel):
@@ -171,8 +217,9 @@ class EngagementStateChange(BaseModel):
 
 
 class AvailabilityWeek(BaseModel):
-    """One ISO week. `unknown` when an active engagement overlapping it has no
-    `days_per_week`: never `free`. `committed_days` then counts only the ones that have it."""
+    """One ISO week. `unknown` when a live engagement (draft, out for signature or active)
+    overlapping it has no `days_per_week`: never `free`. `committed_days` then counts only the
+    ones that have it."""
 
     week: str = Field(description="ISO week, 2026-W46")
     starts_on: dt.date
@@ -312,6 +359,9 @@ class MonthlyReportRead(BaseModel):
     received_on: dt.date
     tacit_on: dt.date
     decided_on: dt.date | None
+    decided_by_name: str | None = Field(
+        default=None, description="The person who decided it, by name"
+    )
     objection: str | None
     held_dates: list[dt.date]
     created_at: datetime
@@ -421,3 +471,73 @@ class SignedCopyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     signed_on: dt.date | None = None
+
+
+# ---- what the engagement pays the freelancer, month by month (REB-1035) -----------------------
+
+PaymentState = Literal["forecast", "expected", "settled"]
+
+
+class EngagementPaymentRead(BaseModel):
+    """One due item the engagement wrote for the freelancer. `month` is the first day of the month
+    the amount pays for, known only for a forecast (the billing point it was written for); an item
+    that replaced one has none. `waiting_for_invoice` is the client's invoice, `2026/71`, whose
+    settlement the date still follows. The amounts are `None` when the engagement's client is not
+    in this administrator's view, as the fee is."""
+
+    due_item_id: UUID
+    month: dt.date | None
+    state: PaymentState
+    amount: Decimal | None
+    settled: Decimal | None
+    remaining: Decimal | None
+    currency: str
+    due_date: dt.date | None
+    due_date_estimated: bool
+    waiting_for_invoice: str | None
+    description: str | None
+
+
+class EngagementPaymentPage(BaseModel):
+    engagement_id: UUID
+    items: list[EngagementPaymentRead]
+
+
+# ---- the freelancer's own card, read through the door (REB-1035, brief «The freelancer's own
+# view») ------------------------------------------------------------------------------------------
+
+OwnMonthState = Literal["in_progress", "received", "approved"]
+
+
+class OwnEngagementMonth(BaseModel):
+    """One month as the freelancer sees it. `in_progress`: rebase has not received the report
+    (the month is running or the report has not arrived); `received`: rebase has it and `answer_by`
+    is the last day for the answer; `approved`: a person approved it or nobody objected in time,
+    with the dates rebase does not recognise in `held_dates`. The reason of an objection never
+    leaves rebase's space: it can carry the client's words."""
+
+    month: dt.date
+    label: str
+    state: OwnMonthState
+    received_on: dt.date | None
+    answer_by: dt.date | None
+    held_dates: list[dt.date]
+
+
+class OwnEngagementRead(BaseModel):
+    """What the freelancer reads of their own engagement with rebase, and nothing else: the
+    letter, their fee and dates, the payment rule and the months. Never the client's name, price
+    or budget, another engagement's figures, a forecast or an objection's reason."""
+
+    letter_number: str | None
+    state: str
+    starts_on: dt.date
+    ends_on: dt.date | None
+    fee: Decimal
+    fee_unit: str
+    days_per_week: Decimal | None
+    payment_rule: str
+    payment_days: int | None
+    payment_end_of_month: bool
+    collection_days: int | None
+    months: list[OwnEngagementMonth]

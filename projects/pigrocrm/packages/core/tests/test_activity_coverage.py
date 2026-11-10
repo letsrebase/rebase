@@ -125,6 +125,12 @@ _READS: dict[Method, str] = {
     ("MonthlyReportService", "for_engagement"): "reads the monthly reports; nothing is written",
     ("EngagementService", "get"): "reads an engagement; an administrator's read",
     ("EngagementService", "list"): "reads engagements; an administrator's read",
+    ("EngagementService", "counts"): "counts engagements; an administrator's read",
+    (
+        "EngagementPaymentService",
+        "for_engagement",
+    ): "reads what an engagement pays; nothing is written",
+    ("OwnEngagementService", "for_contract"): "reads across spaces; nothing is written",
     ("FreelancerService", "availability"): "a computed answer; nothing is written",
     (
         "FreelancerService",
