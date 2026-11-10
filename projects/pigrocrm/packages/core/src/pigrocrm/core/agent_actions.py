@@ -192,6 +192,10 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         # Making an organization shared across the legal entities (REB-970): what an invoice
         # import offers when a customer is billed by two of them.
         "share_organization",
+        # Folding two rows of one company into one (REB-995): it rewrites what every deal,
+        # invoice and timeline points at and archives a row, so an administrator's token with
+        # `full_access`, nothing less. The preview is the same action, with `dry_run`.
+        "merge_organizations",
         # Slice 9 §4.2: reading the owner's Google Drive and copying a file from it, and
         # configuring the grant (which folders the CRM may read and write, connecting and
         # disconnecting the account). Settings operations have no MCP tool and never will;
@@ -357,6 +361,7 @@ ACTION_LABELS: dict[str, str] = {
     "reverse_outgoing_settlement": "annullare il pagamento di una scadenza in uscita o fiscale",
     "read_fiscal_due_items": "leggere le scadenze di imposte, IVA, ritenute e stipendi",
     "share_organization": "condividere un'anagrafica fra le aziende",
+    "merge_organizations": "unire due anagrafiche della stessa azienda",
     "list_duplicate_organizations": "elencare le anagrafiche con la stessa partita IVA",
     "read_engagements": "leggere gli incarichi con i freelance",
     "update_engagement": "modificare un incarico con un freelance",

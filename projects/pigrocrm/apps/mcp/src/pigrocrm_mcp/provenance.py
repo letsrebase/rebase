@@ -34,6 +34,7 @@ FREE_TEXT_TOOLS: frozenset[str] = frozenset(
         "get_organization",
         "search_organizations",
         "list_duplicate_organizations",
+        "merge_organizations",
         "restore_organization",
         "create_person",
         "update_person",

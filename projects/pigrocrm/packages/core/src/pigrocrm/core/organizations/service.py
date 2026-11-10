@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -22,6 +23,7 @@ from pigrocrm.core.gmail.roster import AddressRoster
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.notes.writer import append_first_note
 from pigrocrm.core.organizations.duplicates import duplicate_vat_groups
+from pigrocrm.core.organizations.merge import MergeOutcome, OrganizationMerge
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.organizations.repository import OrganizationRepository
 from pigrocrm.core.organizations.roles import (
@@ -43,6 +45,7 @@ from pigrocrm.core.organizations.schemas import (
     OrganizationCreate,
     OrganizationFromSuggestion,
     OrganizationListQuery,
+    OrganizationMergeRead,
     OrganizationPage,
     OrganizationRead,
     OrganizationsFromSuggestions,
@@ -756,6 +759,134 @@ class OrganizationService:
             )
             for group in duplicate_vat_groups(self.session)
         ]
+
+    def merge(
+        self, survivor_id: UUID, loser_id: UUID, actor: Actor, *, dry_run: bool = True
+    ) -> OrganizationMergeRead:
+        """Folds `loser_id` into `survivor_id` (REB-995, design § 1): every deal, contract,
+        invoice, person, contact point, document, task, note, timeline entry, Gmail link, draft,
+        due item and engagement that pointed at the loser points at the survivor, the roles are
+        joined, what the survivor left empty is filled from the loser, and the loser is
+        archived, each timeline saying so. The whole registry or nothing, so an administrator of
+        the whole space only; a row that sits under a legal entity the caller cannot see would
+        otherwise stay behind. With `dry_run` it answers what would move and writes nothing.
+
+        Two rows under different legal entities are one company used by two of them, so the
+        survivor becomes shared (`legal_entity_id` null), as `share` does by hand."""
+        actor.require_unscoped_admin("merge_organizations")
+        if survivor_id == loser_id:
+            raise ValidationFailed(
+                ENTITY,
+                "loser_id",
+                "un'anagrafica non si unisce a se stessa",
+                expected="un'anagrafica diversa da quella di destinazione",
+            )
+        rows = {
+            row.id: row
+            for row in self.session.scalars(
+                select(Organization)
+                .where(Organization.id.in_((survivor_id, loser_id)))
+                .order_by(Organization.id)
+                .with_for_update()
+            )
+        }
+        survivor, loser = rows.get(survivor_id), rows.get(loser_id)
+        if survivor is None:
+            raise NotFound(ENTITY, survivor_id)
+        if loser is None:
+            raise NotFound(ENTITY, loser_id)
+        for row in (survivor, loser):
+            if row.deleted_at is not None:
+                raise Conflict(
+                    ENTITY,
+                    "un'anagrafica archiviata non si unisce: ripristinala prima",
+                    organization_id=str(row.id),
+                )
+        if loser.hub_freelancer_id is not None and survivor.hub_freelancer_id is not None:
+            raise Conflict(
+                ENTITY,
+                "le due anagrafiche sono due freelance diversi dell'hub",
+                survivor_hub_freelancer_id=str(survivor.hub_freelancer_id),
+                loser_hub_freelancer_id=str(loser.hub_freelancer_id),
+            )
+        survivor_name, loser_name = survivor.legal_name, loser.legal_name
+
+        try:
+            outcome = OrganizationMerge(self.session).run(survivor, loser, apply=not dry_run)
+            if dry_run:
+                # Nothing was written; this only lets go of the two row locks.
+                self.session.commit()
+                return self._merge_read(
+                    survivor_id, loser_id, survivor_name, loser_name, outcome, dry_run
+                )
+            self._record_merge(survivor, loser, outcome, actor)
+            self.session.commit()
+        except IntegrityError as exc:
+            self.session.rollback()
+            raise Conflict(
+                ENTITY,
+                "l'unione non e' riuscita: un'altra modifica ha toccato le due anagrafiche",
+                organization_id=str(survivor_id),
+            ) from exc
+        read = self._merge_read(survivor_id, loser_id, survivor_name, loser_name, outcome, dry_run)
+        read.survivor = OrganizationRead.model_validate(
+            self.session.get_one(Organization, survivor_id)
+        )
+        return read
+
+    def _record_merge(
+        self, survivor: Organization, loser: Organization, outcome: MergeOutcome, actor: Actor
+    ) -> None:
+        if outcome.shares_survivor:
+            self.activities.record(
+                ENTITY, survivor.id, "updated", actor, {"changed": ["legal_entity_id"]}
+            )
+        # The loser's timeline moved with the rest, so what it keeps is this one line: where
+        # everything went. The survivor's says what came in.
+        self.activities.record(
+            ENTITY,
+            loser.id,
+            "merged_into",
+            actor,
+            {"organization_id": str(survivor.id), "legal_name": survivor.legal_name},
+        )
+        self.activities.record(
+            ENTITY,
+            survivor.id,
+            "merged",
+            actor,
+            {
+                "organization_id": str(loser.id),
+                "legal_name": loser.legal_name,
+                "moved": outcome.moved,
+                "dropped": outcome.dropped,
+            },
+        )
+
+    @staticmethod
+    def _merge_read(
+        survivor_id: UUID,
+        loser_id: UUID,
+        survivor_name: str,
+        loser_name: str,
+        outcome: MergeOutcome,
+        dry_run: bool,
+    ) -> OrganizationMergeRead:
+        return OrganizationMergeRead(
+            dry_run=dry_run,
+            survivor_id=survivor_id,
+            survivor_name=survivor_name,
+            loser_id=loser_id,
+            loser_name=loser_name,
+            moved=outcome.moved,
+            total_moved=outcome.total_moved,
+            dropped=outcome.dropped,
+            roles=outcome.roles,
+            filled_fields=outcome.filled_fields,
+            custom_fields_added=outcome.custom_fields_added,
+            shares_survivor=outcome.shares_survivor,
+            moves_hub_freelancer_id=outcome.moves_hub_freelancer_id,
+        )
 
     # `list` must stay the last method defined in this class -- an unconditional
     # project rule (see `FieldDefinitionService.specs_for`'s docstring and

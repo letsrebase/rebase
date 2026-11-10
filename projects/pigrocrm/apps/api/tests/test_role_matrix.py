@@ -355,6 +355,13 @@ ROWS: list[Row] = [
     Row("DELETE", "/api/organizations/{organization_id}"),
     Row("PATCH", "/api/organizations/{organization_id}", body={}),
     Row("POST", "/api/organizations/{organization_id}/restore"),
+    # Folding two organizations into one (REB-995): an unscoped administrator's, first.
+    Row(
+        "POST",
+        "/api/organizations/{organization_id}/merge",
+        admin_only=True,
+        body={"loser_id": "__FAKE__", "dry_run": False},
+    ),
     Row(
         "POST",
         "/api/organizations/{organization_id}/people-from-mail",

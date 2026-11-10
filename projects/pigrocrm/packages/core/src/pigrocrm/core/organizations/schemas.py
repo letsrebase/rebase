@@ -303,3 +303,58 @@ class DuplicateGroupRead(BaseModel):
     country: str
     vat_key: str
     organizations: list[DuplicateOrganizationRead]
+
+
+class OrganizationMerge(BaseModel):
+    """What `POST /api/organizations/{survivor_id}/merge` takes: the organization to fold into
+    the one in the path. `dry_run` is true unless the caller says otherwise, so a call that
+    forgets it writes nothing."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    loser_id: UUID = Field(
+        description="The organization that is archived after everything it holds moves to the "
+        "survivor."
+    )
+    dry_run: bool = Field(
+        default=True,
+        description="True (the default) answers what would move and writes nothing; false does "
+        "the merge.",
+    )
+
+
+class OrganizationMergeRead(BaseModel):
+    """What a merge moved, or with `dry_run` what it would move."""
+
+    dry_run: bool
+    survivor_id: UUID
+    survivor_name: str
+    loser_id: UUID
+    loser_name: str
+    moved: dict[str, int] = Field(
+        description="Rows that now point at the survivor, by reference. Only references with at "
+        "least one row are listed."
+    )
+    total_moved: int
+    dropped: dict[str, int] = Field(
+        description="Rows the survivor already had an equal of, which are not carried over: the "
+        "same contact point, the same Gmail message link, an open automation task of the same "
+        "rule (archived)."
+    )
+    roles: list[str] = Field(description="The survivor's roles after the merge: both sets.")
+    filled_fields: list[str] = Field(
+        description="Fields the survivor had empty and takes from the loser."
+    )
+    custom_fields_added: list[str] = Field(
+        description="Custom field keys the survivor did not have and takes from the loser."
+    )
+    shares_survivor: bool = Field(
+        description="True when the two sit under different legal entities, so the survivor "
+        "becomes shared across them."
+    )
+    moves_hub_freelancer_id: bool = Field(
+        description="True when the loser's hub freelancer id passes to the survivor."
+    )
+    survivor: OrganizationRead | None = Field(
+        default=None, description="The survivor after the merge; absent on a dry run."
+    )

@@ -28,23 +28,33 @@ installation. An administrator of the whole space reads the same groups with
 
 ## Resolving them (a person)
 
-Nothing here merges or deletes: the merge (rewriting every foreign key and the polymorphic rows)
-is its own card. Read each group by the `legal_entity_id` of its rows, which the report prints,
-and decide what the pair is:
+REB-995 added the merge: `POST /api/organizations/{survivor_id}/merge` with `{"loser_id": ...}`
+or the `merge_organizations` tool (an administrator of the whole space; for a token,
+`full_access`). It moves every deal, contract, invoice, person, contact point, document, task,
+note, timeline entry, Gmail link, draft, due item and engagement of the loser to the survivor,
+joins the roles, fills what the survivor left empty, and archives the loser with a «merged»
+entry on the survivor's timeline and a «merged into» entry on the loser's.
 
-- **One company that two legal entities bill** (the rows sit under different legal entities):
-  do not archive either. **Share it**: an administrator sets the row's `legal_entity_id` to
-  `null` (`update_organization` with `legal_entity_id: null`, or `share_organization` in an
-  invoice import), which makes the organization visible to every legal entity. Then move what
-  hangs on the other row by hand until the merge tool exists, and archive that one (it refuses
-  while it has active deals). One row per company is the rule the index holds; two rows for
-  one company used by two legal entities is the state to leave.
-- **A real duplicate under one legal entity**: keep the row that carries the history, move what
-  belongs on it by hand, and **archive** the other (`archive_organization`).
-- **A typo**: correct the number on the wrong row.
+**Preview first.** `dry_run` is true unless sent as false: the answer lists what would move per
+kind (`moved`), what the survivor already has an equal of and is not carried (`dropped`: the
+same contact point, the same Gmail message link, an open automation task of the same rule), the
+joined `roles`, the fields filled from the loser, and `shares_survivor`. Nothing is written.
+Then send the same call with `dry_run: false`.
 
-Give the surviving row the roles of both (`update_organization`, `roles`). The next boot
-builds the index.
+Read each group by the `legal_entity_id` of its rows, which the report prints, and decide what
+the pair is:
+
+- **One company, two rows**: merge them. Keep as the survivor the row that carries the history
+  (usually the older one). When the rows sit under different legal entities, the survivor
+  becomes **shared** (`legal_entity_id` null) so both entities still see it; the preview says
+  `shares_survivor: true`. A freelancer's hub id passes to the survivor, and two rows that each
+  carry a different one are refused: they are two people.
+- **Two companies that happen to share a number** (a typo): correct the number on the wrong
+  row and do not merge.
+
+The merge is not undone by restoring the loser: what moved stays on the survivor, and restore
+refuses while the survivor holds the same VAT number. The next boot builds the index once the
+last duplicate is gone.
 
 A shared organization has no legal entity of its own, so what is created under it (a deal, a
 contract, a document) takes the legal entity its own request names, the default one otherwise.

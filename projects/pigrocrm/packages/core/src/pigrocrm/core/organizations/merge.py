@@ -1,0 +1,391 @@
+"""Folding one organization into another (REB-995, design `2026-11-09-suppliers-purchases-and-iva`
+§ 1, «Duplicates»): every row that points at the loser points at the survivor afterwards, and the
+loser is archived with a trace on both timelines.
+
+The same walk serves the preview and the merge, so the two cannot drift: with `apply` false it
+counts what each step would touch and writes nothing. The steps are `REFERENCES` (a foreign key
+column), `LINKED` (a polymorphic `entity_type` and `entity_id` pair, no foreign key) and the four
+that need a decision of their own: contact points, Gmail message links, open automation tasks
+and pending proposals. `test_organization_merge.py` walks the metadata and fails when a table
+gains a foreign key to `organizations` that none of them covers, which is how a later table (a
+purchase's `supplier_id`) is made to join the list the day it appears.
+
+This module takes no actor and commits nothing: `OrganizationService.merge` authorises, locks the
+two rows and owns the transaction.
+"""
+
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any, cast
+from uuid import UUID
+
+from sqlalchemy import Column, Table, and_, delete, exists, func, select, text, update
+from sqlalchemy.orm import Session
+
+from pigrocrm.core.activities.models import Activity
+from pigrocrm.core.collaborators.models import Engagement
+from pigrocrm.core.contact_points.models import ContactPoint
+from pigrocrm.core.contracts.models import Contract
+from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.documents.models import Document
+from pigrocrm.core.due_items.models import DueItem
+from pigrocrm.core.gmail.models import EmailDraft, GmailMessageLink
+from pigrocrm.core.invoices.models import Invoice
+from pigrocrm.core.notes.models import Note
+from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.people.models import Person
+from pigrocrm.core.tasks.models import Task
+
+ENTITY = "organization"
+
+
+@dataclass(frozen=True)
+class Reference:
+    """One foreign key column that points at `organizations.id`."""
+
+    label: str
+    column: Column[Any]
+
+
+def _col(model: Any, name: str) -> Column[Any]:
+    table: Table = model.__table__
+    return table.c[name]
+
+
+# Contact points and tasks are in their own steps below: a column that moves wholesale cannot
+# carry them, since a unique index on each decides who may stay.
+REFERENCES: tuple[Reference, ...] = (
+    Reference("deals", _col(Deal, "customer_id")),
+    Reference("contracts", _col(Contract, "customer_id")),
+    Reference("invoices", _col(Invoice, "customer_id")),
+    Reference("people", _col(Person, "customer_id")),
+    Reference("documents", _col(Document, "customer_id")),
+    Reference("due_items", _col(DueItem, "organization_id")),
+    Reference("engagements_freelancer", _col(Engagement, "freelancer_id")),
+    Reference("engagements_client", _col(Engagement, "client_organization_id")),
+)
+
+# Not foreign keys: the row a polymorphic pair names depends on `entity_type`.
+LINKED: tuple[tuple[str, Any], ...] = (
+    ("notes", Note),
+    ("activities", Activity),
+    ("email_drafts", EmailDraft),
+)
+
+# What the steps with a decision of their own are called in the preview.
+CONTACT_POINTS = "contact_points"
+TASKS = "tasks"
+GMAIL_LINKS = "gmail_message_links"
+PROPOSALS = "proposals"
+
+# Foreign keys to `organizations.id` that the steps above and below cover, by `table.column`.
+COVERED_COLUMNS: frozenset[str] = frozenset(
+    {f"{ref.column.table.name}.{ref.column.name}" for ref in REFERENCES}
+    | {
+        f"{_col(ContactPoint, 'customer_id').table.name}.customer_id",
+        f"{_col(Task, 'customer_id').table.name}.customer_id",
+    }
+)
+
+# Fields copied from the loser when the survivor's are empty, each group together because its
+# members only mean something side by side.
+FILL_GROUPS: tuple[tuple[str, ...], ...] = (
+    ("tax_code",),
+    ("certified_email",),
+    ("website",),
+    ("status",),
+    ("address", "postal_code", "city", "province"),
+    ("payment_days", "payment_end_of_month"),
+    ("supplier_payment_days", "supplier_payment_end_of_month"),
+    ("supplier_kind", "supplier_area", "supplier_supplies"),
+    ("customer_kind", "sdi_code"),
+    ("owner_id",),
+)
+# A group is filled when its first field is empty on the survivor and set on the loser, except
+# the customer pair, whose first field (`customer_kind`) says what the second means: both must
+# be empty on the survivor, so a public body's six-character code never lands beside a business.
+_PAIR_NEEDS_BOTH_EMPTY = ("customer_kind", "sdi_code")
+
+
+@dataclass
+class MergeOutcome:
+    moved: dict[str, int] = field(default_factory=dict)
+    dropped: dict[str, int] = field(default_factory=dict)
+    roles: list[str] = field(default_factory=list)
+    filled_fields: list[str] = field(default_factory=list)
+    custom_fields_added: list[str] = field(default_factory=list)
+    shares_survivor: bool = False
+    moves_hub_freelancer_id: bool = False
+
+    @property
+    def total_moved(self) -> int:
+        return sum(self.moved.values())
+
+
+def _count(session: Session, column: Column[Any], value: UUID) -> int:
+    return int(
+        session.execute(
+            select(func.count()).select_from(column.table).where(column == value)
+        ).scalar_one()
+    )
+
+
+def _note(outcome: MergeOutcome, bucket: str, label: str, count: int) -> None:
+    if count:
+        target = outcome.moved if bucket == "moved" else outcome.dropped
+        target[label] = target.get(label, 0) + count
+
+
+class OrganizationMerge:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def run(self, survivor: Organization, loser: Organization, *, apply: bool) -> MergeOutcome:
+        outcome = MergeOutcome()
+        survivor_id, loser_id = survivor.id, loser.id
+
+        for reference in REFERENCES:
+            self._move_column(
+                outcome, reference.label, reference.column, loser_id, survivor_id, apply
+            )
+        self._tasks(outcome, loser_id, survivor_id, apply)
+        self._contact_points(outcome, loser_id, survivor_id, apply)
+        self._gmail_links(outcome, loser_id, survivor_id, apply)
+        for label, model in LINKED:
+            self._move_linked(outcome, label, model, loser_id, survivor_id, apply)
+        self._proposals(outcome, loser_id, survivor_id, apply)
+        self._fields(outcome, survivor, loser, apply)
+        return outcome
+
+    # -- foreign keys ----------------------------------------------------------------------
+
+    def _move_column(
+        self,
+        outcome: MergeOutcome,
+        label: str,
+        column: Column[Any],
+        loser_id: UUID,
+        survivor_id: UUID,
+        apply: bool,
+    ) -> None:
+        if apply:
+            result = self.session.execute(
+                update(column.table).where(column == loser_id).values({column.name: survivor_id})
+            )
+            _note(outcome, "moved", label, int(result.rowcount))  # type: ignore[attr-defined]
+        else:
+            _note(outcome, "moved", label, _count(self.session, column, loser_id))
+
+    def _tasks(self, outcome: MergeOutcome, loser_id: UUID, survivor_id: UUID, apply: bool) -> None:
+        """An open task an automation rule made is unique per rule and subject
+        (`uq_tasks_rule_open`): the loser's, when the survivor already has one for the same
+        rule, is archived and then moved with the rest, so none of them is lost silently and
+        none collides."""
+        table = cast(Table, Task.__table__)
+        mine = table.alias("mine")
+        collides = and_(
+            table.c.customer_id == loser_id,
+            table.c.rule.is_not(None),
+            table.c.status == "open",
+            table.c.deleted_at.is_(None),
+            exists().where(
+                mine.c.customer_id == survivor_id,
+                mine.c.rule == table.c.rule,
+                mine.c.status == "open",
+                mine.c.deleted_at.is_(None),
+            ),
+        )
+        if apply:
+            result = self.session.execute(
+                update(table).where(collides).values(deleted_at=datetime.now(UTC))
+            )
+            dropped = int(result.rowcount)  # type: ignore[attr-defined]
+        else:
+            dropped = int(
+                self.session.execute(
+                    select(func.count()).select_from(table).where(collides)
+                ).scalar_one()
+            )
+        _note(outcome, "dropped", TASKS, dropped)
+        self._move_column(outcome, TASKS, table.c.customer_id, loser_id, survivor_id, apply)
+
+    # -- contact points --------------------------------------------------------------------
+
+    def _contact_points(
+        self, outcome: MergeOutcome, loser_id: UUID, survivor_id: UUID, apply: bool
+    ) -> None:
+        """A way to reach the survivor it already has is dropped; the others move after its own,
+        a loser's primary stays primary only for a kind the survivor has no primary in."""
+        theirs = list(
+            self.session.scalars(
+                select(ContactPoint)
+                .where(ContactPoint.customer_id == survivor_id)
+                .order_by(ContactPoint.position)
+            )
+        )
+        known = {(point.kind, point.normalized) for point in theirs}
+        has_primary = {point.kind for point in theirs if point.is_primary}
+        has_any = {point.kind for point in theirs}
+        position = max((point.position for point in theirs), default=-1)
+        moving = list(
+            self.session.scalars(
+                select(ContactPoint)
+                .where(ContactPoint.customer_id == loser_id)
+                .order_by(ContactPoint.position)
+            )
+        )
+        dropped = 0
+        moved = 0
+        for point in moving:
+            key = (point.kind, point.normalized)
+            if key in known:
+                dropped += 1
+                if apply:
+                    self.session.delete(point)
+                continue
+            known.add(key)
+            moved += 1
+            primary = point.kind not in has_primary and (
+                point.is_primary or point.kind not in has_any
+            )
+            has_any.add(point.kind)
+            if primary:
+                has_primary.add(point.kind)
+            if apply:
+                position += 1
+                point.customer_id = survivor_id
+                point.position = position
+                point.is_primary = primary
+        if apply:
+            self.session.flush()
+        _note(outcome, "moved", CONTACT_POINTS, moved)
+        _note(outcome, "dropped", CONTACT_POINTS, dropped)
+
+    # -- polymorphic rows ------------------------------------------------------------------
+
+    def _gmail_links(
+        self, outcome: MergeOutcome, loser_id: UUID, survivor_id: UUID, apply: bool
+    ) -> None:
+        """A mail the survivor is already linked to is linked once (`uq_gmail_message_links_
+        triple`): the loser's second link is dropped."""
+        table = cast(Table, GmailMessageLink.__table__)
+        mine = table.alias("mine")
+        duplicated = and_(
+            table.c.entity_type == ENTITY,
+            table.c.entity_id == loser_id,
+            exists().where(
+                mine.c.entity_type == ENTITY,
+                mine.c.entity_id == survivor_id,
+                mine.c.gmail_message_id == table.c.gmail_message_id,
+            ),
+        )
+        if apply:
+            result = self.session.execute(delete(table).where(duplicated))
+            dropped = int(result.rowcount)  # type: ignore[attr-defined]
+        else:
+            dropped = int(
+                self.session.execute(
+                    select(func.count()).select_from(table).where(duplicated)
+                ).scalar_one()
+            )
+        _note(outcome, "dropped", GMAIL_LINKS, dropped)
+        self._move_linked(outcome, GMAIL_LINKS, GmailMessageLink, loser_id, survivor_id, apply)
+
+    def _move_linked(
+        self,
+        outcome: MergeOutcome,
+        label: str,
+        model: Any,
+        loser_id: UUID,
+        survivor_id: UUID,
+        apply: bool,
+    ) -> None:
+        table = cast(Table, model.__table__)
+        where = and_(table.c.entity_type == ENTITY, table.c.entity_id == loser_id)
+        if apply:
+            result = self.session.execute(update(table).where(where).values(entity_id=survivor_id))
+            _note(outcome, "moved", label, int(result.rowcount))  # type: ignore[attr-defined]
+        else:
+            _note(
+                outcome,
+                "moved",
+                label,
+                int(
+                    self.session.execute(
+                        select(func.count()).select_from(table).where(where)
+                    ).scalar_one()
+                ),
+            )
+
+    def _proposals(
+        self, outcome: MergeOutcome, loser_id: UUID, survivor_id: UUID, apply: bool
+    ) -> None:
+        """A contract proposal still waiting names its customer inside `proposed_fields`; a
+        decided one is history and keeps what it said."""
+        params = {"loser": str(loser_id), "survivor": str(survivor_id)}
+        where = (
+            "status = 'pending' AND target_type = 'contract' "
+            "AND proposed_fields #>> '{contract,customer_id}' = :loser"
+        )
+        if apply:
+            result = self.session.execute(
+                text(
+                    "UPDATE proposals SET proposed_fields = jsonb_set(proposed_fields, "
+                    "'{contract,customer_id}', to_jsonb(CAST(:survivor AS text))) WHERE " + where
+                ),
+                params,
+            )
+            count = int(result.rowcount)  # type: ignore[attr-defined]
+        else:
+            count = int(
+                self.session.execute(
+                    text("SELECT count(*) FROM proposals WHERE " + where), params
+                ).scalar_one()
+            )
+        _note(outcome, "moved", PROPOSALS, count)
+
+    # -- the row itself --------------------------------------------------------------------
+
+    def _fields(
+        self, outcome: MergeOutcome, survivor: Organization, loser: Organization, apply: bool
+    ) -> None:
+        outcome.roles = list(survivor.roles) + [
+            role for role in loser.roles if role not in survivor.roles
+        ]
+        outcome.shares_survivor = (
+            survivor.legal_entity_id is not None
+            and survivor.legal_entity_id != loser.legal_entity_id
+        )
+        outcome.moves_hub_freelancer_id = (
+            loser.hub_freelancer_id is not None and survivor.hub_freelancer_id is None
+        )
+        outcome.custom_fields_added = sorted(
+            key for key in loser.custom_fields if key not in survivor.custom_fields
+        )
+        for group in FILL_GROUPS:
+            if group == _PAIR_NEEDS_BOTH_EMPTY:
+                empty = all(getattr(survivor, name) is None for name in group)
+            else:
+                empty = getattr(survivor, group[0]) is None
+            if empty and getattr(loser, group[0]) is not None:
+                outcome.filled_fields.extend(group)
+        if not apply:
+            return
+        for name in outcome.filled_fields:
+            setattr(survivor, name, getattr(loser, name))
+        survivor.roles = outcome.roles
+        survivor.custom_fields = {**loser.custom_fields, **survivor.custom_fields}
+        if outcome.shares_survivor:
+            survivor.legal_entity_id = None
+        if survivor.is_withholding_agent is False and loser.is_withholding_agent:
+            survivor.is_withholding_agent = True
+        if outcome.moves_hub_freelancer_id:
+            # The unique index counts an archived row, so the loser lets go first.
+            hub_id = loser.hub_freelancer_id
+            loser.hub_freelancer_id = None
+            self.session.flush()
+            survivor.hub_freelancer_id = hub_id
+        loser.deleted_at = datetime.now(UTC)
+        self.session.flush()
+        self.session.expire(survivor, ["contact_points"])
+        self.session.expire(loser, ["contact_points"])

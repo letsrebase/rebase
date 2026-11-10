@@ -19,6 +19,9 @@ const KIND_LABELS: Record<string, string> = {
   updated: 'Modificato',
   deleted: 'Archiviato',
   restored: 'Ripristinato',
+  // REB-995: two organizations of one company folded into one.
+  merged: "Un'anagrafica è stata unita a questa",
+  merged_into: "Unita in un'altra anagrafica",
   stage_changed: 'Cambio stato',
   state_changed: 'Cambio stato',
   // Slice 9's invoice import. Named here rather than left to `humanize`, which would

@@ -9,6 +9,8 @@ from pigrocrm.core.organizations.schemas import (
     DuplicateGroupRead,
     OrganizationCreate,
     OrganizationListQuery,
+    OrganizationMerge,
+    OrganizationMergeRead,
     OrganizationPage,
     OrganizationRead,
     OrganizationsFromSuggestions,
@@ -117,6 +119,21 @@ def soft_delete(organization_id: UUID, session: SessionDep, actor: ActorDep) -> 
 @router.post("/{organization_id}/restore", response_model=OrganizationRead)
 def restore(organization_id: UUID, session: SessionDep, actor: ActorDep) -> OrganizationRead:
     return OrganizationService(session).restore(organization_id, actor)
+
+
+@router.post("/{organization_id}/merge", response_model=OrganizationMergeRead)
+def merge(
+    organization_id: UUID, data: OrganizationMerge, session: SessionDep, actor: ActorDep
+) -> OrganizationMergeRead:
+    """Folds the organization named by `loser_id` into the one in the path: every deal, contract,
+    invoice, person, contact point, document, task, note, timeline entry, Gmail link, draft, due
+    item and engagement that pointed at the loser points at the survivor, the roles are joined
+    and the loser is archived with a trace on both timelines. An administrator of the whole
+    space only. `dry_run` is true unless sent as false and answers what would move without
+    writing anything. Pairs to merge come from `GET /api/organizations/duplicates`."""
+    return OrganizationService(session).merge(
+        organization_id, data.loser_id, actor, dry_run=data.dry_run
+    )
 
 
 router.include_router(timeline_router("organization", id_param="organization_id"))
