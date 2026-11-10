@@ -14,12 +14,26 @@ This module takes no actor and commits nothing: `OrganizationService.merge` auth
 two rows and owns the transaction.
 """
 
+import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import Column, Table, and_, delete, exists, func, select, text, update
+from sqlalchemy import (
+    Column,
+    Table,
+    and_,
+    delete,
+    exists,
+    func,
+    literal,
+    literal_column,
+    select,
+    update,
+)
+from sqlalchemy import cast as sql_cast
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
@@ -34,6 +48,7 @@ from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.notes.models import Note
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
+from pigrocrm.core.proposals.models import Proposal
 from pigrocrm.core.tasks.models import Task
 
 ENTITY = "organization"
@@ -327,24 +342,26 @@ class OrganizationMerge:
     ) -> None:
         """A contract proposal still waiting names its customer inside `proposed_fields`; a
         decided one is history and keeps what it said."""
-        params = {"loser": str(loser_id), "survivor": str(survivor_id)}
-        where = (
-            "status = 'pending' AND target_type = 'contract' "
-            "AND proposed_fields #>> '{contract,customer_id}' = :loser"
-        )
+        named = Proposal.proposed_fields["contract"]["customer_id"].astext == str(loser_id)
+        waiting = and_(Proposal.status == "pending", Proposal.target_type == "contract", named)
         if apply:
             result = self.session.execute(
-                text(
-                    "UPDATE proposals SET proposed_fields = jsonb_set(proposed_fields, "
-                    "'{contract,customer_id}', to_jsonb(CAST(:survivor AS text))) WHERE " + where
-                ),
-                params,
+                update(Proposal)
+                .where(waiting)
+                .values(
+                    proposed_fields=func.jsonb_set(
+                        Proposal.proposed_fields,
+                        literal_column("'{contract,customer_id}'"),
+                        sql_cast(literal(json.dumps(str(survivor_id))), JSONB),
+                    )
+                )
+                .execution_options(synchronize_session=False)
             )
             count = int(result.rowcount)  # type: ignore[attr-defined]
         else:
             count = int(
                 self.session.execute(
-                    text("SELECT count(*) FROM proposals WHERE " + where), params
+                    select(func.count()).select_from(Proposal).where(waiting)
                 ).scalar_one()
             )
         _note(outcome, "moved", PROPOSALS, count)
