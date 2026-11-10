@@ -8,9 +8,10 @@ import datetime as dt
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.collaborators.models import LIVE_STATES, Engagement
+from pigrocrm.core.collaborators.models import LIVE_STATES, Engagement, LetterCounter
 from pigrocrm.core.collaborators.schemas import EngagementListQuery
 from pigrocrm.core.organizations.models import Organization
 
@@ -34,6 +35,20 @@ class EngagementRepository:
         self.session.add(engagement)
         self.session.flush()
         return engagement
+
+    def next_letter_number(self, year: int) -> str:
+        """The next letter number of `year`, `2026-014`: one upsert on the year's counter, so two
+        engagements created together never share a number, and a number once given is never given
+        again (a cancellation keeps its own)."""
+        last = self.session.execute(
+            pg_insert(LetterCounter)
+            .values(year=year, last=1)
+            .on_conflict_do_update(
+                index_elements=[LetterCounter.year], set_={"last": LetterCounter.last + 1}
+            )
+            .returning(LetterCounter.last)
+        ).scalar_one()
+        return f"{year}-{last:03d}"
 
     def by_hub_match(self, hub_match_id: UUID) -> Engagement | None:
         return self.session.execute(

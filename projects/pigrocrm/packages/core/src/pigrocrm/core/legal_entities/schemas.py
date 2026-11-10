@@ -29,6 +29,7 @@ TAX_REGIME_MAX_LENGTH = 200
 # block is still an unbounded text field, and a signature has no more use for 100 000
 # characters than a template variable name does.
 EMAIL_SIGNATURE_MAX_LENGTH = 2_000
+LEGAL_REPRESENTATIVE_MAX_LENGTH = 160
 
 
 class LegalEntityFields(BaseModel):
@@ -68,6 +69,11 @@ class LegalEntityFields(BaseModel):
     # clear them nor point them at somebody else's file. `update` leaves them as they are.
     email_signature: SafeStr | None = Field(default=None, max_length=EMAIL_SIGNATURE_MAX_LENGTH)
     tax_regime: SafeStr | None = Field(default=None, max_length=TAX_REGIME_MAX_LENGTH)
+    legal_representative: SafeStr | None = Field(
+        default=None,
+        max_length=LEGAL_REPRESENTATIVE_MAX_LENGTH,
+        description="Who signs for the entity: printed as the representative on its contracts",
+    )
     # REB-974: the last day of the fiscal year (31 December by default). Unlike the rest of the
     # row they are not replaced by a write that leaves them out: the two are a pair, a write
     # that names them sets both, and `null` or an omission keeps what the row holds (a new
@@ -133,6 +139,7 @@ class LegalEntityRead(BaseModel):
     signature_key: str | None
     email_signature: str | None
     tax_regime: str | None
+    legal_representative: str | None
     fiscal_year_end_month: int
     fiscal_year_end_day: int
     created_at: datetime

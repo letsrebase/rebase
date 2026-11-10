@@ -939,6 +939,13 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "spaces are not the titolare's CRM data, and an agent acting in one space has no "
         "business listing everybody else's"
     ),
+    ("LetterService", "create_letter"): (
+        "REB-1018: writes the engagement's letter as a legal document after a person has reviewed "
+        "the preview; an agent's route to it is `send_engagement_for_signature` (a later card)"
+    ),
+    ("LetterService", "create_framework_agreement"): (
+        "REB-1018: same as `create_letter`, for the freelancer's framework agreement"
+    ),
     ("EngagementService", "ensure"): (
         "the engagements door another product, the hub, calls under its own "
         "PIGROCRM_ENGAGEMENTS_TOKEN (spec 2026-09-25 §2.3): setting up a match's space, "

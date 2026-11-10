@@ -62,6 +62,31 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
+    def preview_engagement(
+        engagement_id: str, variables: dict[str, str | None] | None = None
+    ) -> dict[str, Any]:
+        """Render an engagement's letter as it would be written now, from the space's template for
+        its regime. Nothing is stored. Answers the text `version`, whether it is still a `draft`
+        (a draft is never sent), the letter `number`, the `markdown` and `blank`: the fields the
+        page prints as blank lines. `variables` are the template's free-text fields by name
+        (`attivita`, `luogo`, ...); the engagement, the parties and the issuer cannot be set.
+        The letter never carries the client's price.
+        """
+        return collaborators.preview_letter(context, engagement_id, variables)
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def preview_framework_agreement(
+        freelancer_id: str, letter_type: str | None = None
+    ) -> dict[str, Any]:
+        """Render a freelancer's framework agreement as it would be written now. Nothing is
+        stored. `letter_type`: ordinary or occasional, omitted following the freelancer's fiscal
+        kind. Same answer as `preview_engagement`.
+        """
+        return collaborators.preview_framework_agreement(context, freelancer_id, letter_type)
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
     def get_freelancer_availability(
         freelancer_id: str | None = None,
         hub_freelancer_id: str | None = None,

@@ -90,6 +90,7 @@ const KIND_LABELS: Record<string, string> = {
   deactivated: 'Disattivato',
   closed: 'Mese chiuso',
   created_from_template: 'Creato da un template',
+  letter_created: 'Lettera scritta',
   day_approved: 'Giornata approvata',
   email_template_saved: 'Modello di email salvato',
   gap_declared: 'Numero mancante dichiarato',

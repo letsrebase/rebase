@@ -3810,3 +3810,62 @@ def test_0091_adds_the_payroll_inputs_the_payslips_and_the_staff_counterparty(
         assert _tables_shape(url, {"staff_payslips"}) == (set(), set(), set())
         upgrade(config, "0091")
         assert _payroll_columns(url) == _PAYROLL_COLUMNS
+
+
+def _letters_shape(url: str) -> tuple[bool, bool, bool, bool]:
+    """Whether `letter_counters`, `templates.letter_type`, `documents.engagement_id` and
+    `legal_entities.legal_representative` exist."""
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            table = connection.execute(
+                text("SELECT to_regclass('public.letter_counters') IS NOT NULL")
+            ).scalar_one()
+            columns = {
+                (row[0], row[1])
+                for row in connection.execute(
+                    text("SELECT table_name, column_name FROM information_schema.columns")
+                )
+            }
+    finally:
+        engine.dispose()
+    return (
+        bool(table),
+        ("templates", "letter_type") in columns,
+        ("documents", "engagement_id") in columns,
+        ("legal_entities", "legal_representative") in columns,
+    )
+
+
+def test_0092_adds_the_letter_columns_and_downgrade_removes_them(pigrocrm_postgres: Any) -> None:
+    """REB-1018: nothing backfilled; the template check keeps the regime on the two letter types."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0091")
+        assert _letters_shape(url) == (False, False, False, False)
+        upgrade(config, "0092")
+        assert _letters_shape(url) == (True, True, True, True)
+        engine = create_engine(url)
+        try:
+            insert = text(
+                "INSERT INTO templates (id, name, type, body_markdown, declared_variables, "
+                "active, letter_type) VALUES (gen_random_uuid(), :n, :t, 'x', '[]', true, :l)"
+            )
+            for bad in (
+                {"n": "a", "t": "engagement_letter", "l": None},
+                {"n": "b", "t": "offer", "l": "ordinary"},
+                {"n": "c", "t": "engagement_letter", "l": "weekly"},
+            ):
+                with pytest.raises(IntegrityError), engine.begin() as connection:
+                    connection.execute(insert, bad)
+            with engine.begin() as connection:
+                connection.execute(insert, {"n": "d", "t": "engagement_letter", "l": "ordinary"})
+            with pytest.raises(IntegrityError), engine.begin() as connection:
+                connection.execute(insert, {"n": "e", "t": "engagement_letter", "l": "ordinary"})
+        finally:
+            engine.dispose()
+        downgrade(config, "0091")
+        assert _letters_shape(url) == (False, False, False, False)
+        upgrade(config, "0092")
+        assert _letters_shape(url)[0] is True

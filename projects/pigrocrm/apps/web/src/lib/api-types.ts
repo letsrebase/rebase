@@ -5098,6 +5098,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/engagements/{engagement_id}/letter/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Engagement Letter
+         * @description The engagement's letter as it would be written now, from the space's template for its
+         *     regime, with no client price in it. Nothing is stored; `blank` lists the fields the page
+         *     prints as blank lines and `draft` says the text itself is still a draft.
+         */
+        post: operations["preview_engagement_letter_api_engagements__engagement_id__letter_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/engagements/{engagement_id}/letter/preview/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Engagement Letter Pdf
+         * @description The PDF of `.../letter/preview`.
+         */
+        post: operations["preview_engagement_letter_pdf_api_engagements__engagement_id__letter_preview_pdf_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/engagements/{engagement_id}/letter": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Engagement Letter
+         * @description Writes the engagement's letter as a document of the freelancer. Once per engagement, while
+         *     it is a draft, from a final text and the freelancer's complete tax data.
+         */
+        post: operations["create_engagement_letter_api_engagements__engagement_id__letter_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/freelancers/{freelancer_id}/framework-agreement/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Framework Agreement
+         * @description The freelancer's framework agreement as it would be written now. Nothing is stored.
+         */
+        post: operations["preview_framework_agreement_api_freelancers__freelancer_id__framework_agreement_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/freelancers/{freelancer_id}/framework-agreement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Framework Agreement
+         * @description Writes the freelancer's framework agreement as a document. It hangs on no engagement; a
+         *     freelancer holds one of each regime.
+         */
+        post: operations["create_framework_agreement_api_freelancers__freelancer_id__framework_agreement_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/inbox/upload": {
         parameters: {
             query?: never;
@@ -9751,6 +9855,18 @@ export interface components {
              */
             updated_at?: string | null;
         };
+        /**
+         * FrameworkAgreementRequest
+         * @description Which regime a framework agreement is written for. Omitted, it follows the freelancer's
+         *     fiscal kind: `occasional` for an occasional freelancer, `ordinary` otherwise.
+         */
+        FrameworkAgreementRequest: {
+            /**
+             * Letter Type
+             * @description ordinary | occasional
+             */
+            letter_type?: string | null;
+        };
         /** FreelancerAvailability */
         FreelancerAvailability: {
             /**
@@ -11087,6 +11203,11 @@ export interface components {
             email_signature?: string | null;
             /** Tax Regime */
             tax_regime?: string | null;
+            /**
+             * Legal Representative
+             * @description Who signs for the entity: printed as the representative on its contracts
+             */
+            legal_representative?: string | null;
             /** Fiscal Year End Month */
             fiscal_year_end_month?: number | null;
             /** Fiscal Year End Day */
@@ -11146,6 +11267,8 @@ export interface components {
             email_signature: string | null;
             /** Tax Regime */
             tax_regime: string | null;
+            /** Legal Representative */
+            legal_representative: string | null;
             /** Fiscal Year End Month */
             fiscal_year_end_month: number;
             /** Fiscal Year End Day */
@@ -11210,6 +11333,8 @@ export interface components {
             email_signature: string | null;
             /** Tax Regime */
             tax_regime: string | null;
+            /** Legal Representative */
+            legal_representative: string | null;
             /** Fiscal Year End Month */
             fiscal_year_end_month: number;
             /** Fiscal Year End Day */
@@ -11271,6 +11396,11 @@ export interface components {
             email_signature?: string | null;
             /** Tax Regime */
             tax_regime?: string | null;
+            /**
+             * Legal Representative
+             * @description Who signs for the entity: printed as the representative on its contracts
+             */
+            legal_representative?: string | null;
             /** Fiscal Year End Month */
             fiscal_year_end_month?: number | null;
             /** Fiscal Year End Day */
@@ -11280,6 +11410,70 @@ export interface components {
              * @description The `updated_at` read on the row this change starts from: if someone else saved in the meantime, the request is rejected with 409 `stale_row`. Omitted, no check.
              */
             updated_at?: string | null;
+        };
+        /**
+         * LetterPreview
+         * @description A letter rendered and not stored: what an administrator checks before it exists as a
+         *     document. `blank` lists the fields the page prints as blank lines (the signatures among
+         *     them), `draft` says the text itself is still a draft and could not be sent.
+         */
+        LetterPreview: {
+            /**
+             * Kind
+             * @description framework_agreement | engagement_letter
+             */
+            kind: string;
+            /** Letter Type */
+            letter_type: string;
+            /**
+             * Template Id
+             * Format: uuid
+             */
+            template_id: string;
+            /** Text Version */
+            text_version: string;
+            /** Draft */
+            draft: boolean;
+            /** Number */
+            number: string | null;
+            /** Blank */
+            blank: string[];
+            /** Markdown */
+            markdown: string;
+        };
+        /**
+         * LetterRead
+         * @description A letter as stored: the document, which regime and version of the text wrote it, its
+         *     number and the fields still blank.
+         */
+        LetterRead: {
+            document: components["schemas"]["DocumentRead"];
+            /** Engagement Id */
+            engagement_id: string | null;
+            /** Letter Type */
+            letter_type: string;
+            /** Text Version */
+            text_version: string;
+            /** Number */
+            number: string | null;
+            /** Blank */
+            blank: string[];
+        };
+        /**
+         * LetterRequest
+         * @description The fields an administrator writes for one letter: the text's own free-text fields
+         *     (`attivita`, `risultati`, `luogo`, ...), by the name the template declares them under. What the
+         *     engagement, the freelancer, the client and the legal entity already say is never typed here
+         *     and cannot be overridden.
+         */
+        LetterRequest: {
+            /**
+             * Variables
+             * @description Free-text fields of the template, by name; a field left out prints as a blank
+             */
+            variables?: {
+                [key: string]: string | null;
+            };
         };
         /** LinkRequest */
         LinkRequest: {
@@ -14889,7 +15083,7 @@ export interface components {
              * @default offer
              * @enum {string}
              */
-            type: "offer" | "contract" | "minutes" | "document" | "hours_report" | "email" | "payment_reminder";
+            type: "offer" | "contract" | "minutes" | "document" | "hours_report" | "email" | "payment_reminder" | "framework_agreement" | "engagement_letter";
             /**
              * Body Markdown
              * @default
@@ -14902,6 +15096,11 @@ export interface components {
              * @default true
              */
             active: boolean;
+            /**
+             * Letter Type
+             * @description ordinary | occasional: required for framework_agreement and engagement_letter
+             */
+            letter_type?: ("ordinary" | "occasional") | null;
         };
         /**
          * TemplateDescription
@@ -14955,6 +15154,8 @@ export interface components {
             declared_variables: components["schemas"]["TemplateVariable"][];
             /** Active */
             active: boolean;
+            /** Letter Type */
+            letter_type: string | null;
             /**
              * Created At
              * Format: date-time
@@ -14971,13 +15172,15 @@ export interface components {
             /** Name */
             name?: string | null;
             /** Type */
-            type?: ("offer" | "contract" | "minutes" | "document" | "hours_report" | "email" | "payment_reminder") | null;
+            type?: ("offer" | "contract" | "minutes" | "document" | "hours_report" | "email" | "payment_reminder" | "framework_agreement" | "engagement_letter") | null;
             /** Body Markdown */
             body_markdown?: string | null;
             /** Declared Variables */
             declared_variables?: components["schemas"]["TemplateVariable"][] | null;
             /** Active */
             active?: boolean | null;
+            /** Letter Type */
+            letter_type?: ("ordinary" | "occasional") | null;
         };
         /**
          * TemplateVariable
@@ -16056,6 +16259,8 @@ export interface components {
             collection_days: number | null;
             /** State */
             state: string;
+            /** Letter Number */
+            letter_number: string | null;
             /** Missing */
             missing: string[];
             /** Warnings */
@@ -27423,7 +27628,7 @@ export interface operations {
                 search?: string | null;
                 limit?: number;
                 cursor?: string | null;
-                type?: ("offer" | "contract" | "minutes" | "document" | "hours_report" | "email" | "payment_reminder") | null;
+                type?: ("offer" | "contract" | "minutes" | "document" | "hours_report" | "email" | "payment_reminder" | "framework_agreement" | "engagement_letter") | null;
                 include_inactive?: boolean;
             };
             header?: never;
@@ -54123,6 +54328,621 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OrganizationRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_engagement_letter_api_engagements__engagement_id__letter_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LetterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LetterPreview"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_engagement_letter_pdf_api_engagements__engagement_id__letter_preview_pdf_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LetterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/pdf": unknown;
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_engagement_letter_api_engagements__engagement_id__letter_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LetterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LetterRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_framework_agreement_api_freelancers__freelancer_id__framework_agreement_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                freelancer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FrameworkAgreementRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LetterPreview"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_framework_agreement_api_freelancers__freelancer_id__framework_agreement_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                freelancer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FrameworkAgreementRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LetterRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

@@ -84,8 +84,14 @@ const DOCUMENT_TYPE_WORDS: Record<DocumentType, string> = {
   hours_report: 'Rapporto ore',
 }
 
-/** The two template types no document can be (`TemplateType` in `templates/schemas.py`). */
-const TEMPLATE_ONLY_WORDS = { email: 'Email', payment_reminder: 'Sollecito' }
+/** The template types no document can be (`TemplateType` in `templates/schemas.py`): letters are
+ * written by their own service. */
+const TEMPLATE_ONLY_WORDS = {
+  email: 'Email',
+  payment_reminder: 'Sollecito',
+  framework_agreement: 'Contratto quadro',
+  engagement_letter: 'Lettera di incarico',
+}
 
 /** A word for every type a document or a template can have. */
 export const DOCUMENT_TYPE_LABELS: Record<string, string> = {

@@ -12,7 +12,16 @@ import datetime as dt
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, Date, ForeignKey, Index, Integer, Numeric, String, text
+from sqlalchemy import (
+    CheckConstraint,
+    Date,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
@@ -49,6 +58,7 @@ PAYMENT_DAYS_LIMIT_MONTH_END = 30
 COLLECTION_DAYS_LIMIT = 60
 
 ROLE_MAX_LENGTH = 200
+LETTER_NUMBER_LENGTH = 10
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:
@@ -71,6 +81,7 @@ class Engagement(Base, PrimaryKeyMixin, TimestampMixin):
     __tablename__ = "engagements"
     __table_args__ = (
         Index("uq_engagements_hub_match_id", "hub_match_id", unique=True),
+        Index("uq_engagements_letter_number", "letter_number", unique=True),
         Index("ix_engagements_freelancer_dates", "freelancer_id", "starts_on", "ends_on"),
         CheckConstraint(_in("state", ENGAGEMENT_STATES), name="ck_engagements_state"),
         CheckConstraint(_in("fee_unit", FEE_UNITS), name="ck_engagements_fee_unit"),
@@ -133,6 +144,10 @@ class Engagement(Base, PrimaryKeyMixin, TimestampMixin):
     state: Mapped[str] = mapped_column(
         String(20), nullable=False, default="draft", server_default=text("'draft'")
     )
+    # `YYYY-NNN`, drawn from `letter_counters` when the engagement is created and never given
+    # back by a cancellation (the hub's rule): null only on an engagement written before the
+    # letters moved here.
+    letter_number: Mapped[str | None] = mapped_column(String(LETTER_NUMBER_LENGTH), default=None)
 
     @property
     def missing(self) -> list[str]:
@@ -143,3 +158,15 @@ class Engagement(Base, PrimaryKeyMixin, TimestampMixin):
         if self.deal_id is None and self.contract_id is None:
             out.append("client")
         return out
+
+
+class LetterCounter(Base):
+    """The last letter number given in a year: `2026-014` is the fourteenth letter of 2026. One
+    row per year, advanced by an upsert so two engagements created together never share a number;
+    a cancelled engagement keeps its number (design § 6, `create_engagement` draws it)."""
+
+    __tablename__ = "letter_counters"
+    __table_args__ = (CheckConstraint("last >= 1", name="ck_letter_counters_positive"),)
+
+    year: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    last: Mapped[int] = mapped_column(Integer, nullable=False)

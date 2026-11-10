@@ -9,9 +9,10 @@ import datetime as dt
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from pydantic import BaseModel, Field
 
+from pigrocrm.core.collaborators.letter_service import LetterService
 from pigrocrm.core.collaborators.schemas import (
     AVAILABILITY_MAX_WEEKS,
     EngagementCreate,
@@ -20,13 +21,24 @@ from pigrocrm.core.collaborators.schemas import (
     EngagementRead,
     EngagementStateChange,
     EngagementUpdate,
+    FrameworkAgreementRequest,
     FreelancerAvailability,
     FreelancerTaxData,
+    LetterPreview,
+    LetterRead,
+    LetterRequest,
 )
 from pigrocrm.core.collaborators.service import EngagementService, FreelancerService
 from pigrocrm.core.organizations.schemas import OrganizationRead
 from pigrocrm.core.validation import SafeStr
-from pigrocrm_api.deps import ActorDep, SessionDep, get_actor, module_guard
+from pigrocrm_api.deps import (
+    ActorDep,
+    SessionDep,
+    SettingsDep,
+    StorageDep,
+    get_actor,
+    module_guard,
+)
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import KeysetParams
 
@@ -127,3 +139,97 @@ def set_freelancer_tax_data(
 ) -> OrganizationRead:
     """The tax data the letters print, and the fiscal kind. Only what is sent changes."""
     return FreelancerService(session).set_tax_data(freelancer_id, data, actor)
+
+
+@router.post("/engagements/{engagement_id}/letter/preview", response_model=LetterPreview)
+def preview_engagement_letter(
+    engagement_id: UUID,
+    data: LetterRequest,
+    session: SessionDep,
+    actor: ActorDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+) -> LetterPreview:
+    """The engagement's letter as it would be written now, from the space's template for its
+    regime, with no client price in it. Nothing is stored; `blank` lists the fields the page
+    prints as blank lines and `draft` says the text itself is still a draft."""
+    return LetterService(session, storage, settings).preview_letter(
+        engagement_id, data.variables, actor
+    )
+
+
+@router.post(
+    "/engagements/{engagement_id}/letter/preview/pdf",
+    response_class=Response,
+    responses={200: {"content": {"application/pdf": {}}}},
+)
+def preview_engagement_letter_pdf(
+    engagement_id: UUID,
+    data: LetterRequest,
+    session: SessionDep,
+    actor: ActorDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+) -> Response:
+    """The PDF of `.../letter/preview`."""
+    preview = LetterService(session, storage, settings).preview_letter(
+        engagement_id, data.variables, actor
+    )
+    return Response(content=preview.pdf, media_type="application/pdf")
+
+
+@router.post(
+    "/engagements/{engagement_id}/letter",
+    response_model=LetterRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_engagement_letter(
+    engagement_id: UUID,
+    data: LetterRequest,
+    session: SessionDep,
+    actor: ActorDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+) -> LetterRead:
+    """Writes the engagement's letter as a document of the freelancer. Once per engagement, while
+    it is a draft, from a final text and the freelancer's complete tax data."""
+    return LetterService(session, storage, settings).create_letter(
+        engagement_id, data.variables, actor
+    )
+
+
+@router.post(
+    "/freelancers/{freelancer_id}/framework-agreement/preview", response_model=LetterPreview
+)
+def preview_framework_agreement(
+    freelancer_id: UUID,
+    data: FrameworkAgreementRequest,
+    session: SessionDep,
+    actor: ActorDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+) -> LetterPreview:
+    """The freelancer's framework agreement as it would be written now. Nothing is stored."""
+    return LetterService(session, storage, settings).preview_framework_agreement(
+        freelancer_id, data.letter_type, actor
+    )
+
+
+@router.post(
+    "/freelancers/{freelancer_id}/framework-agreement",
+    response_model=LetterRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_framework_agreement(
+    freelancer_id: UUID,
+    data: FrameworkAgreementRequest,
+    session: SessionDep,
+    actor: ActorDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+) -> LetterRead:
+    """Writes the freelancer's framework agreement as a document. It hangs on no engagement; a
+    freelancer holds one of each regime."""
+    return LetterService(session, storage, settings).create_framework_agreement(
+        freelancer_id, data.letter_type, actor
+    )

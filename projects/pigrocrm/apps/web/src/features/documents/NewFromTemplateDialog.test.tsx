@@ -13,6 +13,7 @@ const TEMPLATE: Template = {
   type: 'offer',
   body_markdown: 'Oggetto: {{oggetto}}',
   declared_variables: [],
+  letter_type: null,
   active: true,
   created_at: '2026-08-10T09:00:00Z',
   updated_at: '2026-08-10T09:00:00Z',

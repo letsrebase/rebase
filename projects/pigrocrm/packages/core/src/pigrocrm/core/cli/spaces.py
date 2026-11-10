@@ -146,10 +146,13 @@ def _furnish_registry(settings: Settings) -> None:
                 continue
         _say_vat_index(slug, vat_index)
         if report.seeded:
-            print(
+            seeded = (
                 f"{slug}: statuses {report.stages}, templates {report.templates}, "
                 f"categories {report.categories}, legal entities {report.legal_entities}"
             )
+            if report.collaborator_templates:
+                seeded += f", collaborator templates {report.collaborator_templates}"
+            print(seeded)
         else:
             print(f"{slug}: already in place")
 

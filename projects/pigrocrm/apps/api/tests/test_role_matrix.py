@@ -597,6 +597,16 @@ ROWS: list[Row] = [
         admin_only=True,
         body={"state": "cancelled"},
     ),
+    Row("POST", "/api/engagements/{engagement_id}/letter", admin_only=True, body={}),
+    Row("POST", "/api/engagements/{engagement_id}/letter/preview", admin_only=True, body={}),
+    Row("POST", "/api/engagements/{engagement_id}/letter/preview/pdf", admin_only=True, body={}),
+    Row("POST", "/api/freelancers/{freelancer_id}/framework-agreement", admin_only=True, body={}),
+    Row(
+        "POST",
+        "/api/freelancers/{freelancer_id}/framework-agreement/preview",
+        admin_only=True,
+        body={},
+    ),
     Row(
         "PUT", "/api/freelancers/{freelancer_id}/tax-data", admin_only=True, body={"tax_code": "X"}
     ),
@@ -1178,6 +1188,9 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
         # REB-976: updating a draft engagement is the administrator's token's; the other three
         # engagement writes need `full_access`.
         ("PATCH", "/api/engagements/{engagement_id}"),
+        ("POST", "/api/engagements/{engagement_id}/letter/preview"),
+        ("POST", "/api/engagements/{engagement_id}/letter/preview/pdf"),
+        ("POST", "/api/freelancers/{freelancer_id}/framework-agreement/preview"),
     }
 )
 

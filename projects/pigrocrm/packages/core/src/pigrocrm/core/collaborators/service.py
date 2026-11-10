@@ -94,7 +94,11 @@ class EngagementService:
         if data.hub_match_id is not None and self.repo.by_hub_match(data.hub_match_id):
             raise self._match_taken(data.hub_match_id)
         engagement = Engagement(
-            freelancer_id=freelancer.id, hub_match_id=data.hub_match_id, state="draft", **values
+            freelancer_id=freelancer.id,
+            hub_match_id=data.hub_match_id,
+            state="draft",
+            letter_number=self.repo.next_letter_number(today_local().year),
+            **values,
         )
         try:
             with self.session.begin_nested():

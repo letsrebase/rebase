@@ -34,7 +34,14 @@ TemplateType = Literal[
     "hours_report",
     "email",
     "payment_reminder",
+    "framework_agreement",
+    "engagement_letter",
 ]
+
+# The regime a framework agreement or an engagement letter is written for: an `ordinary` freelancer
+# invoices (VAT number), an `occasional` one is paid on a receipt. Required on those two types and
+# refused on every other (the `ck_templates_letter_type` check, and the service in words).
+LetterType = Literal["ordinary", "occasional"]
 
 # Mirrors `Template.name`'s column width (models.py). Without this an over-length
 # value reaches Postgres and raises sqlalchemy.exc.DataError -- not a subclass of
@@ -90,6 +97,10 @@ class TemplateCreate(BaseModel):
     body_markdown: SafeStr = ""
     declared_variables: list[TemplateVariable] = Field(default_factory=list)
     active: bool = True
+    letter_type: LetterType | None = Field(
+        default=None,
+        description="ordinary | occasional: required for framework_agreement and engagement_letter",
+    )
 
 
 class TemplateUpdate(BaseModel):
@@ -100,6 +111,7 @@ class TemplateUpdate(BaseModel):
     body_markdown: SafeStr | None = None
     declared_variables: list[TemplateVariable] | None = None
     active: bool | None = None
+    letter_type: LetterType | None = None
 
 
 class TemplateRead(BaseModel):
@@ -111,6 +123,7 @@ class TemplateRead(BaseModel):
     body_markdown: str
     declared_variables: list[TemplateVariable]
     active: bool
+    letter_type: str | None
     created_at: datetime
     updated_at: datetime
 

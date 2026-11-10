@@ -33,7 +33,7 @@ RENDER_TIMEOUT_SECONDS = 30
 # requests would otherwise fork as many Pandoc and Typst pairs as there are worker
 # threads; the rest wait for a slot.
 MAX_CONCURRENT_RENDERS = 2
-_RENDER_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_RENDERS)
+RENDER_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_RENDERS)
 # Ceilings on what a render hands back to this process. The PDF bound is well under the
 # 100 MiB the archive accepts; the intermediate Typst source of a real document is a few
 # kilobytes, so a large one is a runaway; diagnostics are read only up to their first
@@ -100,7 +100,7 @@ _BARE_HYPHEN_RUN = re.compile(r"-{2,}")
 _BARE_DOT_RUN = re.compile(r"\.{3,}")
 
 
-def _defeat_typst_autotypography(typst_source: str) -> str:
+def defeat_typst_autotypography(typst_source: str) -> str:
     """Backslash-protect every bare hyphen/dot run left in `typst_source` so
     Typst's own ligature rule never fires on text this pipeline must reproduce
     byte for byte. Does not touch line counts (every replacement stays on its own
@@ -147,12 +147,12 @@ def build_header(profile: dict[str, Any], *, logo: str | None = None) -> str:
 _MEDIA_NAMES = frozenset({MEDIA_LOGO_PNG, MEDIA_LOGO_SVG, MEDIA_SIGNATURE})
 
 
-class _Outcome(NamedTuple):
+class Outcome(NamedTuple):
     returncode: int
     stderr: bytes
 
 
-def _tool_environment(workdir: Path) -> dict[str, str]:
+def tool_environment(workdir: Path) -> dict[str, str]:
     """The environment both tools run in.
 
     Typst downloads an `@preview/...` package on first import, and `typst compile` has
@@ -182,7 +182,7 @@ def _tool_environment(workdir: Path) -> dict[str, str]:
     }
 
 
-def _run(argv: list[str], workdir: Path, stage: str) -> _Outcome:
+def run_tool(argv: list[str], workdir: Path, stage: str) -> Outcome:
     """Always a list, never a string; never `shell=True`; always bounded in time and in
     the diagnostics it keeps.
 
@@ -205,7 +205,7 @@ def _run(argv: list[str], workdir: Path, stage: str) -> _Outcome:
                 stderr=stderr,
                 check=False,
                 timeout=RENDER_TIMEOUT_SECONDS,
-                env=_tool_environment(workdir),
+                env=tool_environment(workdir),
             )
     except subprocess.TimeoutExpired as exc:
         raise ValidationFailed(
@@ -222,10 +222,10 @@ def _run(argv: list[str], workdir: Path, stage: str) -> _Outcome:
             expected="pandoc e typst nell'immagine dell'API",
         ) from exc
     with log.open("rb") as stderr:
-        return _Outcome(completed.returncode, stderr.read(MAX_DIAGNOSTIC_BYTES))
+        return Outcome(completed.returncode, stderr.read(MAX_DIAGNOSTIC_BYTES))
 
 
-def _read_bounded(path: Path, limit: int) -> bytes:
+def read_bounded(path: Path, limit: int) -> bytes:
     """The file's bytes, refused when it is larger than `limit`: the size is read from
     the file system before a single byte is loaded."""
     if path.stat().st_size > limit:
@@ -289,8 +289,8 @@ def render_pdf(
         source.write_text(markdown, encoding="utf-8")
         header.write_text(header_typst, encoding="utf-8")
 
-        with _RENDER_SLOTS:
-            pandoc = _run(
+        with RENDER_SLOTS:
+            pandoc = run_tool(
                 [
                     settings.pandoc_binary,
                     "--sandbox",
@@ -321,13 +321,13 @@ def render_pdf(
                 )
 
             # Between the two subprocesses, not before and not after: see
-            # `_defeat_typst_autotypography` for why this is the only point where the
+            # `defeat_typst_autotypography` for why this is the only point where the
             # fix can take effect at all.
-            typst_source = _defeat_typst_autotypography(
-                _read_bounded(intermediate, MAX_INTERMEDIATE_BYTES).decode("utf-8")
+            typst_source = defeat_typst_autotypography(
+                read_bounded(intermediate, MAX_INTERMEDIATE_BYTES).decode("utf-8")
             )
             intermediate.write_text(typst_source, encoding="utf-8")
-            typst = _run(
+            typst = run_tool(
                 [
                     settings.typst_binary,
                     "compile",
@@ -359,7 +359,7 @@ def render_pdf(
                 translate_typst_failure(stderr, typst_source),
                 expected="un template Typst valido",
             )
-        return _read_bounded(output, MAX_PDF_BYTES)
+        return read_bounded(output, MAX_PDF_BYTES)
     finally:
         # `ignore_errors=True`: a failed cleanup must never mask the real error, and
         # the directory is disposable by construction.
