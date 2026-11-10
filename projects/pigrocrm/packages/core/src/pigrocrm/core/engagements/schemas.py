@@ -9,6 +9,7 @@ naming the field, never a customer that half exists.
 
 import datetime as dt
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -32,6 +33,9 @@ HOURS_PER_DAY = Decimal(8)
 REPORT_MAX_DAYS = 800
 
 
+FeeUnit = Literal["day", "hour", "flat"]
+
+
 class EngagementFreelancer(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -48,8 +52,10 @@ class EngagementLetter(BaseModel):
     company_name: SafeStr = Field(min_length=1, max_length=255)
     start_date: dt.date
     end_date: dt.date | None = None
-    # The daily fee, as the letter prints it.
+    # The fee as the letter prints it, per `fee_unit`: a day (what the hub sends today and
+    # the default), an hour, or one flat amount for the whole engagement.
     fee: Decimal = Field(gt=0, max_digits=9, decimal_places=2)
+    fee_unit: FeeUnit = "day"
     expected_days: int | None = Field(default=None, ge=1, le=366)
 
 
@@ -79,8 +85,8 @@ class EngagementUpsert(BaseModel):
 
 
 class EngagementRead(BaseModel):
-    """What the door set up for a match: the space, the customer and the deal, with the
-    two links the hub shows. `created` says whether this call wrote the deal's row (201)
+    """What the door set up for a match: the space, the customer, the deal and the contract,
+    with the two links the hub shows. `created` says whether this call wrote the deal's row (201)
     or found it already there (200); `space_created` whether the space was opened for
     this match, said by the call that writes the row (a retry of a call that stopped on
     the way included) and false on the calls after it."""
@@ -90,6 +96,9 @@ class EngagementRead(BaseModel):
     customer_id: UUID
     deal_id: UUID
     deal_url: str
+    # The contract of the letter (REB-1001); `None` for a match whose space was set up
+    # before contracts and keeps its deal and its hours alone.
+    contract_id: UUID | None = None
     space_created: bool
     created: bool
 

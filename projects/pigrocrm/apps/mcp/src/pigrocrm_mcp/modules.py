@@ -102,6 +102,7 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "get_ceiling_headroom": ("taxes",),
     "get_year_overview": ("taxes",),
     "get_fiscal_estimate": ("taxes",),
+    "get_tax_calendar": ("taxes",),
     # The raw figures are `taxes` alone; `deal_id` and `contract_id` are references into
     # their modules, refused by `ID_REFERENCES` below only when the call carries one.
     "simulate_ceiling": ("taxes",),

@@ -1,5 +1,6 @@
 """The engagements door (spec 2026-09-25 § 2.3): what a signed letter sets up in the
-freelancer's CRM -- the space, the customer «rebase» in it, and the deal of the letter --
+freelancer's CRM -- the space, the customer «rebase» in it, the deal of the letter and, since
+REB-1001 (collaborators design § 3), its contract with a rate card of the letter's unit --
 once per hub match, whatever the number of calls; and the report of that deal's hours
 with the invoices they sit on (§ 2.4), the one thing of the space the door reads back.
 
@@ -30,6 +31,15 @@ from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.schemas import UserCreate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings
+from pigrocrm.core.contracts.models import Contract
+from pigrocrm.core.contracts.rate_card_service import RateCardService
+from pigrocrm.core.contracts.repository import RateCardRepository
+from pigrocrm.core.contracts.schemas import (
+    ContractCreate,
+    ContractStateChange,
+    RateCardCreate,
+)
+from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.deals.repository import DealRepository
@@ -43,6 +53,7 @@ from pigrocrm.core.engagements.schemas import (
     ROLE_IN_DEAL_NAME,
     SPACE_NAME_MAX_LENGTH,
     EngagementFreelancer,
+    EngagementLetter,
     EngagementRead,
     EngagementReport,
     EngagementUpsert,
@@ -134,6 +145,44 @@ def deal_marker(match_id: UUID) -> str:
     return f"rebase:match={match_id}"
 
 
+def _hourly_rate(letter: EngagementLetter) -> Decimal | None:
+    """The deal's rate per hour: the day's fee over `HOURS_PER_DAY`, an hourly fee as it
+    is, and none for a flat one, which prices no hour."""
+    if letter.fee_unit == "flat":
+        return None
+    per_hour = letter.fee / HOURS_PER_DAY if letter.fee_unit == "day" else letter.fee
+    return per_hour.quantize(RATE_PLACES)
+
+
+def rate_card_of(letter: EngagementLetter) -> RateCardCreate:
+    """The card the letter's fee becomes (collaborators design § 3): a day or hour fee is
+    a `daily` or `hourly` card valid for the engagement's dates, a flat one a `one_off`
+    card with the same dates. `expected_days` is the forecast per delivery period of a
+    day or hour card (hours at `HOURS_PER_DAY`, the one place hours become days); a card
+    carries a period only together with it."""
+    if letter.fee_unit == "flat":
+        return RateCardCreate(
+            valid_from=letter.start_date,
+            valid_to=letter.end_date,
+            type="one_off",
+            amount=letter.fee,
+            unit="flat",
+        )
+    unit = letter.fee_unit
+    quantity = None
+    if letter.expected_days is not None:
+        quantity = Decimal(letter.expected_days) * (HOURS_PER_DAY if unit == "hour" else 1)
+    return RateCardCreate(
+        valid_from=letter.start_date,
+        valid_to=letter.end_date,
+        type="hourly" if unit == "hour" else "daily",
+        amount=letter.fee,
+        unit=unit,
+        delivery_period="one_off" if quantity is not None else None,
+        expected_quantity=quantity,
+    )
+
+
 def _origin(settings: Settings) -> str:
     return settings.public_url.strip().rstrip("/")
 
@@ -152,6 +201,14 @@ def _customer_note(number: str) -> str:
     return (
         f"Creato da rebase per la lettera n. {number}. rebase legge le ore dei deal di "
         "questo cliente per rendicontare gli incarichi."
+    )
+
+
+def _contract_note(number: str, legal_entity: str) -> str:
+    sentence = legal_entity if legal_entity.endswith(".") else f"{legal_entity}."
+    return (
+        f"Creato da rebase per la lettera n. {number} con {sentence} rebase legge le "
+        "giornate di questo contratto per la rendicontazione al cliente."
     )
 
 
@@ -429,7 +486,9 @@ class EngagementService:
             if row is not None:
                 tenant = self._tenant(registry, row)
                 if row.deal_id is not None:
-                    return self._recorded(tenant, row.customer_id, row.deal_id, match_id)
+                    return self._recorded(
+                        tenant, row.customer_id, row.deal_id, row.contract_id, match_id
+                    )
                 # A previous call stopped between steps 3 and 6: resume at step 4, in the
                 # space it had already chosen, with what it recorded of that space.
             else:
@@ -459,13 +518,16 @@ class EngagementService:
                         registry.commit()
                     self._create_admin(space, data.freelancer, email)
                 customer_id, deal_id = self._customer_and_deal(space, match_id, data, email)
+                contract_id = self._contract(space, data, customer_id)
                 if row.space_created:
-                    # A freelancer's space is `solo` with the deal its match just made
-                    # kept on (spec 2026-11-09 B7). Written only where no profile is
-                    # stored, so a retry never undoes an admin's choice.
+                    # A freelancer's space is `solo`, with contracts on and the deals module
+                    # on only where it holds a deal, which the door still writes beside the
+                    # contract until the hub reads days from work units (spec 2026-11-09
+                    # B7, collaborators § 3). Written only where no profile is stored, so a
+                    # retry never undoes an admin's choice.
                     SpaceModulesService(
                         space, space_base_settings(self.settings, tenant.slug)
-                    ).ensure_profile("solo", Actor.rebase(), keep_on=("deals",))
+                    ).ensure_profile("solo", Actor.rebase(), keep_on=("contracts",))
                     # The welcome goes out with the call that completes the engagement,
                     # not with the one that opened the space: a call that stops on the
                     # way sends nothing, and the row tells its retry to send it. A call
@@ -475,11 +537,19 @@ class EngagementService:
 
             row.customer_id = customer_id
             row.deal_id = deal_id
+            row.contract_id = contract_id
             registry.commit()
-            return self._answer(tenant.slug, customer_id, deal_id, row.space_created, created=True)
+            return self._answer(
+                tenant.slug, customer_id, deal_id, contract_id, row.space_created, created=True
+            )
 
     def _recorded(
-        self, tenant: Tenant, customer_id: UUID | None, deal_id: UUID, match_id: UUID
+        self,
+        tenant: Tenant,
+        customer_id: UUID | None,
+        deal_id: UUID,
+        contract_id: UUID | None,
+        match_id: UUID,
     ) -> EngagementRead:
         """Step 2 with a deal on the row: alive, the row's ids (spec § 2.3); gone, a
         409, and nothing is recreated behind the freelancer's back."""
@@ -488,7 +558,7 @@ class EngagementService:
         # Step 6 writes both ids together, so a row with a deal has its customer; the
         # deal's own stands in only for a row somebody edited by hand.
         answered = customer_id if customer_id is not None else deal.customer_id
-        return self._answer(tenant.slug, answered, deal_id, False, created=False)
+        return self._answer(tenant.slug, answered, deal_id, contract_id, False, created=False)
 
     @staticmethod
     def _live_deal(space: Session, deal_id: UUID, match_id: UUID) -> DealRead:
@@ -500,7 +570,14 @@ class EngagementService:
             raise Conflict(ENTITY, GONE, match_id=str(match_id)) from exc
 
     def _answer(
-        self, slug: str, customer_id: UUID, deal_id: UUID, space_created: bool, *, created: bool
+        self,
+        slug: str,
+        customer_id: UUID,
+        deal_id: UUID,
+        contract_id: UUID | None,
+        space_created: bool,
+        *,
+        created: bool,
     ) -> EngagementRead:
         return EngagementRead(
             slug=slug,
@@ -508,6 +585,7 @@ class EngagementService:
             customer_id=customer_id,
             deal_id=deal_id,
             deal_url=deal_url(self.settings, slug, deal_id),
+            contract_id=contract_id,
             space_created=space_created,
             created=created,
         )
@@ -592,6 +670,34 @@ class EngagementService:
         customer_id = self._customer(space, data)
         return customer_id, self._deal(space, match_id, data, customer_id, email)
 
+    @staticmethod
+    def _contract(space: Session, data: EngagementUpsert, customer_id: UUID) -> UUID:
+        """Step 5b: the letter's contract under the customer, active, with its rate card.
+        Found by its title (the letter's number is in it) under the customer before it
+        is created, and a contract a call left without its card gets the card on the
+        retry: the registry row records the ids only once this has finished, so a call
+        that stops here is resumed, never doubled. The renewal and notice terms are
+        none: the letter's terms live in the hub's document, not in this contract."""
+        letter = data.letter
+        title = deal_name(letter.number, letter.role, letter.company_name)
+        found = next(
+            (
+                contract
+                for contract in ContractService(space).repo.list_for_customer(customer_id)
+                if contract.title == title and contract.start == letter.start_date
+            ),
+            None,
+        )
+        contract = found or _new_contract(space, data, customer_id, title)
+        if contract.status == "draft":
+            # A call that stopped between the creation and the activation.
+            ContractService(space).set_state(
+                contract.id, ContractStateChange(status="active"), Actor.rebase()
+            )
+        if not RateCardRepository(space).list_for_contract(contract.id):
+            RateCardService(space).create(contract.id, rate_card_of(letter), Actor.rebase())
+        return contract.id
+
     @contextmanager
     def _space_session(self, tenant: Tenant) -> Iterator[Session]:
         """A session on the space's own database for one step. A database error in it
@@ -675,7 +781,7 @@ class EngagementService:
             DealCreate(
                 name=deal_name(letter.number, letter.role, letter.company_name),
                 customer_id=customer_id,
-                hourly_rate=(letter.fee / HOURS_PER_DAY).quantize(RATE_PLACES),
+                hourly_rate=_hourly_rate(letter),
                 budgeted_hours=(
                     letter.expected_days * HOURS_PER_DAY
                     if letter.expected_days is not None
@@ -689,3 +795,28 @@ class EngagementService:
             rebase_ref=deal_marker(match_id),
         )
         return created.id
+
+
+def _new_contract(
+    space: Session, data: EngagementUpsert, customer_id: UUID, title: str
+) -> Contract:
+    letter = data.letter
+    service = ContractService(space)
+    created = service.create(
+        ContractCreate(
+            customer_id=customer_id,
+            title=title,
+            start=letter.start_date,
+            end=letter.end_date,
+            renewal_type="none",
+            termination_notice_days=0,
+            billing_cadence="monthly",
+            expense_policy={"kind": "not_reimbursable"},
+            note=_contract_note(letter.number, letter.company_name),
+        ),
+        Actor.rebase(),
+    )
+    service.set_state(created.id, ContractStateChange(status="active"), Actor.rebase())
+    contract = service.repo.get(created.id)
+    assert contract is not None
+    return contract

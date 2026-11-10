@@ -40,7 +40,13 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Final, Literal
 
-from pigrocrm.core.fiscal.law import IncomeTaxAdvanceLaw, MonthDay, TaxYearLaw
+from pigrocrm.core.fiscal.law import (
+    IncomeTaxAdvanceLaw,
+    MonthDay,
+    TaxCalendarLaw,
+    TaxDateRule,
+    TaxYearLaw,
+)
 
 # The pack ids, as literals so a schema can name them in a `Literal` type
 # (`fiscal/schemas.py::PackId`) and a profile cannot point at a pack that does not exist.
@@ -137,11 +143,17 @@ class FiscalPack:
     # The tax law of the regime, one entry per change, oldest first (`fiscal/law.py`). Empty
     # for a regime with nothing computed (`non-it`): no figure, never a guess.
     laws: tuple[TaxYearLaw, ...] = ()
+    # The tax dates, one entry per change, oldest first (`TaxCalendarLaw`, REB-1004). Empty
+    # for a regime with no date of its own (`non-it`).
+    calendars: tuple[TaxCalendarLaw, ...] = ()
 
     def __post_init__(self) -> None:
         years = [law.from_year for law in self.laws]
         if years != sorted(set(years)):
             raise ValueError(f"pack {self.id!r}: law entries must have increasing from_year")
+        calendar_years = [calendar.from_year for calendar in self.calendars]
+        if calendar_years != sorted(set(calendar_years)):
+            raise ValueError(f"pack {self.id!r}: calendar entries must have increasing from_year")
 
     def law_for(self, year: int) -> TaxYearLaw | None:
         """The law that governs tax year `year`: the latest entry starting at or before it,
@@ -151,6 +163,16 @@ class FiscalPack:
             if law.from_year > year:
                 break
             governing = law
+        return governing
+
+    def calendar_for(self, year: int) -> TaxCalendarLaw | None:
+        """The dates that govern calendar year `year`: the latest entry starting at or before
+        it, `None` when the pack carries no dates for that year (never a guess)."""
+        governing = None
+        for calendar in self.calendars:
+            if calendar.from_year > year:
+                break
+            governing = calendar
         return governing
 
     def charge(self, charge_id: str) -> StatutoryCharge:
@@ -178,6 +200,137 @@ SOCIAL_SECURITY_SURCHARGE_INPS = StatutoryCharge(
     # decision, the reason this charge carries two booleans and not one.
     count_by_the_limit=True,
     count_by_the_coefficient=False,
+)
+
+# The tax calendar (REB-1004, taxes design § 2, suppliers design § 6). Every date is a row of
+# the frame's A5 register, verified on 2026-11-10 against the source its rule names. The
+# entries start in 2026, the year the sources were read: an earlier year has no calendar
+# in the pack (the instalments, for one, ended in November until the 2022 tax period), and
+# a decree that moves a date of a later year is a new entry, never a branch in a service.
+# These are the nominal days: the deadline that falls on a Saturday, a Sunday or a national
+# holiday moves to the next working day (`fiscal/calendar.py`, A5 row «A deadline on a
+# Saturday...»). The 1% on a quarterly payment, the 100 euro below which a periodic payment
+# is carried forward and the quarterly eligibility ceilings are verified in A5 and stay out of
+# the pack until a due item computes them; LIPE dates are not in A5's verified rows.
+_SRC_IVA_PAYMENT = "Agenzia delle Entrate, «F24 IVA Periodica - Come e quando si versa»"
+_SRC_IVA_ADVANCE = "Agenzia delle Entrate, «Come pagare l'Iva», «Acconto Iva»"
+_SRC_IVA_AUGUST = "Agenzia delle Entrate, Scadenzario fiscale, scadenze per Iva del 20-08-2026"
+_SRC_INCOME_TAX = "Agenzia delle Entrate, «Imposte sui redditi (Irpef, Ires)» (persone fisiche)"
+_SRC_SUBSTITUTE_TAX = (
+    "Agenzia delle Entrate, Scadenzario fiscale, «Regime forfetario agevolato: versamento "
+    "imposta sostitutiva» (30 June and 30 November 2026)"
+)
+
+# Monthly payers pay the previous month's VAT on the 16th; the July payment falls on 20 August
+# (the Agenzia's scheduler lists it there for 2026; that it does so every year is TO VERIFY in
+# A5, and a pack entry for a later year states it again once it is).
+_IVA_MONTHLY_DATES = tuple(MonthDay(month=m, day=20 if m == 8 else 16) for m in range(1, 13))
+
+_IVA_RULES_2026 = (
+    TaxDateRule(
+        tax="iva",
+        kind="periodic_payment",
+        cadence="monthly",
+        dates=_IVA_MONTHLY_DATES,
+        covers="the VAT of the month before",
+        source=f"{_SRC_IVA_PAYMENT}; {_SRC_IVA_AUGUST}",
+    ),
+    TaxDateRule(
+        tax="iva",
+        kind="annual_balance",
+        cadence="quarterly",
+        dates=(MonthDay(month=3, day=16),),
+        covers="the VAT of the fourth quarter of the year before, with the annual settlement",
+        source=_SRC_IVA_PAYMENT,
+    ),
+    TaxDateRule(
+        tax="iva",
+        kind="quarterly_payment",
+        cadence="quarterly",
+        dates=(MonthDay(month=5, day=16),),
+        covers="the VAT of the first quarter",
+        source=_SRC_IVA_PAYMENT,
+    ),
+    TaxDateRule(
+        tax="iva",
+        kind="quarterly_payment",
+        cadence="quarterly",
+        dates=(MonthDay(month=8, day=20),),
+        covers="the VAT of the second quarter",
+        source=_SRC_IVA_PAYMENT,
+    ),
+    TaxDateRule(
+        tax="iva",
+        kind="quarterly_payment",
+        cadence="quarterly",
+        dates=(MonthDay(month=11, day=16),),
+        covers="the VAT of the third quarter",
+        source=_SRC_IVA_PAYMENT,
+    ),
+    TaxDateRule(
+        tax="iva",
+        kind="advance",
+        cadence=None,
+        dates=(MonthDay(month=12, day=27),),
+        covers="the advance of the December payment (monthly) or of the fourth quarter (quarterly)",
+        source=_SRC_IVA_ADVANCE,
+    ),
+)
+
+_IT_STANDARD_CALENDAR_2026 = TaxCalendarLaw(
+    from_year=2026,
+    rules=(
+        *_IVA_RULES_2026,
+        TaxDateRule(
+            tax="income_tax",
+            kind="balance_and_first_advance",
+            cadence=None,
+            dates=(MonthDay(month=6, day=30),),
+            covers="the balance of the year before and the first advance of the year",
+            source=_SRC_INCOME_TAX,
+        ),
+        TaxDateRule(
+            tax="income_tax",
+            kind="second_advance",
+            cadence=None,
+            dates=(MonthDay(month=11, day=30),),
+            covers="the second or only advance of the year",
+            source=_SRC_INCOME_TAX,
+        ),
+        TaxDateRule(
+            tax="income_tax",
+            kind="instalments_end",
+            cadence=None,
+            dates=(MonthDay(month=12, day=16),),
+            covers="the last instalment of the June balance and first advance",
+            source=_SRC_INCOME_TAX,
+        ),
+    ),
+)
+
+# The flat-rate regime has no periodic IVA settlement (suppliers design § 6), so no IVA date.
+# Its substitute tax falls on the same two days as the income tax; the split and the thresholds
+# of its advances, and its instalments, are TO VERIFY in A5 and not in the calendar.
+_IT_FLAT_RATE_CALENDAR_2026 = TaxCalendarLaw(
+    from_year=2026,
+    rules=(
+        TaxDateRule(
+            tax="substitute_tax",
+            kind="balance_and_first_advance",
+            cadence=None,
+            dates=(MonthDay(month=6, day=30),),
+            covers="the substitute tax balance of the year before and the first advance",
+            source=_SRC_SUBSTITUTE_TAX,
+        ),
+        TaxDateRule(
+            tax="substitute_tax",
+            kind="second_advance",
+            cadence=None,
+            dates=(MonthDay(month=11, day=30),),
+            covers="the second or only substitute tax advance of the year",
+            source=_SRC_SUBSTITUTE_TAX,
+        ),
+    ),
 )
 
 # it-flat-rate.ts:127-180: two ceilings, both `cash_received_calendar_year` /
@@ -235,6 +388,7 @@ IT_FLAT_RATE_PACK = FiscalPack(
     # the cash basis of the revenue). No advance rule: the flat-rate regime's substitute tax
     # advances are not in the register (A5 row added by REB-974, TO VERIFY).
     laws=(TaxYearLaw(from_year=2015, contribution_base="taxable_amount_net_of_substitute_tax"),),
+    calendars=(_IT_FLAT_RATE_CALENDAR_2026,),
 )
 
 # A company established outside Italy (REB-619, spec 2026-10-03 §1.3): no ceiling,
@@ -255,7 +409,8 @@ NON_IT_PACK = FiscalPack(id=PACK_NON_IT, version="1", ceilings=(), charges=())
 # (`social_security_surcharge_line_for_contract`).
 # The regime strategy (`fiscal/regime.py::ORDINARY`) is selected by this pack's id.
 # The advance rules are the Agenzia page's of today, read in 2026 (A5, verified), so the
-# entry starts there: an earlier year has no law in this pack yet, and asks for none. No
+# entry starts there: an earlier year has no law in this pack yet, and asks for none. The
+# dates are the calendar's (`_IT_STANDARD_CALENDAR_2026`). No
 # income estimate: the ordinary regime's IRPEF brackets, regional and municipal surcharges
 # and INPS rates are TO VERIFY (A5), and a pack states no figure it cannot cite.
 IT_STANDARD_PACK = FiscalPack(
@@ -276,12 +431,10 @@ IT_STANDARD_PACK = FiscalPack(
                 single_november_payment_below=Decimal("257.52"),
                 deferral_surcharge_percent=Decimal("0.40"),
                 deferral_window_days=30,
-                instalments_until=MonthDay(month=12, day=16),
-                balance_and_first_advance_date=MonthDay(month=6, day=30),
-                second_advance_date=MonthDay(month=11, day=30),
             ),
         ),
     ),
+    calendars=(_IT_STANDARD_CALENDAR_2026,),
 )
 
 _PACKS: dict[tuple[str, str], FiscalPack] = {
@@ -327,6 +480,8 @@ __all__ = [
     "IncomeTaxAdvanceLaw",
     "MonthDay",
     "StatutoryCharge",
+    "TaxCalendarLaw",
+    "TaxDateRule",
     "TaxYearLaw",
     "known_charge_markers",
     "resolve_pack",
