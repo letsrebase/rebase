@@ -67,7 +67,7 @@ SURFACES: dict[str, dict[str, Any]] = {
 # `mark_inbox_item_duplicate` (every token's, 1.4 KB): the three acts design § 6 classifies as a
 # collaborator's an agent may do, measured at 101,612 bytes. The kinds are listed once.
 # REB-976: 101.75 KB, up from 101.7 KB: `hub_freelancer_id` in `update_organization`'s `changes`
-# schema, +82 bytes. The `collaborators` tools are in neither list: a space starts with the module off.
+# schema, +82 bytes. The `collaborators` tools are in neither list: the module starts off.
 DEFAULT_BUDGET_BYTES = 101_750
 # REB-957: 111.9 KB, up from 111.6 KB, for `skip_space_onboarding` (a full-access
 # administrator's), measured at 111,786 bytes; `describe_space`'s `onboarding` fits the default.

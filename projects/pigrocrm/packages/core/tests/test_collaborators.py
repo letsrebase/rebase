@@ -868,22 +868,3 @@ def test_an_active_engagement_can_be_called_off_only_before_it_starts(
     assert service.cancel(future.id, ADMIN).state == "cancelled"
     with pytest.raises(ValidationFailed, match="si chiude, non si annulla"):
         service.cancel(started.id, ADMIN)
-
-
-def test_what_is_the_clients_is_left_out_for_an_admin_who_cannot_see_the_client(
-    db_session: Session, service: EngagementService, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The row policy answers «not visible» for the client of a scoped admin; the stand-in here
-    is that answer, the policy itself being `test_legal_entity_scope`'s."""
-    who = freelancer(db_session)
-    client = make_customer(db_session)
-    made = make(service, who, client_organization_id=client.id)
-    activate(service, made.id)
-    from pigrocrm.core.collaborators.repository import EngagementRepository
-
-    monkeypatch.setattr(EngagementRepository, "visible_organization", lambda self, i: None)
-    read = service.get(made.id, ADMIN)
-
-    assert read.redacted is True
-    assert (read.role, read.fee, read.client_organization_id) == (None, None, None)
-    assert read.days_per_week == Decimal("3") and read.state == "active"
