@@ -187,6 +187,15 @@ describe('MailboxesPanel', () => {
     })
   })
 
+  it('offers a disconnected mailbox the way back, a new password, and no second «Scollega»', async () => {
+    GET.mockResolvedValue(ok([{ ...BASE, health: 'disconnected' }]))
+    renderPanel()
+    await screen.findByText('fatture@acme.example')
+    expect(within(row('m-1')).getByText('Scollegata')).toBeVisible()
+    expect(within(row('m-1')).getByRole('button', { name: /Ricollega/ })).toBeVisible()
+    expect(within(row('m-1')).queryByRole('button', { name: /Scollega fatture/ })).toBeNull()
+  })
+
   it('is an admin’s tab: no other role sees it', () => {
     expect(canSeeSettingsTab('admin', 'mailboxes')).toBe(true)
     expect(canSeeSettingsTab('collaborator', 'mailboxes')).toBe(false)

@@ -149,28 +149,30 @@ function MailboxRow({ mailbox }: { mailbox: Mailbox }) {
                 Gestisci in Gmail
               </Link>
             </Button>
-          ) : mailbox.health !== 'disconnected' ? (
+          ) : (
             <>
               {!rekeying ? (
                 <Button
                   variant="outline"
                   size="sm"
-                  aria-label={`Cambia la password di ${name}`}
+                  aria-label={`${mailbox.health === 'disconnected' ? 'Ricollega' : 'Cambia la password di'} ${name}`}
                   onClick={() => setRekeying(true)}
                 >
-                  Cambia password
+                  {mailbox.health === 'disconnected' ? 'Ricollega' : 'Cambia password'}
                 </Button>
               ) : null}
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-label={`Scollega ${name}`}
-                onClick={() => setConfirmOpen(true)}
-              >
-                Scollega
-              </Button>
+              {mailbox.health !== 'disconnected' ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`Scollega ${name}`}
+                  onClick={() => setConfirmOpen(true)}
+                >
+                  Scollega
+                </Button>
+              ) : null}
             </>
-          ) : null}
+          )}
         </div>
       </div>
       {mailbox.health === 'auth_failed' ? (
@@ -225,7 +227,13 @@ function MailboxRow({ mailbox }: { mailbox: Mailbox }) {
         </form>
       ) : null}
       <ActionError error={change.error} />
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <Dialog
+        open={confirmOpen}
+        onOpenChange={(open) => {
+          setConfirmOpen(open)
+          if (!open) disconnect.reset()
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Scollegare {name}?</DialogTitle>
@@ -236,7 +244,13 @@ function MailboxRow({ mailbox }: { mailbox: Mailbox }) {
           </DialogHeader>
           <ActionError error={disconnect.error} />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setConfirmOpen(false)
+                disconnect.reset()
+              }}
+            >
               Annulla
             </Button>
             <Button
