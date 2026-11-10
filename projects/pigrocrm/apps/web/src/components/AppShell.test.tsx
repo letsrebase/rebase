@@ -242,6 +242,7 @@ describe('AppShell', () => {
       'Ore',
       'Giornate',
       'Tasse',
+      'Esporta per il commercialista',
       'Agenti',
     ])
     expect(nav.getAllByRole('group').map((group) => group.getAttribute('aria-label'))).toEqual([
@@ -268,6 +269,7 @@ describe('AppShell', () => {
       'Ore',
       'Giornate',
       'Tasse',
+      'Esporta per il commercialista',
     ])
     // Agents and Settings come after every section, Settings last.
     const lastLink = nav.getByRole('link', { name: 'Agenti' })
@@ -310,6 +312,16 @@ describe('AppShell', () => {
     await userEvent.click(nav.getByText('Vendite'))
     expect(nav.getByRole('link', { name: 'Clienti' })).toBeInTheDocument()
     expect(localStorage.length).toBe(0)
+  })
+
+  it('hides «Esporta per il commercialista» from every role but an administrator (REB-1028)', () => {
+    for (const role of ['collaborator', 'readonly']) {
+      mockAuth.role = role
+      const { unmount } = renderShell()
+      expect(sidebar().queryByRole('link', { name: 'Esporta per il commercialista' })).toBeNull()
+      expect(sidebar().getByRole('link', { name: 'Tasse' })).toBeInTheDocument()
+      unmount()
+    }
   })
 
   it('shows the overdue count beside «Attività» (REB-725, REB-873)', async () => {

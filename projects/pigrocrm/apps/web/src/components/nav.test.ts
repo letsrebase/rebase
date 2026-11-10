@@ -6,7 +6,7 @@ import { isNavItemActive, phoneMoreItems, phoneThirdPlace, visibleSections } fro
 
 /** The labels the sidebar draws for a space whose modules in `off` are switched off. */
 function labels(off: readonly ModuleKey[]) {
-  return visibleSections(moduleAccess(spaceModules(off))).flatMap((section) =>
+  return visibleSections(moduleAccess(spaceModules(off)), 'admin').flatMap((section) =>
     section.items.map((item) => item.label),
   )
 }
@@ -28,9 +28,10 @@ describe('visibleSections (REB-953)', () => {
       'Ore',
       'Giornate',
       'Tasse',
+      'Esporta per il commercialista',
     ]
     expect(labels([])).toEqual(everything)
-    expect(visibleSections(moduleAccess(undefined)).flatMap((s) => s.items.map((i) => i.label))).toEqual(
+    expect(visibleSections(moduleAccess(undefined), 'admin').flatMap((s) => s.items.map((i) => i.label))).toEqual(
       everything,
     )
   })
@@ -52,7 +53,7 @@ describe('visibleSections (REB-953)', () => {
   })
 
   it('sets «Fornitori» in «Amministrazione» before «Acquisti», and «Acquisti» after «Fatture»', () => {
-    const sections = visibleSections(moduleAccess(undefined))
+    const sections = visibleSections(moduleAccess(undefined), 'admin')
     expect(sections.find((section) => section.id === 'amministrazione')?.items.map((i) => i.label)).toEqual([
       'Fatture',
       'Fornitori',
@@ -60,12 +61,13 @@ describe('visibleSections (REB-953)', () => {
       'Ore',
       'Giornate',
       'Tasse',
+      'Esporta per il commercialista',
     ])
     expect(sections.find((section) => section.id === 'vendite')?.items[0]?.label).toBe('Clienti')
   })
 
   it('opens the registry on the supplier view for «Fornitori» and on the default one for «Clienti»', () => {
-    const items = visibleSections(moduleAccess(undefined)).flatMap((section) => section.items)
+    const items = visibleSections(moduleAccess(undefined), 'admin').flatMap((section) => section.items)
     expect(items.find((item) => item.label === 'Fornitori')).toMatchObject({
       to: '/app/organizations',
       search: { role: 'supplier' },
@@ -98,16 +100,23 @@ describe('visibleSections (REB-953)', () => {
       'Clienti',
       'Persone',
       'Fatture',
+      'Esporta per il commercialista',
     ]
     expect(labels(['deals', 'contracts', 'time', 'purchases', 'taxes'])).toEqual(core)
   })
 
   it('drops a section left with no entry', () => {
     // Vendite keeps its organizations and people, so it stays; it is Amministrazione that
-    // loses two of its four, and keeps «Fatture» and «Tasse».
-    const sections = visibleSections(moduleAccess(spaceModules(['deals', 'contracts'])))
+    // loses two of its four, and keeps «Fatture», «Tasse» and the export.
+    const sections = visibleSections(moduleAccess(spaceModules(['deals', 'contracts'])), 'admin')
     expect(sections.map((section) => section.id)).toEqual(['da-fare', 'vendite', 'amministrazione'])
-    expect(sections[2]?.items.map((item) => item.label)).toEqual(['Fatture', 'Fornitori', 'Acquisti', 'Tasse'])
+    expect(sections[2]?.items.map((item) => item.label)).toEqual([
+      'Fatture',
+      'Fornitori',
+      'Acquisti',
+      'Tasse',
+      'Esporta per il commercialista',
+    ])
   })
 })
 
@@ -129,7 +138,7 @@ describe('the phone bar (REB-959)', () => {
 
   it('lists in «Altro» what the bar does not draw, and nothing of an off module', () => {
     const more = (off: readonly ModuleKey[], profile: 'solo' | 'company' | null) =>
-      phoneMoreItems(moduleAccess(spaceModules(off, profile))).map((item) => item.label)
+      phoneMoreItems(moduleAccess(spaceModules(off, profile)), 'admin').map((item) => item.label)
     expect(more([], 'solo')).toEqual([
       'In arrivo',
       'Calendario',
@@ -143,6 +152,7 @@ describe('the phone bar (REB-959)', () => {
       'Acquisti',
       'Ore',
       'Tasse',
+      'Esporta per il commercialista',
     ])
     expect(more(['deals', 'time'], 'company')).toEqual([
       'In arrivo',
@@ -155,12 +165,38 @@ describe('the phone bar (REB-959)', () => {
       'Fornitori',
       'Acquisti',
       'Tasse',
+      'Esporta per il commercialista',
     ])
   })
 })
 
+describe('«Esporta per il commercialista» is an administrator\'s entry (REB-1028)', () => {
+  const access = moduleAccess(undefined)
+  const labelsFor = (role: 'admin' | 'collaborator' | 'readonly' | undefined) =>
+    visibleSections(access, role).flatMap((section) => section.items.map((item) => item.label))
+
+  it('is drawn for an administrator, last in «Amministrazione», and for nobody else', () => {
+    const admin = visibleSections(access, 'admin').find((section) => section.id === 'amministrazione')
+    expect(admin?.items.at(-1)?.label).toBe('Esporta per il commercialista')
+    for (const role of ['collaborator', 'readonly', undefined] as const) {
+      expect(labelsFor(role)).not.toContain('Esporta per il commercialista')
+      expect(labelsFor(role)).toContain('Tasse')
+    }
+  })
+
+  it('is in «Altro» for an administrator and gone for the others, whatever the modules', () => {
+    const more = (role: 'admin' | 'collaborator' | 'readonly') =>
+      phoneMoreItems(moduleAccess(spaceModules(['deals', 'contracts', 'time', 'purchases', 'taxes'])), role).map(
+        (item) => item.label,
+      )
+    expect(more('admin')).toContain('Esporta per il commercialista')
+    expect(more('collaborator')).not.toContain('Esporta per il commercialista')
+    expect(more('readonly')).not.toContain('Esporta per il commercialista')
+  })
+})
+
 describe('isNavItemActive: one registry page, two entries', () => {
-  const items = visibleSections(moduleAccess(undefined)).flatMap((section) => section.items)
+  const items = visibleSections(moduleAccess(undefined), 'admin').flatMap((section) => section.items)
   const customers = items.find((item) => item.label === 'Clienti')!
   const suppliers = items.find((item) => item.label === 'Fornitori')!
 

@@ -6,7 +6,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { useWaitingCount } from '@/features/inbox/queries'
 import { useUnreadCount } from '@/features/reminders/queries'
 import { useOverdueCount } from '@/features/tasks/queries'
-import { useCanWrite } from '@/lib/auth'
+import { useAuth, useCanWrite } from '@/lib/auth'
 import { useModules } from '@/lib/modules'
 import { LegalEntitySelect } from './LegalEntitySelect'
 import {
@@ -189,12 +189,13 @@ function More({
   go: (url: string) => void
 }) {
   const modules = useModules()
+  const { user } = useAuth()
   const unread = useUnreadCount()
   const waiting = useWaitingCount()
   const { location } = useRouterState()
   const registryRole = (location.search as { role?: string } | undefined)?.role
   const items: readonly NavItem[] = [
-    ...phoneMoreItems(modules),
+    ...phoneMoreItems(modules, user?.role),
     { to: Agents.to, label: Agents.label, icon: Agents.icon },
     { to: SETTINGS_PATHS.profile, label: SETTINGS.label, icon: SETTINGS.icon },
   ]

@@ -44,6 +44,8 @@ const SCOPED_ROOTS = [
   join(__dirname, '..', 'features', 'dashboard'),
   // «Tasse» (REB-1026): every amount, total and date's net is the server's string.
   join(__dirname, '..', 'features', 'taxes'),
+  // «Esporta per il commercialista» (REB-1028): no figure is parsed from the API; sizes and the counts of parts and open points are read off the lists the server sends.
+  join(__dirname, '..', 'features', 'export'),
 ]
 const SCOPED_FILES = [join(__dirname, '..', 'routes', 'app', 'index.tsx')]
 const FORBIDDEN_CALLS = new Set(['Number', 'parseFloat', 'parseInt'])

@@ -841,6 +841,7 @@ ROWS: list[Row] = [
         body={"date_from": "2026-01-01", "date_to": "2026-03-31"},
     ),
     Row("GET", "/api/accountant-export/exports", admin_only=True),
+    Row("GET", "/api/accountant-export/parts", admin_only=True),
     Row("GET", "/api/accountant-export/exports/{export_id}", admin_only=True),
     Row("GET", "/api/accountant-export/exports/{export_id}/parts/{part}", admin_only=True),
 ]

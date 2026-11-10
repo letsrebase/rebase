@@ -905,6 +905,14 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "needs from `build_accountant_export`, and the download path from "
         "`get_export_download_url`"
     ),
+    (
+        "AccountantExportService",
+        "count_exports",
+    ): "REB-1028: the export page's list says how many there are; same as `list_exports`",
+    ("AccountantExportService", "describe_parts"): (
+        "REB-1028: the export page lists the parts a build would hold before it is made; an agent "
+        "reads the index of the export it built, which names every part and every omission"
+    ),
     ("ProposalService", "accept"): "REB-806: deciding a proposal is a person's act. The "
     "token that read the mail (text written by somebody else) would also have proposed it, "
     "and proposing then accepting in one turn closes the chain. `Actor.require_person` "

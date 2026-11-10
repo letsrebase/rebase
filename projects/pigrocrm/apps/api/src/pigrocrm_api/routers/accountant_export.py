@@ -17,7 +17,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from pigrocrm.core.accountant_export.parts import Period
-from pigrocrm.core.accountant_export.schemas import ExportRead
+from pigrocrm.core.accountant_export.schemas import ExportListRead, ExportRead, PartPreviewRead
 from pigrocrm.core.accountant_export.service import ZIP_MIME, AccountantExportService
 from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep, get_actor
 from pigrocrm_api.downloads import attachment_response
@@ -76,6 +76,22 @@ def build_export(
     return stored.export
 
 
+@router.get("/parts")
+def describe_parts(
+    session: SessionDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+    actor: ActorDep,
+    legal_entity_id: UUID | None = None,
+    all_entities: bool = False,
+) -> list[PartPreviewRead]:
+    """The parts a build for this company would hold, from its modules and fiscal pack, in
+    the order of the index. With `all_entities`, a part that applies to any company."""
+    return _service(session, storage, settings).describe_parts(
+        actor, legal_entity_id, all_entities=all_entities
+    )
+
+
 @router.get("/exports")
 def list_exports(
     session: SessionDep,
@@ -83,10 +99,19 @@ def list_exports(
     settings: SettingsDep,
     actor: ActorDep,
     legal_entity_id: UUID | None = None,
+    year: int | None = Query(
+        default=None, ge=1900, le=2200, description="Only exports whose period starts that year"
+    ),
+    offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
-) -> list[ExportRead]:
-    """The stored exports, newest first. One past 13 months stays listed, with no files."""
-    return _service(session, storage, settings).list_exports(actor, legal_entity_id, limit=limit)
+) -> ExportListRead:
+    """The stored exports, newest first, with how many there are in all. One past 13 months
+    stays listed, with no files."""
+    service = _service(session, storage, settings)
+    return ExportListRead(
+        items=service.list_exports(actor, legal_entity_id, year=year, offset=offset, limit=limit),
+        total_count=service.count_exports(actor, legal_entity_id, year=year),
+    )
 
 
 @router.get("/exports/{export_id}")

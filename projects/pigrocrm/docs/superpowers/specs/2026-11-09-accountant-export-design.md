@@ -212,3 +212,12 @@ stays as the trace and lists no files; a space with nothing due prints nothing, 
 storage refuses a delete prints a line on `stderr` and is tried again the next day.
 The checklist card adds its own snapshot to the row's `checklist`, which today holds the
 index's parts and missing files.
+
+### Built (REB-1028)
+
+The page «Esporta per il commercialista» (`/app/export`, an administrator's) lists the stored exports, prepares a new one and
+downloads each ZIP, from the approved brief `docs/design/2026-11-10-accountant-export-brief.md`. It added three things to the API:
+`GET /api/accountant-export/parts` (the parts a build for a company would hold, from its modules and pack), `year` and `offset` on
+`GET /exports` with the list answering `items` and `total_count`, and the `cause` (`module` or `pack`) of each omitted part in the
+index snapshot, so the page names a part the pack left out and never one a module did. The share link, Drive delivery, the readiness
+checklist and the payroll parts are not drawn until their own data cards exist.

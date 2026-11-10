@@ -30,9 +30,10 @@ import unicodedata
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import Select, extract, func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.accountant_export.index import (
@@ -59,7 +60,7 @@ from pigrocrm.core.accountant_export.retention import (
     RETENTION_MONTHS,
     add_months,
 )
-from pigrocrm.core.accountant_export.schemas import ExportPartRead, ExportRead
+from pigrocrm.core.accountant_export.schemas import ExportPartRead, ExportRead, PartPreviewRead
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, get_settings
@@ -297,15 +298,77 @@ class AccountantExportService:
         return self.storage.get(entry["key"]), ZIP_MIME, entry["filename"]
 
     def list_exports(
-        self, actor: Actor, legal_entity_id: UUID | None = None, *, limit: int = 50
+        self,
+        actor: Actor,
+        legal_entity_id: UUID | None = None,
+        *,
+        year: int | None = None,
+        offset: int = 0,
+        limit: int = 50,
     ) -> list[ExportRead]:
         """The stored exports, newest first, deleted ones included (they are the trace). What
-        the actor's scope hides, the database hides."""
+        the actor's scope hides, the database hides. `year` keeps the exports whose period
+        starts in that calendar year."""
         actor.require_admin(DOWNLOAD_ACTION)
-        query = select(AccountantExportRow).order_by(AccountantExportRow.built_at.desc())
+        query = self._filtered(select(AccountantExportRow), legal_entity_id, year)
+        query = query.order_by(AccountantExportRow.built_at.desc(), AccountantExportRow.id.desc())
+        return [self._read(row) for row in self.session.scalars(query.offset(offset).limit(limit))]
+
+    def count_exports(
+        self, actor: Actor, legal_entity_id: UUID | None = None, *, year: int | None = None
+    ) -> int:
+        """How many stored exports `list_exports` would reach with no page."""
+        actor.require_admin(DOWNLOAD_ACTION)
+        query = self._filtered(select(func.count(AccountantExportRow.id)), legal_entity_id, year)
+        return self.session.scalar(query) or 0
+
+    def describe_parts(
+        self, actor: Actor, legal_entity_id: UUID | None = None, *, all_entities: bool = False
+    ) -> list[PartPreviewRead]:
+        """The parts a build for this company would hold: those that apply to its modules and
+        fiscal pack, in the order of the index. For every company, a part that applies to any
+        of them. A part left out is not named here: the build's index says why."""
+        actor.require_admin(ACTION)
+        if all_entities:
+            actor.require_unscoped_admin(ACTION)
+            if legal_entity_id is not None:
+                raise ValidationFailed(
+                    ENTITY,
+                    "legal_entity_id",
+                    "un'esportazione di tutte le aziende non ne nomina una",
+                    expected="legal_entity_id oppure all_entities, non entrambi",
+                )
+            entities = list(self.legal_entities.repo.list(only_active=False))
+        else:
+            if (
+                legal_entity_id is not None
+                and actor.legal_entities is not None
+                and legal_entity_id not in actor.legal_entities
+            ):
+                raise NotFound(LEGAL_ENTITY, legal_entity_id)
+            entities = [self.legal_entities.require_single(legal_entity_id, entity=ENTITY)]
+        today = dt.datetime.now(dt.UTC).date()
+        contexts = [
+            self._context(actor, Period(today, today), entity, all_entities=all_entities)
+            for entity in entities
+        ]
+        return [
+            PartPreviewRead(
+                key=part.key, label=part.label, date_rule=part.date_rule, contents=part.contents
+            )
+            for part in PARTS
+            if "entity" in part.scopes and any(part.omission(ctx) is None for ctx in contexts)
+        ]
+
+    @staticmethod
+    def _filtered(
+        query: Select[Any], legal_entity_id: UUID | None, year: int | None
+    ) -> Select[Any]:
         if legal_entity_id is not None:
             query = query.where(AccountantExportRow.legal_entity_id == legal_entity_id)
-        return [self._read(row) for row in self.session.scalars(query.limit(limit))]
+        if year is not None:
+            query = query.where(extract("year", AccountantExportRow.period_from) == year)
+        return query
 
     # -- storage -------------------------------------------------------------
 
@@ -513,7 +576,15 @@ class AccountantExportService:
             reason = part.omission(ctx)
             if reason is not None:
                 index.parts.append(
-                    PartLine(section, part.key, part.label, "omitted", part.date_rule, reason)
+                    PartLine(
+                        section,
+                        part.key,
+                        part.label,
+                        "omitted",
+                        part.date_rule,
+                        reason,
+                        cause=part.omission_cause(ctx),
+                    )
                 )
                 continue
             output: PartOutput = part.build(ctx)

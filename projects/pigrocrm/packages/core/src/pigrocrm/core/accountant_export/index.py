@@ -10,7 +10,7 @@ import datetime as dt
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from pigrocrm.core.accountant_export.parts import IndexEntry, MissingFile, Period
+from pigrocrm.core.accountant_export.parts import IndexEntry, MissingFile, OmissionCause, Period
 from pigrocrm.core.csv_cells import BOM, row_line, text_cell
 
 INDEX_FILE = "indice.csv"
@@ -48,6 +48,8 @@ class PartLine:
     date_rule: str
     reason: str | None = None
     entry: IndexEntry | None = None
+    # Only for a part left out: what kind of reason it was.
+    cause: OmissionCause | None = None
 
 
 @dataclass(frozen=True)
@@ -77,6 +79,7 @@ class ExportIndex:
                     "status": line.status,
                     "date_rule": line.date_rule,
                     "reason": line.reason,
+                    "cause": line.cause,
                     "path": line.entry.path if line.entry else None,
                     "count": line.entry.count if line.entry else None,
                     "unit": line.entry.unit if line.entry else None,

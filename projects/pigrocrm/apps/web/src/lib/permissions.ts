@@ -192,6 +192,10 @@ export const MIN_ROLE = {
   get_fiscal_estimate: 'admin',
   // The tax calendar (REB-1004) is the same fiscal position as the estimate: an administrator's.
   get_tax_calendar: 'admin',
+  // The accountant's period export (REB-1028): every fiscal figure of a company, so the page, its
+  // entry in the menu and the download are an administrator's, as the core guards them.
+  build_accountant_export: 'admin',
+  get_export_download_url: 'admin',
   create_cost_category: 'admin',
   update_cost_category: 'admin',
   archive_cost_category: 'admin',
