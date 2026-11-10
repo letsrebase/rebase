@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import { api } from '@/lib/api'
 import { NotificationsPanel } from './NotificationsPanel'
 import { RemindersPanel } from './RemindersPanel'
 
@@ -39,5 +40,42 @@ describe('the Promemoria section', () => {
 
     expect(screen.getByText('editor dello scope space')).toBeInTheDocument()
     expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+  })
+
+  it('reads who changed the defaults and when, with the reminder named as the section names it', async () => {
+    const answers: Record<string, unknown> = {
+      '/api/reminders/preferences': {
+        types: [{ key: 'invoice_overdue', label: 'Fattura scaduta' }],
+      },
+      '/api/reminders/defaults/timeline': [
+        {
+          id: 'e2',
+          kind: 'defaults_reset',
+          occurred_at: '2026-11-09T10:15:00Z',
+          actor_type: 'user',
+          actor_name: 'Ivan Rossi',
+          payload: { type: 'general' },
+        },
+        {
+          id: 'e1',
+          kind: 'defaults_updated',
+          occurred_at: '2026-11-09T09:00:00Z',
+          actor_type: 'user',
+          actor_name: 'Lorenzo Fiore',
+          payload: { type: 'invoice_overdue', changed: ['ladder'] },
+        },
+      ],
+    }
+    vi.mocked(api.GET).mockImplementation(((path: string) =>
+      Promise.resolve({ data: answers[path], response: new Response(null, { status: 200 }) })) as never)
+    renderPanel(<RemindersPanel />)
+
+    const history = await screen.findByRole('region', { name: 'Storico delle modifiche' })
+    expect(await within(history).findByText('Lorenzo Fiore')).toBeInTheDocument()
+    expect(within(history).getByText('Ivan Rossi')).toBeInTheDocument()
+    expect(within(history).getByText('Promemoria: valori predefiniti modificati')).toBeInTheDocument()
+    expect(within(history).getByText('Promemoria: valori predefiniti ripristinati')).toBeInTheDocument()
+    expect(await within(history).findByText(/Fattura scaduta · Campi modificati/)).toBeInTheDocument()
+    expect(within(history).getByText('Ore di silenzio e riepilogo')).toBeInTheDocument()
   })
 })

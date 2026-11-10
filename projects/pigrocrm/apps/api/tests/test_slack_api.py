@@ -302,6 +302,29 @@ def test_the_channel_for_space_wide_reminders_is_picked_and_cleared(
     assert cleared.json()["workspace"]["channel_id"] is None
 
 
+def test_an_admin_reads_the_slack_history_and_a_member_cannot(
+    slack_ready: TestClient, logged_in: TestClient
+) -> None:
+    """REB-828: what the Slack section's history lists, and who may read it."""
+    assert logged_in.get("/api/slack/timeline").json() == []
+    _connect(logged_in)
+    logged_in.put("/api/slack/channel", json={"channel_id": "C1"})
+    logged_in.delete("/api/slack/account")
+
+    entries = logged_in.get("/api/slack/timeline").json()
+    assert [entry["kind"] for entry in entries] == [
+        "slack.workspace_disconnected",
+        "slack.channel_set",
+        "slack.workspace_connected",
+    ]
+    assert entries[1]["payload"] == {"channel": "promemoria"}
+    assert all(entry["actor_name"] for entry in entries)
+    assert BOT_TOKEN not in str(entries)
+
+    member = _collaborator(logged_in)
+    assert member.get("/api/slack/timeline").status_code == 403
+
+
 def test_a_token_slack_revokes_turns_the_page_into_a_reconnect(
     slack_ready: TestClient, logged_in: TestClient, slack: FakeSlack
 ) -> None:

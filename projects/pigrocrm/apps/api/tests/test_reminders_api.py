@@ -43,6 +43,25 @@ def test_an_admin_sets_a_default_and_a_member_overrides_it_for_themselves(
     assert again["mine"] == []
 
 
+def test_an_admin_reads_who_changed_the_defaults_and_a_members_own_layer_is_not_in_it(
+    logged_in: TestClient,
+) -> None:
+    """REB-828: the history under the settings section."""
+    assert logged_in.get("/api/reminders/defaults/timeline").json() == []
+    logged_in.patch("/api/reminders/preferences/space/task_overdue", json={"channels": ["email"]})
+    logged_in.patch("/api/reminders/preferences/me/task_overdue", json={"enabled": False})
+    logged_in.delete("/api/reminders/preferences/space/task_overdue")
+
+    entries = logged_in.get("/api/reminders/defaults/timeline").json()
+    assert [entry["kind"] for entry in entries] == ["defaults_reset", "defaults_updated"]
+    assert entries[1]["payload"] == {"type": "task_overdue", "changed": ["channels"]}
+    assert entries[0]["actor_name"] and entries[0]["occurred_at"]
+
+
+def test_a_member_cannot_read_the_defaults_history(collaborator_client: TestClient) -> None:
+    assert collaborator_client.get("/api/reminders/defaults/timeline").status_code == 403
+
+
 def test_a_threshold_save_that_breaks_the_order_is_a_422_in_italian(logged_in: TestClient) -> None:
     response = logged_in.patch(
         "/api/reminders/preferences/me/task_overdue",

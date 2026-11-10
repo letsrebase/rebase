@@ -160,10 +160,21 @@ const GENERIC_FROM_TO_KINDS: Record<string, true> = {
  *    ugly-but-true `snake_case: value` dump otherwise, which beats saying
  *    nothing about a real event.
  */
-function ActivityDetail({ kind, payload }: { kind: string; payload: ActivityEntry['payload'] }) {
+function ActivityDetail({
+  kind,
+  payload,
+  typeLabel,
+}: {
+  kind: string
+  payload: ActivityEntry['payload']
+  typeLabel?: (key: string) => string | undefined
+}) {
+  // The reminder type a defaults change is about, in the word the settings page uses.
+  const typeWord = typeof payload.type === 'string' ? typeLabel?.(payload.type) : undefined
   if (Array.isArray(payload.changed) && payload.changed.length > 0) {
     return (
       <p className="mt-1 text-sm text-muted-foreground">
+        {typeWord ? `${typeWord} · ` : ''}
         Campi modificati: {payload.changed.map((field) => labelForPayloadKey(String(field))).join(', ')}
       </p>
     )
@@ -192,18 +203,22 @@ function ActivityDetail({ kind, payload }: { kind: string; payload: ActivityEntr
     triggered_via: true,
     draft_id: true,
     user_id: true,
+    // Slack's own id of the workspace, which the name next to it already says.
+    team_id: true,
     // A note event's id and door: the label says what happened, the actor line says who and
     // how, and the text of a note is on the page, never repeated here.
     note_id: true,
     source: true,
   }
-  const rest = Object.entries(payload).filter(([key]) => hidden[key] !== true)
-  if (rest.length === 0) return null
-  return (
-    <p className="mt-1 text-sm text-muted-foreground">
-      {rest.map(([key, value]) => `${labelForPayloadKey(key)}: ${labelForPayloadValue(kind, key, value)}`).join(' · ')}
-    </p>
+  const rest = Object.entries(payload).filter(
+    ([key]) => hidden[key] !== true && !(key === 'type' && typeWord !== undefined),
   )
+  const parts = [
+    ...(typeWord ? [typeWord] : []),
+    ...rest.map(([key, value]) => `${labelForPayloadKey(key)}: ${labelForPayloadValue(kind, key, value)}`),
+  ]
+  if (parts.length === 0) return null
+  return <p className="mt-1 text-sm text-muted-foreground">{parts.join(' · ')}</p>
 }
 
 // Three explicit branches, not a shared helper keyed off a path template: the
@@ -254,6 +269,10 @@ const TIMELINE_FETCHERS: Record<
         params: { path: { contract_id: entityId }, query: { limit } },
       }),
     ),
+  // The space's own settings have one history each and no id to name it.
+  slack: (_entityId, limit) => unwrap(api.GET('/api/slack/timeline', { params: { query: { limit } } })),
+  reminder_defaults: (_entityId, limit) =>
+    unwrap(api.GET('/api/reminders/defaults/timeline', { params: { query: { limit } } })),
 }
 
 interface TimelineProps {
@@ -271,6 +290,12 @@ interface TimelineProps {
    * `toProblem` path, rather than having it masked here.
    */
   limit?: number
+  /**
+   * The reminder defaults' history names a reminder type by its code; the page that shows
+   * it holds the catalogue and says the word a person knows it by. Absent, the code is
+   * left out rather than printed as English.
+   */
+  typeLabel?: (key: string) => string | undefined
 }
 
 /**
@@ -279,7 +304,7 @@ interface TimelineProps {
  * name) and from where (a «dal web» or «via MCP» marker, never an absence of one), and
  * whatever extra the payload has to say.
  */
-export function Timeline({ entityType, entityId, limit = 50 }: TimelineProps) {
+export function Timeline({ entityType, entityId, limit = 50, typeLabel }: TimelineProps) {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: [...queryKeys.timeline(entityType, entityId), limit],
     queryFn: () => TIMELINE_FETCHERS[entityType](entityId, limit),
@@ -321,7 +346,7 @@ export function Timeline({ entityType, entityId, limit = 50 }: TimelineProps) {
           </div>
           <ActorLine entry={entry} />
           <TriggeredBy entry={entry} />
-          <ActivityDetail kind={entry.kind} payload={entry.payload} />
+          <ActivityDetail kind={entry.kind} payload={entry.payload} typeLabel={typeLabel} />
         </li>
       ))}
     </ol>

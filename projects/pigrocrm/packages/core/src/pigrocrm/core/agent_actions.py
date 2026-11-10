@@ -270,6 +270,8 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         "read_user_timeline",
         "read_field_definition_timeline",
         "read_pipeline_stage_timeline",
+        "read_slack_timeline",
+        "read_reminder_defaults_timeline",
         "render_contract_register",
     }
 )
