@@ -1,20 +1,29 @@
-import { useMemo, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { DownloadButton } from '@/components/DownloadButton'
 import { LoadingState } from '@/components/LoadingState'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
+import { toProblem } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { tenantPrefix } from '@/lib/tenant'
 import { Button } from '@rebase/ui/button'
+import { cn } from '@rebase/ui/cn'
+import { toast } from '@rebase/ui/sonner'
 import {
   CONTROL_TONES,
+  LINK_LABELS,
+  LINK_TONES,
   MISSING_SHOWN,
   STATUS_LABELS,
   STATUS_TONES,
   andOthers,
   controlLabel,
+  driveWrittenLine,
   formatDateTime,
   formatDay,
   formatMebibytes,
+  linkStateOf,
+  openingsWord,
   partCount,
   partsWord,
   quantity,
@@ -25,7 +34,17 @@ import {
   type StoredExport,
 } from './labels'
 import { periodName } from './periods'
-import { useBuilderNames, useCompanyName, useExport } from './queries'
+import {
+  useBuilderNames,
+  useCompanyName,
+  useDriveStatus,
+  useDriveWrites,
+  useExport,
+  useExportLinks,
+  useRevokeLink,
+  useWriteToDrive,
+} from './queries'
+import { ShareLinkDialog } from './ShareLinkDialog'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -143,12 +162,131 @@ function Check({ index }: { index: ExportIndex }) {
   )
 }
 
-/** The files of the export, one button each: one ZIP is the strong action, several are quiet. */
+/** The links of this export: state, expiry, count of openings and «Revoca», newest first. The
+ *  address is never here: it was shown once, when the link was made. */
+function Links({ exportId, onOpenLink }: { exportId: string; onOpenLink: (id: string) => void }) {
+  const links = useExportLinks(exportId)
+  const revoke = useRevokeLink()
+  if (links.isError) return <QueryErrorBanner error={links.error} onRetry={() => void links.refetch()} />
+  if (links.isPending) return <LoadingState label="Leggo i link…" />
+  if (links.data.length === 0) {
+    return <p className="text-sm text-muted-foreground">Nessun link per questa esportazione.</p>
+  }
+  return (
+    <ul className="divide-y border" aria-label="Link dell’esportazione">
+      {links.data.map((link) => {
+        const state = linkStateOf(link)
+        return (
+          <li
+            key={link.id}
+            className={cn('space-y-1 px-3 py-2 text-sm', state !== 'active' && 'text-muted-foreground')}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <StatusPill tone={LINK_TONES[state]}>{LINK_LABELS[state]}</StatusPill>
+              {state === 'active' ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={revoke.isPending}
+                  onClick={() =>
+                    revoke.mutate(link.id, {
+                      onSuccess: () => toast.success('Link revocato: chi lo ha non scarica più'),
+                      onError: (error) => toast.error(toProblem(error).detail),
+                    })
+                  }
+                >
+                  Revoca
+                </Button>
+              ) : null}
+            </div>
+            <p className="text-xs tabular-nums">
+              Creato il {formatDateTime(link.created_at)} · scade il {formatDay(link.expires_at)}
+            </p>
+            <p className="text-xs">
+              {link.download_count === 0 ? (
+                openingsWord(0)
+              ) : (
+                <button
+                  type="button"
+                  className="underline underline-offset-2"
+                  onClick={() => onOpenLink(link.id)}
+                >
+                  {openingsWord(link.download_count)}
+                </button>
+              )}
+            </p>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+/**
+ * Writing the export to the space's Drive: the button only when the storage is Drive (a person's
+ * act, no agent has it), the sentence that says why not otherwise, and where the copies went. A
+ * Drive that cannot be reached is a red band with the way to Drive's own page.
+ */
+function DriveDelivery({ exportId }: { exportId: string }) {
+  const status = useDriveStatus()
+  const writes = useDriveWrites(exportId)
+  const write = useWriteToDrive(exportId)
+  const latest = writes.data?.[0]
+  if (status.isError) return <QueryErrorBanner error={status.error} onRetry={() => void status.refetch()} />
+  if (status.isPending) return null
+  const drive = status.data
+  const opener = (
+    <a className="underline underline-offset-2" href={`${tenantPrefix}/app/settings/drive`}>
+      Apri Google Drive
+    </a>
+  )
+  if (!drive.available) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        {drive.reason === 'not_connected' ? (
+          <>
+            Google Drive è la cartella dei file di questo spazio, ma non è ancora collegato. {opener}
+          </>
+        ) : (
+          'Questo spazio salva i file sul server, non su Google Drive: la consegna su Drive non è disponibile.'
+        )}
+      </p>
+    )
+  }
+  return (
+    <div className="space-y-2">
+      <Button
+        variant="outline"
+        className="w-full sm:w-auto"
+        disabled={write.isPending}
+        onClick={() => write.mutate(undefined, { onSuccess: () => toast.success('Scritta su Drive') })}
+      >
+        {write.isPending ? 'Scrivo su Drive…' : 'Scrivi su Drive'}
+      </Button>
+      {write.isError ? (
+        <p role="alert" className="border border-destructive px-3 py-2 text-sm text-destructive">
+          {toProblem(write.error).detail} {opener}
+        </p>
+      ) : null}
+      {latest === undefined ? null : (
+        <p className="break-all text-xs text-muted-foreground">{driveWrittenLine(latest)}</p>
+      )}
+    </div>
+  )
+}
+
+/** The delivery of the export, the panel's foot: the link is how the file reaches the accountant,
+ *  so it is the one strong button; the download and the Drive copy are quiet. */
 function Delivery({ item }: { item: StoredExport }) {
+  const [linkOpen, setLinkOpen] = useState(false)
   if (item.parts.length === 0) return null
   const many = item.parts.length > 1
   return (
     <Section title="Consegna">
+      <Button className="w-full sm:w-auto" onClick={() => setLinkOpen(true)}>
+        Crea un link per il commercialista
+      </Button>
+      <ShareLinkDialog exportId={item.id} open={linkOpen} onOpenChange={setLinkOpen} />
       {many ? (
         <p className="text-sm text-muted-foreground">
           {item.parts.length} file ZIP: ognuno si apre da solo, e l’indice dentro il primo dice
@@ -160,7 +298,7 @@ function Delivery({ item }: { item: StoredExport }) {
           <DownloadButton
             key={part.part}
             path={part.download_url}
-            variant={many ? 'outline' : 'default'}
+            variant="outline"
             className="w-full justify-between sm:w-auto"
           >
             <span>{many ? `Scarica il file ${part.part} di ${item.parts.length}` : 'Scarica lo ZIP'}</span>
@@ -168,16 +306,25 @@ function Delivery({ item }: { item: StoredExport }) {
           </DownloadButton>
         ))}
       </div>
+      <DriveDelivery exportId={item.id} />
     </Section>
   )
 }
 
 /**
- * The open export (the approved brief): its index, the check as it was made, the delivery and
- * the retention line. Only the delivery that exists is drawn: the link and the Drive copy are
- * their own cards, and an export past its 13 months is a trace with nothing to deliver.
+ * The open export (the approved brief): its index, the check as it was made, its links, the
+ * delivery and the retention line. An export past its 13 months is a trace with nothing to
+ * deliver, and its links are over with it.
  */
-export function ExportPanel({ id, onClose }: { id: string; onClose: () => void }) {
+export function ExportPanel({
+  id,
+  onClose,
+  onOpenLink,
+}: {
+  id: string
+  onClose: () => void
+  onOpenLink: (linkId: string) => void
+}) {
   const detail = useExport(id)
   const companyName = useCompanyName()
   const builder = useBuilderNames()
@@ -243,6 +390,11 @@ export function ExportPanel({ id, onClose }: { id: string; onClose: () => void }
           <Check index={index} />
         </Section>
 
+        {status === 'ready' ? (
+          <Section title="Link per il commercialista">
+            <Links exportId={item.id} onOpenLink={onOpenLink} />
+          </Section>
+        ) : null}
       </div>
 
       {/* The delivery is the panel's foot and stays in view while the index scrolls: the download is

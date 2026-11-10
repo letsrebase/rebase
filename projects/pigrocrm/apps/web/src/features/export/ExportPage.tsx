@@ -7,6 +7,7 @@ import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
 import { useMediaQuery } from '@rebase/ui/use-media-query'
 import { ExportsTab } from './ExportsTab'
 import type { Attempt, BuildTarget } from './labels'
+import { LinksTab } from './LinksTab'
 import { PrepareTab } from './PrepareTab'
 import { useBuildExport, useExportTotal } from './queries'
 import { TABS, type ExportTab } from './search'
@@ -18,20 +19,32 @@ const INLINE_PANEL = '(min-width: 1024px)'
  * prepares the archive of one company and one period and finds the ones already made. The tab and
  * the open export are in the URL; what the page shows is the API's to decide, an admin's alone.
  *
- * Built here: «Prepara», the form, and «Esportazioni», the stored exports with their panel and
- * the download. The share link, the Drive copy, the readiness checklist and the payroll parts
- * follow their own data cards, and until they exist nothing on the page names them.
+ * Built here: «Prepara», the form, «Esportazioni», the stored exports with their panel, the
+ * download, the share link and the copy in Drive (REB-1047), and «Link condivisi», every link of
+ * the space with its openings. The readiness checklist and the payroll parts follow their own data
+ * cards, and until they exist nothing on the page names them.
  */
 export function ExportPage({
   tab,
   item,
+  link = null,
   onTabChange,
   onItemChange,
+  onLinkChange = () => {},
+  onOpenLink = () => {},
+  onOpenExport = onItemChange,
 }: {
   tab: ExportTab
   item: string | null
+  /** The open link of «Link condivisi». */
+  link?: string | null
   onTabChange: (next: ExportTab) => void
   onItemChange: (next: string | null) => void
+  onLinkChange?: (next: string | null) => void
+  /** Goes to a link of an export, from the export's panel, in «Link condivisi». */
+  onOpenLink?: (linkId: string) => void
+  /** Goes to an export, from a link's panel, in «Esportazioni». */
+  onOpenExport?: (exportId: string) => void
 }) {
   const inline = useMediaQuery(INLINE_PANEL)
   const total = useExportTotal()
@@ -90,9 +103,9 @@ export function ExportPage({
     <Tabs
       value={tab}
       onValueChange={(next) => onTabChange(next as ExportTab)}
-      // From `lg` the exports tab is as tall as the window and its list and panel scroll inside
+      // From `lg` the exports and links tabs are as tall as the window and its list and panel scroll inside
       // it, so the panel's download is always in view; below it the page flows.
-      className={cn('flex min-h-full flex-col', inline && tab === 'exports' && 'h-full')}
+      className={cn('flex min-h-full flex-col', inline && tab !== 'prepare' && 'h-full')}
     >
       <PageHeader
         icon={PackageOpen}
@@ -113,7 +126,7 @@ export function ExportPage({
       />
       {tab === 'prepare' ? (
         <PrepareTab onCreate={start} />
-      ) : (
+      ) : tab === 'exports' ? (
         <ExportsTab
           item={item}
           attempts={attempts}
@@ -121,6 +134,14 @@ export function ExportPage({
           onRetry={retry}
           onDismiss={dismiss}
           onPrepare={() => onTabChange('prepare')}
+          onOpenLink={onOpenLink}
+        />
+      ) : (
+        <LinksTab
+          link={link}
+          onLinkChange={onLinkChange}
+          onOpenExport={onOpenExport}
+          onPrepareExports={() => onTabChange('exports')}
         />
       )}
     </Tabs>

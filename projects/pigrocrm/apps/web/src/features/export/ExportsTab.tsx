@@ -53,7 +53,7 @@ const YEARS_SHOWN = 5
 
 /** «Azienda» is a word only a space with several companies sees. */
 const emptyText = (several: boolean) =>
-  `Qui trovi gli archivi creati per il commercialista: da qui li scarichi. Per crearne uno, scegli ${
+  `Qui trovi gli archivi creati per il commercialista: da qui li scarichi o li condividi con un link. Per crearne uno, scegli ${
     several ? 'l’azienda e il periodo' : 'il periodo'
   }.`
 
@@ -140,6 +140,7 @@ export function ExportsTab({
   onRetry,
   onDismiss,
   onPrepare,
+  onOpenLink,
 }: {
   item: string | null
   attempts: readonly Attempt[]
@@ -147,6 +148,8 @@ export function ExportsTab({
   onRetry: (attempt: Attempt) => void
   onDismiss: (attempt: Attempt) => void
   onPrepare: () => void
+  /** Opens a link of an export in «Link condivisi», where its openings are. */
+  onOpenLink: (linkId: string) => void
 }) {
   const { user } = useAuth()
   const me = user?.id ?? null
@@ -360,7 +363,7 @@ export function ExportsTab({
                 Chiudi
               </Button>
             </div>
-            <ExportPanel id={item} onClose={() => onItemChange(null)} />
+            <ExportPanel id={item} onClose={() => onItemChange(null)} onOpenLink={onOpenLink} />
           </aside>
         ) : null}
       </div>
@@ -374,10 +377,10 @@ export function ExportsTab({
           >
             <SheetTitle className="sr-only">Esportazione aperta</SheetTitle>
             <SheetDescription className="sr-only">
-              Cosa c’è nello ZIP, il controllo di quando è stata creata e come scaricarla.
+              Cosa c’è nello ZIP, il controllo di quando è stata creata, i link e come consegnarla.
             </SheetDescription>
             <div className="flex min-h-0 flex-1 flex-col pt-12">
-              <ExportPanel id={item} onClose={() => onItemChange(null)} />
+              <ExportPanel id={item} onClose={() => onItemChange(null)} onOpenLink={onOpenLink} />
             </div>
           </SheetContent>
         </Sheet>

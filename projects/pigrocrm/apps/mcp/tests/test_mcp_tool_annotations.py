@@ -126,7 +126,9 @@ DEFAULT_BUDGET_BYTES = 108_200
 # REB-1042: 138.4 KB, up from 137.1 KB, for `get_bank_movement` and `propose_movement_match` (a
 # full-access administrator's: a movement with its ranked candidates, and a proposal of a list of
 # items), measured at 138,315.
-FULL_ACCESS_BUDGET_BYTES = 138_400
+# REB-1047: 139.15 KB, up from 138.4 KB, for `create_export_share_link` (a full-access
+# administrator's: an export and a number of days) and its docstring, measured at 139,060.
+FULL_ACCESS_BUDGET_BYTES = 139_150
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

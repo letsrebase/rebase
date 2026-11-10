@@ -3,6 +3,10 @@ import type { components } from '@/lib/api-types'
 
 export type StoredExport = components['schemas']['ExportRead']
 export type ExportPart = components['schemas']['PartPreviewRead']
+export type ShareLink = components['schemas']['ShareLinkRead']
+export type CreatedShareLink = components['schemas']['ShareLinkCreated']
+export type DriveWrite = components['schemas']['DriveWriteRead']
+export type DriveStatus = components['schemas']['DriveDeliveryStatus']
 
 /** What `POST /exports` takes. */
 export interface BuildRequest {
@@ -195,4 +199,44 @@ export const MISSING_SHOWN = 5
 
 export function andOthers(total: number): string | null {
   return total > MISSING_SHOWN ? `e altre ${total - MISSING_SHOWN}` : null
+}
+
+/** The state of a share link as a person reads it; the server says which (`state`). */
+export type LinkState = 'active' | 'expired' | 'revoked'
+
+export const LINK_LABELS: Record<LinkState, string> = {
+  active: 'Attivo',
+  expired: 'Scaduto',
+  revoked: 'Revocato',
+}
+
+/** An ended link stays in the list as a muted row: it never reads as an error. */
+export const LINK_TONES: Record<LinkState, StatusTone> = {
+  active: 'ink',
+  expired: 'muted',
+  revoked: 'muted',
+}
+
+export function linkStateOf(link: Pick<ShareLink, 'state'>): LinkState {
+  return link.state === 'expired' || link.state === 'revoked' ? link.state : 'active'
+}
+
+/** The lifetimes the dialog offers, in days: a week unless the admin says otherwise, thirty at
+ *  most (the server refuses more). */
+export const EXPIRY_DAYS = [1, 3, 7, 14, 30] as const
+export const DEFAULT_EXPIRY_DAYS = 7
+
+export function daysWord(days: number): string {
+  return days === 1 ? '1 giorno' : `${days} giorni`
+}
+
+/** «Nessuna apertura», «1 apertura», «4 aperture». */
+export function openingsWord(count: number): string {
+  if (count === 0) return 'Nessuna apertura'
+  return count === 1 ? '1 apertura' : `${count} aperture`
+}
+
+/** Where a copy in Drive went, as the brief writes it: «Scritta il 10/11/2026 10:40 in …/». */
+export function driveWrittenLine(write: Pick<DriveWrite, 'written_at' | 'prefix'>): string {
+  return `Scritta il ${formatDateTime(write.written_at)} in ${write.prefix}/`
 }

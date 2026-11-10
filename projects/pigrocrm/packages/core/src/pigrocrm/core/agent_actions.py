@@ -171,6 +171,9 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         # (accountant export design § 5).
         "build_accountant_export",
         "get_export_download_url",
+        # A time-limited link to one stored export, opened with no account: the address is the
+        # credential, so only an administrator's token with `full_access` makes one (§ 5).
+        "create_export_share_link",
         # Rates, cost categories and period locks: configuration, or rewriting what a
         # quarter's work was worth (slice 4 §11).
         "recalculate_rates",
@@ -432,6 +435,12 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         "read_slack_timeline",
         "read_reminder_defaults_timeline",
         "render_contract_register",
+        # What happens to an export once it is handed over (REB-1047, accountant export § 5): who
+        # holds a link and when it was opened is read and ended by a person, and writing a copy
+        # to the space's Drive is a person's act. The tool that makes a link is `full_access`'s.
+        "list_export_share_links",
+        "revoke_export_share_link",
+        "write_export_to_drive",
     }
 )
 
@@ -500,6 +509,10 @@ ACTION_LABELS: dict[str, str] = {
     "get_staff_member": "leggere il compenso di una persona dell'azienda",
     "build_accountant_export": "preparare l'esportazione per il commercialista",
     "get_export_download_url": "scaricare l'esportazione per il commercialista",
+    "create_export_share_link": "creare un link per condividere l'esportazione",
+    "list_export_share_links": "vedere i link di condivisione delle esportazioni",
+    "revoke_export_share_link": "revocare un link di condivisione",
+    "write_export_to_drive": "scrivere l'esportazione su Google Drive",
     "list_staff": "leggere l'elenco delle persone dell'azienda e i loro compensi",
     "set_declared_tax_figure": "registrare le cifre della dichiarazione dei redditi",
     "create_recurring_expense": "registrare una spesa ricorrente",

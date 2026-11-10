@@ -899,6 +899,14 @@ ROWS: list[Row] = [
     Row("GET", "/api/accountant-export/parts", admin_only=True),
     Row("GET", "/api/accountant-export/exports/{export_id}", admin_only=True),
     Row("GET", "/api/accountant-export/exports/{export_id}/parts/{part}", admin_only=True),
+    # --- handing an export over: share links and the copy in Drive (REB-1047) --
+    Row("POST", "/api/accountant-export/exports/{export_id}/share-links", admin_only=True, body={}),
+    Row("GET", "/api/accountant-export/share-links", admin_only=True),
+    Row("GET", "/api/accountant-export/share-links/{link_id}", admin_only=True),
+    Row("POST", "/api/accountant-export/share-links/{link_id}/revoke", admin_only=True),
+    Row("GET", "/api/accountant-export/drive", admin_only=True),
+    Row("GET", "/api/accountant-export/exports/{export_id}/drive-writes", admin_only=True),
+    Row("POST", "/api/accountant-export/exports/{export_id}/drive-writes", admin_only=True),
 ]
 
 # The routes the sweep never calls, each open on purpose. Every entry is a
@@ -934,6 +942,15 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
         "authenticated half of this sweep must not be reachable for. Not called: "
         "spending a token this suite never minted would answer 404/410, a status that "
         "says nothing about roles."
+    ),
+    ("POST", "/api/accountant-export/shared/describe"): (
+        "The door of an export's share link (REB-1047): open to whoever holds the token, and it "
+        "writes nothing. Not called: a token this suite never made answers 404, which says "
+        "nothing about roles; `test_accountant_export_share_api.py` walks it."
+    ),
+    ("POST", "/api/accountant-export/shared/download"): (
+        "The same door, handing a ZIP out and counting the opening: unauthenticated by design, "
+        "throttled per client, covered by `test_accountant_export_share_api.py`."
     ),
     ("POST", "/api/tenants/"): (
         "Space signup: public by design (the person has no account yet), and it "
