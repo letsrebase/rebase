@@ -30,17 +30,19 @@ export interface FiscalField {
 /**
  * The regime choice (REB-621, spec 2026-10-03 §1.3; REB-760): the two Italian codes the
  * server implements, each on the pack of its own (`it-flat-rate` for the forfettario,
- * `it-standard` for the ordinary regime), and the `non-it` pack, which has no FatturaPA
+ * `it-standard` for the ordinary regime, `it-company` for an srl, which invoices as `RF01`
+ * too and differs only in the taxes it owes, REB-1005), and the `non-it` pack, which has no FatturaPA
  * code at all. A select and not the free RF field this panel had: `resolve_regime`
  * refuses every other code anyway («non implementato»), so a free field only offered
  * ways to be refused.
  */
-export type Regime = 'RF19' | 'RF01' | 'foreign'
-type PackId = 'it-flat-rate' | 'it-standard' | 'non-it'
+export type Regime = 'RF19' | 'RF01' | 'company' | 'foreign'
+type PackId = 'it-flat-rate' | 'it-standard' | 'it-company' | 'non-it'
 
 export const Regimes: readonly { value: Regime; label: string }[] = [
   { value: 'RF19', label: 'Forfettario (RF19)' },
   { value: 'RF01', label: 'Ordinario (RF01)' },
+  { value: 'company', label: 'Srl (RF01)' },
   { value: 'foreign', label: 'Estero: nessun regime italiano' },
 ]
 
@@ -51,16 +53,23 @@ export const ORDINARY_RATE = '22.00'
 export const PACK_OF: Record<Regime, PackId> = {
   RF19: 'it-flat-rate',
   RF01: 'it-standard',
+  company: 'it-company',
   foreign: 'non-it',
 }
 
 export function regimeOf(values: { pack_id: PackId }): Regime {
   if (values.pack_id === 'non-it') return 'foreign'
+  if (values.pack_id === 'it-company') return 'company'
   return values.pack_id === 'it-standard' ? 'RF01' : 'RF19'
 }
 
 function isPackId(value: string): value is PackId {
-  return value === 'it-flat-rate' || value === 'it-standard' || value === 'non-it'
+  return (
+    value === 'it-flat-rate' ||
+    value === 'it-standard' ||
+    value === 'it-company' ||
+    value === 'non-it'
+  )
 }
 
 /**
@@ -217,7 +226,7 @@ export function bodyFrom(values: Values): Record<string, unknown> {
       social_security_rate: null,
     }
   }
-  if (pack_id === 'it-standard') {
+  if (pack_id === 'it-standard' || pack_id === 'it-company') {
     return {
       ...rest,
       pack_id,

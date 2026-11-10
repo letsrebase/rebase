@@ -2,6 +2,7 @@
 and `build_year_csv`)."""
 
 from collections import defaultdict
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
@@ -40,7 +41,9 @@ def build_year(
         lines_by_invoice[line.invoice_id].append(line)
 
     register: list[YearRegisterRow] = []
-    regimes: dict[tuple[str | None, str], tuple[int, Decimal]] = {}
+    # By regime code alone (REB-1005): `it-standard` and `it-company` both invoice as `RF01`, so
+    # a year that spans the switch is one row. The pack named is the latest invoice's.
+    regimes: dict[str | None, tuple[int, Decimal, date, str]] = {}
     treatments: dict[tuple[Decimal, str | None, str | None], tuple[int, Decimal]] = {}
     for invoice, customer in invoices:
         # The register holds issued invoices only, and the table's constraints give
@@ -91,9 +94,13 @@ def build_year(
             )
         )
         code = tax.get("regime_code")
-        regime = (code, frozen_pack_id(code, tax.get("pack_id") or PACK_IT_FLAT_RATE))
-        count, total = regimes.get(regime, (0, ZERO_MONEY))
-        regimes[regime] = (count + 1, total + invoice.taxable_amount)
+        pack = frozen_pack_id(code, tax.get("pack_id") or PACK_IT_FLAT_RATE)
+        count, total, latest, latest_pack = regimes.get(
+            code, (0, ZERO_MONEY, invoice.issue_date, pack)
+        )
+        if invoice.issue_date >= latest:
+            latest, latest_pack = invoice.issue_date, pack
+        regimes[code] = (count + 1, total + invoice.taxable_amount, latest, latest_pack)
         for line in lines_by_invoice[invoice.id]:
             key = (line.vat_rate, line.vat_nature, line.legal_reference)
             count, total = treatments.get(key, (0, ZERO_MONEY))
@@ -112,8 +119,8 @@ def build_year(
         ),
         regimes=[
             YearRegime(regime_code=code, pack_id=pack, invoices=count, revenue=total)
-            for (code, pack), (count, total) in sorted(
-                regimes.items(), key=lambda item: (item[0][0] or "", item[0][1])
+            for code, (count, total, _latest, pack) in sorted(
+                regimes.items(), key=lambda item: item[0] or ""
             )
         ],
         treatments=[

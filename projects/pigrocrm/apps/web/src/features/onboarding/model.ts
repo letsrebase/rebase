@@ -10,11 +10,11 @@ import type { ModuleKey } from '@/lib/modules'
 
 export type Profile = components['schemas']['SpaceProfileSet']['profile']
 export type Proposal = components['schemas']['SpaceProfileProposal']
-export type FiscalPack = 'it-flat-rate' | 'it-standard'
+export type FiscalPack = 'it-flat-rate' | 'it-standard' | 'it-company'
 
 /** The regimes a profile offers on step 2. A solo space runs the flat-rate or the ordinary
- *  regime; a company is an srl (other forms are shown as «presto»), and until the company's
- *  own taxes exist an srl invoices exactly like an ordinary regime: `it-standard` (RF01). */
+ *  regime; a company is an srl on its own pack, `it-company` (REB-1005), which invoices like the
+ *  ordinary regime (RF01) and owes its own taxes. Other forms are shown as «presto». */
 export const REGIMES: Record<Profile, readonly { pack: FiscalPack; label: string; hint: string }[]> = {
   solo: [
     {
@@ -30,7 +30,7 @@ export const REGIMES: Record<Profile, readonly { pack: FiscalPack; label: string
   ],
   company: [
     {
-      pack: 'it-standard',
+      pack: 'it-company',
       label: 'Srl',
       hint: 'Fatture con IVA al 22%.',
     },

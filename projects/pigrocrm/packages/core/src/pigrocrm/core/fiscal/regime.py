@@ -17,7 +17,12 @@ from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
 from pigrocrm.core.errors import ValidationFailed
-from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE, PACK_IT_STANDARD, PACK_NON_IT
+from pigrocrm.core.fiscal.pack import (
+    PACK_IT_COMPANY,
+    PACK_IT_FLAT_RATE,
+    PACK_IT_STANDARD,
+    PACK_NON_IT,
+)
 from pigrocrm.core.fiscal.schemas import (
     COUNTRIES_UE,
     DEFAULT_LEGAL_REFERENCE,
@@ -38,8 +43,12 @@ ZERO = Decimal("0.00")
 class RegimeStrategy(Protocol):
     code: str
     # The pack this strategy belongs to: a regime and a pack are chosen together, and a
-    # profile that pairs one with the other's is refused (`resolve_regime`).
+    # profile that pairs one with the other's is refused (`resolve_regime`). `pack_id` is the
+    # pack the regime was written for, the one a legacy snapshot is read as (`frozen_pack_id`);
+    # `pack_ids` is every pack that may carry it: `RF01` belongs to `it-standard` and to
+    # `it-company`, which invoice alike and differ only in what they owe (REB-1005).
     pack_id: str
+    pack_ids: frozenset[str]
 
     def resolve_line_vat(
         self, requested: Decimal | None, profile: FiscalSnapshot, *, country_customer: str
@@ -85,6 +94,7 @@ class _flat_rate:
 
     code = "RF19"
     pack_id = PACK_IT_FLAT_RATE
+    pack_ids = frozenset({PACK_IT_FLAT_RATE})
 
     def resolve_line_vat(
         self, requested: Decimal | None, profile: FiscalSnapshot, *, country_customer: str
@@ -120,7 +130,8 @@ class _flat_rate:
 
 
 class _ordinary:
-    """`RF01`, the ordinary regime, on the `it-standard` pack (REB-760). Every operation
+    """`RF01`, the ordinary regime, on the `it-standard` pack (REB-760) and on `it-company`
+    (REB-1005), which invoice the same way. Every operation
     is taxed at the rate entered, or the profile's default, and the invoice carries no
     `Natura`, no `RiferimentoNormativo` and no stamp duty: there is no untaxed base for
     the duty to be owed on. Its arithmetic is spec 6.1's, the rounding of `totals.py`
@@ -129,6 +140,7 @@ class _ordinary:
 
     code = "RF01"
     pack_id = PACK_IT_STANDARD
+    pack_ids = frozenset({PACK_IT_STANDARD, PACK_IT_COMPANY})
 
     def resolve_line_vat(
         self, requested: Decimal | None, profile: FiscalSnapshot, *, country_customer: str
@@ -172,6 +184,7 @@ class _foreign:
 
     code = PACK_NON_IT
     pack_id = PACK_NON_IT
+    pack_ids = frozenset({PACK_NON_IT})
 
     def resolve_line_vat(
         self, requested: Decimal | None, profile: FiscalSnapshot, *, country_customer: str
@@ -218,9 +231,9 @@ def resolve_regime(regime_code: str | None, pack_id: str) -> RegimeStrategy:
     implementation here, and saying so is more useful than resolving it to the
     flat-rate regime and silently issuing an invoice under the wrong regime), and that
     strategy must belong to the pack (REB-760): `RF01` is the ordinary regime of
-    `it-standard` and `RF19` the flat-rate regime of `it-flat-rate`, so a profile that names
-    one with the other's pack is refused instead of being held to the other regime's
-    ceilings.
+    `it-standard` and `it-company`, and `RF19` the flat-rate regime of `it-flat-rate`, so a
+    profile that names one with the other's pack is refused instead of being held to the other
+    regime's ceilings.
     """
     if pack_id == PACK_NON_IT:
         if regime_code is not None:
@@ -253,12 +266,13 @@ def resolve_regime(regime_code: str | None, pack_id: str) -> RegimeStrategy:
             f"il regime {regime_code} non e' implementato in questa versione",
             expected=f"uno tra: {', '.join(sorted(_BY_CODE))}",
         )
-    if strategy.pack_id != pack_id:
-        belonging = sorted(code for code, known in _BY_CODE.items() if known.pack_id == pack_id)
+    if pack_id not in strategy.pack_ids:
+        belonging = sorted(code for code, known in _BY_CODE.items() if pack_id in known.pack_ids)
         raise ValidationFailed(
             ENTITY,
             "regime_code",
-            f"il regime {regime_code} appartiene al pacchetto {strategy.pack_id}, non a {pack_id}",
+            f"il regime {regime_code} appartiene al pacchetto "
+            f"{' o '.join(sorted(strategy.pack_ids))}, non a {pack_id}",
             expected=f"uno tra: {', '.join(belonging)}" if belonging else "un pacchetto italiano",
         )
     return strategy

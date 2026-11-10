@@ -9492,7 +9492,7 @@ export interface components {
              * @default it-flat-rate
              * @enum {string}
              */
-            pack_id: "it-flat-rate" | "it-standard" | "non-it";
+            pack_id: "it-flat-rate" | "it-standard" | "it-company" | "non-it";
             /**
              * Default Vat Rate
              * @default 0.00

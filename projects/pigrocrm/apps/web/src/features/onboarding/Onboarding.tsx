@@ -88,7 +88,7 @@ function useFirstLegalEntity() {
 /** The whole row a first save sends, the form's own defaults for the pack (a save replaces
  *  the row, so a key left out would be the server's default for another regime). */
 function fiscalBodyFor(pack: FiscalPack): Record<string, unknown> {
-  const ordinary = pack === 'it-standard'
+  const ordinary = pack === 'it-standard' || pack === 'it-company'
   return bodyFrom({
     ...emptyValues(),
     pack_id: pack,

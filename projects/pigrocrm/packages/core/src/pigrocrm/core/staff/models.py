@@ -41,6 +41,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
+from pigrocrm.core.fiscal.pack import PACK_IT_COMPANY, PACK_IT_FLAT_RATE, PACK_IT_STANDARD
 
 KINDS: tuple[str, ...] = ("employee", "director")
 # Employees are paid in 13 or 14 monthly payments (design § 1).
@@ -50,11 +51,8 @@ FEE_PAYMENTS: tuple[str, ...] = ("monthly", "other")
 
 # The fiscal packs whose legal entities may have staff: a flat-rate taxpayer withholds on
 # employees only (L. 190/2014, art. 1 c. 69), never `non-it`, which has no Italian payroll
-# rules. Directors exist only on a company. The company pack arrives with the taxes design;
-# until a legal entity carries it, a director is refused everywhere, which is the rule and
-# not a gap.
-PACK_IT_COMPANY = "it-company"
-EMPLOYEE_PACKS: tuple[str, ...] = ("it-flat-rate", "it-standard", PACK_IT_COMPANY)
+# rules. Directors exist only on a company, the `it-company` pack (REB-1005).
+EMPLOYEE_PACKS: tuple[str, ...] = (PACK_IT_FLAT_RATE, PACK_IT_STANDARD, PACK_IT_COMPANY)
 DIRECTOR_PACKS: tuple[str, ...] = (PACK_IT_COMPANY,)
 
 # The latest day of a month a pay day may name, so it exists in February too.

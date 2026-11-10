@@ -71,7 +71,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         person to confirm on the summary. Admin only.
 
         `data`: `pack_id` (`it-flat-rate` default, flat-rate regime with `regime_code` `RF19`;
-        `it-standard`, standard regime with `RF01` and 22% VAT unless you say otherwise; `non-it`,
+        `it-standard`, standard regime with `RF01` and 22% VAT unless you say otherwise;
+        `it-company`, an srl, invoicing the same as `it-standard`; `non-it`,
         foreign company with no `regime_code`, stamp duty or flat-rate parameters (leave them out);
         a code from another pack is rejected), `profitability_coefficient`,
         `substitute_tax_rate` and `social_security_rate` as percentages (flat-rate only),

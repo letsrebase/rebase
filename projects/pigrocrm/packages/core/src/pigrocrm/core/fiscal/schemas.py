@@ -14,17 +14,27 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE, PACK_IT_STANDARD, PACK_NON_IT
+from pigrocrm.core.fiscal.pack import (
+    PACK_IT_COMPANY,
+    PACK_IT_FLAT_RATE,
+    PACK_IT_STANDARD,
+    PACK_NON_IT,
+)
 from pigrocrm.core.validation import SafeStr
 
 # The packs a profile may point at (REB-619): `pack.py` owns them, this is the shape
 # the API and MCP accept. A `Literal` and not a free string, so a typo is refused by
 # the schema instead of reaching `resolve_pack`'s `KeyError` at the first emission.
-PackId = Literal["it-flat-rate", "it-standard", "non-it"]
+PackId = Literal["it-flat-rate", "it-standard", "it-company", "non-it"]
 InpsCategory = Literal["gestione_separata", "artigiani_commercianti"]
 # The profile keys a save that does not name them leaves as they are (`stored_fields`).
 KEPT_WHEN_OMITTED = ("inps_category", "isa")
-assert set(get_args(PackId)) == {PACK_IT_FLAT_RATE, PACK_IT_STANDARD, PACK_NON_IT}  # noqa: S101
+assert set(get_args(PackId)) == {  # noqa: S101
+    PACK_IT_FLAT_RATE,
+    PACK_IT_STANDARD,
+    PACK_IT_COMPANY,
+    PACK_NON_IT,
+}
 
 # `RF01`..`RF19`, the codes FPR12's own `RegimeFiscaleType` enumerates. `.fullmatch`
 # is what the callers use, never `.match` with `$`: "RF19\n" is five characters and
@@ -166,15 +176,16 @@ class FiscalProfileUpsert(BaseModel):
         them would be refused («una natura con un'aliquota diversa da zero») or, worse,
         would have the fiscal estimate compute the flat-rate regime's taxes for a legal entity it
         does not apply to. `non-it` (REB-619) is empty of all of them; `it-standard`
-        (REB-760) is the ordinary regime, `RF01` at the standard VAT rate. The rule lives
+        (REB-760) and `it-company` (REB-1005) are the ordinary regime, `RF01` at the standard VAT
+        rate. The rule lives
         here, where the API and MCP deserialise, and not only in the SPA's form."""
         if not isinstance(data, dict):
             return data
         pack_id = data.get("pack_id")
-        if pack_id not in (PACK_NON_IT, PACK_IT_STANDARD):
+        if pack_id not in (PACK_NON_IT, PACK_IT_STANDARD, PACK_IT_COMPANY):
             return data
         data = dict(data)
-        if pack_id == PACK_IT_STANDARD:
+        if pack_id in (PACK_IT_STANDARD, PACK_IT_COMPANY):
             data.setdefault("regime_code", REGIME_CODE_ORDINARY)
             data.setdefault("default_vat_rate", DEFAULT_VAT_RATE_ORDINARY)
         for key, value in (

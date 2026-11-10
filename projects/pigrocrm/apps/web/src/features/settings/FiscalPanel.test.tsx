@@ -405,6 +405,27 @@ describe('FiscalPanel', () => {
     })
   })
 
+  it('saves an srl on the it-company pack, invoicing as RF01 with nothing of the forfettario', async () => {
+    vi.mocked(api.GET).mockImplementation(() => ok(PROFILE))
+    vi.mocked(api.PUT).mockImplementation(() => ok({ ...ORDINARY, pack_id: 'it-company' }))
+    renderPanel()
+
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
+    await userEvent.selectOptions(screen.getByLabelText('Regime'), 'company')
+    expect(screen.getByLabelText('Aliquota IVA predefinita')).toHaveValue('22.00')
+    expect(screen.queryByLabelText('Natura')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+    expect(bodyOfSave()).toMatchObject({
+      pack_id: 'it-company',
+      regime_code: 'RF01',
+      default_vat_rate: '22.00',
+      default_vat_nature: null,
+      apply_stamp_duty: false,
+      profitability_coefficient: null,
+    })
+  })
+
   it('sends the default bollo amounts when they were blanked before leaving the forfettario', async () => {
     vi.mocked(api.GET).mockImplementation(() => ok(PROFILE))
     vi.mocked(api.PUT).mockImplementation(() => ok(ORDINARY))

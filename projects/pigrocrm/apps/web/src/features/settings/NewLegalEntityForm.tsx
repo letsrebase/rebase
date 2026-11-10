@@ -57,11 +57,12 @@ type IdentityName = IdentityField['name']
  * foreign company at its own country's rate. Everything else on the profile keeps
  * `FiscalProfileUpsert`'s defaults and is edited on the panel the page lands on.
  */
-type Regime = 'RF19' | 'RF01' | 'foreign'
+type Regime = 'RF19' | 'RF01' | 'company' | 'foreign'
 
 const Regimes: readonly { value: Regime; label: string; rate: string; vat_nature: string }[] = [
   { value: 'RF19', label: 'Forfettario (RF19)', rate: '0.00', vat_nature: 'N2.2' },
   { value: 'RF01', label: 'Ordinario (RF01)', rate: '22.00', vat_nature: '' },
+  { value: 'company', label: 'Srl (RF01)', rate: '22.00', vat_nature: '' },
   // No rate proposed abroad: the country's own rate is the person's to type, and a
   // default that happened to be another country's would be stored unread.
   { value: 'foreign', label: 'Estero: nessun regime italiano', rate: '', vat_nature: '' },
@@ -117,9 +118,9 @@ function fiscalBody(values: Values): Record<string, unknown> {
       iban,
     }
   }
-  if (values.regime === 'RF01') {
+  if (values.regime === 'RF01' || values.regime === 'company') {
     return {
-      pack_id: 'it-standard',
+      pack_id: values.regime === 'company' ? 'it-company' : 'it-standard',
       regime_code: 'RF01',
       default_vat_rate,
       default_vat_nature: null,
@@ -317,11 +318,11 @@ export function NewLegalEntityForm({
             <p className="text-muted-foreground text-xs">
               {values.regime === 'foreign'
                 ? 'L’aliquota del paese in cui l’azienda ha sede, da indicare: 20.00 nel Regno Unito, 19.00 in Germania.'
-                : 'In percentuale: 0.00 per il forfettario, 22.00 per l’ordinario.'}
+                : 'In percentuale: 0.00 per il forfettario, 22.00 per l’ordinario e per la srl.'}
             </p>
           )}
         </div>
-        {values.regime === 'RF01' ? null : (
+        {values.regime === 'RF01' || values.regime === 'company' ? null : (
           <div className="space-y-2">
             <Label htmlFor="new-default-vat-nature">Natura</Label>
             <Input
