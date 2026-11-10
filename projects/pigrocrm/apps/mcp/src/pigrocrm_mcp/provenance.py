@@ -121,6 +121,13 @@ FREE_TEXT_TOOLS: frozenset[str] = frozenset(
         "list_engagements",
         "preview_engagement",
         "preview_framework_agreement",
+        # Signing: a document's `cancel_reason` is the reason the freelancer typed on the signing
+        # site when they refused, and a send answers with the engagement and its `role`.
+        "send_engagement_for_signature",
+        "resend_signing_mail",
+        "refresh_document_signature",
+        "cancel_framework_agreement",
+        "record_framework_notice",
         "set_freelancer_tax_data",
         # Time, purchases and to-dos: descriptions and notes.
         "log_time",

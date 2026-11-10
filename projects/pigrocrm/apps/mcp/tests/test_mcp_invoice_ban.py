@@ -170,6 +170,15 @@ FORBIDDEN = (
     "cancel_engagement",
     "close_engagement",
     "set_freelancer_tax_data",
+    # REB-1019: sending a document for signature mails the freelancer a link to a legal document,
+    # and the other three act on one already sent: resending its mail, cancelling a framework
+    # agreement (its envelope too) and recording a notice that ends it. Their tools live in
+    # `privileged.py`; `refresh_document_signature` only reads Documenso's state and is a default
+    # tool of the `collaborators` module.
+    "send_engagement_for_signature",
+    "resend_signing_mail",
+    "cancel_framework_agreement",
+    "record_framework_notice",
 )
 
 # The other half of `FULL_ACCESS_ACTIONS`: operations that are banned to an agent
@@ -205,10 +214,6 @@ FORBIDDEN = (
 # ban that silently stopped matching.
 REST_ONLY_FORBIDDEN = frozenset(
     {
-        # REB-976: sending an engagement for signature. Its tool arrives with the signature card
-        # (design § 6, `send_engagement_for_signature`), which moves the name to `FORBIDDEN`; until
-        # then only the REST route reaches it, and a token without `full_access` is refused there.
-        "send_engagement_for_signature",
         "set_drive_roots",
         "set_drive_storage_folder",
         "connect_drive",

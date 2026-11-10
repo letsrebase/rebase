@@ -32,6 +32,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import anyio
 import anyio.to_thread
@@ -42,6 +43,8 @@ from starlette.types import ASGIApp
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.pat_service import PAT_PREFIX, PatService
 from pigrocrm.core.config import Settings, get_settings, require_production_secrets
+from pigrocrm.core.documenso.client import signing_configured
+from pigrocrm.core.documenso.routing import tenant_id_for
 from pigrocrm.core.errors import DomainError, ValidationFailed
 from pigrocrm.core.storage import DocumentStorage, LocalFileStorage, storage_from_settings
 from pigrocrm.core.tenants import (
@@ -280,6 +283,7 @@ class McpHttpApp:
             raise RuntimeError("McpHttpApp is not running: enter its lifespan first")
         provider = ScopedSessionProvider(lambda: self._registry.session_factory(slug))
         storage = _storage_for(slug, auth.settings, provider)
+        tenant_id = await anyio.to_thread.run_sync(self._tenant_id, slug, auth.settings)
         server = build_server(
             provider,
             RequestActorProvider(),
@@ -290,6 +294,7 @@ class McpHttpApp:
             # Resolved per call, like the space's own factory: the registry may dispose and
             # rebuild its engine between two calls.
             registry_session=lambda: self._registry.registry_factory()(),
+            tenant_id=tenant_id,
         )
         starlette = server.streamable_http_app(
             streamable_http_path=MCP_PATH,
@@ -314,6 +319,15 @@ class McpHttpApp:
         # re-raises a pre-start failure here instead, and the caller answers with it.
         await self._task_group.start(serve)
         return _SpaceApp(app=starlette, settings=auth.settings, stop=stop)
+
+    def _tenant_id(self, slug: str | None, settings: Settings) -> UUID | None:
+        """The registry id of the space, read only when signing is on: it is what a new envelope's
+        `externalId` carries, and a server that cannot sign has no use for it (and no reason to
+        open the registry). `None` for the root."""
+        if not signing_configured(settings):
+            return None
+        with self._registry.registry_factory()() as registry:
+            return tenant_id_for(registry, self._settings, slug)
 
 
 def _storage_for(

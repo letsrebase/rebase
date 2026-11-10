@@ -1,7 +1,9 @@
-"""Engagements with freelancers: update a draft, read, and ask when a freelancer is free.
+"""Engagements with freelancers: update a draft, read, ask when a freelancer is free, and refresh
+where a document stands on the signing site.
 
-Creating, cancelling and closing an engagement and the tax data are in `privileged.py`: each draws
-a letter number or ends a legal document, so they exist only where `mcp_full_access` is on.
+Creating, cancelling and closing an engagement, the tax data and sending a document for signature
+are in `privileged.py`: each draws a letter number, sends or ends a legal document, so they exist
+only where `mcp_full_access` is on.
 """
 
 from collections.abc import Callable
@@ -9,7 +11,7 @@ from typing import Any, cast
 
 from mcp.server import MCPServer
 
-from pigrocrm_mcp.annotations import DESTRUCTIVE, READ_ONLY
+from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import collaborators
 from pigrocrm_mcp.tools.params import (
@@ -95,6 +97,16 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         kind. Same answer as `preview_engagement`.
         """
         return collaborators.preview_framework_agreement(context, freelancer_id, letter_type)
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def refresh_document_signature(document_id: str) -> dict[str, Any]:
+        """Ask the signing site where a document stands and apply its answer, the way its webhook
+        does: the signature, a refusal or a cancellation, then what a signature still leaves to
+        do (the signed copy, the letter waiting for a framework agreement). Answers the document's
+        signature `state`. A document that never left is refused.
+        """
+        return collaborators.refresh_signature(context, document_id)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard

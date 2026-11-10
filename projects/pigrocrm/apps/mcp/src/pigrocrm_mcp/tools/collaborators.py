@@ -17,6 +17,7 @@ from pigrocrm.core.collaborators.schemas import (
     FreelancerTaxData,
 )
 from pigrocrm.core.collaborators.service import EngagementService, FreelancerService
+from pigrocrm.core.collaborators.signing import SigningService
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools.changes import refuse_empty, report
@@ -164,11 +165,54 @@ def search(
     return EngagementService(context.session).list(query, context.actor).model_dump(mode="json")
 
 
+def _signing(context: McpContext) -> SigningService:
+    """The signing service of this server's space: Documenso and the mail provider come from its
+    settings, and `tenant_id` is what a new envelope's `externalId` names."""
+    return SigningService(
+        context.session, context.storage, context.settings, tenant_id=context.tenant_id
+    )
+
+
 def cancel(context: McpContext, engagement_id: str) -> dict[str, Any]:
-    done = EngagementService(context.session).cancel(
-        _required_uuid("engagement_id", engagement_id), context.actor
+    # The engagement service that also cancels the letter's envelope: the plain one refuses to
+    # cancel a letter that is out for signature.
+    done = (
+        _signing(context)
+        .engagement_service()
+        .cancel(_required_uuid("engagement_id", engagement_id), context.actor)
     )
     return done.model_dump(mode="json")
+
+
+def send_for_signature(context: McpContext, engagement_id: str) -> dict[str, Any]:
+    sent = _signing(context).send_engagement(
+        _required_uuid("engagement_id", engagement_id), context.actor
+    )
+    return sent.model_dump(mode="json")
+
+
+def refresh_signature(context: McpContext, document_id: str) -> dict[str, Any]:
+    found = _signing(context).refresh(_required_uuid("document_id", document_id), context.actor)
+    return found.model_dump(mode="json")
+
+
+def resend_signing_mail(context: McpContext, document_id: str) -> dict[str, Any]:
+    found = _signing(context).resend_mail(_required_uuid("document_id", document_id), context.actor)
+    return found.model_dump(mode="json")
+
+
+def cancel_framework_agreement(context: McpContext, document_id: str) -> dict[str, Any]:
+    found = _signing(context).cancel_framework_agreement(
+        _required_uuid("document_id", document_id), context.actor
+    )
+    return found.model_dump(mode="json")
+
+
+def record_framework_notice(context: McpContext, document_id: str) -> dict[str, Any]:
+    found = _signing(context).record_framework_notice(
+        _required_uuid("document_id", document_id), context.actor
+    )
+    return found.model_dump(mode="json")
 
 
 def close(context: McpContext, engagement_id: str, ended_on: str | None) -> dict[str, Any]:

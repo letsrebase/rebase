@@ -879,6 +879,45 @@ def register(
         """Cancel a draft or an engagement out for signature. Needs a full-access admin token."""
         return collaborators.cancel(context, engagement_id)
 
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def send_engagement_for_signature(engagement_id: str) -> dict[str, Any]:
+        """Send an engagement's letter to the freelancer to sign on the signing site, with the
+        mail that carries the link. Only the freelancer signs. When the freelancer has no active
+        framework agreement of the letter's regime it goes first (written now if there is none)
+        and the letter follows once it is signed. A letter still a draft text, an engagement not
+        in draft or awaiting signature, or a party's data still blank is refused naming it. The
+        answer says what `sent` and the state of each document. Needs signing set up on the
+        installation and a full-access admin token.
+        """
+        return collaborators.send_for_signature(context, engagement_id)
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def resend_signing_mail(document_id: str) -> dict[str, Any]:
+        """Send the freelancer the signing mail again, with the same link, for a document still
+        waiting for the signature. Needs a full-access admin token.
+        """
+        return collaborators.resend_signing_mail(context, document_id)
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def cancel_framework_agreement(document_id: str) -> dict[str, Any]:
+        """Cancel a framework agreement not signed yet, on the signing site too, so the link the
+        freelancer got stops working. A letter is cancelled with its engagement
+        (`cancel_engagement`). Needs a full-access admin token.
+        """
+        return collaborators.cancel_framework_agreement(context, document_id)
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def record_framework_notice(document_id: str) -> dict[str, Any]:
+        """Record a notice of termination or a withdrawal on an active framework agreement: the
+        freelancer has none active from then on, and their next engagement writes a new one. Needs
+        a full-access admin token.
+        """
+        return collaborators.record_framework_notice(context, document_id)
+
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def close_engagement(engagement_id: str, ended_on: IsoDateStr = None) -> dict[str, Any]:
