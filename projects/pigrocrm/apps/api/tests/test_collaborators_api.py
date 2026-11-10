@@ -318,3 +318,131 @@ def test_a_fee_too_long_for_its_column_is_a_422_and_not_a_500(
     for overrides in ({"fee": "1" + "0" * 12}, {"fee": "1E+20"}, {"expected_days": "1" + "0" * 8}):
         response = logged_in.post("/api/engagements", json=_body(who, **overrides))
         assert response.status_code == 422, (overrides, response.text)
+
+
+def test_an_admin_records_and_approves_a_months_monthly_report_and_no_agent_token_can(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    """REB-1002: a month's report is recorded and approved by a person; an agent token, with or
+    without `full_access`, reads the list and is refused both writes."""
+    _module(api_session)
+    who = _freelancer(api_session)
+    made = _create(logged_in, who, starts_on="2026-08-01", ends_on="2026-09-30")
+    _activate(logged_in, made["id"])
+    base = f"/api/engagements/{made['id']}/monthly-reports"
+    assert logged_in.put("/api/settings/space", json={"mcp_full_access": True}).status_code == 200
+
+    def token(*, full_access: bool) -> TestClient:
+        issued = logged_in.post("/api/tokens", json={"name": "agente", "full_access": full_access})
+        assert issued.status_code == 201, issued.text
+        agent = TestClient(logged_in.app, base_url="https://testserver")
+        agent.headers["Authorization"] = f"Bearer {issued.json()['token']}"
+        return agent
+
+    for agent in (token(full_access=False), token(full_access=True)):
+        refused = agent.post(base, json={"month": "2026-10"})
+        assert refused.status_code == 403 and refused.json()["code"] == "agent_forbidden"
+        assert agent.get(base).status_code == 200
+
+    recorded = logged_in.post(base, json={"month": "2026-08", "received_on": "2026-09-01"})
+    assert recorded.status_code == 201, recorded.text
+    assert (recorded.json()["label"], recorded.json()["tacit_on"]) == ("2026-08", "2026-09-10")
+    assert logged_in.post(base, json={"month": "2026-08"}).status_code == 409
+    assert logged_in.post(base, json={"month": "2026-9"}).status_code == 422
+    # Received today: its tacit date is still ahead, so a part can be held.
+    assert logged_in.post(base, json={"month": "2026-09"}).status_code == 201
+
+    for agent in (token(full_access=False), token(full_access=True)):
+        refused = agent.post(f"{base}/2026-08/approval", json={})
+        assert refused.status_code == 403 and refused.json()["code"] == "agent_forbidden"
+
+    late = logged_in.post(
+        f"{base}/2026-08/approval",
+        json={"held_dates": ["2026-08-06"], "objection": "Il cliente non li riconosce"},
+    )
+    # The tacit date (10 September) is past: nothing can be held any more.
+    assert late.status_code == 409, late.text
+    approved = logged_in.post(f"{base}/2026-08/approval", json={})
+    assert approved.status_code == 200, approved.text
+    assert (approved.json()["state"], approved.json()["held_dates"]) == ("approved", [])
+    held = logged_in.post(
+        f"{base}/2026-09/approval",
+        json={"held_dates": ["2026-09-07"], "objection": "Il cliente non li riconosce"},
+    )
+    assert held.status_code == 200, held.text
+    assert held.json()["held_dates"] == ["2026-09-07"]
+    assert logged_in.post(f"{base}/2026-07/approval", json={}).status_code == 404
+    listed = logged_in.get(base).json()
+    assert [item["label"] for item in listed["items"]] == ["2026-08", "2026-09"]
+
+
+def test_the_days_report_is_read_only_from_the_space_that_holds_the_engagements(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    _module(api_session)
+    made = _create(logged_in, _freelancer(api_session))
+    response = logged_in.get(f"/api/engagements/{made['id']}/report")
+    assert response.status_code == 409, response.text
+    assert "PIGROCRM_LEADS_SPACE" in response.json()["detail"]
+    assert logged_in.get(f"/api/engagements/{uuid4()}/report").status_code in (404, 409)
+
+
+def test_the_days_report_answers_with_the_days_and_what_is_payable(
+    logged_in: TestClient, api_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The route's 200: the door and the leads-space check are stood in for, the rest (the
+    engagement, the month's report, the payable marks) is the real service."""
+    from datetime import date
+    from decimal import Decimal
+
+    import pigrocrm.core.collaborators.days_report as days_report
+    from pigrocrm.core.engagements.schemas import EngagementReport, ReportDeal, ReportWorkUnit
+
+    class Door:
+        def __init__(self, *_: Any) -> None: ...
+
+        def report(self, *_: Any) -> EngagementReport:
+            return EngagementReport(
+                slug="ada",
+                deal_url="https://pigro.test/ada/deals/x",
+                deal=ReportDeal(
+                    id=uuid4(), name="L", hourly_rate=None, budgeted_hours=None, status="ok"
+                ),
+                days=[],
+                total_hours=Decimal(0),
+                billed_hours=Decimal(0),
+                unbilled_hours=Decimal(0),
+                invoices=[],
+                work_units=[
+                    ReportWorkUnit(
+                        date=date(2026, 8, 5),
+                        quantity=Decimal("1"),
+                        status="worked",
+                        description="lavoro",
+                        billed=False,
+                    )
+                ],
+            )
+
+    monkeypatch.setattr(days_report, "EngagementService", Door)
+    monkeypatch.setattr(days_report, "is_leads_space", lambda *_: True)
+    monkeypatch.setattr(days_report.DaysReportService, "_check_owner", lambda *_: None)
+    _module(api_session)
+    made = _create(
+        logged_in, _freelancer(api_session), starts_on="2026-08-01", ends_on="2026-08-30"
+    )
+    _activate(logged_in, made["id"])
+    base = f"/api/engagements/{made['id']}"
+    before = logged_in.get(f"{base}/report")
+    assert before.status_code == 200, before.text
+    assert [(d["date"], d["payable"]) for d in before.json()["days"]] == [("2026-08-05", False)]
+
+    assert (
+        logged_in.post(
+            f"{base}/monthly-reports", json={"month": "2026-08", "received_on": "2026-09-01"}
+        ).status_code
+        == 201
+    )
+    after = logged_in.get(f"{base}/report").json()
+    assert after["days"][0]["payable"] is True
+    assert (after["payable_quantity"], after["payable_amount"]) == ("1", "450.00")

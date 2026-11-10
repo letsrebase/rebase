@@ -202,6 +202,26 @@ tacit date passing; it is not an MCP tool and never an agent's act (frame A4). T
 own `worked` work units alone make nothing payable. Hours become days only where the letter's
 unit says so: an hourly letter pays approved hours.
 
+**As built (REB-1002).** The request is the table `engagement_monthly_reports` (one row per
+engagement and month; `MonthlyReport` in code, «Rendiconto» to a person). It stores the day
+rebase received the report, the tacit date, who approved it and the `held_dates` with their
+reason, and copies no day. A person records the receipt (`POST
+/api/engagements/{id}/monthly-reports`) and approves (`POST .../{month}/approval`, with
+optional `held_dates` and the `objection` that justifies them); both are `PERSON_ONLY_ACTIONS`
+and no MCP tool exists for either. The tacit date is the seventh working day after receipt,
+counted without Saturdays, Sundays and the national holidays of `fiscal.calendar` (the
+agreement does not define «giorno lavorativo»: that calendar is an assumption for the legal
+review of the contracts). A report counts as approved the day after its tacit date with no
+decision, without any row being written; a day cannot be held after that. The live report is
+`GET /api/engagements/{id}/report` and the MCP tool `get_engagement_report`: it asks the
+engagements door in-process, in windows of at most 800 days, for the work units of the
+freelancer's contract (and the time entries of an old deal), and marks a day `payable` when its
+ledger state is work done (`approved`, `worked`, `worked_without_approval`, `invoiced`, `paid`),
+it falls inside the engagement's dates, its month counts as approved and it is not held. The
+quantity is hours for an hourly letter and days otherwise (an old entry's hours at 8 a day);
+a flat fee has no amount to read from days. It works only from the space `PIGROCRM_LEADS_SPACE`
+names.
+
 ### Due items
 
 Each engagement writes **due items out** (C4) for the freelancer, in core, so they exist

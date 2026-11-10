@@ -5057,6 +5057,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/engagements/{engagement_id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Engagement Report
+         * @description The days of the engagement, read live from the freelancer's space, with each month's
+         *     «Rendiconto» and what is payable: a day counts only in a month approved by a person or by
+         *     the tacit date passing, and not held. Only from the space that holds the engagements.
+         */
+        get: operations["engagement_report_api_engagements__engagement_id__report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/engagements/{engagement_id}/monthly-reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Monthly Reports
+         * @description The monthly reports recorded for the engagement, oldest month first.
+         */
+        get: operations["list_monthly_reports_api_engagements__engagement_id__monthly_reports_get"];
+        put?: never;
+        /**
+         * Request Monthly Report
+         * @description Records that the freelancer's report of a finished month reached rebase. With no reasoned
+         *     objection within seven working days it counts as approved. A person's act, never an agent's.
+         */
+        post: operations["request_monthly_report_api_engagements__engagement_id__monthly_reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/engagements/{engagement_id}/monthly-reports/{month}/approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Monthly Report
+         * @description Approves the month: its days read payable, except the `held_dates` the client contested
+         *     (with the reason in `objection`). A person's act, never an agent's, whatever the token.
+         */
+        post: operations["approve_monthly_report_api_engagements__engagement_id__monthly_reports__month__approval_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/freelancers/availability": {
         parameters: {
             query?: never;
@@ -9424,6 +9492,53 @@ export interface components {
             /** Collection Days */
             collection_days?: number | null;
         };
+        /**
+         * EngagementDaysReport
+         * @description The engagement's days read live from the freelancer's space, with what is payable.
+         *     `unit` is `hour` for an hourly letter, which pays approved hours, and `day` otherwise (a
+         *     time entry's hours are days at 8 a day). `available` is false until the freelancer's space
+         *     has been set up for the engagement; `note` then says why.
+         */
+        EngagementDaysReport: {
+            /**
+             * Engagement Id
+             * Format: uuid
+             */
+            engagement_id: string;
+            /**
+             * Unit
+             * @enum {string}
+             */
+            unit: "day" | "hour";
+            /** Fee Unit */
+            fee_unit: string;
+            /**
+             * Date From
+             * Format: date
+             */
+            date_from: string;
+            /**
+             * Date To
+             * Format: date
+             */
+            date_to: string;
+            /** Available */
+            available: boolean;
+            /** Note */
+            note: string | null;
+            /** Days */
+            days: components["schemas"]["ReportDay"][];
+            /** Months */
+            months: components["schemas"]["ReportMonth"][];
+            /** Total Quantity */
+            total_quantity: string;
+            /** Payable Quantity */
+            payable_quantity: string;
+            /** Held Quantity */
+            held_quantity: string;
+            /** Payable Amount */
+            payable_amount: string | null;
+        };
         /** EngagementFreelancer */
         EngagementFreelancer: {
             /**
@@ -9510,6 +9625,11 @@ export interface components {
             unbilled_hours: string;
             /** Invoices */
             invoices: components["schemas"]["ReportInvoice"][];
+            /**
+             * Work Units
+             * @default []
+             */
+            work_units: components["schemas"]["ReportWorkUnit"][];
         };
         /** EngagementStateChange */
         EngagementStateChange: {
@@ -11804,6 +11924,98 @@ export interface components {
              * @description How many live records the module holds
              */
             records: number;
+        };
+        /**
+         * MonthlyReportApproval
+         * @description A person's decision on a month. `held_dates` are the days the client contested: they
+         *     are held and the rest is payable. Holding a day needs the reason in `objection`, and is not
+         *     possible once the tacit date has passed with no objection.
+         */
+        MonthlyReportApproval: {
+            /** Held Dates */
+            held_dates?: string[];
+            /** Objection */
+            objection?: string | null;
+        };
+        /** MonthlyReportPage */
+        MonthlyReportPage: {
+            /** Items */
+            items: components["schemas"]["MonthlyReportRead"][];
+        };
+        /** MonthlyReportRead */
+        MonthlyReportRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Engagement Id
+             * Format: uuid
+             */
+            engagement_id: string;
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
+            /**
+             * Label
+             * @description The month, 2026-10
+             */
+            label: string;
+            /**
+             * State
+             * @description requested | approved, as stored
+             */
+            state: string;
+            /**
+             * Effective State
+             * @enum {string}
+             */
+            effective_state: "requested" | "approved" | "tacit";
+            /** Counts As Approved */
+            counts_as_approved: boolean;
+            /**
+             * Received On
+             * Format: date
+             */
+            received_on: string;
+            /**
+             * Tacit On
+             * Format: date
+             */
+            tacit_on: string;
+            /** Decided On */
+            decided_on: string | null;
+            /** Objection */
+            objection: string | null;
+            /** Held Dates */
+            held_dates: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * MonthlyReportRequest
+         * @description Records that rebase received the freelancer's report of `month`. `received_on` is the day
+         *     it arrived (default today): the tacit date counts seven working days from it.
+         */
+        MonthlyReportRequest: {
+            /**
+             * Month
+             * @description The month the report covers, 2026-10
+             */
+            month: string;
+            /** Received On */
+            received_on?: string | null;
         };
         /** MoveStageRequest */
         MoveStageRequest: {
@@ -14218,6 +14430,39 @@ export interface components {
             unit: "days" | "weeks" | "months" | "years";
         };
         /**
+         * ReportDay
+         * @description One day (or one entry of hours) of the freelancer's report. `quantity` is in the report's
+         *     unit. `counts` says the freelancer's ledger holds it as work done (a proposed or disputed day
+         *     does not), `in_term` that it falls within the engagement's dates; `payable` is both, in a
+         *     month whose «Rendiconto» counts as approved, and not held.
+         */
+        ReportDay: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Quantity */
+            quantity: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "work_unit" | "time_entry";
+            /** Status */
+            status: string | null;
+            /** Description */
+            description: string;
+            /** Counts */
+            counts: boolean;
+            /** In Term */
+            in_term: boolean;
+            /** Held */
+            held: boolean;
+            /** Payable */
+            payable: boolean;
+        };
+        /**
          * ReportDeal
          * @description The letter's deal as it stands, `status` as the deal's own page reads it
          *     (`DealTimeSummary.status`).
@@ -14281,6 +14526,52 @@ export interface components {
             date: string | null;
             /** Hours */
             hours?: string | null;
+        };
+        /** ReportMonth */
+        ReportMonth: {
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
+            /** Label */
+            label: string;
+            monthly_report: components["schemas"]["MonthlyReportRead"] | null;
+            /**
+             * Quantity
+             * @description Everything that counts and is in term, in `unit`
+             */
+            quantity: string;
+            /** Held Quantity */
+            held_quantity: string;
+            /** Payable Quantity */
+            payable_quantity: string;
+            /**
+             * Payable Amount
+             * @description `payable_quantity` times the fee; none for a flat fee
+             */
+            payable_amount: string | null;
+        };
+        /**
+         * ReportWorkUnit
+         * @description One day of the letter's contract in the freelancer's space (`quantity` is days or
+         *     hours as the rate card's unit says), with the state the freelancer's ledger holds it in.
+         *     `billed` is whether it sits on an invoice line.
+         */
+        ReportWorkUnit: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Quantity */
+            quantity: string;
+            /** Status */
+            status: string;
+            /** Description */
+            description: string;
+            /** Billed */
+            billed: boolean;
         };
         /**
          * RevenueByCustomer
@@ -54237,6 +54528,497 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["pigrocrm__core__collaborators__schemas__EngagementRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    engagement_report_api_engagements__engagement_id__report_get: {
+        parameters: {
+            query?: {
+                /** @description Default: the engagement's start */
+                date_from?: string | null;
+                /** @description Default: the engagement's end, or today */
+                date_to?: string | null;
+            };
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementDaysReport"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_monthly_reports_api_engagements__engagement_id__monthly_reports_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonthlyReportPage"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    request_monthly_report_api_engagements__engagement_id__monthly_reports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MonthlyReportRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonthlyReportRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_monthly_report_api_engagements__engagement_id__monthly_reports__month__approval_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+                /** @description The month the report covers, 2026-10 */
+                month: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MonthlyReportApproval"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonthlyReportRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

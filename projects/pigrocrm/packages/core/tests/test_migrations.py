@@ -3948,3 +3948,78 @@ def _entity_visible_has(url: str, entity_type: str) -> bool:
             )
     finally:
         engine.dispose()
+
+
+def test_0095_adds_the_engagement_monthly_reports_table_and_downgrade_removes_it(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1002: one table with the forced row-level policy; its checks keep a month on its first
+    day, a decided row dated, and a held day with its reason, and one row a month an engagement."""
+    tables = {"engagement_monthly_reports"}
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0094")
+        assert _tables_shape(url, tables) == (set(), set(), set())
+        upgrade(config, "0095")
+        assert _tables_shape(url, tables) == (tables, tables, tables)
+
+        engine = create_engine(url)
+        try:
+            with engine.begin() as connection:
+                connection.execute(text("SELECT set_config('pigrocrm.legal_entities', '*', false)"))
+                freelancer = connection.execute(
+                    text(
+                        "INSERT INTO organizations (id, legal_name, country, custom_fields, roles) "
+                        "VALUES (gen_random_uuid(), 'F', 'IT', '{}', "
+                        "ARRAY['freelancer']::varchar[]) RETURNING id"
+                    )
+                ).scalar_one()
+                engagement = connection.execute(
+                    text(
+                        "INSERT INTO engagements (id, freelancer_id, role, starts_on, fee, "
+                        "fee_unit, payment_rule, payment_days) VALUES (gen_random_uuid(), :f, "
+                        "'r', '2026-10-01', 100, 'day', 'fixed_term', 30) RETURNING id"
+                    ),
+                    {"f": freelancer},
+                ).scalar_one()
+            insert = text(
+                "INSERT INTO engagement_monthly_reports (id, engagement_id, freelancer_id, month, "
+                "state, received_on, tacit_on, decided_on, objection, held_dates) VALUES "
+                "(gen_random_uuid(), :e, :f, :month, :state, '2026-11-03', '2026-11-12', "
+                "CAST(:decided AS date), :objection, CAST(:held AS jsonb))"
+            )
+            ok = {
+                "e": engagement,
+                "f": freelancer,
+                "month": "2026-10-01",
+                "state": "approved",
+                "decided": "2026-11-13",
+                "objection": "no",
+                "held": '["2026-10-05"]',
+            }
+            with engine.begin() as connection:
+                connection.execute(text("SELECT set_config('pigrocrm.legal_entities', '*', false)"))
+                connection.execute(insert, ok)
+            for bad in (
+                {**ok, "month": "2026-11-02"},
+                {**ok, "state": "requested"},
+                {**ok, "decided": None},
+                {**ok, "month": "2026-12-01", "objection": None},
+                {**ok, "month": "2026-12-01", "held": '{"a": 1}'},
+            ):
+                with pytest.raises(IntegrityError), engine.begin() as connection:
+                    connection.execute(
+                        text("SELECT set_config('pigrocrm.legal_entities', '*', false)")
+                    )
+                    connection.execute(insert, bad)
+            with pytest.raises(IntegrityError), engine.begin() as connection:
+                connection.execute(text("SELECT set_config('pigrocrm.legal_entities', '*', false)"))
+                connection.execute(insert, ok)
+        finally:
+            engine.dispose()
+
+        downgrade(config, "0094")
+        assert _tables_shape(url, tables) == (set(), set(), set())
+        upgrade(config, "0095")
+        assert _tables_shape(url, tables)[0] == tables

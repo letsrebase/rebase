@@ -72,6 +72,9 @@ const KIND_LABELS: Record<string, string> = {
   kind_set: 'Tipo del documento indicato',
   day_created: 'Giornata registrata',
   day_state_changed: 'Giornata cambiata di stato',
+  // The month's report of an engagement (REB-1002): received, then approved by a person.
+  monthly_report_requested: 'Rendiconto mensile ricevuto',
+  monthly_report_approved: 'Rendiconto mensile approvato',
   // The hub's company requests (REB-866): a request filed as a new deal, and one linked by
   // an admin to a deal the CRM already had.
   'hub.request_received': "Richiesta dall'hub ricevuta",

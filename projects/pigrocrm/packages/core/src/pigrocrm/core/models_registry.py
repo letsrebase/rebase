@@ -19,7 +19,11 @@ from pigrocrm.core.bank.models import (  # noqa: F401
     OrganizationIban,
     StatementMovement,
 )
-from pigrocrm.core.collaborators.models import Engagement, LetterCounter  # noqa: F401
+from pigrocrm.core.collaborators.models import (  # noqa: F401
+    Engagement,
+    LetterCounter,
+    MonthlyReport,
+)
 from pigrocrm.core.contact_points.models import ContactPoint  # noqa: F401
 from pigrocrm.core.contract_emails.models import ContractEmailTemplate  # noqa: F401
 from pigrocrm.core.contract_expenses.models import ContractExpense  # noqa: F401

@@ -38,7 +38,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.bank.models import OrganizationIban
-from pigrocrm.core.collaborators.models import Engagement
+from pigrocrm.core.collaborators.models import Engagement, MonthlyReport
 from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.deals.models import Deal
@@ -81,6 +81,7 @@ REFERENCES: tuple[Reference, ...] = (
     Reference("purchases", _col(Purchase, "supplier_id")),
     Reference("engagements_freelancer", _col(Engagement, "freelancer_id")),
     Reference("engagements_client", _col(Engagement, "client_organization_id")),
+    Reference("monthly_reports", _col(MonthlyReport, "freelancer_id")),
 )
 
 # Not foreign keys: the row a polymorphic pair names depends on `entity_type`.

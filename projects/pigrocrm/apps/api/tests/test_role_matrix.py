@@ -608,6 +608,18 @@ ROWS: list[Row] = [
         body={},
     ),
     Row(
+        "POST",
+        "/api/engagements/{engagement_id}/monthly-reports",
+        admin_only=True,
+        body={"month": "2026-01"},
+    ),
+    Row(
+        "POST",
+        "/api/engagements/{engagement_id}/monthly-reports/{month}/approval",
+        admin_only=True,
+        body={},
+    ),
+    Row(
         "PUT", "/api/freelancers/{freelancer_id}/tax-data", admin_only=True, body={"tax_code": "X"}
     ),
     # --- invoices, fiscal half: `require_admin` -- every one of these consumes or

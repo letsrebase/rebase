@@ -37,6 +37,17 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
+    def get_engagement_report(
+        engagement_id: str, date_from: IsoDateStr = None, date_to: IsoDateStr = None
+    ) -> dict[str, Any]:
+        """An engagement's days, read live from the freelancer's space, by month. A day is
+        `payable` only in a month whose «Rendiconto» a person approved or whose tacit date
+        passed, and not `held`. Approving is a person's act: there is no tool for it.
+        """
+        return collaborators.engagement_report(context, engagement_id, date_from, date_to)
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
     def list_engagements(
         freelancer_id: str | None = None,
         state: str | None = None,

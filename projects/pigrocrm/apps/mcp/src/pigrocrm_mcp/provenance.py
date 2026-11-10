@@ -113,6 +113,7 @@ FREE_TEXT_TOOLS: frozenset[str] = frozenset(
         "create_engagement",
         "update_engagement",
         "get_engagement",
+        "get_engagement_report",
         "list_engagements",
         "preview_engagement",
         "preview_framework_agreement",

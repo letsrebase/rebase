@@ -60,6 +60,7 @@ from pigrocrm.core.engagements.schemas import (
     ReportDeal,
     ReportEntry,
     ReportInvoice,
+    ReportWorkUnit,
 )
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
@@ -77,6 +78,7 @@ from pigrocrm.core.tenants.service import TenantService
 from pigrocrm.core.tenants.welcome import welcome
 from pigrocrm.core.timetracking.schemas import TimeEntryListQuery, TimeEntryRead
 from pigrocrm.core.timetracking.service import TimeEntryService, billed_entry_ids
+from pigrocrm.core.work_units.models import WorkUnit
 
 logger = logging.getLogger(__name__)
 
@@ -292,6 +294,7 @@ class EngagementService:
                 raise NotFound(ENTITY, str(match_id))
             tenant = self._tenant(registry, row)
             deal_id = row.deal_id
+            contract_id = row.contract_id
 
         with self._space_session(tenant) as space:
             deal = self._live_deal(space, deal_id, match_id)
@@ -301,6 +304,9 @@ class EngagementService:
             status = times.deal_summary(deal_id, Actor.rebase()).status
             billed = billed_entry_ids(space, entries)
             invoice_of_line, invoices = self._invoices(space, entries)
+            work_units = (
+                self._work_units(space, contract_id, first, last) if contract_id is not None else []
+            )
 
         on_invoice: dict[UUID, list[Decimal]] = {}
         days = []
@@ -353,7 +359,35 @@ class EngagementService:
                 invoice.model_copy(update={"hours": sum_hours(on_invoice[invoice.id])})
                 for invoice, _ in newest_first
             ],
+            work_units=work_units,
         )
+
+    @staticmethod
+    def _work_units(
+        space: Session, contract_id: UUID, date_from: date, date_to: date
+    ) -> list[ReportWorkUnit]:
+        """The days of the contract in `[da, a]`, oldest first. A revoked or rejected day is
+        left out: it frees its date and the ledger no longer counts it."""
+        rows = space.scalars(
+            select(WorkUnit)
+            .where(
+                WorkUnit.contract_id == contract_id,
+                WorkUnit.date >= date_from,
+                WorkUnit.date <= date_to,
+                WorkUnit.status.not_in(("revoked", "rejected")),
+            )
+            .order_by(WorkUnit.date, WorkUnit.created_at, WorkUnit.id)
+        )
+        return [
+            ReportWorkUnit(
+                date=day.date,
+                quantity=day.quantity,
+                status=day.status,
+                description=day.description,
+                billed=day.invoice_line_id is not None,
+            )
+            for day in rows
+        ]
 
     def _require_public_url(self) -> None:
         """Both answers carry links built from `PIGROCRM_PUBLIC_URL`: without it the

@@ -91,6 +91,9 @@ This file is the single mapping from the Italian word to the English identifier.
 | periodo | period | A month that can be locked (`period_locks`) |
 | giornata | work_unit | Contract day |
 | approvazione | approval |  |
+| rendiconto | monthly_report | The month's report of an engagement, an approval request (`engagement_monthly_reports`, `MonthlyReport`); framework agreement 6.1 to 6.2. «Rendiconto» stays in the words a person reads. Approving it is a person's act (`approve_monthly_report`, person-only) |
+| giorno lavorativo | working day | Counted without Saturdays, Sundays and national holidays (`fiscal.calendar`); the tacit date of a monthly report is the seventh after receipt |
+| trattenuto (giorno) | held (day) | A day of a monthly report the client contested: `held_dates`, not payable while the rest of the month is |
 | regola / automazione | rule / automation | Automation rules a1 to a5 |
 | campo (personalizzato) | field | Custom fields: users' own keys stay as written |
 | rinnovo | renewal |  |

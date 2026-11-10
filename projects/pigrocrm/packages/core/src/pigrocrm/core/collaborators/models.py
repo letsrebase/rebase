@@ -20,8 +20,10 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Text,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
@@ -170,3 +172,68 @@ class LetterCounter(Base):
 
     year: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
     last: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+# A «Rendiconto» is `requested` from the day rebase received the freelancer's month and
+# `approved` once a person decided it (collaborators design § 4). Reaching the tacit date with
+# no decision is not a state a row is written in: `monthly_reports.effective_state` reads it.
+MONTHLY_REPORT_STATES: tuple[str, ...] = ("requested", "approved")
+OBJECTION_MAX_LENGTH = 2000
+
+
+class MonthlyReport(Base, PrimaryKeyMixin, TimestampMixin):
+    """The month's report of one engagement, as an approval request (design § 4): framework
+    agreement 6.1 to 6.2. It holds no days: the report is read live from the freelancer's
+    work units and hours, and this row only says which month was received, when it counts as
+    approved if nobody objects (`tacit_on`), who approved it and which dates are held.
+
+    `held_dates` are the days of the month the client contested; a held day is not payable
+    while the rest of the month is. Holding a day needs the reason in `objection`.
+    `freelancer_id` repeats the engagement's so the row-level policy reads the same
+    organization the engagement's does.
+    """
+
+    __tablename__ = "engagement_monthly_reports"
+    __table_args__ = (
+        Index("uq_engagement_monthly_reports_month", "engagement_id", "month", unique=True),
+        CheckConstraint(
+            _in("state", MONTHLY_REPORT_STATES), name="ck_engagement_monthly_reports_state"
+        ),
+        CheckConstraint(
+            "EXTRACT(DAY FROM month) = 1", name="ck_engagement_monthly_reports_month_first_day"
+        ),
+        CheckConstraint(
+            "(state = 'approved') = (decided_on IS NOT NULL)",
+            name="ck_engagement_monthly_reports_decided",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(held_dates) = 'array'", name="ck_engagement_monthly_reports_held_array"
+        ),
+        CheckConstraint(
+            "jsonb_array_length(held_dates) = 0 OR objection IS NOT NULL",
+            name="ck_engagement_monthly_reports_hold_has_reason",
+        ),
+    )
+
+    engagement_id: Mapped[UUID] = mapped_column(
+        ForeignKey("engagements.id"), nullable=False, index=True
+    )
+    freelancer_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False, index=True
+    )
+    # The first day of the month the report covers.
+    month: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    state: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="requested", server_default=text("'requested'")
+    )
+    # The day rebase received the report, and the last day an objection counts: the seventh
+    # working day after it (framework 6.2).
+    received_on: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    tacit_on: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    decided_on: Mapped[dt.date | None] = mapped_column(Date, default=None)
+    # The person who decided it: a user id, never an agent's (no tool approves).
+    decided_by: Mapped[UUID | None] = mapped_column(default=None)
+    objection: Mapped[str | None] = mapped_column(Text, default=None)
+    held_dates: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
