@@ -544,29 +544,29 @@ describe('«Nessuno» on the owner picker (REB-780)', () => {
       await userEvent.click(screen.getByLabelText('Periodo riga 2'))
       await userEvent.click(await screen.findByRole('option', { name: 'Mensile' }))
 
-      // The figures are the server's answer to the lines as typed, not a sum made here.
+      // The figures are the server's answer to the lines as typed, not a sum made here. The
+      // preview waits 400 ms of real time for the lines to settle and `userEvent` spends real
+      // time between the actions above, so on a starved machine the debounce fires between two
+      // of them and sends an earlier state of the lines first. The wait is therefore for the
+      // request that carries the final lines, not for the first one that carries two (REB-947).
+      const finalLines = [
+        { description: null, unit: 'flat', delivery_period: 'one_off', unit_price: '20000', quantity: '1', start: null, duration_months: null },
+        { description: 'Manutenzione', unit: 'flat', delivery_period: 'monthly', unit_price: '500', quantity: '1', start: null, duration_months: null },
+      ]
       await waitFor(() => {
-        const sent = (mockPost.mock.calls.at(-1) as unknown as [string, { body: { value_lines: unknown[] } }] | undefined)
-        expect(sent?.[1].body.value_lines).toHaveLength(2)
+        const sent = mockPost.mock.calls.at(-1) as unknown as [string, { body: unknown }] | undefined
+        expect(sent?.[0]).toBe('/api/deals/value-preview')
+        expect(sent?.[1].body).toEqual({ value_lines: finalLines, expected_close_date: null })
       })
       await waitFor(() => expect(screen.getByTestId('preview-total')).toHaveTextContent('26.000,00'))
       expect(screen.getByTestId('preview-one-off')).toHaveTextContent('20.000,00')
       expect(screen.getByTestId('preview-monthly')).toHaveTextContent('500,00')
       expect(screen.getByTestId('preview-monthly')).toHaveTextContent('/mese')
-      const lastCall = mockPost.mock.calls.at(-1) as unknown as [string, { body: unknown }]
-      expect(lastCall[0]).toBe('/api/deals/value-preview')
-      expect(lastCall[1].body).toEqual({
-        value_lines: [
-          { description: null, unit: 'flat', delivery_period: 'one_off', unit_price: '20000', quantity: '1', start: null, duration_months: null },
-          { description: 'Manutenzione', unit: 'flat', delivery_period: 'monthly', unit_price: '500', quantity: '1', start: null, duration_months: null },
-        ],
-        expected_close_date: null,
-      })
 
       await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
       const body = submitted(onSubmit)
       expect(body).not.toHaveProperty('expected_value')
-      expect(body.value_lines).toEqual((lastCall[1].body as { value_lines: unknown }).value_lines)
+      expect(body.value_lines).toEqual(finalLines)
     })
 
     it('asks for a quantity only on a day or hour line', async () => {
