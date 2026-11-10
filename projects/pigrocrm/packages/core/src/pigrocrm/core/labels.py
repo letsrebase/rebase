@@ -238,6 +238,7 @@ ENTITY_NOUN: dict[str, tuple[str, str]] = {
     "fiscal_profile": ("profilo fiscale", "o"),
     "gmail_message": ("email", "a"),
     "google_account": ("account Google", "o"),
+    "mailbox": ("casella email", "a"),
     "inbox_item": ("elemento in arrivo", "o"),
     "invitation": ("invito", "o"),
     "invoice": ("fattura", "a"),
