@@ -3911,7 +3911,7 @@ def test_0093_adds_the_billed_period_to_invoice_lines_and_downgrade_removes_it(
         assert all(_forecast_schema(url).values())
 
 
-def test_0099_creates_the_accountant_exports_table_under_the_scope_policy(
+def test_0094_creates_the_accountant_exports_table_under_the_scope_policy(
     pigrocrm_postgres: Any,
 ) -> None:
     """REB-1012: a new table with the row policy of every table that reaches a legal entity,
@@ -3923,13 +3923,13 @@ def test_0099_creates_the_accountant_exports_table_under_the_scope_policy(
         upgrade(config, "0093")
         assert _table_shape(url, "accountant_exports")[0] is False
         assert _entity_visible_has(url, "accountant_export") is False
-        upgrade(config, "0099")
+        upgrade(config, "0094")
         assert _table_shape(url, "accountant_exports") == (True, True, {"legal_entity_scope"})
         assert _entity_visible_has(url, "accountant_export") is True
         downgrade(config, "0093")
         assert _table_shape(url, "accountant_exports")[0] is False
         assert _entity_visible_has(url, "accountant_export") is False
-        upgrade(config, "0099")
+        upgrade(config, "0094")
         assert _table_shape(url, "accountant_exports")[0] is True
 
 

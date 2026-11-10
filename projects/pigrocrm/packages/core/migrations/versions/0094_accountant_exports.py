@@ -1,6 +1,6 @@
 """accountant exports: the row a built bundle leaves behind
 
-Revision ID: 0099
+Revision ID: 0094
 Revises: 0093
 
 REB-1012, § 3 of `2026-11-09-accountant-export-design.md`. A new table, `accountant_exports`:
@@ -28,7 +28,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0099"
+revision: str = "0094"
 down_revision: str | Sequence[str] | None = "0093"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
