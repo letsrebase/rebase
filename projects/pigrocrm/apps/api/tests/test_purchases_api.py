@@ -311,3 +311,36 @@ def test_a_collaborator_cannot_set_user_rates(logged_in: TestClient, admin_user)
         f"/api/users/{admin_user.id}/rates", json={"default_hourly_rate": "80.000000"}
     )
     assert response.status_code == 403
+
+
+def test_a_purchase_with_a_duplicate_photo_is_linked_to_the_original_and_its_file(
+    logged_in: TestClient,
+) -> None:
+    photo = b"\xff\xd8\xff\xe0" + b"\x01" * 32
+    category_id = _seed_category(logged_in)
+    ids = []
+    for name in ("uno.jpg", "due.jpg"):
+        response = logged_in.post(
+            "/api/inbox/upload?read=false", files=[("file", (name, photo, "image/jpeg"))]
+        )
+        assert response.status_code == 201, response.text
+        ids.append(response.json()["items"][0])
+    first, second = ids
+    assert second["state"] == "duplicate"
+
+    created = logged_in.post(
+        "/api/purchases",
+        json={
+            "category_id": category_id,
+            "date": "2026-03-05",
+            "amount": "12.50",
+            "description": "Bar Roma",
+            "inbox_item_id": second["id"],
+        },
+    )
+    assert created.status_code == 201, created.text
+    read = logged_in.get(f"/api/purchases/{created.json()['id']}")
+    assert read.json()["inbox_item_id"] == first["id"]
+    file = logged_in.get(f"/api/inbox/items/{read.json()['inbox_item_id']}/file")
+    assert file.status_code == 200 and file.content == photo
+    assert logged_in.get(f"/api/inbox/items/{second['id']}").json()["state"] == "duplicate"

@@ -222,3 +222,15 @@ class PurchasePage(BaseModel):
     # no screen adds money up itself.
     total_count: int
     total_amount: Decimal
+
+
+class PurchaseCapabilitiesRead(BaseModel):
+    """What the buyer's fiscal pack lets a purchase carry, so a form hides what the server would
+    refuse and nothing it would accept (`purchases/capabilities.py`). `legal_entity_id` is the
+    buyer these flags speak for, `None` when none could be resolved (every flag is then true)."""
+
+    legal_entity_id: UUID | None
+    vat_recap: bool
+    withholding: bool
+    reverse_charge: bool
+    split_payment: bool

@@ -61,6 +61,22 @@ def _register(db_session: Session, category_id: UUID, item_id: UUID, actor: Acto
     return purchase.id
 
 
+def _register_any(db_session: Session, category_id: UUID, item_id: UUID, actor: Actor) -> UUID:
+    """Registers and answers the item the purchase ended up linked to."""
+    purchase = PurchaseService(db_session).create(
+        PurchaseCreate(
+            category_id=category_id,
+            date=date(2026, 11, 10),
+            amount=Decimal("12.50"),
+            description="Bar Roma",
+            inbox_item_id=item_id,
+        ),
+        actor,
+    )
+    assert purchase.inbox_item_id is not None
+    return purchase.inbox_item_id
+
+
 def _item(db_session: Session, item_id: UUID) -> InboxItem:
     db_session.expire_all()
     return db_session.get(InboxItem, item_id)  # type: ignore[return-value]
@@ -142,7 +158,7 @@ def test_an_agent_linking_an_item_only_links_it(
     assert proposal is not None and proposal.status == "pending"
 
 
-@pytest.mark.parametrize("state", ["filed", "duplicate", "discarded"])
+@pytest.mark.parametrize("state", ["filed", "discarded"])
 def test_an_item_that_is_not_waiting_is_only_linked(
     db_session: Session,
     uploads: InboxUploads,
@@ -150,16 +166,11 @@ def test_an_item_that_is_not_waiting_is_only_linked(
     seeded_category_id: UUID,
     state: str,
 ) -> None:
-    if state == "duplicate":
-        _photo(uploads, person, "uno.jpg")
-        item_id = _photo(uploads, person, "copia.jpg")  # the same bytes: kept as a duplicate
-        assert _item(db_session, item_id).state == "duplicate"
-    else:
-        item_id = _photo(uploads, person)
-        item = _item(db_session, item_id)
-        item.state = state
-        item.reason = "gia' deciso"
-        db_session.flush()
+    item_id = _photo(uploads, person)
+    item = _item(db_session, item_id)
+    item.state = state
+    item.reason = "gia' deciso"
+    db_session.flush()
     reason = _item(db_session, item_id).reason
 
     _register(db_session, seeded_category_id, item_id, person)
@@ -211,3 +222,80 @@ def test_a_person_discarding_a_filed_item_is_refused_as_before(
 
     with pytest.raises(Conflict):
         InboxService(db_session).discard(item_id, InboxDiscard(reason="no"), person)
+
+
+def test_a_duplicate_is_linked_to_its_original_and_a_person_files_that(
+    db_session: Session, uploads: InboxUploads, person: Actor, seeded_category_id: UUID
+) -> None:
+    original = _photo(uploads, person, "uno.jpg")
+    copy = _photo(uploads, person, "copia.jpg")  # the same bytes: kept as a duplicate
+    assert _item(db_session, copy).state == "duplicate"
+
+    linked = _register_any(db_session, seeded_category_id, copy, person)
+
+    assert linked == original
+    assert _item(db_session, original).state == "filed"
+    assert _item(db_session, original).storage_key is not None
+    kept = _item(db_session, copy)
+    assert (kept.state, kept.duplicate_of_id) == ("duplicate", original)
+
+
+def test_an_agent_linking_a_duplicate_only_links_the_original(
+    db_session: Session,
+    uploads: InboxUploads,
+    person: Actor,
+    agent: Actor,
+    seeded_category_id: UUID,
+) -> None:
+    original = _photo(uploads, person, "uno.jpg")
+    copy = _photo(uploads, person, "copia.jpg")
+
+    assert _register_any(db_session, seeded_category_id, copy, agent) == original
+    assert _item(db_session, original).state == "new"
+
+
+def test_a_chain_of_two_duplicates_resolves_to_the_root(
+    db_session: Session, uploads: InboxUploads, person: Actor, seeded_category_id: UUID
+) -> None:
+    original = _photo(uploads, person, "uno.jpg")
+    middle = _photo(uploads, person, "due.jpg")
+    last = _photo(uploads, person, "tre.jpg")
+    _item(db_session, last).duplicate_of_id = middle
+    db_session.flush()
+
+    assert _register_any(db_session, seeded_category_id, last, person) == original
+
+
+def test_an_original_the_actor_does_not_see_keeps_the_duplicate_id(
+    db_session: Session, uploads: InboxUploads, person: Actor, seeded_category_id: UUID
+) -> None:
+    original = _photo(uploads, person, "uno.jpg")
+    stranger = Actor(id=UUID(int=7), type="user", role="collaborator")
+    copy = _photo(uploads, person, "copia.jpg")
+    assert _item(db_session, copy).duplicate_of_id == original
+
+    assert _register_any(db_session, seeded_category_id, copy, stranger) == copy
+    assert _item(db_session, original).state == "new"
+
+
+def test_a_duplicate_linked_on_update_resolves_to_the_original(
+    db_session: Session, uploads: InboxUploads, person: Actor, seeded_category_id: UUID
+) -> None:
+    original = _photo(uploads, person, "uno.jpg")
+    copy = _photo(uploads, person, "copia.jpg")
+    other = uploads.upload([("altra.png", PNG)], person).items[0].id
+    purchase_id = _register(db_session, seeded_category_id, other, person)
+
+    updated = PurchaseService(db_session).update(
+        purchase_id, PurchaseUpdate(inbox_item_id=copy), person
+    )
+
+    assert updated.inbox_item_id == original
+    assert _item(db_session, original).state == "filed"
+
+
+def test_an_item_that_is_not_a_duplicate_is_linked_as_it_is(
+    db_session: Session, uploads: InboxUploads, person: Actor, seeded_category_id: UUID
+) -> None:
+    item_id = _photo(uploads, person)
+    assert _register_any(db_session, seeded_category_id, item_id, person) == item_id

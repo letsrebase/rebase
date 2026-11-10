@@ -55,6 +55,33 @@ def withdraw_proposals(session: Session, item: InboxItem, actor: Actor) -> None:
     session.refresh(item)
 
 
+_MAX_CHAIN = 10
+"""How many `duplicate_of_id` hops are followed: a longer chain is taken for a loop."""
+
+
+def resolve_original(session: Session, inbox_item_id: UUID, actor: Actor) -> UUID:
+    """The item that holds the file: a `duplicate` holds no bytes, so a purchase linking one
+    is linked to the original it points at (the chain followed to its root, bounded).
+
+    Only to an original the actor sees (`inbox.access`): when a hop is not visible, or the
+    chain does not end, the id given is kept, so nothing about an item they cannot open is
+    revealed. An item that is not a duplicate is answered as it is."""
+    current = session.get(InboxItem, inbox_item_id)
+    for _ in range(_MAX_CHAIN):
+        if current is None or current.state != "duplicate" or current.duplicate_of_id is None:
+            break
+        stmt = select(InboxItem).where(InboxItem.id == current.duplicate_of_id)
+        clause = visible_to(actor)
+        if clause is not None:
+            stmt = stmt.where(clause)
+        current = session.execute(stmt).scalars().first()
+    else:
+        return inbox_item_id
+    if current is None:
+        return inbox_item_id
+    return current.id
+
+
 def file_as_purchase(
     session: Session, inbox_item_id: UUID, purchase_id: UUID, actor: Actor
 ) -> bool:

@@ -2076,6 +2076,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/purchases/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Capabilities
+         * @description What the buyer's fiscal pack lets a purchase carry, for the form to hide the rest.
+         *     Declared before `/{purchase_id}`, which would take `capabilities` for an id.
+         */
+        get: operations["capabilities_api_purchases_capabilities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/purchases/{purchase_id}": {
         parameters: {
             query?: never;
@@ -13619,6 +13640,24 @@ export interface components {
             delivery_period?: ("monthly" | "quarterly" | "annual" | "one_off") | null;
             /** Expected Quantity */
             expected_quantity?: string | null;
+        };
+        /**
+         * PurchaseCapabilitiesRead
+         * @description What the buyer's fiscal pack lets a purchase carry, so a form hides what the server would
+         *     refuse and nothing it would accept (`purchases/capabilities.py`). `legal_entity_id` is the
+         *     buyer these flags speak for, `None` when none could be resolved (every flag is then true).
+         */
+        PurchaseCapabilitiesRead: {
+            /** Legal Entity Id */
+            legal_entity_id: string | null;
+            /** Vat Recap */
+            vat_recap: boolean;
+            /** Withholding */
+            withholding: boolean;
+            /** Reverse Charge */
+            reverse_charge: boolean;
+            /** Split Payment */
+            split_payment: boolean;
         };
         /** PurchaseCreate */
         PurchaseCreate: {
@@ -33482,6 +33521,126 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PurchaseRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    capabilities_api_purchases_capabilities_get: {
+        parameters: {
+            query?: {
+                /** @description The buyer; omitted, the space's only active legal entity, the one a supplier's document that names none is registered under */
+                legal_entity_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PurchaseCapabilitiesRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

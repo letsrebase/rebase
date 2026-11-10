@@ -7,7 +7,9 @@ from pydantic import Field
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.purchases.capabilities import read_purchase_capabilities
 from pigrocrm.core.purchases.schemas import (
+    PurchaseCapabilitiesRead,
     PurchaseCreate,
     PurchaseKind,
     PurchaseListQuery,
@@ -57,6 +59,24 @@ def list_purchases(
     session: SessionDep, actor: ActorDep, params: Annotated[PurchaseListParams, Query()]
 ) -> PurchasePage:
     return PurchaseService(session).list(params.to_query(PurchaseListQuery), actor)
+
+
+@router.get("/capabilities", response_model=PurchaseCapabilitiesRead)
+def capabilities(
+    session: SessionDep,
+    legal_entity_id: Annotated[
+        UUID | None,
+        Query(
+            description=(
+                "The buyer; omitted, the space's only active legal entity, the one a "
+                "supplier's document that names none is registered under"
+            )
+        ),
+    ] = None,
+) -> PurchaseCapabilitiesRead:
+    """What the buyer's fiscal pack lets a purchase carry, for the form to hide the rest.
+    Declared before `/{purchase_id}`, which would take `capabilities` for an id."""
+    return read_purchase_capabilities(session, legal_entity_id)
 
 
 @router.get("/{purchase_id}", response_model=PurchaseRead)
