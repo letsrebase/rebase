@@ -156,7 +156,7 @@ class CashScheduleService:
                 expected=", ".join(str(option) for option in HORIZON_OPTIONS) + " settimane",
             )
         today = today_local()
-        queries = self._queries(query.legal_entity_id, actor, today)
+        queries = self._queries(query.legal_entity_id, actor, today, modules)
         show_outgoing = profile != "solo"
         cash_enabled = modules is None or "cash" in modules
         balances = (
@@ -211,7 +211,12 @@ class CashScheduleService:
     # ---- the payables mirror ----------------------------------------------------------------
 
     def get_payables(
-        self, legal_entity_id: UUID | None, actor: Actor, *, profile: Profile | None = None
+        self,
+        legal_entity_id: UUID | None,
+        actor: Actor,
+        *,
+        modules: AbstractSet[str] | None = None,
+        profile: Profile | None = None,
     ) -> PayablesDashboard:
         """What we owe, in the receivables' six bands. A solo space shows no outgoing money:
         it answers the same shape at zero, so a client that asks is not met by a 404."""
@@ -223,7 +228,7 @@ class CashScheduleService:
                 today=today, legal_entity_id=legal_entity_id, calculated_at=calculated_at
             )
         return build_payables(
-            self._queries(legal_entity_id, actor, today),
+            self._queries(legal_entity_id, actor, today, modules),
             legal_entity_id=legal_entity_id,
             calculated_at=calculated_at,
         )
@@ -248,7 +253,7 @@ class CashScheduleService:
             profile=profile,
         )
         today = schedule.today
-        queries = self._queries(legal_entity_id, actor, today)
+        queries = self._queries(legal_entity_id, actor, today, modules)
         show_outgoing = schedule.show_outgoing
         receivable = queries.owed("in")
         payable = queries.owed("out") if show_outgoing else None
@@ -257,8 +262,17 @@ class CashScheduleService:
             today + dt.timedelta(days=NEXT_DAYS - 1),
             ("in", "out") if show_outgoing else ("in",),
         )
-        in_total = sum((row.amount for row in rows if row.direction == "in"), ZERO_MONEY)
-        out_total = sum((row.amount for row in rows if row.direction == "out"), ZERO_MONEY)
+
+        def total(direction: str, *, forecast_only: bool = False) -> Decimal:
+            return sum(
+                (
+                    row.amount
+                    for row in rows
+                    if row.direction == direction and (row.state == "forecast" or not forecast_only)
+                ),
+                ZERO_MONEY,
+            )
+
         return CashSummary(
             calculated_at=schedule.calculated_at,
             today=today,
@@ -276,14 +290,25 @@ class CashScheduleService:
             else OwedFigure(
                 total=payable.total, late_total=payable.late_total, late_count=payable.late_count
             ),
-            next_7_days=Next7(in_total=in_total, out_total=out_total if show_outgoing else None),
+            balance_below_zero=schedule.total_balance is not None
+            and schedule.total_balance.below_zero,
+            next_7_days=Next7(
+                in_total=total("in"),
+                in_forecast=total("in", forecast_only=True),
+                out_total=total("out") if show_outgoing else None,
+                out_forecast=total("out", forecast_only=True) if show_outgoing else None,
+            ),
             alert=schedule.alerts[0] if schedule.alerts else None,
         )
 
     # ---- internals --------------------------------------------------------------------------
 
     def _queries(
-        self, legal_entity_id: UUID | None, actor: Actor, today: dt.date
+        self,
+        legal_entity_id: UUID | None,
+        actor: Actor,
+        today: dt.date,
+        modules: AbstractSet[str] | None,
     ) -> ScheduleQueries:
         return ScheduleQueries(
             self.session,
@@ -291,6 +316,7 @@ class CashScheduleService:
             legal_entity_id=legal_entity_id,
             restricted=may_read_fiscal(actor),
             currency=SCHEDULE_CURRENCY,
+            modules=modules,
         )
 
     def _weeks(
@@ -368,6 +394,7 @@ class CashScheduleService:
                     balance_as_of=balance.as_of,
                     stale_days=balance.stale_days,
                     is_stale=balance.is_stale,
+                    below_zero=balance.amount is not None and balance.amount < 0,
                 )
             )
             if balance.amount is None:
@@ -387,6 +414,7 @@ class CashScheduleService:
                 as_of=min(dates) if dates else None,
                 excluded_currencies=sorted(excluded),
                 accounts_without_balance=without_balance,
+                below_zero=amount < 0,
             )
         return _Balances(cards, total, {account.id for account, _ in accounts})
 

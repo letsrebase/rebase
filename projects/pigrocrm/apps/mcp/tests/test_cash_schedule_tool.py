@@ -110,6 +110,11 @@ async def test_the_tool_is_there_with_every_optional_module_off(
     assert body["cash_enabled"] is False
     assert (body["accounts"], body["total_balance"], body["show_balance"]) == (None, None, False)
     assert body["weeks"][1]["in_expected"] == "100.00"
+    # The purchase and the tax are the modules' kinds: with every module off they are in no week.
+    assert body["weeks"][1]["out_expected"] == "0.00"
+    async with Client(_server(mcp_session, tmp_path, module_cash=False)) as only_cash_off:
+        body = _payload(await only_cash_off.call_tool("get_cash_schedule", {}))
+    assert body["cash_enabled"] is False
     assert body["weeks"][1]["out_expected"] == "60.00"
 
 

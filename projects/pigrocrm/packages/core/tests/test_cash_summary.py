@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.due_items.schedule import CashScheduleService
-from pigrocrm.core.due_items.schedule_schemas import CashSummary
+from pigrocrm.core.due_items.schedule_schemas import CashScheduleQuery, CashSummary
 from pigrocrm.core.due_items.schemas import SettlementCreate
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.repository import InvoiceRepository
@@ -127,7 +127,9 @@ def test_the_next_seven_days_run_from_today_through_the_sixth_day_after(
     page = summary(world)
 
     assert page.next_7_days.in_total == Decimal("15.00")
+    assert page.next_7_days.in_forecast == Decimal("5.00")
     assert page.next_7_days.out_total == Decimal("32.00")
+    assert page.next_7_days.out_forecast == Decimal("2.00")
 
 
 def test_the_balance_is_the_total_of_the_euro_accounts_and_its_date(world: CashWorld) -> None:
@@ -163,7 +165,8 @@ def test_a_solo_space_has_no_payable_and_no_outgoing(world: CashWorld) -> None:
 
     assert page.show_outgoing is False and page.payable is None
     assert page.next_7_days.in_total == Decimal("100.00")
-    assert page.next_7_days.out_total is None
+    assert page.next_7_days.out_total is None and page.next_7_days.out_forecast is None
+    assert page.next_7_days.in_forecast == Decimal("0.00")
     assert page.receivable.total == Decimal("100.00")
     assert page.balance_today == Decimal("40.00")
     # No projection for a solo space, so no below-zero alert either.
@@ -206,3 +209,26 @@ def test_with_the_module_off_there_is_no_balance_but_the_owed_figures_stay(
     assert (page.balance_today, page.balance_as_of, page.alert) == (None, None, None)
     assert page.receivable.total == Decimal("300.00")
     assert page.receivable.late_count == 1
+
+
+def test_the_server_says_when_the_balance_is_below_zero(world: CashWorld) -> None:
+    world.account("-50.00", name="Scoperto")
+    world.account("20.00", name="Altro")
+
+    page = summary(world)
+    schedule = CashScheduleService(world.session).get_schedule(
+        CashScheduleQuery(), ADMIN, modules=None, profile="company"
+    )
+
+    assert page.balance_today == Decimal("-30.00") and page.balance_below_zero is True
+    assert schedule.total_balance is not None and schedule.total_balance.below_zero is True
+    assert schedule.accounts is not None
+    assert {card.name: card.below_zero for card in schedule.accounts} == {
+        "Scoperto": True,
+        "Altro": False,
+    }
+    # Zero is not below zero, and no balance says nothing.
+    assert (
+        summary(CashWorld(world.session), entity=world.second_entity()).balance_below_zero is False
+    )
+    assert summary(world, COLLABORATOR).balance_below_zero is False

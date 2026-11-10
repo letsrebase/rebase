@@ -318,6 +318,16 @@ token `full_access`), and the kinds of `RESTRICTED_SOURCE_KINDS` need `read_fisc
 receivables' (`BAND_LABELS`, same bounds), pinned by `test_cash_payables.py`, and `receivable.total` of the summary is
 `InvoiceRepository.sum_unpaid` to the cent (`test_cash_summary.py`). The schedule is read in the request's own session
 (no `REPEATABLE READ` snapshot, unlike the dashboards).
+**A source kind of a module that is off is in no figure of that read** (`SOURCE_KIND_MODULES` in `schedule_queries.py`, one
+filter in the shared predicate: weeks, late figures, `has_open_items`, the taxes table, the payables and the summary; the
+list `GET /api/due-items` is a list of records and stays unfiltered). The mapping, read from the routes' guards and the
+kinds' writers: `purchase`, `recurring_expense`, `integration_vat`, `iva_settlement` (the `iva_settlements` route),
+`withholding` and `cash_basis_vat` (the purchases-and-IVA design writes them) are `purchases`; `tax_instalment` is `taxes`;
+`payroll` is `staff`; `engagement` is `collaborators`; `contract_occurrence` is `contracts`; `sales_invoice` and
+`sales_draft` are the core's, as is any kind not named. `test_cash_modules.py` fails for a kind in `SOURCE_KINDS` that is in
+neither place. The server also compares against zero (`below_zero` on each account card and on `total_balance`,
+`balance_below_zero` on the summary, never the browser), and `next_7_days` carries the forecast part of each total
+(`in_forecast`, `out_forecast`), already inside it, so the Home can draw it lighter.
 **Staff and directors are written by `StaffService`, and pay is an administrator's before anything else
 (REB-977).** `staff_members` and `payroll_settings` belong to the module `staff` (default off for both
 profiles, on for a space with no profile): REST `/api/staff` carries `module_guard("staff")` and the

@@ -133,10 +133,11 @@ def test_the_schedule_is_money_as_strings_by_the_week_with_its_own_constants(
         "as_of": TODAY.isoformat(),
         "excluded_currencies": [],
         "accounts_without_balance": 0,
+        "below_zero": False,
     }
-    assert [(a["name"], a["balance"], a["currency"]) for a in body["accounts"]] == [
-        ("Conto operativo", "1000.00", "EUR")
-    ]
+    assert [
+        (a["name"], a["balance"], a["currency"], a["below_zero"]) for a in body["accounts"]
+    ] == [("Conto operativo", "1000.00", "EUR", False)]
     assert body["late_receivable"] == {"count": 0, "total": "0.00", "oldest_days": None}
     assert body["alerts"] == [] and body["has_open_items"] is True
 
@@ -390,7 +391,13 @@ def test_the_summary_is_the_phones_figures(logged_in: TestClient, api_session: S
     assert (body["balance_today"], body["balance_as_of"]) == ("300.00", TODAY.isoformat())
     assert body["receivable"] == {"total": "125.00", "late_total": "100.00", "late_count": 1}
     assert body["payable"] == {"total": "10.00", "late_total": "0.00", "late_count": 0}
-    assert body["next_7_days"] == {"in_total": "25.00", "out_total": "10.00"}
+    assert body["next_7_days"] == {
+        "in_total": "25.00",
+        "in_forecast": "0.00",
+        "out_total": "10.00",
+        "out_forecast": "0.00",
+    }
+    assert body["balance_below_zero"] is False
     assert body["alert"] is None
     assert body["show_outgoing"] is True
 

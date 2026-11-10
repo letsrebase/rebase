@@ -52,6 +52,7 @@ class CashAccountCard(BaseModel):
     balance_as_of: dt.date | None
     stale_days: int | None
     is_stale: bool
+    below_zero: bool = Field(description="`balance` is below zero (the server compares)")
 
 
 class TotalBalance(BaseModel):
@@ -65,6 +66,7 @@ class TotalBalance(BaseModel):
     # EUR accounts with no balance yet (no opening balance and no statement): they are not in
     # `amount`, and the browser says so instead of presenting a partial sum as the balance.
     accounts_without_balance: int
+    below_zero: bool = Field(description="`amount` is below zero (the server compares)")
 
 
 class LateFigure(BaseModel):
@@ -198,7 +200,17 @@ class Next7(BaseModel):
     """The open items (expected and forecast) due from today through the sixth day after."""
 
     in_total: Decimal = Field(max_digits=MONEY_DIGITS, decimal_places=2)
+    in_forecast: Decimal = Field(
+        max_digits=MONEY_DIGITS,
+        decimal_places=2,
+        description="The forecast part already inside `in_total`",
+    )
     out_total: Decimal | None = Field(max_digits=MONEY_DIGITS, decimal_places=2)
+    out_forecast: Decimal | None = Field(
+        max_digits=MONEY_DIGITS,
+        decimal_places=2,
+        description="The forecast part already inside `out_total`; null for a solo space",
+    )
 
 
 class CashSummary(BaseModel):
@@ -210,6 +222,9 @@ class CashSummary(BaseModel):
     show_outgoing: bool
     balance_today: Decimal | None = Field(max_digits=MONEY_DIGITS, decimal_places=2)
     balance_as_of: dt.date | None
+    balance_below_zero: bool = Field(
+        description="`balance_today` is below zero (the server compares); false with no balance"
+    )
     receivable: OwedFigure
     payable: OwedFigure | None
     next_7_days: Next7

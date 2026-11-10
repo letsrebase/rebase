@@ -72,7 +72,10 @@ def payables(
     """What the space owes, in the six bands of the receivables, with the late rows. Zeros for
     a solo space."""
     return CashScheduleService(session).get_payables(
-        legal_entity_id, actor, profile=settings.space_profile
+        legal_entity_id,
+        actor,
+        modules=enabled_modules(settings),
+        profile=settings.space_profile,
     )
 
 

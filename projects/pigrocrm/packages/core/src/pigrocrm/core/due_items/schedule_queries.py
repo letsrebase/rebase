@@ -10,10 +10,13 @@ the receivables the dashboard already prints. What counts as open here:
   replaced and no longer money to come (the daily refresh drops it): it is in no figure.
 
 `restricted` says whether the caller may read the fiscal source kinds; without it they are left
-out of every figure, the rule `DueItemRepository.list_rows` applies to the list.
+out of every figure, the rule `DueItemRepository.list_rows` applies to the list. `modules` is
+what the space has on: a source kind of a module that is off (`SOURCE_KIND_MODULES`) is in no
+figure either.
 """
 
 import datetime as dt
+from collections.abc import Set as AbstractSet
 from decimal import Decimal
 from typing import NamedTuple
 from uuid import UUID
@@ -29,6 +32,33 @@ from pigrocrm.core.organizations.models import Organization
 # The kinds of a solo space's own taxes: the restricted kinds that are not what it pays its
 # people (payroll) or a freelancer (engagement).
 TAX_SOURCE_KINDS: frozenset[str] = RESTRICTED_SOURCE_KINDS - {"payroll", "engagement"}
+
+# The module each source kind belongs to, read from the code that writes it and the routes that
+# guard it: a kind whose module is off is absent from every figure of the schedule, the
+# payables and the summary. A kind not named here is the core's (`sales_invoice`, `sales_draft`).
+# The IVA and withholding kinds are the purchases design's (`iva_settlements` is a `purchases`
+# route; withholdings a company pays for others are due items it writes), `tax_instalment` the
+# taxes design's, `payroll` the staff module's, `engagement` the collaborators' and
+# `contract_occurrence` the contracts'.
+SOURCE_KIND_MODULES: dict[str, str] = {
+    "purchase": "purchases",
+    "recurring_expense": "purchases",
+    "integration_vat": "purchases",
+    "iva_settlement": "purchases",
+    "withholding": "purchases",
+    "cash_basis_vat": "purchases",
+    "tax_instalment": "taxes",
+    "payroll": "staff",
+    "engagement": "collaborators",
+    "contract_occurrence": "contracts",
+}
+
+
+def kinds_of_modules_off(modules: AbstractSet[str] | None) -> frozenset[str]:
+    """The source kinds whose module is not in `modules` (`None`: every module is on)."""
+    if modules is None:
+        return frozenset()
+    return frozenset(kind for kind, module in SOURCE_KIND_MODULES.items() if module not in modules)
 
 
 class DayRow(NamedTuple):
@@ -88,12 +118,14 @@ class ScheduleQueries:
         legal_entity_id: UUID | None,
         restricted: bool,
         currency: str,
+        modules: AbstractSet[str] | None = None,
     ) -> None:
         self.session = session
         self.today = today
         self.legal_entity_id = legal_entity_id
         self.restricted = restricted
         self.currency = currency
+        self.modules_off = kinds_of_modules_off(modules)
 
     # ---- the shared predicate ------------------------------------------------------------
 
@@ -109,8 +141,11 @@ class ScheduleQueries:
         ]
         if self.legal_entity_id is not None:
             clauses.append(DueItem.legal_entity_id == self.legal_entity_id)
+        hidden = set(self.modules_off)
         if not self.restricted:
-            clauses.append(DueItem.source_kind.not_in(sorted(RESTRICTED_SOURCE_KINDS)))
+            hidden |= RESTRICTED_SOURCE_KINDS
+        if hidden:
+            clauses.append(DueItem.source_kind.not_in(sorted(hidden)))
         return clauses
 
     def _in_currency[*Ts](self, stmt: Select[*Ts]) -> Select[*Ts]:
