@@ -11881,6 +11881,8 @@ export interface components {
             due_item_id: string | null;
             /** Payment State */
             payment_state: ("expected" | "settled") | null;
+            /** Registers Changed */
+            registers_changed: boolean;
             /** Carry Forward Limit */
             carry_forward_limit: string | null;
         };
