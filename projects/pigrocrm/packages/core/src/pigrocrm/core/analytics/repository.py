@@ -38,6 +38,7 @@ from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.money import ZERO_MONEY, line_value, round_money, share, sum_hours, sum_money
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.purchases.models import Purchase
+from pigrocrm.core.staff.models import StaffMember
 from pigrocrm.core.timetracking.models import TimeEntry
 from pigrocrm.core.work_units.models import WORK_UNIT_COMMITTED_STATUSES, WorkUnit
 
@@ -221,6 +222,8 @@ class AnalyticsRepository:
         date_to: date,
         customer_id: UUID | None,
         legal_entity_id: UUID | None = None,
+        *,
+        without_staff_users: bool = False,
     ) -> dict[UUID, Decimal]:
         """`Σ ROUND(ore × costo_applicato, 2)`, summed **per row** and then added -- never
         `ROUND(Σ ore × costo, 2)`.
@@ -238,6 +241,19 @@ class AnalyticsRepository:
         )
         stmt = self._customer_scope(stmt, customer_id, TimeEntry.deal_id)
         stmt = self._legal_entity_scope(stmt, legal_entity_id, TimeEntry.deal_id)
+        if without_staff_users:
+            # Staff the personnel line already counts (staff design § 2): the hours of a user
+            # linked to a staff member of the same legal entity, on the days that member is in
+            # service, are not labour a second time. Hours outside the service stay, since
+            # nothing else counts them. Across every legal entity, a link to any is enough.
+            linked = select(StaffMember.id).where(
+                StaffMember.user_id == TimeEntry.user_id,
+                TimeEntry.date >= StaffMember.start_date,
+                or_(StaffMember.end_date.is_(None), TimeEntry.date <= StaffMember.end_date),
+            )
+            if legal_entity_id is not None:
+                linked = linked.where(StaffMember.legal_entity_id == legal_entity_id)
+            stmt = stmt.where(~linked.exists())
         grouped: dict[UUID, list[Decimal | None]] = defaultdict(list)
         for deal_id, hours, cost in self.session.execute(stmt).all():
             grouped[deal_id].append(line_value(hours, cost))

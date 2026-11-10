@@ -149,6 +149,7 @@ _FORBIDDEN: dict[Method, str] = {
     ("StaffService", "update_staff_member"): "REB-977: same as `create_staff_member`",
     ("StaffService", "get_staff_member"): "REB-977: same as `create_staff_member`",
     ("StaffService", "list_staff"): "REB-977: same as `create_staff_member`",
+    ("PayrollService", "get_payroll_month"): "REB-1008: same as `create_staff_member`",
     ("DocumentService", "import_bytes"): (
         "archivia byte che il CRM non ha prodotto, presi dal Drive del titolare a "
         "carico della sua quota e del suo consenso (slice 9 §4.2: `import_drive_file`); "
@@ -358,6 +359,14 @@ _INTERNE: dict[Method, str] = {
     ("DueItemService", "attach_dependency"): "the writer's half: links a waiting item",
     ("DueItemService", "repoint_dependency"): "the writer's half: moves a followed item",
     ("DueItemService", "reschedule"): "the writer's half: the owner of an outgoing item moves it",
+    # REB-1008: the payroll source's writer's half and the P&L's read of the personnel line,
+    # neither takes an actor: `StaffService` and `AnalyticsService` authorise first.
+    ("PayrollService", "refresh_payroll_forecasts"): (
+        "the writer's half: the staff service refreshes the payroll items it just changed"
+    ),
+    ("PayrollService", "personnel_cost_in_range"): (
+        "the P&L's own read; the actor is checked by `period_pnl`, a tool"
+    ),
     # REB-998: the writer's half of the bank data, no actor and no commit. The tools that read
     # and import statements and match movements come with the cards that add them, with their own
     # authorisation (spec 2026-11-09, § 5).
@@ -645,6 +654,10 @@ _CONFIGURATION: dict[Method, str] = {
     ("StaffService", "set_payroll_pay_day"): (
         "REB-977, staff design § 4: the day net pay leaves for a whole legal entity is set from "
         "the staff page by a person; `update_staff_member`'s own override is the agent's"
+    ),
+    ("StaffService", "record_staff_payslip"): (
+        "REB-1008: accepting a payslip is a person's act (frame A4): a person types the figures "
+        "on the staff page, and the inbox's proposal, later, is accepted by a person too"
     ),
     ("StaffService", "get_payroll_pay_day"): (
         "REB-977: the legal entity's pay day is read with the staff page; the effective one is "

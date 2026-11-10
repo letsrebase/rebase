@@ -170,7 +170,7 @@ class AnalyticsService:
         (`pnl.period_pnl`). `modules` is what the space has on (`None`: everything): without
         `time` the labour and the hours are left out, and without `contracts` the approved
         contract days (`pnl.period_pnl`)."""
-        return pnl.period_pnl(self.session, self.repo, query, modules)
+        return pnl.period_pnl(self.session, self.repo, query, actor, modules)
 
     def unbilled_backlog(
         self,

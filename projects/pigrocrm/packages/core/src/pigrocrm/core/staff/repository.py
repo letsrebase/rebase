@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.fiscal.models import FiscalProfile
-from pigrocrm.core.staff.models import PayrollSettings, StaffMember
+from pigrocrm.core.staff.models import PayrollSettings, StaffMember, StaffPayslip
 from pigrocrm.core.staff.schemas import StaffListQuery
 
 
@@ -30,6 +30,46 @@ class StaffRepository:
         return self.session.execute(
             select(FiscalProfile.pack_id).where(FiscalProfile.legal_entity_id == legal_entity_id)
         ).scalar_one_or_none()
+
+    def pack(self, legal_entity_id: UUID) -> tuple[str, str] | None:
+        """The pack id and version the legal entity is on, `None` until it has a profile."""
+        row = self.session.execute(
+            select(FiscalProfile.pack_id, FiscalProfile.pack_version).where(
+                FiscalProfile.legal_entity_id == legal_entity_id
+            )
+        ).one_or_none()
+        return None if row is None else (row[0], row[1])
+
+    def members_of(self, legal_entity_id: UUID | None) -> list[StaffMember]:
+        """Every staff member, ended ones too, of one legal entity or of all the caller sees."""
+        stmt = select(StaffMember).order_by(StaffMember.name.asc(), StaffMember.id.asc())
+        if legal_entity_id is not None:
+            stmt = stmt.where(StaffMember.legal_entity_id == legal_entity_id)
+        return list(self.session.execute(stmt).scalars())
+
+    def payslips_of(self, member_ids: Iterable[UUID]) -> dict[UUID, list[StaffPayslip]]:
+        """The accepted payslips of each member, the earliest period first."""
+        out: dict[UUID, list[StaffPayslip]] = {}
+        rows = self.session.execute(
+            select(StaffPayslip)
+            .where(StaffPayslip.staff_member_id.in_(set(member_ids)))
+            .order_by(StaffPayslip.period.asc())
+        ).scalars()
+        for row in rows:
+            out.setdefault(row.staff_member_id, []).append(row)
+        return out
+
+    def payslip(self, staff_member_id: UUID, period: dt.date) -> StaffPayslip | None:
+        return self.session.execute(
+            select(StaffPayslip).where(
+                StaffPayslip.staff_member_id == staff_member_id, StaffPayslip.period == period
+            )
+        ).scalar_one_or_none()
+
+    def add_payslip(self, payslip: StaffPayslip) -> StaffPayslip:
+        self.session.add(payslip)
+        self.session.flush()
+        return payslip
 
     def user_exists(self, user_id: UUID) -> bool:
         return self.session.get(User, user_id) is not None

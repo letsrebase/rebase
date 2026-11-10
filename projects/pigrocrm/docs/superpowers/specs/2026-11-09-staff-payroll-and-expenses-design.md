@@ -74,6 +74,42 @@ the estimate before them. For a user linked to a staff member, the period P&L ex
 user's time entries' `applied_cost`, so labour is not counted twice. The deal P&L keeps valuing
 hours at the hourly cost, as an allocation to the deal.
 
+**As built (REB-1008).**
+
+- The estimate is `staff/estimate.py`, pure; `staff/payroll.py` reads and writes with it.
+  A month is the month the work belongs to. Cost accrues gross pay over twelve months plus the
+  employer's INPS and INAIL at the typed rates (13th and 14th accrue every month); cash has net
+  pay on the pay day, the 13th and 14th in their typed months, withholding on the 16th of the
+  month after the payment, INPS on the 16th of the month after the month worked, INAIL's yearly
+  premium on 16 February. The dates are the pack's `PayrollLaw` (frame A5, verified 2026-11-10).
+- What no source states for everyone is **typed per staff member**, never defaulted: the employee's
+  INPS share, and the months of the 13th and 14th payments. A part with a missing input is not
+  estimated and `not_estimated` names it. The F24 lines (withholding, INPS, INAIL) come together
+  or not at all: they need the pay day, the pack's dates, the ratios and the three typed rates
+  (the employer's and the employee's INPS share and INAIL's), since INPS is paid as one line and
+  INAIL's premium in the same F24. The 13th and 14th leave in their own typed month, whatever
+  the pay day's offset says of the regular payment.
+- A director has a cost from the fee and, from the ratios, a net fee on the pay day, and **no F24
+  line**: what a fee is withheld at and the INPS «gestione separata» are «to verify» (frame A5,
+  REB-975), so the estimate says `fee_withholding` and `gestione_separata`, not a number.
+- The **accepted payslip** is a row of `staff_payslips` (gross, net, withholding of one month),
+  typed by a person for now (`record_staff_payslip`, person-only); the inbox's proposal will
+  write the same row. Its month stops being an estimate for what it prints: the net pay and the
+  withholding are `expected` due items with its figures, the cost is its gross, and the ratios of
+  the latest payslip drive every other month. The INPS line and INAIL's premium are not on a
+  payslip and stay forecasts.
+- Forecast due items are written on every change of the inputs, the pay day or a payslip, from
+  two months back to twelve ahead, as `forecast` out items of the `payroll` source. An unchanged
+  one is left alone, a changed one is dropped and rewritten, and one whose date passed is
+  dropped: a forecast is never settled, a document replaces it.
+  The daily automations pass rolls the window for every legal entity with staff, each in its own
+  savepoint; a failure is reported on stderr and makes the command exit 1. A recorded payslip
+  cannot be corrected yet: a correction is a later card.
+- The period P&L's `personnel` is the sum of those costs over the window (by days of each month),
+  `null` for a reader who may not read pay and with the module off; where it is read, the hours
+  of a user linked to a staff member of the same legal entity leave the deals' labour. Everyone
+  else reads payroll cash as one «Stipendi» line per date (`list_payroll_totals`), with no person.
+
 **Replaced by the real thing.** The payroll consultant's payslips («cedolini») and the month's
 F24 arrive through the inbox (C2) as PDFs, under the inbox kinds `payslip` and `tax_document`;
 the model or the user's agent reads their figures into a proposal a person accepts (frame

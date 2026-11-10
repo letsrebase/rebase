@@ -134,6 +134,37 @@ class CompanyTaxLaw:
 
 
 @dataclass(frozen=True)
+class PayrollLaw:
+    """When an employer's payroll charges leave, as the staff estimate dates them (REB-1008).
+
+    Three dates, each a verified row of the register (A5, checked 2026-11-10):
+
+    * `withholding_day`: the income tax withheld on pay is paid by F24 on the 16th of the
+      month after the **payment** (Agenzia delle Entrate, «F24 Ritenute reddito lavoro
+      dipendente», «Come e quando si versa»). From 1 January 2027 the same rule is art. 32 c.
+      1 lett. a D.Lgs. 33/2025 («entro il giorno 16 del mese successivo a quello in cui sono
+      state operate le ritenute previste dagli articoli 33, 34, ...», read on
+      portalenormativo.it 2026-11-10) with the F24 term of art. 8 c. 1: the dates do not change.
+    * `contributions_day`: INPS contributions (the employer's and the employee's share,
+      which the employer pays) are paid by the 16th of the month after the **month the
+      work was done**, whether or not the worker was paid (INPS, «Pagamento dei contributi
+      previdenziali», updated 15 October 2024).
+    * `inail_settlement`: INAIL's yearly premium (the advance of the year and the
+      regularisation of the one before, together) is paid by F24 on 16 February (INAIL,
+      «Autoliquidazione 2025/2026», 8 January 2026). The option of four instalments is not
+      modelled: it is the employer's election and later dates move every year.
+
+    What is not here is not verified: the employee's INPS share, the months of the 13th and
+    14th payments, the director's «gestione separata» rate and IRPEF treatment. Those are
+    typed per staff member, or not estimated (A5, REB-975).
+    """
+
+    withholding_day: int
+    contributions_day: int
+    inail_settlement: MonthDay
+
+
+@dataclass(frozen=True)
 class TaxYearLaw:
     """The law that governs the tax years from `from_year` until the next entry of the
     same pack. `None` for a section means the pack's regime has nothing of that kind."""
@@ -146,6 +177,9 @@ class TaxYearLaw:
     advances: IncomeTaxAdvanceLaw | None = None
     # A company's own taxes, for the pack that has a company (`it-company`).
     company_tax: CompanyTaxLaw | None = None
+    # The payroll dates of an employer in this regime (`PayrollLaw`): `None` where the pack
+    # has not verified them, and the estimate then dates no F24 line.
+    payroll: PayrollLaw | None = None
 
     @property
     def has_income_estimate(self) -> bool:
@@ -159,6 +193,7 @@ __all__ = [
     "DateKind",
     "IncomeTaxAdvanceLaw",
     "MonthDay",
+    "PayrollLaw",
     "TaxCalendarLaw",
     "TaxDateRule",
     "TaxName",

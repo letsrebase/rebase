@@ -306,6 +306,13 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
                 )
                 failed = True
         _print_automation_report(target.label, report, dry_run=dry_run)
+        if report.payroll_failed:
+            print(
+                f"{target.label}: payroll forecasts not refreshed {report.payroll_failed} "
+                f"({', '.join(sorted(set(report.payroll_failures)))})",
+                file=sys.stderr,
+            )
+            failed = True
         if roll is not None:
             failed = _print_year_roll(target.label, roll, dry_run=dry_run) or failed
     return 1 if failed else 0
@@ -335,3 +342,5 @@ def _print_automation_report(slug: str, report: PassReport, *, dry_run: bool) ->
             print(
                 f"{slug}: {rule.rule} opened {rule.open}, already open {rule.already_open}{suffix}"
             )
+    if report.payroll_refreshed:
+        print(f"{slug}: payroll forecasts refreshed {report.payroll_refreshed}{suffix}")

@@ -32,12 +32,15 @@ from pigrocrm.core.db import today_local
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.schemas import supplied_changes
+from pigrocrm.core.staff.estimate import first_of
 from pigrocrm.core.staff.models import (
     DIRECTOR_PACKS,
     EMPLOYEE_PACKS,
     PayrollSettings,
     StaffMember,
+    StaffPayslip,
 )
+from pigrocrm.core.staff.payroll import PayrollService
 from pigrocrm.core.staff.repository import StaffRepository
 from pigrocrm.core.staff.schemas import (
     DirectorCreate,
@@ -45,6 +48,8 @@ from pigrocrm.core.staff.schemas import (
     EmployeeCreate,
     PayDayRead,
     PayDayWrite,
+    PayslipFigures,
+    PayslipRead,
     StaffListQuery,
     StaffMemberRead,
     StaffMemberUpdate,
@@ -64,6 +69,9 @@ EMPLOYEE_ONLY = frozenset(
         "part_time_percent",
         "employer_inps_rate",
         "employer_inail_rate",
+        "employee_inps_rate",
+        "thirteenth_month",
+        "fourteenth_month",
     }
 )
 DIRECTOR_ONLY = frozenset(
@@ -83,6 +91,7 @@ class StaffService:
         self.session = session
         self.repo = StaffRepository(session)
         self.activities = ActivityService(session)
+        self.payroll = PayrollService(session)
 
     def create_staff_member(
         self, data: EmployeeCreate | DirectorCreate, actor: Actor
@@ -99,6 +108,7 @@ class StaffService:
         # leaves it out for anyone but an administrator and while the module is off. It says
         # who did what, never which field moved nor to what (no `changed`).
         self.activities.record(ENTITY, member.id, "staff_member_created", actor)
+        self.payroll.refresh_payroll_forecasts(member.legal_entity_id)
         self.session.commit()
         self.session.refresh(member)
         return self._read(member)
@@ -132,6 +142,7 @@ class StaffService:
             setattr(member, key, value)
         self._flushed(self.session.flush, changes.get("user_id"))
         self.activities.record(ENTITY, member.id, "staff_member_updated", actor)
+        self.payroll.refresh_payroll_forecasts(member.legal_entity_id)
         self.session.commit()
         self.session.refresh(member)
         return self._read(member)
@@ -171,12 +182,57 @@ class StaffService:
             found.pay_day = data.pay_day
             found.pay_month_offset = data.pay_month_offset
         self.activities.record(PAY_DAY_ENTITY, found.id, "payroll_pay_day_set", actor)
+        self.payroll.refresh_payroll_forecasts(legal_entity_id)
         self.session.commit()
         return PayDayRead(
             legal_entity_id=legal_entity_id,
             pay_day=data.pay_day,
             pay_month_offset=data.pay_month_offset,
         )
+
+    def record_staff_payslip(
+        self, staff_member_id: UUID, data: PayslipFigures, actor: Actor
+    ) -> PayslipRead:
+        """Records the figures of an accepted payslip: from now on the month it pays is those
+        figures and not an estimate, and the net pay and the income-tax withholding of every
+        other month are estimated from its ratios (`staff/estimate.py`). A person's act, as
+        accepting anything is (frame § A4): `record_staff_payslip` is person-only in
+        `agent_actions.py`, so no credential reaches it, whatever it carries. A month
+        has one payslip."""
+        actor.require_admin("record_staff_payslip")
+        member = self._require(staff_member_id)
+        period = first_of(data.period)
+        if period < first_of(member.start_date) or (
+            member.end_date is not None and period > first_of(member.end_date)
+        ):
+            raise ValidationFailed(
+                "staff_payslip",
+                "period",
+                "il cedolino e' di un mese in cui la persona non era in servizio",
+                expected="un mese tra l'inizio e la fine del rapporto",
+            )
+        if self.repo.payslip(member.id, period) is not None:
+            raise Conflict(
+                "staff_payslip",
+                "il cedolino di questo mese e' gia' registrato",
+                staff_member_id=str(member.id),
+                period=period.isoformat(),
+            )
+        payslip = self.repo.add_payslip(
+            StaffPayslip(
+                staff_member_id=member.id,
+                legal_entity_id=member.legal_entity_id,
+                period=period,
+                gross=data.gross,
+                net=data.net,
+                withholding=data.withholding,
+            )
+        )
+        self.activities.record(ENTITY, member.id, "staff_payslip_recorded", actor)
+        self.payroll.refresh_payroll_forecasts(member.legal_entity_id)
+        self.session.commit()
+        self.session.refresh(payslip)
+        return PayslipRead.model_validate(payslip)
 
     # `list_staff` stays the last method in this class -- the unconditional project rule.
     def list_staff(self, query: StaffListQuery, actor: Actor) -> StaffPage:
@@ -268,6 +324,13 @@ class StaffService:
         if value("end_date") is not None and value("end_date") < value("start_date"):
             raise ValidationFailed(
                 ENTITY, "end_date", "la fine non può precedere l'inizio", expected="dopo l'inizio"
+            )
+        if value("fourteenth_month") is not None and value("monthly_payments") != 14:
+            raise ValidationFailed(
+                ENTITY,
+                "fourteenth_month",
+                "la quattordicesima c'e' solo con quattordici mensilita'",
+                expected="quattordici mensilita', o nessun mese per la quattordicesima",
             )
         if (value("pay_day") is None) != (value("pay_month_offset") is None):
             raise ValidationFailed(

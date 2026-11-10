@@ -136,6 +136,12 @@ class PeriodPnl(BaseModel):
     # unacceptable consequence -- a deal's margin would move when a *different* deal was
     # invoiced.
     general_expenses: Decimal
+    # The staff's cost in the period, a row of its own like the general expenses and never
+    # apportioned onto a deal (staff design § 2): an accepted payslip's gross and the employer's
+    # contributions, or the estimate before it. `None` when the reader may not read pay (only
+    # an administrator does, and an agent with `full_access`) or the space has `staff` off; for
+    # such a reader the hours of staff users stay in the labour of the deals, as they were.
+    personnel: Decimal | None = None
     # Added by slice 6 §5: the informative rows the economic dashboard shows under a
     # heading that is not "ricavi", and which enter no margin. Same names as `DealPnl`'s
     # because they are the same quantity on a different object; the scope lives in the

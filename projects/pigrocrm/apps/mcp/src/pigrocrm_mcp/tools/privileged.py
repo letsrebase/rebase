@@ -72,6 +72,7 @@ from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.modules import ModuleKey, Profile
 from pigrocrm.core.modules.schemas import SpaceModulesSet, SpaceProfileSet
 from pigrocrm.core.modules.service import SpaceModulesService
+from pigrocrm.core.staff.payroll import PayrollService
 from pigrocrm.core.staff.schemas import (
     Kind,
     StaffListQuery,
@@ -103,6 +104,7 @@ from pigrocrm_mcp.tools.params import (
     MoneyArg,
     StaffFields,
     parse_legal_entity_id,
+    required_iso_date,
 )
 
 
@@ -684,6 +686,21 @@ def register(
         return (
             StaffService(context.session)
             .get_staff_member(staff_member_id, context.actor)
+            .model_dump(mode="json")
+        )
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def get_payroll_month(legal_entity_id: str, month: str) -> dict[str, Any]:
+        """Estimate of one month's staff cost and cash (any date of it), admin only: per person
+        the cost, and each amount that leaves with its date. `not_estimated` names what is
+        missing; no payslip, no net pay or withholding.
+        """
+        entity = parse_legal_entity_id(legal_entity_id)
+        assert entity is not None
+        return (
+            PayrollService(context.session)
+            .get_payroll_month(entity, required_iso_date(month, "month"), context.actor)
             .model_dump(mode="json")
         )
 

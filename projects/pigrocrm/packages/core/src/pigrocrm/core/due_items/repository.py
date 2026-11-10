@@ -8,8 +8,10 @@ from uuid import UUID
 from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.db import today_local
 from pigrocrm.core.due_items.models import (
     OPEN_STATES,
+    PAYROLL_SOURCE_KIND,
     RESTRICTED_SOURCE_KINDS,
     DueItem,
     DueItemSettlement,
@@ -18,6 +20,7 @@ from pigrocrm.core.due_items.schemas import DueItemListQuery
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.staff.models import StaffMember
 
 ZERO = Decimal("0.00")
 
@@ -138,6 +141,70 @@ class DueItemRepository:
             select(Organization.legal_entity_id).where(Organization.id == organization_id)
         ).one_or_none()
         return None if row is None else (row[0],)
+
+    def staff_member_legal_entity(self, staff_member_id: UUID) -> UUID | None:
+        """The legal entity of a staff member, `None` when there is none (or the row policy
+        hides it)."""
+        return self.session.execute(
+            select(StaffMember.legal_entity_id).where(StaffMember.id == staff_member_id)
+        ).scalar_one_or_none()
+
+    def items_of_source(self, source_kind: str, source_id: UUID) -> list[DueItem]:
+        """Every item a source wrote, in any state, oldest first."""
+        return list(
+            self.session.execute(
+                select(DueItem)
+                .where(DueItem.source_kind == source_kind, DueItem.source_id == source_id)
+                .order_by(DueItem.created_at.asc(), DueItem.id.asc())
+            ).scalars()
+        )
+
+    def payroll_totals(
+        self,
+        *,
+        legal_entity_id: UUID | None,
+        due_from: dt.date | None,
+        due_to: dt.date | None,
+    ) -> list[tuple[dt.date, Decimal, bool]]:
+        """What the open items of the payroll source add up to, per due date: the date, the
+        remaining amount and whether any of it is still a forecast. No person, no item."""
+        remaining = DueItem.amount - func.coalesce(
+            select(func.sum(DueItemSettlement.amount))
+            .where(
+                DueItemSettlement.due_item_id == DueItem.id,
+                DueItemSettlement.reversed_at.is_(None),
+            )
+            .correlate(DueItem)
+            .scalar_subquery(),
+            ZERO,
+        )
+        stmt = (
+            select(
+                DueItem.due_date,
+                func.sum(remaining),
+                func.bool_or(DueItem.state == "forecast"),
+            )
+            .where(
+                DueItem.source_kind == PAYROLL_SOURCE_KIND,
+                DueItem.state.in_(OPEN_STATES),
+                DueItem.due_date.is_not(None),
+                # A forecast whose date passed is an estimate that nothing replaced: it is
+                # no longer money to come (the daily refresh drops it).
+                or_(DueItem.state == "expected", DueItem.due_date >= today_local()),
+            )
+            .group_by(DueItem.due_date)
+            .order_by(DueItem.due_date.asc())
+        )
+        if legal_entity_id is not None:
+            stmt = stmt.where(DueItem.legal_entity_id == legal_entity_id)
+        if due_from is not None:
+            stmt = stmt.where(DueItem.due_date >= due_from)
+        if due_to is not None:
+            stmt = stmt.where(DueItem.due_date <= due_to)
+        return [
+            (day, Decimal(total), bool(forecast))
+            for day, total, forecast in self.session.execute(stmt).all()
+        ]
 
     def organization_name(self, organization_id: UUID | None) -> str | None:
         if organization_id is None:

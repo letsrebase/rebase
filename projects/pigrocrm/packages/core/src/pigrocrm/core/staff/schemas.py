@@ -3,8 +3,8 @@ expenses, § 1).
 
 A staff member is created as an `EmployeeCreate` or a `DirectorCreate`, told apart by `kind`
 (`StaffMemberCreate`); an update names only what changes and cannot change the kind or the
-legal entity. Percentages are percent (`part_time_percent` 80 is 80 %). A rate or a share
-left out is «not stated», never a default: the payroll consultant verifies them.
+legal entity. Percentages are percent (`part_time_percent` 80 is 80 %). A rate, a share
+or a month left out is «not stated», never a default: the payroll consultant verifies them.
 """
 
 import datetime as dt
@@ -44,6 +44,7 @@ _Hours = Annotated[
     Decimal, Field(gt=0, le=HOURS_MAX_PER_MONTH, max_digits=6, decimal_places=MONEY_SCALE)
 ]
 _PayDay = Annotated[int, Field(ge=1, le=LATEST_PAY_DAY)]
+_Month = Annotated[int, Field(ge=1, le=12)]
 _MonthOffset = Annotated[int, Field(ge=0, le=1)]
 
 
@@ -111,6 +112,15 @@ class EmployeeCreate(_StaffCreate):
     part_time_percent: _PartTime = Decimal("100")
     employer_inps_rate: _Percent | None = None
     employer_inail_rate: _Percent | None = None
+    employee_inps_rate: _Percent | None = None
+    thirteenth_month: _Month | None = None
+    fourteenth_month: _Month | None = None
+
+    @model_validator(mode="after")
+    def _payments(self) -> "EmployeeCreate":
+        if self.fourteenth_month is not None and self.monthly_payments != 14:
+            raise ValueError("la quattordicesima c'e' solo con quattordici mensilita'")
+        return self
 
 
 class DirectorCreate(_StaffCreate):
@@ -154,6 +164,9 @@ class StaffMemberUpdate(BaseModel):
     part_time_percent: _PartTime | None = None
     employer_inps_rate: _Percent | None = None
     employer_inail_rate: _Percent | None = None
+    employee_inps_rate: _Percent | None = None
+    thirteenth_month: _Month | None = None
+    fourteenth_month: _Month | None = None
     annual_fee: _Money | None = None
     fee_payment: FeePayment | None = None
     accrues_tfm: bool | None = None
@@ -185,6 +198,9 @@ class StaffMemberRead(BaseModel):
     part_time_percent: Decimal | None
     employer_inps_rate: Decimal | None
     employer_inail_rate: Decimal | None
+    employee_inps_rate: Decimal | None
+    thirteenth_month: int | None
+    fourteenth_month: int | None
     annual_fee: Decimal | None
     fee_payment: str | None
     accrues_tfm: bool
@@ -208,3 +224,78 @@ class StaffListQuery(BaseModel):
 class StaffPage(BaseModel):
     items: list[StaffMemberRead]
     next_cursor: UUID | None
+
+
+class PayslipFigures(BaseModel):
+    """The figures of one accepted payslip. `period` is any day of the month it pays; gross,
+    net and the income-tax withheld are what the payslip prints, in euro."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    period: dt.date
+    gross: _Money
+    net: Annotated[Decimal, Field(ge=0, max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_SCALE)]
+    withholding: Annotated[
+        Decimal, Field(ge=0, max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_SCALE)
+    ]
+
+    @model_validator(mode="after")
+    def _parts(self) -> "PayslipFigures":
+        if self.net + self.withholding > self.gross:
+            raise ValueError("il netto e la ritenuta non possono superare il lordo")
+        return self
+
+
+class PayslipRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    staff_member_id: UUID
+    legal_entity_id: UUID
+    period: dt.date
+    gross: Decimal
+    net: Decimal
+    withholding: Decimal
+    created_at: dt.datetime
+
+
+CashKindName = Literal["net_pay", "extra_pay", "withholding", "inps_contributions", "inail_premium"]
+EstimateSource = Literal["estimate", "payslip"]
+
+
+class PayrollCostRead(BaseModel):
+    """A month's cost: the gross pay and the employer's contributions that could be estimated
+    (`None` where the rate is not stated), and their total."""
+
+    gross: Decimal
+    employer_inps: Decimal | None
+    employer_inail: Decimal | None
+    total: Decimal
+
+
+class PayrollCashItemRead(BaseModel):
+    kind: CashKindName
+    amount: Decimal
+    due_date: dt.date
+    payroll_month: dt.date
+
+
+class MemberMonthRead(BaseModel):
+    """One staff member's month: cost and cash apart, each cash item with its date, and what
+    could not be estimated and why (`not_estimated`, one word each)."""
+
+    staff_member_id: UUID
+    name: str
+    kind: Kind
+    source: EstimateSource
+    cost: PayrollCostRead | None
+    cash: list[PayrollCashItemRead]
+    not_estimated: list[str]
+
+
+class PayrollMonthRead(BaseModel):
+    legal_entity_id: UUID
+    month: dt.date
+    members: list[MemberMonthRead]
+    cost_total: Decimal
+    cash_total: Decimal

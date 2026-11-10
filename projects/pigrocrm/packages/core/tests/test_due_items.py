@@ -119,7 +119,7 @@ def test_every_source_kind_is_listed_and_the_fiscal_ones_are_a_named_subset() ->
     }
     assert STATES == ("forecast", "expected", "settled", "dropped")
     assert DIRECTIONS == ("in", "out")
-    assert COUNTERPARTY_TYPES == ("organization", "tax_office")
+    assert COUNTERPARTY_TYPES == ("organization", "tax_office", "staff_member")
     assert RULE_KINDS == (
         "fixed",
         "after_settlement",

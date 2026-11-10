@@ -18,7 +18,13 @@ from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.server import build_server
 
-TOOLS = {"create_staff_member", "update_staff_member", "get_staff_member", "list_staff"}
+TOOLS = {
+    "create_staff_member",
+    "update_staff_member",
+    "get_staff_member",
+    "list_staff",
+    "get_payroll_month",
+}
 
 
 def _server(
@@ -193,3 +199,37 @@ async def test_a_full_access_token_whose_owner_is_not_an_admin_is_refused(
             result = await client.call_tool(name, arguments)
             assert result.is_error, name
             assert "Unknown tool" not in str(result.content), name
+
+
+async def test_a_full_access_admin_reads_a_months_estimate_and_a_collaborator_cannot(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    """REB-1008: `get_payroll_month` is the cost and cash estimate; without an accepted payslip
+    there is no net pay and no F24 line, and the owner's role is asked as for every pay read."""
+    entity = _entity(mcp_session, "it-standard")
+    async with Client(_server(mcp_session, tmp_path)) as client:
+        created = await client.call_tool(
+            "create_staff_member",
+            {
+                "legal_entity_id": str(entity),
+                "kind": "employee",
+                "name": "Giulia Bianchi",
+                "start_date": "2026-01-01",
+                "details": {**EMPLOYEE_DETAILS, "employer_inps_rate": "30.00"},
+            },
+        )
+        assert not created.is_error, created.content
+        month = await client.call_tool(
+            "get_payroll_month", {"legal_entity_id": str(entity), "month": "2026-03-10"}
+        )
+        assert not month.is_error, month.content
+        row = _payload(month)["members"][0]
+        assert row["cost"]["gross"] == "2500.00" and row["cost"]["employer_inps"] == "750.00"
+        assert row["cash"] == []
+        assert "accepted_payslip" in row["not_estimated"]
+    async with Client(_server(mcp_session, tmp_path, role="collaborator")) as client:
+        refused = await client.call_tool(
+            "get_payroll_month", {"legal_entity_id": str(entity), "month": "2026-03-10"}
+        )
+        assert refused.is_error
+        assert "Unknown tool" not in str(refused.content)

@@ -5422,6 +5422,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/due-items/payroll-totals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Payroll Totals
+         * @description The open payroll cash as one «Stipendi» line per due date, with no person and no item:
+         *     what any member reads in place of the payroll items only an administrator sees.
+         */
+        get: operations["list_payroll_totals_api_due_items_payroll_totals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/due-items/{item_id}": {
         parameters: {
             query?: never;
@@ -5525,6 +5546,50 @@ export interface paths {
          */
         put: operations["set_pay_day_api_staff_pay_days__legal_entity_id__put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/staff/payroll/{legal_entity_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Payroll Month
+         * @description What the legal entity's staff cost in a month and when that money leaves: per person the
+         *     cost and each cash item with its date, apart. Without an accepted payslip a person has no
+         *     net pay and no withholding, and no F24 line of any kind.
+         */
+        get: operations["get_payroll_month_api_staff_payroll__legal_entity_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/staff/{staff_member_id}/payslips": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Staff Payslip
+         * @description Records the figures of an accepted payslip (gross, net, income tax withheld): that month
+         *     stops being an estimate and the person's other months are estimated from its ratios. A
+         *     person's act: no agent credential.
+         */
+        post: operations["record_staff_payslip_api_staff__staff_member_id__payslips_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8626,11 +8691,13 @@ export interface components {
              * Counterparty Type
              * @enum {string}
              */
-            counterparty_type: "organization" | "tax_office";
+            counterparty_type: "organization" | "tax_office" | "staff_member";
             /** Organization Id */
             organization_id: string | null;
             /** Organization Name */
             organization_name: string | null;
+            /** Staff Member Id */
+            staff_member_id: string | null;
             /** Tax */
             tax: string | null;
             /** Amount */
@@ -8710,11 +8777,13 @@ export interface components {
              * Counterparty Type
              * @enum {string}
              */
-            counterparty_type: "organization" | "tax_office";
+            counterparty_type: "organization" | "tax_office" | "staff_member";
             /** Organization Id */
             organization_id: string | null;
             /** Organization Name */
             organization_name: string | null;
+            /** Staff Member Id */
+            staff_member_id: string | null;
             /** Tax */
             tax: string | null;
             /** Amount */
@@ -9134,6 +9203,12 @@ export interface components {
             employer_inps_rate?: number | string | null;
             /** Employer Inail Rate */
             employer_inail_rate?: number | string | null;
+            /** Employee Inps Rate */
+            employee_inps_rate?: number | string | null;
+            /** Thirteenth Month */
+            thirteenth_month?: number | null;
+            /** Fourteenth Month */
+            fourteenth_month?: number | null;
         };
         /**
          * EngagementCreate
@@ -11251,6 +11326,35 @@ export interface components {
             known_name: boolean;
         };
         /**
+         * MemberMonthRead
+         * @description One staff member's month: cost and cash apart, each cash item with its date, and what
+         *     could not be estimated and why (`not_estimated`, one word each).
+         */
+        MemberMonthRead: {
+            /**
+             * Staff Member Id
+             * Format: uuid
+             */
+            staff_member_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "employee" | "director";
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "estimate" | "payslip";
+            cost: components["schemas"]["PayrollCostRead"] | null;
+            /** Cash */
+            cash: components["schemas"]["PayrollCashItemRead"][];
+            /** Not Estimated */
+            not_estimated: string[];
+        };
+        /**
          * MemberQuestion
          * @description The address the signup asks about. In a body, never in the URL: a query string is
          *     written by the access log and by every proxy on the way, on both hosts.
@@ -12254,6 +12358,140 @@ export interface components {
             /** Payment Date */
             payment_date?: string | null;
         };
+        /** PayrollCashItemRead */
+        PayrollCashItemRead: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "net_pay" | "extra_pay" | "withholding" | "inps_contributions" | "inail_premium";
+            /** Amount */
+            amount: string;
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /**
+             * Payroll Month
+             * Format: date
+             */
+            payroll_month: string;
+        };
+        /**
+         * PayrollCostRead
+         * @description A month's cost: the gross pay and the employer's contributions that could be estimated
+         *     (`None` where the rate is not stated), and their total.
+         */
+        PayrollCostRead: {
+            /** Gross */
+            gross: string;
+            /** Employer Inps */
+            employer_inps: string | null;
+            /** Employer Inail */
+            employer_inail: string | null;
+            /** Total */
+            total: string;
+        };
+        /** PayrollMonthRead */
+        PayrollMonthRead: {
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
+            /** Members */
+            members: components["schemas"]["MemberMonthRead"][];
+            /** Cost Total */
+            cost_total: string;
+            /** Cash Total */
+            cash_total: string;
+        };
+        /**
+         * PayrollTotalLine
+         * @description One date's payroll cash, as any member may read it: a label, a date and an amount, with
+         *     no person, no kind and no item behind it (staff design § 4). `forecast` says some of it is
+         *     still an estimate.
+         */
+        PayrollTotalLine: {
+            /**
+             * Label
+             * @default Stipendi
+             * @constant
+             */
+            label: "Stipendi";
+            /**
+             * Due Date
+             * Format: date
+             */
+            due_date: string;
+            /** Amount */
+            amount: string;
+            /** Forecast */
+            forecast: boolean;
+        };
+        /** PayrollTotals */
+        PayrollTotals: {
+            /** Items */
+            items: components["schemas"]["PayrollTotalLine"][];
+        };
+        /**
+         * PayslipFigures
+         * @description The figures of one accepted payslip. `period` is any day of the month it pays; gross,
+         *     net and the income-tax withheld are what the payslip prints, in euro.
+         */
+        PayslipFigures: {
+            /**
+             * Period
+             * Format: date
+             */
+            period: string;
+            /** Gross */
+            gross: number | string;
+            /** Net */
+            net: number | string;
+            /** Withholding */
+            withholding: number | string;
+        };
+        /** PayslipRead */
+        PayslipRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Staff Member Id
+             * Format: uuid
+             */
+            staff_member_id: string;
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /**
+             * Period
+             * Format: date
+             */
+            period: string;
+            /** Gross */
+            gross: string;
+            /** Net */
+            net: string;
+            /** Withholding */
+            withholding: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /**
          * PdfSource
          * @description Where the original PDF already is: a `documents` row with an uploaded version
@@ -12379,6 +12617,8 @@ export interface components {
             in_progress: components["schemas"]["PnlTotals"];
             /** General Expenses */
             general_expenses: string;
+            /** Personnel */
+            personnel?: string | null;
             /** Accrued Value */
             accrued_value: string;
             /** Billable Uninvoiced Hours */
@@ -14285,6 +14525,12 @@ export interface components {
             employer_inps_rate: string | null;
             /** Employer Inail Rate */
             employer_inail_rate: string | null;
+            /** Employee Inps Rate */
+            employee_inps_rate: string | null;
+            /** Thirteenth Month */
+            thirteenth_month: number | null;
+            /** Fourteenth Month */
+            fourteenth_month: number | null;
             /** Annual Fee */
             annual_fee: string | null;
             /** Fee Payment */
@@ -14340,6 +14586,12 @@ export interface components {
             employer_inps_rate?: number | string | null;
             /** Employer Inail Rate */
             employer_inail_rate?: number | string | null;
+            /** Employee Inps Rate */
+            employee_inps_rate?: number | string | null;
+            /** Thirteenth Month */
+            thirteenth_month?: number | null;
+            /** Fourteenth Month */
+            fourteenth_month?: number | null;
             /** Annual Fee */
             annual_fee?: number | string | null;
             /** Fee Payment */
@@ -56045,6 +56297,130 @@ export interface operations {
             };
         };
     };
+    list_payroll_totals_api_due_items_payroll_totals_get: {
+        parameters: {
+            query?: {
+                /** @description Only this legal entity's rows; omitted, all of them */
+                legal_entity_id?: string | null;
+                /** @description Due on or after this day */
+                due_from?: string | null;
+                /** @description Due on or before this day */
+                due_to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollTotals"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_due_item_api_due_items__item_id__get: {
         parameters: {
             query?: never;
@@ -56797,6 +57173,251 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PayDayRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_payroll_month_api_staff_payroll__legal_entity_id__get: {
+        parameters: {
+            query: {
+                /** @description Any date of the month to estimate */
+                month: string;
+            };
+            header?: never;
+            path: {
+                legal_entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollMonthRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_staff_payslip_api_staff__staff_member_id__payslips_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                staff_member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayslipFigures"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayslipRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

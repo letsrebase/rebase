@@ -17,9 +17,10 @@ from pigrocrm.core.analytics.repository import AnalyticsRepository
 from pigrocrm.core.analytics.schemas import DealPnl, PeriodPnl, PeriodPnlQuery, PnlTotals
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.repository import DealRepository
-from pigrocrm.core.errors import NotFound, ValidationFailed
+from pigrocrm.core.errors import AgentForbidden, NotFound, PermissionDenied, ValidationFailed
 from pigrocrm.core.money import ZERO_MONEY, percentage_of, sum_money
 from pigrocrm.core.pipeline.models import PipelineStage
+from pigrocrm.core.staff.payroll import PayrollService
 from pigrocrm.core.timetracking.locks import PeriodLockService
 from pigrocrm.core.timetracking.models import TimeEntry
 from pigrocrm.core.timetracking.service import TimeEntryService, billed_entry_ids
@@ -168,10 +169,19 @@ def deal_pnl(session: Session, repo: AnalyticsRepository, deal_id: UUID, actor: 
     )
 
 
+def _may_read_payroll(actor: Actor) -> bool:
+    try:
+        actor.require_admin("get_payroll_month")
+    except (PermissionDenied, AgentForbidden):
+        return False
+    return True
+
+
 def period_pnl(
     session: Session,
     repo: AnalyticsRepository,
     query: PeriodPnlQuery,
+    actor: Actor,
     modules: AbstractSet[str] | None = None,
 ) -> PeriodPnl:
     """Aggregated over a date window, optionally scoped to one customer.
@@ -210,8 +220,25 @@ def period_pnl(
     per_deal_costs, general = repo.costs_in_range(
         query.date_from, query.date_to, query.customer_id, legal_entity
     )
+    # The personnel line is pay, so only who may read pay gets it (staff design § 4), and only
+    # when there is no customer filter: staff belong to no customer, like a general expense.
+    # Where it is read, the hours of users linked to staff are left out of the deals' labour,
+    # so the same work is not counted twice (§ 2).
+    personnel: Decimal | None = None
+    if (
+        (modules is None or "staff" in modules)
+        and query.customer_id is None
+        and _may_read_payroll(actor)
+    ):
+        personnel = PayrollService(session).personnel_cost_in_range(
+            legal_entity, query.date_from, query.date_to
+        )
     labour = repo.labour_cost_in_range(
-        query.date_from, query.date_to, query.customer_id, legal_entity
+        query.date_from,
+        query.date_to,
+        query.customer_id,
+        legal_entity,
+        without_staff_users=personnel is not None,
     )
     # Slice 6 §5's three rows, from the same aggregate `unbilled_backlog` uses and
     # merely bounded to the period: one definition of "ore fatturabili non fatturate",
@@ -265,6 +292,7 @@ def period_pnl(
         # Never apportioned onto any deal (§7.4), and absent entirely under a
         # customer filter, because a general expense belongs to no customer.
         general_expenses=general,
+        personnel=personnel,
         accrued_value=value_backlog,
         billable_uninvoiced_hours=backlog_hours,
         hours_without_rate=without_rate,

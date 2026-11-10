@@ -59,6 +59,9 @@ def _tools_of(module: str) -> set[str]:
 CORE_TOOLS = frozenset(
     {
         "describe_schema",
+        # REB-1008: the one «Stipendi» line a token that may not read payroll reads in its
+        # place; the due items are core, so is it.
+        "list_payroll_totals",
         "create_organization",
         "suggest_legal_entity",
         "update_organization",

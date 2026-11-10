@@ -27,7 +27,7 @@ OFFSET_DAYS_MAX = 366
 Direction = Literal["in", "out"]
 State = Literal["forecast", "expected", "settled", "dropped"]
 RuleKind = Literal["fixed", "after_settlement", "month_after_settlement_on_day", "on_settlement"]
-CounterpartyType = Literal["organization", "tax_office"]
+CounterpartyType = Literal["organization", "tax_office", "staff_member"]
 
 
 class DueRule(BaseModel):
@@ -77,6 +77,7 @@ class DueItemCreate(BaseModel):
     direction: Direction
     counterparty_type: CounterpartyType = "organization"
     organization_id: UUID | None = None
+    staff_member_id: UUID | None = None
     tax: SafeStr | None = Field(default=None, min_length=1, max_length=30)
     amount: Decimal = Field(max_digits=AMOUNT_MAX_DIGITS, decimal_places=MONEY_SCALE)
     currency: str = Field(default="EUR", pattern=CURRENCY_PATTERN)
@@ -95,11 +96,24 @@ class DueItemCreate(BaseModel):
         if self.amount == 0:
             raise ValueError("l'importo di una scadenza non e' zero")
         if self.counterparty_type == "organization":
-            if self.organization_id is None or self.tax is not None:
+            if (
+                self.organization_id is None
+                or self.tax is not None
+                or self.staff_member_id is not None
+            ):
                 raise ValueError(
                     "una scadenza verso un'organizzazione ne indica l'id e nessuna imposta"
                 )
-        elif self.tax is None or self.organization_id is not None:
+        elif self.counterparty_type == "staff_member":
+            if (
+                self.staff_member_id is None
+                or self.tax is not None
+                or self.organization_id is not None
+            ):
+                raise ValueError("una scadenza verso una persona dell'azienda ne indica l'id")
+        elif (
+            self.tax is None or self.organization_id is not None or self.staff_member_id is not None
+        ):
             raise ValueError(
                 "una scadenza verso l'erario indica l'imposta e nessuna organizzazione"
             )
@@ -190,6 +204,7 @@ class DueItemRead(BaseModel):
     counterparty_type: CounterpartyType
     organization_id: UUID | None
     organization_name: str | None
+    staff_member_id: UUID | None
     tax: str | None
     amount: Decimal
     currency: str
@@ -232,3 +247,27 @@ class DueItemListQuery(BaseModel):
 class DueItemPage(BaseModel):
     items: list[DueItemRead]
     next_cursor: UUID | None
+
+
+class PayrollTotalsQuery(BaseModel):
+    """The payroll aggregate of the open items, per due date. `legal_entity_id` omitted is
+    every legal entity the caller sees."""
+
+    legal_entity_id: UUID | None = None
+    due_from: dt.date | None = None
+    due_to: dt.date | None = None
+
+
+class PayrollTotalLine(BaseModel):
+    """One date's payroll cash, as any member may read it: a label, a date and an amount, with
+    no person, no kind and no item behind it (staff design § 4). `forecast` says some of it is
+    still an estimate."""
+
+    label: Literal["Stipendi"] = "Stipendi"
+    due_date: dt.date
+    amount: Decimal
+    forecast: bool
+
+
+class PayrollTotals(BaseModel):
+    items: list[PayrollTotalLine]

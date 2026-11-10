@@ -13,6 +13,7 @@ from uuid import UUID
 from pigrocrm.core.due_items.schemas import (
     Direction,
     DueItemListQuery,
+    PayrollTotalsQuery,
     SettlementCreate,
     SettlementReversal,
     State,
@@ -79,6 +80,21 @@ def search(
         cursor=_uuid("cursor", cursor),
     )
     return DueItemService(context.session).list(query, context.actor).model_dump(mode="json")
+
+
+def payroll_totals(
+    context: McpContext, legal_entity_id: str | None, due_from: str | None, due_to: str | None
+) -> dict[str, Any]:
+    query = PayrollTotalsQuery(
+        legal_entity_id=parse_legal_entity_id(legal_entity_id),
+        due_from=iso_date(due_from, "due_from"),
+        due_to=iso_date(due_to, "due_to"),
+    )
+    return (
+        DueItemService(context.session)
+        .list_payroll_totals(query, context.actor)
+        .model_dump(mode="json")
+    )
 
 
 def get(context: McpContext, due_item_id: str) -> dict[str, Any]:

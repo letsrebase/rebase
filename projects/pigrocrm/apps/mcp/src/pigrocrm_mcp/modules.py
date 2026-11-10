@@ -113,6 +113,7 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "update_staff_member": ("staff",),
     "get_staff_member": ("staff",),
     "list_staff": ("staff",),
+    "get_payroll_month": ("staff",),
     # collaborators: engagements with freelancers and their availability.
     "create_engagement": ("collaborators",),
     "update_engagement": ("collaborators",),

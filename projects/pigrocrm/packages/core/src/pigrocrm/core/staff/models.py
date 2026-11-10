@@ -103,7 +103,8 @@ class StaffMember(Base, PrimaryKeyMixin, TimestampMixin):
             "AND collective_agreement IS NULL AND contract_level IS NULL "
             "AND gross_annual_pay IS NULL AND monthly_payments IS NULL "
             "AND part_time_percent IS NULL AND employer_inps_rate IS NULL "
-            "AND employer_inail_rate IS NULL)",
+            "AND employer_inail_rate IS NULL AND employee_inps_rate IS NULL "
+            "AND thirteenth_month IS NULL AND fourteenth_month IS NULL)",
             name="ck_staff_members_director_columns",
         ),
         CheckConstraint(
@@ -126,6 +127,24 @@ class StaffMember(Base, PrimaryKeyMixin, TimestampMixin):
             "employer_inail_rate IS NULL "
             "OR (employer_inail_rate >= 0 AND employer_inail_rate <= 100)",
             name="ck_staff_members_inail_rate",
+        ),
+        CheckConstraint(
+            "employee_inps_rate IS NULL OR (employee_inps_rate >= 0 AND employee_inps_rate <= 100)",
+            name="ck_staff_members_employee_inps_rate",
+        ),
+        CheckConstraint(
+            "thirteenth_month IS NULL OR thirteenth_month BETWEEN 1 AND 12",
+            name="ck_staff_members_thirteenth_month",
+        ),
+        CheckConstraint(
+            "fourteenth_month IS NULL OR fourteenth_month BETWEEN 1 AND 12",
+            name="ck_staff_members_fourteenth_month",
+        ),
+        # The 14th payment exists only on a 14-payment contract, and the 13th on a 13- or
+        # 14-payment one; a month typed for a payment the contract does not have would be a
+        # cash item for money never owed.
+        CheckConstraint(
+            "fourteenth_month IS NULL OR monthly_payments = 14", name="ck_staff_members_fourteenth"
         ),
         CheckConstraint(
             f"fee_payment IS NULL OR fee_payment IN {FEE_PAYMENTS!r}",
@@ -176,6 +195,15 @@ class StaffMember(Base, PrimaryKeyMixin, TimestampMixin):
     # are taxpayer facts the payroll consultant verifies. `NULL` is «not stated».
     employer_inps_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=None)
     employer_inail_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=None)
+    # The employee's own INPS share, in percent: the employer pays it with its own to the INPS
+    # by F24, so the F24 line needs both. Typed, never a default: no primary source states
+    # one rate for every employer (A5, REB-975).
+    employee_inps_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=None)
+    # The calendar months (1 to 12) the 13th and 14th payments are paid in. They come from the
+    # collective agreement, not from the law, so they are typed: a payment with no month is
+    # not scheduled and the estimate says so (A5, REB-975).
+    thirteenth_month: Mapped[int | None] = mapped_column(Integer, default=None)
+    fourteenth_month: Mapped[int | None] = mapped_column(Integer, default=None)
 
     # Director: the annual fee, how it is paid, the TFM accrued a year and the share of the
     # INPS «gestione separata» contribution the company bears, in percent (to verify).
@@ -186,6 +214,38 @@ class StaffMember(Base, PrimaryKeyMixin, TimestampMixin):
     )
     tfm_annual_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), default=None)
     inps_company_share: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=None)
+
+
+class StaffPayslip(Base, PrimaryKeyMixin, TimestampMixin):
+    """The figures of one accepted payslip of one staff member, and nothing else of it.
+
+    The estimate (`staff/estimate.py`) reads only two ratios from the last of them, by
+    `period`: net pay to gross and the income-tax withholding to gross. A member with no row
+    here has neither a net pay nor a withholding estimate (spec § 2). Whoever accepts a payslip
+    (a person typing the figures, or later the inbox's proposal) writes the row; a row is
+    accepted by existing, there is no draft state. `net` and `withholding` are in euro for the
+    month `period` (its first day); `gross` is positive and neither may exceed it.
+    """
+
+    __tablename__ = "staff_payslips"
+    __table_args__ = (
+        UniqueConstraint("staff_member_id", "period", name="uq_staff_payslips_member_period"),
+        CheckConstraint("gross > 0", name="ck_staff_payslips_gross"),
+        CheckConstraint("net >= 0 AND net <= gross", name="ck_staff_payslips_net"),
+        CheckConstraint(
+            "withholding >= 0 AND withholding <= gross", name="ck_staff_payslips_withholding"
+        ),
+        CheckConstraint("net + withholding <= gross", name="ck_staff_payslips_parts"),
+        CheckConstraint("extract(day FROM period) = 1", name="ck_staff_payslips_period"),
+        Index("ix_staff_payslips_legal_entity_id", "legal_entity_id"),
+    )
+
+    staff_member_id: Mapped[UUID] = mapped_column(ForeignKey("staff_members.id"), nullable=False)
+    legal_entity_id: Mapped[UUID] = mapped_column(ForeignKey("legal_entities.id"), nullable=False)
+    period: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    gross: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    net: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    withholding: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
 
 
 class PayrollSettings(Base, PrimaryKeyMixin, TimestampMixin):
