@@ -15,8 +15,11 @@ The constructor and the public methods are the domain's API for the REST app, th
 server and the other cores (`work_units`, `analytics`, ...); nothing here decides.
 """
 
+import datetime as dt
 import logging
 from collections.abc import Callable, Mapping, Sequence
+from decimal import Decimal
+from typing import NamedTuple
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -61,6 +64,14 @@ from pigrocrm.core.invoices.schemas import (
 from pigrocrm.core.storage.base import DocumentStorage
 
 logger = logging.getLogger(__name__)
+
+
+class UnpaidInvoiceRead(NamedTuple):
+    """An invoice read with what is still owed on it and when it falls due."""
+
+    invoice: InvoiceRead
+    remaining: Decimal
+    due_date: dt.date | None
 
 
 class InvoiceService:
@@ -250,10 +261,16 @@ class InvoiceService:
 
     def unpaid_for_customer(
         self, customer_id: UUID, actor: Actor, *, limit: int
-    ) -> list[InvoiceRead]:
-        """One customer's issued, unpaid invoices, oldest deadline first: the rows behind
-        the receivables total, for one customer."""
-        return self.ctx.reads(self.ctx.repo.unpaid_for_customer(customer_id, limit))
+    ) -> list[UnpaidInvoiceRead]:
+        """One customer's issued invoices with something left to collect, oldest deadline
+        first: the rows behind the receivables total, for one customer, each with what is
+        still owed on it and the date it falls due."""
+        rows = self.ctx.repo.unpaid_for_customer(customer_id, limit)
+        reads = self.ctx.reads([row.invoice for row in rows])
+        return [
+            UnpaidInvoiceRead(invoice, row.remaining, row.due_date)
+            for invoice, row in zip(reads, rows, strict=True)
+        ]
 
     # `list` must stay the last method defined in this class -- an unconditional
     # project rule (`test_module_imports.py`). `lines` and `unpaid_for_customer` above
@@ -269,4 +286,4 @@ class InvoiceService:
         )
 
 
-__all__ = ["ENTITY", "InvoiceService"]
+__all__ = ["ENTITY", "InvoiceService", "UnpaidInvoiceRead"]

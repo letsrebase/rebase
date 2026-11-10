@@ -36,6 +36,14 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
 from pigrocrm.core.contact_points.service import email_addresses
 from pigrocrm.core.db.clock import today_local
+from pigrocrm.core.due_items.models import DueItem
+from pigrocrm.core.due_items.repository import DueItemRepository
+from pigrocrm.core.due_items.sales import (
+    SALES_INVOICE,
+    join_sales_item,
+    remaining_amount,
+    still_owed,
+)
 from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.gmail.drafts import EmailDraftService
@@ -55,15 +63,11 @@ from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.people.models import Person
 
 # What `_query` yields per row: the invoice, its customer, how many reminder rows exist,
-# how many of them were actually sent, when the last one left, and when the last one was
-# either sent or prepared.
-CandidateRow = tuple[Invoice, Organization, int, int, datetime | None, datetime | None]
-
-# The one state in `invoices.payment_status` that means the money arrived. Compared
-# positively -- `!= 'incassato'` -- rather than against a list of the others, so a value
-# added to `PaymentStatus` later defaults to *chaseable* and shows up in a test instead
-# of silently disappearing from the list.
-PAID = "paid"
+# how many of them were actually sent, when the last one left, when the last one was either
+# sent or prepared, and what the invoice's due item still has to collect and when it falls due.
+CandidateRow = tuple[
+    Invoice, Organization, int, int, datetime | None, datetime | None, Decimal, date
+]
 
 # An invoice is chaseable only from here. `type` and `status` together, because slice 3
 # runs two state machines through one column: `issued` is a fattura that consumed a
@@ -120,6 +124,7 @@ class PaymentRemindersService:
         self.session = session
         self.settings = settings
         self.repo = GmailRepository(session)
+        self.due_items = DueItemRepository(session)
         self.activities = ActivityService(session)
 
     def candidates(self, actor: Actor) -> list[PaymentReminderCandidate]:
@@ -137,9 +142,16 @@ class PaymentRemindersService:
 
         account = self._mailbox_of(actor)
         candidates: list[PaymentReminderCandidate] = []
-        for invoice, customer, lines, sent, last, last_task in self.session.execute(
-            self._query(grace_cutoff)
-        ).all():
+        for (
+            invoice,
+            customer,
+            lines,
+            sent,
+            last,
+            last_task,
+            remaining,
+            due_date,
+        ) in self.session.execute(self._query(grace_cutoff)).all():
             # Condition 3: no reminder, sent *or merely prepared*, inside the minimum
             # interval. `last_task` is `max(coalesce(sent_at, created_at))`, and the
             # coalesce is the point: `create_reminder` writes a row before anything
@@ -154,9 +166,6 @@ class PaymentRemindersService:
             if lines >= self.settings.payment_reminders_max_reminders:
                 continue
 
-            due_date = invoice.due_date
-            if due_date is None:  # pragma: no cover - the query's own WHERE excludes it
-                continue
             candidates.append(
                 PaymentReminderCandidate(
                     invoice_id=invoice.id,
@@ -164,10 +173,12 @@ class PaymentRemindersService:
                     invoice_date=invoice.issue_date or due_date,
                     due_date=due_date,
                     days_of_delay=(today - due_date).days,
-                    # The invoice's own frozen figure, straight off the column. Never a
-                    # sum recomputed from the lines: a demand naming an amount the
-                    # client's copy does not carry is a demand they are right to ignore.
-                    amount=invoice.total,
+                    # What the due item still has to collect (spec 2026-11-09, § 1.1): the
+                    # invoice's own frozen figure until a payment arrives, less each payment
+                    # after. Never a sum recomputed from the lines: a demand naming an
+                    # amount the client's copy does not carry is a demand they are right to
+                    # ignore.
+                    amount=round_money(Decimal(remaining)),
                     customer=customer.legal_name,
                     customer_id=customer.id,
                     sent_payment_reminders=int(sent),
@@ -223,7 +234,7 @@ class PaymentRemindersService:
         invoice = self.session.get(Invoice, invoice_id)
         if invoice is None or invoice.deleted_at is not None:
             raise NotFound(INVOICE_ENTITY, invoice_id)
-        self._require_chaseable(invoice)
+        item = self._require_chaseable(invoice)
 
         customer = self.session.get(Organization, invoice.customer_id)
         if customer is None or customer.deleted_at is not None:
@@ -263,8 +274,8 @@ class PaymentRemindersService:
                 "cliente": customer.legal_name,
                 "numero_fattura": self._number(invoice),
                 "data_fattura": _italian_date(invoice.issue_date),
-                "scadenza": _italian_date(invoice.due_date),
-                "importo": _euro(invoice.total),
+                "scadenza": _italian_date(item.due_date),
+                "importo": _euro(item.amount - self.due_items.totals(item.id).settled),
                 "iban": self._iban(invoice.legal_entity_id),
                 # The free-text block. Read from the same scope rather than from a second
                 # query, and offered at the top level too because the template puts it
@@ -347,7 +358,7 @@ class PaymentRemindersService:
 
     # ---- internals ------------------------------------------------------------------
 
-    def _require_chaseable(self, invoice: Invoice) -> None:
+    def _require_chaseable(self, invoice: Invoice) -> DueItem:
         """The same conditions the list applies, in the language of a refusal.
 
         Each names what is wrong rather than answering "not a candidate", because the
@@ -360,14 +371,18 @@ class PaymentRemindersService:
             raise Conflict(ENTITY, "questa fattura è stata annullata: non si può sollecitare")
         if invoice.status != CHASEABLE_STATUS:
             raise Conflict(ENTITY, "si può sollecitare solo una fattura già emessa")
-        if invoice.payment_status == PAID:
+        item = self.due_items.by_source(SALES_INVOICE, invoice.id)
+        # An invoice with no item has nothing to collect (a zero total), as one whose item
+        # is `settled` does: both read as collected.
+        if item is None or item.state != "expected":
             raise Conflict(ENTITY, "questa fattura risulta già incassata")
-        if invoice.due_date is None:
+        if item.due_date is None:
             raise Conflict(
                 ENTITY,
                 "questa fattura non ha una data di scadenza: senza una scadenza "
                 "concordata non c'è nulla da sollecitare",
             )
+        return item
 
     def _require_room(self, invoice_id: UUID, lines: int, last_task: datetime | None) -> None:
         """The ceiling and the interval, in that order.
@@ -514,13 +529,17 @@ class PaymentRemindersService:
         )
 
         return (
-            select(
-                Invoice,
-                Organization,
-                func.coalesce(reminders.c.lines, 0),
-                func.coalesce(reminders.c.sent, 0),
-                reminders.c.last,
-                reminders.c.last_task,
+            join_sales_item(
+                select(
+                    Invoice,
+                    Organization,
+                    func.coalesce(reminders.c.lines, 0),
+                    func.coalesce(reminders.c.sent, 0),
+                    reminders.c.last,
+                    reminders.c.last_task,
+                    remaining_amount(),
+                    DueItem.due_date,
+                )
             )
             .join(Organization, Organization.id == Invoice.customer_id)
             .outerjoin(reminders, reminders.c.invoice_id == Invoice.id)
@@ -531,8 +550,8 @@ class PaymentRemindersService:
                 Invoice.type == CHASEABLE_TYPE,
                 Invoice.status == CHASEABLE_STATUS,
                 Invoice.deleted_at.is_(None),
-                # 1. not collected
-                Invoice.payment_status != PAID,
+                # 1. not collected: the due item still has something to collect
+                still_owed(),
                 # 2. overdue by more than the grace period -- chasing the day after the
                 #    due date is aggressive and often wrong: the transfer has left.
                 #    `due_date` is nullable, and `NULL < date` is NULL rather than
@@ -541,11 +560,11 @@ class PaymentRemindersService:
                 #    that makes a reminder legitimate, and relying on three-valued logic
                 #    to enforce the load-bearing condition is how it goes missing in a
                 #    later edit.
-                Invoice.due_date.is_not(None),
-                Invoice.due_date < grace_cutoff,
+                DueItem.due_date.is_not(None),
+                DueItem.due_date < grace_cutoff,
                 Organization.deleted_at.is_(None),
             )
-            .order_by(Invoice.due_date)
+            .order_by(DueItem.due_date)
         )
 
     def _mailbox_of(self, actor: Actor) -> GoogleAccount | None:

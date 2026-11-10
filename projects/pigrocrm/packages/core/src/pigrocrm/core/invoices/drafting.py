@@ -15,6 +15,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.documents.context import ENTITY as DOCUMENT_ENTITY
+from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.errors import Conflict, ImmutableField, ValidationFailed
 from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.fields.validator import validate_custom_fields
@@ -353,11 +354,16 @@ class InvoiceDrafting:
                 "un incasso senza data non e' un incasso",
                 expected="la data in cui il pagamento e' arrivato",
             )
-        invoice.payment_status = data.payment_status
-        # Cleared rather than left dangling: the table's own
-        # `ck_invoices_collection_requires_state` would refuse the inconsistent pair anyway,
-        # and a stale date on an uncollected invoice is a lie either way.
-        invoice.payment_date = data.payment_date if data.payment_status == "paid" else None
+        # The due item is the truth and the two columns are its projection, written by
+        # `DueItemService` and by nothing else (§ 1.1): «paid» settles what remains on that
+        # date, «unpaid» reverses the settlements, and a stale date on an uncollected
+        # invoice cannot survive either way.
+        DueItemService(ctx.session).record_invoice_payment(
+            invoice,
+            paid=data.payment_status == "paid",
+            paid_on=data.payment_date,
+            actor=actor,
+        )
         ctx.activities.record(
             ENTITY,
             invoice.id,

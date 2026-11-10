@@ -142,6 +142,10 @@ def _an_overdue_invoice_in_every_space(settings: Settings, spaces: None) -> Iter
             connection.execute(text("delete from tasks"))
             connection.execute(text("delete from automation_config"))
             connection.execute(text("delete from reminder_job_run"))
+            # The spaces are migrated databases, which the test template's trigger does not
+            # reach: the invoice's due item goes first.
+            connection.execute(text("delete from due_item_settlements"))
+            connection.execute(text("delete from due_items"))
             connection.execute(text("delete from invoices"))
             connection.execute(text("delete from organizations"))
 

@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.db.transactions import savepoint
+from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.errors import Conflict, ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalSnapshot
 from pigrocrm.core.invoices.checks import (
@@ -178,6 +179,11 @@ class IssuedInvoiceImporter:
                 imported_from=imported_from,
             )
             self._add_lines(invoice, data)
+            DueItemService(ctx.session).open_for_invoice(
+                invoice,
+                paid_on=data.payment_date if data.payment_status == "paid" else None,
+                actor=actor,
+            )
             if pdf_source is not None:
                 invoice.pdf_document_id = self._original_pdf_document(
                     invoice, data, pdf_source, actor
@@ -312,8 +318,9 @@ class IssuedInvoiceImporter:
                 vat_amount=data.vat_amount,
                 stamp_duty=data.stamp_duty,
                 total=data.total,
-                payment_status=data.payment_status,
-                payment_date=data.payment_date,
+                # Born unpaid: the due item below settles it, and `DueItemService` is the
+                # only writer of the two columns from here on (§ 1.1).
+                payment_status="unpaid",
                 transmitted_externally_at=data.transmitted_externally_at,
                 internal_notes=data.internal_notes,
                 imported_from=imported_from if imported_from is not None else data.imported_from,

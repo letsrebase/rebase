@@ -95,6 +95,9 @@ def _guarded_getaddrinfo(host: Any, port: Any, *args: Any, **kwargs: Any) -> Any
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    from fakes.hand_built_invoices import install
+
+    install()
     socket.socket.connect = _guarded_connect  # type: ignore[method-assign]
     socket.socket.connect_ex = _guarded_connect_ex  # type: ignore[method-assign]
     socket.getaddrinfo = _guarded_getaddrinfo  # type: ignore[assignment]
@@ -151,6 +154,23 @@ def _legal_entity_scope_statements() -> list[str]:
     return out
 
 
+# Test-only DDL, never a migration: a test that builds an issued invoice as a row gets its due item
+# from `fakes/hand_built_invoices.py`, and the many tests that clean up by deleting their invoices
+# by hand would otherwise leave the item behind and block the deletion of its organization
+# (REB-968). Production never deletes an issued invoice.
+_DROP_INVOICE_DUE_ITEMS_SQL = """
+CREATE FUNCTION test_drop_invoice_due_items() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    DELETE FROM due_item_settlements WHERE due_item_id IN (
+        SELECT id FROM due_items WHERE source_kind = 'sales_invoice' AND source_id = OLD.id);
+    DELETE FROM due_items WHERE source_kind = 'sales_invoice' AND source_id = OLD.id;
+    RETURN OLD;
+END $$;
+CREATE TRIGGER test_drop_invoice_due_items AFTER DELETE ON invoices
+    FOR EACH ROW EXECUTE FUNCTION test_drop_invoice_due_items();
+"""
+
+
 @pytest.fixture(scope="session")
 def pigrocrm_postgres(postgres_per_worker: Any) -> Any:
     """The CRM's template database, built once per worker, and clones of it on demand.
@@ -196,6 +216,8 @@ def pigrocrm_postgres(postgres_per_worker: Any) -> Any:
             # scope tests connect as the application role the boot creates and do.
             for statement in _legal_entity_scope_statements():
                 connection.execute(text(statement))
+        with engine.begin() as connection:
+            connection.execute(text(_DROP_INVOICE_DUE_ITEMS_SQL))
         # A template must have no session connected while it is copied.
         engine.dispose()
 

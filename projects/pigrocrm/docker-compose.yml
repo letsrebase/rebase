@@ -261,6 +261,15 @@ services:
       migrate:
         condition: service_completed_successfully
     environment: *api-environment
+    # The due-item reconciliation first (REB-968): `migrate` reconciled while the previous api
+    # still served, and an invoice it wrote after that has no due item until this runs, now
+    # that it is gone. A failure is a line on stderr and never keeps the api down.
+    command:
+      - sh
+      - -c
+      - >-
+        python -m pigrocrm.core.cli reconcile-due-items;
+        exec uvicorn pigrocrm_api.main:app --host 0.0.0.0 --port 8000
     # Where `PIGROCRM_STORAGE_BACKEND=local` writes documents (config.py's
     # `storage_local_root`, ./var/documents under the image's WORKDIR /app). On the
     # host, like the database above, so a rebuilt container keeps every PDF -- written

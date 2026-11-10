@@ -24,7 +24,7 @@ the mail are the same walk.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from uuid import UUID
@@ -184,26 +184,36 @@ class DigestService:
         # is today -- and overlap entirely for a week recomputed with `--date`, whose
         # «in scadenza» window has since gone by. The overdue half wins: it is the same
         # row, and it carries the days of delay instead of «in scadenza».
-        overdue_ids = {row.id for row in overdue_rows}
-        in_due_date_rows = [row for row in in_due_date_rows if row.id not in overdue_ids]
+        overdue_ids = {row.invoice.id for row in overdue_rows}
+        in_due_date_rows = [row for row in in_due_date_rows if row.invoice.id not in overdue_ids]
         # One lookup for all four lists, after the rows are chosen: a label query per row
         # is the N+1 `customer_names` exists to prevent.
         names = invoices.customer_names(
             {
                 row.customer_id
-                for row in (*overdue_rows, *issued_rows, *paid_rows, *in_due_date_rows)
+                for row in (
+                    *(open_row.invoice for open_row in overdue_rows),
+                    *issued_rows,
+                    *(payment.invoice for payment in paid_rows),
+                    *(open_row.invoice for open_row in in_due_date_rows),
+                )
             }
         )
         # The lateness expression is `PaymentRemindersService.candidates`' own, copied rather than
         # imported so that a list of debts and a list of chaseable invoices stay free to
         # diverge: `(today - scadenza).days`, over the clock's day in the emitter's zone.
-        # The `is not None` guard is `list_overdue`'s own `WHERE` restated -- the column is
-        # nullable and `mypy` reads it as such.
         overdue = [
             line
             for row in overdue_rows
-            if (due_date := row.due_date) is not None
-            and (line := self._line(row, names, due_date, days_of_delay=(today - due_date).days))
+            if (
+                line := self._line(
+                    row.invoice,
+                    names,
+                    row.remaining,
+                    row.due_date,
+                    days_of_delay=(today - row.due_date).days,
+                )
+            )
             is not None
         ]
         month_from, month_to = month_bounds(date_to.year, date_to.month)
@@ -252,14 +262,18 @@ class DigestService:
             date_from=date_from,
             date_to=date_to,
             overdue=overdue,
-            in_due_date=self._lines(in_due_date_rows, names, lambda row: row.due_date),
+            in_due_date=self._lines(
+                [(row.invoice, row.remaining, row.due_date) for row in in_due_date_rows], names
+            ),
             won_to_invoice=won_to_invoice,
             unbilled_hours=backlog.billable_uninvoiced_hours or Decimal("0"),
             accrued_value=backlog.accrued_value,
-            issued=self._lines(issued_rows, names, lambda row: row.issue_date),
+            issued=self._lines([(row, row.total, row.issue_date) for row in issued_rows], names),
             total_month_current=invoices.sum_issued_in_period(month_from, month_to),
             total_month_previous=invoices.sum_issued_in_period(previous_from, previous_to),
-            paid=self._lines(paid_rows, names, lambda row: row.payment_date),
+            paid=self._lines(
+                [(row.invoice, row.amount, row.settled_on) for row in paid_rows], names
+            ),
             hours=hours,
             pipeline=pipeline,
             deal_moves=deal_moves,
@@ -342,17 +356,24 @@ class DigestService:
 
     def _lines(
         self,
-        rows: Sequence[Invoice],
+        rows: Sequence[tuple[Invoice, Decimal, date | None]],
         names: dict[UUID, str],
-        date_of: Callable[[Invoice], date | None],
     ) -> list[DigestInvoice]:
-        """`_line` over a list, leaving out the rows it declines to print."""
-        return [line for row in rows if (line := self._line(row, names, date_of(row))) is not None]
+        """`_line` over `(invoice, amount, date)` rows, leaving out the ones it declines to
+        print. The amount and the date are the section's: what was issued and when, what is
+        still owed and when it falls due, what was received and on which day (spec
+        2026-11-09, § 1.1)."""
+        return [
+            line
+            for invoice, amount, day in rows
+            if (line := self._line(invoice, names, amount, day)) is not None
+        ]
 
     def _line(
         self,
         invoice: Invoice,
         names: dict[UUID, str],
+        amount: Decimal,
         data: date | None,
         *,
         days_of_delay: int | None = None,
@@ -386,7 +407,7 @@ class DigestService:
             invoice_id=invoice.id,
             number=number_complete(invoice.year or 0, invoice.number or 0),
             customer=names.get(invoice.customer_id, ""),
-            amount=invoice.total,
+            amount=amount,
             date=day,
             status=invoice.status,
             payment_status=invoice.payment_status,

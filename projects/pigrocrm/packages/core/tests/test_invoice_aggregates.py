@@ -419,7 +419,7 @@ def test_unpaid_for_customer_returns_the_rows_unpaid_sums(
 
     repo = InvoiceRepository(db_session)
     rows = repo.unpaid_for_customer(customer.id, limit=50)
-    assert sum(row.total for row in rows) == repo.sum_unpaid()
+    assert sum(row.remaining for row in rows) == repo.sum_unpaid()
     assert len(rows) == 2
 
 
@@ -434,7 +434,7 @@ def test_unpaid_for_customer_excludes_another_organizations_invoice(db_session: 
     _invoice(db_session, theirs, total="999.00")
 
     rows = InvoiceRepository(db_session).unpaid_for_customer(mine.id, limit=50)
-    assert [row.total for row in rows] == [Decimal("1220.00")]
+    assert [row.remaining for row in rows] == [Decimal("1220.00")]
 
 
 def test_unpaid_for_customer_excludes_a_soft_deleted_invoice(
@@ -462,7 +462,7 @@ def test_unpaid_for_customer_orders_by_deadline_with_the_undated_row_last(
     _invoice(db_session, customer, total="200.00", due_date=today_local() - timedelta(days=9))
 
     rows = InvoiceRepository(db_session).unpaid_for_customer(customer.id, limit=50)
-    assert [row.total for row in rows] == [
+    assert [row.remaining for row in rows] == [
         Decimal("200.00"),
         Decimal("300.00"),
         Decimal("100.00"),
@@ -543,11 +543,11 @@ def test_the_week_reads_split_issued_collected_and_due(
     repo = InvoiceRepository(db_session)
     week = (date(2026, 9, 7), date(2026, 9, 13))
     assert [i.total for i in repo.list_issued_in_period(*week)] == [Decimal("1000.00")]
-    assert [i.total for i in repo.list_paid_in_period(*week)] == [Decimal("1000.00")]
-    assert [i.total for i in repo.list_in_due_date(date(2026, 9, 7), date(2026, 9, 14))] == [
+    assert [p.amount for p in repo.list_paid_in_period(*week)] == [Decimal("1000.00")]
+    assert [i.remaining for i in repo.list_in_due_date(date(2026, 9, 7), date(2026, 9, 14))] == [
         Decimal("500.00")
     ]
-    assert [i.total for i in repo.list_overdue(date(2026, 9, 12))] == [Decimal("500.00")]
+    assert [i.remaining for i in repo.list_overdue(date(2026, 9, 12))] == [Decimal("500.00")]
     assert repo.list_overdue(date(2026, 9, 11)) == []
     assert repo.sum_issued_in_period(*week) == Decimal("1000.00")
     assert repo.sum_issued_in_period(date(2026, 9, 1), date(2026, 9, 30)) == Decimal("1800.00")

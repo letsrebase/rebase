@@ -733,9 +733,9 @@ def test_an_invoice_with_no_date_at_all_is_skipped_and_logged_by_its_id(
     )
     with session_factory(db_engine)() as session, caplog.at_level("WARNING"):
         service = DigestService(session, SETTINGS)
-        assert service._line(invoice, {}, None) is None
+        assert service._line(invoice, {}, invoice.total, None) is None
         # The row is left out of a list and the rest of the list survives it.
-        assert service._lines([invoice], {}, lambda row: row.payment_date) == []
+        assert service._lines([(invoice, invoice.total, None)], {}) == []
     assert str(invoice.id) in caplog.text
 
 

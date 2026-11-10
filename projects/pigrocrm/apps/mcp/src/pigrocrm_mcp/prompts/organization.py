@@ -50,16 +50,25 @@ def status_organization(context: McpContext, organization_id: str) -> list[dict[
     if not unpaid:
         lines.append("No invoices to collect.")
     else:
-        for invoice in unpaid:
+        for row in unpaid:
+            invoice = row.invoice
             # A draft that was issued always has both `year` and `number`
             # (`ck_invoices_year_number_together`), but the pair is nullable on the column,
             # so it is rendered defensively rather than assumed.
             number = (
                 f"{invoice.year}/{invoice.number}" if invoice.number is not None else "no number"
             )
-            due_date = invoice.due_date or "no due date"
-            total = str(invoice.total).replace(".", ",")
-            lines.append(f"- {number} — {total} € (total incl. VAT), due {due_date}")
+            due_date = row.due_date or "no due date"
+            left = str(row.remaining).replace(".", ",")
+            if row.remaining == invoice.total:
+                lines.append(f"- {number} — {left} € (total incl. VAT), due {due_date}")
+            else:
+                # Partly paid: what is still owed, and the document's total beside it.
+                total = str(invoice.total).replace(".", ",")
+                lines.append(
+                    f"- {number} — {left} € still owed of {total} € (total incl. VAT), "
+                    f"due {due_date}"
+                )
         if truncated:
             lines += [
                 "",

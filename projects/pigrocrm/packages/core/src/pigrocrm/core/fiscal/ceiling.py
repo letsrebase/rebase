@@ -4,12 +4,11 @@ between them -- REB-361, ported against REB-344 §8-9 and REB-352 §2/§6.
 Three things live here, all reading or writing invoices through a `Session`, which
 is why none of them belong in `pack.py` (pure data, no database access at all):
 
-1. **Ceiling evaluation.** `evaluate_pack` sums `Invoice.taxable_amount` across every
-   invoice *paid* within a calendar year (REB-344 §8's `cash_received_calendar_year`
-   basis: `stato_pagamento = 'incassato'`, by `payment_date` falling back to
-   `issue_date` the same way `AnalyticsRepository.monthly_paid` already
-   does) and compares it against each of the pack's own ceilings. A social security surcharge line
-   is
+1. **Ceiling evaluation.** `evaluate_pack` sums the `Invoice.taxable_amount` received
+   within a calendar year (REB-344 §8's `cash_received_calendar_year` basis, read per
+   settlement and by the settlement's own date, spec 2026-11-09 § 1.1, so instalments
+   across 31 December land in the right year) and compares it against each of the pack's own
+   ceilings. A social security surcharge line is
    one more VAT-grouped line on the same invoice and is therefore already inside
    `taxable_amount` the moment it exists -- no extra step, exactly as REB-352 §2's "no
    code change is needed for the ceiling side" says.
@@ -48,9 +47,11 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, func, or_, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.due_items.models import DueItem, DueItemSettlement
+from pigrocrm.core.due_items.sales import join_sales_item
 from pigrocrm.core.fiscal.pack import (
     SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID,
     Ceiling,
@@ -87,27 +88,22 @@ def _issued_invoice_filter(
     )
 
 
-def _paid_calendar_year_filter(
+def _collected_in_year_filter(
     year: int, legal_entity_id: UUID | None = None
 ) -> tuple[ColumnElement[bool], ...]:
-    """`cash_received_calendar_year` (REB-344 §8): paid, by the year of `payment_date`
-    falling back to `issue_date` when a paid invoice never recorded the exact
-    collection date -- the identical fallback `AnalyticsRepository.monthly_paid`
-    already uses for the same reason."""
+    """`cash_received_calendar_year` (REB-344 §8): a payment made within `year`, by the date
+    of the settlement itself (spec 2026-11-09, due items, § 1.1). An invoice paid in
+    instalments across 31 December is attributed to each year for what arrived in it, and a
+    reversed settlement is not a payment."""
     first, next_year = date(year, 1, 1), date(year + 1, 1, 1)
     return (
         Invoice.type == "invoice",
         Invoice.status == "issued",
         Invoice.deleted_at.is_(None),
-        Invoice.payment_status == "paid",
-        # Half-open ranges so the date columns' indexes stay usable; the second branch
-        # is the `coalesce(data_incasso, data_emissione)` fallback.
-        or_(
-            (Invoice.payment_date >= first) & (Invoice.payment_date < next_year),
-            Invoice.payment_date.is_(None)
-            & (Invoice.issue_date >= first)
-            & (Invoice.issue_date < next_year),
-        ),
+        DueItemSettlement.reversed_at.is_(None),
+        # Half-open, so the settlement date's index stays usable.
+        DueItemSettlement.settled_on >= first,
+        DueItemSettlement.settled_on < next_year,
         *_legal_entity_filter(legal_entity_id),
     )
 
@@ -115,16 +111,21 @@ def _paid_calendar_year_filter(
 def paid_revenue_for_calendar_year(
     session: Session, year: int, legal_entity_id: UUID | None = None
 ) -> Decimal:
-    """Sigma `Invoice.taxable_amount` of every invoice paid within `year` -- the ceiling's
-    own basis, in full, social security surcharge included (REB-352 §2) -- of one legal entity when
-    named
-    (REB-630): a ceiling is a fact about one legal entity's receipts, never the space's."""
+    """The taxable amount received within `year` -- the ceiling's own basis, in full, social
+    security surcharge included (REB-352 §2) -- of one legal entity when named (REB-630): a
+    ceiling is a fact about one legal entity's receipts, never the space's.
+
+    Each settlement counts for its share of the invoice's `taxable_amount`, its amount over
+    the item's (`taxable_amount * settlement / total`): a payment in full is exactly the
+    taxable amount, and one in instalments adds up to it. The shares are summed before they
+    are rounded, so the instalments never drift by a cent."""
+    share = Invoice.taxable_amount * DueItemSettlement.amount / DueItem.amount
     return round_money(
         Decimal(
             session.execute(
-                select(func.coalesce(func.sum(Invoice.taxable_amount), 0)).where(
-                    *_paid_calendar_year_filter(year, legal_entity_id)
-                )
+                join_sales_item(select(func.coalesce(func.sum(share), 0)))
+                .join(DueItemSettlement, DueItemSettlement.due_item_id == DueItem.id)
+                .where(*_collected_in_year_filter(year, legal_entity_id))
             ).scalar_one()
         )
     )
