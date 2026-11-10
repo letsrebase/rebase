@@ -163,6 +163,12 @@ export const queryKeys = {
   // «tutte» the economic tab holds one entry per legal entity at once.
   fiscalEstimate: (year: number, legalEntityId: string | null = null) =>
     ['fiscal-estimate', year, legalEntityId] as const,
+  // The IVA cycle of one legal entity (REB-1024): the entities that have it, a year's periods and
+  // a period's register. `entityId` is the legal entity the page reads, never a sum.
+  ivaEntities: () => ['iva-entities'] as const,
+  ivaPeriods: (year: number, entityId: string | null) => ['iva-periods', year, entityId] as const,
+  ivaRegister: (kind: 'sales' | 'purchases', year: number, number: number, entityId: string | null) =>
+    ['iva-register', kind, year, number, entityId] as const,
   // The tax calendar is one legal entity's and one calendar year's (REB-1026).
   taxCalendar: (year: number, legalEntityId: string | null = null) =>
     ['tax-calendar', year, legalEntityId] as const,

@@ -196,6 +196,8 @@ export const MIN_ROLE = {
   // entry in the menu and the download are an administrator's, as the core guards them.
   build_accountant_export: 'admin',
   get_export_download_url: 'admin',
+  // The IVA periods and the registers behind them (REB-1024), the same position again.
+  list_iva_periods: 'admin',
   create_cost_category: 'admin',
   update_cost_category: 'admin',
   archive_cost_category: 'admin',

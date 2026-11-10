@@ -64,6 +64,10 @@ export const ROUTE_MODULES: ReadonlyArray<{ path: string; modules: readonly Modu
   // purchases: the purchases register, its pages and the cost categories. A deal's own
   // «Acquisti» block stays on its Ore tab, `time` and `purchases` together.
   { path: '/app/purchases', modules: ['purchases'] },
+  // The IVA cycle is part of `purchases` (suppliers design § 8): its settlement sums the purchase
+  // register, so the page follows the module whole (the brief's «sales register alone» is an
+  // open point, not an answer).
+  { path: '/app/vat', modules: ['purchases'] },
   { path: '/app/settings/cost-categories', modules: ['purchases'] },
 ]
 
