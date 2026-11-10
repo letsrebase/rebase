@@ -120,7 +120,13 @@ async def request_validation_handler(_request: Request, exc: Exception) -> JSONR
     `toProblem` reads it) and `msg` in Italian, worded by the same translator the MCP
     tools use. The first error is the one the UI shows, so every error is translated."""
     assert isinstance(exc, RequestValidationError)
-    errors = [{**error, "msg": _italian_message(dict(error))} for error in exc.errors()]
+    # `input` is what the caller sent, and for a body that is the whole body: a login, or a mailbox
+    # connection (REB-1015), would answer with the password it was refused for. Nothing reads it.
+    errors = [
+        {**{key: value for key, value in error.items() if key != "input"}}
+        | {"msg": _italian_message(dict(error))}
+        for error in exc.errors()
+    ]
     return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
 
 

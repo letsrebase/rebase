@@ -23,6 +23,7 @@ from pigrocrm.core.space_settings import SpaceSettingsService, apply_overrides
 from pigrocrm.core.tenants.database import tenant_database_url, tenants_database_url
 from pigrocrm.core.tenants.google import (
     oauth_state_prefix,
+    space_mailbox_token_key,
     space_slack_token_key,
     space_token_key,
 )
@@ -105,6 +106,9 @@ def space_base_settings(settings: Settings, slug: str | None) -> Settings:
         update={
             **google,
             **slack,
+            # Mailboxes are core and always on: a space is sealed with a key derived for it
+            # alone, and has none when the root has no valid key.
+            "mailbox_token_key": space_mailbox_token_key(settings.mailbox_token_key, slug),
             "public_url": public_url,
             "storage_backend": "local",
         }

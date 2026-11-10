@@ -490,6 +490,17 @@ _CREDENZIALI: dict[Method, str] = {
     "decision",
     ("SlackOAuthService", "redirect_uri"): "the fixed URL Slack compares with the ones "
     "registered on the app, not an operation (REB-739)",
+    ("ImapMailboxService", "connect"): "typing the password of a third-party mailbox is a person's "
+    "act, like every credential (REB-880, REB-1015): an agent has no password of its own to give "
+    "and must not be handed one",
+    ("ImapMailboxService", "change_password"): "same reason as `ImapMailboxService.connect`: a new "
+    "password is a credential a person types",
+    ("ImapMailboxService", "disconnect"): "same reason as `GmailOAuthService.disconnect`: stopping "
+    "the read of a mailbox and forgetting its password is a person's decision",
+    ("ImapMailboxService", "list"): "the page of mailboxes and their health is the web's; a tool "
+    "for it is a later card",
+    ("ImapSyncService", "sync"): "same reason as `GmailSyncService.sync`: it is the cron's, and "
+    "it spends a person's login on a third-party server",
     ("GmailSyncService", "sync"): (
         "il consenso a leggere la casella e' della persona, e lo e' anche il momento in "
         "cui viene esercitato: `sync` va a prendere posta da un servizio terzo, sotto "

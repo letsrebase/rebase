@@ -23,6 +23,7 @@ runs is the real URL building, the real `q` and the real error handling, and onl
 socket is replaced.
 """
 
+import base64
 from collections.abc import Callable, Iterator
 from typing import Any
 from urllib.parse import urlparse
@@ -31,6 +32,7 @@ from uuid import UUID
 import pytest
 from fakes.contacts import points
 from fakes.fake_gmail import API_HOST, FakeGmail
+from fakes.fake_imap import HOST, PASSWORD, USERNAME, FakeImap, ServerState, loopback
 from fakes.gmail_fixtures import connected_account, gmail_settings
 from sqlalchemy import Engine, text
 from sqlalchemy.engine import make_url
@@ -44,8 +46,13 @@ from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import drop_database
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.mailboxes.credential import seal_password
+from pigrocrm.core.mailboxes.imap_sync import ImapSyncService
+from pigrocrm.core.mailboxes.models import Mailbox
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.reminders.run import ROOT_LABEL
+
+MAILBOX_KEY = base64.b64encode(b"m" * 32).decode()
 
 # A registry of this module's own, so the walk finds it empty whatever else has
 # provisioned a space on this container.
@@ -301,26 +308,121 @@ def test_the_old_name_gmail_sync_runs_the_same_cycle_and_keeps_the_same_clock(
     assert jobs == ["mail-sync"]
 
 
-def test_a_space_with_only_a_mailbox_that_is_not_gmail_neither_fails_nor_prints(
-    cli_gmail: FakeGmail, db_engine: Engine, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """REB-1014: an IMAP-only space is configured. The run has no Google mailbox to read and
-    says nothing, and the exit is 0 where «no mailbox connected» is 1."""
-    with db_engine.begin() as connection:
-        connection.execute(
-            text(
-                "insert into mailboxes (id, provider, status) "
-                "values (gen_random_uuid(), 'imap', 'active')"
-            )
+@pytest.fixture
+def imap_server(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeImap]:
+    """The fake IMAP server, with the CLI's own `ImapSyncService` bound to its resolver and to
+    the certificate it trusts: production resolves a public name and trusts the system's roots."""
+    fake = FakeImap(ServerState())
+    fake.start()
+    monkeypatch.setattr(
+        gmail_cli,
+        "ImapSyncService",
+        lambda session, *, settings: ImapSyncService(
+            session, settings=settings, resolve=loopback, context=fake.client_context()
+        ),
+    )
+    yield fake
+    fake.stop()
+
+
+def _connect_imap(engine: Engine, server: FakeImap, *, password: str = PASSWORD) -> UUID:
+    """A space mailbox the CLI's own session can see, with a password really sealed under the key
+    `gmail_settings(mailbox_token_key=...)` publishes."""
+    ciphertext, nonce = seal_password(password, gmail_settings(mailbox_token_key=MAILBOX_KEY))
+    with session_factory(engine)() as session:
+        mailbox = Mailbox(
+            owner_user_id=None,
+            provider="imap",
+            status="active",
+            address=USERNAME,
+            imap_host=HOST,
+            imap_port=server.port,
+            imap_security="tls",
+            imap_username=USERNAME,
+            password_ciphertext=ciphertext,
+            password_nonce=nonce,
         )
+        session.add(mailbox)
+        session.commit()
+        return mailbox.id
+
+
+@pytest.fixture
+def imap_settings(settings_for: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        cli,
+        "get_settings",
+        lambda: settings_for(mailbox_token_key=MAILBOX_KEY),
+    )
+
+
+def _forget_imap(engine: Engine) -> None:
+    with engine.begin() as connection:
+        connection.execute(text("delete from mailboxes"))
+        connection.execute(text("delete from reminder_job_run"))
+
+
+def test_a_space_with_only_an_imap_mailbox_is_read_and_reads_configured(
+    cli_gmail: FakeGmail,
+    imap_server: FakeImap,
+    imap_settings: None,
+    db_engine: Engine,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """REB-1015: an IMAP-only space is read, exits 0 and its job is not «not configured»."""
+    mailbox_id = _connect_imap(db_engine, imap_server)
     try:
         assert _run() == 0
-        captured = capsys.readouterr()
-        assert (captured.out, captured.err) == ("", "")
+        out = capsys.readouterr()
+        assert f"mail-sync {ROOT_LABEL} {mailbox_id}: active" in out.out
+        assert out.err == ""
+        assert imap_server.state.logins == 1
+        with db_engine.connect() as connection:
+            row = connection.execute(text("select job, failure from reminder_job_run")).one()
+        assert row == ("mail-sync", None)
         assert _run("--email", "nobody@example.it") == 1, "an address that matches is still asked"
     finally:
-        with db_engine.begin() as connection:
-            connection.execute(text("delete from mailboxes"))
+        _forget_imap(db_engine)
+
+
+def test_an_imap_mailbox_the_server_refuses_is_one_line_and_exit_one(
+    cli_gmail: FakeGmail,
+    imap_server: FakeImap,
+    imap_settings: None,
+    db_engine: Engine,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    mailbox_id = _connect_imap(db_engine, imap_server, password="old-password")
+    try:
+        assert _run() == 1
+        err = capsys.readouterr().err
+        assert f"mail-sync {ROOT_LABEL} {mailbox_id}: auth_failed" in err
+        assert "old-password" not in err and USERNAME not in err
+        with db_engine.connect() as connection:
+            row = connection.execute(text("select job, failure from reminder_job_run")).one()
+        assert row == ("mail-sync", "MailboxAuthFailed")
+        logins = imap_server.state.logins
+        assert _run() == 1
+        assert imap_server.state.logins == logins, "a refused password is not sent again"
+    finally:
+        _forget_imap(db_engine)
+
+
+def test_a_disconnected_imap_mailbox_is_not_read(
+    cli_gmail: FakeGmail,
+    imap_server: FakeImap,
+    imap_settings: None,
+    db_engine: Engine,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _connect_imap(db_engine, imap_server)
+    with db_engine.begin() as connection:
+        connection.execute(text("update mailboxes set status = 'disconnected'"))
+    try:
+        assert _run() == 1, "no mailbox connected"
+        assert imap_server.state.logins == 0
+    finally:
+        _forget_imap(db_engine)
 
 
 def test_the_cron_does_not_act_for_a_deactivated_owner(

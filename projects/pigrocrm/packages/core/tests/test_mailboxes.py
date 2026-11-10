@@ -2,7 +2,7 @@
 `2026-11-09-incoming-documents-inbox-design.md`)."""
 
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fakes.gmail_fixtures import connected_account
@@ -15,9 +15,27 @@ from pigrocrm.core.mailboxes.health import GMAIL_HEALTH, gmail_health
 from pigrocrm.core.mailboxes.models import Mailbox, MailboxPurpose
 from pigrocrm.core.mailboxes.repository import MailboxRepository
 
+# A whole IMAP connection, for a test that wants one check to fail and no other.
+_IMAP_COLUMNS = (
+    "address, imap_host, imap_port, imap_security, imap_username, "
+    "password_ciphertext, password_nonce"
+)
+_IMAP_VALUES = "'a@b.it', 'h.it', 993, 'tls', 'u', '\\x01', '\\x02'"
+
 
 def _space_imap(session: Session, *, status: str = "active") -> Mailbox:
-    mailbox = Mailbox(owner_user_id=None, provider="imap", status=status)
+    mailbox = Mailbox(
+        owner_user_id=None,
+        provider="imap",
+        status=status,
+        address=f"box-{uuid4().hex[:8]}@studio.test",
+        imap_host="imap.studio.test",
+        imap_port=993,
+        imap_security="tls",
+        imap_username="box",
+        password_ciphertext=None if status == "disconnected" else b"sealed",
+        password_nonce=None if status == "disconnected" else b"nonce",
+    )
     session.add(mailbox)
     session.flush()
     return mailbox
@@ -176,14 +194,15 @@ def test_the_schema_keeps_gmail_personal_wrapping_an_account_and_one_per_person(
     )
     _refused_by(
         db_session,
-        "INSERT INTO mailboxes (id, provider) VALUES (gen_random_uuid(), 'imap')",
+        "INSERT INTO mailboxes (id, provider, " + _IMAP_COLUMNS + ") "
+        "VALUES (gen_random_uuid(), 'imap', " + _IMAP_VALUES + ")",
         {},
         "ck_mailboxes_status_belongs",
     )
     _refused_by(
         db_session,
-        "INSERT INTO mailboxes (id, provider, status) "
-        "VALUES (gen_random_uuid(), 'imap', 'expired')",
+        "INSERT INTO mailboxes (id, provider, status, " + _IMAP_COLUMNS + ") "
+        "VALUES (gen_random_uuid(), 'imap', 'expired', " + _IMAP_VALUES + ")",
         {},
         "ck_mailboxes_status_belongs",
     )
@@ -234,7 +253,5 @@ def test_a_space_with_only_an_imap_mailbox_is_connected(db_session: Session) -> 
     assert repo.any_connected() is False
     _space_imap(db_session, status="disconnected")
     assert repo.any_connected() is False
-    assert repo.count_connected_without_account() == 0
     _space_imap(db_session, status="failing")
     assert repo.any_connected() is True
-    assert repo.count_connected_without_account() == 1

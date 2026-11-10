@@ -216,6 +216,10 @@ _MACHINERY: dict[Method, str] = {
     ("InvitationService", "record_mail"): "delivery status of a mail already recorded as sent",
     ("InvitationService", "refresh_mail_status"): "delivery status of a mail already recorded",
     ("TenantService", "provision"): "creates a space in the registry; the space has no history yet",
+    ("ImapSyncService", "sync"): (
+        "the cron's read of a mailbox: its health and watermark live on the mailbox row, and "
+        "connecting, re-keying and disconnecting are what record"
+    ),
 }
 
 EXCLUSIONS: dict[Method, str] = {**_READS, **_DELEGATION, **_PERSONAL, **_MACHINERY}

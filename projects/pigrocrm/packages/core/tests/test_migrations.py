@@ -29,6 +29,9 @@ HAND_MAINTAINED_INDEXES = {
     "uq_users_email_lower",
     # REB-1014, migration 0087: one Gmail mailbox per person (partial, `WHERE provider = 'gmail'`).
     "uq_mailboxes_one_gmail_per_user",
+    # REB-1015, migration 0097: one IMAP mailbox per owner and address (an expression, and the
+    # space's NULL owner folded to a zero uuid so that two of its own count as one).
+    "uq_mailboxes_imap_address",
     # REB-615, migration 0045: one default per space (partial, `WHERE predefinita`) and
     # one azienda per fiscal id (partial, functional over `upper(...)`). Both are shapes
     # `compare_metadata` cannot compare, so they are asserted on their definitions below.
@@ -4085,3 +4088,55 @@ def test_0096_creates_the_iva_settlements_table_and_every_profile_settles_monthl
         assert _iva_frequency(url) is None
         upgrade(config, "0096")
         assert _table_shape(url, "iva_settlements")[0] is True
+
+
+def test_0097_adds_the_imap_connection_to_mailboxes_and_downgrade_removes_it(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1015: an IMAP mailbox holds its connection and a sealed password, a Gmail one none of
+    it, and one address is one mailbox per owner; downgrade drops the IMAP rows with the columns."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0093")
+        upgrade(config, "0097")
+        engine = create_engine(url)
+        insert = text(
+            "INSERT INTO mailboxes (id, provider, status, address, imap_host, imap_port, "
+            "imap_security, imap_username, password_ciphertext, password_nonce) VALUES "
+            "(gen_random_uuid(), 'imap', 'active', :a, 'imap.example.test', :p, :s, 'u', "
+            "'\\x01', '\\x02')"
+        )
+        try:
+            with engine.begin() as connection:
+                connection.execute(insert, {"a": "A@x.test", "p": 993, "s": "tls"})
+            for params in (
+                {"a": "a@x.test", "p": 993, "s": "tls"},  # the same address, the same owner
+                {"a": "b@x.test", "p": 143, "s": "none"},  # no plaintext choice
+                {"a": "b@x.test", "p": 0, "s": "tls"},
+            ):
+                with pytest.raises(IntegrityError), engine.begin() as connection:
+                    connection.execute(insert, params)
+            with pytest.raises(IntegrityError), engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO mailboxes (id, provider, status, address, imap_host, "
+                        "imap_port, imap_security, imap_username) VALUES (gen_random_uuid(), "
+                        "'imap', 'active', 'c@x.test', 'h', 993, 'tls', 'u')"
+                    )
+                )
+
+            downgrade(config, "0093")
+            with engine.connect() as connection:
+                columns = set(
+                    connection.execute(
+                        text(
+                            "SELECT column_name FROM information_schema.columns "
+                            "WHERE table_name = 'mailboxes'"
+                        )
+                    ).scalars()
+                )
+                assert connection.execute(text("SELECT count(*) FROM mailboxes")).scalar() == 0
+            assert columns.isdisjoint({"imap_host", "password_ciphertext", "last_error"})
+        finally:
+            engine.dispose()

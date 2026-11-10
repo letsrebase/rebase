@@ -35,6 +35,8 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Index,
+    Integer,
+    LargeBinary,
     String,
     UniqueConstraint,
     text,
@@ -49,6 +51,9 @@ PURPOSES: Final = ("correspondence", "billing")
 # the next cycle retries; `auth_failed` is one a person must act on (a changed password, a revoked
 # grant); `disconnected` is what the person did.
 HEALTH_STATES: Final = ("active", "failing", "auth_failed", "disconnected")
+# How an IMAP connection is secured. There is no plaintext choice: `tls` is TLS from the first
+# byte (port 993), `starttls` upgrades a plain connection before anything is sent (port 143).
+IMAP_SECURITY: Final = ("tls", "starttls")
 
 
 def _in(values: tuple[str, ...]) -> str:
@@ -60,7 +65,10 @@ class Mailbox(Base, PrimaryKeyMixin, TimestampMixin):
     such as fatture@ or a PEC, connected by an admin). `google_account_id` is set for Gmail and
     only for Gmail. A person has one Gmail through OAuth and a space has none in this project:
     space-owned mailboxes are IMAP only, which keeps an admin's personal Gmail and Drive from
-    colliding with a space Gmail."""
+    colliding with a space Gmail.
+
+    An IMAP mailbox (which covers a PEC) carries its connection and its own health. It has no
+    `__repr__` that prints a column, so a password's ciphertext cannot reach a log through it."""
 
     __tablename__ = "mailboxes"
     __table_args__ = (
@@ -77,6 +85,34 @@ class Mailbox(Base, PrimaryKeyMixin, TimestampMixin):
             f"(provider = 'gmail' AND status IS NULL) "
             f"OR (provider <> 'gmail' AND status IS NOT NULL AND status IN ({_in(HEALTH_STATES)}))",
             name="ck_mailboxes_status_belongs_to_the_mailbox_that_has_no_account",
+        ),
+        CheckConstraint(
+            "provider <> 'imap' OR (address IS NOT NULL AND imap_host IS NOT NULL "
+            "AND imap_port IS NOT NULL AND imap_security IS NOT NULL AND imap_username IS NOT NULL "
+            "AND (status = 'disconnected' OR (password_ciphertext IS NOT NULL "
+            "AND password_nonce IS NOT NULL)))",
+            name="ck_mailboxes_imap_holds_its_connection",
+        ),
+        CheckConstraint(
+            "provider <> 'gmail' OR (address IS NULL AND imap_host IS NULL AND imap_port IS NULL "
+            "AND imap_security IS NULL AND imap_username IS NULL AND password_ciphertext IS NULL "
+            "AND password_nonce IS NULL)",
+            name="ck_mailboxes_gmail_holds_no_imap_connection",
+        ),
+        CheckConstraint(
+            f"imap_security IS NULL OR imap_security IN ({_in(IMAP_SECURITY)})",
+            name="ck_mailboxes_imap_security",
+        ),
+        CheckConstraint(
+            "imap_port IS NULL OR (imap_port BETWEEN 1 AND 65535)", name="ck_mailboxes_imap_port"
+        ),
+        # A space's mailbox has no owner, and two NULLs are two owners to a unique index.
+        Index(
+            "uq_mailboxes_imap_address",
+            text("coalesce(owner_user_id, '00000000-0000-0000-0000-000000000000')"),
+            text("lower(address)"),
+            unique=True,
+            postgresql_where=text("provider = 'imap'"),
         ),
         # The target of `mailbox_purposes`' composite foreign key.
         UniqueConstraint("id", "space_owned", name="uq_mailboxes_id_space_owned"),
@@ -99,6 +135,25 @@ class Mailbox(Base, PrimaryKeyMixin, TimestampMixin):
     space_owned: Mapped[bool] = mapped_column(
         Boolean, Computed("owner_user_id IS NULL", persisted=True), nullable=False
     )
+    # IMAP only (REB-1015); every one is NULL on a Gmail mailbox, which holds none of it. `address`
+    # is the mailbox's own address, what its sent mail is told apart by; `imap_username` is what
+    # the server logs in (often the same, and for some hosts not).
+    address: Mapped[str | None] = mapped_column(String(320), default=None)
+    imap_host: Mapped[str | None] = mapped_column(String(255), default=None)
+    imap_port: Mapped[int | None] = mapped_column(Integer, default=None)
+    imap_security: Mapped[str | None] = mapped_column(String(10), default=None)
+    imap_username: Mapped[str | None] = mapped_column(String(320), default=None)
+    # AES-256-GCM under `PIGROCRM_MAILBOX_TOKEN_KEY` derived for the space. Never returned,
+    # never logged: a `Mailbox` has no `__repr__` that prints a column.
+    password_ciphertext: Mapped[bytes | None] = mapped_column(LargeBinary, default=None)
+    password_nonce: Mapped[bytes | None] = mapped_column(LargeBinary, default=None)
+    # The sentence a person reads (Italian), never a line the server sent and never a password.
+    last_error: Mapped[str | None] = mapped_column(String(500), default=None)
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # When the current run of transient failures began, `NULL` while the mailbox reads: what the
+    # `failing` ladder is counted from.
+    failing_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    disconnected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
 
 class MailboxPurpose(Base, PrimaryKeyMixin, TimestampMixin):
