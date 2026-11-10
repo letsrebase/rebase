@@ -1,6 +1,6 @@
 """Recurring expenses: the rule that forecasts money going out
 
-Revision ID: 0099
+Revision ID: 0098
 Revises: 0097
 
 REB-1022, § 1.2 of `2026-11-09-due-items-bank-and-cash-schedule-design.md`. A new table,
@@ -22,7 +22,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0099"
+revision: str = "0098"
 down_revision: str | Sequence[str] | None = "0097"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

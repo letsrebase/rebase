@@ -274,3 +274,103 @@ def test_the_rule_is_validated_and_authorised(
     # An agent's token writes it, as it writes a purchase.
     agent = Actor(id=None, type="mcp", role="collaborator")
     assert service.create_recurring_expense(data, agent).cadence == "annual"
+
+
+def test_a_purchase_of_another_company_does_not_replace_and_a_shared_one_does(
+    db_session: Session, legal_entity_id: UUID, supplier_id: UUID, seeded_category_id: UUID
+) -> None:
+    from pigrocrm.core.legal_entities.models import LegalEntity
+    from pigrocrm.core.purchases.models import Purchase
+
+    other = LegalEntity(name="altra", legal_name="Altra Srl", country="IT")
+    db_session.add(other)
+    db_session.flush()
+    rule_id = _rule(db_session, supplier_id, seeded_category_id, legal_entity_id=legal_entity_id)
+    count = len(_forecasts(db_session, rule_id))
+
+    def buy(legal_entity: UUID | None) -> Purchase:
+        purchase = Purchase(
+            category_id=seeded_category_id,
+            supplier_id=supplier_id,
+            legal_entity_id=legal_entity,
+            date=FIRST,
+            amount=Decimal("800.00"),
+            description="Affitto",
+        )
+        db_session.add(purchase)
+        db_session.flush()
+        return purchase
+
+    buy(other.id)
+    ForecastService(db_session).refresh_supplier_rules(supplier_id)
+    assert len(_forecasts(db_session, rule_id)) == count
+    buy(None)
+    ForecastService(db_session).refresh_supplier_rules(supplier_id)
+    assert len(_forecasts(db_session, rule_id)) == count - 1
+
+
+def test_the_period_is_the_cadences_calendar_span_and_a_moved_purchase_gives_it_back(
+    db_session: Session, legal_entity_id: UUID, supplier_id: UUID, seeded_category_id: UUID
+) -> None:
+    from pigrocrm.core.purchases.schemas import PurchaseUpdate
+
+    first = dt.date(TODAY.year + 1, 2, 10)
+    rule_id = _rule(
+        db_session, supplier_id, seeded_category_id, cadence="quarterly", first_due_date=first
+    )
+    service = PurchaseService(db_session)
+    count = len(_forecasts(db_session, rule_id))
+    # Quarter one of the year runs from 1 January to 31 March: a purchase on 1 January covers
+    # the due date of 10 February, one on 1 April does not.
+    purchase = service.create(
+        PurchaseCreate(
+            category_id=seeded_category_id,
+            supplier_id=supplier_id,
+            date=dt.date(first.year, 4, 1),
+            amount=Decimal("800.00"),
+            description="Affitto",
+        ),
+        WRITER,
+    )
+    assert len(_forecasts(db_session, rule_id)) == count
+    service.update(purchase.id, PurchaseUpdate(date=dt.date(first.year, 1, 1)), WRITER)
+    assert first not in [item.own_date for item in _forecasts(db_session, rule_id)]
+    service.update(purchase.id, PurchaseUpdate(date=dt.date(first.year, 4, 1)), WRITER)
+    assert first in [item.own_date for item in _forecasts(db_session, rule_id)]
+    # Archiving the purchase that covers the period frees it too; restoring covers it again.
+    service.update(purchase.id, PurchaseUpdate(date=dt.date(first.year, 1, 1)), WRITER)
+    service.soft_delete(purchase.id, WRITER)
+    assert first in [item.own_date for item in _forecasts(db_session, rule_id)]
+    service.restore(purchase.id, WRITER)
+    assert first not in [item.own_date for item in _forecasts(db_session, rule_id)]
+
+
+def test_merging_two_suppliers_moves_the_rule_and_replaces_with_the_losers_purchases(
+    db_session: Session, legal_entity_id: UUID, supplier_id: UUID, seeded_category_id: UUID
+) -> None:
+    from pigrocrm.core.organizations.service import OrganizationService
+    from pigrocrm.core.purchases.models import Purchase
+
+    loser = Organization(legal_name="Affitti Sas", country="IT", roles=["supplier"])
+    db_session.add(loser)
+    db_session.flush()
+    rule_id = _rule(db_session, loser.id, seeded_category_id)
+    db_session.add(
+        Purchase(
+            category_id=seeded_category_id,
+            supplier_id=supplier_id,
+            date=FIRST,
+            amount=Decimal("800.00"),
+            description="Affitto",
+        )
+    )
+    db_session.flush()
+    count = len(_forecasts(db_session, rule_id))
+
+    OrganizationService(db_session).merge(supplier_id, loser.id, ADMIN, dry_run=False)
+
+    rule = RecurringExpenseService(db_session).list_recurring_expenses(READER)[0]
+    assert rule.supplier_id == supplier_id
+    after = _forecasts(db_session, rule_id)
+    assert len(after) == count - 1
+    assert {item.organization_id for item in after} == {supplier_id}

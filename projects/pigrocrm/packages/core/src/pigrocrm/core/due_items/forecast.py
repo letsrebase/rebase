@@ -134,7 +134,7 @@ class ForecastReport:
 
 
 @dataclass(frozen=True)
-class Want:
+class _Want:
     """One forecast the rules produce now."""
 
     key: UUID
@@ -247,7 +247,7 @@ class ForecastService:
             select(Contract).where(Contract.id == contract_id).with_for_update(),
             execution_options={"populate_existing": True},
         ).scalar_one_or_none()
-        wants: dict[UUID, Want] = {}
+        wants: dict[UUID, _Want] = {}
         replaced: set[UUID] = set()
         if contract is not None:
             wants, replaced = self._contract_wants(contract, day)
@@ -257,7 +257,7 @@ class ForecastService:
             if item.source_rule in CONTRACT_RULES
         ]
         legal_entity_id = contract.legal_entity_id if contract is not None else None
-        return self.apply(
+        return self._apply(
             live,
             wants,
             replaced,
@@ -268,7 +268,7 @@ class ForecastService:
 
     def _contract_wants(
         self, contract: Contract, today: date
-    ) -> tuple[dict[UUID, Want], set[UUID]]:
+    ) -> tuple[dict[UUID, _Want], set[UUID]]:
         if (
             contract.deleted_at is not None
             or contract.status != ACTIVE
@@ -279,7 +279,7 @@ class ForecastService:
         if pricing is None:
             return {}, set()
         profile, strategy, customer = pricing
-        wants: dict[UUID, Want] = {}
+        wants: dict[UUID, _Want] = {}
         replaced: set[UUID] = set()
         self._fee_wants(contract, profile, strategy, customer, today, wants, replaced)
         self._day_wants(contract, profile, strategy, customer, today, wants)
@@ -292,7 +292,7 @@ class ForecastService:
         strategy: RegimeStrategy,
         customer: Organization,
         today: date,
-        wants: dict[UUID, Want],
+        wants: dict[UUID, _Want],
         replaced: set[UUID],
     ) -> None:
         cards = [
@@ -336,7 +336,7 @@ class ForecastService:
                 )
                 if total is None:
                     continue
-                wants[key] = Want(
+                wants[key] = _Want(
                     key,
                     RULE_RECURRING_FEE,
                     total,
@@ -352,7 +352,7 @@ class ForecastService:
         strategy: RegimeStrategy,
         customer: Organization,
         today: date,
-        wants: dict[UUID, Want],
+        wants: dict[UUID, _Want],
     ) -> None:
         groups, _uncovered, cards = gather(self.session, contract.id, None, None)
         if not groups:
@@ -379,7 +379,7 @@ class ForecastService:
             # its forecast is undated («senza scadenza»), never a date made up.
             due = self._due_on(max(end, today), customer.id, profile) if end is not None else None
             key = forecast_key(CONTRACT_OCCURRENCE, contract.id, start)
-            wants[key] = Want(
+            wants[key] = _Want(
                 key,
                 RULE_WORKED_DAYS,
                 total,
@@ -455,7 +455,7 @@ class ForecastService:
             select(Invoice).where(Invoice.id == invoice_id),
             execution_options={"populate_existing": True},
         ).scalar_one_or_none()
-        wants: dict[UUID, Want] = {}
+        wants: dict[UUID, _Want] = {}
         if invoice is not None:
             want = self._draft_want(invoice, today)
             if want is not None:
@@ -470,7 +470,7 @@ class ForecastService:
             if invoice is None or invoice.status in DRAFT_STATUSES
             else {item.forecast_key for item in live if item.forecast_key is not None}
         )
-        return self.apply(
+        return self._apply(
             live,
             wants,
             replaced,
@@ -479,7 +479,7 @@ class ForecastService:
             legal_entity_id=invoice.legal_entity_id if invoice is not None else None,
         )
 
-    def _draft_want(self, invoice: Invoice, today: date) -> Want | None:
+    def _draft_want(self, invoice: Invoice, today: date) -> _Want | None:
         if (
             invoice.deleted_at is not None
             or invoice.status not in DRAFT_STATUSES
@@ -497,7 +497,7 @@ class ForecastService:
         if due < today:
             return None
         proforma = invoice.type == "proforma"
-        return Want(
+        return _Want(
             forecast_key(SALES_DRAFT, invoice.id),
             RULE_DRAFT_INVOICE,
             invoice.total,
@@ -521,11 +521,11 @@ class ForecastService:
             select(RecurringExpense).where(RecurringExpense.id == rule_id).with_for_update(),
             execution_options={"populate_existing": True},
         ).scalar_one_or_none()
-        wants: dict[UUID, Want] = {}
+        wants: dict[UUID, _Want] = {}
         replaced: set[UUID] = set()
         if rule is not None:
             wants, replaced = self._recurring_wants(rule, day)
-        return self.apply(
+        return self._apply(
             self.repo.live_forecasts(RECURRING_EXPENSE, rule_id),
             wants,
             replaced,
@@ -536,7 +536,7 @@ class ForecastService:
 
     def _recurring_wants(
         self, rule: RecurringExpense, today: date
-    ) -> tuple[dict[UUID, Want], set[UUID]]:
+    ) -> tuple[dict[UUID, _Want], set[UUID]]:
         if rule.stopped_on is not None:
             return {}, set()
         legal_entity = self.session.get(LegalEntity, rule.legal_entity_id)
@@ -553,7 +553,7 @@ class ForecastService:
         if rule.ends_on is not None:
             last = min(last, rule.ends_on)
         bought = self._purchase_dates(rule)
-        wants: dict[UUID, Want] = {}
+        wants: dict[UUID, _Want] = {}
         replaced: set[UUID] = set()
         for occurrence in stepped_dates(rule.first_due_date, last, months):
             key = forecast_key(RECURRING_EXPENSE, rule.id, occurrence)
@@ -563,7 +563,7 @@ class ForecastService:
             if any(start <= day <= end for day in bought):
                 replaced.add(key)
             elif occurrence >= today:
-                wants[key] = Want(
+                wants[key] = _Want(
                     key,
                     RULE_RECURRING_EXPENSE,
                     rule.amount,
@@ -645,10 +645,10 @@ class ForecastService:
         total = sum_totals(build_recap(computed))[2]
         return total if total > 0 else None
 
-    def apply(
+    def _apply(
         self,
         live: list[DueItem],
-        wants: dict[UUID, Want],
+        wants: dict[UUID, _Want],
         replaced: set[UUID],
         *,
         source_kind: str,
@@ -691,7 +691,9 @@ class ForecastService:
                 )
         return ForecastReport(created, revised, dropped)
 
-    def _create(self, want: Want, source_kind: str, source_id: UUID, legal_entity_id: UUID) -> bool:
+    def _create(
+        self, want: _Want, source_kind: str, source_id: UUID, legal_entity_id: UUID
+    ) -> bool:
         """The forecast, unless another writer holds the key: the unique index is the net
         under the contract's lock, and its loser is the same answer, not an error."""
         try:

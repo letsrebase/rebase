@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
-from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.timetracking.models import CostCategory
@@ -32,6 +31,7 @@ def _server(session: Session, tmp_path: Path, **settings: Any) -> Any:
 
 
 def _payload(result: Any) -> dict[str, Any]:
+    assert not result.is_error, result.content[0].text
     return result.structured_content or json.loads(result.content[0].text)
 
 
@@ -50,7 +50,6 @@ async def test_the_tools_are_listed_while_the_purchases_module_is_on(
 async def test_an_agent_creates_lists_and_stops_a_rule(
     mcp_session: Session, tmp_path: Path
 ) -> None:
-    mcp_session.add(LegalEntity(name="rec tool", legal_name="Rec Tool", country="IT"))
     supplier = Organization(legal_name="Affitti Srl", country="IT", roles=["supplier"])
     category = CostCategory(name="Affitto", position=0, code=None)
     mcp_session.add_all([supplier, category])

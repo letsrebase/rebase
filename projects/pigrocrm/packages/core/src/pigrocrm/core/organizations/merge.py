@@ -47,7 +47,8 @@ from pigrocrm.core.contact_points.models import ContactPoint
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
-from pigrocrm.core.due_items.models import DueItem
+from pigrocrm.core.due_items.forecast import ForecastService
+from pigrocrm.core.due_items.models import DueItem, RecurringExpense
 from pigrocrm.core.engagements.registry import EngagementRegistry
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessageLink
 from pigrocrm.core.invoices.models import Invoice
@@ -84,6 +85,7 @@ REFERENCES: tuple[Reference, ...] = (
     Reference("documents", _col(Document, "customer_id")),
     Reference("due_items", _col(DueItem, "organization_id")),
     Reference("purchases", _col(Purchase, "supplier_id")),
+    Reference("recurring_expenses", _col(RecurringExpense, "supplier_id")),
     Reference("engagements_freelancer", _col(Engagement, "freelancer_id")),
     Reference("engagements_client", _col(Engagement, "client_organization_id")),
     Reference("monthly_reports", _col(MonthlyReport, "freelancer_id")),
@@ -191,6 +193,9 @@ class OrganizationMerge:
         self._proposals(outcome, loser_id, survivor_id, apply)
         self._registry_rows(outcome, loser_id, survivor_id, apply)
         self._fields(outcome, survivor, loser, apply)
+        if apply:
+            # The loser's rules and purchases are the survivor's now: its forecasts read again.
+            ForecastService(self.session).refresh_supplier_rules(survivor_id)
         return outcome
 
     # -- foreign keys ----------------------------------------------------------------------

@@ -207,6 +207,20 @@ ROWS: list[Row] = [
     Row("PATCH", "/api/purchases/{purchase_id}", body={}),
     Row("POST", "/api/purchases/{purchase_id}/restore"),
     Row("POST", "/api/purchases/{purchase_id}/cancel"),
+    # --- recurring expenses: `require_write` (due_items/recurring.py) --------------------
+    Row(
+        "POST",
+        "/api/recurring-expenses",
+        body={
+            "supplier_id": "__CUST__",
+            "category_id": "__FAKE__",
+            "description": "matrice-ricorrente",
+            "amount": "10.00",
+            "cadence": "monthly",
+            "first_due_date": "2026-01-05",
+        },
+    ),
+    Row("POST", "/api/recurring-expenses/{rule_id}/stop"),
     # --- contracts / rate cards (REB-358): `require_write` (contracts/service.py) ----
     Row(
         "POST",
@@ -1191,6 +1205,8 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/api/purchases"),
         ("POST", "/api/purchases/{purchase_id}/cancel"),
         ("POST", "/api/purchases/{purchase_id}/restore"),
+        ("POST", "/api/recurring-expenses"),
+        ("POST", "/api/recurring-expenses/{rule_id}/stop"),
         ("POST", "/api/organizations"),
         ("POST", "/api/organizations/{organization_id}/people-from-mail"),
         ("POST", "/api/organizations/{organization_id}/restore"),

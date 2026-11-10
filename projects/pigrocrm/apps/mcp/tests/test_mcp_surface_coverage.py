@@ -421,6 +421,11 @@ _INTERNE: dict[Method, str] = {
     ("ForecastService", "refresh_all"): "the daily job, behind `pigrocrm automations`",
     ("ForecastService", "refresh_contract"): "a change to a contract, a card or a day calls it",
     ("ForecastService", "sync_invoice"): "a change to a draft or an invoice calls it",
+    ("ForecastService", "refresh_recurring_expense"): (
+        "a change to a recurrence rule calls it; the tools that write one are `create_recurring_"
+        "expense` and `stop_recurring_expense`"
+    ),
+    ("ForecastService", "refresh_supplier_rules"): "a purchase write rereads its supplier's rules",
     ("ForecastService", "billed_contracts"): "internal read behind sync_invoice",
     ("ForecastService", "lock_contracts"): "the lock order of the writers of a day",
 }
