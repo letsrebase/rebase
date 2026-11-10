@@ -472,6 +472,7 @@ class SignedCopyRequest(BaseModel):
 
     signed_on: dt.date | None = None
 
+
 # ---- what the engagement pays the freelancer, month by month (REB-1035) -----------------------
 
 PaymentState = Literal["forecast", "expected", "settled"]

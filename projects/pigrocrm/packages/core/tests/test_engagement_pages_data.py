@@ -421,7 +421,7 @@ def test_a_freelancer_reads_their_own_engagement_and_nothing_of_the_client(
 ) -> None:
     contract_id, settings, leads, slug = _two_spaces(door)
 
-    card = OwnEngagementService(door.registry, settings).for_contract(slug, contract_id)
+    card = OwnEngagementService(door.registry, settings).for_contract(slug, contract_id, ADMIN)
 
     assert (card.fee, card.fee_unit, card.state) == (Decimal("400.00"), "day", "active")
     assert (card.payment_rule, card.collection_days) == ("on_collection", 15)
@@ -444,14 +444,14 @@ def test_a_space_reads_only_the_engagement_of_its_own_contract(door: "door_tests
     service = OwnEngagementService(door.registry, settings)
 
     with pytest.raises(NotFound):
-        service.for_contract(leads, contract_id)  # another space, the same contract id
+        service.for_contract(leads, contract_id, ADMIN)  # another space, the same contract id
     with pytest.raises(NotFound):
-        service.for_contract(slug, uuid4())  # a contract the door did not write
+        service.for_contract(slug, uuid4(), ADMIN)  # a contract the door did not write
     with pytest.raises(NotFound):
-        service.for_contract(None, contract_id)  # the root installation, no space
+        service.for_contract(None, contract_id, ADMIN)  # the root installation, no space
     no_leads = settings.model_copy(update={"leads_space": ""})
     with pytest.raises(NotFound):
-        OwnEngagementService(door.registry, no_leads).for_contract(slug, contract_id)
+        OwnEngagementService(door.registry, no_leads).for_contract(slug, contract_id, ADMIN)
 
 
 def test_a_cancelled_engagement_has_no_card(door: "door_tests.Door") -> None:
@@ -461,7 +461,7 @@ def test_a_cancelled_engagement_has_no_card(door: "door_tests.Door") -> None:
         space.commit()
 
     with pytest.raises(NotFound):
-        OwnEngagementService(door.registry, settings).for_contract(slug, contract_id)
+        OwnEngagementService(door.registry, settings).for_contract(slug, contract_id, ADMIN)
 
 
 def test_a_match_that_belongs_to_another_freelancer_is_not_read(door: "door_tests.Door") -> None:
@@ -474,4 +474,4 @@ def test_a_match_that_belongs_to_another_freelancer_is_not_read(door: "door_test
         space.commit()
 
     with pytest.raises(NotFound):
-        OwnEngagementService(door.registry, settings).for_contract(slug, contract_id)
+        OwnEngagementService(door.registry, settings).for_contract(slug, contract_id, ADMIN)

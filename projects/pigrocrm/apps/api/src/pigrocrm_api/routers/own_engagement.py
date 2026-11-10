@@ -61,12 +61,13 @@ def own_engagement(
     letter, their fee and dates, the payment rule and each month's report state, read from
     rebase's space. 404 when the contract did not come from an engagement. A person's read, not
     an agent's: the engagement is rebase's data."""
-    actor.require_admin("read_rebase_engagement")
     bind: Any = registry.get_bind()
     if not isinstance(bind, Engine):
         raise TypeError(f"the registry session is bound to {type(bind).__name__}, not an Engine")
     try:
-        return OwnEngagementService(bind, settings).for_contract(tenant_slug(request), contract_id)
+        return OwnEngagementService(bind, settings).for_contract(
+            tenant_slug(request), contract_id, actor
+        )
     except (SpaceUnreachable, SQLAlchemyError) as exc:
         logger.warning("own engagement: rebase's space not reachable (%s)", type(exc).__name__)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NOT_REACHABLE) from exc

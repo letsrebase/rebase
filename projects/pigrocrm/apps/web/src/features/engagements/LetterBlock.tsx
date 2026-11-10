@@ -6,6 +6,7 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Loader } from '@rebase/ui/loader'
 import { toast } from '@rebase/ui/sonner'
+import { toProblem } from '@/lib/api'
 import { Textarea } from '@rebase/ui/textarea'
 import { HIDDEN } from './words'
 import {
@@ -17,7 +18,7 @@ import {
   waitingSentence,
   type Engagement,
 } from './labels'
-import { useChangeEngagementState, useCreateLetter, usePreviewLetter } from './queries'
+import { useChangeEngagementState, useCreateLetter, usePreviewLetter, useSendEngagement } from './queries'
 
 /** The free-text fields of the letter's text, by the name the template declares them under. */
 const FIELDS: ReadonlyArray<{ name: string; label: string; multiline: boolean }> = [
@@ -69,6 +70,9 @@ export function LetterBlock({
   const preview = usePreviewLetter(engagement.id)
   const create = useCreateLetter(engagement.id)
   const change = useChangeEngagementState(engagement.id)
+  const send = useSendEngagement(engagement.id)
+  // Without the signing site the letter is sent by hand: the state is then moved by hand too.
+  const unavailable = (send.error as { code?: string } | null)?.code === 'signing_unavailable'
   const [values, setValues] = useState<Record<string, string>>({})
   const draft = engagement.state === 'draft'
   const waitingSignature = engagement.state === 'awaiting_signature'
@@ -195,17 +199,40 @@ export function LetterBlock({
         ) : null}
         {draft && hasLetter ? (
           <Button
+            disabled={send.isPending}
+            onClick={() =>
+              send.mutate(undefined, {
+                onSuccess: (done) =>
+                  toast.success(
+                    done.mail_sent === false
+                      ? 'Inviata, ma la mail non è partita: si può rimandare.'
+                      : 'Inviata per la firma.',
+                  ),
+              })
+            }
+          >
+            {send.isPending ? <Loader className="mr-2 size-4" /> : null}
+            Invia per la firma
+          </Button>
+        ) : null}
+        {draft && hasLetter && unavailable ? (
+          <Button
+            variant="outline"
             disabled={change.isPending}
             onClick={() =>
               change.mutate(
                 { state: 'awaiting_signature' },
-                { onSuccess: () => toast.success('Lettera inviata per la firma.') },
+                { onSuccess: () => toast.success('Lettera segnata come inviata, a mano.') },
               )
             }
           >
-            {change.isPending ? <Loader className="mr-2 size-4" /> : null}
-            Invia per la firma
+            Segna come inviata (a mano)
           </Button>
+        ) : null}
+        {draft && hasLetter && send.isError ? (
+          <p role="alert" className="w-full text-sm text-destructive">
+            {toProblem(send.error).detail}
+          </p>
         ) : null}
         {waitingSignature ? (
           <Button

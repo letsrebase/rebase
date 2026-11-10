@@ -7,6 +7,7 @@ import { PHONE_BAR_HEIGHT } from '@/components/PhoneBar'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
 import { useIsAdmin } from '@/lib/auth'
+import { toProblem } from '@/lib/api'
 import { toIsoDate } from '@/lib/dates'
 import { Button } from '@rebase/ui/button'
 import { Loader } from '@rebase/ui/loader'
@@ -31,7 +32,7 @@ import {
 } from './labels'
 import { awaitsArrival, awaitsDecision, planMonths } from './monthRows'
 import {
-  useChangeEngagementState,
+  useSendEngagement,
   useEngagement,
   useEngagementPayments,
   useEngagementReport,
@@ -79,7 +80,7 @@ export function EngagementPage() {
     engagement.data.state !== 'awaiting_signature'
   const report = useEngagementReport(engagementId, started)
   const payments = useEngagementPayments(engagementId, started)
-  const change = useChangeEngagementState(engagementId)
+  const send = useSendEngagement(engagementId)
   const inline = useMediaQuery(INLINE_PANEL)
   const [selected, setSelected] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
@@ -131,15 +132,15 @@ export function EngagementPage() {
     barAction = hasLetter ? (
       <Button
         className="w-full"
-        disabled={change.isPending}
+        disabled={send.isPending}
         onClick={() =>
-          change.mutate(
-            { state: 'awaiting_signature' },
-            { onSuccess: () => toast.success('Lettera inviata per la firma.') },
-          )
+          send.mutate(undefined, {
+            onSuccess: () => toast.success('Inviata per la firma.'),
+            onError: (error) => toast.error(toProblem(error).detail),
+          })
         }
       >
-        {change.isPending ? <Loader className="mr-2 size-4" /> : null}
+        {send.isPending ? <Loader className="mr-2 size-4" /> : null}
         Invia per la firma
       </Button>
     ) : (

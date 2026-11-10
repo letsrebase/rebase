@@ -479,9 +479,8 @@ describe('the letter and the months of a draft', () => {
     expect(await screen.findByRole('button', { name: 'Apri il PDF' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Crea la lettera' })).not.toBeInTheDocument()
     await user.click(within(screen.getByRole('region', { name: 'Lettera e firma' })).getByRole('button', { name: 'Invia per la firma' }))
-    expect(api.POST).toHaveBeenCalledWith('/api/engagements/{engagement_id}/state', {
+    expect(api.POST).toHaveBeenCalledWith('/api/engagements/{engagement_id}/send', {
       params: { path: { engagement_id: 'e1' } },
-      body: { state: 'awaiting_signature' },
     })
   })
 

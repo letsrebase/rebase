@@ -8,6 +8,7 @@ with the administrator's token, and creating, cancelling, closing or setting tax
 """
 
 import datetime as dt
+from collections.abc import Callable, Sequence
 from decimal import Decimal
 from typing import Any
 from uuid import UUID

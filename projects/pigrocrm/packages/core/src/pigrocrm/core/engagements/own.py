@@ -21,6 +21,7 @@ from uuid import UUID
 from sqlalchemy import Engine, or_, select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.collaborators.models import REPORTING_STATES, Engagement
 from pigrocrm.core.collaborators.own_view import own_view
 from pigrocrm.core.collaborators.schemas import OwnEngagementRead
@@ -45,12 +46,15 @@ class OwnEngagementService:
         self.settings = settings
         self.door = EngagementService(registry_engine, settings)
 
-    def for_contract(self, space_slug: str | None, contract_id: UUID) -> OwnEngagementRead:
+    def for_contract(
+        self, space_slug: str | None, contract_id: UUID, actor: Actor
+    ) -> OwnEngagementRead:
         """The engagement the door wrote `contract_id` of space `space_slug` for, as its
         freelancer reads it. `NotFound` when there is none: a contract that did not come from an
         engagement, a space that is not a freelancer's, an engagement not yet signed (the door
         writes the contract when it turns active) or one that was cancelled, or an installation
         with no leads space."""
+        actor.require_admin("read_rebase_engagement")
         leads = self.settings.leads_space.strip()
         if space_slug is None or not leads:
             raise NotFound(ENTITY, str(contract_id))

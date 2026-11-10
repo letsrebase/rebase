@@ -209,6 +209,20 @@ export function useChangeEngagementState(id: string) {
   })
 }
 
+/**
+ * «Invia per la firma»: the freelancer's framework agreement first when they have none active, else
+ * the letter (REB-1019). An installation without the signing site answers 503 `signing_unavailable`:
+ * the page then offers the manual state change.
+ */
+export function useSendEngagement(id: string) {
+  const invalidate = useInvalidateEngagements()
+  return useMutation({
+    mutationFn: () =>
+      unwrap(api.POST('/api/engagements/{engagement_id}/send', { params: { path: { engagement_id: id } } })),
+    onSettled: invalidate,
+  })
+}
+
 /** «Anteprima»: the letter as it would be written now, nothing stored. */
 export function usePreviewLetter(id: string) {
   return useMutation({
