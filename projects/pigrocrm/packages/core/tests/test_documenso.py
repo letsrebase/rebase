@@ -346,10 +346,10 @@ def _settings(**values: str) -> Settings:
 
 
 def test_an_envelope_goes_to_the_space_its_external_id_names(registry_session: Session) -> None:
-    uno = _space(registry_session, f"rotta-uno-{uuid4().hex[:6]}")
-    due = _space(registry_session, f"rotta-due-{uuid4().hex[:6]}")
+    first = _space(registry_session, f"rotta-first-{uuid4().hex[:6]}")
+    second = _space(registry_session, f"rotta-due-{uuid4().hex[:6]}")
     settings = _settings(root_slug="radice")
-    for tenant in (uno, due):
+    for tenant in (first, second):
         route = route_envelope(
             registry_session, settings, parse_external_id(external_id(tenant.id, DOCUMENT))
         )
