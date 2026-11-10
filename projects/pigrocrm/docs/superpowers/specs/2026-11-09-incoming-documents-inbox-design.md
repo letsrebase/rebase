@@ -286,6 +286,55 @@ Each new item is read once, in this order:
    (`ProposalService`, § 3.5). The text read is data, never instructions (`provenance.py`).
 3. **Nothing recognised → `other`**, kept, with a sentence saying why.
 
+**As built (REB-972, classification and the proposals changes).** Choices the design left to the
+builder:
+
+- **Where it runs.** `inbox/classifier.py`, after the upload's own transaction (a classification
+  never fails an upload, and a failure on one file leaves it unread and its claim released): every certain item is classified at once, and at most five PDFs or photos
+  per request go to the model (`POST /api/inbox/classify` reads the oldest unread ones, and
+  `POST /api/inbox/items/{id}/classify` one). An item is read once: one with a kind, or not `new`, is
+  left as it is; one the model could not read keeps no kind and a sentence, and is read again by the
+  next run, at most three times by automatic runs (`read_attempts`; the least tried first, and a
+  rejected reading counts as tried out), and by a person's own request always. A paid reading is
+  claimed first (`read_started_at`, a committed timestamp, abandoned after ten minutes), so two
+  overlapping runs do not pay for one file. The classify routes have their own long-read locations
+  in the three nginx files, since a request reads up to five files.
+- **Certain data.** A FatturaPA's legal entity is the one that matches (`match_legal_entity`). The
+  legal entity as the supplier of every invoice of the file is a `sales_invoice` with that legal
+  entity; as the buyer of every invoice (and not the supplier) a `supplier_invoice`, or a
+  `credit_note` when every document is TD04, with the legal entity only when exactly one matches;
+  addressed to nobody the space knows it is a `supplier_invoice` with no legal entity; a mix, or an
+  identifier no legal entity has, is left unclassified with the reason. `camt053`, CSV, XLS and XLSX
+  are tagged `bank_statement` by their type. All of them stay `new`: **no classifier writes an
+  invoice, a document, a purchase or a cost.** What a FatturaPA states is kept in
+  `inbox_items.parsed_fields`, the text of a PDF in `inbox_items.extracted_text` (both deferred
+  columns, shown by `get_inbox_item`, which `provenance.py` marks as free text).
+- **The issued review.** A sales invoice of the inbox is reviewed with
+  `GET /api/inbox/items/{id}/issued-review` (the importer's own `review_upload`, read only, on the
+  item's bytes, a `.p7m` as the XML inside) and written with `POST .../issued-import` (its own
+  `confirm_upload`, with the same decisions): that is the person's confirmation, behind the
+  import's own gates (an administrator, and `full_access` for a token), and the item is
+  then `filed`, its bytes deleted.
+- **Proposals.** `proposals.document_id` is nullable; `inbox_item_id` and `owner_user_id` are
+  added; the target types are `contract`, `work_unit` (which read from a document) and
+  `supplier_invoice`, `receipt`, `bank_statement` (which read from an inbox item), each with one
+  branch in `ProposalService.create` and `.accept` and none that falls through to the day
+  (`ck_proposals_source` holds the two sources apart in the database). The three new kinds carry
+  `ReadDocumentFields`; accepting one is refused with the sentence naming the module that does not
+  exist yet (C3, C4) and the proposal stays pending: nothing is lost and nothing is invented.
+  Rejecting one returns the item to `new` with no kind. A `task` target type and the notified owner
+  of such a proposal are §4's card: `owner_user_id` and its visibility rule are here, with no
+  producer yet. A contract or a day proposed from an inbox item (not an archived document) needs the
+  filing that copies the bytes into a `Document`, which is the filing card's.
+- **Visibility.** A proposal is visible as its source is: one with an owner is the owner's alone
+  (not an administrator's), one read from an inbox item is visible to whoever sees the item
+  (`proposals/access.py`, and in Postgres the `proposals` policy and the `proposal` branch of
+  `entity_visible`, rewritten by 0080 to read the item's own policy), the rest as before. A
+  proposal the actor cannot see is not found.
+- **The agent.** With the model off a PDF stays `new` with no kind, listed by
+  `list_inbox_items(classified=false)`; `get_inbox_item` carries its text; `propose_inbox_item`
+  makes the same proposal the model would. A photo has no text an agent can read from here.
+
 ### 3.2 The two readers of free text
 
 - **PigroCRM's own model**, off by default, switched on per space by an admin and configured
@@ -299,6 +348,23 @@ Each new item is read once, in this order:
   proposal through tools, as agents do today for contracts and days.
 
 Both end in the same proposal, and the second needs nothing switched on.
+
+**As built (REB-972, the model).** PigroCRM had no model client, so the seam is the one its other
+clients have: `http.HttpCall`, which a test replaces, with `ai/transport.py` (`ModelCall`,
+`HttpModelCall` for Anthropic's Messages API and OpenAI's Chat Completions at their own fixed
+addresses, no SDK, no host in a setting). Tests pass a fake transport and never a key.
+`ai_model_config` (one row, the key sealed like the Google secrets, the daily cap and the two prices
+a cap needs, `enabled` default false) and `ai_model_usage` (one row per call, the cost reserved
+before the network under an advisory lock and settled to the real tokens, a failed call released)
+are read and written only through `ai/gateway.py`; the settings are `GET/PUT /api/settings/ai-model`
+and `POST .../test` («Prova»), an unscoped administrator's and never a token's
+(`read_`/`update_ai_model_settings`, `test_ai_model` are person only). It cannot be switched on
+without the provider, the model, the key, the cap and both prices, nor without
+`privacy_acknowledged` in the same request, and the notice (`privacy_notice`) names the provider and
+the model and says what is sent (the text of a PDF, the PDF itself when it has none, a photo);
+changing the provider or the model switches it off. The model's answer is data: the kind is one of
+a closed set, the fields go through `ReadDocumentFields`, and an unusable answer makes no proposal. A
+web form for these settings is not built here.
 
 ### 3.3 Duplicates
 

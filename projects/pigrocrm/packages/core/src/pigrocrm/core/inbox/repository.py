@@ -71,6 +71,13 @@ class InboxRepository:
             stmt = stmt.where(InboxItem.state == query.state)
         if query.kind is not None:
             stmt = stmt.where(InboxItem.kind == query.kind)
+        if query.classified is not None:
+            stmt = stmt.where(
+                InboxItem.kind.is_not(None)
+                if query.classified
+                # Nobody said what it is, and it is waiting: not a duplicate or a discarded file.
+                else (InboxItem.kind.is_(None) & (InboxItem.state == "new"))
+            )
         if query.parent_id is not None:
             stmt = stmt.where(InboxItem.parent_id == query.parent_id)
         if query.cursor is not None:

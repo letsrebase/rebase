@@ -64,6 +64,12 @@ OUR_OWN_ROUTE_PATHS = frozenset(
             REPO_ROOT / "apps" / "api" / "src" / "pigrocrm_api" / "routers" / "gmail.py",
             "/messages",
         ),
+        # The model's provider, not Gmail: Anthropic's own endpoint ends in the same word
+        # (REB-972, `ai/transport.py`).
+        (
+            REPO_ROOT / "packages" / "core" / "src" / "pigrocrm" / "core" / "ai" / "transport.py",
+            "https://api.anthropic.com/v1/messages",
+        ),
     }
 )
 

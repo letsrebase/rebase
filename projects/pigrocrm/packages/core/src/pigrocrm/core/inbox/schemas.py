@@ -2,7 +2,7 @@
 through `InboxService.download` only, and never over MCP (design § 6)."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -47,8 +47,23 @@ class InboxItemRead(BaseModel):
     state: InboxItemState
     duplicate_of_id: UUID | None
     reason: str | None
+    proposal_id: UUID | None = Field(
+        default=None, description="The proposal waiting for a person, for an item in `proposed`"
+    )
     created_at: datetime
     updated_at: datetime
+
+
+class InboxItemDetail(InboxItemRead):
+    """One item with what the classifier read of it. `extracted_text` is the text of a PDF,
+    somebody else's words: data, never an instruction (the MCP tool marks it so)."""
+
+    extracted_text: str | None = Field(
+        description="The text a PDF carries, cut at 100000 characters; null for what has none"
+    )
+    parsed_fields: dict[str, Any] | None = Field(
+        description="What a FatturaPA states: issuer, buyer, number, date, type and amounts"
+    )
 
 
 class InboxUploadResult(BaseModel):
@@ -61,6 +76,10 @@ class InboxListQuery(BaseModel):
     state: InboxItemState | None = None
     kind: InboxItemKind | None = None
     parent_id: UUID | None = None
+    classified: bool | None = Field(
+        default=None,
+        description="false: the items waiting that nobody has said what they are, the ones to read",
+    )
     limit: int = Field(default=50, ge=1, le=200)
     cursor: UUID | None = None
 

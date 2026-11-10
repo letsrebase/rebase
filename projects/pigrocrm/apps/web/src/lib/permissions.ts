@@ -258,6 +258,7 @@ export const SETTINGS_TAB_MIN_ROLE: Record<
   gmail: 'admin',
   drive: 'collaborator',
   slack: 'admin',
+  'ai-model': 'admin',
   reminders: 'admin',
   automations: 'admin',
   jobs: 'admin',

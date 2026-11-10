@@ -20,10 +20,22 @@ among the items the caller can see. A unique index would make a person limited t
 entities fail, with a 500, on the file of an item they are not allowed to see.
 """
 
+from datetime import datetime
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    SmallInteger,
+    String,
+    Text,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, deferred, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
 from pigrocrm.core.inbox.filetypes import FILE_TYPES
@@ -47,6 +59,9 @@ document of its own. Upload decides only `archive` and, for an envelope it canno
 ITEM_STATES: tuple[str, ...] = ("new", "proposed", "filed", "duplicate", "discarded")
 
 FILE_NAME_MAX_LENGTH = 255
+EXTRACTED_TEXT_MAX = 100_000
+READ_CLAIM_MINUTES = 10
+MAX_READ_ATTEMPTS = 3
 STORAGE_KEY_MAX_LENGTH = 255
 
 
@@ -89,6 +104,23 @@ class InboxItem(Base, PrimaryKeyMixin, TimestampMixin):
     # The sentence a person reads: why it is discarded or a duplicate, why its kind is
     # `other`, what a container held. Italian, like every string the user sees.
     reason: Mapped[str | None] = mapped_column(Text, default=None)
+    # What the classifier read of the file (design § 3, REB-972). The text of a PDF, for the
+    # user's agent to read through MCP (cut at `EXTRACTED_TEXT_MAX` characters); `NULL` for
+    # what carries none (an image, an XML). Deferred: a list of items never loads it.
+    extracted_text: Mapped[str | None] = deferred(mapped_column(Text, default=None))
+    # The fields a certain document states, read once: the invoices of a FatturaPA (issuer,
+    # buyer, number, date, type and amounts), shown while the module that files them does not
+    # exist (design § 3.5, last paragraph).
+    parsed_fields: Mapped[dict[str, Any] | None] = deferred(mapped_column(JSONB, default=None))
+    # A paid reading's claim: set when a run takes the item to the model, cleared when it ends,
+    # and taken as abandoned after `READ_CLAIM_MINUTES`, so two runs never pay for one file.
+    read_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # How many times the model was asked to read it: an automatic run stops at
+    # `MAX_READ_ATTEMPTS` and reads the least tried items first, so a file that never reads
+    # starves nobody.
+    read_attempts: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=0, server_default=text("0")
+    )
 
     @property
     def has_file(self) -> bool:

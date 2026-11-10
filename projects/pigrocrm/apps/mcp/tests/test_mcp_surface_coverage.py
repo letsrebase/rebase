@@ -626,6 +626,19 @@ _CONFIGURATION: dict[Method, str] = {
         "REB-977: the legal entity's pay day is read with the staff page; the effective one is "
         "on every staff member `get_staff_member` and `list_staff` answer"
     ),
+    ("AiModelService", "get"): (
+        "Impostazioni > Modelli AI (REB-972): the provider, the model, the spend cap and the "
+        "notice of what the model receives are the admin's, read from the panel; the key is "
+        "never returned and a token never reads this configuration"
+    ),
+    ("AiModelService", "update"): (
+        "Impostazioni > Modelli AI: the key, the provider, the cap and the switch are a "
+        "credential and money, like every credential (REB-880): a person's act, never an agent's"
+    ),
+    ("AiModelService", "test"): (
+        "Impostazioni > Modelli AI: «Prova» spends the space's model on the saved settings; "
+        "a person's button, and an agent that read hostile text must not be able to press it"
+    ),
     ("SlackService", "rematch"): (
         "Impostazioni > Slack (REB-739): asks Slack, with the space's bot token, who each user "
         "is. Who receives a message in a third party's workspace is a person's decision made "

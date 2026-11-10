@@ -8,6 +8,7 @@ import {
   formatConfidence,
   formatQuantity,
   type ProposalDescription,
+  type ProposalTargetType,
 } from './fields'
 import { validateProposalsSearch } from './search'
 
@@ -64,7 +65,7 @@ function rowsOf(description: ProposalDescription, group: string) {
 }
 
 /** A proposal as the queue holds it: nothing decided, nothing accepted yet. */
-function waiting(target_type: 'contract' | 'work_unit', proposed_fields: Record<string, unknown>) {
+function waiting(target_type: ProposalTargetType, proposed_fields: Record<string, unknown>) {
   return { target_type, proposed_fields, accepted_fields: null, status: 'pending' }
 }
 
@@ -103,6 +104,45 @@ describe('describeProposal, a day', () => {
     expect(fromString.title).toBe('Giornata del 05/11/2026 · 0,5 gg')
     expect(fromNumber.title).toBe(fromString.title)
     expect(rowsOf(fromNumber, 'Giornata')['Quantità']).toBe('0,5 giorni')
+  })
+})
+
+describe('describeProposal, a document read out of an inbox item', () => {
+  const RECEIPT = {
+    issuer_name: 'Trattoria Da Mario',
+    issuer_tax_id: '01111111111',
+    number: '42',
+    issue_date: '2026-11-03',
+    currency: 'EUR',
+    total: '48.0000',
+    vat_lines: [{ rate: '10.0000', taxable_amount: '43.64', vat_amount: '4.36' }],
+  }
+
+  it('titles a receipt with its issuer and total and names no customer or contract', () => {
+    const description = describeProposal(waiting('receipt', RECEIPT))
+    expect(description.title).toBe('Ricevuta · Trattoria Da Mario · 48,00\u00a0€')
+    expect(description.customerId).toBeNull()
+    expect(description.contractId).toBeNull()
+  })
+
+  it('words the document and its amounts, and leaves out what the model did not read', () => {
+    const description = describeProposal(waiting('receipt', RECEIPT))
+    expect(rowsOf(description, 'Documento')).toEqual({
+      'Emittente': 'Trattoria Da Mario',
+      'Partita IVA o codice fiscale': '01111111111',
+      'Numero': '42',
+      'Data': '03/11/2026',
+    })
+    expect(rowsOf(description, 'Importi')['Totale']).toBe('48,00\u00a0€')
+    expect(rowsOf(description, 'Importi')['Aliquota 1']).toContain('IVA 10%')
+  })
+
+  it('titles a statement with its period', () => {
+    const description = describeProposal(
+      waiting('bank_statement', { period_start: '2026-10-01', period_end: '2026-10-31', iban: 'IT60X0542811101000000123456' }),
+    )
+    expect(description.title).toBe('Estratto conto · 01/10/2026 - 31/10/2026')
+    expect(rowsOf(description, 'Estratto conto')['Periodo']).toBe('dal 01/10/2026 al 31/10/2026')
   })
 })
 

@@ -30,13 +30,14 @@ from typing import Final
 from uuid import NAMESPACE_DNS, UUID, uuid5
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.db.clock import month_bounds
 from pigrocrm.core.drive.models import GoogleDriveAccount
 from pigrocrm.core.gmail.models import GoogleAccount
 from pigrocrm.core.gmail.schemas import SCOPE_READONLY
+from pigrocrm.core.inbox.models import InboxItem
 from pigrocrm.core.proposals.models import Proposal
 from pigrocrm.core.reminders.catalogue import LADDER_MAX, REMINDER_TYPES
 from pigrocrm.core.reminders.detect import Detection, Detector, DetectorContext
@@ -138,7 +139,13 @@ def detect_not_closed(ctx: DetectorContext) -> list[Detection]:
 # listed a thousand would bury the list it exists to keep short.
 MAX_PROPOSALS: Final = 100
 
-_WHAT = {"contract": "La bozza di contratto", "work_unit": "La giornata proposta"}
+_WHAT = {
+    "contract": "La bozza di contratto",
+    "work_unit": "La giornata proposta",
+    "supplier_invoice": "La fattura di acquisto letta",
+    "receipt": "La ricevuta letta",
+    "bank_statement": "L'estratto conto letto",
+}
 
 
 def detect_pending(ctx: DetectorContext) -> list[Detection]:
@@ -148,20 +155,40 @@ def detect_pending(ctx: DetectorContext) -> list[Detection]:
     cutoff_day = ctx.today - timedelta(days=max(ctx.bound(PENDING), 1))
     cutoff = datetime.combine(cutoff_day + timedelta(days=1), time.min, tzinfo=zone)
     rows = ctx.session.execute(
-        select(Proposal, Contract.title, Contract.legal_entity_id, Contract.customer_id)
+        select(
+            Proposal,
+            Contract.title,
+            # A proposal read from the inbox has no contract: its item's legal entity, which
+            # is empty until somebody classifies it, is the space's own.
+            func.coalesce(Contract.legal_entity_id, InboxItem.legal_entity_id),
+            Contract.customer_id,
+        )
         .outerjoin(Contract, Contract.id == Proposal.contract_id)
+        .outerjoin(InboxItem, InboxItem.id == Proposal.inbox_item_id)
         .where(Proposal.status == "pending", Proposal.created_at < cutoff)
         .order_by(Proposal.created_at, Proposal.id)
         .limit(MAX_PROPOSALS)
     )
     found: list[Detection] = []
     for proposal, contract_title, legal_entity_id, customer_id in rows:
-        recipients = admins_seeing(ctx, legal_entity_id)
+        if proposal.owner_user_id is not None:
+            # One person's proposal is told to that person and to nobody else, an administrator
+            # included (design 2026-11-09, incoming documents inbox, § 3.5 and § 5).
+            recipients = frozenset({proposal.owner_user_id}) & frozenset(ctx.directory.people)
+        else:
+            recipients = admins_seeing(ctx, legal_entity_id)
         if not recipients:
             continue
         days = (ctx.today - proposal.created_at.astimezone(zone).date()).days
         what = _WHAT.get(proposal.target_type, "La proposta")
         about = f" · {contract_title}" if contract_title else ""
+        # Nothing files a document read from the inbox yet: it cannot be accepted, only refused
+        # (and read again), and the sentence does not ask for what cannot be done.
+        ask = (
+            "nessun modulo la archivia ancora, rifiutala per farla rileggere"
+            if proposal.inbox_item_id is not None
+            else "accettala o rifiutala"
+        )
         found.append(
             Detection(
                 type="proposal_pending",
@@ -169,7 +196,7 @@ def detect_pending(ctx: DetectorContext) -> list[Detection]:
                 measure=float(days),
                 recipients=recipients,
                 title="Proposta in attesa di una decisione",
-                detail=(f"{what} aspetta da {format_days(days)}: accettala o rifiutala{about}"),
+                detail=(f"{what} aspetta da {format_days(days)}: {ask}{about}"),
                 entity="proposal",
                 entity_id=proposal.id,
                 legal_entity_id=legal_entity_id,

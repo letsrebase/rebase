@@ -7,6 +7,7 @@ from fastapi import Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session, sessionmaker
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.ai.transport import HttpModelCall, ModelCall
 from pigrocrm.core.auth.pat_service import PAT_PREFIX, PatService
 from pigrocrm.core.auth.refresh_service import RefreshTokenService
 from pigrocrm.core.auth.repository import UserRepository
@@ -224,6 +225,16 @@ def get_storage(request: Request, settings: SettingsDep) -> DocumentStorage:
 
 
 StorageDep = Annotated[DocumentStorage, Depends(get_storage)]
+
+
+def get_model_call() -> ModelCall:
+    """The network the model's calls go through (design 2026-11-09, incoming documents inbox,
+    § 3.2). A dependency so the tests replace it with a fake transport: a test never holds a
+    key, and a call with no key configured never reaches it."""
+    return HttpModelCall()
+
+
+ModelCallDep = Annotated[ModelCall, Depends(get_model_call)]
 
 
 def reset_storage_cache() -> None:

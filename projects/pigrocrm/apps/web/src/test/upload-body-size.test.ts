@@ -118,4 +118,16 @@ describe.each(Object.entries(configs))('%s', (_label, conf) => {
     const prefixed = blocks.filter((block) => /a-z0-9/.test(block[0].split('\n')[0] ?? ''))
     expect(prefixed.length, 'no slug-prefixed location for the inbox upload').toBeGreaterThan(0)
   })
+
+  it('gives the inbox classify routes a long read, bare and under a prefix (REB-972)', () => {
+    // Reading a file is a call to the space's model that can take minutes, and a request reads up
+    // to five: under nginx's 60 s default the person would get a 504 while the work went on.
+    const blocks = [...conf.matchAll(/location [^\n]*api\/inbox\/\(classify[^\n]*\{([\s\S]*?)\n {4}\}/g)]
+    expect(blocks.length, 'no location matching the inbox classify routes').toBeGreaterThan(0)
+    for (const block of blocks) {
+      const directive = block[1]?.match(/^\s*proxy_read_timeout\s+(\d+)s;/m)
+      expect(directive, `no proxy_read_timeout in ${block[0].slice(0, 60)}`).toBeTruthy()
+      expect(Number(directive?.[1])).toBeGreaterThanOrEqual(300)
+    }
+  })
 })

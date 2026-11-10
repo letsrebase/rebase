@@ -119,6 +119,8 @@ _READS: dict[Method, str] = {
     ("DocumentTemplating", "render_to_pdf"): (
         "commits only to release the read transaction before the Typst compile; writes nothing"
     ),
+    ("AiModelService", "get"): "reads the model's settings, never its key",
+    ("AiModelService", "test"): "one call whose cost is the gateway's own usage row (REB-972)",
     ("InvoiceImporter", "review_import"): "classifies stored bytes, writes nothing",
     ("InvoiceImporter", "review_upload"): "classifies uploaded bytes, writes nothing",
     ("PatService", "list_team"): "reads the live tokens of the other members",

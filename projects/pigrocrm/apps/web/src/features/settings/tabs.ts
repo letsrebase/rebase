@@ -73,6 +73,8 @@ export const SETTINGS_GROUPS = [
       { value: 'drive', label: 'Google Drive' },
       // The Slack app installed in the space, who in it is whom, and the channel (REB-739).
       { value: 'slack', label: 'Slack' },
+      // The model PigroCRM reads incoming documents with: off until an admin turns it on (REB-972).
+      { value: 'ai-model', label: 'Modello AI' },
     ],
   },
   {

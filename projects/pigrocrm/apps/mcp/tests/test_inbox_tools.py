@@ -13,8 +13,11 @@ from mcp import Client
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.ai.gateway import ModelGateway
+from pigrocrm.core.ai.transport import ModelAnswer, ModelRequest
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
+from pigrocrm.core.inbox.classifier import InboxClassifier
 from pigrocrm.core.inbox.uploads import InboxUploads
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.provenance import PROVENANCE_TEXT_FREE
@@ -179,3 +182,108 @@ async def test_a_token_sees_the_unclassified_items_of_its_owner_and_an_admins_se
     assert theirs["items"] == []
     assert refused.is_error and "non trovato" in refused.content[0].text
     assert len(everything["items"]) == 3
+
+
+def _pdf(line: str) -> bytes:
+    """A one-page PDF whose text layer says `line`, with a real cross-reference table."""
+    stream = f"BT /F1 12 Tf 72 720 Td ({line}) Tj ET".encode()
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+        b"/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+        b"<< /Length %d >>\nstream\n%s\nendstream" % (len(stream), stream),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for number, body in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n%s\nendobj\n" % (number, body)
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    for offset in offsets:
+        out += b"%010d 00000 n \n" % offset
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (
+        len(objects) + 1,
+        xref,
+    )
+    return bytes(out)
+
+
+RECEIPT_PDF = _pdf("Scontrino 42 totale 48,00")
+
+
+def _no_model(request: ModelRequest) -> ModelAnswer:
+    raise AssertionError("the model is off: nothing may be sent to it")
+
+
+@pytest.fixture
+def unread(mcp_session: Session, marco: User, tmp_path: Path) -> dict[str, Any]:
+    """A PDF Marco uploaded while PigroCRM's own model is off: read, not classified."""
+    storage = LocalFileStorage(tmp_path / "store")
+    actor = Actor(id=marco.id, type="user", role="collaborator")
+    uploaded = InboxUploads(mcp_session, storage).upload([("scontrino.pdf", RECEIPT_PDF)], actor)
+    classifier = InboxClassifier(
+        mcp_session,
+        storage,
+        ModelGateway(mcp_session, Settings(_env_file=None), _no_model),  # type: ignore[call-arg]
+    )
+    (item,) = classifier.classify_uploaded(uploaded, actor, model_budget=5).items
+    return item.model_dump(mode="json")
+
+
+async def test_the_agent_finds_what_nobody_has_read_reads_its_text_and_proposes(
+    mcp_session: Session, marco: User, unread: dict[str, Any], tmp_path: Path
+) -> None:
+    async with Client(_server_of(mcp_session, marco, tmp_path)) as client:
+        waiting = _payload(await client.call_tool("list_inbox_items", {"classified": False}))
+        read = await client.call_tool("get_inbox_item", {"item_id": unread["id"]})
+        proposed = await client.call_tool(
+            "propose_inbox_item",
+            {
+                "item_id": unread["id"],
+                "kind": "receipt",
+                "excerpt": "Scontrino 42 totale 48,00",
+                "confidence": 0.8,
+                "fields": {"issue_date": "2026-11-03", "total": 48},
+            },
+        )
+        after = _payload(await client.call_tool("get_inbox_item", {"item_id": unread["id"]}))
+        nothing_left = _payload(await client.call_tool("list_inbox_items", {"classified": False}))
+    assert [i["id"] for i in waiting["items"]] == [unread["id"]]
+    item = _payload(read)
+    assert "Scontrino 42" in item["extracted_text"]
+    assert PROVENANCE_TEXT_FREE in json.dumps(read.structured_content or read.content[0].text)
+    assert not proposed.is_error, proposed.content[0].text
+    proposal = _payload(proposed)
+    assert (proposal["status"], proposal["target_type"]) == ("pending", "receipt")
+    assert proposal["inbox_item_id"] == unread["id"] and proposal["document_id"] is None
+    assert (after["state"], after["kind"], after["proposal_id"]) == (
+        "proposed",
+        "receipt",
+        proposal["id"],
+    )
+    assert nothing_left["items"] == []
+
+
+async def test_a_proposal_from_the_inbox_is_refused_in_words_when_it_does_not_hold(
+    mcp_session: Session,
+    marco: User,
+    giulia: User,
+    unread: dict[str, Any],
+    tmp_path: Path,
+) -> None:
+    fields = {"issue_date": "2026-11-03", "total": 48}
+    base = {"item_id": unread["id"], "excerpt": "x", "confidence": 0.5, "fields": fields}
+    async with Client(_server_of(mcp_session, marco, tmp_path)) as client:
+        wrong_kind = await client.call_tool("propose_inbox_item", {**base, "kind": "contract"})
+        no_total = await client.call_tool(
+            "propose_inbox_item",
+            {**base, "kind": "receipt", "fields": {"issue_date": "2026-11-03"}},
+        )
+    async with Client(_server_of(mcp_session, giulia, tmp_path)) as client:
+        not_hers = await client.call_tool("propose_inbox_item", {**base, "kind": "receipt"})
+    assert wrong_kind.is_error and "supplier_invoice" in wrong_kind.content[0].text
+    assert no_total.is_error and "total" in no_total.content[0].text
+    assert not_hers.is_error and "non trovato" in not_hers.content[0].text
