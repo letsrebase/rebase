@@ -13,7 +13,8 @@ import { LoadingState } from '@/components/LoadingState'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
 import { formatIsoDateItalian } from '@/lib/dates'
-import { accountMoney, movementPill, periodLabel, statementFormatLabel } from './labels'
+import { moneyIn } from '../money'
+import { movementPill, periodLabel, statementFormatLabel } from './labels'
 import { useMovements, type BankAccount, type Movement, type MovementFilter, type Statement } from './queries'
 
 const ALL_STATEMENTS = 'all'
@@ -120,7 +121,7 @@ function MovementsTable({ items, currencyOf }: { items: readonly Movement[]; cur
                 <Description movement={movement} />
               </TableCell>
               <TableCell className="whitespace-nowrap text-right tabular-nums">
-                {accountMoney(movement.amount, movement.currency || currencyOf)}
+                {moneyIn(movement.amount, movement.currency || currencyOf)}
               </TableCell>
               <TableCell>
                 <MovementPill movement={movement} />
@@ -139,7 +140,7 @@ function MovementCards({ items, currencyOf }: { items: readonly Movement[]; curr
       {items.map((movement) => (
         <li key={movement.id} className="space-y-2 border bg-card p-4">
           <p className="text-lg font-semibold tabular-nums">
-            {accountMoney(movement.amount, movement.currency || currencyOf)}
+            {moneyIn(movement.amount, movement.currency || currencyOf)}
           </p>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
             <span className="tabular-nums">{formatIsoDateItalian(movement.booking_date)}</span>

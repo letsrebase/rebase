@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react'
+import { moneyIn } from '../money'
 import { cn } from '@rebase/ui/cn'
 import { formatIsoMonthYear } from '@/lib/dates'
 import {
   ARRIVAL_LABELS,
   CADENCE_LABELS,
-  accountMoney,
   balanceDateLine,
   groupIban,
   monthTitle,
@@ -39,7 +39,7 @@ export function BalanceCard({ account }: { account: BankAccount }) {
             account.below_zero && 'text-destructive',
           )}
         >
-          {accountMoney(account.balance, account.currency)}
+          {moneyIn(account.balance, account.currency)}
           {account.below_zero && <span className="ml-2 text-sm font-normal">sotto zero</span>}
         </p>
       )}

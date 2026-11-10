@@ -1,6 +1,7 @@
 import type { StatusTone } from '@/components/StatusPill'
 import { formatIsoDateItalian, formatIsoMonthYear } from '@/lib/dates'
 import { money } from '@/features/dashboard/format'
+import { daysCount } from '../days'
 import type { BankAccount, CoverageMonth, Movement, Statement } from './queries'
 
 /** The format a reader reports, as a person names it; a format nobody taught this build about
@@ -83,24 +84,6 @@ export function groupIban(iban: string): string {
   )
 }
 
-const amountFormats = new Map<string, Intl.NumberFormat>()
-
-/** An amount in the account's own currency («1.350,00 USD»); euros read «1.350,00 €». The string
- *  the server sent goes into the formatter as it is. */
-export function accountMoney(amount: string, currency: string): string {
-  if (currency === 'EUR') return money(amount)
-  let format = amountFormats.get(currency)
-  if (format === undefined) {
-    try {
-      format = new Intl.NumberFormat('it-IT', { style: 'currency', currency, useGrouping: 'always' })
-    } catch {
-      return `${amount.replace('.', ',')} ${currency}`
-    }
-    amountFormats.set(currency, format)
-  }
-  return format.format(amount as `${number}`)
-}
-
 /** «al 30/09/2026», and «, da 41 giorni» once the server says the balance is stale. */
 export function balanceDateLine(account: Pick<BankAccount, 'balance_as_of' | 'is_stale' | 'stale_days'>): string | null {
   if (account.balance_as_of === null) return null
@@ -127,11 +110,6 @@ export function checkSentence(check: Statement['check']): string | null {
     return `Il saldo iniziale non coincide con quello finale dell’estratto precedente${difference}`
   }
   return `Il saldo dichiarato non torna${difference}`
-}
-
-/** «1 giorno», «41 giorni». */
-export function daysCount(count: number): string {
-  return count === 1 ? '1 giorno' : `${count} giorni`
 }
 
 /** «1 movimento», «41 movimenti». */
