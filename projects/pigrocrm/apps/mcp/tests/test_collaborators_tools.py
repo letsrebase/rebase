@@ -335,4 +335,9 @@ async def test_the_report_is_a_read_and_no_tool_records_or_approves_a_monthly_re
     names = {tool.name for tool in await leads.list_tools()}
     assert refused.is_error and "PIGROCRM_LEADS_SPACE" in refused.content[0].text  # type: ignore[union-attr]
     assert report["available"] is False and report["days"] == [] and "provenance" in report
-    assert not {name for name in names if "monthly_report" in name or "approve" in name}
+    # `approve_expense_note` is the staff module's (REB-1046), not a monthly report's.
+    assert not {
+        name
+        for name in names
+        if ("monthly_report" in name or "approve" in name) and "expense_note" not in name
+    }
