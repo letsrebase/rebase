@@ -6035,7 +6035,8 @@ export interface paths {
         };
         /**
          * List Exports
-         * @description The stored exports, newest first. One past 13 months stays listed, with no files.
+         * @description The stored exports, newest first, with how many there are in all. One past 13 months
+         *     stays listed, with no files.
          */
         get: operations["list_exports_api_accountant_export_exports_get"];
         put?: never;
@@ -6049,6 +6050,27 @@ export interface paths {
          *     exports; each is deleted after 13 months.
          */
         post: operations["build_export_api_accountant_export_exports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accountant-export/parts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Describe Parts
+         * @description The parts a build for this company would hold, from its modules and fiscal pack, in
+         *     the order of the index. With `all_entities`, a part that applies to any company.
+         */
+        get: operations["describe_parts_api_accountant_export_parts_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -9929,6 +9951,16 @@ export interface components {
              */
             all_entities: boolean;
         };
+        /** ExportListRead */
+        ExportListRead: {
+            /** Items */
+            items: components["schemas"]["ExportRead"][];
+            /**
+             * Total Count
+             * @description How many stored exports match, whatever the page
+             */
+            total_count: number;
+        };
         /** ExportPartRead */
         ExportPartRead: {
             /**
@@ -13131,6 +13163,26 @@ export interface components {
             id_transmitter: string;
             /** Send Sequential */
             send_sequential: string;
+        };
+        /** PartPreviewRead */
+        PartPreviewRead: {
+            /** Key */
+            key: string;
+            /**
+             * Label
+             * @description The part as the index names it
+             */
+            label: string;
+            /**
+             * Date Rule
+             * @description Which date places a row in the period
+             */
+            date_rule: string;
+            /**
+             * Contents
+             * @description What the part is made of: a CSV list, original files
+             */
+            contents: string;
         };
         /** PatRead */
         PatRead: {
@@ -61606,6 +61658,9 @@ export interface operations {
         parameters: {
             query?: {
                 legal_entity_id?: string | null;
+                /** @description Only exports whose period starts that year */
+                year?: number | null;
+                offset?: number;
                 limit?: number;
             };
             header?: never;
@@ -61620,7 +61675,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExportRead"][];
+                    "application/json": components["schemas"]["ExportListRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -61742,6 +61797,126 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ExportRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    describe_parts_api_accountant_export_parts_get: {
+        parameters: {
+            query?: {
+                legal_entity_id?: string | null;
+                all_entities?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartPreviewRead"][];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

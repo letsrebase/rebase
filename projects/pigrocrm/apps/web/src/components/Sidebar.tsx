@@ -175,7 +175,7 @@ export function Sidebar({
       >
         <div className="space-y-1">
           <NavLeaf {...HOME} rail={rail} />
-          {visibleSections(modules).map((section) => (
+          {visibleSections(modules, user?.role).map((section) => (
             // A group named by its caption, not a control: nothing opens or closes, so the
             // caption is a plain line of text above its entries. In the rail it is a thin
             // separator, and the group keeps its name for a screen reader either way.

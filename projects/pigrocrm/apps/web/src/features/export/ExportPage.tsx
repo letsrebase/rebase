@@ -1,0 +1,120 @@
+import { PackageOpen } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { PageHeader } from '@/components/PageHeader'
+import { toProblem } from '@/lib/api'
+import { cn } from '@rebase/ui/cn'
+import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
+import { useMediaQuery } from '@rebase/ui/use-media-query'
+import { ExportsTab } from './ExportsTab'
+import type { Attempt, BuildTarget } from './labels'
+import { PrepareTab } from './PrepareTab'
+import { useBuildExport, useExportTotal } from './queries'
+import { TABS, type ExportTab } from './search'
+
+const INLINE_PANEL = '(min-width: 1024px)'
+
+/**
+ * «Esporta per il commercialista» (REB-1028, the approved brief of 2026-11-10): where an admin
+ * prepares the archive of one company and one period and finds the ones already made. The tab and
+ * the open export are in the URL; what the page shows is the API's to decide, an admin's alone.
+ *
+ * Built here: «Prepara», the form, and «Esportazioni», the stored exports with their panel and
+ * the download. The share link, the Drive copy, the readiness checklist and the payroll parts
+ * follow their own data cards, and until they exist nothing on the page names them.
+ */
+export function ExportPage({
+  tab,
+  item,
+  onTabChange,
+  onItemChange,
+}: {
+  tab: ExportTab
+  item: string | null
+  onTabChange: (next: ExportTab) => void
+  onItemChange: (next: string | null) => void
+}) {
+  const inline = useMediaQuery(INLINE_PANEL)
+  const total = useExportTotal()
+  const build = useBuildExport()
+  const [attempts, setAttempts] = useState<Attempt[]>([])
+  const counter = useRef(0)
+  // A build outlives the page: the admin may leave while it runs, and finding the export done is
+  // the list's job. Opening its panel is not: it only happens while this page is still the place.
+  const here = useRef(true)
+  useEffect(() => {
+    here.current = true
+    return () => {
+      here.current = false
+    }
+  }, [])
+
+  /** Starts a build and puts its row in the list at once. A refusal stays as a row with its
+   *  reason; a retry is a new export asked from the same target. */
+  function start(target: BuildTarget) {
+    counter.current += 1
+    const key = `attempt-${counter.current}`
+    setAttempts((previous) => [{ key, target, status: 'building', reason: null }, ...previous])
+    onTabChange('exports')
+    build.mutateAsync(target.request).then(
+      (created) => {
+        setAttempts((previous) => previous.filter((other) => other.key !== key))
+        if (here.current) onItemChange(created.id)
+      },
+      (error: unknown) =>
+        setAttempts((previous) =>
+          previous.map((other) =>
+            other.key === key ? { ...other, status: 'failed', reason: toProblem(error).detail } : other,
+          ),
+        ),
+    )
+  }
+
+  function retry(attempt: Attempt) {
+    setAttempts((previous) => previous.filter((other) => other.key !== attempt.key))
+    start(attempt.target)
+  }
+
+  function dismiss(attempt: Attempt) {
+    setAttempts((previous) => previous.filter((other) => other.key !== attempt.key))
+  }
+
+  return (
+    <Tabs
+      value={tab}
+      onValueChange={(next) => onTabChange(next as ExportTab)}
+      // From `lg` the exports tab is as tall as the window and its list and panel scroll inside
+      // it, so the panel's download is always in view; below it the page flows.
+      className={cn('flex min-h-full flex-col', inline && tab === 'exports' && 'h-full')}
+    >
+      <PageHeader
+        icon={PackageOpen}
+        title="Esporta per il commercialista"
+        description="Un archivio ZIP per azienda e periodo: registri, documenti e scadenze, con l’indice di ciò che contiene."
+        tabs={
+          <TabsList variant="line">
+            {TABS.map((candidate) => (
+              <TabsTrigger key={candidate.id} value={candidate.id}>
+                {candidate.label}
+                {candidate.id === 'exports' && (total.data ?? 0) > 0 ? (
+                  <span className="ml-2 tabular-nums text-muted-foreground">{total.data}</span>
+                ) : null}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        }
+      />
+      {tab === 'prepare' ? (
+        <PrepareTab onCreate={start} />
+      ) : (
+        <ExportsTab
+          item={item}
+          attempts={attempts}
+          onItemChange={onItemChange}
+          onRetry={retry}
+          onDismiss={dismiss}
+          onPrepare={() => onTabChange('prepare')}
+        />
+      )}
+    </Tabs>
+  )
+}

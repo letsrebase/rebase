@@ -349,6 +349,22 @@ is `require_person`, so a token is refused whatever it carries. Tests use `tests
 fake server on the loopback with a real TLS handshake: pass `resolve=loopback` and `fake.client_context()`,
 never a flag in production code. `mail-sync` reads IMAP beside Gmail; a sink per purpose (`MessageSink`) is
 how REB-1016 plugs in.
+**«Esporta per il commercialista» is `/app/export` and draws what the server says (REB-1028).** `features/export/` is an
+administrator's page (the entry names `action: 'build_accountant_export'` in `components/nav.ts`, so the sidebar and «Altro» hide it
+from other roles by the `lib/permissions.ts` table, which `permissions.test.ts` pins to the core's `require_admin` strings; the first
+entry gated by role) with the tab and the open export in the URL (`?tab=prepare|exports&export=`). «Prepara» is the form: company (a
+field from the second company on, preset from the sidebar, «Tutte le aziende» a separate option never preselected and absent for a
+scoped admin), period (the calendar month, quarter or year, opening on the last complete period of the company's IVA frequency) and
+«Cosa contiene», which is `GET /api/accountant-export/parts` (the parts that apply to the company's modules and pack, in the index's
+order). «Esportazioni» reads `GET /exports?legal_entity_id=&year=&offset=&limit=` (`items` and `total_count`, 50 rows at a time) and its
+panel reads the snapshot the build kept in `checklist`: the parts with their counts, the documents that could not be attached (the
+«N aperti» of the list; gold, never danger, and never recomputed after the build) and the download of each ZIP. The snapshot keeps the
+`cause` of each part left out: a part the company's **pack** carries not is named in the panel, one a **module** switched off is never
+drawn, and a part whose source is not built (`unavailable`) is drawn nowhere, since the page may not name a module that is off or not
+built. A build is synchronous: the page shows its row («In preparazione») while the request runs, a refusal stays as a row with the
+reason and «Riprova» (which makes a new export, since an export is never replaced), and the mutation's own `onSuccess` refreshes the
+list so an admin who left finds it done. The share link, the Drive copy, the readiness checklist, the payroll parts and the tab
+«Link condivisi» have no data yet and are drawn nowhere; each joins with its own card. The folder is under `no-browser-arithmetic.test.ts`.
 
 **A router authenticates with `dependencies=[Depends(get_actor)]`, not per handler.** A
 handler that never names the actor is still behind it, and `test_routes_authenticate.py`
