@@ -27,7 +27,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@rebase/ui/sheet'
-import { useModules } from '@/lib/modules'
+import { daysInBackground, useModules } from '@/lib/modules'
 import { QuickHours } from './QuickHours'
 import { QuickNote } from './QuickNote'
 
@@ -36,8 +36,9 @@ type Action = 'task' | 'note' | 'day' | 'hours' | 'expense' | 'document'
 /**
  * «+» of the phone's bottom bar (spec 2026-11-09 B6, REB-959): what can be added from
  * anywhere, without navigating. An activity and a note always; a worked day with `contracts`
- * on; hours with `time` on; an expense with `purchases` on. An entry of a module the space has
- * off is not drawn, the same question (`useModules().on`) the sidebar and the route guard ask.
+ * on (last in a `company` space, which records days rarely, REB-1054); hours with `time` on; an
+ * expense with `purchases` on. An entry of a module the space has off is not drawn, the same
+ * question (`useModules().on`) the sidebar and the route guard ask.
  *
  * The sheet only chooses. Each choice opens the dialog of the thing itself, the one the rest
  * of the app already uses, and the sheet closes behind it. The choice is remembered with the
@@ -59,6 +60,12 @@ export function QuickAdd({
   const action = adding?.action ?? null
   const close = () => setAdding(null)
 
+  const dayEntry = {
+    action: 'day' as const,
+    label: 'Giornata',
+    hint: 'Un giorno lavorato su un contratto',
+    icon: CalendarPlus,
+  }
   const entries: { action: Action; label: string; hint: string; icon: LucideIcon }[] = [
     { action: 'task', label: 'Attività', hint: 'Una cosa da fare, con una scadenza', icon: ListChecks },
     {
@@ -69,9 +76,7 @@ export function QuickAdd({
         : 'Su un cliente o una persona',
       icon: StickyNote,
     },
-    ...(modules.on('contracts')
-      ? [{ action: 'day' as const, label: 'Giornata', hint: 'Un giorno lavorato su un contratto', icon: CalendarPlus }]
-      : []),
+    ...(modules.on('contracts') && !daysInBackground(modules) ? [dayEntry] : []),
     ...(modules.on('time')
       ? [{ action: 'hours' as const, label: 'Ore', hint: 'Ore lavorate su un deal', icon: Clock }]
       : []),
@@ -95,6 +100,9 @@ export function QuickAdd({
       hint: 'Una foto o un file, in In arrivo',
       icon: FileInput,
     },
+    // A company space records days rarely (REB-1054): the entry stays, after everything it does
+    // more often, instead of being the third thing the sheet offers.
+    ...(modules.on('contracts') && daysInBackground(modules) ? [dayEntry] : []),
   ]
 
   return (

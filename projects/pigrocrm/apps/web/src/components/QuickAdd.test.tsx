@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import type { ModuleKey } from '@/lib/modules'
+import type { ModuleKey, SpaceProfile } from '@/lib/modules'
 import { seedModules } from '@/lib/modules.testing'
 import { QuickAdd } from './QuickAdd'
 
@@ -19,9 +19,9 @@ vi.mock('@/features/purchases/QuickExpense', () => ({
   QuickExpense: ({ open }: { open: boolean }) => (open ? <div>Sheet della spesa</div> : null),
 }))
 
-function renderQuickAdd(off: readonly ModuleKey[] = []) {
+function renderQuickAdd(off: readonly ModuleKey[] = [], profile: SpaceProfile | null = null) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  seedModules(client, off)
+  seedModules(client, off, profile)
   render(
     <QueryClientProvider client={client}>
       <QuickAdd open onOpenChange={vi.fn()} />
@@ -47,6 +47,38 @@ describe('the «+» sheet', () => {
       'SpesaUno scontrino o una spesa, in due tocchi',
       'Carica un documentoUna foto o un file, in In arrivo',
     ])
+  })
+
+  it('keeps «Giornata» third for a solo space and for one whose profile is not chosen yet (REB-1054)', () => {
+    for (const profile of ['solo', null] as const) {
+      const sheet = renderQuickAdd([], profile)
+      expect(labels(sheet)).toEqual([
+        'AttivitàUna cosa da fare, con una scadenza',
+        'NotaSu un cliente, una persona o un deal',
+        'GiornataUn giorno lavorato su un contratto',
+        'OreOre lavorate su un deal',
+        'SpesaUno scontrino o una spesa, in due tocchi',
+        'Carica un documentoUna foto o un file, in In arrivo',
+      ])
+      cleanup()
+    }
+  })
+
+  it('puts «Giornata» last for a company space, after the upload (REB-1054)', () => {
+    const sheet = renderQuickAdd([], 'company')
+    expect(labels(sheet)).toEqual([
+      'AttivitàUna cosa da fare, con una scadenza',
+      'NotaSu un cliente, una persona o un deal',
+      'OreOre lavorate su un deal',
+      'SpesaUno scontrino o una spesa, in due tocchi',
+      'Carica un documentoUna foto o un file, in In arrivo',
+      'GiornataUn giorno lavorato su un contratto',
+    ])
+  })
+
+  it('still drops «Giornata» from a company space with contracts off (REB-1054)', () => {
+    const sheet = renderQuickAdd(['contracts'], 'company')
+    expect(labels(sheet).some((text) => text?.startsWith('Giornata'))).toBe(false)
   })
 
   it('has no «Spesa» with the purchases module off', () => {
