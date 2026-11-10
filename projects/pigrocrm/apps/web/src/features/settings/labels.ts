@@ -34,6 +34,8 @@ export const TEMPLATE_TYPE_LABELS: Record<string, string> = {
   minutes: 'Verbale',
   document: 'Documento',
   hours_report: 'Rapporto ore',
+  framework_agreement: 'Contratto quadro',
+  engagement_letter: 'Lettera di incarico',
   email: 'Email',
   payment_reminder: 'Sollecito',
 }

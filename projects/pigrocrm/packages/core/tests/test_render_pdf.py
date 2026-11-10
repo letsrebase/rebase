@@ -245,7 +245,7 @@ def test_only_a_bounded_number_of_renders_run_their_tools_at_once(
     peak = 0
     guard = threading.Lock()
 
-    def fake_run(argv: list[str], workdir: Path, stage: str) -> pdf_module._Outcome:
+    def fake_run(argv: list[str], workdir: Path, stage: str) -> pdf_module.Outcome:
         nonlocal running, peak
         with guard:
             running += 1
@@ -255,9 +255,9 @@ def test_only_a_bounded_number_of_renders_run_their_tools_at_once(
         target.write_bytes(b"%PDF-fake" if stage == "typst" else b"text")
         with guard:
             running -= 1
-        return pdf_module._Outcome(0, b"")
+        return pdf_module.Outcome(0, b"")
 
-    monkeypatch.setattr(pdf_module, "_run", fake_run)
+    monkeypatch.setattr(pdf_module, "run_tool", fake_run)
     with ThreadPoolExecutor(max_workers=6) as pool:
         futures = [
             pool.submit(render_pdf, "ok\n", header_typst=build_header(PROFILE), settings=SETTINGS)

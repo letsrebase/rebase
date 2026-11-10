@@ -8490,7 +8490,7 @@ export interface components {
              * @default document
              * @enum {string}
              */
-            type: "offer" | "contract" | "minutes" | "document" | "invoice" | "invoice_xml" | "proforma" | "hours_report" | "framework_agreement" | "engagement_letter";
+            type: "offer" | "contract" | "minutes" | "document" | "invoice" | "invoice_xml" | "proforma" | "hours_report";
             /** Title */
             title: string;
             /** Status */
@@ -25930,7 +25930,7 @@ export interface operations {
                 contract_id?: string | null;
                 /** @description Only this legal entity's rows; omitted, all of them */
                 legal_entity_id?: string | null;
-                type?: ("offer" | "contract" | "minutes" | "document" | "invoice" | "invoice_xml" | "proforma" | "hours_report" | "framework_agreement" | "engagement_letter") | null;
+                type?: ("offer" | "contract" | "minutes" | "document" | "invoice" | "invoice_xml" | "proforma" | "hours_report") | null;
                 status?: ("draft" | "sent" | "accepted" | "rejected") | null;
                 only_unwon_deals?: boolean;
             };
