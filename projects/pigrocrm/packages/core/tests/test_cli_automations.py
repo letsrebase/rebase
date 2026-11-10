@@ -351,9 +351,13 @@ def test_the_pass_deletes_the_exports_past_thirteen_months_and_says_so(
     and prints a line for the space that had one and none for the others."""
     local = settings.model_copy(update={"storage_local_root": str(tmp_path)})
     monkeypatch.setattr(cli, "get_settings", lambda: local)
-    storage = LocalFileStorage(tmp_path)
+    # The API writes a space's files under `<root>/tenants/<slug>` (REB-1039): that is where the
+    # export is, and the root's own folder holds a file of the same key that must stay.
+    storage = LocalFileStorage(tmp_path / "tenants" / FIRST_SPACE)
+    root_storage = LocalFileStorage(tmp_path)
     key = "commercialista/studio/2025-01-01_2025-03-31/20250402t093000z-abcd1234/export.zip"
     storage.put(key, b"PK", "application/zip")
+    root_storage.put(key, b"ROOT", "application/zip")
     with _engine(_url(settings, FIRST_SPACE)) as engine, engine.begin() as connection:
         connection.execute(
             text(
@@ -374,6 +378,7 @@ def test_the_pass_deletes_the_exports_past_thirteen_months_and_says_so(
         )
         with pytest.raises(NotFound):
             storage.get(key)
+        assert root_storage.get(key) == b"ROOT"
         with _engine(_url(settings, FIRST_SPACE)) as engine, engine.connect() as connection:
             row = connection.execute(text("select deleted_at from accountant_exports")).scalar_one()
             kinds = (

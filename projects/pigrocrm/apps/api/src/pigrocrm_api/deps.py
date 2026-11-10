@@ -1,6 +1,5 @@
 import threading
 from collections.abc import Iterator
-from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import Depends, HTTPException, Query, Request, status
@@ -17,7 +16,8 @@ from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.errors import DomainError
 from pigrocrm.core.modules import ModuleKey, require_modules
-from pigrocrm.core.storage import DocumentStorage, LocalFileStorage, storage_from_settings
+from pigrocrm.core.storage import DocumentStorage, storage_from_settings
+from pigrocrm.core.storage.factory import space_storage_from_settings
 from pigrocrm.core.tenants import SpaceRegistry, space_base_settings
 from pigrocrm_api.ratelimit import (
     FREE_BEARER_FAILURES,
@@ -203,16 +203,13 @@ def get_storage(request: Request, settings: SettingsDep) -> DocumentStorage:
             with _storage_lock:
                 storage = _tenant_storages.get(slug)
                 if storage is None:
-                    if settings.storage_backend == "gdrive":
-                        # Resolved per call: the registry may have disposed this space's
-                        # engine since, and a captured factory would keep the old one.
-                        storage = storage_from_settings(
-                            settings,
-                            session_factory=lambda: space_session_factory(slug, settings)(),
-                        )
-                    else:
-                        root = Path(settings.storage_local_root) / "tenants" / slug
-                        storage = LocalFileStorage(root)
+                    # Resolved per call: the registry may have disposed this space's engine
+                    # since, and a captured factory would keep the old one.
+                    storage = space_storage_from_settings(
+                        settings,
+                        slug,
+                        session_factory=lambda: space_session_factory(slug, settings)(),
+                    )
                     _tenant_storages[slug] = storage
         return storage
 
