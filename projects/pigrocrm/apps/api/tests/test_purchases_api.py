@@ -165,6 +165,25 @@ def test_a_purchase_is_cancelled_over_http_and_leaves_the_registered_list(
     )
 
 
+def test_a_purchase_has_a_timeline_and_an_unknown_one_is_a_404(logged_in: TestClient) -> None:
+    category_id = _seed_category(logged_in)
+    created = logged_in.post(
+        "/api/purchases",
+        json={
+            "category_id": category_id,
+            "date": "2026-03-05",
+            "amount": "10.00",
+            "description": "x",
+        },
+    )
+    purchase_id = created.json()["id"]
+    timeline = logged_in.get(f"/api/purchases/{purchase_id}/timeline")
+    assert timeline.status_code == 200, timeline.text
+    assert [entry["kind"] for entry in timeline.json()] == ["created"]
+    missing = logged_in.get("/api/purchases/00000000-0000-4000-8000-000000000000/timeline")
+    assert missing.status_code == 404
+
+
 def test_no_cost_route_answers(logged_in: TestClient) -> None:
     assert logged_in.get("/api/costs").status_code == 404
     assert logged_in.post("/api/costs", json={}).status_code in (404, 405)

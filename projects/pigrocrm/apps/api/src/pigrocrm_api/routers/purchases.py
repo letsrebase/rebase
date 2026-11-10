@@ -4,7 +4,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import Field
+from sqlalchemy.orm import Session
 
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.purchases.schemas import (
     PurchaseCreate,
     PurchaseKind,
@@ -18,6 +20,7 @@ from pigrocrm.core.purchases.service import PurchaseService
 from pigrocrm_api.deps import ActorDep, SessionDep, get_actor, module_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import CustomParams, KeysetParams
+from pigrocrm_api.timeline import timeline_router
 
 router = APIRouter(
     prefix="/api/purchases",
@@ -81,3 +84,13 @@ def soft_delete(purchase_id: UUID, session: SessionDep, actor: ActorDep) -> None
 @router.post("/{purchase_id}/restore", response_model=PurchaseRead)
 def restore(purchase_id: UUID, session: SessionDep, actor: ActorDep) -> PurchaseRead:
     return PurchaseService(session).restore(purchase_id, actor)
+
+
+def _purchase_visible(session: Session, purchase_id: UUID, actor: Actor) -> None:
+    """The timeline of a purchase the caller cannot read (another legal entity's, an unknown
+    id) is a 404 and not an empty list: the history of a row is read with the row's own
+    visibility."""
+    PurchaseService(session).get(purchase_id, actor)
+
+
+router.include_router(timeline_router("purchase", id_param="purchase_id", guard=_purchase_visible))

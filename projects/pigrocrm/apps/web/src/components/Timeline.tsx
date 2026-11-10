@@ -269,6 +269,12 @@ const TIMELINE_FETCHERS: Record<
         params: { path: { contract_id: entityId }, query: { limit } },
       }),
     ),
+  purchase: (entityId, limit) =>
+    unwrap(
+      api.GET('/api/purchases/{purchase_id}/timeline', {
+        params: { path: { purchase_id: entityId }, query: { limit } },
+      }),
+    ),
   // The space's own settings have one history each and no id to name it.
   slack: (_entityId, limit) => unwrap(api.GET('/api/slack/timeline', { params: { query: { limit } } })),
   reminder_defaults: (_entityId, limit) =>

@@ -2129,6 +2129,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/purchases/{purchase_id}/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Timeline */
+        get: operations["timeline_api_purchases__purchase_id__timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/cost-categories": {
         parameters: {
             query?: never;
@@ -5310,7 +5327,7 @@ export interface paths {
          *     the body is not read before the role is checked. Every new item is then read once
          *     (`InboxClassifier`): a FatturaPA is routed, a PDF or a photo becomes a proposal when the
          *     space's model is on, and at most five files go to the model in one request:
-         *     `POST /api/inbox/classify` reads the rest.
+         *     `POST /api/inbox/classify` reads the rest. With `read=false` none is read.
          */
         post: operations["upload_api_inbox_upload_post"];
         delete?: never;
@@ -34156,6 +34173,127 @@ export interface operations {
             };
         };
     };
+    timeline_api_purchases__purchase_id__timeline_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                purchase_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityRead"][];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_cost_categories_api_cost_categories_get: {
         parameters: {
             query?: {
@@ -56243,7 +56381,10 @@ export interface operations {
     };
     upload_api_inbox_upload_post: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description `false` stores the files and reads none: no classification, no model call, and the items are answered as the upload made them (new, duplicate or discarded). The caller files them itself, for example a receipt photo that is only the justification of the purchase it registers. Default `true`. */
+                read?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
