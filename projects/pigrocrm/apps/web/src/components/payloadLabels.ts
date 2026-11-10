@@ -167,7 +167,6 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   snapshot_version: 'Snapshot versione',
   social_security_rate: 'Aliquota inps',
   source: 'Fonte',
-  staff_member_id: "Persona dell'azienda",
   stamp_duty: 'Bollo',
   stamp_duty_amount: 'Importo bollo',
   stamp_duty_threshold: 'Soglia bollo',

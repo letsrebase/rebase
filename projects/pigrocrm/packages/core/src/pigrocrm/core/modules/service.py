@@ -18,7 +18,7 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.db import SoftDeleteMixin
 from pigrocrm.core.deals.models import Deal
-from pigrocrm.core.errors import Conflict, ValidationFailed
+from pigrocrm.core.errors import AgentForbidden, Conflict, PermissionDenied, ValidationFailed
 from pigrocrm.core.modules.registry import (
     MODULE_KEYS,
     MODULES,
@@ -74,6 +74,17 @@ def _live(
     return true()
 
 
+def _may_count_staff(actor: Actor | None) -> bool:
+    """Who may learn how many staff members there are: whoever may list them."""
+    if actor is None:
+        return False
+    try:
+        actor.require_admin("list_staff")
+    except (PermissionDenied, AgentForbidden):
+        return False
+    return True
+
+
 def _bit(value: bool) -> str:
     return "true" if value else "false"
 
@@ -105,12 +116,17 @@ class SpaceModulesService:
             self.activities.record(ENTITY, SETTINGS_ID, "updated", actor, {"keys": changed})
         self.session.commit()
 
-    def describe(self) -> SpaceModulesRead:
+    def describe(self, actor: Actor | None = None) -> SpaceModulesRead:
         """Open to every member and every agent: it says what the space can do, and the
-        tools that are listed already say as much."""
+        tools that are listed already say as much. The one exception is how many staff
+        members there are, which is pay's own privacy (staff design § 4): `staff` reads
+        `records=0` unless `actor` is an administrator, and for an agent one with
+        `full_access`. No actor reads as nobody."""
         effective = self.settings.effective()
         on = enabled_modules(effective)
         counts = self._counts()
+        if not _may_count_staff(actor):
+            counts["staff"] = 0
         modules = []
         for module in MODULES:
             records = counts.get(module.key, 0)
@@ -171,7 +187,7 @@ class SpaceModulesService:
             previous_profile=effective.space_profile,
             applied=data.confirm,
             changes=changes,
-            state=self.describe(),
+            state=self.describe(actor),
         )
 
     def ensure_profile(
@@ -215,7 +231,7 @@ class SpaceModulesService:
         self.settings.lock()
         if self.settings.effective().space_profile is None:
             self._write({ONBOARDING_SKIPPED_KEY: _bit(True)}, actor)
-        return self.describe()
+        return self.describe(actor)
 
     def set_modules(self, data: SpaceModulesSet, actor: Actor) -> SpaceModulesRead:
         """Switches the named modules. A module that holds records is switched off only when
@@ -281,7 +297,7 @@ class SpaceModulesService:
         values.update({setting_key(key): _bit(True) for key in data.on})
         values.update({setting_key(key): _bit(False) for key in data.off})
         self._write(values, actor)
-        return self.describe()
+        return self.describe(actor)
 
 
 def _check_dependencies(state: dict[ModuleKey, bool]) -> None:

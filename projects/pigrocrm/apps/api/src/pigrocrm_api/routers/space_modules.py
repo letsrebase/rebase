@@ -40,10 +40,10 @@ router = APIRouter(
 
 
 @router.get("", response_model=SpaceModulesRead)
-def read(session: SessionDep, base: BaseSettingsDep) -> SpaceModulesRead:
+def read(session: SessionDep, base: BaseSettingsDep, actor: ActorDep) -> SpaceModulesRead:
     """The profile and every module: whether it is on, what its switch and its default
     are, and whether the space has records in it."""
-    return SpaceModulesService(session, base).describe()
+    return SpaceModulesService(session, base).describe(actor)
 
 
 @router.put("/profile", response_model=SpaceProfileProposal)

@@ -22,4 +22,8 @@ def register(
         `records`. A module that is off has no tools: this
         says why.
         """
-        return SpaceModulesService(context.session, settings).describe().model_dump(mode="json")
+        return (
+            SpaceModulesService(context.session, settings)
+            .describe(context.actor)
+            .model_dump(mode="json")
+        )

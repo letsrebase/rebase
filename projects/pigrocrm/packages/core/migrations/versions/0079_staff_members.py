@@ -22,7 +22,15 @@ filters by legal entity only: who may read pay (administrators, and agents with
 default privileges on what the owner creates, and the boot's `ensure-space-defaults`
 re-grants on every table of every space.
 
-`downgrade` drops both tables, the people with them.
+The activity feed reads each row through `entity_visible(entity_type, entity_id, ...)`, whose
+`ELSE` is the caller's own default (open): staff writes its entries under `staff_member` and
+`payroll_settings`, and this revision gives the function a branch for each, so an entry is
+seen only by whoever sees the staff member's or the pay day's legal entity. The branch is added
+to the definition the database holds (`pg_get_functiondef`), not to a copy of it, so the
+revisions that rewrote the function before this one (0068, 0077) stay the single source of the
+rest; `statements()` carries the same step for the test template.
+
+`downgrade` takes the branch out and drops both tables, the people with them.
 """
 
 from collections.abc import Sequence
@@ -52,7 +60,45 @@ def statements() -> list[str]:
             f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY",
             f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY",
         ]
+    out.append(_rewrite_function(add=True))
     return out
+
+
+# The branch each of the two entity types gets. `ELSE $3` is the one place in the function's
+# text the branch can go before, and it is unique there.
+_ANCHOR = "ELSE $3"
+_BRANCHES = (
+    "WHEN 'staff_member' THEN current_setting('pigrocrm.legal_entities', true) = '*' OR EXISTS (\n"
+    "          SELECT 1 FROM staff_members s WHERE s.id = $2 AND "
+    "legal_entity_visible(s.legal_entity_id))\n"
+    "        WHEN 'payroll_settings' THEN current_setting('pigrocrm.legal_entities', true) = '*' "
+    "OR EXISTS (\n"
+    "          SELECT 1 FROM payroll_settings p WHERE p.id = $2 AND "
+    "legal_entity_visible(p.legal_entity_id))\n"
+    "        "
+)
+_FUNCTION = "'public.entity_visible(text, uuid, boolean)'::regprocedure"
+
+
+def _rewrite_function(add: bool) -> str:
+    """A `DO` block that re-creates `entity_visible` with the two branches in (or out), and
+    changes nothing when it already is (or already is not): applied by `upgrade`,
+    `downgrade` and, for the test template, `statements`."""
+    old, new = (_ANCHOR, _BRANCHES + _ANCHOR) if add else (_BRANCHES + _ANCHOR, _ANCHOR)
+    check = "'staff_member'"
+    guard = (
+        f"position({check} in definition) = 0" if add else f"position({check} in definition) > 0"
+    )
+    return (
+        "DO $do$\n"
+        "DECLARE definition text := pg_get_functiondef(" + _FUNCTION + ");\n"
+        "BEGIN\n"
+        f"  IF {guard} THEN\n"
+        f"    EXECUTE replace(definition, $old${old}$old$, $new${new}$new$);\n"
+        "  END IF;\n"
+        "END\n"
+        "$do$"
+    )
 
 
 def _timestamps() -> list[sa.Column[sa.DateTime]]:
@@ -191,5 +237,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute(_rewrite_function(add=False))
     op.drop_table(SETTINGS)
     op.drop_table(STAFF)

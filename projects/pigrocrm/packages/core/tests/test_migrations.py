@@ -3128,6 +3128,22 @@ def _tables_shape(url: str, names: set[str]) -> tuple[set[str], set[str], set[st
     return tables, forced, policies
 
 
+def _entity_visible_names(url: str) -> tuple[bool, bool]:
+    """Whether the row-level function of the activity feed names `staff_member` and
+    `payroll_settings`."""
+    engine: Engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            definition = connection.execute(
+                text(
+                    "SELECT pg_get_functiondef('entity_visible(text, uuid, boolean)'::regprocedure)"
+                )
+            ).scalar_one()
+    finally:
+        engine.dispose()
+    return "'staff_member'" in definition, "'payroll_settings'" in definition
+
+
 def test_0079_creates_the_staff_tables_under_the_scope_policy_and_downgrade_drops_them(
     pigrocrm_postgres: Any,
 ) -> None:
@@ -3140,9 +3156,13 @@ def test_0079_creates_the_staff_tables_under_the_scope_policy_and_downgrade_drop
         config = _alembic_config(url)
         upgrade(config, "0078")
         assert _tables_shape(url, both) == (set(), set(), set())
+        assert _entity_visible_names(url) == (False, False)
         upgrade(config, "0079")
         assert _tables_shape(url, both) == (both, both, both)
+        assert _entity_visible_names(url) == (True, True)
         downgrade(config, "0078")
         assert _tables_shape(url, both) == (set(), set(), set())
+        assert _entity_visible_names(url) == (False, False)
         upgrade(config, "0079")
         assert _tables_shape(url, both)[0] == both
+        assert _entity_visible_names(url) == (True, True)

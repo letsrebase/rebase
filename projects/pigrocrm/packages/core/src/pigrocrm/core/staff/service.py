@@ -19,9 +19,11 @@ ban test finds the privileged tools by name, and a bare `get` or `list` would ma
 other service.
 """
 
+from collections.abc import Callable
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
@@ -50,6 +52,8 @@ from pigrocrm.core.staff.schemas import (
 )
 
 ENTITY = "staff_member"
+PAY_DAY_ENTITY = "payroll_settings"
+USER_INDEX = "uq_staff_members_user_id"
 
 EMPLOYEE_ONLY = frozenset(
     {
@@ -87,16 +91,14 @@ class StaffService:
         self._require_may_have(data.legal_entity_id, data.kind)
         if data.user_id is not None:
             self._require_free_user(data.user_id, None)
-        member = self.repo.add(StaffMember(**data.model_dump()))
-        # The timeline entry is on the legal entity, which every member reads: it says who
-        # did what and which person, never which field moved nor to what (no `changed`).
-        self.activities.record(
-            "legal_entity",
-            member.legal_entity_id,
-            "staff_member_created",
-            actor,
-            {"staff_member_id": str(member.id)},
+        member = self._flushed(
+            lambda: self.repo.add(StaffMember(**data.model_dump())), data.user_id
         )
+        # Recorded under `staff_member`, never on the legal entity's timeline, which every
+        # member reads: the row policy lets only the entity's own scope see it, the feed
+        # leaves it out for anyone but an administrator and while the module is off. It says
+        # who did what, never which field moved nor to what (no `changed`).
+        self.activities.record(ENTITY, member.id, "staff_member_created", actor)
         self.session.commit()
         self.session.refresh(member)
         return self._read(member)
@@ -128,14 +130,8 @@ class StaffService:
         self._require_consistent(member, changes)
         for key, value in changes.items():
             setattr(member, key, value)
-        self.session.flush()
-        self.activities.record(
-            "legal_entity",
-            member.legal_entity_id,
-            "staff_member_updated",
-            actor,
-            {"staff_member_id": str(member.id)},
-        )
+        self._flushed(self.session.flush, changes.get("user_id"))
+        self.activities.record(ENTITY, member.id, "staff_member_updated", actor)
         self.session.commit()
         self.session.refresh(member)
         return self._read(member)
@@ -174,7 +170,7 @@ class StaffService:
         else:
             found.pay_day = data.pay_day
             found.pay_month_offset = data.pay_month_offset
-        self.activities.record("legal_entity", legal_entity_id, "payroll_pay_day_set", actor)
+        self.activities.record(PAY_DAY_ENTITY, found.id, "payroll_pay_day_set", actor)
         self.session.commit()
         return PayDayRead(
             legal_entity_id=legal_entity_id,
@@ -245,6 +241,23 @@ class StaffService:
                 user_id=str(user_id),
             )
 
+    def _flushed[T](self, write: Callable[[], T], user_id: UUID | None) -> T:
+        """Runs a write that flushes, inside a savepoint. `_require_free_user` reads under the
+        row policy, so a user already staffed in a legal entity out of this actor's sight is
+        not found there and the global unique index is what stops the link: that is the same
+        «already linked» answer, and it does not say where."""
+        try:
+            with self.session.begin_nested():
+                return write()
+        except IntegrityError as exc:
+            if user_id is not None and USER_INDEX in str(exc.orig):
+                raise Conflict(
+                    ENTITY,
+                    "questo utente è già collegato a un'altra persona dell'azienda",
+                    user_id=str(user_id),
+                ) from exc
+            raise
+
     def _require_consistent(self, member: StaffMember, changes: dict[str, Any]) -> None:
         """What the create schemas' own validators say, for the fields an update touches
         together with the ones it leaves."""
@@ -297,4 +310,4 @@ class StaffService:
         return read
 
 
-__all__ = ["ENTITY", "StaffService"]
+__all__ = ["ENTITY", "PAY_DAY_ENTITY", "StaffService"]

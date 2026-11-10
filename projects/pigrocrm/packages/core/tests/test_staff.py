@@ -454,7 +454,78 @@ def test_a_change_leaves_a_timeline_entry_without_the_pay(db_session: Session) -
         .order_by(Activity.occurred_at, Activity.id)
         .all()
     )
-    assert [row.kind for row in rows] == ["staff_member_created", "staff_member_updated"]
-    for row in rows:
-        assert "31000" not in str(row.payload) and "30000" not in str(row.payload)
-        assert "Giulia" not in str(row.payload)
+    assert rows == []
+    own = (
+        db_session.query(Activity)
+        .filter(Activity.entity_type == "staff_member", Activity.entity_id == member.id)
+        .order_by(Activity.occurred_at, Activity.id)
+        .all()
+    )
+    assert [row.kind for row in own] == ["staff_member_created", "staff_member_updated"]
+    for row in own:
+        assert row.payload == {}
+
+
+# --- what the space's read and the feed say about staff -------------------------------------
+
+
+def _describe_staff_records(session: Session, actor: Actor | None) -> int:
+    from pigrocrm.core.config import Settings
+    from pigrocrm.core.modules.service import SpaceModulesService
+
+    state = SpaceModulesService(session, Settings(_env_file=None)).describe(actor)  # type: ignore[call-arg]
+    staff = next(module for module in state.modules if module.key == "staff")
+    assert staff.holds_data is (staff.records > 0)
+    return staff.records
+
+
+def test_the_modules_read_hides_the_staff_head_count_from_whoever_may_not_list_staff(
+    db_session: Session,
+) -> None:
+    entity = _entity(db_session, "it-standard")
+    StaffService(db_session).create_staff_member(_employee(entity), ADMIN)
+
+    assert _describe_staff_records(db_session, ADMIN) == 1
+    assert _describe_staff_records(db_session, AGENT_ADMIN_FULL) == 1
+    for hidden in (COLLABORATOR, READONLY, AGENT_ADMIN, AGENT_COLLABORATOR_FULL, None):
+        assert _describe_staff_records(db_session, hidden) == 0
+
+
+def test_switching_staff_off_still_asks_for_the_real_count(db_session: Session) -> None:
+    from pigrocrm.core.config import Settings
+    from pigrocrm.core.modules.schemas import SpaceModulesSet
+    from pigrocrm.core.modules.service import SpaceModulesService
+
+    entity = _entity(db_session, "it-standard")
+    StaffService(db_session).create_staff_member(_employee(entity), ADMIN)
+    service = SpaceModulesService(db_session, Settings(_env_file=None))  # type: ignore[call-arg]
+    with pytest.raises(Conflict) as refused:
+        service.set_modules(SpaceModulesSet(off=["staff"]), ADMIN)
+    assert "1 record" in str(refused.value)
+
+
+def test_staff_entries_are_in_an_administrators_feed_only_while_the_module_is_on(
+    db_session: Session,
+) -> None:
+    from pigrocrm.core.dashboard.service import DashboardService
+
+    entity = _entity(db_session, "it-standard")
+    service = StaffService(db_session)
+    service.create_staff_member(_employee(entity), ADMIN)
+    service.set_payroll_pay_day(entity, PayDayWrite(pay_day=27, pay_month_offset=0), ADMIN)
+
+    def feed(actor: Actor, modules: frozenset[str]) -> set[str]:
+        # The dashboard's own feed read; `get_operational_dashboard` opens a snapshot session
+        # of its own, which a rolled-back test transaction cannot give it.
+        rows = DashboardService(db_session)._recent_feed(actor, modules)
+        return {row.entity_type for row in rows}
+
+    with_staff = frozenset({"staff"})
+    assert {"staff_member", "payroll_settings"} <= feed(ADMIN, with_staff)
+    assert not {"staff_member", "payroll_settings"} & feed(ADMIN, frozenset())
+    for other in (COLLABORATOR, READONLY, AGENT_ADMIN_FULL):
+        assert not {"staff_member", "payroll_settings"} & feed(other, with_staff)
+    # And never on the legal entity's own timeline, which every member reads.
+    from pigrocrm.core.activities.service import ActivityService
+
+    assert ActivityService(db_session).timeline("legal_entity", entity) == []

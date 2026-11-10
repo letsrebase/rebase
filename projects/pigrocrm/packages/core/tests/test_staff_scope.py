@@ -18,15 +18,23 @@ from fakes.legal_entity_fixtures import committed_default_legal_entity, remove_l
 from sqlalchemy import Engine, create_engine, delete, text
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.activities.models import Activity
+from pigrocrm.core.activities.repository import ActivityRepository
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.auth.models import User
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.role import ensure_application_role
 from pigrocrm.core.db.scope import bind_scope
-from pigrocrm.core.errors import NotFound
+from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.staff.models import PayrollSettings, StaffMember
-from pigrocrm.core.staff.schemas import EmployeeCreate, PayDayWrite, StaffListQuery
+from pigrocrm.core.staff.schemas import (
+    EmployeeCreate,
+    PayDayWrite,
+    StaffListQuery,
+    StaffMemberUpdate,
+)
 from pigrocrm.core.staff.service import StaffService
 
 TAG = "STAFFSCOPE"
@@ -82,6 +90,11 @@ def world(db_engine: Engine) -> Iterator[World]:
     finally:
         ids.app.dispose()
         with factory() as session:
+            session.execute(
+                delete(Activity).where(
+                    Activity.entity_type.in_(["staff_member", "payroll_settings"])
+                )
+            )
             session.execute(delete(StaffMember).where(StaffMember.name.like(f"{TAG} %")))
             session.execute(
                 delete(PayrollSettings).where(
@@ -182,3 +195,88 @@ def test_the_policies_put_the_all_fast_path_first(db_engine: Engine) -> None:
     for using, check in policies.values():
         assert "".join(using.split()).startswith("(scope_all()OR")
         assert check == using
+
+
+@pytest.fixture
+def staffed_user(world: World) -> Iterator[UUID]:
+    """A user who is the staff member of the studio, committed, so that another legal
+    entity's admin cannot see the link."""
+    factory = session_factory(world.engine)
+    with factory() as session:
+        user = User(
+            email=f"{TAG.lower()}-{uuid4()}@example.test",
+            password_hash="x",
+            name=TAG,
+            role="collaborator",
+        )
+        session.add(user)
+        session.flush()
+        session.execute(
+            text("UPDATE staff_members SET user_id = :user WHERE id = :member"),
+            {"user": user.id, "member": world.studio_member},
+        )
+        session.commit()
+        user_id = user.id
+    yield user_id
+    with factory() as session:
+        session.execute(
+            text("UPDATE staff_members SET user_id = NULL WHERE user_id = :u"), {"u": user_id}
+        )
+        session.execute(delete(User).where(User.id == user_id))
+        session.commit()
+
+
+def test_a_user_staffed_in_another_legal_entity_is_the_same_conflict_and_not_a_500(
+    world: World, staffed_user: UUID
+) -> None:
+    """`_require_free_user` reads under the row policy and does not see the other entity's
+    member; the global unique index stops the link, and the answer is the ordinary one,
+    without saying where the user is staffed."""
+    session, admin = _scoped(world, "admin", world.other)
+    with session:
+        service = StaffService(session)
+        with pytest.raises(Conflict) as created:
+            service.create_staff_member(
+                EmployeeCreate(
+                    legal_entity_id=world.other,
+                    name=f"{TAG} twin",
+                    start_date=D(2026, 1, 1),
+                    gross_annual_pay=Decimal("1000.00"),
+                    monthly_payments=13,
+                    user_id=staffed_user,
+                ),
+                admin,
+            )
+        assert "già collegato" in str(created.value)
+        assert str(world.studio) not in str(created.value.details)
+        session.rollback()
+        with pytest.raises(Conflict):
+            service.update_staff_member(
+                world.other_member, StaffMemberUpdate(user_id=staffed_user), admin
+            )
+        session.rollback()
+        # The session is usable after the refusal: nothing was left half written.
+        assert service.get_staff_member(world.other_member, admin).user_id is None
+
+
+def test_the_activity_feed_shows_a_scoped_admin_only_their_own_legal_entitys_staff_entries(
+    world: World,
+) -> None:
+    def staff_entries(session: Session) -> set[UUID]:
+        rows = ActivityRepository(session).recent(200)
+        return {
+            row.entity_id for row in rows if row.entity_type in ("staff_member", "payroll_settings")
+        }
+
+    session, _ = _scoped(world, "admin", world.other)
+    with session:
+        assert staff_entries(session) == {world.other_member}
+    session, _ = _scoped(world, "admin", world.studio)
+    with session:
+        seen = staff_entries(session)
+        assert world.studio_member in seen and world.other_member not in seen
+        assert len(seen) == 2  # the member, and the legal entity's pay day
+    unscoped = session_factory(world.app)()
+    bind_scope(unscoped, Actor(id=uuid4(), type="user", role="admin"))
+    with unscoped:
+        assert {world.studio_member, world.other_member} <= staff_entries(unscoped)
