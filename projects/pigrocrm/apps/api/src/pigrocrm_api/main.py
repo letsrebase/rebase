@@ -31,6 +31,7 @@ from pigrocrm_api.routers import (
     cost_categories,
     dashboard,
     deals,
+    documenso,
     documents,
     drive,
     due_items,
@@ -177,6 +178,8 @@ def create_app() -> FastAPI:
         scheduled_jobs,
         # REB-976: engagements with freelancers and their availability, `collaborators` module.
         collaborators,
+        # REB-1019: Documenso's webhook, root only, behind its own secret: routers/documenso.py.
+        documenso,
         # REB-971: the inbox of incoming documents, filled by upload. Before `notes`, which stays
         # last: the web tests type their mock of `api.GET` against the last path of the API.
         inbox,

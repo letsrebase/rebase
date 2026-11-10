@@ -40,6 +40,11 @@ STATUS_BY_CODE: dict[str, int] = {
     # in the document is the row's current version.
     "stale_row": 409,
     "domain_error": 400,
+    # Signing (REB-1019): the installation has no Documenso or no mail to carry the link, so
+    # the document is sent by hand; or Documenso itself refused or did not answer, a bad
+    # gateway and not the caller's fault.
+    "signing_unavailable": 503,
+    "documenso_failed": 502,
 }
 
 TITLE_BY_CODE: dict[str, str] = {
@@ -58,6 +63,8 @@ TITLE_BY_CODE: dict[str, str] = {
     "module_off": "Modulo spento",
     "stale_row": "Riga cambiata nel frattempo",
     "domain_error": "Errore di dominio",
+    "signing_unavailable": "Firma non disponibile",
+    "documenso_failed": "Documenso non ha risposto",
 }
 
 
