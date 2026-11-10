@@ -9,6 +9,7 @@ from sqlalchemy.exc import ProgrammingError
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.cli.spaces_walk import disposed, read_spaces, report_unreadable, space_engine
+from pigrocrm.core.collaborators.forecast import EngagementForecastService
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.db.role import ensure_application_role
@@ -246,6 +247,10 @@ def _reconcile_due_items(engine: Engine, label: str) -> bool:
         with session_factory(engine)() as space:
             bind_scope(space, Actor.system())
             done = reconcile_sales_invoices(space)
+            # What active engagements pay their freelancers: the horizon of an open-ended one
+            # moves forward here, and a client invoice written elsewhere gets paired (REB-1003).
+            forecasts = EngagementForecastService(space).refresh_all()
+            space.commit()
     except Exception as exc:  # noqa: BLE001 - one space must not stop the others
         print(f"{label}: due items not reconciled ({type(exc).__name__})", file=sys.stderr)
         return False
@@ -255,6 +260,14 @@ def _reconcile_due_items(engine: Engine, label: str) -> bool:
         )
     else:
         print(f"{label}: due items already in place")
+    if forecasts:
+        print(
+            f"{label}: engagement forecasts {forecasts.created} written, "
+            f"{forecasts.dropped} dropped, {forecasts.paired} paired"
+        )
+    if forecasts.failed:
+        print(f"{label}: {forecasts.failed} engagements' forecasts not synced", file=sys.stderr)
+        return False
     return True
 
 

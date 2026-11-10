@@ -868,6 +868,23 @@ def test_an_item_waiting_for_a_dependency_not_recorded_yet_is_dated_by_its_backs
         DueRule(kind="on_settlement", not_after=D(2026, 5, 1))
 
 
+def test_an_item_following_one_payment_can_be_pointed_at_another(world: World) -> None:
+    freelancer = world.item(
+        direction="out",
+        source_kind="engagement",
+        own_date=None,
+        rule=DueRule(kind="after_settlement", offset_days=10, not_after=D(2026, 5, 1)),
+    )
+    first = world.item(own_date=D(2026, 3, 1))
+    second = world.item(own_date=D(2026, 3, 20))
+    with pytest.raises(Conflict):
+        world.service.repoint_dependency(freelancer, first)
+    assert world.service.attach_dependency(freelancer, first).due_date == D(2026, 3, 11)
+    assert world.service.repoint_dependency(freelancer, first).due_date == D(2026, 3, 11)
+    moved = world.service.repoint_dependency(freelancer, second)
+    assert (moved.rule.depends_on_id, moved.due_date) == (second, D(2026, 3, 30))
+
+
 def test_a_dependency_cannot_close_a_loop(world: World) -> None:
     first = world.item(
         direction="out",

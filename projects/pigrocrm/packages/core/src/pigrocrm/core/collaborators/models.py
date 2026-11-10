@@ -40,9 +40,10 @@ PAYMENT_RULES: tuple[str, ...] = ("fixed_term", "on_collection")
 DAYS_PER_WEEK_MIN = Decimal("0.5")
 DAYS_PER_WEEK_MAX = Decimal("5")
 
-# Law 81/2017 art. 3 as framework 7.1 prints it: no payment term past 60 days, and 30 when
-# counted from the end of the month (which can add up to 30 more). «To verify» against the
-# primary source (frame A5).
+# Law 81/2017 art. 3 c. 1: a clause agreeing a payment term past 60 days from the client's
+# receiving the invoice or request for payment is abusive and void (verified on normattiva.it,
+# 2026-11-10; frame A5). 30 days counted from the end of the month never passes it either: the
+# longest case, an invoice of 30 January, lands on 31 March, 60 days on.
 PAYMENT_DAYS_LIMIT = 60
 PAYMENT_DAYS_LIMIT_MONTH_END = 30
 COLLECTION_DAYS_LIMIT = 60

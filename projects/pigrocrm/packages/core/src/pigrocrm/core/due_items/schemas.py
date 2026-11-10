@@ -56,8 +56,8 @@ class DueRule(BaseModel):
             # An item that waits for a dependency not recorded yet, and is dated by its
             # backstop meanwhile (collaborators design, « Pairing »).
             if self.kind == "after_settlement" and self.not_after is not None:
-                if self.offset_days or self.day_of_month is not None:
-                    raise ValueError("una scadenza in attesa ha solo il limite massimo")
+                if self.day_of_month is not None:
+                    raise ValueError("una scadenza in attesa non ha un giorno del mese")
                 return self
             raise ValueError("questa regola indica la scadenza da cui dipende")
         if (self.kind == "month_after_settlement_on_day") != (self.day_of_month is not None):
@@ -86,6 +86,8 @@ class DueItemCreate(BaseModel):
     source_id: UUID | None = None
     source_rule: SafeStr | None = Field(default=None, min_length=1, max_length=60)
     own_date: dt.date | None = None
+    # See `DueItem.forecast_key`: only a forecast has one.
+    forecast_key: UUID | None = None
     rule: DueRule = Field(default_factory=DueRule)
 
     @model_validator(mode="after")
@@ -101,6 +103,8 @@ class DueItemCreate(BaseModel):
             raise ValueError(
                 "una scadenza verso l'erario indica l'imposta e nessuna organizzazione"
             )
+        if self.forecast_key is not None and self.state != "forecast":
+            raise ValueError("solo una previsione ha una chiave")
         if (self.state == "forecast") != (self.source_rule is not None):
             raise ValueError("una previsione indica la regola che l'ha prodotta, e solo lei")
         if self.own_date is not None and self.rule.kind in (

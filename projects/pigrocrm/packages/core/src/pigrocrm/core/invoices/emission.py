@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.collaborators.forecast import EngagementForecastService
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.due_items.service import DueItemService
@@ -207,6 +208,8 @@ class InvoiceEmission:
             # The invoice's due item, in the same SAVEPOINT as its number: an issued
             # invoice with no item would vanish from every receivable.
             DueItemService(ctx.session).open_for_invoice(target, paid_on=None, actor=actor)
+            # A freelancer paid when this client pays waits for this item (REB-1003).
+            EngagementForecastService(ctx.session).pair_invoice(target)
         ctx.session.commit()
         # The artefacts belong to the caller's second transaction, not to this method:
         # when `issue` rendered them itself it stopped being one transaction, and the
