@@ -67,6 +67,11 @@ SUGGESTED_DATES = 6
 
 DESCRIPTION_MAX_LENGTH = 200
 
+# How far from today a window or a date may reach (ten years): the schedule steps from the card's
+# start to the date asked about, so a date at the end of the calendar would walk every month and
+# then overflow it.
+CEILING_DAYS = 3650
+
 # What a contract that is not in force for billing says, in the words a person reads.
 NOT_STARTED = "il contratto è ancora una bozza: i canoni si fatturano da un contratto attivo"
 
@@ -107,6 +112,16 @@ def _description(contract: Contract, day: dt.date, end: dt.date | None) -> str:
     return f"{prefix}{contract.title[:room]}{suffix}"
 
 
+def _require_within_ceiling(day: dt.date, field: str, today: dt.date) -> None:
+    if abs((day - today).days) > CEILING_DAYS:
+        raise ValidationFailed(
+            ENTITY,
+            field,
+            "la data è troppo lontana da oggi",
+            expected=f"una data entro {CEILING_DAYS // 365} anni da oggi",
+        )
+
+
 class FeeBillingService:
     def __init__(self, session: Session, storage: DocumentStorage | None = None) -> None:
         self.session = session
@@ -127,8 +142,25 @@ class FeeBillingService:
         and the forecasts' own horizon ahead."""
         contract = self._contract(contract_id)
         today = today_local()
-        first = date_from if date_from is not None else today - dt.timedelta(days=LOOKBACK_DAYS)
-        last = date_to if date_to is not None else today + dt.timedelta(days=HORIZON_DAYS)
+        for supplied, field in ((date_from, "from"), (date_to, "to")):
+            if supplied is not None:
+                _require_within_ceiling(supplied, field, today)
+        if date_from is None and date_to is None:
+            first = today - dt.timedelta(days=LOOKBACK_DAYS)
+            last = today + dt.timedelta(days=HORIZON_DAYS)
+        elif date_from is None:
+            assert date_to is not None
+            last = date_to
+            first = last - dt.timedelta(days=LOOKBACK_DAYS + HORIZON_DAYS)
+        else:
+            first = date_from
+            last = (
+                date_to
+                if date_to is not None
+                else first + dt.timedelta(days=LOOKBACK_DAYS + HORIZON_DAYS)
+            )
+        _require_within_ceiling(first, "from", today)
+        _require_within_ceiling(last, "to", today)
         if last < first:
             raise ValidationFailed(
                 ENTITY, "to", "la fine precede l'inizio", expected="una data dopo quella di inizio"
@@ -272,6 +304,7 @@ class FeeBillingService:
     def _span_of(self, contract: Contract, card: RateCard, day: dt.date) -> dt.date | None:
         """The day the occurrence after `day` falls on, once `day` is one of the card's own: the
         period a line names has to be a date the schedule actually produces."""
+        _require_within_ceiling(day, "period_start", today_local())
         for occurrence, following in occurrence_spans(contract, card, day):
             if occurrence == day:
                 return following

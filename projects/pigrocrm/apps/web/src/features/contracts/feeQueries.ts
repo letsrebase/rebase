@@ -32,7 +32,9 @@ export function useBillFee(contractId: string) {
           body: occurrence,
         }),
       ),
-    onSuccess: () => {
+    // Settled, not only successful: a 409 says the occurrence was billed elsewhere, and the list
+    // that still offers its button has to be read again.
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.contract(contractId) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.invoices() })
     },

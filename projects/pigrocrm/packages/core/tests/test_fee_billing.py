@@ -558,3 +558,40 @@ def test_a_contract_with_no_recurring_fee_lists_nothing(
     listed = _service(db_session, local_storage).occurrences(contract.id)
 
     assert listed.occurrences == []
+
+
+def test_a_date_at_the_end_of_the_calendar_is_refused_instead_of_walking_to_it(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    _install_profiles(db_session)
+    contract = _contract(db_session)
+    card = _card(db_session, contract)
+    service = _service(db_session, local_storage)
+
+    with pytest.raises(ValidationFailed) as refused:
+        _bill(db_session, local_storage, contract, card, dt.date(9999, 12, 31))
+    assert refused.value.details["field"] == "period_start"
+    for window in (
+        {"date_from": dt.date(9999, 1, 1), "date_to": dt.date(9999, 12, 31)},
+        {"date_to": dt.date.min},
+        {"date_from": dt.date(9999, 12, 31)},
+    ):
+        with pytest.raises(ValidationFailed):
+            service.occurrences(contract.id, **window)  # type: ignore[arg-type]
+
+
+def test_a_lone_bound_of_the_window_gets_the_other_from_the_default_span(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    _install_profiles(db_session)
+    contract = _contract(db_session)
+    _card(db_session, contract, valid_from=add_months(TODAY, -1))
+    service = _service(db_session, local_storage)
+    later = TODAY + dt.timedelta(days=400)
+
+    after = service.occurrences(contract.id, date_from=later)
+    before = service.occurrences(contract.id, date_to=TODAY - dt.timedelta(days=400))
+
+    assert (after.date_to - after.date_from).days == 270
+    assert (before.date_to - before.date_from).days == 270
+    assert [row.period_start for row in after.occurrences if row.period_start < later] == []

@@ -5,7 +5,6 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
-import { LoadingState } from '@/components/LoadingState'
 import { formatDate, formatInvoiceHeading } from '@/features/invoices/format'
 import { useCan } from '@/lib/auth'
 import {
@@ -41,7 +40,9 @@ export function FeeOccurrencesSection({
   const fees = useFeeOccurrences(contractId)
   const bill = useBillFee(contractId)
 
-  if (fees.isSuccess && fees.data.occurrences.length === 0) return null
+  // Nothing while it loads and nothing for a contract with no recurring fee: a card that appears
+  // and goes away would shift the page of every contract that has none.
+  if (fees.isLoading || (fees.isSuccess && fees.data.occurrences.length === 0)) return null
 
   const billing = bill.isPending ? bill.variables : undefined
 
@@ -65,13 +66,14 @@ export function FeeOccurrencesSection({
     <Card className="lg:col-span-2">
       <CardContent className="pt-6">
         <h2 className="mb-1 font-semibold">Canoni</h2>
-        <p className="mb-3 text-sm text-muted-foreground">
-          Le scadenze dei canoni ricorrenti degli ultimi 90 giorni e dei prossimi 180.
-        </p>
+        {fees.data !== undefined && (
+          <p className="mb-3 text-sm text-muted-foreground">
+            Le scadenze dei canoni ricorrenti dal {formatDate(fees.data.date_from)} al{' '}
+            {formatDate(fees.data.date_to)}.
+          </p>
+        )}
 
-        {fees.isLoading ? (
-          <LoadingState />
-        ) : fees.isError ? (
+        {fees.isError ? (
           <QueryErrorBanner error={fees.error} />
         ) : fees.data === undefined ? null : (
           <div className="space-y-4">
@@ -128,7 +130,7 @@ export function FeeOccurrencesSection({
               })}
             </ul>
 
-            {fees.data.block_reason !== null && fees.data.block_reason !== undefined && (
+            {canBill && fees.data.block_reason !== null && fees.data.block_reason !== undefined && (
               <p role="alert" className="text-sm text-destructive">
                 {fees.data.block_reason[0]?.toUpperCase()}
                 {fees.data.block_reason.slice(1)}.

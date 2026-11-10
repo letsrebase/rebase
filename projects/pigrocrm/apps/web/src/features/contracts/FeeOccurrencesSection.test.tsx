@@ -195,6 +195,8 @@ describe('FeeOccurrencesSection', () => {
 
     expect(await screen.findByText(/già in una fattura emessa/)).toBeInTheDocument()
     expect(navigate).not.toHaveBeenCalled()
+    // The list that still offered the button is read again: the occurrence was billed elsewhere.
+    await waitFor(() => expect(vi.mocked(api.GET).mock.calls.length).toBeGreaterThan(1))
   })
 
   it('shows the rows without the button to somebody who may not bill', async () => {
@@ -233,12 +235,19 @@ describe('FeeOccurrencesSection', () => {
     await waitFor(() => expect(container).toBeEmptyDOMElement())
   })
 
-  it('shows the wait and then the error of the read', async () => {
+  it('shows the error of the read and nothing while it waits', async () => {
     vi.mocked(api.GET).mockImplementation((() =>
       failed({ status: 500, code: 'internal', detail: 'x' }, 500)) as never)
+    const { container } = renderSection()
+
+    expect(container).toBeEmptyDOMElement()
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+  })
+
+  it('names the window the server drew', async () => {
+    vi.mocked(api.GET).mockImplementation((() => ok(fees())) as never)
     renderSection()
 
-    expect(screen.getByRole('status')).toBeInTheDocument()
-    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(await screen.findByText(/dal 12\/08\/2026 al 09\/05\/2027/)).toBeInTheDocument()
   })
 })

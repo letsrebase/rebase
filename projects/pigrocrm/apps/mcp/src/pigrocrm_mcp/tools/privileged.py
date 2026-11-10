@@ -585,7 +585,8 @@ def register(
         `get_invoice` and, if right, pass it to `issue_invoice`; issuing it replaces that
         occurrence's forecast.
 
-        `period_start` (`YYYY-MM-DD`) must be an occurrence date `list_fee_occurrences` lists.
+        `period_start` (`YYYY-MM-DD`) must be a date the rate card's schedule produces, as
+        `list_fee_occurrences` lists them.
         A second call for the same occurrence changes nothing and answers the draft or proforma
         that already bills it (`created: false`); one on an issued invoice is refused, naming
         the invoice. The contract has to be active, expired or terminated, and in euros.

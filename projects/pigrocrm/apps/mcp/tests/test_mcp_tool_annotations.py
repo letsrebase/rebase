@@ -108,9 +108,9 @@ DEFAULT_BUDGET_BYTES = 107_650
 # REB-1022: 128.5 KB, up from 127.0 KB, the same three tools, measured at 128,444.
 # REB-1024: 129.8 KB, up from 128.5 KB, for `list_iva_periods` and `get_iva_register` (a full-access
 # administrator's: a year, a period, a register and a page), measured at 129,771.
-# REB-1032: 131.7 KB, up from 129.8 KB, for `bill_contract_fee` (a full-access administrator's) and
-# `list_fee_occurrences` above, measured at 131,692.
-FULL_ACCESS_BUDGET_BYTES = 131_700
+# REB-1032: 131.75 KB, up from 129.8 KB, for `bill_contract_fee` (a full-access administrator's) and
+# `list_fee_occurrences` above, measured at 131,724.
+FULL_ACCESS_BUDGET_BYTES = 131_750
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.
