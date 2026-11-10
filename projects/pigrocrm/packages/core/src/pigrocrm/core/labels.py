@@ -243,6 +243,7 @@ ENTITY_NOUN: dict[str, tuple[str, str]] = {
     "invoice": ("fattura", "a"),
     "invoice_artifact": ("file della fattura", "o"),
     "legal_entity": ("azienda", "a"),
+    "declared_tax_figure": ("cifra dichiarata", "a"),
     "note": ("nota", "a"),
     "payroll_settings": ("impostazioni delle paghe", "a"),
     "period_lock": ("mese chiuso", "o"),

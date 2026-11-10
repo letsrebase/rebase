@@ -169,6 +169,10 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "get_fiscal_estimate",
         # The dates of the taxes a legal entity owes (REB-1004): its tax position, as the estimate.
         "get_tax_calendar",
+        # The accountant's figures of a tax return, typed beside the estimate (REB-1006, taxes
+        # design § 5): the most sensitive data the product holds, so an administrator's token
+        # with `full_access`, nothing less. Accepting one read from a document stays a person's.
+        "set_declared_tax_figure",
         # The space's profile and which modules are on (spec 2026-11-09, B1): what the whole
         # team sees changes. An administrator's token with `full_access`, nothing less; the
         # generic `update_space_settings` stays person-only below.
@@ -381,6 +385,7 @@ ACTION_LABELS: dict[str, str] = {
     "update_staff_member": "modificare una persona dell'azienda o il suo compenso",
     "get_staff_member": "leggere il compenso di una persona dell'azienda",
     "list_staff": "leggere l'elenco delle persone dell'azienda e i loro compensi",
+    "set_declared_tax_figure": "registrare le cifre della dichiarazione dei redditi",
     "set_payroll_pay_day": "impostare il giorno di paga dell'azienda",
 }
 

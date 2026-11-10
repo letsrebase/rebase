@@ -138,6 +138,10 @@ _FORBIDDEN: dict[Method, str] = {
         "della quota e del consenso del titolare, e ne restituisce il testo senza "
         "archiviare niente; l'installazione puo' aprirla con `mcp_full_access`"
     ),
+    ("DeclaredTaxFigureService", "set_declared_tax_figure"): (
+        "REB-1006: the accountant's declared tax figures are the most sensitive data the "
+        "product holds (taxes design § 5); the tool is on a `full_access` token's surface only"
+    ),
     ("StaffService", "create_staff_member"): (
         "REB-977: pay is the most personal data the product holds (staff design § 4); the tool "
         "exists only on an administrator's `full_access` token"
@@ -201,6 +205,10 @@ _OUTSIDE_FROM_SIEVE: dict[Method, str] = {
 #    no-actor rule and is listed for the same reason: it is the intermediate step of
 #    `render_pdf`, not an operation of its own.
 _INTERNE: dict[Method, str] = {
+    ("DeclaredTaxFigureService", "declared_for_year"): (
+        "REB-1006: read inside `get_fiscal_estimate`, which is `full_access` only; no tool of "
+        "its own"
+    ),
     (
         "AnalyticsService",
         "freeze_fiscal_estimates",

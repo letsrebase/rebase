@@ -2355,6 +2355,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/fiscal/declared": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Declared Tax Figure
+         * @description The figures of the tax return as the accountant computed them, for one tax and year;
+         *     typing them again replaces the three together. `admin`, enforced by the service. They are
+         *     never computed and a newer estimate leaves them alone: `/fiscal` shows them beside the
+         *     estimate and says the year's reading is declared.
+         */
+        put: operations["set_declared_tax_figure_api_analytics_fiscal_declared_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics/backlog": {
         parameters: {
             query?: never;
@@ -8099,6 +8122,63 @@ export interface components {
             position: number;
         };
         /**
+         * DeclaredTaxFigureRead
+         * @description A declared figure as stored. `reading` says which of the three readings of a year it
+         *     is (estimate, declared, paid), so a screen never presents it as an estimate.
+         */
+        DeclaredTaxFigureRead: {
+            /**
+             * Reading
+             * @default declared
+             * @constant
+             */
+            reading: "declared";
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /** Tax */
+            tax: string;
+            /** Year */
+            year: number;
+            /** Tax Due */
+            tax_due: string | null;
+            /** Balance */
+            balance: string | null;
+            /** Advances */
+            advances: string | null;
+            /** Source */
+            source: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * DeclaredTaxFigureSet
+         * @description What an administrator types: the figures of the tax return as the accountant computed
+         *     them. Whatever is left out is recorded as not given (never as zero), and typing the same
+         *     tax and year again replaces the three together. `tax_due` and `advances` are never
+         *     negative; `balance` is signed, a credit being negative.
+         */
+        DeclaredTaxFigureSet: {
+            /**
+             * Tax
+             * @enum {string}
+             */
+            tax: "irpef" | "substitute_tax" | "ires" | "irap" | "inps";
+            /** Year */
+            year: number;
+            /** Tax Due */
+            tax_due?: number | string | null;
+            /** Balance */
+            balance?: number | string | null;
+            /** Advances */
+            advances?: number | string | null;
+        };
+        /**
          * DirectorCreate
          * @description A director: the annual fee, how it is paid, the TFM accrued a year (set exactly when
          *     `accrues_tfm`) and the share of the INPS «gestione separata» the company bears.
@@ -9416,6 +9496,14 @@ export interface components {
              * @default false
              */
             frozen: boolean;
+            /**
+             * Reading
+             * @default estimate
+             * @enum {string}
+             */
+            reading: "estimate" | "declared";
+            /** Declared */
+            declared?: components["schemas"]["DeclaredTaxFigureRead"][];
         };
         /** FiscalProfileRead */
         FiscalProfileRead: {
@@ -34444,6 +34532,130 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FiscalEstimate"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_declared_tax_figure_api_analytics_fiscal_declared_put: {
+        parameters: {
+            query?: {
+                /** @description The legal entity to compute for: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one and can be omitted. */
+                legal_entity_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeclaredTaxFigureSet"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeclaredTaxFigureRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

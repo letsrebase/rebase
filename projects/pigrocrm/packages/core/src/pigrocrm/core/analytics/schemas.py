@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pigrocrm.core.contracts.schemas import ContractCapSimulation
 from pigrocrm.core.fiscal.law import Cadence, DateKind, TaxName
 from pigrocrm.core.fiscal.pack import CeilingConsequence
+from pigrocrm.core.fiscal.schemas import DeclaredTaxFigureRead
 
 # Mirrors `Deal`'s own Numeric(p, s) column widths (`deals/models.py`), the same
 # reasoning `deals/schemas.py`'s own constants give for existing at all: a value
@@ -298,6 +299,13 @@ class FiscalEstimate(BaseModel):
     # `True` when these are the figures frozen when the year was computed, served because
     # the legal entity's pack no longer carries the estimate: the year keeps what it was.
     frozen: bool = False
+    # REB-1006, taxes design § 2: the figures of the tax return as the accountant computed
+    # them, typed by an administrator, shown beside the estimate and never computed. A year
+    # with one reads `declared` and the figures above stay what they are, an estimate; a newer
+    # estimate leaves the declared figures alone. Empty for a «what if» with a revenue the
+    # caller supplied, which is about no real year.
+    reading: Literal["estimate", "declared"] = "estimate"
+    declared: list[DeclaredTaxFigureRead] = Field(default_factory=list)
 
 
 class CashMonth(BaseModel):

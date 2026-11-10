@@ -97,6 +97,9 @@ FORBIDDEN = (
     "bind_time_to_invoice",
     "get_fiscal_estimate",
     "get_tax_calendar",
+    # The accountant's declared tax figures (REB-1006): an administrator's token with
+    # `full_access` and no other.
+    "set_declared_tax_figure",
     # What the whole team sees (spec 2026-11-09, B1): an administrator's token with
     # `full_access`, and no other.
     "set_space_profile",
@@ -290,6 +293,9 @@ FORBIDDEN_SERVICE_CALLS = (
     "bind_to_invoice",
     "get_fiscal_estimate",
     "get_tax_calendar",
+    # `DeclaredTaxFigureService.set_declared_tax_figure` (REB-1006), behind the tool of the
+    # same name.
+    "set_declared_tax_figure",
     # `StaffService`'s four, named uniquely for this scan: a bare `get` or `list` would match
     # every other service.
     "create_staff_member",

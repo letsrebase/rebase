@@ -34,7 +34,11 @@ from pigrocrm.core.documents.models import Document, DocumentVersion  # noqa: F4
 from pigrocrm.core.drive.models import GoogleDriveAccount  # noqa: F401
 from pigrocrm.core.due_items.models import DueItem, DueItemSettlement  # noqa: F401
 from pigrocrm.core.fields.models import FieldDefinition  # noqa: F401
-from pigrocrm.core.fiscal.models import FiscalEstimateReading, FiscalProfile  # noqa: F401
+from pigrocrm.core.fiscal.models import (  # noqa: F401
+    DeclaredTaxFigure,
+    FiscalEstimateReading,
+    FiscalProfile,
+)
 from pigrocrm.core.gmail.models import (  # noqa: F401
     EmailDraft,
     GmailKnownAddress,

@@ -231,6 +231,15 @@ table's CHECKs say so; a rate left out is «not stated», never a default, becau
 The legal entity's pay day is REST only and person-only (`set_payroll_pay_day`); a member's own override is a field
 of `update_staff_member`. Nothing is deleted: `end_date` is how someone leaves. The estimate, the payslips and the
 screens are later cards.
+**A declared tax figure is typed, never computed, and it outranks the estimate (REB-1006).**
+`declared_tax_figures` holds, per legal entity, tax (`DeclaredTax`: `irpef`, `substitute_tax`, `ires`, `irap`, `inps`)
+and year, what the accountant's return says: tax due, balance (signed) and advances, any of which may be left out
+(never read as zero). `DeclaredTaxFigureService.set_declared_tax_figure` is the only writer: an administrator, or a
+token with `full_access` (REST `PUT /api/analytics/fiscal/declared` and the privileged MCP tool of the same name), and
+typing again replaces the row whole. `AnalyticsService.get_fiscal_estimate` answers the figures beside the estimate
+(`declared`) and says the year's `reading` (`declared` as soon as one exists), so a newer estimate, which is written by
+another path, never touches them; a «what if» with a supplied revenue carries none. Reading a figure from a document and
+the advances and due items that follow are their own cards.
 
 **The tax calendar is pack data keyed by the calendar year a date falls in (REB-1004).** `FiscalPack.calendars`
 holds `TaxCalendarLaw` entries (`fiscal/law.py`), each a list of `TaxDateRule` with the nominal days and the primary

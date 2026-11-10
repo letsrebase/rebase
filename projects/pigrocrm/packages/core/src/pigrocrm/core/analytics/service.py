@@ -49,6 +49,7 @@ from pigrocrm.core.fiscal.ceiling import (
     evaluate_pack,
     taxable_revenue,
 )
+from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService, reading_for_year
 from pigrocrm.core.fiscal.pack import resolve_pack
 from pigrocrm.core.fiscal.repository import FiscalEstimateRepository
 from pigrocrm.core.fiscal.schemas import FiscalProfileRead
@@ -629,7 +630,13 @@ class AnalyticsService:
         # which tells the user which screen to go to -- better than an estimate of zero
         # computed from three nulls, which reads as "you owe nothing".
         profile = FiscalProfileService(self.session).get(actor, legal_entity.id)
-        return self._estimate_year(year, legal_entity, profile, revenue)
+        estimate = self._estimate_year(year, legal_entity, profile, revenue)
+        if revenue is not None:
+            return estimate
+        declared = DeclaredTaxFigureService(self.session).declared_for_year(legal_entity.id, year)
+        return estimate.model_copy(
+            update={"declared": declared, "reading": reading_for_year(declared)}
+        )
 
     def get_tax_calendar(
         self, year: int, actor: Actor, *, legal_entity_id: UUID | None = None

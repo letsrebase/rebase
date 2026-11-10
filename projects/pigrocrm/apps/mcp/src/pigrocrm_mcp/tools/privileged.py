@@ -55,6 +55,8 @@ from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings, gmail_configured
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
+from pigrocrm.core.fiscal.schemas import DeclaredTax, DeclaredTaxFigureSet
 from pigrocrm.core.gmail.attachment_text import GmailAttachmentService
 from pigrocrm.core.gmail.sync import GmailSyncService
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
@@ -596,6 +598,34 @@ def register(
             AnalyticsService(context.session)
             .get_tax_calendar(
                 year, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def set_declared_tax_figure(
+        tax: DeclaredTax,
+        year: int,
+        tax_due: str | None = None,
+        balance: str | None = None,
+        advances: str | None = None,
+        legal_entity_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Types a tax return's figures as the accountant computed them, admin only: amounts
+        as decimal strings, `balance` negative for a credit. Typing a tax and year again
+        replaces all three. Never computed or replaced by an estimate: `get_fiscal_estimate`
+        shows them beside it. With several companies pass `legal_entity_id`.
+        """
+        data = TypeAdapter(DeclaredTaxFigureSet).validate_python(
+            {
+                "tax": tax,
+                "year": year,
+                "tax_due": tax_due,
+                "balance": balance,
+                "advances": advances,
+            }
+        )
+        return (
+            DeclaredTaxFigureService(context.session)
+            .set_declared_tax_figure(
+                data, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
             )
             .model_dump(mode="json")
         )
