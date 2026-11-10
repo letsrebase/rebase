@@ -122,6 +122,7 @@ _FORBIDDEN: dict[Method, str] = {
     ("PeriodLockService", "close_period"): "chiusura di periodo (slice 4 §11)",
     ("PeriodLockService", "reopen_period"): "riapertura di periodo (slice 4 §11)",
     ("AnalyticsService", "get_fiscal_estimate"): "posizione fiscale del titolare (slice 4 §11)",
+    ("AnalyticsService", "get_tax_calendar"): "REB-1004: tax position, like the estimate",
     ("GmailSyncService", "discover"): (
         "interroga Gmail sul dominio del cliente a carico della quota e del consenso "
         "del titolare, come `sync` e `backfill`; a differenza loro l'installazione puo' "

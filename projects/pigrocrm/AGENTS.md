@@ -229,6 +229,15 @@ The legal entity's pay day is REST only and person-only (`set_payroll_pay_day`);
 of `update_staff_member`. Nothing is deleted: `end_date` is how someone leaves. The estimate, the payslips and the
 screens are later cards.
 
+**The tax calendar is pack data keyed by the calendar year a date falls in (REB-1004).** `FiscalPack.calendars`
+holds `TaxCalendarLaw` entries (`fiscal/law.py`), each a list of `TaxDateRule` with the nominal days and the primary
+source; a decree that moves a date is a new entry from that year, never a branch in a service. `fiscal/calendar.py`
+turns an entry into the dates of one year and moves a deadline on a Saturday, a Sunday or a national holiday to
+the next working day, keeping `nominal_date` beside `due_date`. A year with no entry has no dates (`None`, then an
+empty list), never another year's. A date enters a pack only after its row in the frame's A5 register is
+«verified» with the source. `get_tax_calendar` (`AnalyticsService`, registered in `tools/privileged.py`, module
+`taxes`) is an administrator's and a `full_access` token's, as `get_fiscal_estimate` is.
+
 **A router authenticates with `dependencies=[Depends(get_actor)]`, not per handler.** A
 handler that never names the actor is still behind it, and `test_routes_authenticate.py`
 asks every route of the OpenAPI document once with no credential. The open routes are the
