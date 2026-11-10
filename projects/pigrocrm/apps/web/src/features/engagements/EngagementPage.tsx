@@ -106,7 +106,8 @@ export function EngagementPage() {
   }
 
   const data = engagement.data
-  const today = toIsoDate(new Date())
+  // The CRM's own day, from the server: the browser's clock would disagree near midnight.
+  const today = data.today ?? toIsoDate(new Date())
   const plan = planMonths(report.data, payments.data?.items ?? [], today)
   const open = selected === null ? undefined : plan.rows.find((row) => row.key === selected)
   const live = data.state === 'draft' || data.state === 'awaiting_signature' || data.state === 'active'
@@ -286,7 +287,7 @@ export function EngagementPage() {
 
       <EngagementFormDialog open={editing} onOpenChange={setEditing} engagement={data} />
       {closing === null ? null : (
-        <CloseEngagementDialog engagementId={data.id} mode={closing} onClose={() => setClosing(null)} />
+        <CloseEngagementDialog engagementId={data.id} mode={closing} today={today} onClose={() => setClosing(null)} />
       )}
       {arrival === null ? null : (
         <RecordArrivalDialog engagementId={data.id} month={arrival} onClose={() => setArrival(null)} />
