@@ -150,8 +150,8 @@ class _flat_rate:
 
 class _ordinary:
     """`RF01`, the ordinary regime, on the `it-standard` pack (REB-760) and on `it-company`
-    (REB-1005), which invoice the same way. Every operation to a customer in Italy is taxed at the rate entered, or the profile's default, and
-    the invoice carries no `Natura`, no `RiferimentoNormativo` and no stamp duty: there is
+    (REB-1005), which invoice the same way. Every operation to a customer in Italy is taxed
+    at the rate entered, or the profile's default, and the invoice carries no `Natura`, no `RiferimentoNormativo` and no stamp duty: there is
     no untaxed base for the duty to be owed on. Its arithmetic is spec 6.1's, the rounding
     of `totals.py` producing a VAT figure for every group (a 22% and a 10% line on one
     invoice).
