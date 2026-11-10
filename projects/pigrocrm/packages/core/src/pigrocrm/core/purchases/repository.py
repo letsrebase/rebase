@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Select, func, select
@@ -31,7 +32,7 @@ class PurchaseRepository:
         return purchase
 
     @staticmethod
-    def _filtered(query: PurchaseListQuery) -> Select[tuple[Purchase]]:
+    def _filtered(query: PurchaseListQuery) -> Select[Any]:
         """The rows a query selects, before paging: what the page and its totals both read."""
         stmt = select(Purchase).where(Purchase.deleted_at.is_(None))
         if query.only_general:

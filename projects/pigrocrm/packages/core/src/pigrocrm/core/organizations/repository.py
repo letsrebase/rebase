@@ -137,7 +137,8 @@ class OrganizationRepository:
         """Narrow a select of `Organization` to one role; `any` leaves it as it is."""
         return stmt if role == "any" else stmt.where(Organization.roles.contains([role]))
 
-    def list(self, query: OrganizationListQuery) -> list[Organization]:
+    def _filtered(self, query: OrganizationListQuery) -> Select[Any]:
+        """The rows a query selects before it is paged: what the page and its total both read."""
         stmt = select(Organization).where(Organization.deleted_at.is_(None))
 
         if query.search:
@@ -162,9 +163,20 @@ class OrganizationRepository:
             stmt = stmt.where(Organization.status == query.status)
         if query.legal_entity_id:
             stmt = stmt.where(_of_legal_entity(query.legal_entity_id))
+        if query.supplier_kind:
+            stmt = stmt.where(Organization.supplier_kind == query.supplier_kind)
         if query.custom:
             # JSONB containment, served by the GIN index.
             stmt = stmt.where(Organization.custom_fields.contains(query.custom))
+        return stmt
+
+    def count(self, query: OrganizationListQuery) -> int:
+        """How many organizations the filters select in all, whatever page was asked for."""
+        rows = self._filtered(query).subquery()
+        return int(self.session.execute(select(func.count()).select_from(rows)).scalar_one())
+
+    def list(self, query: OrganizationListQuery) -> list[Organization]:
+        stmt = self._filtered(query)
 
         # Residuo R9: keyset pagination over a *whitelisted* column, ordered
         # `col <dir>, id <dir>` (`NULLS LAST` only where the column admits a null, which
