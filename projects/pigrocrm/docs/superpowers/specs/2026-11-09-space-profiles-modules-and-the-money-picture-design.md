@@ -254,12 +254,15 @@ The register as of today, from the conversation:
 | Deferred IVA for a public body | to verify | |
 | Exempt thresholds for travel allowances, traceable payment of reimbursements | to verify | |
 | ACI tables for mileage | to verify | |
-| Payroll withholdings and contributions paid by F24 on the 16th of the following month | to verify | |
-| Months of the 13th and 14th payments, by collective agreement | to verify | |
+| Income tax withheld on employment pay is paid by F24 by the 16th of the month after the **payment** | verified 2026-11-10 | Agenzia, «F24 Ritenute reddito lavoro dipendente - Come e quando si versa». From 1 January 2027: art. 32 c. 1 lett. a D.Lgs. 33/2025 («entro il giorno 16 del mese successivo a quello in cui sono state operate le ritenute previste dagli articoli 33, 34, ...») and the F24 term of art. 8 c. 1, read on portalenormativo.it on 2026-11-10; they replace art. 18 D.Lgs. 241/1997 and art. 8 DPR 602/1973 without changing the dates |
+| INPS contributions of an employee (employer's and employee's share, paid together by the employer) are paid by the 16th of the month after the month the work was done, whether or not the worker was paid | verified 2026-11-10 | INPS, «Pagamento dei contributi previdenziali» (updated 15 October 2024) |
+| The employee's INPS share and the employer's INPS rate | to verify | typed per staff member (`employee_inps_rate`, `employer_inps_rate`); no primary source states one rate for every employer, so the estimate writes no F24 line without both (REB-975) |
+| Months of the 13th and 14th payments, by collective agreement | to verify | typed per staff member (`thirteenth_month`, `fourteenth_month`); a payment with no month is not scheduled and the estimate says so (REB-975) |
 | TFR accrual and its payment rules (end of employment, advances, pension funds) | to verify | |
 | TFM accrual and its deductibility conditions (a written deed of earlier date) | to verify | |
-| INAIL yearly settlement and its dates | to verify | |
-| IRPEF withholding and «gestione separata» treatment of a director's fee | to verify | |
+| INAIL's yearly premium (the advance of the year and the regularisation of the one before, together) is paid by F24 by 16 February; the employer may elect four instalments (16 February, then dates fixed each year) | verified 2026-11-10 | INAIL, «Autoliquidazione 2025/2026 - Premi e contributi associativi», version of 8 January 2026, «Informazioni generali» and «Pagamento in quattro rate». The estimate dates the single settlement; the instalment election and each year's later dates are not modelled |
+| INAIL premium rate and risk class, and the premium base for a part-time or minimum-wage case | to verify | typed per staff member (`employer_inail_rate`); the accountant gives the rate (REB-975) |
+| IRPEF withholding rate and «gestione separata» treatment of a director's fee, and whether a fee is income assimilated to employment pay (art. 34 D.Lgs. 33/2025, whose F24 term is the same 16th of the month after) | to verify | not estimated: a director has a cost and a net fee from the last payslip's ratio, and no F24 line (REB-975) |
 | CBI Globe as the Italian access to banking APIs | to verify | |
 | Qonto and Revolut Business CSV export formats | to verify | |
 | Banco BPM business banking export format (it may be «YouBusiness Web», not «YouWeb») | to verify | |

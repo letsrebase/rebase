@@ -73,7 +73,9 @@ SURFACES: dict[str, dict[str, Any]] = {
 # in place of the six cost tools (measured at 104,700 bytes): a purchase has a kind, a supplier, a
 # VAT recap and the currency, and the two writes list them by name and type through a compact
 # schema (no `null` branches, no patterns), which is how an agent learns them.
-DEFAULT_BUDGET_BYTES = 104_800
+# REB-1008: 105.25 KB, up from 104.8 KB, for `list_payroll_totals` (every token's, 444 bytes): the
+# «Stipendi» line a token that may not read payroll reads in its place, measured at 105,244.
+DEFAULT_BUDGET_BYTES = 105_250
 # REB-957: 111.9 KB, up from 111.6 KB, for `skip_space_onboarding` (a full-access
 # administrator's), measured at 111,786 bytes; `describe_space`'s `onboarding` fits the default.
 # REB-977: 116.2 KB, up from 113.4 KB, for `create_staff_member`, `update_staff_member`,
@@ -90,7 +92,10 @@ DEFAULT_BUDGET_BYTES = 104_800
 # REB-993: 123.3 KB, up from 120.2 KB, the seven purchase tools (+3.0 KB net of the cost tools).
 # REB-1006: 124.1 KB, up from 123.3 KB, for `set_declared_tax_figure` (a full-access
 # administrator's, three amounts, a tax and a year).
-FULL_ACCESS_BUDGET_BYTES = 124_100
+# REB-1008: 125.1 KB, up from 124.1 KB, for `list_payroll_totals` and `get_payroll_month` (a
+# full-access administrator's) and the three staff fields `update_staff_member` lists by name and
+# type, measured at 125,098.
+FULL_ACCESS_BUDGET_BYTES = 125_100
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

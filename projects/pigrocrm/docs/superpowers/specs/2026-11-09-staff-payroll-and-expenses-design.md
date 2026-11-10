@@ -85,13 +85,19 @@ hours at the hourly cost, as an allocation to the deal.
 - What no source states for everyone is **typed per staff member**, never defaulted: the employee's
   INPS share, and the months of the 13th and 14th payments. A part with a missing input is not
   estimated and `not_estimated` names it. The F24 lines (withholding, INPS, INAIL) come together
-  or not at all: they need the pay day, the pack's dates and both INPS rates, besides the ratios.
-- A director has cost from the fee and, from the ratios, net fee and withholding. The INPS
-  «gestione separata» is not estimated (frame A5, REB-975).
+  or not at all: they need the pay day, the pack's dates, the ratios and the three typed rates
+  (the employer's and the employee's INPS share and INAIL's), since INPS is paid as one line and
+  INAIL's premium in the same F24. The 13th and 14th leave in their own typed month, whatever
+  the pay day's offset says of the regular payment.
+- A director has a cost from the fee and, from the ratios, a net fee on the pay day, and **no F24
+  line**: what a fee is withheld at and the INPS «gestione separata» are «to verify» (frame A5,
+  REB-975), so the estimate says `fee_withholding` and `gestione_separata`, not a number.
 - The **accepted payslip** is a row of `staff_payslips` (gross, net, withholding of one month),
   typed by a person for now (`record_staff_payslip`, person-only); the inbox's proposal will
-  write the same row. Its month stops being an estimate: the due items are `expected` with its
-  figures, the cost is its gross, and the ratios of the latest payslip drive every other month.
+  write the same row. Its month stops being an estimate for what it prints: the net pay and the
+  withholding are `expected` due items with its figures, the cost is its gross, and the ratios of
+  the latest payslip drive every other month. The INPS line and INAIL's premium are not on a
+  payslip and stay forecasts.
 - Forecast due items are written on every change of the inputs, the pay day or a payslip, from
   two months back to twelve ahead, as `forecast` out items of the `payroll` source. An unchanged
   one is left alone, a changed one is dropped and rewritten, and one whose date passed is
