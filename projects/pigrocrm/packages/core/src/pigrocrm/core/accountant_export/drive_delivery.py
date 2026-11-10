@@ -25,6 +25,7 @@ from pigrocrm.core.accountant_export.schemas import DriveDeliveryStatus, DriveWr
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, get_settings
+from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.drive.repository import DriveRepository
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.storage.base import DocumentStorage
@@ -64,11 +65,12 @@ def period_folder(period_from: dt.date, period_to: dt.date) -> str:
     return f"{period_from.isoformat()}_{period_to.isoformat()}"
 
 
-def drive_prefix(row: AccountantExportRow, written_at: dt.datetime) -> str:
-    """`commercialista/<entity-slug>/<period>/<timestamp>`, lowercase as every storage key is.
-    The entity folder is the one the build chose, the second segment of its own prefix."""
+def drive_prefix(row: AccountantExportRow, written_at: dt.datetime, write_id: UUID) -> str:
+    """`commercialista/<entity-slug>/<period>/<timestamp>-<id>`, lowercase as every storage key
+    is: the end of the write's id keeps two writes in the same second apart, as the build does
+    with its own. The entity folder is the one the build chose, the second segment of its prefix."""
     folder = row.prefix.split("/")[1]
-    stamp = f"{written_at.astimezone(dt.UTC):%Y%m%dt%H%M%Sz}"
+    stamp = f"{written_at.astimezone(dt.UTC):%Y%m%dt%H%M%Sz}-{write_id.hex[-8:]}"
     return f"commercialista/{folder}/{period_folder(row.period_from, row.period_to)}/{stamp}"
 
 
@@ -78,8 +80,11 @@ def drive_unavailable(session: Session, settings: Settings) -> str | None:
     account, or no connected account with a folder, is there to write with (`not_connected`)."""
     if settings.storage_backend != "gdrive":
         return LOCAL_STORAGE
-    if settings.gdrive_service_account_json and settings.gdrive_root_folder_id:
-        return None
+    if settings.gdrive_service_account_json or settings.gdrive_root_folder_id:
+        # Either variable selects the service account and the other is then required: half of
+        # it is a Drive that cannot be written to, as the storage factory says.
+        both = settings.gdrive_service_account_json and settings.gdrive_root_folder_id
+        return None if both else NOT_CONNECTED
     return None if DriveRepository(session).storage_account() is not None else NOT_CONNECTED
 
 
@@ -125,7 +130,8 @@ class ExportDriveService:
                 "l'esportazione è stata eliminata dopo 13 mesi: se serve, va rifatta",
             )
         written_at = now or dt.datetime.now(dt.UTC)
-        prefix = drive_prefix(row, written_at)
+        write_id = uuid7()
+        prefix = drive_prefix(row, written_at, write_id)
         files: list[dict[str, object]] = []
         try:
             for entry in row.parts:
@@ -138,6 +144,7 @@ class ExportDriveService:
             self._delete(files)
             raise
         write = ExportDriveWrite(
+            id=write_id,
             export_id=row.id,
             legal_entity_id=row.legal_entity_id,
             prefix=prefix,

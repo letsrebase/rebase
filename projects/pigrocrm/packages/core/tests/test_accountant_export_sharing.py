@@ -460,7 +460,9 @@ def test_an_export_is_written_to_the_drive_folder_the_design_names(
         exported, ADMIN, now=NOW
     )
 
-    assert written.prefix == f"commercialista/{row.prefix.split('/')[1]}/2026-t3/20261110t104012z"
+    assert written.prefix == (
+        f"commercialista/{row.prefix.split('/')[1]}/2026-t3/20261110t104012z-{written.id.hex[-8:]}"
+    )
     assert written.files == [row.parts[0]["filename"]]
     assert written.written_by == ADMIN.id and written.written_at == NOW
     copy = storage.get(f"{written.prefix}/{row.parts[0]['filename']}")
@@ -484,7 +486,11 @@ def test_writing_twice_keeps_both_copies_apart(db_session: Session) -> None:
     second = service.write_export_to_drive(exported, ADMIN, now=NOW + dt.timedelta(minutes=5))
 
     assert first.prefix != second.prefix
+    # Two writes in the same second are apart too.
+    third = service.write_export_to_drive(exported, ADMIN, now=NOW + dt.timedelta(minutes=5))
+    assert third.prefix != second.prefix
     assert [write.id for write in service.list_drive_writes(exported, ADMIN)] == [
+        third.id,
         second.id,
         first.id,
     ]
@@ -535,6 +541,12 @@ def test_the_status_says_available_with_a_service_account(db_session: Session) -
     status = ExportDriveStatus(db_session, settings).get_drive_status(ADMIN)
 
     assert (status.available, status.reason) == (True, None)
+    only_the_folder = Settings(  # type: ignore[call-arg]
+        _env_file=None, storage_backend="gdrive", gdrive_root_folder_id="abc"
+    )
+    assert ExportDriveStatus(db_session, only_the_folder).get_drive_status(ADMIN).reason == (
+        "not_connected"
+    )
 
 
 def test_writing_to_drive_is_a_persons_act_and_an_admins(db_session: Session) -> None:
@@ -562,8 +574,10 @@ def test_writing_to_drive_is_a_persons_act_and_an_admins(db_session: Session) ->
 
 
 def test_a_copy_that_fails_halfway_leaves_nothing_in_drive_and_no_row(
-    db_session: Session,
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    fixed = UUID("00000000-0000-7000-8000-000000000000")
+    monkeypatch.setattr("pigrocrm.core.accountant_export.drive_delivery.uuid7", lambda: fixed)
     storage, _, settings = _drive()
     exported = _build(db_session, storage)
     row = db_session.get(AccountantExportRow, exported)

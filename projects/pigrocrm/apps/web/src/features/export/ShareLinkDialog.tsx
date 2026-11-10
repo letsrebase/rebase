@@ -38,8 +38,9 @@ export function ShareLinkDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const [pending, setPending] = useState(false)
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => (next || !pending) && onOpenChange(next)}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Link per il commercialista</DialogTitle>
@@ -49,13 +50,21 @@ export function ShareLinkDialog({
           </DialogDescription>
         </DialogHeader>
         {/* Born with each opening, so a closed dialog never offers last time's address. */}
-        <LinkForm exportId={exportId} onClose={() => onOpenChange(false)} />
+        <LinkForm exportId={exportId} onClose={() => onOpenChange(false)} onPending={setPending} />
       </DialogContent>
     </Dialog>
   )
 }
 
-function LinkForm({ exportId, onClose }: { exportId: string; onClose: () => void }) {
+function LinkForm({
+  exportId,
+  onClose,
+  onPending,
+}: {
+  exportId: string
+  onClose: () => void
+  onPending: (pending: boolean) => void
+}) {
   const [days, setDays] = useState<number>(DEFAULT_EXPIRY_DAYS)
   const create = useCreateLink(exportId)
   const { reset } = create
@@ -63,6 +72,9 @@ function LinkForm({ exportId, onClose }: { exportId: string; onClose: () => void
   // of the answer is dropped with the dialog.
   const [created, setCreated] = useState<CreatedShareLink | null>(null)
   useEffect(() => reset, [reset])
+  // The dialog may not be closed while the link is being made: its address is only shown here.
+  const pending = create.isPending
+  useEffect(() => onPending(pending), [pending, onPending])
 
   if (created !== null) return <CreatedLink link={created} onClose={onClose} />
 
