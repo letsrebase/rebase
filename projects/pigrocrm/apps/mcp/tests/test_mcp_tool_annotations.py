@@ -76,7 +76,7 @@ DEFAULT_BUDGET_BYTES = 101_750
 # fields, and `update_staff_member` lists them by name and type, which is how an agent learns them.
 # REB-972: 117.0 KB, up from 116.2 KB, the same tool, measured at 116,956 bytes.
 # REB-984: 118.5 KB, up from 117.0 KB, the same three tools, measured at 118,400 bytes.
-# REB-976: 118.6 KB, up from 118.5 KB, the same field (+146 bytes with the new `share` row).
+# REB-976: 118.6 KB, up from 118.5 KB, the same field.
 FULL_ACCESS_BUDGET_BYTES = 118_600
 
 # A name starting with one of these reads. The tools that read without such a name are
