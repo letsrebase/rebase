@@ -11892,6 +11892,16 @@ export interface components {
             total: string;
             /** Stamp Duty */
             stamp_duty?: string | null;
+            /**
+             * Withholding Amount
+             * @default 0.00
+             */
+            withholding_amount: string;
+            /**
+             * Split Payment
+             * @default false
+             */
+            split_payment: boolean;
             /** Social Security Pension Fund */
             social_security_pension_fund: components["schemas"]["ParsedInvoiceSocialCharge"][];
             /** Payment Terms */
@@ -12050,6 +12060,8 @@ export interface components {
             taxable_amount: string;
             /** Vat Amount */
             vat_amount: string;
+            /** Vat Collectability */
+            vat_collectability?: string | null;
         };
         /**
          * ParsedInvoiceTransmission

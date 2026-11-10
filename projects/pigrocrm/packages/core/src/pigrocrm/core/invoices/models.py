@@ -57,7 +57,8 @@ def _net_receivable_default(context: DefaultExecutionContext) -> Decimal:
     """What a row built without a net receivable is owed: the gross total. A row that carries
     a withholding or a split payment states its net; every other row, the hand-built ones of
     the tests among them, is owed what it printed."""
-    return context.get_current_parameters()["total"]
+    total: Decimal = context.get_current_parameters()["total"]  # type: ignore[no-untyped-call]
+    return total
 
 
 class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
