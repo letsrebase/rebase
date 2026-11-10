@@ -70,6 +70,8 @@ DOCUMENT_TYPE: dict[str, str] = {
     "invoice": "fattura",
     "invoice_xml": "fattura_xml",
     "hours_report": "rapporto_ore",
+    "framework_agreement": "contratto_quadro",
+    "engagement_letter": "lettera_incarico",
 }
 
 DOCUMENT_STATUS: dict[str, str] = {
@@ -85,6 +87,8 @@ TEMPLATE_TYPE: dict[str, str] = {
     "minutes": "verbale",
     "document": "documento",
     "hours_report": "rapporto_ore",
+    "framework_agreement": "contratto_quadro",
+    "engagement_letter": "lettera_incarico",
     "payment_reminder": "sollecito",
 }
 

@@ -140,6 +140,10 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "read_engagements",
         "update_engagement",
         "get_freelancer_availability",
+        # What a letter or framework agreement would say now: a read, with the free text of the
+        # texts and of the engagement in it.
+        "preview_engagement",
+        "preview_framework_agreement",
     }
 )
 
@@ -286,6 +290,11 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         # The freelancer's signature makes an engagement active: a person records it, never the
         # credential that read the letter's text (collaborators design § 6).
         "activate_engagement",
+        # Writing a letter or a framework agreement as a document: a person reviews the text first,
+        # and the agent's way to a legal document is `send_engagement_for_signature` with
+        # `full_access` (a later card). Previews are reads and sit in the allowed set above.
+        "create_engagement_letter",
+        "create_framework_agreement",
         # Connections to third parties, and mail that leaves in the owner's name.
         "connect_gmail",
         "disconnect_gmail",

@@ -31,6 +31,7 @@ LEGAL_ENTITY_KEYS: dict[str, str] = {
     "signature_key": "firma_key",
     "email_signature": "firma_email",
     "tax_regime": "regime_fiscale",
+    "legal_representative": "rappresentante",
 }
 
 CUSTOMER_KEYS: dict[str, str] = {
@@ -58,3 +59,26 @@ TAX_KEYS: dict[str, str] = {
 def italian_keys(data: dict[str, Any], keys: dict[str, str]) -> dict[str, Any]:
     """`data` with the top-level keys renamed through `keys`."""
     return {keys.get(name, name): value for name, value in data.items()}
+
+
+def seat(
+    address: str | None, postal_code: str | None, city: str | None, province: str | None
+) -> str | None:
+    """`Via Roma 1, 20100 Milano (MI)`: the registered office as a contract writes it, or `None`
+    when the party has no address at all."""
+    place = " ".join(part for part in (postal_code, city) if part)
+    if province and place:
+        place = f"{place} ({province})"
+    text = ", ".join(part for part in (address, place) if part)
+    return text or None
+
+
+def with_seat(party: dict[str, Any]) -> dict[str, Any]:
+    """A party already renamed through `PARTY_KEYS`, plus `sede`: its address on one line, the
+    way the contracts print the registered office."""
+    return {
+        **party,
+        "sede": seat(
+            party.get("indirizzo"), party.get("cap"), party.get("comune"), party.get("provincia")
+        ),
+    }

@@ -26,7 +26,7 @@ from pigrocrm.core.organizations.schemas import OrganizationRead
 from pigrocrm.core.render.pdf import build_header, render_pdf
 from pigrocrm.core.templates.models import Template
 from pigrocrm.core.templates.renderer import render_template
-from pigrocrm.core.templates.scope import CUSTOMER_KEYS, italian_keys
+from pigrocrm.core.templates.scope import CUSTOMER_KEYS, italian_keys, with_seat
 
 # The template types a `documents` row can legitimately be created from. Derived from
 # `DocumentType` itself, never retyped, so a value added there is covered here by
@@ -95,8 +95,11 @@ class DocumentTemplating:
             "emittente"
         ]
         scope["cliente"] = (
-            italian_keys(
-                OrganizationRead.model_validate(customer).model_dump(mode="json"), CUSTOMER_KEYS
+            with_seat(
+                italian_keys(
+                    OrganizationRead.model_validate(customer).model_dump(mode="json"),
+                    CUSTOMER_KEYS,
+                )
             )
             if customer
             else {}

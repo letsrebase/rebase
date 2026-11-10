@@ -40,7 +40,8 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.errors import Conflict, NotFound
+from pigrocrm.core.collaborators.letters import LETTER_TEMPLATE_TYPES, check_front_matter
+from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.render.pdf import ASSETS_DIR
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 from pigrocrm.core.templates.models import Template
@@ -94,6 +95,47 @@ class TemplateService:
         self.repo = TemplateRepository(session)
         self.activities = ActivityService(session)
 
+    def _check_letter_kind(
+        self,
+        kind: str,
+        letter_type: str | None,
+        body: str,
+        *,
+        active: bool,
+        own: Template | None,
+    ) -> None:
+        """A framework agreement or an engagement letter names its regime, opens with the front
+        matter that says its version and whether it is still a draft, and is the only active text
+        of its kind and regime (a letter reads the space's template, so two would make the choice
+        arbitrary). No other type has a regime. Templates of these types are written by an
+        administrator only: `create` and `update` already demand one, and these texts are legal
+        documents whose computed fields (the fee, the payment term) are never typed in."""
+        if kind not in LETTER_TEMPLATE_TYPES:
+            if letter_type is not None:
+                raise ValidationFailed(
+                    ENTITY,
+                    "letter_type",
+                    "il regime vale solo per i contratti quadro e le lettere di incarico",
+                    expected="letter_type vuoto",
+                )
+            return
+        if letter_type is None:
+            raise ValidationFailed(
+                ENTITY,
+                "letter_type",
+                "serve il regime del testo: ordinario o occasionale",
+                expected="ordinary | occasional",
+            )
+        check_front_matter(body)
+        if active:
+            other = self.repo.active_letter(kind, letter_type)
+            if other is not None and other is not own:
+                raise Conflict(
+                    ENTITY,
+                    "c'è già un template attivo per questo tipo e questo regime: disattivalo prima",
+                    template=other.name,
+                )
+
     def create(self, data: TemplateCreate, actor: Actor) -> TemplateRead:
         actor.require_unscoped_admin("create_template")
         # Fails fast, at save time, naming the offending template line -- rather
@@ -103,6 +145,9 @@ class TemplateService:
         # (parser.py's own ENTITY/FIELD constants), so there is nothing to catch or
         # re-wrap here.
         parse_template(data.body_markdown)
+        self._check_letter_kind(
+            data.type, data.letter_type, data.body_markdown, active=data.active, own=None
+        )
         if self.repo.get_by_name(data.name) is not None:
             raise _conflicting_name(data.name)
 
@@ -145,6 +190,13 @@ class TemplateService:
             # object, not merely an equal one.
             if existing is not None and existing is not template:
                 raise _conflicting_name(changes["name"])
+        self._check_letter_kind(
+            changes.get("type", template.type),
+            changes.get("letter_type", template.letter_type),
+            changes.get("body_markdown", template.body_markdown),
+            active=changes.get("active", template.active),
+            own=template,
+        )
         for key, value in changes.items():
             setattr(template, key, value)
 
@@ -187,6 +239,9 @@ class TemplateService:
         if template is None:
             raise NotFound(ENTITY, template_id)
         was_active = template.active
+        self._check_letter_kind(
+            template.type, template.letter_type, template.body_markdown, active=True, own=template
+        )
         template.active = True
         if not was_active:
             self.activities.record(ENTITY, template.id, "activated", actor)

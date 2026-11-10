@@ -107,6 +107,10 @@ class LegalEntity(Base, PrimaryKeyMixin, TimestampMixin):
     # between two places. The previous system hardcoded all of it, twice, verbatim, in two builders.
     email_signature: Mapped[str | None] = mapped_column(Text, default=None)
     tax_regime: Mapped[str | None] = mapped_column(String(200), default=None)
+    # The person who signs for the entity: the `rebase-rappresentante` of the engagement letters
+    # and framework agreements (collaborators design § 1, «The signer's side»). Free text, as the
+    # company writes it («Mario Rossi, amministratore unico»).
+    legal_representative: Mapped[str | None] = mapped_column(String(160), default=None)
     # REB-974, taxes design § 1: the last day of the fiscal year, 31 December unless the
     # company's statutes say otherwise. A legal entity's own fact and not the profile's: it
     # is the entity's financial year, which the company dates follow (balance and first

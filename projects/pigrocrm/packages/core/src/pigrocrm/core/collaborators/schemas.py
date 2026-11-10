@@ -14,6 +14,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from pigrocrm.core.collaborators.models import ROLE_MAX_LENGTH
+from pigrocrm.core.documents.schemas import DocumentRead
 from pigrocrm.core.validation import SafeStr
 
 KIND_MAX_LENGTH = 20
@@ -127,6 +128,9 @@ class EngagementRead(BaseModel):
     payment_end_of_month: bool
     collection_days: int | None
     state: str
+    # `YYYY-NNN`, drawn when the engagement was created; null on one written before letters moved
+    # here.
+    letter_number: str | None
     # What an admin still has to fill in: `days_per_week` and `client`.
     missing: list[str]
     # Filled on a create, an update and a get of a live engagement.
@@ -202,4 +206,62 @@ class FreelancerTaxData(BaseModel):
         default=None,
         max_length=KIND_MAX_LENGTH,
         description="professional | flat_rate | occasional",
+    )
+
+
+LETTER_VARIABLE_MAX_LENGTH = 4_000
+LETTER_VARIABLES_MAX = 60
+
+
+class LetterRequest(BaseModel):
+    """The fields an administrator writes for one letter: the text's own free-text fields
+    (`attivita`, `risultati`, `luogo`, ...), by the name the template declares them under. What the
+    engagement, the freelancer, the client and the legal entity already say is never typed here
+    and cannot be overridden."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    variables: dict[str, SafeStr | None] = Field(
+        default_factory=dict,
+        max_length=LETTER_VARIABLES_MAX,
+        description="Free-text fields of the template, by name; a field left out prints as a blank",
+    )
+
+
+class LetterPreview(BaseModel):
+    """A letter rendered and not stored: what an administrator checks before it exists as a
+    document. `blank` lists the fields the page prints as blank lines (the signatures among
+    them), `draft` says the text itself is still a draft and could not be sent."""
+
+    kind: str = Field(description="framework_agreement | engagement_letter")
+    letter_type: str
+    template_id: UUID
+    text_version: str
+    draft: bool
+    number: str | None
+    blank: list[str]
+    markdown: str
+    pdf: bytes = Field(exclude=True, repr=False)
+
+
+class LetterRead(BaseModel):
+    """A letter as stored: the document, which regime and version of the text wrote it, its
+    number and the fields still blank."""
+
+    document: DocumentRead
+    engagement_id: UUID | None
+    letter_type: str
+    text_version: str
+    number: str | None
+    blank: list[str]
+
+
+class FrameworkAgreementRequest(BaseModel):
+    """Which regime a framework agreement is written for. Omitted, it follows the freelancer's
+    fiscal kind: `occasional` for an occasional freelancer, `ordinary` otherwise."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    letter_type: SafeStr | None = Field(
+        default=None, max_length=KIND_MAX_LENGTH, description="ordinary | occasional"
     )

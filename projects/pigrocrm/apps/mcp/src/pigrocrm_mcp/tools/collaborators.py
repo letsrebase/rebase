@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
+from pigrocrm.core.collaborators.letter_service import LetterService
 from pigrocrm.core.collaborators.schemas import (
     EngagementCreate,
     EngagementListQuery,
@@ -43,6 +44,24 @@ def _decimal(name: str, value: float | str | None) -> Decimal | None:
         return Decimal(str(value))
     except InvalidOperation as exc:
         raise ValidationFailed("input", name, "is not a number", expected="a number") from exc
+
+
+def preview_letter(
+    context: McpContext, engagement_id: str, variables: dict[str, str | None] | None
+) -> dict[str, Any]:
+    found = LetterService(context.session, context.storage).preview_letter(
+        _required_uuid("engagement_id", engagement_id), variables or {}, context.actor
+    )
+    return found.model_dump(mode="json")
+
+
+def preview_framework_agreement(
+    context: McpContext, freelancer_id: str, letter_type: str | None
+) -> dict[str, Any]:
+    found = LetterService(context.session, context.storage).preview_framework_agreement(
+        _required_uuid("freelancer_id", freelancer_id), letter_type, context.actor
+    )
+    return found.model_dump(mode="json")
 
 
 def create(

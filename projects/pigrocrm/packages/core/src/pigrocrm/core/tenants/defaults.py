@@ -16,11 +16,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.collaborators.letter_templates import seed_collaborator_templates
+from pigrocrm.core.config import get_settings
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.modules.registry import enabled_modules
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.pipeline.service import PipelineService
+from pigrocrm.core.space_settings.service import SpaceSettingsService
 from pigrocrm.core.templates.models import Template
 from pigrocrm.core.templates.service import TemplateService
 from pigrocrm.core.timetracking.categories import CostCategoryService
@@ -36,10 +40,19 @@ class DefaultsReport:
     templates: int
     categories: int
     legal_entities: int = 0
+    # The texts of the `collaborators` module (framework agreements, engagement letters, the NDA
+    # and the company's contract), written only in a space where that module is on.
+    collaborator_templates: int = 0
 
     @property
     def seeded(self) -> bool:
-        return bool(self.stages or self.templates or self.categories or self.legal_entities)
+        return bool(
+            self.stages
+            or self.templates
+            or self.categories
+            or self.legal_entities
+            or self.collaborator_templates
+        )
 
 
 def _is_empty(session: Session, model: type[PipelineStage | Template | CostCategory]) -> bool:
@@ -66,6 +79,15 @@ def ensure_defaults(session: Session, *, name: str | None = None) -> DefaultsRep
     if name and LegalEntityRepository(session).count() == 0:
         LegalEntityService(session).upsert_default(LegalEntityUpsert(legal_name=name), actor)
         legal_entities = 1
+    collaborator_templates = 0
+    if "collaborators" in enabled_modules(
+        SpaceSettingsService(session, get_settings()).effective()
+    ):
+        collaborator_templates = len(seed_collaborator_templates(session, actor))
     return DefaultsReport(
-        stages=stages, templates=templates, categories=categories, legal_entities=legal_entities
+        stages=stages,
+        templates=templates,
+        categories=categories,
+        legal_entities=legal_entities,
+        collaborator_templates=collaborator_templates,
     )

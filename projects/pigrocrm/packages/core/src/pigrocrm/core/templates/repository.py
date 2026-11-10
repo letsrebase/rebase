@@ -29,6 +29,14 @@ class TemplateRepository:
         self.session.flush()
         return template
 
+    def active_letter(self, kind: str, letter_type: str) -> Template | None:
+        """The active template of a framework agreement or an engagement letter for one regime:
+        at most one, which `uq_templates_letter_kind` guarantees."""
+        stmt = select(Template).where(
+            Template.type == kind, Template.letter_type == letter_type, Template.active.is_(True)
+        )
+        return self.session.execute(stmt).scalars().first()
+
     # `list` stays the last method defined in this class: naming a method `list`
     # rebinds that name in the class namespace, so any later method with a bare
     # `-> list[...]` return annotation would resolve `list` to this method instead of

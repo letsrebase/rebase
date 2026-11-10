@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.collaborators.letter_templates import seed_collaborator_templates
 from pigrocrm.core.collaborators.models import Engagement
 from pigrocrm.core.config import Settings
 from pigrocrm.core.contracts.models import Contract
@@ -311,6 +312,11 @@ class SpaceModulesService:
         values.update({setting_key(key): _bit(True) for key in data.on})
         values.update({setting_key(key): _bit(False) for key in data.off})
         self._write(values, actor)
+        if "collaborators" in data.on:
+            # The texts of the module come with it; a text the space already has is left alone.
+            # Written by the system, as the other defaults are: an agent that switched the module
+            # on may not create templates.
+            seed_collaborator_templates(self.session, Actor.system())
         return self.describe(actor)
 
 

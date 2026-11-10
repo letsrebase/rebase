@@ -22,7 +22,7 @@ from pigrocrm.core.legal_entities.schemas import (
     LegalEntityRead,
     LegalEntityUpsert,
 )
-from pigrocrm.core.templates.scope import LEGAL_ENTITY_KEYS, italian_keys
+from pigrocrm.core.templates.scope import LEGAL_ENTITY_KEYS, italian_keys, with_seat
 from pigrocrm.core.versioning import require_unchanged
 
 # The error label and the timeline entity keep the table's name (spec 2026-10-03 §10):
@@ -112,6 +112,11 @@ def _check_fiscal(data: dict[str, Any]) -> None:
             ENTITY, "sdi_code", "deve essere di 7 caratteri", expected="7 caratteri"
         )
     _check_fiscal_year_end(data)
+    # The representative is not on every form that saves a row (the web panel does not send it
+    # yet): a write that leaves it out or sends `null` keeps the row's own, and an empty string
+    # clears it, the way the fiscal year end above is never reset by a whole-row replacement.
+    if data.get("legal_representative") is None:
+        data.pop("legal_representative", None)
     if not data.get("name"):
         data["name"] = data["legal_name"][:NAME_MAX_LENGTH]
 
@@ -260,7 +265,7 @@ class LegalEntityService:
         """
         profile = self.get(actor, legal_entity_id)
         fields = profile.model_dump(mode="json", exclude=set(TEMPLATE_EXCLUDED_FIELDS))
-        return {"emittente": italian_keys(fields, LEGAL_ENTITY_KEYS)}
+        return {"emittente": with_seat(italian_keys(fields, LEGAL_ENTITY_KEYS))}
 
     # -- writes --------------------------------------------------------------
 

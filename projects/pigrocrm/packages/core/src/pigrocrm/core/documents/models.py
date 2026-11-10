@@ -59,6 +59,16 @@ class Document(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         index=True,
         default=default_legal_entity_id,
     )
+    # A letter's own links (collaborators design § 1, «The documents»): the engagement an
+    # engagement letter belongs to (a framework agreement hangs on the freelancer only), the regime
+    # of the text it was written from and that text's version. All three are null on every other
+    # document. The engagement keeps the owner rule above untouched: the freelancer organization
+    # still owns a letter.
+    engagement_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("engagements.id"), default=None, index=True
+    )
+    letter_type: Mapped[str | None] = mapped_column(String(20), default=None)
+    text_version: Mapped[str | None] = mapped_column(String(20), default=None)
     type: Mapped[str] = mapped_column(String(20), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     status: Mapped[str | None] = mapped_column(String(20), default=None)
@@ -103,6 +113,22 @@ class Document(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         # Slice 6 §4.1. See `Deal.__table_args__` for why the index is declared on the
         # model rather than only in the migration.
         Index("ix_documents_status_since", "status_since"),
+        # One live letter per engagement, and one live framework agreement per freelancer and
+        # regime: what `LetterService` checks first, held here under concurrency.
+        Index(
+            "uq_documents_engagement_letter",
+            "engagement_id",
+            "type",
+            unique=True,
+            postgresql_where=text("engagement_id IS NOT NULL AND deleted_at IS NULL"),
+        ),
+        Index(
+            "uq_documents_framework_agreement",
+            "customer_id",
+            "letter_type",
+            unique=True,
+            postgresql_where=text("type = 'framework_agreement' AND deleted_at IS NULL"),
+        ),
     )
 
 

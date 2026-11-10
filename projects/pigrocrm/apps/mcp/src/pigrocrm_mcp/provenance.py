@@ -114,6 +114,8 @@ FREE_TEXT_TOOLS: frozenset[str] = frozenset(
         "update_engagement",
         "get_engagement",
         "list_engagements",
+        "preview_engagement",
+        "preview_framework_agreement",
         "set_freelancer_tax_data",
         # Time, purchases and to-dos: descriptions and notes.
         "log_time",

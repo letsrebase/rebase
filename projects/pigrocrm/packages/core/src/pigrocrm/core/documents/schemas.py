@@ -25,6 +25,8 @@ DocumentType = Literal[
     "invoice_xml",
     "proforma",
     "hours_report",
+    "framework_agreement",
+    "engagement_letter",
 ]
 OfferState = Literal["draft", "sent", "accepted", "rejected"]
 
