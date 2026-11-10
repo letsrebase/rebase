@@ -85,10 +85,11 @@ FORBIDDEN = (
     "annul_invoice",
     "mark_invoice_transmitted",
     "export_invoice_xml",
-    # The accountant's export (REB-1012): every fiscal figure of an entity, stored. Both tools
-    # answer a download path, never bytes.
+    # The accountant's export (REB-1012): every fiscal figure of an entity, stored. The tools
+    # answer a download path or a link (REB-1047), never bytes.
     "build_accountant_export",
     "get_export_download_url",
+    "create_export_share_link",
     "recalculate_rates",
     "update_user_rates",
     "update_deal_rate",
@@ -326,9 +327,10 @@ FORBIDDEN_SERVICE_CALLS = (
     "annul",
     "mark_transmitted_externally",
     "export_xml",
-    # `AccountantExportService`'s two, named uniquely for this scan.
+    # `AccountantExportService`'s two and `ExportShareService`'s one, named uniquely for this scan.
     "build_accountant_export",
     "get_export_download_url",
+    "create_export_share_link",
     "recalculate_rates",
     "update_user_rates",
     "update_deal_rate",

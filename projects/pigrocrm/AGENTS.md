@@ -518,7 +518,7 @@ how REB-1016 plugs in.
 **«Esporta per il commercialista» is `/app/export` and draws what the server says (REB-1028).** `features/export/` is an
 administrator's page (the entry names `action: 'build_accountant_export'` in `components/nav.ts`, so the sidebar and «Altro» hide it
 from other roles by the `lib/permissions.ts` table, which `permissions.test.ts` pins to the core's `require_admin` strings; the first
-entry gated by role) with the tab and the open export in the URL (`?tab=prepare|exports&export=`). «Prepara» is the form: company (a
+entry gated by role) with the tab and the open export in the URL (`?tab=prepare|exports|links&export=&link=`). «Prepara» is the form: company (a
 field from the second company on, preset from the sidebar, «Tutte le aziende» a separate option never preselected and absent for a
 scoped admin), period (the calendar month, quarter or year, opening on the last complete period of the company's IVA frequency) and
 «Cosa contiene», which is `GET /api/accountant-export/parts` (the parts that apply to the company's modules and pack, in the index's
@@ -529,8 +529,30 @@ panel reads the snapshot the build kept in `checklist`: the parts with their cou
 drawn, and a part whose source is not built (`unavailable`) is drawn nowhere, since the page may not name a module that is off or not
 built. A build is synchronous: the page shows its row («In preparazione») while the request runs, a refusal stays as a row with the
 reason and «Riprova» (which makes a new export, since an export is never replaced), and the mutation's own `onSuccess` refreshes the
-list so an admin who left finds it done. The share link, the Drive copy, the readiness checklist, the payroll parts and the tab
-«Link condivisi» have no data yet and are drawn nowhere; each joins with its own card. The folder is under `no-browser-arithmetic.test.ts`.
+list so an admin who left finds it done. The readiness checklist and the payroll parts have no data yet and are drawn nowhere; each
+joins with its own card. The folder is under `no-browser-arithmetic.test.ts`.
+
+**An export is handed over by a share link or a copy in Drive (REB-1047).** `core/accountant_export/sharing.py` is two halves. `ExportShareService`
+(`create_export_share_link`, `list_export_share_links`, `get_export_share_link`, `revoke_export_share_link`; tables `accountant_export_links` and
+`accountant_export_link_openings`, migration 0104, both under the `legal_entity_visible` policy of their export) is an administrator's whose scope
+covers the export; only the create is also a `full_access` token's (the MCP tool `create_export_share_link`, which answers the link's `url`, never
+bytes), and list, read and revoke are `PERSON_ONLY_ACTIONS`. A link is 256 random bits (`token_urlsafe(32)`) stored **only as its SHA-256**: the
+raw address is in the answer that makes it and nowhere else, so the page shows it once in the dialog and no list has a «Copia». It lives 7 days,
+at most 30, and ends by `revoked_at` or `expires_at`; an export deleted at 13 months ends its links. `ExportShareDoor` is the public half, not a
+`*Service` because it has no actor: it binds the system scope for the one row a token hash names, answers `export_link_unknown` (404),
+`export_link_expired` or `export_link_revoked` (410), reads the file **then** counts the opening (`download_count` by `UPDATE ... + 1`) and writes
+an audit row (when, client address, which ZIP), so a download that failed leaves none. The routes are `POST /api/accountant-export/shared/describe`
+and `/download` (`routers/shared_export.py`, no login, the token in the **POST body** so it reaches no log, history or `Referer`; the file is
+`Cache-Control: no-store` and `Referrer-Policy: no-referrer`), throttled by `ratelimit.spend_one` (30 a minute per client), a backoff on a client
+that keeps sending tokens that do not resolve, and nginx's own `pigro_share` zone (`infra/origin/nginx/rate-limits.conf`, applied by hand to the
+host's vhosts). What the accountant opens is `/app/shared-export?t=` (`SharedExportPage`; `PUBLIC_APP_ROUTES`; `main.tsx` strips the `?t=` before
+anything runs; its nginx location is `access_log off` in the three conf files). The link's address is built from `PIGROCRM_PUBLIC_URL` only, never
+from a request's `Host`. «Link condivisi» is the third tab (`?tab=links&link=`), every link of the space with its count, state and openings.
+**Drive delivery** (`drive_delivery.py`, `ExportDriveService`, table `accountant_export_drive_writes`) copies the ZIPs under
+`commercialista/<entity-slug>/<period>/<timestamp>/` (`2026-t3`, `2026-09`, `2026`, or the two dates) when `storage_backend` is `gdrive`; with local
+storage `GET /api/accountant-export/drive` answers `local_storage` and the panel says so with no button, with Drive chosen and no account and folder
+`not_connected`. It is a person's act (`write_export_to_drive` is person only, no tool), and the 13-month deletion removes the copies too. A payroll
+export or one with payroll parts must not travel on a plain link (design § 3): neither exists yet, so the guard and the code link come with the payroll card.
 
 **A space mailbox's attachments reach the inbox through `BillingSink` and nothing else (REB-1016).** `inbox/mail_intake.py`
 decides from BODYSTRUCTURE which parts to fetch (an accepted extension, not inline, not a small image, not the

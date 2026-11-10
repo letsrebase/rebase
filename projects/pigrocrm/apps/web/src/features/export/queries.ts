@@ -3,7 +3,7 @@ import { api, toProblem, unwrap } from '@/lib/api'
 import { useIsAdmin } from '@/lib/auth'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { queryKeys, retryUnlessMissing } from '@/lib/query'
-import { PAGE_SIZE, type BuildRequest, type StoredExport } from './labels'
+import { PAGE_SIZE, type BuildRequest } from './labels'
 
 /**
  * Every read of «Esporta per il commercialista». All of them share one root key, so a build
@@ -162,11 +162,122 @@ export function useBuilderNames() {
   }
 }
 
-/** How an export is named wherever it is listed: its company, or «Tutte le aziende». */
+/** How an export or a link is named wherever it is listed: its company, or «Tutte le aziende». */
 export function useCompanyName() {
   const { byId } = useLegalEntity()
-  return (item: StoredExport): string =>
+  return (item: { scope: string; legal_entity_id: string | null }): string =>
     item.scope === 'all_entities'
       ? 'Tutte le aziende'
       : (byId(item.legal_entity_id)?.name ?? 'Azienda non più attiva')
+}
+
+/** The links of one export, newest first. */
+export function useExportLinks(exportId: string) {
+  return useQuery({
+    queryKey: [...ROOT, 'links', 'of', exportId] as const,
+    queryFn: () =>
+      unwrap(
+        api.GET('/api/accountant-export/share-links', {
+          params: { query: { export_id: exportId, limit: 200 } },
+        }),
+      ),
+    select: (page) => page.items,
+  })
+}
+
+/** Every link of the space, 50 at a time, newest first: the tab «Link condivisi». */
+export function useAllLinks() {
+  return useInfiniteQuery({
+    queryKey: [...ROOT, 'links', 'all'] as const,
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) =>
+      unwrap(
+        api.GET('/api/accountant-export/share-links', {
+          params: { query: { offset: pageParam, limit: PAGE_SIZE } },
+        }),
+      ),
+    getNextPageParam: (last, pages) => {
+      const loaded = pages.reduce((sum, page) => sum + page.items.length, 0)
+      return loaded < last.total_count && last.items.length > 0 ? loaded : undefined
+    },
+  })
+}
+
+/** One link with its latest openings: when, which file and from which address. */
+export function useLink(id: string) {
+  return useQuery({
+    retry: retryUnlessMissing,
+    queryKey: [...ROOT, 'links', 'one', id] as const,
+    queryFn: () =>
+      unwrap(
+        api.GET('/api/accountant-export/share-links/{link_id}', {
+          params: { path: { link_id: id } },
+        }),
+      ),
+  })
+}
+
+/** Makes a link for one export. The address comes back once, in this answer, and the dialog that
+ *  asked is the only place it is held; the lists refresh so the new link is in them. */
+export function useCreateLink(exportId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (days: number) =>
+      unwrap(
+        api.POST('/api/accountant-export/exports/{export_id}/share-links', {
+          params: { path: { export_id: exportId } },
+          body: { days },
+        }),
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...ROOT, 'links'] }),
+  })
+}
+
+/** Ends a link at once, with no confirmation: the page says so in a toast. */
+export function useRevokeLink() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) =>
+      unwrap(
+        api.POST('/api/accountant-export/share-links/{link_id}/revoke', {
+          params: { path: { link_id: id } },
+        }),
+      ),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: [...ROOT, 'links'] }),
+  })
+}
+
+/** Whether an export can be written to the space's Drive: the page draws the button only then. */
+export function useDriveStatus() {
+  return useQuery({
+    queryKey: [...ROOT, 'drive'] as const,
+    queryFn: () => unwrap(api.GET('/api/accountant-export/drive')),
+  })
+}
+
+/** Where an export was written to Drive, newest first. */
+export function useDriveWrites(exportId: string) {
+  return useQuery({
+    queryKey: [...ROOT, 'drive-writes', exportId] as const,
+    queryFn: () =>
+      unwrap(
+        api.GET('/api/accountant-export/exports/{export_id}/drive-writes', {
+          params: { path: { export_id: exportId } },
+        }),
+      ),
+  })
+}
+
+/** Copies an export to the space's Drive. A person's act: the button is the only way. */
+export function useWriteToDrive(exportId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      unwrap(
+        api.POST('/api/accountant-export/exports/{export_id}/drive-writes', {
+          params: { path: { export_id: exportId } },
+        }),
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [...ROOT, 'drive-writes'] }),
+  })
 }

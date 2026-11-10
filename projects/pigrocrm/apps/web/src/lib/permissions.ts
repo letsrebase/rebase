@@ -233,6 +233,13 @@ export const MIN_ROLE = {
   // entry in the menu and the download are an administrator's, as the core guards them.
   build_accountant_export: 'admin',
   get_export_download_url: 'admin',
+  // Handing an export over (REB-1047): the share link, who opened it, ending it, and a copy in
+  // the space's Drive are an administrator's. The last three are a person's act and have no
+  // agent tool; the first is also a `full_access` token's.
+  create_export_share_link: 'admin',
+  list_export_share_links: 'admin',
+  revoke_export_share_link: 'admin',
+  write_export_to_drive: 'admin',
   // The IVA periods and the registers behind them (REB-1024), the same position again.
   list_iva_periods: 'admin',
   // Closing an IVA period and reopening it (REB-1036): an administrator's, and only one with the

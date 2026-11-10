@@ -18,12 +18,18 @@ from fakes.legal_entity_fixtures import committed_default_legal_entity, remove_l
 from sqlalchemy import Engine, create_engine, delete
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.accountant_export.models import AccountantExportRow
+from pigrocrm.core.accountant_export.models import (
+    AccountantExportRow,
+    ExportDriveWrite,
+    ExportShareLink,
+    ExportShareOpening,
+)
 from pigrocrm.core.accountant_export.parts import Period
 from pigrocrm.core.accountant_export.service import AccountantExportService
+from pigrocrm.core.accountant_export.sharing import ExportShareDoor, ExportShareService
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.config import get_settings
+from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.role import ensure_application_role
 from pigrocrm.core.db.scope import bind_scope
@@ -77,6 +83,9 @@ def world(db_engine: Engine, tmp_path: object) -> Iterator[World]:
         ids.app.dispose()
         with factory() as session:
             session.execute(delete(Activity).where(Activity.entity_type == "accountant_export"))
+            session.execute(delete(ExportShareOpening))
+            session.execute(delete(ExportShareLink))
+            session.execute(delete(ExportDriveWrite))
             session.execute(delete(AccountantExportRow))
             session.execute(delete(LegalEntity).where(LegalEntity.id.in_([ids.studio, ids.other])))
             remove_legal_entity(session, inserted)
@@ -134,3 +143,52 @@ def test_an_unscoped_admin_sees_every_export_including_the_one_of_every_entity(
     with _unscoped(world) as session:
         assert _rows(session) == expected
         assert _entries(session) == expected
+
+
+def test_the_links_and_openings_of_an_export_are_seen_by_whoever_sees_the_export(
+    world: World, db_engine: Engine, tmp_path: object
+) -> None:
+    settings = Settings(_env_file=None, public_url="https://pigro.example")  # type: ignore[call-arg]
+    storage = LocalFileStorage(tmp_path)  # type: ignore[arg-type]
+    with session_factory(db_engine)() as session:
+        service = ExportShareService(session, settings)
+        links = {
+            export: service.create_export_share_link(export, Actor.system(), now=NOW)
+            for export in (world.studio_export, world.other_export, world.all_export)
+        }
+        door = ExportShareDoor(session, storage, settings)
+        for link in links.values():
+            door.open(link.url.split("?t=", 1)[1], 1, "203.0.113.7", now=NOW)
+
+    def seen(session: Session, model: type[ExportShareLink] | type[ExportShareOpening]) -> int:
+        return len(session.scalars(model.__table__.select()).all())  # type: ignore[attr-defined]
+
+    with _scoped(world, world.studio) as session:
+        assert (seen(session, ExportShareLink), seen(session, ExportShareOpening)) == (1, 1)
+    with _scoped(world, world.other) as session:
+        assert (seen(session, ExportShareLink), seen(session, ExportShareOpening)) == (1, 1)
+    with _unscoped(world) as session:
+        assert (seen(session, ExportShareLink), seen(session, ExportShareOpening)) == (3, 3)
+    # A session with no scope at all reads nothing: the default is closed.
+    with session_factory(world.app)() as session:
+        assert (seen(session, ExportShareLink), seen(session, ExportShareOpening)) == (0, 0)
+
+
+def test_the_public_door_opens_one_link_as_the_application_role_with_no_session_of_a_person(
+    world: World, db_engine: Engine, tmp_path: object
+) -> None:
+    settings = Settings(_env_file=None, public_url="https://pigro.example")  # type: ignore[call-arg]
+    storage = LocalFileStorage(tmp_path)  # type: ignore[arg-type]
+    with session_factory(db_engine)() as session:
+        created = ExportShareService(session, settings).create_export_share_link(
+            world.all_export, Actor.system(), now=NOW
+        )
+    token = created.url.split("?t=", 1)[1]
+
+    with session_factory(world.app)() as session:
+        door = ExportShareDoor(session, storage, settings)
+        assert door.describe(token, now=NOW).company == "Tutte le aziende"
+        assert door.open(token, 1, "203.0.113.7", now=NOW).data.startswith(b"PK")
+    with _unscoped(world) as session:
+        link = session.get(ExportShareLink, created.id)
+        assert link is not None and link.download_count == 1

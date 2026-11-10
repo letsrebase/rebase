@@ -4347,3 +4347,27 @@ def test_0103_adds_payslip_proposals_closed_payroll_months_and_the_payslip_readi
         assert all("payslip" not in sql for sql in _proposal_checks(url).values())
         upgrade(config, "0103")
         assert _table_shape(url, "payroll_month_closures")[0] is True
+
+
+def test_0104_creates_the_export_share_link_tables_under_the_scope_policy(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1047: three new tables under the row policy of every table that reaches a legal entity,
+    nothing backfilled; it reverses and comes back."""
+    tables = (
+        "accountant_export_links",
+        "accountant_export_link_openings",
+        "accountant_export_drive_writes",
+    )
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0103")
+        assert all(_table_shape(url, table)[0] is False for table in tables)
+        upgrade(config, "0104")
+        for table in tables:
+            assert _table_shape(url, table) == (True, True, {"legal_entity_scope"})
+        downgrade(config, "0103")
+        assert all(_table_shape(url, table)[0] is False for table in tables)
+        upgrade(config, "0104")
+        assert _table_shape(url, "accountant_export_links")[0] is True

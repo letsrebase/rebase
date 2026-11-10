@@ -17,7 +17,7 @@ import datetime as dt
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Date, DateTime, ForeignKey, String
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -50,3 +50,72 @@ class AccountantExportRow(Base, PrimaryKeyMixin, TimestampMixin):
     deleted_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
     )
+
+
+class ExportShareLink(Base, PrimaryKeyMixin, TimestampMixin):
+    """A share link for one stored export (spec accountant export § 3): the credential of
+    someone with no account, so it is held only as the SHA-256 of a 256-bit random token and
+    the raw value exists once, in the answer that creates it.
+
+    `legal_entity_id` repeats the export's, so the scope policy that hides an export hides its
+    links (`NULL` for the export of every entity, an unscoped administrator's). A link is never
+    deleted: `revoked_at` ends it early, `expires_at` ends it on its day, and the openings stay
+    as the audit.
+    """
+
+    __tablename__ = "accountant_export_links"
+
+    export_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accountant_exports.id"), nullable=False, index=True
+    )
+    legal_entity_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("legal_entities.id"), nullable=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    expires_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_by: Mapped[UUID | None] = mapped_column(nullable=True)
+    created_by_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    revoked_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    revoked_by: Mapped[UUID | None] = mapped_column(nullable=True, default=None)
+    # How many files were handed out through the link; written only by `UPDATE ... + 1`.
+    download_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+
+
+class ExportShareOpening(Base, PrimaryKeyMixin):
+    """One opening of a share link: a file handed to whoever held it, when and from which
+    address (the client address nginx reports), and which ZIP of the export it was."""
+
+    __tablename__ = "accountant_export_link_openings"
+
+    link_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accountant_export_links.id"), nullable=False, index=True
+    )
+    legal_entity_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("legal_entities.id"), nullable=True
+    )
+    opened_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    address: Mapped[str] = mapped_column(String(64), nullable=False)
+    part: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class ExportDriveWrite(Base, PrimaryKeyMixin):
+    """A copy of a stored export written to the space's Drive by a person, under
+    `commercialista/<entity-slug>/<period>/<timestamp>/`: where it is and when it was written."""
+
+    __tablename__ = "accountant_export_drive_writes"
+
+    export_id: Mapped[UUID] = mapped_column(
+        ForeignKey("accountant_exports.id"), nullable=False, index=True
+    )
+    legal_entity_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("legal_entities.id"), nullable=True
+    )
+    prefix: Mapped[str] = mapped_column(String(255), nullable=False)
+    # One object per ZIP written: `{"key", "filename", "size_bytes"}`.
+    files: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    written_by: Mapped[UUID | None] = mapped_column(nullable=True)
+    written_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -1,11 +1,11 @@
 """Exports are kept 13 months and then deleted, leaving a trace (spec § 3).
 
-The files leave the storage and the row stays with `deleted_at`, and an `activities` entry
-(`accountant_export_deleted`) says which export it was, for which period and how many files:
-never a figure out of the bundle. The pass runs inside the daily `pigrocrm automations`,
-which is already scheduled and watched for lateness, so no cron line is added. One export
-whose files cannot be deleted is counted and left for the next day's pass; it never stops
-the others.
+The files leave the storage (the copies written to Drive with them) and the row stays with
+`deleted_at`, and an `activities` entry (`accountant_export_deleted`) says which export it was,
+for which period and how many files: never a figure out of the bundle. The pass runs inside the
+daily `pigrocrm automations`, which is already scheduled and watched for lateness, so no cron
+line is added. One export whose files cannot be deleted is counted and left for the next day's
+pass; it never stops the others.
 """
 
 import datetime as dt
@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.accountant_export.models import AccountantExportRow
+from pigrocrm.core.accountant_export.models import AccountantExportRow, ExportDriveWrite
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.db.scope import bind_scope
@@ -75,6 +75,12 @@ class ExportRetention:
             try:
                 for part in row.parts:
                     storage.delete(part["key"])
+                # The copies a person wrote to Drive live as long as the export does.
+                for write in self.session.scalars(
+                    select(ExportDriveWrite).where(ExportDriveWrite.export_id == row.id)
+                ):
+                    for file in write.files:
+                        storage.delete(file["key"])
             except Exception:  # noqa: BLE001 - kept for the next pass, the others go on
                 failed += 1
                 continue

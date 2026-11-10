@@ -52,6 +52,7 @@ from pydantic import TypeAdapter
 
 from pigrocrm.core.accountant_export.parts import Period
 from pigrocrm.core.accountant_export.service import AccountantExportService
+from pigrocrm.core.accountant_export.sharing import DEFAULT_DAYS, ExportShareService
 from pigrocrm.core.analytics.schemas import BindTimeRequest
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.auth.models import User
@@ -818,6 +819,22 @@ def register(
         return (
             AccountantExportService(context.session, context.storage, settings)
             .get_export_download_url(UUID(export_id), context.actor)
+            .model_dump(mode="json")
+        )
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def create_export_share_link(export_id: str, days: int = DEFAULT_DAYS) -> dict[str, Any]:
+        """Makes a link to a stored export, admin only, from the `id` that
+        `build_accountant_export` answered: whoever holds the link downloads the export with no
+        account until it expires or a person revokes it. Answers the link's `url`, shown only
+        now (it is stored as a hash), never the file. Lives 7 days by default, at most 30.
+        Handing the url on is the owner's decision: say where it goes. Listing and revoking
+        links, and writing an export to Drive, are done by a person in the application.
+        """
+        return (
+            ExportShareService(context.session, settings)
+            .create_export_share_link(UUID(export_id), context.actor, days=days)
             .model_dump(mode="json")
         )
 

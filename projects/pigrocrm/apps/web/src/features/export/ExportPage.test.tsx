@@ -2,7 +2,9 @@
  * «Esporta per il commercialista» (REB-1028, the approved brief of 2026-11-10): the form that
  * asks for a build, the list of stored exports and the panel that downloads one, and the rules
  * the brief gives a component that it must not break: «Tutte le aziende» never preselected, no
- * part or sentence for a module that is off, no delivery that does not exist yet, an admin's page.
+ * part or sentence for a module that is off, an admin's page; and, from REB-1047, the delivery: the
+ * share link (made once and shown once, never copied from a list, revoked on one click), the copy
+ * in Drive (only where the storage is Drive) and the tab «Link condivisi».
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
@@ -10,10 +12,11 @@ import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
+import { toast } from '@rebase/ui/sonner'
 import { downloadFromApi } from '@/lib/download'
 import { LegalEntityContext, type LegalEntityValue } from '@/lib/legalEntity'
 import { ExportPage } from './ExportPage'
-import type { StoredExport } from './labels'
+import type { DriveStatus, DriveWrite, ShareLink, StoredExport } from './labels'
 import type { ExportTab } from './search'
 
 const session = vi.hoisted(() => ({ role: 'admin' as 'admin' | 'collaborator' | 'readonly' }))
@@ -97,8 +100,28 @@ const stored = (overrides: Partial<StoredExport> = {}): StoredExport => ({
   ...overrides,
 })
 
+const link = (overrides: Partial<ShareLink> = {}): ShareLink => ({
+  id: 'l-1',
+  export_id: 'e-1',
+  legal_entity_id: 'le-1',
+  scope: 'entity',
+  created_at: '2026-10-13T08:00:00Z',
+  created_by: 'u-2',
+  expires_at: '2026-10-20T08:00:00Z',
+  revoked_at: null,
+  state: 'active',
+  download_count: 0,
+  period_from: '2026-07-01',
+  period_to: '2026-09-30',
+  openings: [],
+  ...overrides,
+})
+
 let exportsList: StoredExport[]
 let partsAnswer: Promise<unknown> | unknown
+let linksList: ShareLink[]
+let driveStatus: DriveStatus
+let driveWrites: DriveWrite[]
 
 beforeEach(() => {
   session.role = 'admin'
@@ -106,6 +129,11 @@ beforeEach(() => {
   vi.setSystemTime(new Date(2026, 10, 10, 9, 0, 0))
   exportsList = []
   partsAnswer = PARTS
+  linksList = []
+  driveStatus = { available: false, reason: 'local_storage' }
+  driveWrites = []
+  vi.mocked(toast.success).mockClear()
+  vi.mocked(toast.error).mockClear()
   vi.mocked(api.POST).mockReset()
   vi.mocked(downloadFromApi).mockClear()
   vi.mocked(api.GET).mockReset()
@@ -119,6 +147,14 @@ beforeEach(() => {
     if (path === '/api/accountant-export/parts') {
       return partsAnswer instanceof Promise ? partsAnswer : ok(partsAnswer)
     }
+    if (path === '/api/accountant-export/share-links') {
+      return ok({ items: linksList, total_count: linksList.length })
+    }
+    if (path === '/api/accountant-export/share-links/{link_id}') {
+      return ok(linksList.find((item) => item.id === (init as { params?: { path?: { link_id?: string } } })?.params?.path?.link_id))
+    }
+    if (path === '/api/accountant-export/drive') return ok(driveStatus)
+    if (path === '/api/accountant-export/exports/{export_id}/drive-writes') return ok(driveWrites)
     if (path === '/api/legal-entities/{legal_entity_id}/fiscal-profile') {
       return ok({ iva_frequency: 'monthly' })
     }
@@ -137,25 +173,42 @@ afterEach(() => vi.useRealTimers())
 function page({
   tab = 'prepare',
   item = null,
+  openLink = null,
   legal = companies(),
   onTabChange = vi.fn(),
   onItemChange = vi.fn(),
+  onLinkChange = vi.fn(),
+  onOpenLink = vi.fn(),
+  onOpenExport = vi.fn(),
 }: {
   tab?: ExportTab
   item?: string | null
+  openLink?: string | null
   legal?: LegalEntityValue
   onTabChange?: (next: ExportTab) => void
   onItemChange?: (next: string | null) => void
+  onLinkChange?: (next: string | null) => void
+  onOpenLink?: (id: string) => void
+  onOpenExport?: (id: string) => void
 } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={client}>
       <LegalEntityContext.Provider value={legal}>
-        <ExportPage tab={tab} item={item} onTabChange={onTabChange} onItemChange={onItemChange} />
+        <ExportPage
+          tab={tab}
+          item={item}
+          link={openLink}
+          onTabChange={onTabChange}
+          onItemChange={onItemChange}
+          onLinkChange={onLinkChange}
+          onOpenLink={onOpenLink}
+          onOpenExport={onOpenExport}
+        />
       </LegalEntityContext.Provider>
     </QueryClientProvider>,
   )
-  return { onTabChange, onItemChange }
+  return { onTabChange, onItemChange, onLinkChange, onOpenLink, onOpenExport }
 }
 
 const posted = () =>
@@ -169,8 +222,10 @@ describe('«Prepara»', () => {
       'Registro delle venditeElenco CSV · per data di emissione',
       'Fatture emesse: file originaliFile originali · per data del documento',
     ])
-    // No share link, Drive, payroll or checklist block: their own cards build them.
-    expect(screen.queryByText(/Link condivisi|Drive|Parti paghe|Variazioni paghe|Il periodo è pronto/)).toBeNull()
+    // No payroll or checklist block, and no delivery in the form: their own cards build them, and
+    // delivery is done on a stored export (brief, answer 1).
+    expect(screen.queryByText(/Drive|Parti paghe|Variazioni paghe|Il periodo è pronto|Crea un link/)).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Link condivisi' })).toBeInTheDocument()
   })
 
   it('names no company in a space that has one, and opens on the last quarter its IVA is settled by', async () => {
@@ -428,7 +483,7 @@ describe('«Esportazioni»', () => {
 })
 
 describe('the open export', () => {
-  it('shows the index, the check as it was made and one ZIP with its size as the strong button', async () => {
+  it('shows the index, the check as it was made and one ZIP with its size', async () => {
     exportsList = [
       stored({
         checklist: {
@@ -462,8 +517,8 @@ describe('the open export', () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     await user.click(download)
     expect(downloadFromApi).toHaveBeenCalledWith('/api/accountant-export/exports/e-1/parts/1')
-    // The delivery that does not exist yet is not drawn.
-    expect(within(panel).queryByText(/link|Drive/i)).toBeNull()
+    // The link is how the file reaches the accountant: the panel's strong button.
+    expect(within(panel).getByRole('button', { name: 'Crea un link per il commercialista' })).toBeInTheDocument()
   })
 
   it('offers each file of a split export and says how many there are', async () => {
@@ -616,5 +671,265 @@ describe('a build in progress and one that failed', () => {
     await ask(user)
     await user.click(await screen.findByRole('button', { name: 'Chiudi' }))
     expect(screen.queryByText('Non riuscita')).toBeNull()
+  })
+})
+
+describe('handing an export over: the share link', () => {
+  const CREATED = { ...link({ id: 'l-new' }), url: 'https://pigro.example/studio/app/shared-export?t=abc' }
+
+  async function openPanel() {
+    exportsList = [stored()]
+    page({ tab: 'exports', item: 'e-1' })
+    return screen.findByRole('complementary', { name: 'Esportazione aperta' })
+  }
+
+  it('lists the links of the export with state, expiry, openings and «Revoca», and never a way to copy one', async () => {
+    linksList = [
+      link({ id: 'l-a', download_count: 3 }),
+      link({ id: 'l-b', state: 'expired', expires_at: '2026-10-01T08:00:00Z' }),
+      link({ id: 'l-c', state: 'revoked', revoked_at: '2026-10-14T08:00:00Z', download_count: 1 }),
+    ]
+    const panel = await openPanel()
+    const list = await within(panel).findByRole('list', { name: 'Link dell’esportazione' })
+    const rows = within(list).getAllByRole('listitem')
+    expect(rows.map((row) => within(row).getByText(/Attivo|Scaduto|Revocato/).textContent)).toEqual(['Attivo', 'Scaduto', 'Revocato'])
+    expect(within(rows[0] as HTMLElement).getByText('3 aperture')).toBeInTheDocument()
+    expect(within(rows[0] as HTMLElement).getByText(/scade il 20\/10\/2026/)).toBeInTheDocument()
+    // Only a live link can be revoked; ended ones are muted rows.
+    expect(within(list).getAllByRole('button', { name: 'Revoca' })).toHaveLength(1)
+    expect(within(rows[1] as HTMLElement).getByText('Scaduto').closest('[data-tone]')).toHaveAttribute('data-tone', 'muted')
+    expect(within(rows[2] as HTMLElement).getByText('Revocato').closest('[data-tone]')).toHaveAttribute('data-tone', 'muted')
+    expect(within(panel).queryByRole('button', { name: /Copia/ })).toBeNull()
+    expect(within(panel).queryByText(/shared-export/)).toBeNull()
+  })
+
+  it('says there is no link yet', async () => {
+    const panel = await openPanel()
+    expect(await within(panel).findByText('Nessun link per questa esportazione.')).toBeInTheDocument()
+  })
+
+  it('makes a link for a week by default, offers one to thirty days and shows the address once', async () => {
+    vi.mocked(api.POST).mockReturnValue(ok(CREATED) as never)
+    const writeText = vi.fn(() => Promise.resolve())
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const panel = await openPanel()
+    await user.click(await within(panel).findByRole('button', { name: 'Crea un link per il commercialista' }))
+    const dialog = await screen.findByRole('dialog')
+    const expiry = within(dialog).getByRole('combobox', { name: 'Scade tra' })
+    expect(expiry).toHaveTextContent('7 giorni')
+    await user.click(expiry)
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      '1 giorno',
+      '3 giorni',
+      '7 giorni',
+      '14 giorni',
+      '30 giorni',
+    ])
+    await user.click(screen.getByRole('option', { name: '14 giorni' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Crea il link' }))
+
+    expect(vi.mocked(api.POST).mock.calls[0]).toEqual([
+      '/api/accountant-export/exports/{export_id}/share-links',
+      { params: { path: { export_id: 'e-1' } }, body: { days: 14 } },
+    ])
+    expect(await within(dialog).findByDisplayValue(CREATED.url)).toBeInTheDocument()
+    expect(within(dialog).getByText('Lo vedi solo ora: non lo conserviamo. Se lo perdi, revocalo e creane un altro.')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Copia il link' }))
+    expect(writeText).toHaveBeenCalledWith(CREATED.url)
+    expect(toast.success).toHaveBeenCalledWith('Link copiato')
+
+    // Closed and opened again, the address is gone: it is held nowhere.
+    await user.click(within(dialog).getAllByRole('button', { name: 'Chiudi' }).at(-1) as HTMLElement)
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await user.click(within(panel).getByRole('button', { name: 'Crea un link per il commercialista' }))
+    const again = await screen.findByRole('dialog')
+    expect(within(again).queryByDisplayValue(CREATED.url)).toBeNull()
+    expect(within(again).getByRole('button', { name: 'Crea il link' })).toBeInTheDocument()
+  })
+
+  it('shows the server’s refusal in the dialog and keeps the form', async () => {
+    vi.mocked(api.POST).mockReturnValue(refused(422, { code: 'validation_failed', detail: 'Un link dura da 1 a 30 giorni.' }) as never)
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const panel = await openPanel()
+    await user.click(await within(panel).findByRole('button', { name: 'Crea un link per il commercialista' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Crea il link' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Un link dura da 1 a 30 giorni.')
+    expect(within(dialog).getByRole('button', { name: 'Crea il link' })).toBeEnabled()
+  })
+
+  it('revokes on one click, with a toast and no confirmation', async () => {
+    linksList = [link({ id: 'l-a' })]
+    vi.mocked(api.POST).mockReturnValue(ok(link({ id: 'l-a', state: 'revoked' })) as never)
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const panel = await openPanel()
+    await user.click(await within(panel).findByRole('button', { name: 'Revoca' }))
+    expect(vi.mocked(api.POST).mock.calls[0]).toEqual([
+      '/api/accountant-export/share-links/{link_id}/revoke',
+      { params: { path: { link_id: 'l-a' } } },
+    ])
+    expect(toast.success).toHaveBeenCalledWith('Link revocato: chi lo ha non scarica più')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+  })
+
+  it('goes to the openings of a link in «Link condivisi»', async () => {
+    linksList = [link({ id: 'l-a', download_count: 2 })]
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    exportsList = [stored()]
+    const { onOpenLink } = page({ tab: 'exports', item: 'e-1' })
+    await user.click(await screen.findByRole('button', { name: '2 aperture' }))
+    expect(onOpenLink).toHaveBeenCalledWith('l-a')
+  })
+
+  it('offers no link on an export past its 13 months', async () => {
+    exportsList = [stored({ deleted_at: '2026-11-10T03:30:00Z', parts: [] })]
+    page({ tab: 'exports', item: 'e-1' })
+    const panel = await screen.findByRole('complementary', { name: 'Esportazione aperta' })
+    await within(panel).findByText(/Eliminata il/)
+    expect(within(panel).queryByRole('button', { name: /Crea un link|Revoca/ })).toBeNull()
+  })
+
+  it('is an admin’s: a collaborator on a stale address gets the server’s refusal and no button', async () => {
+    session.role = 'collaborator'
+    vi.mocked(api.GET).mockImplementation((() =>
+      refused(403, { code: 'permission_denied', detail: 'Serve il ruolo admin.' })) as never)
+    page({ tab: 'links' })
+    expect(await screen.findByText(/Serve il ruolo admin\.|non puoi|admin/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Crea un link|Revoca|Scrivi su Drive/ })).toBeNull()
+  })
+})
+
+describe('handing an export over: Drive', () => {
+  async function openPanel() {
+    exportsList = [stored()]
+    page({ tab: 'exports', item: 'e-1' })
+    return screen.findByRole('complementary', { name: 'Esportazione aperta' })
+  }
+
+  it('says the space keeps its files on the server, and draws no button', async () => {
+    const panel = await openPanel()
+    expect(
+      await within(panel).findByText('Questo spazio salva i file sul server, non su Google Drive: la consegna su Drive non è disponibile.'),
+    ).toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: /Drive/ })).toBeNull()
+  })
+
+  it('says Drive is not connected yet and points at its page', async () => {
+    driveStatus = { available: false, reason: 'not_connected' }
+    const panel = await openPanel()
+    expect(await within(panel).findByText(/non è ancora collegato/)).toBeInTheDocument()
+    expect(within(panel).getByRole('link', { name: 'Apri Google Drive' })).toHaveAttribute('href', '/app/settings/drive')
+    expect(within(panel).queryByRole('button', { name: 'Scrivi su Drive' })).toBeNull()
+  })
+
+  it('writes to Drive on the press of a quiet button and says where the copy went', async () => {
+    driveStatus = { available: true, reason: null }
+    const written: DriveWrite = {
+      id: 'w-1',
+      export_id: 'e-1',
+      prefix: 'commercialista/lumen-studio/2026-t3/20261110t104012z',
+      files: ['commercialista-lumen.zip'],
+      written_at: '2026-11-10T09:40:12Z',
+      written_by: 'u-1',
+    }
+    vi.mocked(api.POST).mockImplementation((() => {
+      driveWrites = [written]
+      return ok(written)
+    }) as never)
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const panel = await openPanel()
+    expect(within(panel).queryByText(/Scritta il/)).toBeNull()
+    await user.click(await within(panel).findByRole('button', { name: 'Scrivi su Drive' }))
+    expect(vi.mocked(api.POST).mock.calls[0]).toEqual([
+      '/api/accountant-export/exports/{export_id}/drive-writes',
+      { params: { path: { export_id: 'e-1' } } },
+    ])
+    expect(await within(panel).findByText(/Scritta il .* in commercialista\/lumen-studio\/2026-t3\/20261110t104012z\//)).toBeInTheDocument()
+  })
+
+  it('shows a Drive that cannot be reached as a red band with the way to Drive’s page', async () => {
+    driveStatus = { available: true, reason: null }
+    vi.mocked(api.POST).mockReturnValue(
+      refused(409, { code: 'conflict', detail: 'Google Drive non è pronto a ricevere i documenti.' }) as never,
+    )
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const panel = await openPanel()
+    await user.click(await within(panel).findByRole('button', { name: 'Scrivi su Drive' }))
+    const band = await within(panel).findByRole('alert')
+    expect(band).toHaveTextContent('Google Drive non è pronto a ricevere i documenti.')
+    expect(within(band).getByRole('link', { name: 'Apri Google Drive' })).toBeInTheDocument()
+  })
+})
+
+describe('«Link condivisi»', () => {
+  const ended = link({ id: 'l-b', state: 'expired', expires_at: '2026-10-01T08:00:00Z', download_count: 2 })
+
+  it('lists every link with its export, expiry, openings and state, ended ones muted', async () => {
+    linksList = [link({ id: 'l-a', download_count: 5 }), ended]
+    page({ tab: 'links' })
+    const rows = await screen.findAllByRole('row')
+    expect(rows).toHaveLength(3)
+    expect(within(rows[1] as HTMLElement).getByText('Lumen Studio S.r.l.')).toBeInTheDocument()
+    expect(within(rows[1] as HTMLElement).getByText(/3° trimestre 2026 · creato il 13\/10\/2026/)).toBeInTheDocument()
+    expect(within(rows[1] as HTMLElement).getByText('20/10/2026')).toBeInTheDocument()
+    expect(within(rows[1] as HTMLElement).getByText('5')).toHaveClass('text-right')
+    expect(within(rows[1] as HTMLElement).getByText('Attivo')).toBeInTheDocument()
+    expect(rows[2]).toHaveClass('text-muted-foreground')
+    expect(within(rows[2] as HTMLElement).getByText('Scaduto').closest('[data-tone]')).toHaveAttribute('data-tone', 'muted')
+    expect(screen.queryByRole('button', { name: /Copia/ })).toBeNull()
+  })
+
+  it('says there is no link and sends the admin to the exports', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const { onTabChange } = page({ tab: 'links' })
+    expect(await screen.findByText('Nessun link')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Vai alle esportazioni' }))
+    expect(onTabChange).toHaveBeenCalledWith('exports')
+  })
+
+  it('opens a link in the panel: its openings with when and from which address, and «Revoca»', async () => {
+    linksList = [
+      link({
+        id: 'l-a',
+        download_count: 2,
+        openings: [
+          { opened_at: '2026-10-15T10:00:00Z', address: '203.0.113.7', part: 1 },
+          { opened_at: '2026-10-14T09:00:00Z', address: '2001:db8::1', part: 1 },
+        ],
+      }),
+    ]
+    vi.mocked(api.POST).mockReturnValue(ok(link({ id: 'l-a', state: 'revoked' })) as never)
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    page({ tab: 'links', openLink: 'l-a' })
+    const panel = await screen.findByRole('complementary', { name: 'Link aperto' })
+    const openings = await within(panel).findByRole('region', { name: 'Aperture' })
+    expect(within(openings).getAllByRole('listitem')).toHaveLength(2)
+    expect(within(openings).getByText(/203\.0\.113\.7 · ZIP 1/)).toBeInTheDocument()
+    expect(within(openings).getByText(/2001:db8::1/)).toBeInTheDocument()
+    await user.click(within(panel).getByRole('button', { name: 'Revoca' }))
+    expect(vi.mocked(api.POST).mock.calls[0]?.[0]).toBe('/api/accountant-export/share-links/{link_id}/revoke')
+    expect(toast.success).toHaveBeenCalled()
+  })
+
+  it('shows an ended link with no «Revoca» and a way back to its export', async () => {
+    linksList = [{ ...ended, revoked_at: null }]
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const { onOpenExport } = page({ tab: 'links', openLink: 'l-b' })
+    const panel = await screen.findByRole('complementary', { name: 'Link aperto' })
+    expect(await within(panel).findByText(/Scaduto il 01\/10\/2026/)).toBeInTheDocument()
+    expect(within(panel).getByText('Nessuna apertura.')).toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: 'Revoca' })).toBeNull()
+    await user.click(within(panel).getByRole('button', { name: 'Apri l’esportazione' }))
+    expect(onOpenExport).toHaveBeenCalledWith('e-1')
+  })
+
+  it('opens a link from its row', async () => {
+    linksList = [link({ id: 'l-a' })]
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const { onLinkChange } = page({ tab: 'links' })
+    await user.click((await screen.findAllByRole('row'))[1] as HTMLElement)
+    expect(onLinkChange).toHaveBeenCalledWith('l-a')
   })
 })
