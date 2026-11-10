@@ -29,6 +29,7 @@ from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.engagements.models import RebaseEngagement
 from pigrocrm.core.engagements.service import EngagementService
 from pigrocrm.core.errors import NotFound
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.tenants.models import Tenant
 
 logger = logging.getLogger(__name__)
@@ -55,24 +56,25 @@ class OwnEngagementService:
             raise NotFound(ENTITY, str(contract_id))
         with session_factory(self.registry_engine)() as registry:
             tenant = registry.scalar(select(Tenant).where(Tenant.slug == space_slug))
-            row = (
-                registry.scalar(
-                    select(RebaseEngagement).where(
-                        RebaseEngagement.tenant_id == tenant.id,
-                        RebaseEngagement.contract_id == contract_id,
-                    )
+            if tenant is None:
+                raise NotFound(ENTITY, str(contract_id))
+            row = registry.scalar(
+                select(RebaseEngagement).where(
+                    RebaseEngagement.tenant_id == tenant.id,
+                    RebaseEngagement.contract_id == contract_id,
                 )
-                if tenant is not None
-                else None
             )
             leads_tenant = registry.scalar(select(Tenant).where(Tenant.slug == leads))
             if row is None or leads_tenant is None:
                 raise NotFound(ENTITY, str(contract_id))
             match_id = row.match_id
+            owner_email = tenant.owner_email.strip().lower()
         with self.door._space_session(leads_tenant) as space:
-            return self._read(space, match_id, contract_id)
+            return self._read(space, match_id, contract_id, owner_email)
 
-    def _read(self, space: Session, match_id: UUID, contract_id: UUID) -> OwnEngagementRead:
+    def _read(
+        self, space: Session, match_id: UUID, contract_id: UUID, owner_email: str
+    ) -> OwnEngagementRead:
         engagement = space.scalars(
             select(Engagement).where(
                 or_(Engagement.hub_match_id == match_id, Engagement.id == match_id),
@@ -80,5 +82,16 @@ class OwnEngagementService:
             )
         ).first()
         if engagement is None:
+            raise NotFound(ENTITY, str(contract_id))
+        # `hub_match_id` is typed by whoever creates the engagement: a freelancer reads it only
+        # when the engagement's freelancer is the owner of the space (one of their own emails),
+        # as the report in the other direction checks (`DaysReportService._check_owner`).
+        freelancer = space.get(Organization, engagement.freelancer_id)
+        emails = {
+            point.value.strip().lower()
+            for point in (freelancer.contact_points if freelancer is not None else [])
+            if point.kind == "email"
+        }
+        if owner_email not in emails:
             raise NotFound(ENTITY, str(contract_id))
         return own_view(space, engagement, today_local(self.settings))

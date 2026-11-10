@@ -477,7 +477,6 @@ class OwnEngagementRead(BaseModel):
 
     letter_number: str | None
     state: str
-    role: str
     starts_on: dt.date
     ends_on: dt.date | None
     fee: Decimal

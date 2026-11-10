@@ -15,7 +15,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
 })
 
 const auth = vi.hoisted(() => ({ canWrite: true }))
-vi.mock('@/lib/auth', () => ({ useCan: () => auth.canWrite }))
+vi.mock('@/lib/auth', () => ({ useCan: () => auth.canWrite, useIsAdmin: () => true }))
 
 const mockGet = vi.spyOn(api, 'GET')
 
@@ -55,6 +55,9 @@ function mockApi(contract: ReturnType<typeof ok> | ReturnType<typeof failed>) {
     if (path === '/api/work-units') return ok({ items: [], truncated: false })
     if (path === '/api/schema/{entity_type}') {
       return ok({ entity_type: 'contract', native_fields: [], custom_fields: [] })
+    }
+    if (path.endsWith('/rebase-engagement')) {
+      return failed({ status: 404, code: 'not_found', detail: 'x' }, 404)
     }
     if (path.endsWith('/renewal-assumption')) {
       return failed({ status: 404, code: 'not_found', entity: 'renewal_assumption', detail: 'x' }, 404)

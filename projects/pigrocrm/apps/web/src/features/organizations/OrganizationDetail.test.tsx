@@ -4,6 +4,12 @@ import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { OrganizationDetail } from './OrganizationDetail'
+vi.mock('@/features/engagements/AvailabilityStrip', () => ({
+  FreelancerAvailability: () => <div>Settimane del freelance</div>,
+  AvailabilityStrip: () => null,
+}))
+vi.mock('@/features/engagements/EngagementsTable', () => ({ EngagementsTable: () => null }))
+vi.mock('@/features/engagements/EngagementFormDialog', () => ({ EngagementFormDialog: () => null }))
 import { api } from '@/lib/api'
 import { spaceModules } from '@/lib/modules.testing'
 import type { ModuleKey } from '@/lib/modules'
@@ -29,6 +35,7 @@ vi.mock('@/lib/auth', () => ({
   // owner's change (REB-773) is an admin's, so it follows its own switch.
   useCan: (action: string) => (action === 'change_customer_owner' ? auth.admin : auth.canWrite),
   useAuth: () => ({ user: auth.user }),
+  useIsAdmin: () => auth.admin,
 }))
 
 // `api.GET` is spied on directly (not `vi.mock('@/lib/api', ...)`), mirroring
@@ -390,7 +397,7 @@ describe('OrganizationDetail and the roles', () => {
               ? ok([])
               : path === '/api/purchases'
                 ? ok({ items: [], next_cursor: null })
-                : path === '/api/cost-categories'
+                : path === '/api/cost-categories' || path === '/api/users'
                   ? ok([])
                   : ok({ items: [] })) as never,
     )
@@ -403,6 +410,39 @@ describe('OrganizationDetail and the roles', () => {
     const chips = heading.parentElement!.querySelectorAll('[data-slot="badge"]')
     expect([...chips].map((chip) => chip.textContent)).toEqual(['Cliente', 'Fornitore'])
     for (const chip of chips) expect(chip).toHaveAttribute('data-variant', 'outline')
+  })
+
+  it('draws «Incarichi» for an administrator on a freelancer with collaborators on, and nothing otherwise', async () => {
+    const freelancer = { ...(CUSTOMER as object), roles: ['freelancer'] }
+    auth.admin = true
+    mockOrganization(freelancer)
+    const { unmount } = renderWithClient(<OrganizationDetail />)
+    await userEvent.click(await screen.findByRole('tab', { name: 'Incarichi' }, { timeout: 10_000 }))
+    expect(await screen.findByRole('heading', { name: 'Disponibilità' })).toBeInTheDocument()
+    expect(await screen.findByText('Nessun incarico per questo freelance.')).toBeInTheDocument()
+    unmount()
+
+    // Not an administrator.
+    auth.admin = false
+    mockOrganization(freelancer)
+    const second = renderWithClient(<OrganizationDetail />)
+    await screen.findByRole('tab', { name: 'Panoramica' }, { timeout: 10_000 })
+    expect(screen.queryByRole('tab', { name: 'Incarichi' })).toBeNull()
+    second.unmount()
+
+    // Module off.
+    auth.admin = true
+    mockOrganization(freelancer, ['collaborators'])
+    const third = renderWithClient(<OrganizationDetail />)
+    await screen.findByRole('tab', { name: 'Fatture' }, { timeout: 10_000 })
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'Incarichi' })).toBeNull())
+    third.unmount()
+
+    // Another role.
+    mockOrganization({ ...(CUSTOMER as object), roles: ['customer'] })
+    renderWithClient(<OrganizationDetail />)
+    await screen.findByRole('tab', { name: 'Panoramica' }, { timeout: 10_000 })
+    expect(screen.queryByRole('tab', { name: 'Incarichi' })).toBeNull()
   })
 
   it('draws «Come cliente» for a customer and no supplier group, tab or menu entry for a reader', async () => {

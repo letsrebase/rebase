@@ -5340,8 +5340,9 @@ export interface paths {
         };
         /**
          * Freelancer Availability
-         * @description The days a week a freelancer is committed to, by ISO week, from their active
-         *     engagements; `sconosciuta` where an engagement has no `days_per_week`.
+         * @description The days a week a freelancer is committed to, by ISO week, from their live engagements
+         *     (draft, out for signature and active: the ones the overlap warning counts);
+         *     `sconosciuta` where an engagement has no `days_per_week`.
          */
         get: operations["freelancer_availability_api_freelancers_availability_get"];
         put?: never;
@@ -13588,8 +13589,6 @@ export interface components {
             letter_number: string | null;
             /** State */
             state: string;
-            /** Role */
-            role: string;
             /**
              * Starts On
              * Format: date
