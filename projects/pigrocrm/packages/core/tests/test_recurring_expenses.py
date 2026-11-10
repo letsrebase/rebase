@@ -11,7 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.db.clock import add_months, today_local
+from pigrocrm.core.db import clock as db_clock
+from pigrocrm.core.db.clock import ITALY_TZ, add_months, today_local
 from pigrocrm.core.due_items.forecast import (
     HORIZON_DAYS,
     RECURRING_EXPENSE,
@@ -309,14 +310,35 @@ def test_a_purchase_of_another_company_does_not_replace_and_a_shared_one_does(
     assert len(_forecasts(db_session, rule_id)) == count - 1
 
 
+@pytest.mark.parametrize(
+    "instant",
+    [
+        dt.datetime(2026, 11, 10, 12, 0, tzinfo=ITALY_TZ),
+        # 23:30 UTC on the 10th: Rome is already on the 11th, the day the horizon reaches 10 May.
+        dt.datetime(2026, 11, 11, 0, 30, tzinfo=ITALY_TZ),
+    ],
+)
 def test_the_period_is_the_cadences_calendar_span_and_a_moved_purchase_gives_it_back(
-    db_session: Session, legal_entity_id: UUID, supplier_id: UUID, seeded_category_id: UUID
+    db_session: Session,
+    legal_entity_id: UUID,
+    supplier_id: UUID,
+    seeded_category_id: UUID,
+    monkeypatch: pytest.MonkeyPatch,
+    instant: dt.datetime,
 ) -> None:
     from pigrocrm.core.purchases.schemas import PurchaseUpdate
 
-    first = dt.date(TODAY.year + 1, 2, 10)
+    monkeypatch.setattr(db_clock, "_now", lambda: instant.astimezone(dt.UTC))
+    first = dt.date(2027, 2, 10)
+    # `ends_on` keeps the rule to the one due date under test: a later quarter inside the
+    # 180-day horizon (10 May enters it on 11 November) is covered by the 1 April purchase too.
     rule_id = _rule(
-        db_session, supplier_id, seeded_category_id, cadence="quarterly", first_due_date=first
+        db_session,
+        supplier_id,
+        seeded_category_id,
+        cadence="quarterly",
+        first_due_date=first,
+        ends_on=first,
     )
     service = PurchaseService(db_session)
     count = len(_forecasts(db_session, rule_id))

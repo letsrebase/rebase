@@ -1,5 +1,6 @@
 import os
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -9,8 +10,17 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, get_settings
+from pigrocrm.core.db import clock as db_clock
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.storage import LocalFileStorage
+
+# One day for the whole run. Many test modules compute `TODAY = today_local()` at import while the
+# code under test reads `today_local()` at call time, so a run that collects before Rome's
+# midnight and executes after it disagrees with itself (REB-1058). `db.clock._now` is the only
+# place the product reads the wall clock: freezing it at the instant the run starts gives both
+# sides the same day. A test that needs another instant pins its own with `monkeypatch`.
+_RUN_STARTED = datetime.now(UTC)
+db_clock._now = lambda: _RUN_STARTED
 
 # The HTTP app refuses a placeholder signing key (PCORE-B-05) and `pigrocrm_mcp.http` builds one
 # at import: the secret is set before anything imports it.
