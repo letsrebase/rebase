@@ -59,6 +59,7 @@ describe('visibleSections (REB-953)', () => {
       'Acquisti',
       'Ore',
       'Giornate',
+      'Tasse',
     ])
     expect(sections.find((section) => section.id === 'vendite')?.items[0]?.label).toBe('Clienti')
   })
