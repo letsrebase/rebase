@@ -259,6 +259,8 @@ def test_only_an_administrator_reaches_the_engagements(
 
     for response in (
         client.get("/api/engagements"),
+        client.get("/api/engagements/counts"),
+        client.get(f"/api/engagements/{uuid4()}/payments"),
         client.post("/api/engagements", json=_body(who)),
         client.get("/api/freelancers/availability", params={"freelancer_id": str(who.id)}),
         client.put(f"/api/freelancers/{who.id}/tax-data", json={"tax_code": "X"}),
@@ -457,3 +459,79 @@ def test_the_days_report_answers_with_the_days_and_what_is_payable(
     after = logged_in.get(f"{base}/report").json()
     assert after["days"][0]["payable"] is True
     assert (after["payable_quantity"], after["payable_amount"]) == ("1", "450.00")
+
+
+def test_the_list_names_its_people_counts_what_waits_and_filters_by_tab(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    """REB-1035: «Incarichi» draws names, a count for the entry and the three tabs."""
+    _module(api_session)
+    who = _freelancer(api_session, legal_name="Giulia Martini")
+    draft = _create(logged_in, who)
+    active = _create(logged_in, who, starts_on="2026-12-07", ends_on="2026-12-20")
+    _activate(logged_in, active["id"])
+
+    counts = logged_in.get("/api/engagements/counts")
+    assert counts.status_code == 200, counts.text
+    # Both lack a client link: a draft and a live engagement missing it wait for a person.
+    assert counts.json() == {"todo": 2, "ongoing": 0, "closed": 0}
+    todo = logged_in.get("/api/engagements", params={"bucket": "todo"}).json()["items"]
+    assert {item["id"] for item in todo} == {draft["id"], active["id"]}
+    assert {item["freelancer_name"] for item in todo} == {"Giulia Martini"}
+    assert [w["code"] for w in next(i for i in todo if i["id"] == active["id"])["waiting"]] == [
+        "missing_client"
+    ]
+    assert logged_in.get("/api/engagements", params={"bucket": "closed"}).json()["items"] == []
+    assert logged_in.get("/api/engagements", params={"bucket": "later"}).status_code == 422
+
+
+def test_an_engagements_payments_are_read_over_rest_and_unknown_ones_are_404(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    _module(api_session)
+    made = _create(logged_in, _freelancer(api_session))
+
+    page = logged_in.get(f"/api/engagements/{made['id']}/payments")
+    assert page.status_code == 200, page.text
+    assert page.json()["engagement_id"] == made["id"]
+    assert logged_in.get(f"/api/engagements/{uuid4()}/payments").status_code == 404
+
+
+def test_the_availability_strip_can_leave_one_engagement_out(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    _module(api_session)
+    who = _freelancer(api_session)
+    first = _create(logged_in, who, days_per_week="3")
+    second = _create(logged_in, who, days_per_week="1")
+
+    both = logged_in.get(
+        "/api/freelancers/availability",
+        params={"freelancer_id": str(who.id), "date_from": "2026-11-02", "date_to": "2026-11-08"},
+    ).json()
+    alone = logged_in.get(
+        "/api/freelancers/availability",
+        params={
+            "freelancer_id": str(who.id),
+            "date_from": "2026-11-02",
+            "date_to": "2026-11-08",
+            "excluding_engagement_id": second["id"],
+        },
+    ).json()
+
+    assert both["weeks"][0]["committed_days"] == "4.0"
+    assert alone["weeks"][0]["committed_days"] == "3.0"
+    assert alone["weeks"][0]["engagement_ids"] == [first["id"]]
+
+
+def test_a_freelancers_own_engagement_is_a_persons_read_of_a_contract_the_door_wrote(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    missing = logged_in.get(f"/api/contracts/{uuid4()}/rebase-engagement")
+    assert missing.status_code == 404, missing.text
+
+    issued = logged_in.post("/api/tokens", json={"name": "agente", "full_access": False})
+    agent = TestClient(logged_in.app, base_url="https://testserver")
+    agent.headers["Authorization"] = f"Bearer {issued.json()['token']}"
+    refused = agent.get(f"/api/contracts/{uuid4()}/rebase-engagement")
+    assert refused.status_code == 403 and refused.json()["code"] == "agent_forbidden"

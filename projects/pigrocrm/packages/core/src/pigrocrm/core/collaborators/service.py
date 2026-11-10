@@ -8,6 +8,7 @@ with the administrator's token, and creating, cancelling, closing or setting tax
 """
 
 import datetime as dt
+from collections.abc import Sequence
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -19,7 +20,12 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.collaborators import rules
 from pigrocrm.core.collaborators.forecast import EngagementForecastService
-from pigrocrm.core.collaborators.models import LIVE_STATES, Engagement
+from pigrocrm.core.collaborators.models import (
+    LIVE_STATES,
+    REPORTING_STATES,
+    Engagement,
+    MonthlyReport,
+)
 from pigrocrm.core.collaborators.repository import EngagementRepository
 from pigrocrm.core.collaborators.rules import ENTITY, Commitment
 from pigrocrm.core.collaborators.schemas import (
@@ -27,11 +33,13 @@ from pigrocrm.core.collaborators.schemas import (
     AVAILABILITY_MAX_WEEKS,
     AvailabilityStatus,
     AvailabilityWeek,
+    EngagementCounts,
     EngagementCreate,
     EngagementListQuery,
     EngagementPage,
     EngagementRead,
     EngagementUpdate,
+    EngagementWaiting,
     EngagementWarning,
     FreelancerAvailability,
     FreelancerTaxData,
@@ -329,16 +337,68 @@ class EngagementService:
         return next(iter(named), None)
 
     def _read(self, engagement: Engagement, *, with_warnings: bool = True) -> EngagementRead:
-        out = EngagementRead.model_validate(engagement)
-        client = engagement.client_organization_id
-        if client is not None and self.repo.visible_organization(client) is None:
-            # A freelancer shared across legal entities, an engagement for a client this admin's
-            # scope does not show: the days and the state stay, what is the client's goes.
-            out.redacted = True
-            out.role = out.fee = None
-            out.client_organization_id = out.deal_id = out.contract_id = None
-        if with_warnings and engagement.state in LIVE_STATES:
-            out.warnings = self._warnings(engagement)
+        return self._reads([engagement], with_warnings=with_warnings)[0]
+
+    def _reads(
+        self, engagements: Sequence[Engagement], *, with_warnings: bool = True
+    ) -> list[EngagementRead]:
+        """The engagements as the API says them, with the names, the stored letter and what waits
+        for a person read in one batch for the whole page, never once per row."""
+        ids = [engagement.id for engagement in engagements]
+        today = today_local()
+        wanted = {engagement.freelancer_id for engagement in engagements}
+        wanted.update(
+            engagement.client_organization_id
+            for engagement in engagements
+            if engagement.client_organization_id is not None
+        )
+        names = self.repo.organization_names(wanted)
+        letter_of = self.repo.letter_documents(ids)
+        undecided = self.repo.undecided_months(ids, today)
+        out: list[EngagementRead] = []
+        for engagement in engagements:
+            read = EngagementRead.model_validate(engagement)
+            read.freelancer_name = names.get(engagement.freelancer_id)
+            read.letter_document_id = letter_of.get(engagement.id)
+            client = engagement.client_organization_id
+            if client is not None and client not in names:
+                # A freelancer shared across legal entities, an engagement for a client this
+                # admin's scope does not show: the days and the state stay, what is the
+                # client's goes.
+                read.redacted = True
+                read.role = read.fee = None
+                read.client_organization_id = read.deal_id = read.contract_id = None
+            elif client is not None:
+                read.client_name = names[client]
+            if with_warnings and engagement.state in LIVE_STATES:
+                read.warnings = self._warnings(engagement)
+            read.waiting = self._waiting(
+                engagement, engagement.id in letter_of, undecided.get(engagement.id, [])
+            )
+            out.append(read)
+        return out
+
+    @staticmethod
+    def _waiting(
+        engagement: Engagement, has_letter: bool, undecided: Sequence[MonthlyReport]
+    ) -> list[EngagementWaiting]:
+        """What the engagement waits for a person to do, in the words of `repository.
+        waiting_for_a_person`, which the list's «Da fare» tab and its count are built from."""
+        out: list[EngagementWaiting] = []
+        if engagement.state == "draft":
+            out.append(
+                EngagementWaiting(code="letter_not_sent" if has_letter else "letter_not_created")
+            )
+        if engagement.state in LIVE_STATES:
+            if engagement.days_per_week is None:
+                out.append(EngagementWaiting(code="missing_days_per_week"))
+            if engagement.deal_id is None and engagement.contract_id is None:
+                out.append(EngagementWaiting(code="missing_client"))
+        if engagement.state in REPORTING_STATES:
+            out.extend(
+                EngagementWaiting(code="report_undecided", month=row.month, tacit_on=row.tacit_on)
+                for row in undecided
+            )
         return out
 
     def _warnings(self, engagement: Engagement) -> list[EngagementWarning]:
@@ -392,16 +452,27 @@ class EngagementService:
 
     # ---- the list --------------------------------------------------------------------------
 
+    def counts(self, actor: Actor) -> EngagementCounts:
+        """How many engagements wait for a person, are under way and are closed: the count on
+        the «Incarichi» entry and on the list's tabs."""
+        actor.require_admin("read_engagements")
+        found = self.repo.bucket_counts(today_local())
+        return EngagementCounts(
+            todo=found.get("todo", 0),
+            ongoing=found.get("ongoing", 0),
+            closed=found.get("closed", 0),
+        )
+
     # Last in the class: a method named `list` would shadow the builtin for every annotation
     # that follows it.
     def list(self, query: EngagementListQuery, actor: Actor) -> EngagementPage:
         actor.require_admin("read_engagements")
         if query.state is not None:
             rules.check_state(query.state)
-        rows = self.repo.page(query)
+        rows = self.repo.page(query, today_local())
         page = rows[: query.limit]
         return EngagementPage(
-            items=[self._read(row, with_warnings=False) for row in page],
+            items=self._reads(page, with_warnings=False),
             next_cursor=page[-1].id if len(rows) > query.limit and page else None,
         )
 
@@ -442,12 +513,15 @@ class FreelancerService:
         hub_freelancer_id: UUID | None = None,
         date_from: dt.date | None = None,
         date_to: dt.date | None = None,
+        excluding_engagement_id: UUID | None = None,
     ) -> FreelancerAvailability:
-        """The days a week a freelancer is committed to, by ISO week, from their active
-        engagements. A week touched by an active engagement with no `days_per_week` is
-        `unknown` («sconosciuta») and never `free`. The freelancer is named by the organization
-        id or by the hub's freelancer id, one of the two. With no dates: from this week's Monday
-        for twelve weeks."""
+        """The days a week a freelancer is committed to, by ISO week, from their live
+        engagements: the draft, out for signature and active ones, the same three states the
+        overlap warning counts, so a strip and its warning never disagree. A week touched by a
+        live engagement with no `days_per_week` is `unknown` («sconosciuta») and never `free`.
+        `excluding_engagement_id` leaves one out, so the page of a draft is not warned against
+        itself. The freelancer is named by the organization id or by the hub's freelancer id,
+        one of the two. With no dates: from this week's Monday for twelve weeks."""
         actor.require_admin("get_freelancer_availability")
         if (freelancer_id is None) == (hub_freelancer_id is None):
             raise ValidationFailed(
@@ -485,8 +559,9 @@ class FreelancerService:
             Commitment(e.id, e.starts_on, e.ends_on, e.days_per_week)
             for e in self.repo.of_freelancer(
                 freelancer.id,
-                ("active",),
+                LIVE_STATES,
                 date_from=start,
+                excluding=excluding_engagement_id,
                 # To the Sunday of the last week shown: an engagement that starts on its Thursday
                 # still commits that week.
                 date_to=rules.monday(end) + dt.timedelta(days=6),

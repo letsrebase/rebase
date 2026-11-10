@@ -54,11 +54,13 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         client_organization_id: str | None = None,
         deal_id: str | None = None,
         contract_id: str | None = None,
+        bucket: str | None = None,
         limit: BoundedLimit = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
         """List engagements, newest first. `state`: draft, awaiting_signature, active, concluded
-        or cancelled.
+        or cancelled. `bucket`: `todo` (waits for a person), `ongoing` or `closed`; each
+        engagement answers what it waits for in `waiting`.
         """
         return collaborators.search(
             context,
@@ -67,6 +69,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
             client_organization_id=client_organization_id,
             deal_id=deal_id,
             contract_id=contract_id,
+            bucket=bucket,
             limit=cast(int, limit),
             cursor=cursor,
         )
@@ -104,9 +107,11 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         date_from: IsoDateStr = None,
         date_to: IsoDateStr = None,
     ) -> dict[str, Any]:
-        """Days a week a freelancer is committed to, by ISO week, from their active engagements.
-        Name the freelancer by organization id or hub id. `status` `unknown` (sconosciuta) where
-        an engagement has no `days_per_week`, never `free`. Default: twelve weeks from this one.
+        """Days a week a freelancer is committed to, by ISO week, from their live engagements
+        (draft, out for signature and active, the ones the overlap warning counts). Name the
+        freelancer by organization id or hub id. `status` `unknown` (sconosciuta) where an
+        engagement has no `days_per_week`, never `free`.
+        Default: twelve weeks from this one.
         """
         return collaborators.availability(
             context,

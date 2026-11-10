@@ -47,6 +47,9 @@ class DueItemListParams(KeysetParams):
             "engagement items are an administrator's; without them they are left out of every page"
         ),
     )
+    source_id: UUID | None = Field(
+        default=None, description="Only the items this record wrote (an engagement, an invoice)"
+    )
     due_from: date | None = Field(default=None, description="Due on or after this day")
     due_to: date | None = Field(default=None, description="Due on or before this day")
 

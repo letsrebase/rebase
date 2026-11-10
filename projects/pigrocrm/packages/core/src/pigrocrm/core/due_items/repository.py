@@ -287,6 +287,8 @@ class DueItemRepository:
             stmt = stmt.where(DueItem.organization_id == query.organization_id)
         if query.source_kind is not None:
             stmt = stmt.where(DueItem.source_kind == query.source_kind)
+        if query.source_id is not None:
+            stmt = stmt.where(DueItem.source_id == query.source_id)
         if query.due_from is not None:
             stmt = stmt.where(DueItem.due_date >= query.due_from)
         if query.due_to is not None:

@@ -121,8 +121,9 @@ export const MIN_ROLE = {
   propose_staff_hourly_cost: 'admin',
   adopt_staff_hourly_cost: 'admin',
   // Engagements with freelancers (REB-976): every read and write is an administrator's, as the
-  // hub's matches were. No screen consults them yet; the rows are here so that the one that
-  // does finds the minimum already pinned against the service.
+  // hub's matches were. «Incarichi», the engagement page and the registry's block consult them
+  // (REB-1035); `read_rebase_engagement` is the freelancer's own card, read in their own space
+  // by the administrator of it.
   read_engagements: 'admin',
   create_engagement: 'admin',
   update_engagement: 'admin',
@@ -133,6 +134,7 @@ export const MIN_ROLE = {
   read_engagement_report: 'admin',
   record_monthly_report: 'admin',
   approve_monthly_report: 'admin',
+  read_rebase_engagement: 'admin',
   get_freelancer_availability: 'admin',
   set_freelancer_tax_data: 'admin',
   set_organization_hub_freelancer: 'admin',

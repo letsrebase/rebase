@@ -29,7 +29,11 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.collaborators import rules
 from pigrocrm.core.collaborators.models import Engagement, MonthlyReport
-from pigrocrm.core.collaborators.monthly_reports import monthly_reports_of, read_monthly_report
+from pigrocrm.core.collaborators.monthly_reports import (
+    decider_names,
+    monthly_reports_of,
+    read_monthly_report,
+)
 from pigrocrm.core.collaborators.repository import EngagementRepository
 from pigrocrm.core.collaborators.rules import CENT, COUNTING_STATUSES, ENTITY
 from pigrocrm.core.collaborators.schemas import (
@@ -246,10 +250,13 @@ class DaysReportService:
         days.sort(key=lambda day: (day.date, day.source))
 
         visible = self._fee_visible(engagement)
+        deciders = decider_names(self.session, monthly_reports.values())
         months: list[ReportMonth] = []
         month = rules.month_start(first)
         while month <= last:
-            months.append(self._month(engagement, month, days, monthly_reports, today, visible))
+            months.append(
+                self._month(engagement, month, days, monthly_reports, deciders, today, visible)
+            )
             month = rules.next_month(month)
 
         payable = sum((m.payable_quantity for m in months), Decimal(0))
@@ -306,6 +313,7 @@ class DaysReportService:
         month: dt.date,
         days: list[ReportDay],
         monthly_reports: dict[dt.date, MonthlyReport],
+        deciders: dict[UUID, str],
         today: dt.date,
         visible: bool,
     ) -> ReportMonth:
@@ -315,7 +323,13 @@ class DaysReportService:
         return ReportMonth(
             month=month,
             label=rules.month_label(month),
-            monthly_report=read_monthly_report(row, today) if row is not None else None,
+            monthly_report=(
+                read_monthly_report(
+                    row, today, deciders.get(row.decided_by) if row.decided_by else None
+                )
+                if row is not None
+                else None
+            ),
             quantity=sum((d.quantity for d in mine), Decimal(0)),
             held_quantity=sum((d.quantity for d in mine if d.held), Decimal(0)),
             payable_quantity=payable,
