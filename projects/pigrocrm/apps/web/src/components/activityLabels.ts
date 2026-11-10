@@ -104,6 +104,8 @@ const KIND_LABELS: Record<string, string> = {
   payroll_pay_day_set: 'Giorno di paga impostato',
   staff_payslip_recorded: 'Cedolino registrato',
   declared_tax_figure_set: 'Cifre della dichiarazione registrate',
+  accountant_export_built: 'Esportazione per il commercialista preparata',
+  accountant_export_deleted: 'Esportazione per il commercialista eliminata',
   pat_first_used: 'Token usato per la prima volta',
   pat_revoked: 'Token revocato',
   pat_used_after_revocation: 'Token usato dopo la revoca',

@@ -95,7 +95,9 @@ DEFAULT_BUDGET_BYTES = 105_250
 # REB-1008: 125.1 KB, up from 124.1 KB, for `list_payroll_totals` and `get_payroll_month` (a
 # full-access administrator's) and the three staff fields `update_staff_member` lists by name and
 # type, measured at 125,098.
-FULL_ACCESS_BUDGET_BYTES = 125_100
+# REB-1012: 126.4 KB, up from 125.1 KB, for `build_accountant_export` and
+# `get_export_download_url` (a full-access administrator's), measured at 126,346.
+FULL_ACCESS_BUDGET_BYTES = 126_400
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.
