@@ -27,6 +27,8 @@ CORE_ROOT = Path(__file__).resolve().parents[1]
 # with the missing index's name instead of a generic metadata diff.
 HAND_MAINTAINED_INDEXES = {
     "uq_users_email_lower",
+    # REB-1014, migration 0087: one Gmail mailbox per person (partial, `WHERE provider = 'gmail'`).
+    "uq_mailboxes_one_gmail_per_user",
     # REB-615, migration 0045: one default per space (partial, `WHERE predefinita`) and
     # one azienda per fiscal id (partial, functional over `upper(...)`). Both are shapes
     # `compare_metadata` cannot compare, so they are asserted on their definitions below.
@@ -3521,3 +3523,81 @@ def test_0086_turns_every_cost_into_an_expense_and_downgrade_turns_them_back(
         engine.dispose()
         upgrade(config, "0086")
         assert _tables_shape(url, {"purchases"})[0] == {"purchases"}
+
+
+def test_0087_wraps_every_google_account_in_a_mailbox_and_renames_the_sync_job(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1014: each account gets one mailbox with the purpose `correspondence` and nothing
+    copied from it, the job clock of `gmail-sync` is kept under `mail-sync`, and `downgrade`
+    puts the name back and drops both tables."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0086")
+        engine = create_engine(url)
+        try:
+            with engine.begin() as connection:
+                owner = connection.execute(
+                    text(
+                        "INSERT INTO users (id, email, password_hash, name, role, active) VALUES "
+                        "(gen_random_uuid(), 'o@example.test', 'x', 'O', 'admin', true) "
+                        "RETURNING id"
+                    )
+                ).scalar_one()
+                account = connection.execute(
+                    text(
+                        "INSERT INTO google_accounts (id, user_id, google_sub, email_address, "
+                        "refresh_token_ciphertext, refresh_token_nonce, scopes_granted, status, "
+                        "gmail_store_bodies) "
+                        "VALUES (gen_random_uuid(), :u, 's', 'a@example.test', 'x', 'x', "
+                        "'[]'::jsonb, 'revoked', true) RETURNING id"
+                    ),
+                    {"u": owner},
+                ).scalar_one()
+                connection.execute(
+                    text(
+                        "INSERT INTO reminder_job_run (id, job, ran_at) "
+                        "VALUES (gen_random_uuid(), 'gmail-sync', now())"
+                    )
+                )
+
+            upgrade(config, "0087")
+
+            with engine.connect() as connection:
+                index = connection.execute(
+                    text(
+                        "SELECT indexdef FROM pg_indexes "
+                        "WHERE indexname = 'uq_mailboxes_one_gmail_per_user'"
+                    )
+                ).scalar_one()
+                rows = connection.execute(
+                    text(
+                        "SELECT m.owner_user_id, m.provider, m.google_account_id, m.status, "
+                        "m.space_owned, p.purpose, p.space_owned, p.sync_watermark "
+                        "FROM mailboxes m JOIN mailbox_purposes p ON p.mailbox_id = m.id"
+                    )
+                ).all()
+                jobs = connection.execute(text("SELECT job FROM reminder_job_run")).scalars().all()
+            assert "UNIQUE" in index and "provider" in index and "gmail" in index
+            assert [tuple(row) for row in rows] == [
+                (owner, "gmail", account, None, False, "correspondence", False, None)
+            ]
+            assert jobs == ["mail-sync"]
+
+            downgrade(config, "0086")
+            with engine.connect() as connection:
+                assert connection.execute(
+                    text("SELECT to_regclass('public.mailboxes') IS NULL")
+                ).scalar_one()
+                assert connection.execute(
+                    text("SELECT to_regclass('public.mailbox_purposes') IS NULL")
+                ).scalar_one()
+                jobs = connection.execute(text("SELECT job FROM reminder_job_run")).scalars().all()
+            assert jobs == ["gmail-sync"]
+
+            upgrade(config, "0087")
+            with engine.connect() as connection:
+                assert connection.execute(text("SELECT count(*) FROM mailboxes")).scalar_one() == 1
+        finally:
+            engine.dispose()

@@ -7,7 +7,7 @@ import { useScheduledJobs } from './jobsQueries'
 /**
  * Esecuzioni (REB-764): «is my instance healthy» for the four cron commands, in one screen.
  *
- * PigroCRM has no daemon: `gmail-sync`, `reminders`, `automations` and `digest` are lines
+ * PigroCRM has no daemon: `mail-sync`, `reminders`, `automations` and `digest` are lines
  * in the host's crontab, and until this page nobody could see whether they ran. Each
  * writes the space's row at the end of a run (`reminder_job_run`) and this lists the rows,
  * one job per card with its last finished run, its last failed attempt and whether it is

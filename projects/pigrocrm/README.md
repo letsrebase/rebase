@@ -159,7 +159,7 @@ project, `pigrocrm` on production and `pigrocrm-preview` on the preview: without
 takes the directory's name, which is `pigrocrm` in both checkouts (REB-980):
 
 ```
-*/15 * * * * cd $DEPLOY_PATH/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync >> /var/log/pigrocrm-gmail-sync.log 2>&1
+*/15 * * * * cd $DEPLOY_PATH/projects/pigrocrm && docker compose -p pigrocrm --env-file ../../.env exec -T api uv run --no-sync pigrocrm mail-sync >> /var/log/pigrocrm-gmail-sync.log 2>&1
 ```
 
 Every run synchronises every connected mailbox of the root installation and of every

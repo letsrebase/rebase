@@ -2,9 +2,9 @@
 
 One module per family: `admin` (createadmin, resetpassword), `spaces` (ensure-space-defaults,
 reconcile-due-items, rebuild-identity-index, seed-templates), `cron` (digest, reminders,
-automations), `gmail` (gmail-sync), `backfill` (owner-backfill, duplicate-organizations,
-vapid-keys). What they share, the walk over the root installation and the registry's spaces, is
-`spaces_walk`.
+automations), `mail` (mail-sync, alias gmail-sync), `backfill` (owner-backfill,
+duplicate-organizations, vapid-keys). What they share, the walk over the root installation and
+the registry's spaces, is `spaces_walk`.
 """
 
 import argparse
@@ -14,7 +14,7 @@ from datetime import date
 from pigrocrm.core.cli.admin import createadmin, resetpassword
 from pigrocrm.core.cli.backfill import duplicate_organizations, owner_backfill, vapid_keys
 from pigrocrm.core.cli.cron import automations, digest, reminders
-from pigrocrm.core.cli.gmail import gmail_sync
+from pigrocrm.core.cli.mail import mail_sync
 from pigrocrm.core.cli.spaces import (
     ensure_space_defaults,
     rebuild_identity_index,
@@ -48,11 +48,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "rebuild-identity-index",
         help="Index in identities every address found in the users of every space",
     )
-    sync = sub.add_parser(
-        "gmail-sync",
-        help="Sync every linked Google mailbox, of the root and of every space (for cron)",
-    )
-    sync.add_argument("--email", help="Only the mailbox with this address, wherever it is linked")
+    for name, help_text in (
+        ("mail-sync", "Sync every connected mailbox, of the root and of every space (for cron)"),
+        ("gmail-sync", "The old name of mail-sync, kept until the crontabs say mail-sync"),
+    ):
+        sync = sub.add_parser(name, help=help_text)
+        sync.add_argument(
+            "--email", help="Only the mailbox with this address, wherever it is linked"
+        )
     weekly = sub.add_parser("digest", help="Send every space its weekly digest (for cron)")
     weekly.add_argument("--slug", help="A single space, instead of the whole registry")
     weekly.add_argument(
@@ -151,8 +154,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return reconcile_due_items(settings, slug=args.slug)
         case "rebuild-identity-index":
             return rebuild_identity_index(settings)
-        case "gmail-sync":
-            return gmail_sync(settings, args.email)
+        case "mail-sync" | "gmail-sync":
+            return mail_sync(settings, args.email)
         case "digest":
             return digest(
                 settings, slug=args.slug, day=args.date, force=args.force, dry_run=args.dry_run

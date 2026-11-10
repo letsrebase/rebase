@@ -1,6 +1,6 @@
 # Runbook: the daily automation pass (`pigrocrm automations`)
 
-The fourth job in the deploy user's crontab, after `gmail-sync`, `digest` and `reminders`
+The fourth job in the deploy user's crontab, after `mail-sync`, `digest` and `reminders`
 (their runbooks are `2026-09-09-gmail-cron-runbook.md` and `2026-10-26-reminders-cron-runbook.md`,
 and everything they say about the four details of the line, `cd`, `--env-file ../../.env`,
 `exec -T api` and `uv run --no-sync`, holds here word for word). There is no daemon and no

@@ -47,7 +47,7 @@ from pigrocrm.core.reminders.engine import Evaluation, ReminderEngine
 from pigrocrm.core.reminders.jobs import (
     AUTOMATIONS_JOB,
     DIGEST_JOB,
-    GMAIL_SYNC_JOB,
+    MAIL_SYNC_JOB,
     REMINDER_PASS_JOB,
     JobClock,
 )
@@ -826,7 +826,7 @@ def test_the_pass_the_automations_and_the_digest_are_watched_not_the_sync_or_a_s
     _touch(space, REMINDER_PASS_JOB, 200)
     _touch(space, AUTOMATIONS_JOB, 60 * 60)
     _touch(space, DIGEST_JOB, 60 * 24 * 30)
-    _touch(space, GMAIL_SYNC_JOB, 99999)
+    _touch(space, MAIL_SYNC_JOB, 99999)
     _touch(space, "backup", 99999)
     _gmail(space, synced_hours_ago=3)
 

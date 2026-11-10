@@ -11,12 +11,17 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     func,
+    insert,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.engine import Connection
+from sqlalchemy.orm import Mapped, Mapper, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
+from pigrocrm.core.db.base import uuid7
+from pigrocrm.core.mailboxes.models import Mailbox, MailboxPurpose
 
 
 class GoogleAccount(Base, PrimaryKeyMixin, TimestampMixin):
@@ -85,6 +90,31 @@ class GoogleAccount(Base, PrimaryKeyMixin, TimestampMixin):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     disconnected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
+@event.listens_for(GoogleAccount, "after_insert")
+def _wrap_in_a_mailbox(
+    _mapper: Mapper[GoogleAccount], connection: Connection, account: GoogleAccount
+) -> None:
+    """Every Google account is a mailbox (REB-1014, § 2.2 of the incoming-documents design): its
+    owner is the account's user, its purpose `correspondence`, which is what Gmail sync has always
+    done. Made here, at the insert, so no way of creating an account (the consent flow, a script,
+    a test) can leave one unwrapped; the rows go when the account does (`ON DELETE CASCADE`).
+    Nothing the account holds is copied: see `mailboxes/models.py`."""
+    mailbox_id = uuid7()
+    connection.execute(
+        insert(Mailbox).values(
+            id=mailbox_id,
+            owner_user_id=account.user_id,
+            provider="gmail",
+            google_account_id=account.id,
+        )
+    )
+    connection.execute(
+        insert(MailboxPurpose).values(
+            id=uuid7(), mailbox_id=mailbox_id, space_owned=False, purpose="correspondence"
+        )
+    )
 
 
 class GoogleOAuthState(Base, PrimaryKeyMixin, TimestampMixin):

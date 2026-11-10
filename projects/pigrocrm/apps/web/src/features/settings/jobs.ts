@@ -41,7 +41,7 @@ export function failureText(failure: string): string {
 
 /** What a space that has nothing for a job to do says, per job; `none` for the rest. */
 const NOT_CONFIGURED: Record<string, string> = {
-  'gmail-sync': 'Nessuna casella Gmail collegata: qui non c’è niente da sincronizzare.',
+  'mail-sync': 'Nessuna casella email collegata: qui non c’è niente da sincronizzare.',
 }
 
 const stamp = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' })

@@ -19,12 +19,13 @@ from pigrocrm.core.auth.models import User
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.errors import PermissionDenied
 from pigrocrm.core.gmail.models import GoogleAccount
+from pigrocrm.core.mailboxes.models import Mailbox
 from pigrocrm.core.reminders.jobs import (
     AUTOMATIONS_JOB,
     DIGEST_JOB,
     FAILURE_MAX_LENGTH,
-    GMAIL_SYNC_JOB,
     JOBS_BY_KEY,
+    MAIL_SYNC_JOB,
     REMINDER_PASS_JOB,
     SCHEDULED_JOBS,
     JobClock,
@@ -112,9 +113,9 @@ def test_the_next_success_ends_the_failure(db_session: Session) -> None:
 
 
 def test_a_failure_text_is_one_bounded_line(db_session: Session) -> None:
-    JobClock(db_session).failed(GMAIL_SYNC_JOB, "prima riga\n  seconda " + "x" * 500, NOW)
+    JobClock(db_session).failed(MAIL_SYNC_JOB, "prima riga\n  seconda " + "x" * 500, NOW)
 
-    failure = _row(db_session, GMAIL_SYNC_JOB).failure
+    failure = _row(db_session, MAIL_SYNC_JOB).failure
     assert failure is not None
     assert len(failure) == FAILURE_MAX_LENGTH and "\n" not in failure
     assert failure.startswith("prima riga seconda x")
@@ -129,19 +130,19 @@ def test_the_four_jobs_are_listed_in_the_panels_order_with_their_commands(
     jobs = ScheduledJobService(db_session).describe(ADMIN, now=NOW).jobs
 
     assert [job.key for job in jobs] == [
-        GMAIL_SYNC_JOB,
+        MAIL_SYNC_JOB,
         REMINDER_PASS_JOB,
         AUTOMATIONS_JOB,
         DIGEST_JOB,
     ]
     assert [job.command for job in jobs] == [
-        "pigrocrm gmail-sync",
+        "pigrocrm mail-sync",
         "pigrocrm reminders",
         "pigrocrm automations",
         "pigrocrm digest",
     ]
     assert {job.key: job.stale_after_minutes for job in jobs} == {
-        GMAIL_SYNC_JOB: 30,
+        MAIL_SYNC_JOB: 30,
         REMINDER_PASS_JOB: 30,
         AUTOMATIONS_JOB: 26 * 60,
         DIGEST_JOB: 8 * 24 * 60,
@@ -166,14 +167,14 @@ def test_the_mailbox_sync_is_not_configured_where_no_mailbox_is_connected(
     """The command prints nothing for such a space, so there is nothing to record, and the
     panel must not read that silence as a fault."""
     jobs = _read(db_session)
-    assert jobs[GMAIL_SYNC_JOB].state == "not_configured"
+    assert jobs[MAIL_SYNC_JOB].state == "not_configured"
     assert jobs[REMINDER_PASS_JOB].state == "never_run", "the other jobs run everywhere"
 
     _mailbox(db_session, status="disconnected")
-    assert _read(db_session)[GMAIL_SYNC_JOB].state == "not_configured", "unhooked is not one"
+    assert _read(db_session)[MAIL_SYNC_JOB].state == "not_configured", "unhooked is not one"
 
     _mailbox(db_session, status="revoked")
-    assert _read(db_session)[GMAIL_SYNC_JOB].state == "never_run", "a broken one still is"
+    assert _read(db_session)[MAIL_SYNC_JOB].state == "never_run", "a broken one still is"
 
 
 @pytest.mark.parametrize("job", [job.key for job in SCHEDULED_JOBS])
@@ -239,3 +240,13 @@ def test_only_an_admin_may_read_it(db_session: Session, role: str) -> None:
 
     with pytest.raises(PermissionDenied):
         ScheduledJobService(db_session).describe(actor)
+
+
+def test_a_space_with_only_a_mailbox_that_is_not_gmail_has_the_sync_configured(
+    db_session: Session,
+) -> None:
+    """REB-1014: the sync reads «not configured» for a space with no mailbox of any kind, and an
+    IMAP-only space has one."""
+    db_session.add(Mailbox(owner_user_id=None, provider="imap", status="active"))
+
+    assert _read(db_session)[MAIL_SYNC_JOB].state == "never_run"
