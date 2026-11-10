@@ -7,6 +7,7 @@ import {
   Clock,
   FileInput,
   Handshake,
+  IdCard,
   Inbox,
   Landmark,
   LayoutDashboard,
@@ -86,6 +87,9 @@ export const SECTIONS = [
       { to: '/app/hours', label: 'Ore', icon: Clock },
       { to: '/app/days', label: 'Giornate', icon: CalendarCheck },
       { to: '/app/taxes', label: 'Tasse', icon: Landmark },
+      // The people the company pays (the approved brief of 2026-11-10, REB-1027): pay is an
+      // administrator's, so the entry is theirs alone, as the service is.
+      { to: '/app/staff', action: 'list_staff', label: "Persone dell'azienda", icon: IdCard },
       // The archive of a period for the accountant (REB-1028): an administrator's, in the sidebar
       // and in «Altro». It belongs to no module, since the registers it reads are the core's.
       {
