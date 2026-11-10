@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Button } from '@rebase/ui/button'
 import {
   Select,
@@ -292,6 +292,19 @@ export function PurchaseForm({
 
   const busy = create.isPending || update.isPending
 
+  // The bar's own height, which changes when an error banner joins the buttons: the room left
+  // under the last field on a phone is exactly that, so the field can be scrolled clear of the
+  // bar instead of ending under it (REB-1057).
+  const bar = useRef<HTMLDivElement>(null)
+  const [barHeight, setBarHeight] = useState(0)
+  useEffect(() => {
+    const node = bar.current
+    if (node === null || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => setBarHeight(node.getBoundingClientRect().height))
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+
   return (
     <div className="space-y-6">
       <FormGrid>
@@ -469,12 +482,15 @@ export function PurchaseForm({
         {dealId !== undefined && dealShown ? <DealLine dealId={dealId} /> : null}
       </FormGrid>
 
+      <div aria-hidden className="sm:hidden" style={{ height: barHeight }} />
+
       {/* The action bar, bottom right; sticky so «Annulla» and «Registra» stay in reach on a
           phone, where the form is long. */}
       {/* Below `sm` the phone's navigation is fixed over the bottom of the page, so the bar
           sticks above it (its height and the home indicator's inset) and «Registra» is never
           covered. */}
       <div
+        ref={bar}
         style={{ '--phone-bar': `calc(${PHONE_BAR_HEIGHT} + env(safe-area-inset-bottom))` } as CSSProperties}
         className="sticky bottom-(--phone-bar) z-10 space-y-2 border-t bg-background py-3 sm:bottom-0"
       >

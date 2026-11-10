@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@rebase/ui/select'
-import { buildInvoiceColumns } from '@/features/invoices/columns'
+import { buildInvoiceCard, buildInvoiceColumns } from '@/features/invoices/columns'
 import { ImportInvoicesButton } from '@/features/invoices/ImportInvoicesDialog'
 import { LoadMoreInvoices } from '@/features/invoices/LoadMoreInvoices'
 import { NewProformaButton } from '@/features/invoices/NewProformaDialog'
@@ -102,7 +102,8 @@ export function InvoicesList({ overdue }: { overdue?: boolean }) {
   // page draws the same columns without it -- see `InvoicesTab`.
   // And the legal entity's name beside the number, only under «Tutte le aziende» from the
   // second legal entity on (REB-625): with one selected the sidebar already says whose.
-  const columns = buildInvoiceColumns({ customer: true, legal_entities: useLegalEntitiesToName() })
+  const legal_entities = useLegalEntitiesToName()
+  const columns = buildInvoiceColumns({ customer: true, legal_entities })
 
   return (
     <>
@@ -169,6 +170,7 @@ export function InvoicesList({ overdue }: { overdue?: boolean }) {
 
         <DataTable
           label="Fatture"
+          phone={buildInvoiceCard({ customer: true, legal_entities })}
           columns={columns}
           data={invoices.items}
           isLoading={invoices.isLoading}

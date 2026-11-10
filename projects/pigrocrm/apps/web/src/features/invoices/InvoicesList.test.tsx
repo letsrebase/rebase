@@ -370,4 +370,30 @@ describe('the invoice list', () => {
     await screen.findByRole('columnheader', { name: 'Numero' })
     expect(screen.queryByRole('button', { name: 'Importa' })).not.toBeInTheDocument()
   })
+
+  /** REB-1057: nine columns scrolled sideways at 390 and hid the state and the total, so below
+   *  768px an invoice is a card with the number, the total, whose it is and its chips. */
+  it('draws each invoice as a card on a phone, with its customer, total and state', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query.includes('max-width: 767px'),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }))
+    try {
+      mockGet.mockImplementation((() =>
+        ok({ items: [invoice({ memo: 'Sviluppo del sito' })], next_cursor: null })) as never)
+      renderList()
+      const list = await screen.findByRole('list', { name: 'Fatture' })
+      expect(screen.queryByRole('table')).not.toBeInTheDocument()
+      const card = within(list).getByRole('listitem')
+      expect(within(card).getByText('2026/7')).toBeInTheDocument()
+      expect(within(card).getByText('ACME S.r.l.')).toBeInTheDocument()
+      expect(within(card).getByText('Sviluppo del sito')).toBeInTheDocument()
+      expect(within(card).getByText('Da incassare')).toBeInTheDocument()
+      expect(within(card).getByText(/1\.500,00/)).toBeInTheDocument()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })
