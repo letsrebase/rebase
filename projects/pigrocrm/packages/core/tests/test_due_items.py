@@ -116,7 +116,6 @@ def test_every_source_kind_is_listed_and_the_fiscal_ones_are_a_named_subset() ->
         "purchase",
         "contract_occurrence",
         "recurring_expense",
-        "engagement",
         "sales_draft",
     }
     assert STATES == ("forecast", "expected", "settled", "dropped")
@@ -709,7 +708,9 @@ def test_the_fiscal_kinds_are_read_by_an_administrator_and_a_full_access_agent_a
         amount=Decimal("10.00"),
     )
     payroll = world.item(direction="out", source_kind="payroll")
-    every = {ordinary, tax, payroll}
+    # What an engagement owes a freelancer: REB-1034.
+    engagement = world.item(direction="out", source_kind="engagement")
+    every = {ordinary, tax, payroll, engagement}
     query = DueItemListQuery()
 
     def listed(actor: Actor) -> set[UUID]:
@@ -722,7 +723,13 @@ def test_the_fiscal_kinds_are_read_by_an_administrator_and_a_full_access_agent_a
         with pytest.raises((PermissionDenied, AgentForbidden)):
             world.service.get(tax, reader)
         with pytest.raises((PermissionDenied, AgentForbidden)):
+            world.service.get(engagement, reader)
+        with pytest.raises((PermissionDenied, AgentForbidden)):
             world.service.list(DueItemListQuery(source_kind="payroll"), reader)
+        with pytest.raises((PermissionDenied, AgentForbidden)):
+            world.service.list(DueItemListQuery(source_kind="engagement"), reader)
+        with pytest.raises(ValidationFailed):
+            world.service.list(DueItemListQuery(cursor=engagement), reader)
         assert world.service.get(ordinary, reader).id == ordinary
 
 

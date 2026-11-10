@@ -321,7 +321,7 @@ def test_a_fee_too_long_for_its_column_is_a_422_and_not_a_500(
 
 
 def test_an_admin_records_and_approves_a_months_monthly_report_and_no_agent_token_can(
-    logged_in: TestClient, api_session: Session
+    logged_in: TestClient, api_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """REB-1002: a month's report is recorded and approved by a person; an agent token, with or
     without `full_access`, reads the list and is refused both writes."""
@@ -330,6 +330,16 @@ def test_an_admin_records_and_approves_a_months_monthly_report_and_no_agent_toke
     made = _create(logged_in, who, starts_on="2026-08-01", ends_on="2026-09-30")
     _activate(logged_in, made["id"])
     base = f"/api/engagements/{made['id']}/monthly-reports"
+    # Outside the space that holds the engagements nothing is recorded or approved (REB-1034).
+    for refused in (
+        logged_in.post(base, json={"month": "2026-08", "received_on": "2026-09-01"}),
+        logged_in.post(f"{base}/2026-08/approval", json={}),
+    ):
+        assert refused.status_code == 409, refused.text
+        assert "PIGROCRM_LEADS_SPACE" in refused.json()["detail"]
+    from pigrocrm.core.collaborators import rules
+
+    monkeypatch.setattr(rules, "is_leads_space", lambda *_: True)
     assert logged_in.put("/api/settings/space", json={"mcp_full_access": True}).status_code == 200
 
     def token(*, full_access: bool) -> TestClient:
@@ -396,6 +406,7 @@ def test_the_days_report_answers_with_the_days_and_what_is_payable(
     from decimal import Decimal
 
     import pigrocrm.core.collaborators.days_report as days_report
+    from pigrocrm.core.collaborators import rules
     from pigrocrm.core.engagements.schemas import EngagementReport, ReportDeal, ReportWorkUnit
 
     class Door:
@@ -425,7 +436,7 @@ def test_the_days_report_answers_with_the_days_and_what_is_payable(
             )
 
     monkeypatch.setattr(days_report, "EngagementService", Door)
-    monkeypatch.setattr(days_report, "is_leads_space", lambda *_: True)
+    monkeypatch.setattr(rules, "is_leads_space", lambda *_: True)
     monkeypatch.setattr(days_report.DaysReportService, "_check_owner", lambda *_: None)
     _module(api_session)
     made = _create(

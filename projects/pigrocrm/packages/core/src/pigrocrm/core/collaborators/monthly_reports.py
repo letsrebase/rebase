@@ -69,9 +69,12 @@ def monthly_reports_of(session: Session, engagement_id: UUID) -> list[MonthlyRep
 
 
 class MonthlyReportService:
-    def __init__(self, session: Session, settings: Settings | None = None) -> None:
+    def __init__(
+        self, session: Session, settings: Settings, *, space_slug: str | None = None
+    ) -> None:
         self.session = session
         self.settings = settings
+        self.space_slug = space_slug
         self.repo = EngagementRepository(session)
         self.activities = ActivityService(session)
 
@@ -94,6 +97,7 @@ class MonthlyReportService:
         month must be over, inside the engagement's dates, and asked once."""
         actor.require_person("record_monthly_report")
         actor.require_admin("record_monthly_report")
+        rules.require_leads_space(self.settings, self.space_slug)
         engagement = self._engagement(engagement_id, lock=True)
         month = rules.parse_month(data.month)
         today = today_local(self.settings)
@@ -169,6 +173,7 @@ class MonthlyReportService:
         report counts as approved (framework 6.2)."""
         actor.require_person("approve_monthly_report")
         actor.require_admin("approve_monthly_report")
+        rules.require_leads_space(self.settings, self.space_slug)
         self._engagement(engagement_id, lock=True)
         month = rules.parse_month(month_label)
         row = self.session.scalar(

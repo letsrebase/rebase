@@ -58189,7 +58189,7 @@ export interface operations {
                 legal_entity_id?: string | null;
                 /** @description Only this counterparty */
                 organization_id?: string | null;
-                /** @description Only this source kind. The fiscal kinds (tax, IVA, withholding, payroll) are an administrator's; without them they are left out of every page */
+                /** @description Only this source kind. The fiscal kinds (tax, IVA, withholding, payroll) and engagement items are an administrator's; without them they are left out of every page */
                 source_kind?: string | null;
                 /** @description Due on or after this day */
                 due_from?: string | null;

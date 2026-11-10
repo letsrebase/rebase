@@ -68,7 +68,8 @@ SOURCE_KINDS: tuple[str, ...] = (
 PAYROLL_SOURCE_KIND = "payroll"
 # The kinds only an administrator reads and settles, and an agent only with `full_access`:
 # what the tax, IVA, withholding and payroll sources disclose is the fiscal position (spec §
-# 5, which names the source's own permission). Everything else is read by any member.
+# 5, which names the source's own permission), and an engagement's items disclose a
+# freelancer's pay. Everything else is read by any member.
 RESTRICTED_SOURCE_KINDS: frozenset[str] = frozenset(
     {
         "integration_vat",
@@ -77,6 +78,9 @@ RESTRICTED_SOURCE_KINDS: frozenset[str] = frozenset(
         "tax_instalment",
         PAYROLL_SOURCE_KIND,
         "cash_basis_vat",
+        # What an engagement owes a freelancer names them and what they are paid (collaborators
+        # design § 4): an administrator's, and a `full_access` agent's.
+        "engagement",
     }
 )
 

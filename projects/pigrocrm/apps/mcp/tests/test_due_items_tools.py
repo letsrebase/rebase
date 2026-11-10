@@ -178,9 +178,13 @@ async def test_a_token_without_full_access_is_refused_money_going_out_and_the_fi
         source_kind="iva_settlement",
         amount=Decimal("50.00"),
     )
+    # What an engagement owes a freelancer is restricted too (REB-1034).
+    engagement = _item(mcp_session, direction="out", source_kind="engagement")
     arguments = {"amount": 10, "settled_on": "2026-03-01"}
 
     async with Client(_server(mcp_session, tmp_path)) as plain:
+        engagement_get = await plain.call_tool("get_due_item", {"due_item_id": engagement})
+        engagement_list = await plain.call_tool("list_due_items", {"source_kind": "engagement"})
         refused = await plain.call_tool("settle_due_item", {"due_item_id": outgoing, **arguments})
         listed = _payload(await plain.call_tool("list_due_items", {}))
         fiscal_get = await plain.call_tool("get_due_item", {"due_item_id": tax})
@@ -188,10 +192,10 @@ async def test_a_token_without_full_access_is_refused_money_going_out_and_the_fi
         untouched = _payload(await plain.call_tool("get_due_item", {"due_item_id": outgoing}))
     assert untouched["settlements"] == []
     assert refused.is_error
-    for denied in (refused, fiscal_get, fiscal_list):
+    for denied in (refused, fiscal_get, fiscal_list, engagement_get, engagement_list):
         assert denied.is_error
         assert "non è eseguibile da un agente" in denied.content[0].text  # type: ignore[union-attr]
-    assert tax not in {item["id"] for item in listed["items"]}
+    assert not {tax, engagement} & {item["id"] for item in listed["items"]}
 
     async with Client(_server(mcp_session, tmp_path, full_access=True)) as full:
         paid = await full.call_tool("settle_due_item", {"due_item_id": outgoing, **arguments})
@@ -200,7 +204,7 @@ async def test_a_token_without_full_access_is_refused_money_going_out_and_the_fi
         paid_tax = await full.call_tool("settle_due_item", {"due_item_id": tax, **arguments})
     assert not paid.is_error, paid.content
     assert not read_tax.is_error and not paid_tax.is_error
-    assert tax in {item["id"] for item in listed_full["items"]}
+    assert {tax, engagement} <= {item["id"] for item in listed_full["items"]}
 
 
 async def test_a_token_without_full_access_reads_payroll_as_one_stipendi_line_per_date(
