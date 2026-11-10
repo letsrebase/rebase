@@ -1,5 +1,5 @@
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { CalendarClock, ChevronLeft, ChevronRight, IdCard, Plus } from 'lucide-react'
+import { CalendarClock, ChevronLeft, ChevronRight, IdCard, Lock, Plus } from 'lucide-react'
 import { useState } from 'react'
 import { DataTable, type DataTableFeatures } from '@/components/DataTable'
 import { LoadMore } from '@/components/LoadMore'
@@ -19,13 +19,13 @@ import { useIsAdmin } from '@/lib/auth'
 import { sumDecimalStrings, MONEY_SCALE } from '@/lib/decimal'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { Absent, Figure, NetCell } from './Amounts'
+import { CloseMonthDialog } from './CloseMonthDialog'
 import { PayDayDialog } from './PayDayDialog'
 import { PersonDialog } from './PersonDialog'
-import { StaffPanel } from './StaffPanel'
+import { AcceptPayslipButton, StaffPanel } from './StaffPanel'
 import {
   F24_KINDS,
   STATE_LABELS,
-  STATE_LINES,
   STATE_TONES,
   formatDay,
   missingReason,
@@ -35,6 +35,7 @@ import {
   namesList,
   netItems,
   shiftMonth,
+  stateLine,
   stateOf,
   termsLine,
   thisMonth,
@@ -54,25 +55,41 @@ const ADMIN_ONLY = 'I compensi li vedono solo gli amministratori.'
 interface Row {
   member: StaffMember
   month: MemberMonth | undefined
+  /** The month is closed: every person in it reads «Chiuso». */
+  closed: boolean
 }
 
-/** The pill of a month: the least advanced person's state, with the line naming who set it.
- *  Read from the server's month, which carries everyone in service, not from the pages of the list. */
-function monthState(members: MemberMonth[]): { state: MonthState; line: string } | null {
+/** The pill of a month: a closed month is «Chiuso», with who closed it and when; otherwise the least
+ *  advanced person's state, with the line naming who set it. Read from the server's month, which
+ *  carries everyone in service, not from the pages of the list. */
+function monthState(payroll: PayrollMonth): { state: MonthState; line: string } | null {
+  const { members, closed } = payroll
+  if (closed != null) {
+    return {
+      state: 'closed',
+      line: `Chiuso il ${formatDay(closed.closed_at.slice(0, 10))}${closed.closed_by === null ? '' : ` da ${closed.closed_by}`}`,
+    }
+  }
   if (members.length === 0) return null
   const waiting = members.filter((row) => stateOf(row) === 'estimated')
-  if (waiting.length === 0) return { state: 'accepted', line: 'Ogni cedolino è accettato' }
-  return { state: 'estimated', line: `Lo tiene a «Stimato»: ${namesList(waiting.map((row) => row.name))}` }
+  if (waiting.length > 0) {
+    return { state: 'estimated', line: `Lo tiene a «Stimato»: ${namesList(waiting.map((row) => row.name))}` }
+  }
+  const received = members.filter((row) => stateOf(row) === 'received')
+  if (received.length > 0) {
+    return { state: 'received', line: `Da accettare: ${namesList(received.map((row) => row.name))}` }
+  }
+  return { state: 'accepted', line: 'Ogni cedolino è accettato' }
 }
 
-function Figures({ payroll }: { payroll: PayrollMonth }) {
+function Figures({ payroll, canClose, onClose }: { payroll: PayrollMonth; canClose: boolean; onClose: () => void }) {
   const members = payroll.members
   const served = members.filter((row) => row.cost !== null)
   const fromPayslip = served.filter((row) => row.source === 'payslip').length
   const net = members.flatMap((row) => netItems(row))
   const dates = [...new Set(net.map((item) => item.due_date))].sort()
   const withoutNet = served.filter((row) => netItems(row).length === 0).length
-  const state = monthState(members)
+  const state = monthState(payroll)
   const leaving = dates.length === 0 ? null : monthOnly(dates[0]!.slice(0, 7))
   // A total is a payslip's only when nothing in it is still an estimate.
   const allPayslips = served.length > 0 && fromPayslip === served.length
@@ -106,10 +123,20 @@ function Figures({ payroll }: { payroll: PayrollMonth }) {
           {state === null ? (
             <span className="text-muted-foreground">—</span>
           ) : (
-            <StatusPill tone={STATE_TONES[state.state]}>{STATE_LABELS[state.state]}</StatusPill>
+            <StatusPill tone={STATE_TONES[state.state]}>
+              {state.state === 'closed' ? <Lock aria-hidden className="mr-1 inline size-3" /> : null}
+              {STATE_LABELS[state.state]}
+            </StatusPill>
           )}
         </dd>
         <dd className="text-sm text-muted-foreground">{state === null ? 'Nessuno in servizio' : state.line}</dd>
+        {payroll.closed != null || !canClose || members.length === 0 ? null : (
+          <dd className="pt-2">
+            <Button variant="outline" size="sm" onClick={onClose}>
+              Chiudi il mese
+            </Button>
+          </dd>
+        )}
       </div>
     </dl>
   )
@@ -119,7 +146,7 @@ function Figures({ payroll }: { payroll: PayrollMonth }) {
  *  anyone lacks an accepted payslip. The contributions stay an estimate even then (design § 2). */
 function F24Row({ members }: { members: MemberMonth[] }) {
   const items = members.flatMap((row) => row.cash.filter((item) => F24_KINDS.has(item.kind)))
-  const waiting = members.filter((row) => stateOf(row) !== 'accepted')
+  const waiting = members.filter((row) => row.source !== 'payslip')
   const dates = [...new Set(items.map((item) => item.due_date))].sort()
   if (members.length === 0) return null
   return (
@@ -162,14 +189,31 @@ function PersonCell({ row }: { row: Row }) {
 }
 
 function StateCell({ row }: { row: Row }) {
-  const state = stateOf(row.month)
+  const state = stateOf(row.month, row.closed)
   if (state === null) return <span className="text-sm text-muted-foreground">Non in servizio</span>
   return (
     <span className="block space-y-1">
-      <StatusPill tone={STATE_TONES[state]}>{STATE_LABELS[state]}</StatusPill>
-      <span className="block whitespace-normal text-xs text-muted-foreground">{STATE_LINES[state]}</span>
+      <StatusPill tone={STATE_TONES[state]}>
+        {state === 'closed' ? <Lock aria-hidden className="mr-1 inline size-3" /> : null}
+        {STATE_LABELS[state]}
+      </StatusPill>
+      <span className="block whitespace-normal text-xs text-muted-foreground">{stateLine(row.month, state)}</span>
     </span>
   )
+}
+
+/** The sticky action of the phone's full-screen card: the one of the person's state, «Accetta il
+ *  cedolino» on a «Ricevuto» person and otherwise «Modifica condizioni». */
+function StickyAction({ month, closed, onEdit }: { month: MemberMonth | undefined; closed: boolean; onEdit: () => void }) {
+  const received = month?.received ?? null
+  if (received === null || closed || month?.source === 'payslip') {
+    return (
+      <Button className="w-full" onClick={onEdit}>
+        Modifica condizioni
+      </Button>
+    )
+  }
+  return <AcceptPayslipButton proposalId={received.proposal_id} className="w-full" />
 }
 
 function costCell(row: Row) {
@@ -248,6 +292,7 @@ function StaffMonth({ entity, entityName }: { entity: string; entityName: string
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState(false)
   const [payDayOpen, setPayDayOpen] = useState(false)
+  const [closing, setClosing] = useState(false)
 
   function go(patch: { month?: string; ended?: boolean }) {
     void navigate({
@@ -257,8 +302,9 @@ function StaffMonth({ entity, entityName }: { entity: string; entityName: string
     })
   }
 
+  const closure = payroll.data?.closed ?? null
   const byId = new Map((payroll.data?.members ?? []).map((row) => [row.staff_member_id, row]))
-  const rows: Row[] = staff.items.map((member) => ({ member, month: byId.get(member.id) }))
+  const rows: Row[] = staff.items.map((member) => ({ member, month: byId.get(member.id), closed: closure !== null }))
   const open = rows.find((row) => row.member.id === openId) ?? null
   const loading = staff.isLoading || payroll.isPending
   const failed = staff.isError || payroll.isError
@@ -312,7 +358,15 @@ function StaffMonth({ entity, entityName }: { entity: string; entityName: string
 
   const panel =
     open === null ? null : (
-      <StaffPanel key={open.member.id} member={open.member} month={open.month} monthKey={month} onEdit={() => setEditing(true)} showEdit={inline} />
+      <StaffPanel
+        key={open.member.id}
+        member={open.member}
+        month={open.month}
+        monthKey={month}
+        closed={closure}
+        onEdit={() => setEditing(true)}
+        showEdit={inline}
+      />
     )
 
   return (
@@ -344,7 +398,9 @@ function StaffMonth({ entity, entityName }: { entity: string; entityName: string
             Giorno di paga
           </Button>
         </div>
-        {payroll.data === undefined || failed || rows.length === 0 ? null : <Figures payroll={payroll.data} />}
+        {payroll.data === undefined || failed || rows.length === 0 ? null : (
+          <Figures payroll={payroll.data} canClose={month < thisMonth()} onClose={() => setClosing(true)} />
+        )}
       </PageHeader>
 
       <div className={cn('flex gap-6 px-8 pb-8 pt-2', inline ? 'items-start' : '')}>
@@ -381,9 +437,7 @@ function StaffMonth({ entity, entityName }: { entity: string; entityName: string
             <SheetDescription className="sr-only">Il mese, il cedolino, le condizioni e il costo orario.</SheetDescription>
             <div className="min-h-0 flex-1 overflow-y-auto pt-12">{panel}</div>
             <div className="sticky bottom-0 border-t bg-background p-3">
-              <Button className="w-full" onClick={() => setEditing(true)}>
-                Modifica condizioni
-              </Button>
+              <StickyAction month={open.month} closed={closure !== null} onEdit={() => setEditing(true)} />
             </div>
           </SheetContent>
         </Sheet>
@@ -403,6 +457,9 @@ function StaffMonth({ entity, entityName }: { entity: string; entityName: string
         />
       ) : null}
       {payDayOpen ? <PayDayDialog open onOpenChange={setPayDayOpen} legalEntityId={entity} current={payDay.data} /> : null}
+      {closing && payroll.data !== undefined ? (
+        <CloseMonthDialog open onOpenChange={setClosing} legalEntityId={entity} monthKey={month} members={payroll.data.members} />
+      ) : null}
     </>
   )
 }

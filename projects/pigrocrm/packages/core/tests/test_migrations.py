@@ -4283,3 +4283,67 @@ def test_0102_creates_the_movement_match_tables_and_the_settlement_evidence_colu
         assert _evidence_column(url) is False
         upgrade(config, "0102")
         assert _table_shape(url, "movement_matches")[0] is True
+
+
+def _column_exists(url: str, table: str, column: str) -> bool:
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            return bool(
+                connection.execute(
+                    text(
+                        "SELECT count(*) > 0 FROM information_schema.columns WHERE "
+                        "table_name = :table AND column_name = :column"
+                    ),
+                    {"table": table, "column": column},
+                ).scalar_one()
+            )
+    finally:
+        engine.dispose()
+
+
+def _proposal_checks(url: str) -> dict[str, str]:
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            return {
+                row[0]: row[1]
+                for row in connection.execute(
+                    text(
+                        "SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint "
+                        "WHERE conrelid = 'proposals'::regclass AND contype = 'c' "
+                        "AND conname IN ('ck_proposals_target_type', 'ck_proposals_source')"
+                    )
+                )
+            }
+    finally:
+        engine.dispose()
+
+
+def test_0103_adds_payslip_proposals_closed_payroll_months_and_the_payslip_reading_switch(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1045: the proposals' two checks learn `payslip`, a payslip links its inbox item, a
+    closed payroll month is a table under the row policy, the model gets a payslip switch; and it
+    reverses and comes back."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0102")
+        assert _table_shape(url, "payroll_month_closures")[0] is False
+        assert _column_exists(url, "staff_payslips", "inbox_item_id") is False
+        assert _column_exists(url, "ai_model_config", "read_payslips") is False
+        assert all("payslip" not in sql for sql in _proposal_checks(url).values())
+        upgrade(config, "0103")
+        assert _table_shape(url, "payroll_month_closures") == (True, True, {"legal_entity_scope"})
+        assert _column_exists(url, "staff_payslips", "inbox_item_id") is True
+        assert _column_exists(url, "ai_model_config", "read_payslips") is True
+        checks = _proposal_checks(url)
+        assert len(checks) == 2 and all("payslip" in sql for sql in checks.values())
+        downgrade(config, "0102")
+        assert _table_shape(url, "payroll_month_closures")[0] is False
+        assert _column_exists(url, "staff_payslips", "inbox_item_id") is False
+        assert _column_exists(url, "ai_model_config", "read_payslips") is False
+        assert all("payslip" not in sql for sql in _proposal_checks(url).values())
+        upgrade(config, "0103")
+        assert _table_shape(url, "payroll_month_closures")[0] is True

@@ -256,6 +256,37 @@ class PayslipCorrection(_PayslipAmounts):
     among them: a payslip of another month is another payslip."""
 
 
+class ReadPayslipFields(BaseModel):
+    """What the space's model read on a payslip (`ai/reader.py`), every field optional because a
+    document may not state it: the name it carries, a day of the month it pays and the three
+    figures. An amount is a decimal or absent, never a sentence. What is missing makes the
+    reading no proposal: a person has nothing to decide on a figure that was not read."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    employee_name: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    period: dt.date | None = None
+    gross: Decimal | None = Field(
+        default=None, gt=0, max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_SCALE
+    )
+    net: Decimal | None = Field(
+        default=None, ge=0, max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_SCALE
+    )
+    withholding: Decimal | None = Field(
+        default=None, ge=0, max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_SCALE
+    )
+
+
+class PayslipProposalFields(PayslipFigures):
+    """`proposed_fields` of a `payslip` proposal (REB-1045): the figures of `PayslipFigures`, for
+    whom they are (`staff_member_id`) and, for the reviewer, the name the document itself carries
+    (`employee_name`). Whoever reads a payslip (the space's model, or the user's agent) has
+    matched the person already; a person accepts the proposal as it reads or not at all."""
+
+    staff_member_id: UUID
+    employee_name: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+
+
 class PayslipRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -266,7 +297,42 @@ class PayslipRead(BaseModel):
     gross: Decimal
     net: Decimal
     withholding: Decimal
+    # The inbox item the payslip was accepted from: its file is the payslip's PDF. `None` for
+    # figures a person typed.
+    inbox_item_id: UUID | None = None
     created_at: dt.datetime
+
+
+class PayslipProposalRead(BaseModel):
+    """A payslip the inbox read and nobody accepted yet: what makes a person's month «Ricevuto».
+    The decision is the proposal's own (`POST /api/proposals/{proposal_id}/accept` and
+    `/reject`), the same call wherever it is drawn."""
+
+    proposal_id: UUID
+    inbox_item_id: UUID | None
+    gross: Decimal
+    net: Decimal
+    withholding: Decimal
+    confidence: Decimal
+    confidence_reason: str | None
+    created_at: dt.datetime
+
+
+class PayrollClosureRead(BaseModel):
+    """A payroll month a person closed: when and by whom (the name as it is now)."""
+
+    legal_entity_id: UUID
+    month: dt.date
+    closed_at: dt.datetime
+    closed_by: str | None
+
+
+class PayrollMonthClose(BaseModel):
+    """What closes: any day of the month worked."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    month: dt.date
 
 
 CashKindName = Literal["net_pay", "extra_pay", "withholding", "inps_contributions", "inail_premium"]
@@ -326,6 +392,9 @@ class MemberMonthRead(BaseModel):
     not_estimated: list[str]
     # The payslip that fixed the month, with its id (what a correction names), or none.
     payslip: PayslipRead | None = None
+    # A payslip read from the inbox that nobody accepted: the month reads «Ricevuto». Never in a
+    # month a person closed.
+    received: PayslipProposalRead | None = None
 
 
 class PayrollMonthRead(BaseModel):
@@ -334,3 +403,5 @@ class PayrollMonthRead(BaseModel):
     members: list[MemberMonthRead]
     cost_total: Decimal
     cash_total: Decimal
+    # Set once a person closed the month: its figures are the ones that were closed.
+    closed: PayrollClosureRead | None = None

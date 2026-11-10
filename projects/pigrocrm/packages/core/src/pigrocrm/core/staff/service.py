@@ -19,6 +19,7 @@ ban test finds the privileged tools by name, and a bare `get` or `list` would ma
 other service.
 """
 
+import datetime as dt
 from collections.abc import Callable
 from typing import Any
 from uuid import UUID
@@ -34,10 +35,11 @@ from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.money import round_money
 from pigrocrm.core.schemas import supplied_changes
-from pigrocrm.core.staff.estimate import first_of
+from pigrocrm.core.staff.estimate import add_months, first_of
 from pigrocrm.core.staff.models import (
     DIRECTOR_PACKS,
     EMPLOYEE_PACKS,
+    PayrollMonthClosure,
     PayrollSettings,
     StaffMember,
     StaffPayslip,
@@ -52,18 +54,23 @@ from pigrocrm.core.staff.schemas import (
     HourlyCostProposalRead,
     PayDayRead,
     PayDayWrite,
+    PayrollClosureRead,
+    PayrollMonthClose,
     PayslipCorrection,
     PayslipFigures,
+    PayslipProposalFields,
     PayslipRead,
     StaffListQuery,
     StaffMemberRead,
     StaffMemberUpdate,
     StaffPage,
 )
+from pigrocrm.core.timetracking.locks import period_label
 from pigrocrm.core.timetracking.schemas import UserRatesUpdate
 from pigrocrm.core.timetracking.service import TimeEntryService
 
 ENTITY = "staff_member"
+MONTH_ENTITY = "payroll_month"
 PAY_DAY_ENTITY = "payroll_settings"
 USER_INDEX = "uq_staff_members_user_id"
 
@@ -205,10 +212,56 @@ class StaffService:
         other month are estimated from its ratios (`staff/estimate.py`). A person's act, as
         accepting anything is (frame § A4): `record_staff_payslip` is person-only in
         `agent_actions.py`, so no credential reaches it, whatever it carries. A month
-        has one payslip."""
+        has one payslip, and a month a person closed takes none (409)."""
         actor.require_admin("record_staff_payslip")
         member = self._require(staff_member_id)
+        payslip = self._write_payslip(member, data, actor)
+        self.session.commit()
+        self.session.refresh(payslip)
+        return PayslipRead.model_validate(payslip)
+
+    def file_proposed_payslip(
+        self,
+        fields: PayslipProposalFields,
+        proposal_id: UUID,
+        inbox_item_id: UUID | None,
+        actor: Actor,
+    ) -> UUID:
+        """Writes the payslip a person accepted from the inbox's proposal: the same row, with
+        the same due items and forecasts, as `record_staff_payslip` writes, plus the inbox item
+        its PDF is. Flushes and never commits: `ProposalService.accept` owns the transaction
+        and the proposal's own decision. Answers the payslip's id."""
+        actor.require_admin("accept_payslip_proposal")
+        member = self._require(fields.staff_member_id)
+        payslip = self._write_payslip(
+            member,
+            PayslipFigures(
+                period=fields.period,
+                gross=fields.gross,
+                net=fields.net,
+                withholding=fields.withholding,
+            ),
+            actor,
+            inbox_item_id=inbox_item_id,
+            payload={"proposal_id": str(proposal_id)},
+        )
+        return payslip.id
+
+    def _write_payslip(
+        self,
+        member: StaffMember,
+        data: PayslipFigures,
+        actor: Actor,
+        *,
+        inbox_item_id: UUID | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> StaffPayslip:
+        """The one writer of a payslip row: the checks, the row, the timeline entry and the
+        forecasts it moves. The legal entity's row is taken first, so a close of the month
+        and a payslip for it queue, and never commits."""
         period = first_of(data.period)
+        self.payroll.lock_legal_entity(member.legal_entity_id)
+        self._require_open_month(member.legal_entity_id, period)
         if period < first_of(member.start_date) or (
             member.end_date is not None and period > first_of(member.end_date)
         ):
@@ -233,13 +286,24 @@ class StaffService:
                 gross=data.gross,
                 net=data.net,
                 withholding=data.withholding,
+                inbox_item_id=inbox_item_id,
             )
         )
-        self.activities.record(ENTITY, member.id, "staff_payslip_recorded", actor)
+        self.activities.record(ENTITY, member.id, "staff_payslip_recorded", actor, payload)
         self.payroll.refresh_payroll_forecasts(member.legal_entity_id)
-        self.session.commit()
-        self.session.refresh(payslip)
-        return PayslipRead.model_validate(payslip)
+        return payslip
+
+    def _require_open_month(self, legal_entity_id: UUID, month: dt.date) -> None:
+        """A month a person closed takes no payslip and no correction: 409, with the month
+        named so the page can say it."""
+        if self.repo.closure(legal_entity_id, month) is not None:
+            raise Conflict(
+                "staff_payslip",
+                f"il mese di paga {period_label(month.year, month.month)} e' chiuso: non si "
+                "registra ne' si corregge un cedolino di quel mese",
+                legal_entity_id=str(legal_entity_id),
+                month=month.isoformat(),
+            )
 
     def correct_staff_payslip(
         self, staff_member_id: UUID, payslip_id: UUID, data: PayslipCorrection, actor: Actor
@@ -250,14 +314,16 @@ class StaffService:
         `correct_staff_payslip` is person-only in `agent_actions.py`, so no credential reaches
         it, whatever it carries. The month never changes; an item of the payslip with a payment
         recorded that the figures would move is refused, and nothing is written (the payment is
-        reversed first). The timeline entry says who and for which month, never the figures.
-        Correcting to the figures it already has writes nothing."""
+        reversed first), and so is a payslip of a month a person closed (409). The timeline
+        entry says who and for which month, never the figures. Correcting to the figures it
+        already has writes nothing."""
         actor.require_admin("correct_staff_payslip")
         member = self._require(staff_member_id)
         self.payroll.lock_legal_entity(member.legal_entity_id)
         payslip = self.repo.payslip_locked(payslip_id)
         if payslip is None or payslip.staff_member_id != member.id:
             raise NotFound("staff_payslip", payslip_id)
+        self._require_open_month(member.legal_entity_id, payslip.period)
         if (payslip.gross, payslip.net, payslip.withholding) == (
             data.gross,
             data.net,
@@ -281,6 +347,49 @@ class StaffService:
         self.session.commit()
         self.session.refresh(payslip)
         return PayslipRead.model_validate(payslip)
+
+    def close_payroll_month(
+        self, legal_entity_id: UUID, data: PayrollMonthClose, actor: Actor
+    ) -> PayrollClosureRead:
+        """Closes a payroll month of one legal entity (staff design § 4): its accepted payslips
+        and its estimates are locked, which is to say that no payslip is recorded or corrected
+        for it from now on and the month reads as it is now, whatever the pay inputs become.
+        An administrator's act and, for an agent, a `full_access` token's. Only a month that
+        has ended closes, and once: a closed month stays closed. A person still on an estimate
+        is closed with it, as an estimate; the page says who before it asks."""
+        actor.require_admin("close_payroll_month")
+        self._require_legal_entity(legal_entity_id)
+        month = first_of(data.month)
+        if add_months(month, 1) > today_local():
+            raise ValidationFailed(
+                "payroll_month",
+                "month",
+                "il mese di paga non e' ancora finito: si chiude quando e' stato lavorato",
+                expected="un mese gia' concluso",
+            )
+        self.payroll.lock_legal_entity(legal_entity_id)
+        if self.repo.closure(legal_entity_id, month) is not None:
+            raise Conflict(
+                "payroll_month",
+                f"il mese di paga {period_label(month.year, month.month)} e' gia' chiuso",
+                legal_entity_id=str(legal_entity_id),
+                month=month.isoformat(),
+            )
+        snapshot = self.payroll.live_month(legal_entity_id, month).model_dump(mode="json")
+        closure = self.repo.add_closure(
+            PayrollMonthClosure(
+                legal_entity_id=legal_entity_id,
+                month=month,
+                closed_at=dt.datetime.now(dt.UTC),
+                closed_by_id=actor.id,
+                snapshot=snapshot,
+            )
+        )
+        self.activities.record(
+            MONTH_ENTITY, closure.id, "payroll_month_closed", actor, {"month": month.isoformat()}
+        )
+        self.session.commit()
+        return self.payroll.closure_read(closure)
 
     def propose_staff_hourly_cost(
         self, staff_member_id: UUID, actor: Actor
