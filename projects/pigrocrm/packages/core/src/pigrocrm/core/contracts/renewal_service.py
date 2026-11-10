@@ -15,6 +15,7 @@ from pigrocrm.core.contracts.repository import ContractRepository, RateCardRepos
 from pigrocrm.core.contracts.rules import ENTITY
 from pigrocrm.core.contracts.schemas import ContractRead, ContractRenew
 from pigrocrm.core.db.transactions import savepoint
+from pigrocrm.core.due_items.forecast import ForecastService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.organizations.repository import OrganizationRepository
@@ -163,5 +164,8 @@ class ContractRenewalService:
                 "end": end.isoformat(),
             },
         )
+        forecasts = ForecastService(self.session)
+        forecasts.refresh_contract(contract.id)
+        forecasts.refresh_contract(successor.id)
         self.session.commit()
         return ContractRead.model_validate(successor)

@@ -10,6 +10,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.collaborators.forecast import EngagementForecastService
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.db.transactions import savepoint
+from pigrocrm.core.due_items.forecast import ForecastService
 from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.errors import Conflict, ImmutableField, ValidationFailed
 from pigrocrm.core.fiscal.regime import RegimeStrategy
@@ -210,6 +211,14 @@ class InvoiceEmission:
             DueItemService(ctx.session).open_for_invoice(target, paid_on=None, actor=actor)
             # A freelancer paid when this client pays waits for this item (REB-1003).
             EngagementForecastService(ctx.session).pair_invoice(target)
+        # The forecasts it replaces, in the same transaction and outside the SAVEPOINT (REB-997):
+        # the proforma's or draft's own, and the periods its lines bill, so the receivable is
+        # counted once whichever of the job and this issue commits first. A failure here is not
+        # a concurrent number, and must not be worded as one.
+        forecasts = ForecastService(ctx.session)
+        if target is not source:
+            forecasts.sync_invoice(source.id)
+        forecasts.sync_invoice(target.id)
         ctx.session.commit()
         # The artefacts belong to the caller's second transaction, not to this method:
         # when `issue` rendered them itself it stopped being one transaction, and the
@@ -377,8 +386,11 @@ class InvoiceEmission:
         )
         # The days billed on it are billable again, as the hours are: an annulled invoice
         # keeps its number but not its revenue (REB-751).
+        forecasts = ForecastService(ctx.session)
+        forecasts.lock_contracts(forecasts.billed_contracts(invoice.id))
         release_days_of_invoice(ctx.session, invoice.id, actor, ANNULLED_INVOICE_REASON)
         DueItemService(ctx.session).drop_for_invoice(invoice.id)
+        forecasts.sync_invoice(invoice.id)
         ctx.session.commit()
         return ctx.read(invoice)
 

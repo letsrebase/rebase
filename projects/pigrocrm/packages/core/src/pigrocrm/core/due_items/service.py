@@ -101,8 +101,10 @@ class DueItemService:
 
     # ---- the writer's half: no actor, no commit -------------------------------------------
 
-    def create(self, data: DueItemCreate) -> DueItemRead:
-        """Records an amount that falls due. The caller commits, with the document it is for."""
+    def create(self, data: DueItemCreate, *, check_organization: bool = True) -> DueItemRead:
+        """Records an amount that falls due. The caller commits, with the document it is for.
+        `check_organization=False` is for a document that is billed under another legal entity
+        than its customer's, as a contract's days are (see `open_for_invoice`)."""
         if data.source_kind not in SOURCE_KINDS:
             raise ValidationFailed(
                 ENTITY,
@@ -112,7 +114,7 @@ class DueItemService:
             )
         if self.session.get(LegalEntity, data.legal_entity_id) is None:
             raise NotFound("legal_entity", data.legal_entity_id)
-        if data.organization_id is not None:
+        if data.organization_id is not None and check_organization:
             self._require_organization_of(data.organization_id, data.legal_entity_id)
         if data.staff_member_id is not None:
             self._require_staff_member_of(data.staff_member_id, data.legal_entity_id)
@@ -167,6 +169,42 @@ class DueItemService:
                 rule_not_after=data.rule.not_after,
             )
         )
+        return self._read(item)
+
+    def revise_forecast(
+        self,
+        item_id: UUID,
+        *,
+        amount: Decimal,
+        own_date: dt.date | None,
+        description: str | None,
+        organization_id: UUID,
+    ) -> DueItemRead:
+        """Brings a live forecast to what its rule produces now: the amount, the date, the
+        description and the organisation. Only a forecast is revised, since a document fixes
+        the other states; a forecast has no settlements, so nothing else depends on it. Flushes
+        and never commits; answers without writing when nothing changed."""
+        item = self._locked(item_id)
+        if item.state != "forecast":
+            raise Conflict(ENTITY, "solo una previsione si rivede", id=str(item.id))
+        if amount == ZERO:
+            raise ValidationFailed(
+                ENTITY, "amount", "l'importo di una scadenza non e' zero", expected="un importo"
+            )
+        description = description[:255] if description else None
+        if (item.amount, item.own_date, item.description, item.organization_id) != (
+            amount,
+            own_date,
+            description,
+            organization_id,
+        ):
+            item.amount = amount
+            item.own_date = own_date
+            item.description = description
+            item.organization_id = organization_id
+            self.session.flush()
+            self._redate(item)
+            self._follow(item)
         return self._read(item)
 
     def drop(self, item_id: UUID, reason: str | None = None) -> DueItemRead:

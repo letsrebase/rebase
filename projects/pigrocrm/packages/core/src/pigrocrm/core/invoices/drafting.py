@@ -15,6 +15,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.db.transactions import savepoint
 from pigrocrm.core.documents.context import ENTITY as DOCUMENT_ENTITY
+from pigrocrm.core.due_items.forecast import ForecastService
 from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.errors import Conflict, ImmutableField, ValidationFailed
 from pigrocrm.core.fields.custom import merge_custom
@@ -135,6 +136,7 @@ class InvoiceDrafting:
             # `check_issue_date`'s limits apply, and the fattura born from this row takes
             # its own date at `issue` -- which is why any date is accepted.
             invoice.issue_date = data.issue_date or today
+        ctx.check_billed_cards(data.lines, data.customer_id)
         computed = compute_lines(
             data.lines,
             profile,
@@ -145,6 +147,7 @@ class InvoiceDrafting:
         apply_totals(invoice, computed, profile, strategy, customer)
         ctx.repo.add(invoice)
         persist_lines(ctx.repo, invoice, computed)
+        ForecastService(ctx.session).sync_invoice(invoice.id)
         ctx.activities.record(
             ENTITY,
             invoice.id,
@@ -216,6 +219,7 @@ class InvoiceDrafting:
         for key, value in changes.items():
             setattr(invoice, key, value)
         ctx.activities.record(ENTITY, invoice.id, "updated", actor, {"changed": sorted(changes)})
+        ForecastService(ctx.session).sync_invoice(invoice.id)
         ctx.session.commit()
         return ctx.read(invoice)
 
@@ -241,6 +245,7 @@ class InvoiceDrafting:
                 work_units=billed,
             )
         customer = ctx.check_owner(invoice.customer_id, None)
+        ctx.check_billed_cards(lines, invoice.customer_id)
         strategy, profile = ctx.regime(invoice.legal_entity_id)
         computed = compute_lines(
             lines,
@@ -250,6 +255,10 @@ class InvoiceDrafting:
             customer_kind=customer.customer_kind,
         )
         apply_totals(invoice, computed, profile, strategy, customer)
+        forecasts = ForecastService(ctx.session)
+        # The contracts the old lines billed, which the new ones may not: their periods are free.
+        billed_contracts = forecasts.billed_contracts(invoice.id)
+        forecasts.lock_contracts(billed_contracts)
         persist_lines(ctx.repo, invoice, computed)
         ctx.activities.record(
             ENTITY,
@@ -258,6 +267,7 @@ class InvoiceDrafting:
             actor,
             {"lines": len(computed), "total": str(invoice.total)},
         )
+        forecasts.sync_invoice(invoice.id, also_contracts=billed_contracts)
         ctx.session.commit()
         return ctx.read(invoice)
 
@@ -347,7 +357,13 @@ class InvoiceDrafting:
             ctx.activities.record(DOCUMENT_ENTITY, document.id, "deleted", actor)
         ctx.activities.record(ENTITY, invoice.id, "deleted", actor)
         # The days billed on it are billable again (REB-751): the draft that held them is gone.
+        # The contracts its lines billed are locked before their days are given back, and read
+        # again after: their days are free and their periods unbilled (REB-997).
+        forecasts = ForecastService(ctx.session)
+        forecasts.lock_contracts(forecasts.billed_contracts(invoice.id))
         release_days_of_invoice(ctx.session, invoice.id, actor, DELETED_DRAFT_REASON)
+        # The draft's own forecast goes with it.
+        forecasts.sync_invoice(invoice.id)
         ctx.session.commit()
 
     def set_payment_state(self, invoice_id: UUID, data: PaymentState, actor: Actor) -> InvoiceRead:

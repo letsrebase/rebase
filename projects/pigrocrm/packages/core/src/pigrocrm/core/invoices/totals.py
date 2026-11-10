@@ -13,7 +13,9 @@ needs no session, no container and no XML.
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
+from uuid import UUID
 
 from pigrocrm.core.invoices.schemas import MONEY_DECIMAL_PLACES, MONEY_MAX_DIGITS
 from pigrocrm.core.money import FACTOR_QUANT, round_money
@@ -89,6 +91,9 @@ class ComputedLine:
     vat_rate: Decimal
     vat_nature: str | None
     legal_reference: str | None
+    # The contract rate card this line bills and the day its period starts (REB-997).
+    rate_card_id: UUID | None = None
+    period_start: date | None = None
 
 
 @dataclass(frozen=True)

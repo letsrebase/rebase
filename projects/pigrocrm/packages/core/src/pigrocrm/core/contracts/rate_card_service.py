@@ -10,6 +10,7 @@ from pigrocrm.core.contracts.repository import ContractRepository, RateCardRepos
 from pigrocrm.core.contracts.rules import check_rate_card_shape
 from pigrocrm.core.contracts.schemas import RateCardCreate, RateCardRead, RateCardUpdate
 from pigrocrm.core.db.transactions import savepoint
+from pigrocrm.core.due_items.forecast import ForecastService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 
@@ -89,6 +90,7 @@ class RateCardService:
                 ),
             },
         )
+        ForecastService(self.session).refresh_contract(contract_id)
         self.session.commit()
         return RateCardRead.model_validate(rate_card)
 
@@ -150,6 +152,7 @@ class RateCardService:
             actor,
             {"changed": sorted(changes), "valid_from": str(card.valid_from)},
         )
+        ForecastService(self.session).refresh_contract(contract_id)
         self.session.commit()
         return RateCardRead.model_validate(card)
 

@@ -35,6 +35,7 @@ from pigrocrm.core.contracts.schemas import (
     ContractUpdate,
 )
 from pigrocrm.core.db import encode_cursor
+from pigrocrm.core.due_items.forecast import ForecastService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.fields.service import FieldDefinitionService
@@ -80,6 +81,7 @@ class ContractService:
 
         contract = self.repo.add(Contract(**payload))
         self.activities.record(ENTITY, contract.id, "created", actor, {"title": contract.title})
+        ForecastService(self.session).refresh_contract(contract.id)
         self.session.commit()
         return ContractRead.model_validate(contract)
 
@@ -169,6 +171,7 @@ class ContractService:
         if "expense_policy" in changes:
             self._reevaluate_unbilled_expenses(contract.id)
         self.activities.record(ENTITY, contract.id, "updated", actor, {"changed": sorted(changes)})
+        ForecastService(self.session).refresh_contract(contract.id)
         self.session.commit()
         return ContractRead.model_validate(contract)
 
@@ -218,6 +221,7 @@ class ContractService:
             actor,
             {"from": previous, "to": data.status},
         )
+        ForecastService(self.session).refresh_contract(contract.id)
         self.session.commit()
         return ContractRead.model_validate(contract)
 

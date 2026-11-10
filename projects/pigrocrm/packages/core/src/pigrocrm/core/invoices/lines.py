@@ -81,6 +81,8 @@ def compute_lines(
                 vat_rate=rate,
                 vat_nature=vat_nature,
                 legal_reference=reference,
+                rate_card_id=line.rate_card_id,
+                period_start=line.period_start,
             )
         )
     return tuple(computed)
@@ -102,6 +104,8 @@ def computed_from_stored(lines: Sequence[InvoiceLine]) -> tuple[ComputedLine, ..
             vat_rate=r.vat_rate,
             vat_nature=r.vat_nature,
             legal_reference=r.legal_reference,
+            rate_card_id=r.rate_card_id,
+            period_start=r.period_start,
         )
         for r in lines
     )
@@ -184,5 +188,7 @@ def persist_lines(
                 vat_rate=line.vat_rate,
                 vat_nature=line.vat_nature,
                 legal_reference=line.legal_reference,
+                rate_card_id=line.rate_card_id,
+                period_start=line.period_start,
             )
         )

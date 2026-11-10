@@ -176,6 +176,20 @@ class InvoiceLineIn(BaseModel):
     vat_rate: Decimal | None = Field(
         default=None, max_digits=RATE_MAX_DIGITS, decimal_places=RATE_DECIMAL_PLACES
     )
+    # The contract rate card this line bills and the day its period starts, both or neither
+    # (REB-997): what lets issuing replace the forecast of that period. The service checks that
+    # the card is a card of a contract of the document's customer.
+    rate_card_id: UUID | None = None
+    period_start: dt.date | None = None
+
+    @model_validator(mode="after")
+    def _rate_card_with_period(self) -> "InvoiceLineIn":
+        if (self.rate_card_id is None) != (self.period_start is None):
+            raise ValueError(
+                "una riga che fattura un periodo di un contratto indica la scheda tariffa "
+                "e il giorno in cui il periodo comincia, tutti e due"
+            )
+        return self
 
 
 class InvoiceLineRead(BaseModel):
@@ -194,6 +208,10 @@ class InvoiceLineRead(BaseModel):
     vat_rate: Decimal
     vat_nature: str | None
     legal_reference: str | None
+    # Not required: a line built from a payload that predates them (an import, a snapshot)
+    # bills no period.
+    rate_card_id: UUID | None = None
+    period_start: dt.date | None = None
 
 
 class InvoiceCreate(BaseModel):

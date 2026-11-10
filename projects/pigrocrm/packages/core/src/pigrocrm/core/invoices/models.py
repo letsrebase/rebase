@@ -331,6 +331,14 @@ class InvoiceLine(Base, PrimaryKeyMixin, TimestampMixin):
     vat_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
     vat_nature: Mapped[str | None] = mapped_column(String(4), default=None)
     legal_reference: Mapped[str | None] = mapped_column(Text, default=None)
+    # The contract rate card this line bills and the day its period starts (REB-997): what lets
+    # issuing drop the forecast of that period instead of adding to it. Both or neither; a line
+    # that bills no contract carries neither. No `ondelete`: a card that was billed is not
+    # deleted.
+    rate_card_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("rate_cards.id"), default=None, index=True
+    )
+    period_start: Mapped[date | None] = mapped_column(Date, default=None)
 
     __table_args__ = (
         UniqueConstraint("invoice_id", "line_number", name="uq_invoice_lines_invoice_number"),
@@ -343,6 +351,11 @@ class InvoiceLine(Base, PrimaryKeyMixin, TimestampMixin):
             name="ck_invoice_lines_vat_nature_agrees_with_rate",
         ),
         CheckConstraint("line_number >= 1", name="ck_invoice_lines_number_positive"),
+        # A line either bills a contract's rate card for a period or bills neither.
+        CheckConstraint(
+            "(rate_card_id IS NULL) = (period_start IS NULL)",
+            name="ck_invoice_lines_rate_card_with_period",
+        ),
     )
 
 

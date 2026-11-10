@@ -392,6 +392,15 @@ _INTERNE: dict[Method, str] = {
     ("EngagementForecastService", "pair"): "behind sync and the invoice's emission",
     ("EngagementForecastService", "pair_invoice"): "the writer's half: emission and import pair",
     ("EngagementForecastService", "refresh_all"): "the cron step of reconcile-due-items",
+    # REB-997: the forecasts of money in. Materialised by the daily job and by the services that
+    # own a contract, a rate card, a day or an invoice, inside their own transaction; a person
+    # or an agent reads them as due items (`list_due_items`), and nothing writes one by hand.
+    ("DueItemService", "revise_forecast"): "the writer's half: a forecast follows its rule",
+    ("ForecastService", "refresh_all"): "the daily job, behind `pigrocrm automations`",
+    ("ForecastService", "refresh_contract"): "a change to a contract, a card or a day calls it",
+    ("ForecastService", "sync_invoice"): "a change to a draft or an invoice calls it",
+    ("ForecastService", "billed_contracts"): "internal read behind sync_invoice",
+    ("ForecastService", "lock_contracts"): "the lock order of the writers of a day",
 }
 
 
