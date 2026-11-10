@@ -598,6 +598,10 @@ def register(
             AnalyticsService(context.session)
             .get_tax_calendar(
                 year, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
+            )
+            .model_dump(mode="json")
+        )
+
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def set_declared_tax_figure(
