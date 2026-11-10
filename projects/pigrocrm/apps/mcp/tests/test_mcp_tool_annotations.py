@@ -83,7 +83,9 @@ SURFACES: dict[str, dict[str, Any]] = {
 # 107,601.
 # REB-1025: 107.2 KB, up from 106.8 KB, for `get_cash_schedule` (every token's, 453 bytes): the
 # schedule is core and any token reads it, measured at 107,155.
-DEFAULT_BUDGET_BYTES = 107_650
+# REB-1025 after the merge with main: 108.1 KB, measured at 108,053 (the cash schedule tool and the
+# fee tools together).
+DEFAULT_BUDGET_BYTES = 108_100
 # REB-957: 111.9 KB, up from 111.6 KB, for `skip_space_onboarding` (a full-access
 # administrator's), measured at 111,786 bytes; `describe_space`'s `onboarding` fits the default.
 # REB-977: 116.2 KB, up from 113.4 KB, for `create_staff_member`, `update_staff_member`,
@@ -116,7 +118,8 @@ DEFAULT_BUDGET_BYTES = 107_650
 # 3.6 KB: an account has an IBAN, a currency, an opening balance, an arrival and a cadence, and
 # `update_bank_account` lists them by name and type) and `get_cash_schedule` (every token's, 453
 # bytes), measured at 132,491.
-FULL_ACCESS_BUDGET_BYTES = 131_750
+# REB-1025 after the merge with main: 135.9 KB, measured at 135,815.
+FULL_ACCESS_BUDGET_BYTES = 135_900
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.
