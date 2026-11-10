@@ -109,6 +109,17 @@ export const MIN_ROLE = {
   reverse_settlement: 'collaborator',
   settle_outgoing_due_item: 'admin',
   reverse_outgoing_settlement: 'admin',
+  // Staff and their pay (REB-977, REB-1008, REB-1009): every read and write is an
+  // administrator's, and the service refuses anyone else before it looks anything up.
+  list_staff: 'admin',
+  get_staff_member: 'admin',
+  create_staff_member: 'admin',
+  update_staff_member: 'admin',
+  set_payroll_pay_day: 'admin',
+  get_payroll_month: 'admin',
+  record_staff_payslip: 'admin',
+  propose_staff_hourly_cost: 'admin',
+  adopt_staff_hourly_cost: 'admin',
   // Engagements with freelancers (REB-976): every read and write is an administrator's, as the
   // hub's matches were. No screen consults them yet; the rows are here so that the one that
   // does finds the minimum already pinned against the service.

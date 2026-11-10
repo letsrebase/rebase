@@ -242,6 +242,7 @@ describe('AppShell', () => {
       'Ore',
       'Giornate',
       'Tasse',
+      "Persone dell'azienda",
       'Esporta per il commercialista',
       'Agenti',
     ])
@@ -269,6 +270,7 @@ describe('AppShell', () => {
       'Ore',
       'Giornate',
       'Tasse',
+      "Persone dell'azienda",
       'Esporta per il commercialista',
     ])
     // Agents and Settings come after every section, Settings last.

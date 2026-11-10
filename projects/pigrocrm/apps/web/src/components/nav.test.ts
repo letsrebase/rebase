@@ -28,6 +28,7 @@ describe('visibleSections (REB-953)', () => {
       'Ore',
       'Giornate',
       'Tasse',
+      "Persone dell'azienda",
       'Esporta per il commercialista',
     ]
     expect(labels([])).toEqual(everything)
@@ -83,6 +84,7 @@ describe('visibleSections (REB-953)', () => {
       'Ore',
       'Giornate',
       'Tasse',
+      "Persone dell'azienda",
       'Esporta per il commercialista',
     ])
     expect(sections.find((section) => section.id === 'vendite')?.items[0]?.label).toBe('Clienti')
@@ -112,6 +114,19 @@ describe('visibleSections (REB-953)', () => {
     expect(shown).toContain('Fatture')
   })
 
+  it("draws «Persone dell'azienda» to an administrator only, and not with staff off (REB-1027)", () => {
+    const access = moduleAccess(undefined)
+    const names = (role: 'admin' | 'collaborator' | 'readonly' | undefined) =>
+      visibleSections(access, role).flatMap((section) => section.items.map((item) => item.label))
+    expect(names('admin')).toContain("Persone dell'azienda")
+    for (const role of ['collaborator', 'readonly', undefined] as const) {
+      expect(names(role)).not.toContain("Persone dell'azienda")
+    }
+    expect(labels(['staff'])).not.toContain("Persone dell'azienda")
+    expect(phoneMoreItems(access, 'collaborator').map((item) => item.label)).not.toContain("Persone dell'azienda")
+    expect(phoneMoreItems(access, 'admin').map((item) => item.label)).toContain("Persone dell'azienda")
+  })
+
   it('keeps the entries of the core whatever is off', () => {
     const core = [
       'Attività',
@@ -124,7 +139,7 @@ describe('visibleSections (REB-953)', () => {
       'Fatture',
       'Esporta per il commercialista',
     ]
-    expect(labels(['deals', 'contracts', 'time', 'purchases', 'taxes'])).toEqual(core)
+    expect(labels(['deals', 'contracts', 'time', 'purchases', 'taxes', 'staff'])).toEqual(core)
   })
 
   it('drops a section left with no entry', () => {
@@ -137,6 +152,7 @@ describe('visibleSections (REB-953)', () => {
       'Fornitori',
       'Acquisti',
       'Tasse',
+      "Persone dell'azienda",
       'Esporta per il commercialista',
     ])
   })
@@ -174,6 +190,7 @@ describe('the phone bar (REB-959)', () => {
       'Acquisti',
       'Ore',
       'Tasse',
+      "Persone dell'azienda",
       'Esporta per il commercialista',
     ])
     expect(more(['deals', 'time'], 'company')).toEqual([
@@ -187,6 +204,7 @@ describe('the phone bar (REB-959)', () => {
       'Fornitori',
       'Acquisti',
       'Tasse',
+      "Persone dell'azienda",
       'Esporta per il commercialista',
     ])
   })

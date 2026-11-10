@@ -235,6 +235,19 @@ The module `staff` (frame § A2; default on for a company that said so in the on
 received, accepted, closed); «Note spese» for the staff member and the approver, on the phone
 first. New surfaces: brief and mockups before markup (frame § A7).
 
+**As built (REB-1027).** `/app/staff`, `features/staff/`: an administrator's page (the entry is
+hidden from every other role and the route answers «I compensi li vedono solo gli
+amministratori.»), one table for the month worked with cost, cash and state, the month's one F24
+row, and a panel (a full-screen sheet on the phone) with the month's figures, the typed payslip
+beside the estimate, the terms, the hourly cost (REB-1009) and «Modifica condizioni». Every
+figure and every reason is the server's (`not_estimated` read through one table of sentences);
+the browser only adds the totals the server does not send, with `sumDecimalStrings`. The legal
+entity is the sidebar's. The month's state is the least advanced person's. Not built, because
+there is no backend yet: «Ricevuto» (the inbox's payslip, accepted from the proposal), «Rifiuta…»
+and «Apri il PDF», «Chiuso» and «Chiudi il mese» (`close_payroll_month`), and «Note spese»
+(the expense-note data cards). The page opens on the current month, not on «the most recent month
+that is not closed», for the same reason.
+
 ## 7. What is tested
 
 A month's estimate split into net pay, F24 and accruals with their dates; the 13th and 14th

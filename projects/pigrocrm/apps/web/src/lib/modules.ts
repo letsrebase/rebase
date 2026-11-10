@@ -61,6 +61,8 @@ export const ROUTE_MODULES: ReadonlyArray<{ path: string; modules: readonly Modu
   // taxes: the page of the legal entity's taxes, their readings and dates (REB-1026). The
   // ceiling and the year register stay where they are, on the Home.
   { path: '/app/taxes', modules: ['taxes'] },
+  // staff: the people the company pays and what they cost (REB-1027).
+  { path: '/app/staff', modules: ['staff'] },
   // purchases: the purchases register, its pages and the cost categories. A deal's own
   // «Acquisti» block stays on its Ore tab, `time` and `purchases` together.
   { path: '/app/purchases', modules: ['purchases'] },
