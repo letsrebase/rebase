@@ -50,6 +50,8 @@ from uuid import UUID
 from mcp.server import MCPServer
 from pydantic import TypeAdapter
 
+from pigrocrm.core.accountant_export.parts import Period
+from pigrocrm.core.accountant_export.service import AccountantExportService
 from pigrocrm.core.analytics.schemas import BindTimeRequest
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.auth.models import User
@@ -633,6 +635,46 @@ def register(
             .set_declared_tax_figure(
                 data, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
             )
+            .model_dump(mode="json")
+        )
+
+    # ---- the accountant's export ---------------------------------------------------
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def build_accountant_export(
+        date_from: str,
+        date_to: str,
+        legal_entity_id: str | None = None,
+        all_entities: bool = False,
+    ) -> dict[str, Any]:
+        """Builds and stores the accountant's export of a period (at most 366 days), admin
+        only: every fiscal figure of the company in ZIP files. Answers the export with a
+        REST `download_url` for each ZIP, never the bytes. Building the same period again
+        stores another export and keeps the first; each is deleted after 13 months. With
+        several companies pass `legal_entity_id`, or `all_entities` for every company
+        (an administrator not limited to some companies).
+        """
+        stored = AccountantExportService(
+            context.session, context.storage, settings
+        ).build_accountant_export(
+            Period(_required_day(date_from), _required_day(date_to)),
+            context.actor,
+            parse_legal_entity_id(legal_entity_id),
+            all_entities=all_entities,
+        )
+        return stored.export.model_dump(mode="json")
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def get_export_download_url(export_id: str) -> dict[str, Any]:
+        """The REST paths to download the ZIP files of a stored export, from the `id` that
+        `build_accountant_export` answered. It does not return the bytes. An export past 13
+        months has been deleted and has no files.
+        """
+        return (
+            AccountantExportService(context.session, context.storage, settings)
+            .get_export_download_url(UUID(export_id), context.actor)
             .model_dump(mode="json")
         )
 

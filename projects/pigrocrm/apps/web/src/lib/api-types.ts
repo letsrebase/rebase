@@ -5768,7 +5768,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/accountant-export": {
+    "/api/accountant-export/exports": {
         parameters: {
             query?: never;
             header?: never;
@@ -5776,13 +5776,57 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Download Export
-         * @description One ZIP for the accountant: the sales register with its VAT columns, the invoices
-         *     issued and received with their files, the receipts and expenses, the open due items and
-         *     the payments of the period, and an index naming every part with its row count, every part
-         *     left out with its reason and every part whose source does not exist yet.
+         * List Exports
+         * @description The stored exports, newest first. One past 13 months stays listed, with no files.
          */
-        get: operations["download_export_api_accountant_export_get"];
+        get: operations["list_exports_api_accountant_export_exports_get"];
+        put?: never;
+        /**
+         * Build Export
+         * @description Builds the period's export and stores it, one ZIP or several when it is too big for
+         *     one file: the sales register with its VAT columns, the invoices issued and received with
+         *     their files, the receipts and expenses, the open due items and the payments of the period,
+         *     and an index naming every part with its row count, every part left out with its reason and
+         *     every part whose source does not exist yet. Building the same period again keeps both
+         *     exports; each is deleted after 13 months.
+         */
+        post: operations["build_export_api_accountant_export_exports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accountant-export/exports/{export_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Export */
+        get: operations["get_export_api_accountant_export_exports__export_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accountant-export/exports/{export_id}/parts/{part}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download Export Part
+         * @description One ZIP of a stored export. A bundle too big for one file is several, each a complete
+         *     archive; the index inside the first says which holds which file.
+         */
+        get: operations["download_export_part_api_accountant_export_exports__export_id__parts__part__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -9548,6 +9592,112 @@ export interface components {
             custom_fields: {
                 [key: string]: unknown;
             }[];
+        };
+        /** ExportBuild */
+        ExportBuild: {
+            /**
+             * Date From
+             * Format: date
+             * @description First day of the period, included
+             */
+            date_from: string;
+            /**
+             * Date To
+             * Format: date
+             * @description Last day of the period, included; at most 366 days
+             */
+            date_to: string;
+            /**
+             * Legal Entity Id
+             * @description The legal entity to export; omitted, the only one of a one-entity space
+             */
+            legal_entity_id?: string | null;
+            /**
+             * All Entities
+             * @description Every legal entity plus the shared purchases, in one bundle; only an admin whose view is not limited to some legal entities, and not together with legal_entity_id
+             * @default false
+             */
+            all_entities: boolean;
+        };
+        /** ExportPartRead */
+        ExportPartRead: {
+            /**
+             * Part
+             * @description The part's number, from 1
+             */
+            part: number;
+            /**
+             * Filename
+             * @description The ZIP's name
+             */
+            filename: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Sha256 */
+            sha256: string;
+            /**
+             * Download Url
+             * @description The REST path that serves this ZIP
+             */
+            download_url: string;
+        };
+        /** ExportRead */
+        ExportRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Legal Entity Id
+             * @description The legal entity, `null` for the export of every legal entity
+             */
+            legal_entity_id: string | null;
+            /**
+             * Scope
+             * @description `entity` or `all_entities`
+             */
+            scope: string;
+            /**
+             * Period From
+             * Format: date
+             */
+            period_from: string;
+            /**
+             * Period To
+             * Format: date
+             */
+            period_to: string;
+            /** Built By */
+            built_by: string | null;
+            /**
+             * Built At
+             * Format: date-time
+             */
+            built_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             * @description When its files are deleted: 13 months on
+             */
+            expires_at: string;
+            /**
+             * Deleted At
+             * @description When its files were deleted, `null` while they are kept
+             */
+            deleted_at: string | null;
+            /**
+             * Parts
+             * @description One ZIP, or several when the bundle is too big for one file
+             */
+            parts: components["schemas"]["ExportPartRead"][];
+            /**
+             * Checklist
+             * @description The index as it was when the export was built
+             */
+            checklist: {
+                [key: string]: unknown;
+            };
         };
         /**
          * ExposureCustomer
@@ -58944,17 +59094,11 @@ export interface operations {
             };
         };
     };
-    download_export_api_accountant_export_get: {
+    list_exports_api_accountant_export_exports_get: {
         parameters: {
-            query: {
-                /** @description First day of the period, included */
-                date_from: string;
-                /** @description Last day of the period, included; at most 366 days */
-                date_to: string;
-                /** @description The legal entity to export; omitted, the only one of a one-entity space */
+            query?: {
                 legal_entity_id?: string | null;
-                /** @description Every legal entity plus the shared purchases, in one bundle; only an admin whose view is not limited to some legal entities, and not together with legal_entity_id */
-                all_entities?: boolean;
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -58962,7 +59106,367 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The period bundle as a ZIP */
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportRead"][];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    build_export_api_accountant_export_exports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportBuild"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_export_api_accountant_export_exports__export_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                export_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    download_export_part_api_accountant_export_exports__export_id__parts__part__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                export_id: string;
+                part: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One ZIP of the export */
             200: {
                 headers: {
                     [name: string]: unknown;

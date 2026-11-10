@@ -11,9 +11,11 @@ The card's proof is the second test: run twice, the second run opens nothing.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from datetime import timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from fakes.legal_entity_fixtures import committed_default_legal_entity
@@ -28,10 +30,12 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.db.sidecar import create_database_if_missing, drop_database
+from pigrocrm.core.errors import NotFound
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.tasks.models import Task
 from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
@@ -335,3 +339,55 @@ def test_another_day_is_only_a_rehearsal(
 def test_an_unknown_slug_is_an_error(capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main(["automations", "--slug", "non-esiste"]) == 1
     assert "non-esiste: not in the registry" in capsys.readouterr().err
+
+
+def test_the_pass_deletes_the_exports_past_thirteen_months_and_says_so(
+    settings: Settings,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """REB-1012: the daily pass removes an expired export's files, keeps its row as the trace,
+    and prints a line for the space that had one and none for the others."""
+    local = settings.model_copy(update={"storage_local_root": str(tmp_path)})
+    monkeypatch.setattr(cli, "get_settings", lambda: local)
+    storage = LocalFileStorage(tmp_path)
+    key = "commercialista/studio/2025-01-01_2025-03-31/20250402t093000z-abcd1234/export.zip"
+    storage.put(key, b"PK", "application/zip")
+    with _engine(_url(settings, FIRST_SPACE)) as engine, engine.begin() as connection:
+        connection.execute(
+            text(
+                "insert into accountant_exports (id, scope, period_from, period_to, prefix, "
+                "parts, checklist, built_by_type, built_at, expires_at) values "
+                "(gen_random_uuid(), 'all_entities', '2025-01-01', '2025-03-31', 'p', "
+                "cast(:parts as jsonb), '{}', 'user', '2025-04-02', '2026-05-02')"
+            ),
+            {"parts": json.dumps([{"key": key, "filename": "export.zip"}])},
+        )
+    try:
+        assert cli.main(["automations"]) == 0
+
+        out = capsys.readouterr().out
+        assert f"{FIRST_SPACE}: accountant exports deleted 1" in out
+        assert "accountant exports deleted" not in out.replace(
+            f"{FIRST_SPACE}: accountant exports deleted 1", ""
+        )
+        with pytest.raises(NotFound):
+            storage.get(key)
+        with _engine(_url(settings, FIRST_SPACE)) as engine, engine.connect() as connection:
+            row = connection.execute(text("select deleted_at from accountant_exports")).scalar_one()
+            kinds = (
+                connection.execute(
+                    text("select kind from activities where entity_type = 'accountant_export'")
+                )
+                .scalars()
+                .all()
+            )
+        assert row is not None
+        assert kinds == ["accountant_export_deleted"]
+    finally:
+        with _engine(_url(settings, FIRST_SPACE)) as engine, engine.begin() as connection:
+            connection.execute(text("delete from accountant_exports"))
+            connection.execute(
+                text("delete from activities where entity_type = 'accountant_export'")
+            )

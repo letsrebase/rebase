@@ -107,8 +107,12 @@ An export is a stored artefact. It is a row (legal entity, period, parts, built 
 checklist snapshot) with its files under a storage prefix of its own, not `documents`. File
 names carry a timestamp, so a rebuild never overwrites the earlier export. When a bundle would
 exceed the size a single `put` takes, it is split into several ZIP parts; the limit is taken as
-100 MiB, the cap the upload path already uses (`invoices/import_upload.py:55`), «to verify»
-against the storage backends. Exports are kept for 13 months, then deleted, leaving a trace.
+100 MiB, the cap the upload path already uses (`invoices/import_upload.py:55`) and the one
+`DocumentService` already puts through `DocumentStorage.put` on both backends
+(`documents/schemas.py`, `SIZE_MAX`); checked against the code of both (REB-1012): neither
+refuses a smaller object, and a Drive `put` is one multipart request carrying the whole body,
+which is why a part stays at or under the cap. Exports are kept for 13 months, then deleted,
+leaving a trace.
 
 ## 4. Payroll parts and the payroll consultant
 
@@ -178,3 +182,33 @@ the period that holds the next number after it. Storage, retention, the checklis
 link and the MCP tools stay their own cards. In a space with a single legal entity the shared
 purchases are that entity's (`PurchaseService` reads «shared» that way there), so its export
 carries them; with several, only the all-entities export does.
+
+### Built (REB-1012)
+
+An export is stored. `POST /api/accountant-export/exports` (an admin; the build tool is
+`build_accountant_export`) writes a row in `accountant_exports` (legal entity, or `NULL` for
+every legal entity; period; who built it and when; a snapshot of the index; the ZIP parts with
+their key, size and SHA-256) and the files under
+`commercialista/<entity-slug>/<period>/<timestamp>-<id>/`, so building the same period twice
+keeps both. The routes `GET /exports`, `GET /exports/{id}` and `GET /exports/{id}/parts/{n}`
+read it back; `get_export_download_url` answers the same paths over MCP, never bytes. The old
+`GET /api/accountant-export` that built and returned a ZIP is gone.
+
+The bundle is not held in memory: an original file is read from the storage, written to a
+spool on disk and copied into the ZIP in chunks, and the ZIP is written member by member. The
+members are placed in parts by their size before compression, each part a complete ZIP of at
+most the ceiling less 2 MiB; a file larger than that on its own gets a part to itself. When
+there is more than one part, the index lists which archive holds which file. A part is put in
+memory once, for the `put`, one at a time, and read back whole for a download: the
+`DocumentStorage` interface takes and returns bytes, so a part of about 98 MiB is the most the
+process holds at once. The spool, the ZIP parts and that one part share the temporary
+directory until the build ends, about twice the bundle on disk; a full disk fails the build
+before anything is stored.
+
+After 13 months (calendar months, `expires_at` set at the build) the daily `pigrocrm
+automations` pass deletes the files, sets `deleted_at` on the row and records
+`accountant_export_deleted` in the activities, beside `accountant_export_built`. The row
+stays as the trace and lists no files; a space with nothing due prints nothing, one whose
+storage refuses a delete prints a line on `stderr` and is tried again the next day.
+The checklist card adds its own snapshot to the row's `checklist`, which today holds the
+index's parts and missing files.

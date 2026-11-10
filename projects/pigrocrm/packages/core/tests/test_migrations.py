@@ -3909,3 +3909,42 @@ def test_0093_adds_the_billed_period_to_invoice_lines_and_downgrade_removes_it(
         assert not any(_forecast_schema(url).values())
         upgrade(config, "0093")
         assert all(_forecast_schema(url).values())
+
+
+def test_0099_creates_the_accountant_exports_table_under_the_scope_policy(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1012: a new table with the row policy of every table that reaches a legal entity,
+    forced, and a branch of `entity_visible` for the activities its exports write; nothing is
+    backfilled, so both ways are a pure create and drop."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0093")
+        assert _table_shape(url, "accountant_exports")[0] is False
+        assert _entity_visible_has(url, "accountant_export") is False
+        upgrade(config, "0099")
+        assert _table_shape(url, "accountant_exports") == (True, True, {"legal_entity_scope"})
+        assert _entity_visible_has(url, "accountant_export") is True
+        downgrade(config, "0093")
+        assert _table_shape(url, "accountant_exports")[0] is False
+        assert _entity_visible_has(url, "accountant_export") is False
+        upgrade(config, "0099")
+        assert _table_shape(url, "accountant_exports")[0] is True
+
+
+def _entity_visible_has(url: str, entity_type: str) -> bool:
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            return bool(
+                connection.execute(
+                    text(
+                        "SELECT position(:kind in pg_get_functiondef("
+                        "'public.entity_visible(text, uuid, boolean)'::regprocedure)) > 0"
+                    ),
+                    {"kind": f"'{entity_type}'"},
+                ).scalar_one()
+            )
+    finally:
+        engine.dispose()

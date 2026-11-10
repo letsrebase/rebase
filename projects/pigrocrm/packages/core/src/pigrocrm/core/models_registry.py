@@ -3,6 +3,7 @@
 Each task that adds a model appends its import here.
 """
 
+from pigrocrm.core.accountant_export.models import AccountantExportRow  # noqa: F401
 from pigrocrm.core.activities.models import Activity  # noqa: F401
 from pigrocrm.core.ai.models import AiModelConfig, AiModelUsage  # noqa: F401
 from pigrocrm.core.auth.invitation_models import Invitation  # noqa: F401
