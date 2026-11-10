@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { BrandMark } from '@rebase/ui/brand-mark'
 import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
+import { useWaitingCount } from '@/features/inbox/queries'
 import { useOverdueCount } from '@/features/tasks/queries'
 import { useUnreadCount } from '@/features/reminders/queries'
 import { useAuth } from '@/lib/auth'
@@ -12,6 +13,7 @@ import { LegalEntitySelect } from './LegalEntitySelect'
 import {
   Agents,
   HOME,
+  INBOX_PATH,
   SETTINGS,
   SETTINGS_PATHS,
   isUnder,
@@ -56,6 +58,8 @@ export function Sidebar({
   // tasks are past their deadline, drawn beside «Attività» (REB-873: it sat beside «Oggi»
   // while that was an entry) and only when it is above zero.
   const overdue = useOverdueCount()
+  // The files that arrived and wait for a person (REB-984): «In arrivo»'s own count.
+  const waiting = useWaitingCount()
   // An entry of a module the space has switched off is not drawn (REB-953).
   const modules = useModules()
 
@@ -186,7 +190,10 @@ export function Sidebar({
                   key={item.to}
                   {...item}
                   rail={rail}
-                  count={item.to === '/app/reminders' ? unread : 0}
+                  count={
+                    item.to === '/app/reminders' ? unread : item.to === INBOX_PATH ? waiting : 0
+                  }
+                  countLabel={item.to === INBOX_PATH ? 'da gestire' : undefined}
                   overdue={overdue}
                 />
               ))}

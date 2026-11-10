@@ -18,6 +18,7 @@ export function NavLeaf({
   rail,
   exact = false,
   count = 0,
+  countLabel = 'da leggere',
   overdue,
 }: {
   to: LinkTo
@@ -26,6 +27,8 @@ export function NavLeaf({
   rail: boolean
   exact?: boolean
   count?: number
+  /** What the count counts, for a screen reader: «, 3 da leggere». */
+  countLabel?: string
   overdue?: number
 }) {
   return (
@@ -65,7 +68,7 @@ export function NavLeaf({
           >
             {count > 99 ? '99+' : count}
           </span>
-          <span className="sr-only">{`, ${count} da leggere`}</span>
+          <span className="sr-only">{`, ${count} ${countLabel}`}</span>
         </>
       )}
     </Link>

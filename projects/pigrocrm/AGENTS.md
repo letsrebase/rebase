@@ -247,6 +247,20 @@ overrides `get_model_call` with `scripted_model.ScriptedModel`, which fails a te
 with no answer queued. A proposal's visibility is its source's (`proposals/access.py`); accepting
 one of the three new kinds is refused until the module that files it exists.
 
+**What a person or an agent says about an item that waits is three acts of `InboxService`, and a proposal
+waiting on the item is a person's (REB-984).** `discard`, `mark_duplicate` and `set_kind` (REST
+`/api/inbox/items/{id}/discard|duplicate|kind`, MCP `discard_inbox_item`, `mark_inbox_item_duplicate`,
+`set_inbox_item_kind`, all in `AGENT_ALLOWED_ACTIONS`) read the item under a row lock with the visibility of
+`inbox/access.py`, answer an idempotent request with the item as it is, refuse an item that is no longer `new` or
+`proposed` with a 409, and record an activity entry on the item (that timeline is where «by whom» lives; the row has no
+column for it). A person's act rejects a pending proposal on the item through `ProposalService.reject`; an agent's
+is refused, since an agent never decides a proposal. Nothing is written as a record, and a kind a FatturaPA decided
+(`parsed_fields` set) does not change. «In arrivo» is `features/inbox/`: `labels.ts` holds the words and the
+`TABS`, `queries.ts` the keyset lists (one per state of a tab, merged by id) and the waiting count the sidebar
+draws, and `IssuedReviewDialog` runs the issued-invoice review of `features/invoices/ImportReview.tsx` on an
+item's own file. The model's state is read from `GET /api/settings/ai-model`, which only an unscoped administrator
+may, so «Leggi i documenti in attesa» is that administrator's alone.
+
 **`pg_trgm` is created by the migrations at API start-up.** On a managed Postgres
 where the user cannot create extensions, the deploy fails at boot with
 `permission denied to create extension "pg_trgm"`. That is the wanted behaviour: the

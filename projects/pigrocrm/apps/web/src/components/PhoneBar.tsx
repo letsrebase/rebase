@@ -3,6 +3,7 @@ import { Ellipsis, LayoutDashboard, ListChecks, Plus, Search } from 'lucide-reac
 import { useState } from 'react'
 import { cn } from '@rebase/ui/cn'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@rebase/ui/sheet'
+import { useWaitingCount } from '@/features/inbox/queries'
 import { useUnreadCount } from '@/features/reminders/queries'
 import { useOverdueCount } from '@/features/tasks/queries'
 import { useCanWrite } from '@/lib/auth'
@@ -10,6 +11,7 @@ import { useModules } from '@/lib/modules'
 import { LegalEntitySelect } from './LegalEntitySelect'
 import {
   Agents,
+  INBOX_PATH,
   SETTINGS,
   SETTINGS_PATHS,
   isUnder,
@@ -184,6 +186,7 @@ function More({
 }) {
   const modules = useModules()
   const unread = useUnreadCount()
+  const waiting = useWaitingCount()
   const { location } = useRouterState()
   const items = [
     ...phoneMoreItems(modules),
@@ -241,6 +244,12 @@ function More({
                   <span className="bg-sidebar-primary px-1.5 text-xs font-medium tabular-nums text-sidebar-primary-foreground">
                     <span aria-hidden="true">{unread > 99 ? '99+' : unread}</span>
                     <span className="sr-only">{`, ${unread} da leggere`}</span>
+                  </span>
+                ) : null}
+                {to === INBOX_PATH && waiting > 0 ? (
+                  <span className="bg-sidebar-primary px-1.5 text-xs font-medium tabular-nums text-sidebar-primary-foreground">
+                    <span aria-hidden="true">{waiting > 99 ? '99+' : waiting}</span>
+                    <span className="sr-only">{`, ${waiting} da gestire`}</span>
                   </span>
                 ) : null}
               </Link>

@@ -77,6 +77,16 @@ export const queryKeys = {
   // decision invalidates; the contract behind a day proposal has a key of its own because
   // the page only needs its title, not the contracts feature's cache.
   proposals: (status?: string) => ['proposals', status ?? 'all'] as const,
+  // «In arrivo» (REB-984): `inbox` is the prefix every write to an item invalidates, under it the
+  // lists by state and kind, one item, the waiting count the sidebar draws, and the two
+  // lists a panel reads (the copies of an item, and the files one may be a copy of).
+  inbox: ['inbox'] as const,
+  inboxList: (state: string, kind: string | null) => ['inbox', 'list', state, kind] as const,
+  inboxItem: (id: string) => ['inbox', 'item', id] as const,
+  inboxCount: ['inbox', 'count'] as const,
+  inboxUnread: ['inbox', 'unread'] as const,
+  inboxCopies: ['inbox', 'copies'] as const,
+  inboxOriginals: ['inbox', 'originals'] as const,
   proposal: (id: string) => ['proposal', id] as const,
   proposalTimeline: (id: string) => ['proposal-timeline', id] as const,
   proposalContract: (id: string) => ['proposal-contract', id] as const,

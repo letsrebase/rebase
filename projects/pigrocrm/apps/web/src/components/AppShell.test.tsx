@@ -220,6 +220,7 @@ describe('AppShell', () => {
       'Attività',
       'Calendario',
       'Avvisi',
+      'In arrivo',
       'Proposte',
       'Clienti',
       'Persone',
@@ -238,6 +239,7 @@ describe('AppShell', () => {
       'Attività',
       'Calendario',
       'Avvisi',
+      'In arrivo',
       'Proposte',
     ])
     expect(within(nav.getByRole('group', { name: 'Vendite' })).getAllByRole('link').map((l) => l.textContent)).toEqual([
@@ -530,13 +532,16 @@ describe('AppShell', () => {
    * «Da fare», right after the calendar and right before Proposals, which stays the last
    * entry of the section (REB-750) and opens `/app/proposals`.
    */
-  it.each(['admin', 'collaborator', 'readonly'])('shows Avvisi to a %s, between Calendario and Proposte', (role) => {
+  it.each(['admin', 'collaborator', 'readonly'])('shows Avvisi to a %s, after Calendario and before In arrivo and Proposte', (role) => {
     mockAuth.role = role
     renderShell()
     const links = sidebar().getAllByRole('link')
     const names = links.map((link) => link.textContent)
     expect(names.indexOf('Avvisi')).toBe(names.indexOf('Calendario') + 1)
-    expect(names.indexOf('Proposte')).toBe(names.indexOf('Avvisi') + 1)
+    // «In arrivo» (REB-984) sits between them: what arrived, before what an agent proposed.
+    expect(names.indexOf('In arrivo')).toBe(names.indexOf('Avvisi') + 1)
+    expect(names.indexOf('Proposte')).toBe(names.indexOf('In arrivo') + 1)
+    expect(links[names.indexOf('In arrivo')]).toHaveAttribute('href', '/app/inbox')
     expect(links[names.indexOf('Avvisi')]).toHaveAttribute('href', '/app/reminders')
     expect(links[names.indexOf('Proposte')]).toHaveAttribute('href', '/app/proposals')
   })
@@ -1102,6 +1107,7 @@ describe('AppShell on a phone', () => {
       'NotaSu un cliente, una persona o un deal',
       'GiornataUn giorno lavorato su un contratto',
       'OreOre lavorate su un deal',
+      'Carica un documentoUna foto o un file, in In arrivo',
       'Chiudi',
     ])
   })

@@ -17,6 +17,7 @@ describe('visibleSections (REB-953)', () => {
       'Attività',
       'Calendario',
       'Avvisi',
+      'In arrivo',
       'Proposte',
       'Clienti',
       'Persone',
@@ -47,7 +48,16 @@ describe('visibleSections (REB-953)', () => {
   })
 
   it('keeps the entries of the core whatever is off', () => {
-    const core = ['Attività', 'Calendario', 'Avvisi', 'Proposte', 'Clienti', 'Persone', 'Fatture']
+    const core = [
+      'Attività',
+      'Calendario',
+      'Avvisi',
+      'In arrivo',
+      'Proposte',
+      'Clienti',
+      'Persone',
+      'Fatture',
+    ]
     expect(labels(['deals', 'contracts', 'time', 'costs', 'taxes'])).toEqual(core)
   })
 
@@ -80,6 +90,7 @@ describe('the phone bar (REB-959)', () => {
     const more = (off: readonly ModuleKey[], profile: 'solo' | 'company' | null) =>
       phoneMoreItems(moduleAccess(spaceModules(off, profile))).map((item) => item.label)
     expect(more([], 'solo')).toEqual([
+      'In arrivo',
       'Calendario',
       'Avvisi',
       'Proposte',
@@ -90,6 +101,7 @@ describe('the phone bar (REB-959)', () => {
       'Ore',
     ])
     expect(more(['deals', 'time'], 'company')).toEqual([
+      'In arrivo',
       'Calendario',
       'Avvisi',
       'Proposte',
