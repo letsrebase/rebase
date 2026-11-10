@@ -1,7 +1,7 @@
 # Brief: «Tasse» and the Home's tax dates (PigroCRM)
 
-Status: awaiting Lorenzo's answers on the artifact `pigrocrm-taxes`; draft 2026-11-10.
-Card: REB-1007. Design: `projects/pigrocrm/docs/superpowers/specs/2026-11-09-taxes-and-contributions-design.md`
+Status: approved by Lorenzo on 2026-11-10, on the artifact `pigrocrm-taxes` («possiamo andare con i
+tuoi consigli per tutto»: the recommended option of every question, A, A, A, B, A). Card: REB-1007. Design: `projects/pigrocrm/docs/superpowers/specs/2026-11-09-taxes-and-contributions-design.md`
 §§ 3 and 6 (REB-964), with § 1 (law in the pack, parameters in the profile), § 2 (the three
 readings, due items, plans, credits, F24) and § 5 (who may read); frame:
 `2026-11-09-space-profiles-modules-and-the-money-picture-design.md` § A1 (taxes are never
@@ -9,8 +9,8 @@ summed across legal entities), § A2 (the `taxes` module), § A5 (the register o
 verify»), § A7 (every new surface passes this gate), § B5 (Home per profile) and § B6 (the
 phone shell); due items:
 `2026-11-09-due-items-bank-and-cash-schedule-design.md` § 1 (the four states of a due item).
-This brief creates no rule yet. Once Lorenzo answers, the orchestrator writes the rows of
-`docs/design/DECISIONS.md` and the build cards read this file and those rows, never the artifact.
+The rule this brief creates is the last row of `docs/design/DECISIONS.md` dated 2026-11-10; the
+build cards read this file and that row, never the artifact.
 
 Everything here is drawn on `shared/ui/tokens.css` and the primitives of `@rebase/ui`:
 squared, 1px ink lines, Outfit, Prussian sidebar, Watermelon Deep only on the primary action
@@ -50,22 +50,24 @@ A question already answered is a defect to ask again.
 | 17 | A declared figure read from a document | A proposal a person accepts, in «Proposte»; accepting is never an agent's act | Design § 2 and § 5; frame § A4 |
 | 18 | Strings | Italian, about 20% longer than English, designed for the long label | Taste profile, standing rules |
 
-## Questions for Lorenzo
+## Questions for Lorenzo, answered
 
-Five, each a choice the sources above do not answer. Each is drawn on the artifact for the
-desktop and the phone, A and B at the same scale.
+Five, each a choice the sources above did not answer, drawn on the artifact for the desktop and
+the phone, A and B at the same scale. Lorenzo, 2026-11-10: «possiamo andare con i tuoi consigli per
+tutto», so the decision of every row is its recommendation.
 
-| # | Question | A | B | Recommendation |
-|---|---|---|---|---|
-| 1 | How does a tax show its three readings? | Three columns, «Stima», «Dichiarato», «Pagato», the one that counts in bold; a total per column | One figure with a pill naming its reading; the other readings in the side panel | A. The point of the readings is to see where the accountant's figure replaced the estimate (frame § A6), which only a side-by-side shows; the empty «Dichiarato» column of a year in progress is honest, because that figure does not exist yet. |
-| 2 | What does «Tasse» open on (company, ordinary solo)? | «Imposte» (the year's taxes and their readings), then «Scadenze», «Rate» | «Scadenze» (what falls due and when), then «Imposte», «Rate» | A. The Home already carries the next dates (question 5), so the page's first reading should be what the Home cannot carry; the dates are one tab away. |
-| 3 | How do the calendar and the F24s relate? | No F24 tab: an F24 is what a date becomes, with its chip («da creare», «pagato · ricevuta») on the date's row | Two lists: «Scadenze» by tax line and «F24» by document, four tabs | A. An F24 is the group of the lines of one date (design § 2), so one row per date says everything a second list would, with three tabs instead of four on a 390 px screen. |
-| 4 | Does the page change shape for a solo flat-rate space? | The same three tabs for every profile | A lighter page: no tabs, sections («Le tue tasse», «Scadenze», «Rate») that appear when they have rows; ordinary solo and company keep the tabs | B. The solo Home is already its own layout (REB-958) and two taxes do not need three tabs; the cost, two layouts, is contained to one profile and the readings component is the same in both. |
-| 5 | Where do the next tax dates sit on the Home? | A block of their own with the money (solo), a band above the tabs (company), a card under the first figure (phone) | With the tax figures: last on the solo Home, top of «Economica» for a company, the tax card on the phone | A. A tax date is the kind of thing that asks for a person, and Lorenzo already chose a band above the tabs for what is late or due today (2026-11-02); the phone card keeps the figures-first order. |
+| # | Question | A | B | Recommendation | Decision |
+|---|---|---|---|---|---|
+| 1 | How does a tax show its three readings? | Three columns, «Stima», «Dichiarato», «Pagato», the one that counts in bold; a total per column | One figure with a pill naming its reading; the other readings in the side panel | A. The point of the readings is to see where the accountant's figure replaced the estimate (frame § A6), which only a side-by-side shows; the empty «Dichiarato» column of a year in progress is honest, because that figure does not exist yet. | A. Lorenzo, 2026-11-10, approved the recommendations. |
+| 2 | What does «Tasse» open on (company, ordinary solo)? | «Imposte» (the year's taxes and their readings), then «Scadenze», «Rate» | «Scadenze» (what falls due and when), then «Imposte», «Rate» | A. The Home already carries the next dates (question 5), so the page's first reading should be what the Home cannot carry; the dates are one tab away. | A. Lorenzo, 2026-11-10, approved the recommendations. |
+| 3 | How do the calendar and the F24s relate? | No F24 tab: an F24 is what a date becomes, with its chip («da creare», «pagato · ricevuta») on the date's row | Two lists: «Scadenze» by tax line and «F24» by document, four tabs | A. An F24 is the group of the lines of one date (design § 2), so one row per date says everything a second list would, with three tabs instead of four on a 390 px screen. | A. Lorenzo, 2026-11-10, approved the recommendations. |
+| 4 | Does the page change shape for a solo flat-rate space? | The same three tabs for every profile | A lighter page: no tabs, sections («Le tue tasse», «Scadenze», «Rate») that appear when they have rows; ordinary solo and company keep the tabs | B. The solo Home is already its own layout (REB-958) and two taxes do not need three tabs; the cost, two layouts, is contained to one profile and the readings component is the same in both. | B. Lorenzo, 2026-11-10, approved the recommendations. |
+| 5 | Where do the next tax dates sit on the Home? | A block of their own with the money (solo), a band above the tabs (company), a card under the first figure (phone) | With the tax figures: last on the solo Home, top of «Economica» for a company, the tax card on the phone | A. A tax date is the kind of thing that asks for a person, and Lorenzo already chose a band above the tabs for what is late or due today (2026-11-02); the phone card keeps the figures-first order. | A. Lorenzo, 2026-11-10, approved the recommendations. |
 
-Question 2 is drawn on the readings of question 1 option A and the date rows of question 3
-option A, and question 4 on the structure of question 3 option A. If question 3 is answered B,
-an «F24» tab joins option A of question 4 and a section joins its option B.
+What the answers make: a company and an ordinary solo space get three tabs, «Imposte», «Scadenze»,
+«Rate», opening on «Imposte», with the readings as three columns and an F24 as a chip on a date's
+row (no «F24» tab); a solo flat-rate space gets one page with no tabs; the next dates sit in a
+block of their own near the top of the Home.
 
 ## «Tasse»
 
@@ -105,25 +107,34 @@ and the one strong button, which follows the tab: «Inserisci il dichiarato» on
 «Nuovo piano» on «Rate», none on «Scadenze». Tabs as «Proposte» does. Under them the server's
 warning sentence, then the tab.
 - «Imposte» (the readings): one row per tax of the pack and year. Columns and the way the three
-  readings sit depend on question 1. The row opens a panel of 330 px: the pack and its
+  readings sit are decided (question 1 A): «Imposta», «Stima», «Dichiarato», «Pagato», the
+  reading that counts in bold with the legend «In grassetto la cifra che vale: pagato, poi dichiarato,
+  poi stima.», and a «Totale» row whose figures are the server's, each column adding readings of
+  one kind only, the lines that cannot be computed left out and said so. The row opens a panel of 330 px: the pack and its
   version, the law's year, the entity's fiscal year end, the advance method («Storico» or
   «Previsionale»), who typed the declared figure and when, the F24 that paid it, and the actions
   «Inserisci il dichiarato» and «Cambia il metodo dell'acconto». The forms open in a dialog, dense and
   two-column, action bar bottom right.
 - «Scadenze» (the calendar): one row per date of the selected year, past ones muted, each with
   «tra 6 giorni», the lines it holds, the net amount the server gives, a state pill, and the F24
-  chip (question 3). A row opens to its lines, credits as negative lines.
+  chip, «F24 da creare», «F24 creato» or «F24 pagato · ricevuta» (question 3 A). A row opens to its
+  lines, credits as negative lines.
 - «Rate»: one row per plan, chosen for a year or entered by hand for a notice from the tax
   office: total with interest, instalments paid, next instalment, state; the panel lists the
   instalments with their states.
-- «F24» only if question 3 is answered B.
+- There is no «F24» tab: the F24 is what a date becomes, and its receipt is reached from the date's row.
+- A solo flat-rate space (question 4 B) has no tabs: one page with the sections «Le tue tasse»
+  (a card per tax, with its three readings as lines), «Scadenze» (the dates of the year in a
+  compact table with the F24 chip) and «Rate», which appears only when a plan exists. Ordinary
+  solo and company keep the tabs.
 Where a declared figure was read from a document and waits as a proposal, a line above the table
 says so and links to «Proposte»; accepting stays there.
 
 **Phone.** The same page on the phone is for reading: the administrator checks where a tax
-stands and what is due next, away from the desk. A segmented control of at most four short labels
-(«Imposte», «Scadenze», «Rate», «F24») under the title and the year, one column of cards, figures
-before lists. A tax opens full screen with its readings and provenance; a date opens full screen
+stands and what is due next, away from the desk. A segmented control of three short labels
+(«Imposte», «Scadenze», «Rate») under the title and the year, one column of cards, figures
+before lists; a solo flat-rate space has no segmented control, one column of cards for the taxes,
+then the dates, then the plans when there are any. A tax opens full screen with its readings and provenance; a date opens full screen
 with its lines, its F24 and a sticky «Segna come pagato». The forms of the desktop are the same in
 one column with their actions in a sticky bar. Nothing is added to the centre «+» (the quick add
 is for activities, notes, days and hours, frame § B6). There is no strong action on the list
@@ -170,17 +181,18 @@ Non-goals    The ceiling and the estimate card (unchanged); a reminder (design �
              cash schedule's own due items (C4).
 ```
 
-**Desktop.** The two answers of question 5 differ only in place; the block is the same.
+**Desktop.** The dates stand alone, near the top (question 5 A).
 - *Solo.* `SoloHome` has four blocks («Da fatturare ora», «Quando arrivano i soldi», «Contratti
-  attivi», the flat-rate figures). The flat-rate figures keep the ceiling panel and the estimate
-  card; the dates are two rows of the next dates with «Apri Tasse».
-- *Company.* The Home keeps «Da fare» and the five tabs (frame § B5). The dates are two rows
-  with the date, the number of lines and the amount; with several entities each row names its
-  entity and none is merged into another.
+  attivi», the flat-rate figures). The block «Prossime tasse» sits right after «Quando arrivano i
+  soldi», money in then money out: two rows of the next dates with «Apri Tasse». The flat-rate
+  figures keep the ceiling panel and the estimate card.
+- *Company.* The Home keeps «Da fare» and the five tabs (frame § B5). A band under «Da fare» and
+  above the tabs, «Prossime scadenze fiscali», holds the two dates with their amounts and «Apri
+  Tasse», on every tab; with several entities each date names its entity and none is merged into
+  another.
 **Phone.** One column: the first figure («Da incassare»), then a card «Prossime tasse» of two
-rows (date, what, amount), then the rest of the figures, then «Da fare oggi» (question 5
-option A), or the same two rows inside a card «Tasse» with the estimate (option B). The card
-opens «Tasse». The company's phone Home reads the same card.
+rows (date, what, amount), then the rest of the figures, then «Da fare oggi». The card opens
+«Tasse». The company's phone Home reads the same card.
 
 | State | What is drawn |
 |---|---|
@@ -208,12 +220,13 @@ which decides what the first build shows.
 
 ## What a component can violate
 
-Each rule is phrased so a reviewer can check it. The ones that depend on an answer say which.
+Each rule is phrased so a reviewer can check it. All follow Lorenzo's answers of 2026-11-10.
 
 - The reading words are «Stima», «Dichiarato» and «Pagato», each from one locale key, on every
   screen; an estimate is never drawn in a cell, pill or line named «Dichiarato».
 - The reading that counts is chosen by the server by stage, never by the date or by a comparison
-  in the browser. (Question 1: bold in a column in A, the pill in B.)
+  in the browser. It is drawn in bold in its column of the three (Stima, Dichiarato, Pagato); a
+  column total adds readings of one kind only and is the server's.
 - No component adds, subtracts or divides an API amount: a column total, a date's net, a
   remainder and a count of days owed come as the server's strings, and the folder is under
   `no-browser-arithmetic.test.ts`. «tra 6 giorni» is a difference of two dates, as `leftOf` in
@@ -235,11 +248,12 @@ Each rule is phrased so a reviewer can check it. The ones that depend on an answ
 - With `taxes` off the entry, the tab of the Home, the block and the route are gone and the route
   guard answers with the module's sentence; `ROUTE_MODULES` gains `/app/taxes`.
 - The phone has no horizontal table; its segmented control holds at most four labels that fit
-  390 px («Rate», not «Rateizzazioni»). (Question 3: four labels only in B.)
-- Question 4: in B the flat-rate page has no tabs and a section appears only when it has rows;
-  ordinary solo and company keep the tabs in both answers.
-- Question 5: in A the dates block is above the tabs for a company and in B it is inside
-  «Economica» only.
+  390 px («Rate», not «Rateizzazioni»); there is no «F24» tab, an F24 is a chip on a date's row.
+- A solo flat-rate space's page has no tabs and a section appears only when it has rows;
+  ordinary solo and company keep the three tabs.
+- The Home's dates are a block of their own: after «Quando arrivano i soldi» on a solo Home, a band
+  under «Da fare» and above the tabs on a company Home (every tab shows it), a card under the
+  first figure on the phone. They are never inside the tax estimate card or one tab only.
 
 ## Inferred, not asked
 
@@ -277,33 +291,50 @@ back on any.
   wording, not in the design.
 - «Rate» is the tab's label, short for 390 px; the table's heading says «Piani di rate».
 
-## Gaps found in the design and the code
+## Open points
 
-Reported, not papered over.
+Gaps, contradictions and unresolved items found while writing this brief. The page cards inherit
+them: each one is either settled in its card or sent back to the design's owner.
 
-- **The flat-rate Home has no dates to show today.** Design § 3 says the flat-rate Home carries
-  «the next two tax dates with their amounts», while the frame's register lists the flat-rate
-  advances (dates, split, thresholds) and the day of the month of income-tax dates as «to verify»
-  and `fiscal/pack.py` lines 235 and 236 say the flat-rate pack carries no advance rule. The first
-  build shows the «Pack has no calendar» state on that profile.
+- **The flat-rate Home has no dates to show today.** Design § 3 (taxes design lines 148 to 150)
+  says the flat-rate Home carries «the next two tax dates with their amounts», while the frame's
+  register lists the flat-rate advances (dates, split, thresholds) and the day of the month of
+  income-tax dates as «to verify» (frame lines 203 and 204) and `fiscal/pack.py` lines 235 and 236
+  say the flat-rate pack carries no advance rule. The first build shows the «Pack has no calendar»
+  state on that profile and the Home draws no block.
 - **The ordinary pack has dates and no estimate.** `IT_STANDARD_PACK` (`pack.py` lines 257 to 290)
   carries the advance dates and no income estimate (IRPEF brackets «to verify»), so an ordinary
   solo sees dates with «non calcolabile» amounts until a declared figure exists.
-- **IVA and withholdings have no reading.** Design § 2 gives every tax three readings, but § 3
-  puts IVA and withholdings on the page and the frame (§ A6) says IVA is exact from the registers
-  and C3 writes their due items directly. This brief shows them in the calendar and the F24s and
-  not in the readings table; the design should say which reading word an IVA settlement carries.
-- **A partly paid tax.** Design § 2 ranks paid over declared and does not say what stands when
-  only part is paid.
-- **Who sees payroll on the Home.** Design § 5 says every read of a tax due item, «the schedule
-  and the Home» included, is for administrators and token holders with `full_access`; the staff
-  design (§ 4, `2026-11-09-staff-payroll-and-expenses-design.md`) says other roles see one
-  aggregate «Stipendi» line per date in the schedule and the Home. This brief follows § 5 for tax
-  dates and leaves the aggregate to C4's and C7's briefs.
-- **The `taxes` module also owns the ceiling.** Frame § A2 puts the ceiling panel and simulator
-  in `taxes`, while design § 5 calls the ceiling revenue, open to every role. Switching `taxes`
-  off hides the ceiling with the taxes; the solo Home's ceiling goes with it.
-- **«The calendar» and «the F24s» overlap** (design § 6 against § 2): question 3.
+- **`it-company` is not a pack yet** (taxes design § 1, lines 66 to 84), so a company's page waits
+  for it and for the migration of existing srl entities.
+- **IVA and withholdings have no reading word.** Taxes design § 2 (lines 86 to 106) gives every tax
+  three readings, but § 3 (lines 146 to 153) puts IVA and withholdings on the page and the frame
+  (§ A6, line 257) says IVA is exact from the registers while C3 writes their due items. This
+  brief shows them in the calendar and the F24s and not in the readings table; the design should
+  say which reading word an IVA settlement carries.
+- **A partly paid tax.** Taxes design § 2 ranks paid over declared and does not say what stands when
+  only part is paid. The brief decides «Dichiarato» with the paid part beside it (see «Inferred»);
+  the design owner confirms.
+- **Which year the page shows.** The pack is keyed by tax year and a June date serves two tax
+  years; the design does not say which year the page's selector names. The brief decides the tax
+  year for «Imposte» and the calendar year for «Scadenze» (see «Inferred»).
+- **Who sees payroll on the Home.** Taxes design § 5 (lines 175 to 179) says every read of a tax
+  due item, «the schedule and the Home» included, is for administrators and `full_access` tokens;
+  the staff design § 4 (`2026-11-09-staff-payroll-and-expenses-design.md` line 128) says other
+  roles see one aggregate «Stipendi» line per date in the schedule and the Home. This brief
+  follows § 5 for tax dates and leaves the aggregate to C4's and C7's briefs.
+- **The `taxes` module also owns the ceiling.** Frame § A2 (line 107) puts the ceiling panel and
+  simulator in `taxes`, while taxes design § 5 (line 200) calls the ceiling revenue, open to every
+  role. Switching `taxes` off hides the ceiling with the taxes; the solo Home's ceiling goes with it.
+- **The state words must match C4's.** «Previsto», «Da pagare», «Pagato», «Scaduto» and «Non più
+  dovuto» are this brief's words for the four states of a due item (due items design § 1); the
+  cash schedule's brief and this one must use the same.
+- **Nothing is built.** The field names, the endpoints that serve a date's net and the readings
+  (`get_tax_calendar`, `set_declared_tax_figure`, design § 5 lines 187 to 195) are the design's
+  names, not code; the first card reads what exists when it starts. The Italian copy has had no
+  native read.
+- **The F24 as its own list is not built** (question 3 A): if the accountant's export (C8) or a
+  receipt search needs a list of F24 documents, it comes back as its own card.
 
 ## Not in this brief
 
@@ -313,4 +344,4 @@ Reported, not papered over.
   calendar is every role's.
 - Reminders (`tax_payment_due`, the missing-figure reminder) and their text (design § 4).
 - Payroll, staff, IVA settlement and purchases screens (C3, C7).
-- Any markup, route or component, and the DECISIONS rows, which follow Lorenzo's answers.
+- Any markup, route or component. The decision row of 2026-11-10 is in `docs/design/DECISIONS.md`.
