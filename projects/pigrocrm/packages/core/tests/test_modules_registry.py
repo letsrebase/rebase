@@ -39,8 +39,8 @@ def test_collaborators_is_off_by_default_and_on_only_by_its_own_row() -> None:
 @pytest.mark.parametrize(
     ("profile", "expected"),
     [
-        ("solo", {"contracts", "costs", "taxes"}),
-        ("company", {"deals", "contracts", "time", "costs", "taxes"}),
+        ("solo", {"contracts", "purchases", "taxes"}),
+        ("company", {"deals", "contracts", "time", "purchases", "taxes"}),
     ],
 )
 def test_a_profile_switches_on_its_defaults(profile: str, expected: set[str]) -> None:
@@ -52,7 +52,7 @@ def test_a_stored_switch_outranks_the_profile_default_either_way() -> None:
     assert "contracts" not in enabled_modules(
         _settings(space_profile="company", module_contracts=False)
     )
-    assert "costs" not in enabled_modules(_settings(module_costs=False))
+    assert "purchases" not in enabled_modules(_settings(module_purchases=False))
 
 
 def test_a_module_whose_requirement_is_off_reads_as_off_whatever_its_own_row_says() -> None:
@@ -92,11 +92,11 @@ def test_a_route_of_a_module_that_is_off_is_refused_with_the_sentence_naming_it(
 
 def test_the_rows_are_laid_over_settings_and_the_generic_update_cannot_write_them() -> None:
     laid = apply_overrides(
-        _settings(), {"space_profile": "solo", "module_deals": "false", "module_costs": "true"}
+        _settings(), {"space_profile": "solo", "module_deals": "false", "module_purchases": "true"}
     )
 
     assert laid.space_profile == "solo"
-    assert laid.module_deals is False and laid.module_costs is True
+    assert laid.module_deals is False and laid.module_purchases is True
     assert laid.module_time is None
     assert set(SHAPE_KEYS) <= set(OVERRIDABLE_KEYS)
     # None of them is a field of the generic body: sending one is refused outright.

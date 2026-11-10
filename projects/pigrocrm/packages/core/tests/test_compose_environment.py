@@ -85,7 +85,7 @@ NOT_FORWARDED: dict[str, str] = {
     "module_deals": "decided per space by `set_space_modules`, never by the environment",
     "module_contracts": "decided per space by `set_space_modules`, never by the environment",
     "module_time": "decided per space by `set_space_modules`, never by the environment",
-    "module_costs": "decided per space by `set_space_modules`, never by the environment",
+    "module_purchases": "decided per space by `set_space_modules`, never by the environment",
     "module_taxes": "decided per space by `set_space_modules`, never by the environment",
     "module_staff": "decided per space by `set_space_modules`, never by the environment",
     "module_collaborators": "decided per space by `set_space_modules`, never by the environment",

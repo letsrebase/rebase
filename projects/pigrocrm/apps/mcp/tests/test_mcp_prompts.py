@@ -53,8 +53,9 @@ from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
+from pigrocrm.core.purchases.models import Purchase
 from pigrocrm.core.storage import LocalFileStorage
-from pigrocrm.core.timetracking.models import Cost, CostCategory, TimeEntry
+from pigrocrm.core.timetracking.models import CostCategory, TimeEntry
 from pigrocrm_mcp.context import ScopedSessionProvider
 from pigrocrm_mcp.errors import to_agent_message
 from pigrocrm_mcp.prompts import dashboards as dashboard_prompts
@@ -229,7 +230,7 @@ def _seed(factory: sessionmaker[Any]) -> _Seeded:
         # all, which is what makes the non-zero check in that test more than a formality.
         session.add_all(
             [
-                Cost(
+                Purchase(
                     deal_id=won_deal.id,
                     category_id=category.id,
                     date=date(_YEAR, _MONTH, 8),
@@ -239,7 +240,7 @@ def _seed(factory: sessionmaker[Any]) -> _Seeded:
                 ),
                 # `deal_id IS NULL`: a general expense lands in `general_expenses` and on no
                 # deal's margin.
-                Cost(
+                Purchase(
                     deal_id=None,
                     category_id=category.id,
                     date=date(_YEAR, _MONTH, 5),
@@ -329,7 +330,7 @@ def _teardown(factory: sessionmaker[Any], legal_entity_id: UUID | None = None) -
         # it -- the activities by their own `kind`, which no other file writes.
         session.execute(delete(Activity).where(Activity.kind.like(f"{_PREFIX}_%")))
         session.execute(delete(TimeEntry).where(TimeEntry.description.like(f"{_PREFIX} %")))
-        session.execute(delete(Cost).where(Cost.description.like(f"{_PREFIX} %")))
+        session.execute(delete(Purchase).where(Purchase.description.like(f"{_PREFIX} %")))
         session.execute(delete(Invoice).where(Invoice.memo.like(f"{_PREFIX} %")))
         session.execute(delete(Document).where(Document.title.like(f"{_PREFIX} %")))
         session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))

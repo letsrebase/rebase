@@ -649,8 +649,9 @@ def open_deal_with_hours(
     Labour cost 400.00, direct costs 150.00, revenue nothing -- an unfinished job, whose
     margin is provisional by construction and must never be added to a finished one's.
     """
-    from pigrocrm.core.timetracking.costs import CostService
-    from pigrocrm.core.timetracking.schemas import CostCreate, TimeEntryCreate
+    from pigrocrm.core.purchases.schemas import PurchaseCreate
+    from pigrocrm.core.purchases.service import PurchaseService
+    from pigrocrm.core.timetracking.schemas import TimeEntryCreate
     from pigrocrm.core.timetracking.service import TimeEntryService
 
     writer = Actor(id=None, type="user", role="collaborator")
@@ -667,8 +668,8 @@ def open_deal_with_hours(
         ),
         writer,
     )
-    CostService(db_session).create(
-        CostCreate(
+    PurchaseService(db_session).create(
+        PurchaseCreate(
             deal_id=deal_id,
             category_id=seeded_category_id,
             date=TODAY,
@@ -691,8 +692,8 @@ def closed_deal_with_invoice(
     Margin 1800.00, that is 90.00% of revenue: a reportable figure, and one that would
     move visibly if a general expense were ever apportioned onto it.
     """
-    from pigrocrm.core.timetracking.costs import CostService
-    from pigrocrm.core.timetracking.schemas import CostCreate
+    from pigrocrm.core.purchases.schemas import PurchaseCreate
+    from pigrocrm.core.purchases.service import PurchaseService
 
     deal_id, customer_id = _deal_of_fiscal_customer(db_session, "Progetto chiuso", type="won")
     _issue(
@@ -707,8 +708,8 @@ def closed_deal_with_invoice(
         ),
         TODAY,
     )
-    CostService(db_session).create(
-        CostCreate(
+    PurchaseService(db_session).create(
+        PurchaseCreate(
             deal_id=deal_id,
             category_id=seeded_category_id,
             date=TODAY,

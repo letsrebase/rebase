@@ -44,8 +44,8 @@ from pigrocrm.core.proposals.schemas import (
     ProposalReject,
 )
 from pigrocrm.core.proposals.service import ProposalService
+from pigrocrm.core.purchases.models import Purchase
 from pigrocrm.core.storage.local import LocalFileStorage
-from pigrocrm.core.timetracking.models import Cost
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "fatturapa"
 SALES = (FIXTURES / "fpr-12-march-consulting.xml").read_bytes()
@@ -180,7 +180,7 @@ def test_a_pdf_receipt_produces_a_proposal_and_nothing_else(
 ) -> None:
     _switch_on(db_session, model, admin)
     model.say(RECEIPT_ANSWER)
-    before = {t: _count(db_session, t) for t in (Document, Cost, Invoice, Contract)}
+    before = {t: _count(db_session, t) for t in (Document, Purchase, Invoice, Contract)}
 
     uploaded = inbox.upload([("scontrino.pdf", _receipt())], admin)
     item = classifier.classify_uploaded(uploaded, admin, model_budget=5).items[0]
@@ -200,7 +200,7 @@ def test_a_pdf_receipt_produces_a_proposal_and_nothing_else(
     # The excerpt is in the PDF's own text, so it is a quotation and not a transcription.
     assert proposal.excerpt_type == "quoted"
     # And nothing else: no document, no cost, no invoice, no contract.
-    assert {t: _count(db_session, t) for t in (Document, Cost, Invoice, Contract)} == before
+    assert {t: _count(db_session, t) for t in (Document, Purchase, Invoice, Contract)} == before
     assert len(model.requests) == 1
 
 

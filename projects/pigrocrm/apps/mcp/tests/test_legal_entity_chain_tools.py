@@ -17,7 +17,8 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
-from pigrocrm.core.timetracking.models import Cost, CostCategory
+from pigrocrm.core.purchases.models import Purchase
+from pigrocrm.core.timetracking.models import CostCategory
 
 # The tools whose input schema must offer `legal_entity_id`, as the card lists them, plus
 # the calendar read and the proposal that joined with them.
@@ -28,7 +29,7 @@ _FILTERED = (
     "search_contracts",
     "list_documents",
     "list_invoices",
-    "list_costs",
+    "list_purchases",
     "list_time_entries",
     "get_calendar_month",
 )
@@ -133,7 +134,7 @@ async def test_the_lists_narrow_to_the_legal_entity_named(
     category = CostCategory(name="Viaggi")
     mcp_session.add(category)
     mcp_session.flush()
-    on_deal = Cost(
+    on_deal = Purchase(
         deal_id=seeded_deal_id,
         legal_entity_id=UUID(default),
         category_id=category.id,
@@ -141,7 +142,7 @@ async def test_the_lists_narrow_to_the_legal_entity_named(
         amount=Decimal("10.00"),
         description="Treno",
     )
-    shared = Cost(
+    shared = Purchase(
         category_id=category.id,
         date=date(2026, 3, 2),
         amount=Decimal("5.00"),
@@ -198,22 +199,26 @@ async def test_the_lists_narrow_to_the_legal_entity_named(
 
         own = _payload(
             await client.call_tool(
-                "create_cost",
+                "create_purchase",
                 {
-                    "category_id": str(category.id),
-                    "date": "2026-03-03",
-                    "amount": "7.00",
-                    "description": "Licenza",
-                    "legal_entity_id": second,
+                    "purchase": {
+                        "category_id": str(category.id),
+                        "date": "2026-03-03",
+                        "amount": "7.00",
+                        "description": "Licenza",
+                        "legal_entity_id": second,
+                    }
                 },
             )
         )
         assert own["legal_entity_id"] == second
 
-        costs = _payload(await client.call_tool("list_costs", {"legal_entity_id": default}))
+        costs = _payload(await client.call_tool("list_purchases", {"legal_entity_id": default}))
         default_costs = {c["description"] for c in costs["items"]}
         assert "Treno" in default_costs and not {"Software", "Licenza"} & default_costs
-        second_costs = _payload(await client.call_tool("list_costs", {"legal_entity_id": second}))
+        second_costs = _payload(
+            await client.call_tool("list_purchases", {"legal_entity_id": second})
+        )
         assert [c["description"] for c in second_costs["items"]] == ["Licenza"]
-        all_costs = _payload(await client.call_tool("list_costs", {}))
+        all_costs = _payload(await client.call_tool("list_purchases", {}))
         assert {"Treno", "Software", "Licenza"} <= {c["description"] for c in all_costs["items"]}

@@ -197,14 +197,14 @@ class Settings(BaseSettings):
     module_deals: bool | None = None
     module_contracts: bool | None = None
     module_time: bool | None = None
-    module_costs: bool | None = None
+    module_purchases: bool | None = None
     module_taxes: bool | None = None
     module_staff: bool | None = None
     module_collaborators: bool | None = None
 
     # The emitter's timezone, and the only one. Every `Date` column in the product is a
     # calendar day in *this* zone: `invoices.issue_date` (slice 3 §6.2),
-    # `costs.date` and `time_entries.date` (slice 4), `deals.closed_at` and
+    # `purchases.date` and `time_entries.date` (slice 4), `deals.closed_at` and
     # `documents.status_since` (slice 6 §4.1). Deriving any of them from
     # `datetime.now(UTC).date()` moves everything after 23:00 CET by a day and everything
     # on 31 December by a year -- the exact defect slice 3 §6.2 names. Single-tenant, so

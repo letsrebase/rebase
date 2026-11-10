@@ -277,7 +277,9 @@ def render_time_report_pdf(
     return TimeReportService(session, storage).render_pdf(deal_id, month, actor)
 
 
-@router.get("/{deal_id}/pnl", response_model=DealPnl, dependencies=[module_guard("time", "costs")])
+@router.get(
+    "/{deal_id}/pnl", response_model=DealPnl, dependencies=[module_guard("time", "purchases")]
+)
 def deal_pnl(deal_id: UUID, session: SessionDep, actor: ActorDep) -> DealPnl:
     """Every row of §7.1, already summed. No role gate, deliberately: a deal's P&L is not
     more sensitive than the deal, the hours and the invoices it is derived from, each of

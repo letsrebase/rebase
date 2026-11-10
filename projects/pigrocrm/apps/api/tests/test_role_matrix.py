@@ -168,10 +168,10 @@ ROWS: list[Row] = [
     Row("PATCH", "/api/cost-categories/{category_id}", admin_only=True, body={}),
     Row("POST", "/api/cost-categories/{category_id}/archive", admin_only=True),
     Row("POST", "/api/cost-categories/{category_id}/unarchive", admin_only=True),
-    # --- costs: `require_write` (timetracking/costs.py) ------------------------------
+    # --- purchases: `require_write` (purchases/service.py) ------------------------------
     Row(
         "POST",
-        "/api/costs",
+        "/api/purchases",
         body={
             "category_id": "__FAKE__",
             "date": "2026-01-05",
@@ -179,9 +179,10 @@ ROWS: list[Row] = [
             "description": "matrice-costo",
         },
     ),
-    Row("DELETE", "/api/costs/{cost_id}"),
-    Row("PATCH", "/api/costs/{cost_id}", body={}),
-    Row("POST", "/api/costs/{cost_id}/restore"),
+    Row("DELETE", "/api/purchases/{purchase_id}"),
+    Row("PATCH", "/api/purchases/{purchase_id}", body={}),
+    Row("POST", "/api/purchases/{purchase_id}/restore"),
+    Row("POST", "/api/purchases/{purchase_id}/cancel"),
     # --- contracts / rate cards (REB-358): `require_write` (contracts/service.py) ----
     Row(
         "POST",
@@ -1069,7 +1070,7 @@ def test_collaborator_holds_writes_and_is_refused_on_admin_routes(row: Row, matr
 AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
     {
         ("DELETE", "/api/activities/{task_id}"),
-        ("DELETE", "/api/costs/{cost_id}"),
+        ("DELETE", "/api/purchases/{purchase_id}"),
         ("DELETE", "/api/organizations/{organization_id}"),
         ("DELETE", "/api/deals/{deal_id}"),
         ("DELETE", "/api/documents/{document_id}"),
@@ -1085,7 +1086,7 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
         ("PATCH", "/api/contracts/{contract_id}/clause-notes/{note_id}"),
         ("PATCH", "/api/contracts/{contract_id}/expenses/{expense_id}"),
         ("PATCH", "/api/contracts/{contract_id}/rate-cards/{rate_card_id}"),
-        ("PATCH", "/api/costs/{cost_id}"),
+        ("PATCH", "/api/purchases/{purchase_id}"),
         ("PATCH", "/api/organizations/{organization_id}"),
         ("PATCH", "/api/deals/{deal_id}"),
         ("PATCH", "/api/deals/{deal_id}/stage"),
@@ -1110,8 +1111,9 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/api/contracts/{contract_id}/rate-cards"),
         ("POST", "/api/contracts/{contract_id}/renew"),
         ("POST", "/api/contracts/{contract_id}/state"),
-        ("POST", "/api/costs"),
-        ("POST", "/api/costs/{cost_id}/restore"),
+        ("POST", "/api/purchases"),
+        ("POST", "/api/purchases/{purchase_id}/cancel"),
+        ("POST", "/api/purchases/{purchase_id}/restore"),
         ("POST", "/api/organizations"),
         ("POST", "/api/organizations/{organization_id}/people-from-mail"),
         ("POST", "/api/organizations/{organization_id}/restore"),

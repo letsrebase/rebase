@@ -59,9 +59,12 @@ from pigrocrm.core.people.models import Person
 from pigrocrm.core.people.repository import PersonRepository
 from pigrocrm.core.people.schemas import PersonListQuery
 from pigrocrm.core.pipeline.models import PipelineStage
-from pigrocrm.core.timetracking.models import Cost, CostCategory, TimeEntry
-from pigrocrm.core.timetracking.repository import CostRepository, TimeEntryRepository
-from pigrocrm.core.timetracking.schemas import CostListQuery, TimeEntryListQuery
+from pigrocrm.core.purchases.models import Purchase
+from pigrocrm.core.purchases.repository import PurchaseRepository
+from pigrocrm.core.purchases.schemas import PurchaseListQuery
+from pigrocrm.core.timetracking.models import CostCategory, TimeEntry
+from pigrocrm.core.timetracking.repository import TimeEntryRepository
+from pigrocrm.core.timetracking.schemas import TimeEntryListQuery
 
 _PREFIX = "SCOPE"
 APP_ROLE = "pigrocrm_app_test"
@@ -94,7 +97,8 @@ POLICIED = {
     "contracts",
     "documents",
     "invoices",
-    "costs",
+    "purchases",
+    "purchase_vat_lines",
     "people",
     "time_entries",
     "time_timers",
@@ -136,7 +140,7 @@ class World(NamedTuple):
 
 
 def _require_empty(session: Session) -> None:
-    for model in (Invoice, TimeEntry, Deal, Cost, Organization, Person, Contract, Document):
+    for model in (Invoice, TimeEntry, Deal, Purchase, Organization, Person, Contract, Document):
         leftovers = session.execute(select(func.count(model.id))).scalar_one()
         assert leftovers == 0, f"{leftovers} committed {model.__tablename__} row(s) already present"
 
@@ -323,7 +327,7 @@ def world(db_engine: Engine) -> Iterator[World]:
                 )
             )
             session.add(
-                Cost(
+                Purchase(
                     deal_id=deal.id,
                     legal_entity_id=legal_entity,
                     category_id=category.id,
@@ -369,7 +373,7 @@ def world(db_engine: Engine) -> Iterator[World]:
         seed(foreign.id, "estero", 1)
         # One shared cost and one space-level timeline row: «all»'s alone, and everyone's.
         session.add(
-            Cost(
+            Purchase(
                 deal_id=None,
                 legal_entity_id=None,
                 category_id=category.id,
@@ -422,7 +426,7 @@ def world(db_engine: Engine) -> Iterator[World]:
                 "invoices": 1,
                 "invoice_lines": 1,
                 "time_entries": 1,
-                "costs": 1,
+                "purchases": 1,
                 "activities": 3,  # its customer's, its register's, and the space-level one
                 "legal_entities": 1,
                 "inbox_items": 2,  # its legal entity's, and the one the operator uploaded
@@ -460,7 +464,7 @@ def world(db_engine: Engine) -> Iterator[World]:
                 )
             )
             session.execute(delete(InboxItem).where(InboxItem.original_name.like(f"{_PREFIX} %")))
-            session.execute(delete(Cost).where(Cost.description.like(f"{_PREFIX} %")))
+            session.execute(delete(Purchase).where(Purchase.description.like(f"{_PREFIX} %")))
             session.execute(delete(CostCategory).where(CostCategory.name.like(f"{_PREFIX} %")))
             session.execute(delete(InvoiceLine).where(InvoiceLine.invoice_id.in_(invoices)))
             session.execute(delete(Invoice).where(Invoice.customer_id.in_(organizations)))
@@ -529,7 +533,7 @@ def test_every_repository_list_answers_the_scope_s_rows_alone(world: World) -> N
         assert [p.first_name for p in people] == [f"{_PREFIX} estero contatto"]
         entries = TimeEntryRepository(session).list(TimeEntryListQuery(limit=50))
         assert len(entries) == 1
-        costs = CostRepository(session).list(CostListQuery(limit=50))
+        costs = PurchaseRepository(session).list(PurchaseListQuery(limit=50))
         # The shared cost is «all»'s alone (§1.7): not here.
         assert [c.description for c in costs] == [f"{_PREFIX} estero costo"]
 
@@ -546,7 +550,7 @@ def test_a_raw_select_on_every_policied_table_agrees_with_the_lists(world: World
         assert _count(session, "contact_points") == 4
         assert _count(session, "notes") == 6
         assert _count(session, "invoices") == 3
-        assert _count(session, "costs") == 2  # the shared one is still «all»'s alone
+        assert _count(session, "purchases") == 2  # the shared one is still «all»'s alone
         assert _count(session, "activities") == 5
         assert _count(session, "inbox_items") == 3  # both classified, and the operator's own
 
@@ -556,7 +560,7 @@ def test_an_unscoped_actor_and_all_see_everything(world: World) -> None:
     bind_scope(session, Actor(id=world.user_id, type="user", role="collaborator"))
     with session:
         assert _count(session, "organizations") == 2
-        assert _count(session, "costs") == 3
+        assert _count(session, "purchases") == 3
         assert _count(session, "activities") == 5
         assert _count(session, "inbox_items") == 4
 
@@ -1289,6 +1293,7 @@ FAST_PATH = {
     "staff_members",
     "payroll_settings",
     "engagements",
+    "purchase_vat_lines",
     "time_entries",
     "time_timers",
     "invoice_lines",

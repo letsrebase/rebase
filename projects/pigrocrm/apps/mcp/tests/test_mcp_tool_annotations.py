@@ -68,7 +68,12 @@ SURFACES: dict[str, dict[str, Any]] = {
 # collaborator's an agent may do, measured at 101,612 bytes. The kinds are listed once.
 # REB-976: 101.75 KB, up from 101.7 KB: `hub_freelancer_id` in `update_organization`'s `changes`
 # schema, +82 bytes. The `collaborators` tools are in neither list: the module starts off.
-DEFAULT_BUDGET_BYTES = 101_750
+# REB-993: 104.8 KB, up from 101.75 KB, for `create_purchase`, `update_purchase`,
+# `cancel_purchase`, `archive_purchase`, `restore_purchase`, `get_purchase` and `list_purchases`
+# in place of the six cost tools (measured at 104,700 bytes): a purchase has a kind, a supplier, a
+# VAT recap and the currency, and the two writes list them by name and type through a compact
+# schema (no `null` branches, no patterns), which is how an agent learns them.
+DEFAULT_BUDGET_BYTES = 104_800
 # REB-957: 111.9 KB, up from 111.6 KB, for `skip_space_onboarding` (a full-access
 # administrator's), measured at 111,786 bytes; `describe_space`'s `onboarding` fits the default.
 # REB-977: 116.2 KB, up from 113.4 KB, for `create_staff_member`, `update_staff_member`,
@@ -80,7 +85,8 @@ DEFAULT_BUDGET_BYTES = 101_750
 # REB-995: 119.7 KB, up from 118.6 KB, for `merge_organizations` (a full-access administrator's,
 # 1.0 KB): the survivor, the loser and the preview switch, and a docstring that says what it
 # rewrites, which is the only warning an agent reads.
-FULL_ACCESS_BUDGET_BYTES = 119_700
+# REB-993: 122.8 KB, up from 119.7 KB, the seven purchase tools (+3.0 KB net of the cost tools).
+FULL_ACCESS_BUDGET_BYTES = 122_800
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

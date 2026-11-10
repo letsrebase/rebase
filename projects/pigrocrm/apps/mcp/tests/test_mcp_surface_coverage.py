@@ -263,7 +263,7 @@ _INTERNE: dict[Method, str] = {
         "`GoogleConsentFlow.complete` after the person's redirect: not an operation"
     ),
     ("ActivityService", "record"): "scrive la timeline per conto di un altro servizio",
-    ("CostCategoryService", "require_active"): "validazione interna di CostService",
+    ("CostCategoryService", "require_active"): "validazione interna di PurchaseService",
     ("DealService", "set_stage_in_transaction"): (
         "e' la meta' di sola mutazione di `move_stage`, introdotta dalla convenzione "
         "`*_in_transaction` della fetta 6 (§9.3): muta, non registra, non committa e non "

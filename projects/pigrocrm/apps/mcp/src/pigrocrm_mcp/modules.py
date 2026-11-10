@@ -83,21 +83,22 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "bind_time_to_invoice": ("time",),
     "get_budget_vs_actual": ("deals", "time"),
     # An expense is a contract's and carries a cost category: both modules, as in the web app.
-    "create_contract_expense": ("contracts", "costs"),
-    "update_contract_expense": ("contracts", "costs"),
-    "list_contract_expenses": ("contracts", "costs"),
-    # costs.
-    "create_cost": ("costs",),
-    "update_cost": ("costs",),
-    "archive_cost": ("costs",),
-    "restore_cost": ("costs",),
-    "get_cost": ("costs",),
-    "list_costs": ("costs",),
-    "list_cost_categories": ("costs",),
-    "create_cost_category": ("costs",),
-    "update_cost_category": ("costs",),
-    "archive_cost_category": ("costs",),
-    "unarchive_cost_category": ("costs",),
+    "create_contract_expense": ("contracts", "purchases"),
+    "update_contract_expense": ("contracts", "purchases"),
+    "list_contract_expenses": ("contracts", "purchases"),
+    # purchases.
+    "create_purchase": ("purchases",),
+    "update_purchase": ("purchases",),
+    "cancel_purchase": ("purchases",),
+    "archive_purchase": ("purchases",),
+    "restore_purchase": ("purchases",),
+    "get_purchase": ("purchases",),
+    "list_purchases": ("purchases",),
+    "list_cost_categories": ("purchases",),
+    "create_cost_category": ("purchases",),
+    "update_cost_category": ("purchases",),
+    "archive_cost_category": ("purchases",),
+    "unarchive_cost_category": ("purchases",),
     # taxes: the estimate, the ceilings and the year.
     "get_ceiling_headroom": ("taxes",),
     "get_year_overview": ("taxes",),
@@ -122,7 +123,7 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     # Across modules: all of them, or the tool is not there.
     "convert_deal_to_contract": ("deals", "contracts"),
     "preview_deal_contract": ("deals", "contracts"),
-    "get_deal_pnl": ("deals", "time", "costs"),
+    "get_deal_pnl": ("deals", "time", "purchases"),
 }
 
 
@@ -175,7 +176,7 @@ KIND_MODULES: Mapping[str, ModuleKey] = {
     "contract": "contracts",
     "work_unit": "contracts",
     "time_entry": "time",
-    "cost": "costs",
+    "purchase": "purchases",
 }
 
 

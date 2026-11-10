@@ -31,8 +31,9 @@ from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.organizations.schemas import OrganizationCreate, OrganizationUpdate
 from pigrocrm.core.organizations.service import OrganizationService
-from pigrocrm.core.timetracking.costs import CostService
-from pigrocrm.core.timetracking.schemas import CostCreate, CostUpdate, TimeEntryUpdate
+from pigrocrm.core.purchases.schemas import PurchaseCreate, PurchaseUpdate
+from pigrocrm.core.purchases.service import PurchaseService
+from pigrocrm.core.timetracking.schemas import TimeEntryUpdate
 from pigrocrm.core.timetracking.service import TimeEntryService
 
 WRITER = Actor(id=None, type="user", role="collaborator")
@@ -155,9 +156,9 @@ def test_an_emptied_cost_amount_is_refused_by_name(
 ) -> None:
     """`costs.amount` is `NOT NULL`, and a cleared amount is not a zero amount: both are
     refused, but with the message that names the amount rather than the generic one."""
-    service = CostService(db_session)
+    service = PurchaseService(db_session)
     cost = service.create(
-        CostCreate(
+        PurchaseCreate(
             deal_id=seeded_deal_id,
             category_id=seeded_category_id,
             date=date(2026, 3, 10),
@@ -167,7 +168,7 @@ def test_an_emptied_cost_amount_is_refused_by_name(
         WRITER,
     )
     with pytest.raises(ValidationFailed) as exc:
-        service.update(cost.id, CostUpdate.model_validate({"amount": None}), WRITER)
+        service.update(cost.id, PurchaseUpdate.model_validate({"amount": None}), WRITER)
     assert exc.value.details["reason"] == "l'importo non può essere svuotato"
 
 
@@ -176,9 +177,9 @@ def test_a_nullable_cost_reference_clears_without_a_lookup(
 ) -> None:
     """`_check_refs` already took values rather than keys, so an explicit `deal_id: null`
     passes straight through it instead of becoming `NotFound("deal", None)`."""
-    service = CostService(db_session)
+    service = PurchaseService(db_session)
     cost = service.create(
-        CostCreate(
+        PurchaseCreate(
             deal_id=seeded_deal_id,
             category_id=seeded_category_id,
             date=date(2026, 3, 10),
@@ -188,6 +189,6 @@ def test_a_nullable_cost_reference_clears_without_a_lookup(
         WRITER,
     )
     assert (
-        service.update(cost.id, CostUpdate.model_validate({"deal_id": None}), WRITER).deal_id
+        service.update(cost.id, PurchaseUpdate.model_validate({"deal_id": None}), WRITER).deal_id
         is None
     )

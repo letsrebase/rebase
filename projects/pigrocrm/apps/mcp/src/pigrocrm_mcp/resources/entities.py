@@ -262,10 +262,10 @@ def render_deal(context: McpContext, deal_id: UUID) -> str:
                 "(excluded from the accrued value and the margin)"
             )
 
-    # The economics are `get_deal_pnl`'s, which spans deals, time and costs: with `costs` off
-    # the direct-costs line and the margin it feeds would print a figure the space has
+    # The economics are `get_deal_pnl`'s, which spans deals, time and purchases: with `purchases`
+    # off the direct-costs line and the margin it feeds would print a figure the space has
     # switched off (REB-978).
-    if context.modules is None or {"time", "costs"} <= set(context.modules):
+    if context.modules is None or {"time", "purchases"} <= set(context.modules):
         # 4A deliberately printed no revenue here, because there were no invoices to read and
         # a zero would have looked like a real figure. There are now: `deal_pnl` reads the
         # issued ones and this block is the payoff -- an agent asked "how is this project

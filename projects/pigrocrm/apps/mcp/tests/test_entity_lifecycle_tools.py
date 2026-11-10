@@ -41,7 +41,7 @@ async def test_archive_customer_is_reversible_and_blocks_on_active_deals(
         # one over REST the whole time. `test_mcp_surface_coverage.py` is what found the
         # asymmetry -- `OrganizationService.restore`, `DealService.restore` and
         # `PersonService.restore` were the only `restore` methods with no tool, while
-        # `restore_cost` and `restore_time_entry` have had one since slice 4.
+        # `restore_purchase` and `restore_time_entry` have had one since slice 4.
         restored = _payload(
             await client.call_tool("restore_organization", {"organization_id": customer["id"]})
         )

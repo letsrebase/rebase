@@ -220,18 +220,20 @@ The register as of today, from the conversation:
 | Intrastat for services | to verify | |
 | Periodic IVA settlement, LIPE, December IVA advance | to verify | |
 | Withholding paid to the tax office by the 16th of the month after the payment | to verify | |
-| A flat-rate buyer owes VAT on a reverse-charge purchase from abroad | to verify | |
+| A flat-rate buyer owes VAT on a reverse-charge purchase from abroad, and cannot deduct it | verified | L. 190/2014, art. 1 c. 58 lett. e-bis (pays the VAT on purchases under art. 17 DPR 633/72 «compresi quelli intracomunitari», by the 16th of the second month after each quarter; no deduction), normattiva.it, read 2026-11-10 (REB-993) |
 | ECB rate reference date for a foreign-currency document | to verify | |
 | TD16 integrates a domestic reverse-charge purchase | to verify | |
 | Quarterly settlement surcharge of 1% and the minimum below which a periodic payment is carried forward | to verify | |
 | Eligibility thresholds for quarterly settlement | to verify | |
 | Split payment exclusions: professionals whose fees are subject to withholding | to verify | |
 | Cash-basis IVA conditions: eligibility ceiling, one-year backstop, buyer-side deduction timing, invoice annotation | to verify | |
-| VAT on a retail receipt is not deductible without an invoice | to verify | |
+| VAT on a retail receipt is not deductible without an invoice | verified | DPR 633/72, art. 19 c. 1 (only the tax «addebitata a titolo di rivalsa» is deductible) and art. 22 (in retail an invoice is not compulsory unless the customer asks before the operation), normattiva.it, read 2026-11-10 (REB-993). An invoice, a simplified one (art. 21-bis) included, is a purchase of kind `invoice`, not a receipt |
 | 40% deductibility of VAT on a car's running costs | to verify | art. 19-bis1 DPR 633/72 |
 | Services to a business abroad are outside VAT, to a consumer abroad they may not be | to verify | art. 7-ter DPR 633/72 |
 | Reverse charge on a foreign supplier depends on the place of supply; TD17, TD18, TD19 by EU or extra-EU and goods or services | to verify | |
-| IVA period date: issue or operation date for sales, receipt and registration date for purchases | to verify | |
+| IVA period date for sales: issue or operation date | to verify | |
+| A purchase invoice is annotated in the register before the periodic settlement in which the deduction is exercised, and at the latest by the annual return of the second year after the year of receipt | verified | DPR 633/72, art. 25 c. 1 and art. 19 c. 1, as amended by D.Lgs. 7 August 2026 n. 148, art. 12 c. 1 (in force 12 August 2026; the earlier text said «all'anno di ricezione della fattura e con riferimento al medesimo anno»), normattiva.it and gazzettaufficiale.it GU n. 185 of 11-8-2026, read 2026-11-10 (REB-993). The code stores a day a person chooses and defaults it to the day of receipt; it does not enforce the term |
+| Which term governs a purchase invoice received before 12 August 2026 (the 2026 amendment of art. 25 c. 1 has no transitional rule in art. 12) | to verify | for the accountant list (REB-975); the IVA register card enforces the term |
 | Numbering of integration documents TD16 to TD19 | to verify | |
 | FPA12 format, 6-character IPA code and deferred IVA for a public body | to verify | |
 | Exempt thresholds for travel allowances, traceable payment of reimbursements | to verify | |

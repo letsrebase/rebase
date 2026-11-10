@@ -57,6 +57,7 @@ from pigrocrm.core.organizations.models import Organization  # noqa: F401
 from pigrocrm.core.people.models import Person  # noqa: F401
 from pigrocrm.core.pipeline.models import PipelineStage  # noqa: F401
 from pigrocrm.core.proposals.models import Proposal  # noqa: F401
+from pigrocrm.core.purchases.models import Purchase, PurchaseVatLine  # noqa: F401
 from pigrocrm.core.reminders.models import (  # noqa: F401
     ReminderAck,
     ReminderDelivery,
@@ -76,7 +77,6 @@ from pigrocrm.core.staff.models import PayrollSettings, StaffMember  # noqa: F40
 from pigrocrm.core.tasks.models import Task  # noqa: F401
 from pigrocrm.core.templates.models import Template  # noqa: F401
 from pigrocrm.core.timetracking.models import (  # noqa: F401
-    Cost,
     CostCategory,
     PeriodLock,
     TimeEntry,

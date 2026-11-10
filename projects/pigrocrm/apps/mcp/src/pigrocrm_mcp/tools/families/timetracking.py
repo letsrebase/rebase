@@ -1,4 +1,4 @@
-"""Hours, the timer, costs and period locks."""
+"""Hours, the timer, purchases and period locks."""
 
 from collections.abc import Callable
 from typing import Any, cast
@@ -6,10 +6,8 @@ from uuid import UUID
 
 from mcp.server import MCPServer
 
-from pigrocrm.core.timetracking.schemas import (
-    CostListQuery,
-    TimeEntryListQuery,
-)
+from pigrocrm.core.purchases.schemas import PurchaseListQuery
+from pigrocrm.core.timetracking.schemas import TimeEntryListQuery
 from pigrocrm_mcp.annotations import ADDITIVE, DESTRUCTIVE, READ_ONLY
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import (
@@ -17,12 +15,12 @@ from pigrocrm_mcp.tools import (
 )
 from pigrocrm_mcp.tools.params import (
     BoundedLimit,
-    CostChanges,
     HoursArg,
     IsoDateStr,
-    MoneyArg,
     OptionalFactor,
     OptionalYear,
+    PurchaseChanges,
+    PurchaseData,
     TimeEntryChanges,
     iso_date,
     parse_legal_entity_id,
@@ -228,85 +226,79 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
-    def create_cost(
-        category_id: str,
-        date: str,
-        amount: MoneyArg,
-        description: str,
-        deal_id: str | None = None,
-        supplier: str | None = None,
-        document_id: str | None = None,
-        custom_fields: dict[str, Any] | None = None,
-        legal_entity_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Record a cost. Without `deal_id` it is an overhead, in the period profit and loss
-        and not allocated to deals. `amount` is the total paid, VAT included; negative is a
-        refund; zero is rejected. Categories are in `list_cost_categories`. `legal_entity_id`
-        applies only to an overhead (omitted: shared); a cost on a deal belongs to the deal's
-        company.
+    def create_purchase(purchase: PurchaseData) -> dict[str, Any]:
+        """Register a purchase. `kind`: `invoice` or `credit_note` (a supplier's document: needs
+        `supplier_id`, an organization with the supplier role, and `vat_lines`, one per rate: a
+        credit note is negative and may name `corrects_purchase_id`), `receipt` (a shop: total
+        only, `merchant_name`) or `expense` (the default). `amount` is the total in euro, VAT
+        included. In another currency add `currency`, `currency_amount`, `exchange_rate` and its
+        date. Without `deal_id` it is an overhead, not allocated to deals. `cost_amount` in the
+        answer is what it costs, frozen from the buyer's fiscal pack.
         """
-        return timetracking.create_cost(
-            context,
-            {
-                "category_id": UUID(category_id),
-                "date": date,
-                "amount": amount,
-                "description": description,
-                "deal_id": UUID(deal_id) if deal_id else None,
-                "legal_entity_id": parse_legal_entity_id(legal_entity_id),
-                "supplier": supplier,
-                "document_id": UUID(document_id) if document_id else None,
-                "custom_fields": custom_fields or {},
-            },
-        )
+        return timetracking.create_purchase(context, purchase)
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
-    def update_cost(cost_id: str, changes: CostChanges) -> dict[str, Any]:
-        """Update a cost."""
-        return timetracking.update_cost(context, cost_id, changes)
+    def update_purchase(purchase_id: str, changes: PurchaseChanges) -> dict[str, Any]:
+        """Update a purchase. `vat_lines`, when sent, replaces the whole VAT recap."""
+        return timetracking.update_purchase(context, purchase_id, changes)
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def cancel_purchase(purchase_id: str) -> dict[str, Any]:
+        """Cancel a registered purchase that turns out void: it stays on the record and counts
+        nowhere. For a row entered by mistake, `archive_purchase`.
+        """
+        return timetracking.cancel_purchase(context, purchase_id)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
-    def archive_cost(cost_id: str) -> dict[str, str]:
-        """Archive a cost (reversible with `restore_cost`)."""
-        return timetracking.archive_cost(context, cost_id)
+    def archive_purchase(purchase_id: str) -> dict[str, str]:
+        """Archive a purchase (reversible with `restore_purchase`)."""
+        return timetracking.archive_purchase(context, purchase_id)
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
-    def restore_cost(cost_id: str) -> dict[str, Any]:
-        """Restore an archived cost."""
-        return timetracking.restore_cost(context, cost_id)
+    def restore_purchase(purchase_id: str) -> dict[str, Any]:
+        """Restore an archived purchase."""
+        return timetracking.restore_purchase(context, purchase_id)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
-    def get_cost(cost_id: str) -> dict[str, Any]:
-        """Read a cost."""
-        return timetracking.get_cost(context, cost_id)
+    def get_purchase(purchase_id: str) -> dict[str, Any]:
+        """Read a purchase, with its VAT recap lines."""
+        return timetracking.get_purchase(context, purchase_id)
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
-    def list_costs(
+    def list_purchases(
         deal_id: str | None = None,
         only_general: bool = False,
         category_id: str | None = None,
+        supplier_id: str | None = None,
+        kind: str | None = None,
+        status: str | None = None,
         date_from: IsoDateStr = None,
         date_to: IsoDateStr = None,
         legal_entity_id: str | None = None,
         limit: BoundedLimit = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        """List costs, most recent first. `only_general = true` shows only costs without a deal.
-        `legal_entity_id` filters by company; omitted, all, including shared costs with no
-        company.
+        """List purchases, most recent first. `kind`: invoice, credit_note, receipt, expense;
+        `status`: registered, cancelled. `only_general = true` shows only purchases without a
+        deal. `legal_entity_id` filters by company; omitted, all, including shared purchases
+        with no company.
         """
-        return timetracking.list_costs(
+        return timetracking.list_purchases(
             context,
-            CostListQuery(
+            PurchaseListQuery(
                 deal_id=UUID(deal_id) if deal_id else None,
                 legal_entity_id=parse_legal_entity_id(legal_entity_id),
                 only_general=only_general,
                 category_id=UUID(category_id) if category_id else None,
+                supplier_id=UUID(supplier_id) if supplier_id else None,
+                kind=cast(Any, kind),
+                status=cast(Any, status),
                 date_from=iso_date(date_from, "date_from"),
                 date_to=iso_date(date_to, "date_to"),
                 limit=cast(int, limit),

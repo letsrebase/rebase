@@ -1,4 +1,4 @@
-"""Thin calls into `TimeEntryService`/`CostService`/`CostCategoryService`/
+"""Thin calls into `TimeEntryService`/`PurchaseService`/`CostCategoryService`/
 `AnalyticsService`, like every other tool module -- see `tools/invoices.py`'s own
 docstring for the shape this one mirrors.
 
@@ -27,15 +27,13 @@ from pydantic import Field, TypeAdapter
 
 from pigrocrm.core.analytics.schemas import BudgetQuery, CeilingSimulationQuery, PeriodPnlQuery
 from pigrocrm.core.analytics.service import AnalyticsService
+from pigrocrm.core.purchases.schemas import PurchaseCreate, PurchaseListQuery, PurchaseUpdate
+from pigrocrm.core.purchases.service import PurchaseService
 from pigrocrm.core.timetracking.categories import CostCategoryService
-from pigrocrm.core.timetracking.costs import CostService
 from pigrocrm.core.timetracking.locks import PeriodLockService
 from pigrocrm.core.timetracking.schemas import (
     YEAR_MAX,
     YEAR_MIN,
-    CostCreate,
-    CostListQuery,
-    CostUpdate,
     TimeEntryCreate,
     TimeEntryListQuery,
     TimeEntryUpdate,
@@ -152,40 +150,54 @@ def describe_rates(context: McpContext, deal_id: str, user_id: str) -> dict[str,
     )
 
 
-def create_cost(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
+def create_purchase(context: McpContext, data: dict[str, Any]) -> dict[str, Any]:
     return (
-        CostService(context.session)
-        .create(CostCreate(**data), context.actor)
+        PurchaseService(context.session)
+        .create(PurchaseCreate(**data), context.actor)
         .model_dump(mode="json")
     )
 
 
-def update_cost(context: McpContext, cost_id: str, data: dict[str, Any]) -> dict[str, Any]:
-    service = CostService(context.session)
-    identifier = UUID(cost_id)
-    changes = CostUpdate(**data)
+def update_purchase(context: McpContext, purchase_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    service = PurchaseService(context.session)
+    identifier = UUID(purchase_id)
+    changes = PurchaseUpdate(**data)
     refuse_empty(data)
     before = service.get(identifier, context.actor)
     return report(before, service.update(identifier, changes, context.actor))
 
 
-def archive_cost(context: McpContext, cost_id: str) -> dict[str, str]:
-    CostService(context.session).soft_delete(UUID(cost_id), context.actor)
-    return {"status": "archived", "cost_id": cost_id}
-
-
-def restore_cost(context: McpContext, cost_id: str) -> dict[str, Any]:
+def cancel_purchase(context: McpContext, purchase_id: str) -> dict[str, Any]:
     return (
-        CostService(context.session).restore(UUID(cost_id), context.actor).model_dump(mode="json")
+        PurchaseService(context.session)
+        .cancel(UUID(purchase_id), context.actor)
+        .model_dump(mode="json")
     )
 
 
-def get_cost(context: McpContext, cost_id: str) -> dict[str, Any]:
-    return CostService(context.session).get(UUID(cost_id), context.actor).model_dump(mode="json")
+def archive_purchase(context: McpContext, purchase_id: str) -> dict[str, str]:
+    PurchaseService(context.session).soft_delete(UUID(purchase_id), context.actor)
+    return {"status": "archived", "purchase_id": purchase_id}
 
 
-def list_costs(context: McpContext, query: CostListQuery) -> dict[str, Any]:
-    page = CostService(context.session).list(query, context.actor)
+def restore_purchase(context: McpContext, purchase_id: str) -> dict[str, Any]:
+    return (
+        PurchaseService(context.session)
+        .restore(UUID(purchase_id), context.actor)
+        .model_dump(mode="json")
+    )
+
+
+def get_purchase(context: McpContext, purchase_id: str) -> dict[str, Any]:
+    return (
+        PurchaseService(context.session)
+        .get(UUID(purchase_id), context.actor)
+        .model_dump(mode="json")
+    )
+
+
+def list_purchases(context: McpContext, query: PurchaseListQuery) -> dict[str, Any]:
+    page = PurchaseService(context.session).list(query, context.actor)
     return {
         "items": [item.model_dump(mode="json") for item in page.items],
         "next_cursor": str(page.next_cursor) if page.next_cursor else None,

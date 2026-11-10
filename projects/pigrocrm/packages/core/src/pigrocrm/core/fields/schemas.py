@@ -21,7 +21,7 @@ EntityType = Literal[
     "document",
     "invoice",
     "time_entry",
-    "cost",
+    "purchase",
     # Slice 10. A commitment carries custom fields for the same reason everything
     # else does: whoever runs the installation knows what they need to record about
     # one, and the alternative is a `note` field holding a form.

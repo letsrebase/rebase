@@ -50,7 +50,8 @@ from pigrocrm.core.legal_entities.repository import LegalEntityRepository
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
-from pigrocrm.core.timetracking.models import Cost, CostCategory, TimeEntry
+from pigrocrm.core.purchases.models import Purchase
+from pigrocrm.core.timetracking.models import CostCategory, TimeEntry
 
 ADMIN = Actor(id=None, type="system", role="admin")
 READONLY = Actor(id=uuid7(), type="user", role="readonly")
@@ -88,7 +89,7 @@ class Corpus(NamedTuple):
 
 
 def _require_empty(session: Session) -> None:
-    for model in (Invoice, TimeEntry, Deal, Cost):
+    for model in (Invoice, TimeEntry, Deal, Purchase):
         leftovers = session.execute(select(func.count(model.id))).scalar_one()
         assert leftovers == 0, (
             f"{leftovers} committed {model.__tablename__} row(s) were already present; the "
@@ -228,7 +229,7 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
         session.flush()
         session.add_all(
             [
-                Cost(
+                Purchase(
                     deal_id=None,
                     legal_entity_id=None,
                     category_id=category.id,
@@ -237,7 +238,7 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
                     description=f"{_PREFIX} condiviso",
                     custom_fields={},
                 ),
-                Cost(
+                Purchase(
                     deal_id=deal_e.id,
                     legal_entity_id=foreign.id,
                     category_id=category.id,
@@ -281,7 +282,7 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
                     TimeEntry.deal_id.in_(select(Deal.id).where(Deal.name.like(f"{_PREFIX} %")))
                 )
             )
-            session.execute(delete(Cost).where(Cost.description.like(f"{_PREFIX} %")))
+            session.execute(delete(Purchase).where(Purchase.description.like(f"{_PREFIX} %")))
             session.execute(delete(CostCategory).where(CostCategory.name.like(f"{_PREFIX} %")))
             session.execute(delete(Invoice).where(Invoice.customer_id.in_(organizations)))
             session.execute(delete(Deal).where(Deal.name.like(f"{_PREFIX} %")))

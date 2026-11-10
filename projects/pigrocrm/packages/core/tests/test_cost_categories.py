@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from pigrocrm.core.purchases.models import Purchase
 from pigrocrm.core.timetracking.categories import SEED_CATEGORIES, CostCategoryService
-from pigrocrm.core.timetracking.models import Cost
 from pigrocrm.core.timetracking.schemas import CostCategoryCreate, CostCategoryUpdate
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -60,7 +60,7 @@ def test_archiving_keeps_existing_costs_readable(db_session: Session, seeded_dea
     service = CostCategoryService(db_session)
     category = service.create_cost_category(CostCategoryCreate(name="Hosting"), ADMIN)
     db_session.add(
-        Cost(
+        Purchase(
             deal_id=seeded_deal_id,
             category_id=category.id,
             date=date(2026, 3, 1),

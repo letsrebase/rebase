@@ -42,8 +42,9 @@ from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.mail import RecordingSender
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
+from pigrocrm.core.purchases.models import Purchase
 from pigrocrm.core.storage import LocalFileStorage
-from pigrocrm.core.timetracking.models import Cost, CostCategory
+from pigrocrm.core.timetracking.models import CostCategory
 from pigrocrm_api import deps
 from pigrocrm_api.deps import get_storage
 from pigrocrm_api.main import create_app
@@ -219,7 +220,7 @@ def world(api_engine: Engine) -> Iterator[ScopedWorld]:
             session.execute(
                 delete(RefreshToken).where(RefreshToken.user_id.in_([admin.id, member.id]))
             )
-            session.execute(delete(Cost).where(Cost.category_id == category.id))
+            session.execute(delete(Purchase).where(Purchase.category_id == category.id))
             for rows in (studio_rows, ltd_rows):
                 session.execute(delete(InvoiceLine).where(InvoiceLine.invoice_id == rows.invoice))
                 session.execute(delete(Invoice).where(Invoice.id == rows.invoice))
@@ -357,7 +358,7 @@ def test_a_write_the_policy_refuses_is_a_404_and_never_a_500(
     )
     assert moved.status_code == 404, moved.text
     shared = client.post(
-        "/api/costs",
+        "/api/purchases",
         json={
             "category_id": str(world.category),
             "date": "2026-03-10",

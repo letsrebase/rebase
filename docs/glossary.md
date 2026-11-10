@@ -62,8 +62,11 @@ This file is the single mapping from the Italian word to the English identifier.
 | voce | entry | A time or invoice entry |
 | tariffa | rate | Price per unit; `tariffa_oraria` is `hourly_rate`, `tariffa_giornaliera` is `daily_rate` |
 | listino | list_price | Contract price list |
-| costo | cost | Direct cost; `costo_orario` is `hourly_cost` |
-| spesa | expense | A contract expense |
+| costo | cost | What a purchase or an hour costs: `cost_amount` on a purchase (frozen from the buyer's pack), `hourly_cost` for an hour. A `costs` row is, since REB-993, a purchase of kind `expense`; the category table keeps its name (`cost_categories`) |
+| acquisto | purchase | Anything the space pays for, with its document: table `purchases`, `PurchaseService`, `/api/purchases`, MCP `create_purchase`, module `purchases` (REB-993). Kinds: `invoice` (fattura), `credit_note` (nota di credito), `receipt` (ricevuta, scontrino) and `expense` (spesa) |
+| spesa | expense | A purchase of kind `expense` (anything paid with no invoice), or a contract expense (`contract_expenses`) |
+| periodo IVA | `iva_period` | A day inside the IVA register period a purchase invoice is annotated in |
+| ritenuta | withholding | `withholding_rate`, `withholding_base`, `withholding_amount` on a purchase |
 | ricavi | revenue |  |
 | preventivato | budgeted | Estimated in the offer (`ore_preventivate` is `budgeted_hours`) |
 | previsto | expected | Forecast (`valore_previsto` is `expected_value`) |
@@ -231,7 +234,7 @@ Entries are per project: `pigrocrm`, `hub`, `website`, `shared`.
 - `contract_expenses`: `data` -> `date`, `descrizione` -> `description`, `importo` -> `amount`, `pre_autorizzata` -> `pre_authorized`, `riferimento_autorizzazione` -> `authorization_reference`, `rimborsabile` -> `reimbursable`
 - `contracts`: `azienda_id` -> `legal_entity_id`, `cadenza_fatturazione` -> `billing_cadence`, `contratto_precedente_id` -> `previous_contract_id`, `divisa` -> `currency`, `fine` -> `end`, `giorni_pagamento` -> `payment_days`, `inizio` -> `start`, `pagamento_fine_mese` -> `payment_end_of_month`, `politica_spese` -> `expense_policy`, `preavviso_disdetta_giorni` -> `termination_notice_days`, `preavviso_rinnovo_giorni` -> `renewal_notice_days`, `stato` -> `status`, `tetto_quota_cliente` -> `customer_share_cap`, `tipo_rinnovo` -> `renewal_type`, `titolo` -> `title`
 - `cost_categories`: `archiviata` -> `archived`, `nome` -> `name`, `posizione` -> `position`
-- `costs`: `azienda_id` -> `legal_entity_id`, `data` -> `date`, `descrizione` -> `description`, `fornitore` -> `supplier`, `importo` -> `amount`
+- `costs` (now `purchases`, REB-993): `azienda_id` -> `legal_entity_id`, `data` -> `date`, `descrizione` -> `description`, `fornitore` -> `supplier` (now `merchant_name`), `importo` -> `amount`
 - `customers`: `azienda_id` -> `legal_entity_id`, `codice_fiscale` -> `tax_code`, `codice_sdi` -> `sdi_code`, `comune` -> `city`, `giorni_pagamento` -> `payment_days`, `indirizzo` -> `address`, `nazione` -> `country`, `pagamento_fine_mese` -> `payment_end_of_month`, `partita_iva` -> `vat_number`, `pec` -> `certified_email`, `provincia` -> `province`, `ragione_sociale` -> `legal_name`, `sito_web` -> `website`, `stato` -> `status`, `telefono` -> `phone`
 - `deals`: `azienda_id` -> `legal_entity_id`, `chiuso_il` -> `closed_at`, `data_chiusura_prevista` -> `expected_close_date`, `nome` -> `name`, `ore_preventivate` -> `budgeted_hours`, `probabilita` -> `probability`, `tariffa_oraria` -> `hourly_rate`, `valore_preventivato` -> `budgeted_value`, `valore_previsto` -> `expected_value`
 - `digests`: `inviato_a` -> `sent_to`, `settimana` -> `week`

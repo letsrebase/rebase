@@ -11,8 +11,9 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.errors import NotFound
-from pigrocrm.core.timetracking.costs import CostService
-from pigrocrm.core.timetracking.schemas import CostCreate, TimeEntryCreate
+from pigrocrm.core.purchases.schemas import PurchaseCreate
+from pigrocrm.core.purchases.service import PurchaseService
+from pigrocrm.core.timetracking.schemas import TimeEntryCreate
 from pigrocrm.core.timetracking.service import TimeEntryService
 
 READER = Actor(id=None, type="user", role="readonly")
@@ -61,8 +62,8 @@ def test_costs_of_an_uninvoiced_deal_still_appear(
     `offers.filter(offerKeysWithInvoices.has(...))`, so the expenses of a job in progress were
     invisible to every summary. Every deal has its own P&L here, invoiced or not, with the **state**
     beside it instead of the exclusion (§7.3)."""
-    CostService(db_session).create(
-        CostCreate(
+    PurchaseService(db_session).create(
+        PurchaseCreate(
             deal_id=seeded_deal_id,
             category_id=seeded_category_id,
             date=date(2026, 3, 1),
@@ -195,8 +196,8 @@ def test_no_path_lets_the_same_expense_in_twice(
     `time_entries`. An external consultant who invoices you their hours is a `cost` in
     "Consulenza esterna", and their hours -- if you record them -- carry
     `applied_cost = NULL`."""
-    CostService(db_session).create(
-        CostCreate(
+    PurchaseService(db_session).create(
+        PurchaseCreate(
             deal_id=seeded_deal_id,
             category_id=seeded_category_id,
             date=date(2026, 3, 1),
@@ -224,8 +225,8 @@ def test_no_path_lets_the_same_expense_in_twice(
 def test_margin_percentage_when_there_is_revenue(
     db_session: Session, deal_with_mixed_invoices: UUID, seeded_category_id: UUID
 ) -> None:
-    CostService(db_session).create(
-        CostCreate(
+    PurchaseService(db_session).create(
+        PurchaseCreate(
             deal_id=deal_with_mixed_invoices,
             category_id=seeded_category_id,
             date=date(2026, 3, 1),
@@ -269,3 +270,65 @@ def test_a_soft_deleted_deal_is_not_readable_either(
     db_session.flush()
     with pytest.raises(NotFound):
         AnalyticsService(db_session).deal_pnl(seeded_deal_id, READER)
+
+
+def test_a_deals_direct_costs_are_what_its_purchases_cost_and_a_cancelled_one_counts_nowhere(
+    db_session: Session, seeded_deal_id: UUID, seeded_category_id: UUID, rf01_fiscal_profile: None
+) -> None:
+    """REB-993: the deal's P&L sums `cost_amount`, so an ordinary-regime buyer's invoice enters
+    at the taxable amount (its VAT is recovered), an expense at its total, and a purchase that was
+    cancelled not at all."""
+    from pigrocrm.core.organizations.schemas import OrganizationCreate
+    from pigrocrm.core.organizations.service import OrganizationService
+    from pigrocrm.core.purchases.schemas import VatLine
+
+    supplier = OrganizationService(db_session).create(
+        OrganizationCreate(legal_name="Vendor Srl", roles=["supplier"]),
+        Actor(id=None, type="system", role="admin"),
+    )
+    service = PurchaseService(db_session)
+    invoice = service.create(
+        PurchaseCreate(
+            kind="invoice",
+            supplier_id=supplier.id,
+            deal_id=seeded_deal_id,
+            category_id=seeded_category_id,
+            date=date(2026, 3, 1),
+            amount=Decimal("122.00"),
+            description="Licenza",
+            vat_lines=[
+                VatLine(
+                    rate=Decimal("22.00"),
+                    taxable_amount=Decimal("100.00"),
+                    vat_amount=Decimal("22.00"),
+                )
+            ],
+        ),
+        WRITER,
+    )
+    service.create(
+        PurchaseCreate(
+            deal_id=seeded_deal_id,
+            category_id=seeded_category_id,
+            date=date(2026, 3, 2),
+            amount=Decimal("50.00"),
+            description="Treno",
+        ),
+        WRITER,
+    )
+    void = service.create(
+        PurchaseCreate(
+            deal_id=seeded_deal_id,
+            category_id=seeded_category_id,
+            date=date(2026, 3, 3),
+            amount=Decimal("999.00"),
+            description="Annullata",
+        ),
+        WRITER,
+    )
+    assert invoice.cost_amount == Decimal("100.00")
+    service.cancel(void.id, WRITER)
+
+    assert AnalyticsService(db_session).deal_pnl(seeded_deal_id, READER).direct_costs == Decimal(
+        "150.00"
+    )

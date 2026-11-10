@@ -1,4 +1,4 @@
-"""The HTTP surface for costs, categories and period locks -- thin adapters over
+"""The HTTP surface for purchases, categories and period locks -- thin adapters over
 `packages/core`. Business rules are proven there; here we assert statuses, problem
 documents, and that the wire shape matches what the frontend generator expects.
 """
@@ -32,7 +32,7 @@ def _seed_category(logged_in: TestClient) -> str:
 def test_post_creates_and_returns_a_decimal_as_a_string(logged_in: TestClient) -> None:
     category_id = _seed_category(logged_in)
     response = logged_in.post(
-        "/api/costs",
+        "/api/purchases",
         json={
             "category_id": category_id,
             "date": "2026-03-05",
@@ -49,7 +49,7 @@ def test_post_creates_and_returns_a_decimal_as_a_string(logged_in: TestClient) -
 def test_a_negative_amount_is_accepted_and_zero_is_a_422(logged_in: TestClient) -> None:
     category_id = _seed_category(logged_in)
     refund = logged_in.post(
-        "/api/costs",
+        "/api/purchases",
         json={
             "category_id": category_id,
             "date": "2026-03-05",
@@ -61,7 +61,7 @@ def test_a_negative_amount_is_accepted_and_zero_is_a_422(logged_in: TestClient) 
     assert refund.json()["amount"] == "-45.50"
 
     zero = logged_in.post(
-        "/api/costs",
+        "/api/purchases",
         json={
             "category_id": category_id,
             "date": "2026-03-05",
@@ -76,7 +76,7 @@ def test_a_negative_amount_is_accepted_and_zero_is_a_422(logged_in: TestClient) 
 def test_soft_delete_then_restore_over_http(logged_in: TestClient) -> None:
     category_id = _seed_category(logged_in)
     created = logged_in.post(
-        "/api/costs",
+        "/api/purchases",
         json={
             "category_id": category_id,
             "date": "2026-03-05",
@@ -84,12 +84,90 @@ def test_soft_delete_then_restore_over_http(logged_in: TestClient) -> None:
             "description": "x",
         },
     )
-    cost_id = created.json()["id"]
-    assert logged_in.delete(f"/api/costs/{cost_id}").status_code == 204
-    assert logged_in.get("/api/costs").json()["items"] == []
-    restored = logged_in.post(f"/api/costs/{cost_id}/restore")
+    purchase_id = created.json()["id"]
+    assert logged_in.delete(f"/api/purchases/{purchase_id}").status_code == 204
+    assert logged_in.get("/api/purchases").json()["items"] == []
+    restored = logged_in.post(f"/api/purchases/{purchase_id}/restore")
     assert restored.status_code == 200
-    assert [c["id"] for c in logged_in.get("/api/costs").json()["items"]] == [cost_id]
+    assert [c["id"] for c in logged_in.get("/api/purchases").json()["items"]] == [purchase_id]
+
+
+def _supplier(logged_in: TestClient) -> str:
+    response = logged_in.post(
+        "/api/organizations", json={"legal_name": "Vendor Srl", "roles": ["supplier"]}
+    )
+    assert response.status_code == 201, response.text
+    return response.json()["id"]
+
+
+def test_an_invoice_with_its_supplier_and_recap_is_registered_and_filtered(
+    logged_in: TestClient,
+) -> None:
+    category_id = _seed_category(logged_in)
+    supplier_id = _supplier(logged_in)
+    created = logged_in.post(
+        "/api/purchases",
+        json={
+            "kind": "invoice",
+            "supplier_id": supplier_id,
+            "number": "FA/1",
+            "category_id": category_id,
+            "date": "2026-03-05",
+            "amount": "122.00",
+            "description": "Consulenza",
+            "vat_lines": [{"rate": "22.00", "taxable_amount": "100.00", "vat_amount": "22.00"}],
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["kind"] == "invoice" and body["status"] == "registered"
+    assert body["cost_amount"] == "122.00" and body["iva_period"] == "2026-03-05"
+    assert body["vat_lines"][0]["deductible_share"] == "100.00"
+    listed = logged_in.get("/api/purchases", params={"supplier_id": supplier_id, "kind": "invoice"})
+    assert [item["id"] for item in listed.json()["items"]] == [body["id"]]
+
+    mismatch = logged_in.post(
+        "/api/purchases",
+        json={
+            "kind": "invoice",
+            "supplier_id": supplier_id,
+            "category_id": category_id,
+            "date": "2026-03-05",
+            "amount": "130.00",
+            "description": "x",
+            "vat_lines": [{"rate": "22.00", "taxable_amount": "100.00", "vat_amount": "22.00"}],
+        },
+    )
+    assert mismatch.status_code == 422 and mismatch.json()["field"] == "amount"
+
+
+def test_a_purchase_is_cancelled_over_http_and_leaves_the_registered_list(
+    logged_in: TestClient,
+) -> None:
+    category_id = _seed_category(logged_in)
+    created = logged_in.post(
+        "/api/purchases",
+        json={
+            "category_id": category_id,
+            "date": "2026-03-05",
+            "amount": "10.00",
+            "description": "x",
+        },
+    )
+    purchase_id = created.json()["id"]
+    cancelled = logged_in.post(f"/api/purchases/{purchase_id}/cancel")
+    assert cancelled.status_code == 200 and cancelled.json()["status"] == "cancelled"
+    assert logged_in.post(f"/api/purchases/{purchase_id}/cancel").status_code == 409
+    assert logged_in.get("/api/purchases", params={"status": "registered"}).json()["items"] == []
+    assert (
+        logged_in.patch(f"/api/purchases/{purchase_id}", json={"description": "y"}).status_code
+        == 409
+    )
+
+
+def test_no_cost_route_answers(logged_in: TestClient) -> None:
+    assert logged_in.get("/api/costs").status_code == 404
+    assert logged_in.post("/api/costs", json={}).status_code in (404, 405)
 
 
 def test_cost_category_lifecycle_over_http(logged_in: TestClient) -> None:

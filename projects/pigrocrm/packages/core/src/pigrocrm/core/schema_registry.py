@@ -20,8 +20,9 @@ from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.invoices.schemas import InvoiceCreate
 from pigrocrm.core.organizations.schemas import OrganizationCreate
 from pigrocrm.core.people.schemas import PersonCreate
+from pigrocrm.core.purchases.schemas import PurchaseCreate
 from pigrocrm.core.tasks.schemas import TaskCreate
-from pigrocrm.core.timetracking.schemas import CostCreate, TimeEntryCreate
+from pigrocrm.core.timetracking.schemas import TimeEntryCreate
 
 ENTITY_TYPES: tuple[EntityType, ...] = (
     "organization",
@@ -30,7 +31,7 @@ ENTITY_TYPES: tuple[EntityType, ...] = (
     "document",
     "invoice",
     "time_entry",
-    "cost",
+    "purchase",
     "task",
     "contract",
 )
@@ -42,7 +43,7 @@ CREATE_MODELS: dict[str, type[BaseModel]] = {
     "document": DocumentCreate,
     "invoice": InvoiceCreate,
     "time_entry": TimeEntryCreate,
-    "cost": CostCreate,
+    "purchase": PurchaseCreate,
     "task": TaskCreate,
     "contract": ContractCreate,
 }
@@ -97,7 +98,15 @@ EXTRA_NATIVE_FIELDS: dict[str, tuple[str, ...]] = {
         "cost_source",
         "invoice_line_id",
     ),
-    "cost": ("document_id",),
+    # Set by the service and never taken on create: the state, the frozen cost and the buyer's
+    # pack and regime frozen at registration.
+    "purchase": (
+        "status",
+        "cost_amount",
+        "buyer_pack_id",
+        "buyer_pack_version",
+        "buyer_regime_code",
+    ),
     # `status`, `completed_at`, `origin` and `rule` are columns `TaskCreate`
     # deliberately does not declare: the state moves only through `complete`, `cancel`
     # and `reopen`, and `origin`/`rule` say who created the row -- a caller that

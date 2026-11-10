@@ -196,65 +196,6 @@ class TimeTimer(Base, PrimaryKeyMixin, TimestampMixin):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-class Cost(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
-    """Money that actually left, towards somebody else, with a receipt to prove it.
-
-    A cost is not a time entry even though both reduce the margin, and the three
-    differences are the ones that matter (§4.2): a cost is real money out with a
-    document behind it, while an hour's cost is an internal, notional figure derived
-    from a rate you chose yourself; an hour is also *potential revenue* and a cost
-    never is; and an hour has a quantity comparable with an estimate
-    (`budgeted_hours`) while a cost has only money. Merging them would leave half
-    the columns null on every row and turn "hours recorded" -- the central quantity of
-    this slice -- into a filtered aggregate over a table where most rows are not hours.
-
-    `deal_id IS NULL` means a general expense: it enters the period P&L in a row of
-    its own and is **never apportioned** onto any deal (§7.4). Any apportionment key
-    -- on revenue, on hours -- has one precise and unacceptable consequence: a deal's
-    margin would move when a *different* deal was invoiced.
-
-    `amount` is the **total paid**, VAT included. Under the flat-rate regime input VAT
-    is not deductible, so it is cost in every sense and recording the net would
-    understate the cost by 22%. Under an ordinary regime the right choice is the
-    opposite one, and the extension path is a second `importo_iva` column read from
-    `fiscal_profile.regime_code` -- named here as a boundary, not designed (§13).
-
-    `document_id` is the receipt, held in slice 2's document store with its pluggable
-    storage, versioning and hash. The previous system kept the attachment as base64 inside the costs
-    JSON (`parseBase64Payload`); the document store already exists and is not
-    reinvented.
-    """
-
-    __tablename__ = "costs"
-    __table_args__ = (
-        # Zero is refused because it is neither a cost nor a correction; negative is
-        # allowed because it is a refund or a credit note received (§4.4).
-        CheckConstraint("amount <> 0", name="ck_costs_amount_not_zero"),
-        Index("ix_costs_deal_date", "deal_id", "date", postgresql_where=text("deleted_at IS NULL")),
-        # The period P&L reads costs by date across every deal *and* the general
-        # expenses, where `deal_id` is NULL and the two-column index above cannot help.
-        Index("ix_costs_date", "date", postgresql_where=text("deleted_at IS NULL")),
-        Index("ix_costs_custom_fields", "custom_fields", postgresql_using="gin"),
-    )
-
-    deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"), default=None, index=True)
-    # The deal's legal entity when the cost has a deal, `NULL` when it has none: a shared
-    # cost («condivisa», REB-623, spec §1.7), which only the view over every legal entity
-    # shows. No column default: `NULL` is a meaning here, not an omission.
-    legal_entity_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("legal_entities.id"), default=None, index=True
-    )
-    category_id: Mapped[UUID] = mapped_column(
-        ForeignKey("cost_categories.id"), nullable=False, index=True
-    )
-    date: Mapped[dt.date] = mapped_column(Date, nullable=False)
-    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
-    supplier: Mapped[str | None] = mapped_column(String(200), default=None)
-    document_id: Mapped[UUID | None] = mapped_column(ForeignKey("documents.id"), default=None)
-    custom_fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
-
-
 class PeriodLock(Base):
     """A reported month, closed against further writes.
 
@@ -271,7 +212,7 @@ class PeriodLock(Base):
     Closing is not mandatory: somebody who closes nothing gets the previous behaviour,
     and no screen demands a ritual before it works. And closing does **not** freeze
     invoices, which already have their own rules (slice 3 §4) and do not want a second
-    set: this table governs only `time_entries` and `costs`.
+    set: this table governs only `time_entries` and `purchases`.
     """
 
     __tablename__ = "period_locks"

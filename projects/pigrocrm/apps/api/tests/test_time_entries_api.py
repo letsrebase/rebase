@@ -190,7 +190,7 @@ def test_the_openapi_document_describes_the_new_routes(logged_in: TestClient) ->
         "/api/deals/{deal_id}/time-entries",
         "/api/deals/{deal_id}/time-summary",
         "/api/deals/{deal_id}/rates",
-        "/api/costs",
+        "/api/purchases",
         "/api/cost-categories",
         "/api/period-locks",
         "/api/users/{user_id}/rates",

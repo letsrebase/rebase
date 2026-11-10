@@ -16,7 +16,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from pigrocrm.core.money import FACTOR_SCALE, HOURS_SCALE, MONEY_SCALE
+from pigrocrm.core.money import FACTOR_SCALE, HOURS_SCALE
 from pigrocrm.core.validation import SafeStr
 
 # Mirror the columns in models.py.
@@ -186,76 +186,6 @@ class TimerRead(BaseModel):
     description: str
     billable: bool
     started_at: datetime
-
-
-class CostCreate(BaseModel):
-    deal_id: UUID | None = None
-    # Read only for a cost without a deal (REB-623, spec §1.7): a cost with a deal takes
-    # the deal's legal entity and refuses a different one; without a deal, `None` is a shared
-    # cost («condivisa») and an id ties it to one legal entity.
-    legal_entity_id: UUID | None = None
-    category_id: UUID
-    date: dt.date
-    amount: Decimal = Field(max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_SCALE)
-    description: SafeStr = Field(max_length=DESCRIPTION_MAX_LENGTH)
-    supplier: SafeStr | None = Field(default=None, max_length=SUPPLIER_MAX_LENGTH)
-    document_id: UUID | None = None
-    custom_fields: dict[str, Any] = {}
-
-
-class CostUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    deal_id: UUID | None = None
-    legal_entity_id: UUID | None = None
-    category_id: UUID | None = None
-    date: dt.date | None = None
-    amount: Decimal | None = Field(
-        default=None, max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_SCALE
-    )
-    description: SafeStr | None = Field(default=None, max_length=DESCRIPTION_MAX_LENGTH)
-    supplier: SafeStr | None = Field(default=None, max_length=SUPPLIER_MAX_LENGTH)
-    document_id: UUID | None = None
-    custom_fields: dict[str, Any] | None = None
-
-
-class CostRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    deal_id: UUID | None
-    legal_entity_id: UUID | None
-    category_id: UUID
-    date: dt.date
-    amount: Decimal
-    description: str
-    supplier: str | None
-    document_id: UUID | None
-    custom_fields: dict[str, Any]
-    created_at: datetime
-    updated_at: datetime
-
-
-class CostListQuery(BaseModel):
-    deal_id: UUID | None = None
-    # One legal entity's costs (REB-623): a shared cost, `NULL`, appears only when none is
-    # asked for, which is the view over every legal entity.
-    legal_entity_id: UUID | None = None
-    # `True` selects only general expenses (`deal_id IS NULL`). Needed because
-    # `deal_id=None` already means "do not filter", and §7.4 gives general expenses a
-    # row of their own that has to be selectable.
-    only_general: bool = False
-    category_id: UUID | None = None
-    date_from: dt.date | None = None
-    date_to: dt.date | None = None
-    custom: dict[str, Any] | None = None
-    limit: int = Field(default=50, ge=1, le=200)
-    cursor: UUID | None = None
-
-
-class CostPage(BaseModel):
-    items: list[CostRead]
-    next_cursor: UUID | None
 
 
 class CostCategoryCreate(BaseModel):
