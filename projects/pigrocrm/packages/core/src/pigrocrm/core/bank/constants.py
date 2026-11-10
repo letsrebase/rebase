@@ -10,3 +10,6 @@ STATEMENT_GRACE_DAYS = 7
 # quarter.
 MONTHLY_PERIOD_DAYS = 31
 QUARTERLY_PERIOD_DAYS = 92
+# A payment marked by hand and the movement that proves it are within this many days of each
+# other: a movement months away from a payment of the same amount is a coincidence (REB-1042).
+ADOPT_WINDOW_DAYS = 45

@@ -189,6 +189,11 @@ _FORBIDDEN: dict[Method, str] = {
     ("BankAccountService", "archive_bank_account"): "REB-1025: same as `list_bank_accounts`",
     ("BankStatementReadService", "list_statements"): "REB-1025: same as `list_bank_accounts`",
     ("BankStatementReadService", "list_movements"): "REB-1025: same as `list_bank_accounts`",
+    ("MovementMatchService", "get_movement"): "REB-1042: same as `list_bank_accounts`",
+    ("MovementMatchService", "propose_match"): (
+        "REB-1042: same as `list_bank_accounts`; the tool `propose_movement_match` settles "
+        "nothing, a person confirms in «Cassa»"
+    ),
     ("DocumentService", "import_bytes"): (
         "archivia byte che il CRM non ha prodotto, presi dal Drive del titolare a "
         "carico della sua quota e del suo consenso (slice 9 §4.2: `import_drive_file`); "
@@ -970,6 +975,34 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
     ("AccountantExportService", "describe_parts"): (
         "REB-1028: the export page lists the parts a build would hold before it is made; an agent "
         "reads the index of the export it built, which names every part and every omission"
+    ),
+    ("MovementMatchService", "confirm"): (
+        "REB-1042: confirming settles the items with the movement as evidence, a person's act "
+        "like `accept_proposal`: the token that proposed it, or read the bank's text, must not "
+        "close the chain. `Actor.require_person` refuses every agent credential, over REST too"
+    ),
+    ("MovementMatchService", "undo"): (
+        "REB-1042: reopening what a person confirmed is a person's act, as confirming it was"
+    ),
+    ("MovementMatchService", "list_open_items"): (
+        "REB-1042: the panel's search of open items; an agent reads `get_bank_movement`'s "
+        "candidates and `list_due_items` for the rest"
+    ),
+    ("MovementMatchService", "preview"): (
+        "REB-1042: the panel's sums for a selection a person is about to confirm; an agent's "
+        "proposal is checked by `propose_movement_match` itself, which refuses what does not cover"
+    ),
+    ("MovementMatchService", "propose_for_import"): (
+        "REB-1042: the importer's step, with no actor: a new movement with one fit beyond doubt "
+        "gets a proposal; it settles nothing and an agent has no statement to import"
+    ),
+    ("DueItemService", "settle_from_movement"): (
+        "REB-1042: the writer's half of confirming a match, which `MovementMatchService` "
+        "authorises as a person's act; `settle_due_item` is the tool for a payment by hand"
+    ),
+    ("DueItemService", "adopt_for_movement"): "REB-1042: same as `settle_from_movement`",
+    ("DueItemService", "release_for_movement"): (
+        "REB-1042: the writer's half of undoing a match, same as `settle_from_movement`"
     ),
     ("ProposalService", "accept"): "REB-806: deciding a proposal is a person's act. The "
     "token that read the mail (text written by somebody else) would also have proposed it, "

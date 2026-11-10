@@ -309,6 +309,11 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "get_bank_account_coverage",
         "import_statement",
         "revert_statement",
+        # Matching a bank movement to the due items it pays (REB-1042): an agent reads a movement
+        # with its ranked candidates and proposes a match, and a person confirms or undoes it
+        # (the two person-only actions below). The same position as the movements themselves.
+        "get_bank_movement",
+        "propose_movement_match",
     }
 )
 
@@ -336,6 +341,10 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         # Decisions a person takes about what an agent proposed (REB-806).
         "accept_proposal",
         "reject_proposal",
+        # Settling a due item with a bank movement as its evidence, and taking that back: a
+        # person's act, like accepting any other proposal (REB-1042, brief « The matching panel »).
+        "confirm_movement_match",
+        "undo_movement_match",
         # The freelancer's signature makes an engagement active: a person records it, never the
         # credential that read the letter's text (collaborators design § 6).
         "activate_engagement",
@@ -511,6 +520,10 @@ ACTION_LABELS: dict[str, str] = {
     "get_bank_account_coverage": "leggere gli estratti conto che mancano a un conto",
     "list_statements": "leggere gli estratti conto di un conto",
     "list_bank_movements": "leggere i movimenti di un conto",
+    "get_bank_movement": "leggere un movimento con le scadenze che potrebbe pagare",
+    "propose_movement_match": "proporre a quali scadenze corrisponde un movimento",
+    "confirm_movement_match": "confermare l'abbinamento di un movimento a delle scadenze",
+    "undo_movement_match": "annullare l'abbinamento di un movimento",
     "create_bank_account": "aggiungere un conto bancario",
     "update_bank_account": "modificare un conto bancario",
     "archive_bank_account": "archiviare un conto bancario",

@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from pigrocrm.core.bank.constants import UNMATCHED_OLD_DAYS
 from pigrocrm.core.bank.iban import is_valid_iban, normalise_iban
+from pigrocrm.core.bank.match_schemas import MatchCandidate, MovementMatchRead
 from pigrocrm.core.bank.models import (
     BALANCE_PRECISION,
     NAME_MAX_LENGTH,
@@ -220,6 +221,7 @@ class StatementImportResult(BaseModel):
     statement: StatementRead
     added: int
     duplicates: int
+    proposed: int = Field(description="How many of the new movements were proposed to a due item")
 
 
 class MovementRead(BaseModel):
@@ -233,8 +235,10 @@ class MovementRead(BaseModel):
     amount: Decimal
     currency: str
     counterparty_name: str | None
+    counterparty_iban: str | None
     description: str | None
     bank_reference: str | None
+    end_to_end_id: str | None = Field(description="The id the payer gave the payment, when it did")
     state: MovementState
     ignored_reason: str | None
     unmatched_days: int | None = Field(
@@ -244,6 +248,19 @@ class MovementRead(BaseModel):
         description=f"Unmatched for at least {UNMATCHED_OLD_DAYS} days"
     )
     statement_ids: list[UUID]
+    match: MovementMatchRead | None = Field(
+        description="The live proposal, or the confirmed match, of this movement"
+    )
+
+
+class MovementDetail(BaseModel):
+    """One movement with what the matching panel draws: its live proposal or confirmed match
+    (`movement.match`), the candidates the server ranked (empty once it is matched, a transfer
+    or ignored) and what was dismissed or undone before, its trace."""
+
+    movement: MovementRead
+    candidates: list[MatchCandidate]
+    history: list[MovementMatchRead]
 
 
 class MovementPage(BaseModel):

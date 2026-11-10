@@ -121,6 +121,9 @@ FREE_TEXT_TOOLS: frozenset[str] = frozenset(
         "archive_bank_account",
         "list_statements",
         "list_bank_movements",
+        # A movement's text and counterparty, and the note an agent wrote with a proposal.
+        "get_bank_movement",
+        "propose_movement_match",
         # Engagements with freelancers: the role is typed by whoever created the engagement,
         # and the freelancer's organization name comes with the tax data.
         "create_engagement",

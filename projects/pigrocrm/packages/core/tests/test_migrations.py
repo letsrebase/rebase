@@ -4244,3 +4244,42 @@ def test_0101_creates_the_iva_period_locks_table_under_the_row_policy(
         assert _table_shape(url, "iva_period_locks")[0] is False
         upgrade(config, "0101")
         assert _table_shape(url, "iva_period_locks")[0] is True
+
+
+def _evidence_column(url: str) -> bool:
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            return bool(
+                connection.execute(
+                    text(
+                        "SELECT count(*) > 0 FROM information_schema.columns WHERE "
+                        "table_name = 'due_item_settlements' AND column_name = 'bank_movement_id'"
+                    )
+                ).scalar_one()
+            )
+    finally:
+        engine.dispose()
+
+
+def test_0102_creates_the_movement_match_tables_and_the_settlement_evidence_column(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1042: two new tables under the row policy and one nullable column on the payments;
+    nothing is backfilled, and it reverses and comes back."""
+    tables = ("movement_matches", "movement_match_items")
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0101")
+        assert all(_table_shape(url, table)[0] is False for table in tables)
+        assert _evidence_column(url) is False
+        upgrade(config, "0102")
+        for table in tables:
+            assert _table_shape(url, table) == (True, True, {"legal_entity_scope"})
+        assert _evidence_column(url) is True
+        downgrade(config, "0101")
+        assert all(_table_shape(url, table)[0] is False for table in tables)
+        assert _evidence_column(url) is False
+        upgrade(config, "0102")
+        assert _table_shape(url, "movement_matches")[0] is True

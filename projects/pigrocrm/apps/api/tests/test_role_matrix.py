@@ -204,6 +204,27 @@ ROWS: list[Row] = [
     Row("POST", "/api/bank-accounts/{account_id}/archive", admin_only=True),
     Row("POST", "/api/bank-accounts/{account_id}/statements", admin_only=True, multipart=True),
     Row("POST", "/api/bank-statements/{statement_id}/revert", admin_only=True),
+    # --- matching a movement to the due items it pays (REB-1042): `require_admin`, and a
+    # person's act for confirming and undoing (bank/matching.py) --------------------------
+    Row(
+        "POST",
+        "/api/bank-movements/{movement_id}/match-preview",
+        admin_only=True,
+        body={"due_item_ids": ["__FAKE__"]},
+    ),
+    Row(
+        "POST",
+        "/api/bank-movements/{movement_id}/match-proposal",
+        admin_only=True,
+        body={"due_item_ids": ["__FAKE__"]},
+    ),
+    Row(
+        "POST",
+        "/api/bank-movements/{movement_id}/match",
+        admin_only=True,
+        body={"due_item_ids": ["__FAKE__"]},
+    ),
+    Row("POST", "/api/bank-movements/{movement_id}/unmatch", admin_only=True, body={}),
     Row("POST", "/api/cost-categories", admin_only=True, body={"name": "matrice-cat"}),
     Row("POST", "/api/cost-categories/seed", admin_only=True),
     Row("PATCH", "/api/cost-categories/{category_id}", admin_only=True, body={}),

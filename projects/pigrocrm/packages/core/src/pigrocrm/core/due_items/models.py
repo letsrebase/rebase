@@ -251,7 +251,7 @@ class DueItemSettlement(Base, PrimaryKeyMixin, TimestampMixin):
 
     A settlement is never deleted: **reversing** it stamps `reversed_at`, and only a live one
     (`reversed_at IS NULL`) counts toward what remains. A settlement is a cash fact: no month
-    lock applies to it (spec § 3).
+    lock applies to it (spec § 3). `bank_movement_id` is the movement that proves it (REB-1042).
     """
 
     __tablename__ = "due_item_settlements"
@@ -260,6 +260,12 @@ class DueItemSettlement(Base, PrimaryKeyMixin, TimestampMixin):
             ["due_item_id", "legal_entity_id"],
             ["due_items.id", "due_items.legal_entity_id"],
             name="fk_due_item_settlements_same_legal_entity",
+        ),
+        # The movement that proves the payment: the same legal entity as the item's.
+        ForeignKeyConstraint(
+            ["bank_movement_id", "legal_entity_id"],
+            ["bank_movements.id", "bank_movements.legal_entity_id"],
+            name="fk_due_item_settlements_movement_same_legal_entity",
         ),
         CheckConstraint("amount <> 0", name="ck_due_item_settlements_amount_not_zero"),
         CheckConstraint(
@@ -276,6 +282,7 @@ class DueItemSettlement(Base, PrimaryKeyMixin, TimestampMixin):
         ),
         Index("ix_due_item_settlements_due_item_id", "due_item_id"),
         Index("ix_due_item_settlements_settled_on", "legal_entity_id", "settled_on"),
+        Index("ix_due_item_settlements_bank_movement_id", "bank_movement_id"),
     )
 
     due_item_id: Mapped[UUID] = mapped_column(nullable=False)
@@ -287,6 +294,9 @@ class DueItemSettlement(Base, PrimaryKeyMixin, TimestampMixin):
     account_currency: Mapped[str | None] = mapped_column(String(3), default=None)
     settled_on: Mapped[dt.date] = mapped_column(Date, nullable=False)
     value_date: Mapped[dt.date | None] = mapped_column(Date, default=None)
+    # The bank movement that proves the payment, when a match wrote or adopted it (REB-1042); null
+    # for a payment marked by hand. Only `MovementMatchService` sets and clears it.
+    bank_movement_id: Mapped[UUID | None] = mapped_column(default=None)
     note: Mapped[str | None] = mapped_column(String(TEXT_MAX_LENGTH), default=None)
     recorded_by_id: Mapped[UUID | None] = mapped_column(default=None)
     recorded_by_type: Mapped[str] = mapped_column(String(10), nullable=False)

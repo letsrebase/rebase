@@ -185,6 +185,10 @@ FORBIDDEN = (
     "archive_bank_account",
     "list_statements",
     "list_bank_movements",
+    # REB-1042: reading a movement with its ranked candidates and proposing a match; confirming
+    # and undoing are person-only and have no tool at all.
+    "get_bank_movement",
+    "propose_movement_match",
     # REB-1019: sending a document for signature mails the freelancer a link to a legal document,
     # and the other three act on one already sent: resending its mail, cancelling a framework
     # agreement (its envelope too) and recording a notice that ends it. Their tools live in
@@ -358,6 +362,10 @@ FORBIDDEN_SERVICE_CALLS = (
     "archive_bank_account",
     "list_statements",
     "list_movements",
+    # REB-1042: `MovementMatchService.get_movement` and `.propose`, behind `get_bank_movement` and
+    # `propose_movement_match`; `confirm` and `undo` have no tool and are person-only.
+    "get_movement",
+    "propose_match",
     "discover",
     # `GmailSyncService.suggest_organizations`, behind `suggest_organizations_from_gmail`
     # (REB-223): the same family as `discover`.

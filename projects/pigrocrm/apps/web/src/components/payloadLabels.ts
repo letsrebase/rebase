@@ -149,6 +149,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   period_start: 'Inizio del periodo',
   scope: 'Ambito',
   purposes: 'Scopi',
+  proposed: 'Movimenti con una proposta',
   security: 'Sicurezza',
   space_owned: 'Casella dello spazio',
   text_version: 'Versione del testo',

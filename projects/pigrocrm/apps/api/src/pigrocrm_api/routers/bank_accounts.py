@@ -33,7 +33,8 @@ from pigrocrm.core.bank.statements import (
     StatementImportService,
 )
 from pigrocrm.core.errors import ValidationFailed
-from pigrocrm_api.deps import ActorDep, SessionDep, get_actor, module_guard
+from pigrocrm.core.modules import enabled_modules
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor, module_guard
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.query_params import LEGAL_ENTITY_QUERY_DESCRIPTION, ListParams
 from pigrocrm_api.uploads import read_upload_with_fields, single_file_body
@@ -134,12 +135,17 @@ def list_statements(
     ),
 )
 async def import_statement(
-    account_id: UUID, request: Request, session: SessionDep, actor: ActorDep
+    account_id: UUID,
+    request: Request,
+    session: SessionDep,
+    actor: ActorDep,
+    settings: SettingsDep,
 ) -> StatementImportResult:
     """Reads the file into the account: the movements it already holds are linked, not
     stored again. The format is told by the file's content. A file that states no period
-    needs `period_from` and `period_to` as form fields. The role is checked before the body
-    is read."""
+    needs `period_from` and `period_to` as form fields. A new movement that fits one open due
+    item beyond doubt is proposed to it (`proposed` counts them); nothing is settled. The role
+    is checked before the body is read."""
     actor.require_admin("import_statement")
     data, _content_type, fields = await read_upload_with_fields(
         request, STATEMENT_SIZE_MAX, "period_from", "period_to"
@@ -153,6 +159,7 @@ async def import_statement(
         actor,
         period_from=period_from,
         period_to=period_to,
+        modules=enabled_modules(settings),
     )
 
 

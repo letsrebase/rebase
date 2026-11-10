@@ -1,9 +1,13 @@
 """The bank tools over the MCP client (REB-1025): `list_bank_accounts`, `create_bank_account`,
 `update_bank_account`, `archive_bank_account`, `list_statements` and `list_bank_movements` exist
 only on a `full_access` token's surface and only while the `cash` module is on, and even then an
-administrator's alone. The file upload and the revert are REST only."""
+administrator's alone. The file upload and the revert are REST only. `get_bank_movement` and
+`propose_movement_match` (REB-1042) are the same: an agent reads a movement and proposes the due
+items it pays, and has no tool to confirm or undo."""
 
+import datetime as dt
 import json
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -14,6 +18,10 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor, Role
 from pigrocrm.core.bank.statements import StatementImportService
 from pigrocrm.core.config import Settings
+from pigrocrm.core.due_items.schemas import DueItemCreate
+from pigrocrm.core.due_items.service import DueItemService
+from pigrocrm.core.legal_entities.repository import LegalEntityRepository
+from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.provenance import PROVENANCE_TEXT_FREE
 from pigrocrm_mcp.server import build_server
@@ -25,6 +33,8 @@ TOOLS = {
     "archive_bank_account",
     "list_statements",
     "list_bank_movements",
+    "get_bank_movement",
+    "propose_movement_match",
 }
 IBAN = "IT60X0542811101000000123456"
 CAMT = (
@@ -200,3 +210,62 @@ async def test_a_member_who_is_not_an_administrator_is_refused(
     async with Client(_server(mcp_session, tmp_path, role="collaborator")) as client:
         result = await client.call_tool("list_bank_accounts", {})
         assert result.is_error
+
+
+async def test_an_agent_reads_a_movement_and_proposes_its_items_and_has_no_way_to_confirm(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    entity = LegalEntityRepository(mcp_session).default()
+    assert entity is not None
+    customer = Organization(legal_name="Acme S.r.l.", legal_entity_id=entity.id)
+    mcp_session.add(customer)
+    mcp_session.flush()
+    item = DueItemService(mcp_session).create(
+        DueItemCreate(
+            legal_entity_id=entity.id,
+            direction="in",
+            organization_id=customer.id,
+            amount=Decimal("1220.00"),
+            source_kind="sales_invoice",
+            source_id=uuid4(),
+            own_date=dt.date(2026, 10, 20),
+        )
+    )
+    mcp_session.commit()
+    async with Client(_server(mcp_session, tmp_path)) as client:
+        made = await _create(client)
+        StatementImportService(mcp_session).import_file(
+            UUID(made["id"]), CAMT.read_bytes(), Actor(id=None, type="system", role="admin")
+        )
+        listed = _payload(await client.call_tool("list_bank_movements", {"account_id": made["id"]}))
+        movement = next(m for m in listed["items"] if m["amount"] == "1220.00")
+        # The import already proposed the item, as `system`.
+        assert movement["match"]["state"] == "proposed"
+
+        detail = _payload(
+            await client.call_tool("get_bank_movement", {"movement_id": movement["id"]})
+        )
+        assert detail["candidates"][0]["items"][0]["due_item_id"] == str(item.id)
+        assert detail["provenance"] == PROVENANCE_TEXT_FREE
+
+        proposed = _payload(
+            await client.call_tool(
+                "propose_movement_match",
+                {
+                    "movement_id": movement["id"],
+                    "due_item_ids": [str(item.id)],
+                    "note": "stesso importo e stesso cliente",
+                },
+            )
+        )
+        match = proposed["movement"]["match"]
+        assert (match["state"], match["proposed_by_type"]) == ("proposed", "mcp")
+        assert proposed["provenance"] == PROVENANCE_TEXT_FREE
+        short = await client.call_tool(
+            "propose_movement_match",
+            {"movement_id": movement["id"], "due_item_ids": []},
+        )
+        assert short.is_error
+        tools = {tool.name for tool in (await client.list_tools()).tools}
+        assert not tools & {"confirm_movement_match", "undo_movement_match", "match_movement"}
+    assert DueItemService(mcp_session).repo.live_settlements(item.id) == []

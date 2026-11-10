@@ -107,7 +107,7 @@ export function UploadStatementDialog({ open, onOpenChange, accountId }: Props) 
         {result !== null ? (
           <div className="space-y-4">
             <p role="status" className="text-sm">
-              {importSentence(result.added, result.duplicates)}
+              {importSentence(result.added, result.duplicates, result.proposed)}
             </p>
             <DialogFooter>
               <Button onClick={() => onOpenChange(false)}>Chiudi</Button>
