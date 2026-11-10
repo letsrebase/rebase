@@ -120,6 +120,7 @@ _READS: dict[Method, str] = {
     ): "writes through `OrganizationService.update`, which records",
     ("DueItemService", "get"): "reads an item; the role check only gates the fiscal kinds",
     ("DueItemService", "list"): "reads items; the role check only gates the fiscal kinds",
+    ("ForecastService", "refresh_all"): "the daily job, a system step: forecasts are derived rows",
     ("GmailAttachmentService", "attachment_text"): "reads an attachment and stores nothing",
     ("GmailSyncService", "discover"): "asks Gmail, writes nothing",
     ("GmailSyncService", "suggest_organizations"): "asks Gmail, writes nothing",

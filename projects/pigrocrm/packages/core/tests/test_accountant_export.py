@@ -403,7 +403,7 @@ def _items_of(session: Session):
 
     from pigrocrm.core.due_items.models import DueItem
 
-    return list(session.scalars(select(DueItem)))
+    return list(session.scalars(select(DueItem).where(DueItem.source_kind == "sales_invoice")))
 
 
 # --- parts left out --------------------------------------------------------------------
