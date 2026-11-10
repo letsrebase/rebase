@@ -424,6 +424,8 @@ class InboxClassifier:
                 item.read_attempts = max(0, item.read_attempts - 1)
             self._unread(item, str(exc.details.get("reason") or exc.message))
             return
+        if self._acted_on(item):
+            return
         if read.kind == "other":
             item.kind = "other"
             item.reason = read.reason or UNKNOWN_DOCUMENT_REASON
@@ -457,9 +459,21 @@ class InboxClassifier:
         if item is not None:
             self._unread(item, sentence)
 
+    def _acted_on(self, item: InboxItem) -> bool:
+        """Whether a person or an agent said something about the item while the model was reading
+        it (discarded it, marked a copy, said what it is): what the model read then changes
+        nothing, since the act is the later and the deliberate one (REB-985). The row is read
+        again from the database, which the model's wait has left stale."""
+        self.session.flush()  # a try not counted (read_attempts) is the caller's, and is kept
+        self.session.refresh(item)
+        return item.state != "new" or item.kind is not None
+
     def _unread(self, item: InboxItem, sentence: str) -> None:
         """The model could not give a reading: the item stays unclassified, with the sentence,
-        and a later run (or a person, or an agent) reads it again."""
+        and a later run (or a person, or an agent) reads it again. An item somebody acted on
+        meanwhile is left as it is."""
+        if self._acted_on(item):
+            return
         item.reason = f"Lettura automatica non riuscita: {sentence}. Resta da leggere"
         item.read_started_at = None
         self.session.commit()

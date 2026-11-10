@@ -255,7 +255,7 @@ waiting on the item is a person's (REB-984).** `discard`, `mark_duplicate` and `
 `proposed` with a 409, and record an activity entry on the item (that timeline is where «by whom» lives; the row has no
 column for it). A person's act rejects a pending proposal on the item through `ProposalService.reject`; an agent's
 is refused, since an agent never decides a proposal. Nothing is written as a record, and a kind a FatturaPA decided
-(`parsed_fields` set) does not change. «In arrivo» is `features/inbox/`: `labels.ts` holds the words and the
+(`parsed_fields` set) does not change. Marking a copy re-points every copy the item had under `db/scope.py::widened`, the caller's own scope restored after, so a copy their scope hides never keeps pointing at a copy; and the classifier asks `_acted_on` after the model returns, so a reading that completes after a person discarded the item, marked a copy or said what it is changes nothing (REB-985). «In arrivo» is `features/inbox/`: `labels.ts` holds the words and the
 `TABS`, `queries.ts` the keyset lists (one per state of a tab, merged by id) and the waiting count the sidebar
 draws, and `IssuedReviewDialog` runs the issued-invoice review of `features/invoices/ImportReview.tsx` on an
 item's own file. The model's state is read from `GET /api/settings/ai-model`, which only an unscoped administrator
