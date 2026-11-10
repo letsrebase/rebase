@@ -656,3 +656,23 @@ def test_an_engagement_that_was_never_sent_becomes_active_with_a_hand_signed_let
     assert desk.engagement_state() == "draft"
     manual.upload_signed_copy(letter.id, HAND_SIGNED_PDF, "application/pdf", None, ADMIN)
     assert desk.engagement_state() == "active"
+
+
+@needs_binaries
+def test_a_document_that_left_for_signature_cannot_be_deleted_from_under_its_envelope(
+    desk: Desk,
+) -> None:
+    from pigrocrm.core.documents.service import DocumentService
+
+    documents = DocumentService(desk.session, desk.world.storage)
+    letter = desk.document("engagement_letter")
+    # Written and never sent: it may still be deleted.
+    desk.service.send_engagement(desk.engagement.id, ADMIN)
+    framework = desk.document("framework_agreement")
+    for waiting in (framework, desk.document("engagement_letter")):
+        with pytest.raises(Conflict, match="si annulla"):
+            documents.soft_delete(waiting.id, ADMIN)
+    assert letter.id == desk.document("engagement_letter").id
+    desk.sign(framework)
+    with pytest.raises(Conflict, match="si annulla"):
+        documents.soft_delete(framework.id, ADMIN)

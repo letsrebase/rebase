@@ -710,6 +710,9 @@ class SigningService:
         self.document(document_id)
         zone = self.settings.timezone
         try:
+            # Engagement first, then the document: the order every other writer keeps.
+            if (engagement_id := self.document(document_id).engagement_id) is not None:
+                self.lock_engagement(engagement_id)
             document = self.lock_document(document_id)
             if document.signature_state not in SENDABLE or document.envelope_id is not None:
                 raise Conflict(

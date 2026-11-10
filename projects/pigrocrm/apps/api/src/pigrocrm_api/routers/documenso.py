@@ -46,6 +46,7 @@ from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.documenso.client import WebhookBody, outcome_from_webhook, parse_external_id
 from pigrocrm.core.documenso.routing import SpaceRoute, route_envelope
 from pigrocrm.core.documents.models import Document
+from pigrocrm.core.storage import DocumentStorage
 from pigrocrm.core.storage.factory import space_storage_from_settings
 from pigrocrm_api.deps import TenantsRegistryDep, _space_registry, space_session_factory
 from pigrocrm_api.errors import PROBLEM_RESPONSES
@@ -113,8 +114,19 @@ class WebhookAck(BaseModel):
     ok: bool = True
 
 
+class _NoStorage:
+    """The storage of a service that only applies an outcome: `apply` reads and writes rows and
+    touches no file, and building the real backend (a Drive round-trip on a space that chose
+    Drive) is not done in the webhook's own request."""
+
+    def _refuse(self, *_args: object, **_kwargs: object) -> Any:
+        raise RuntimeError("the webhook's apply step has no storage")
+
+    put = get = delete = signed_url = _refuse
+
+
 def _open_space(
-    settings: Settings, route: SpaceRoute, factory: SigningFactory
+    settings: Settings, route: SpaceRoute, factory: SigningFactory, *, with_storage: bool = True
 ) -> tuple[Session, SigningService]:
     """A session on the routed space (the root for `slug` `None`), scoped to the system, with the
     space's effective settings and storage: what `get_request_settings` and `get_storage` give a
@@ -125,8 +137,12 @@ def _open_space(
         # A session with no scope reads nothing: row-level security keys on it.
         bind_scope(session, Actor.system())
         effective = _space_registry(settings).effective_settings(slug, session, settings)
-        storage = space_storage_from_settings(
-            effective, slug, session_factory=lambda: space_session_factory(slug, settings)()
+        storage: DocumentStorage = (
+            space_storage_from_settings(
+                effective, slug, session_factory=lambda: space_session_factory(slug, settings)()
+            )
+            if with_storage
+            else _NoStorage()
         )
         return session, factory(session, storage, effective, route.tenant_id)
     except Exception:
@@ -167,7 +183,7 @@ def documenso_webhook(
         if route is None:
             _log.info("webhook for envelope %s ignored: not ours", outcome.envelope_id)
             return WebhookAck()
-        session, signing = _open_space(settings, route, factory)
+        session, signing = _open_space(settings, route, factory, with_storage=False)
         try:
             # The document the externalId names must hold this very envelope: the hub's own
             # envelopes, a forged externalId and a deleted space's leftovers all stop here.

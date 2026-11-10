@@ -16,8 +16,11 @@ from collections.abc import Iterator
 from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
+from uuid import UUID
 
 import pytest
+from fakes.fake_documenso import FakeDocumenso
 from fakes.legal_entity_fixtures import committed_default_legal_entity
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
@@ -396,3 +399,123 @@ def test_the_pass_deletes_the_exports_past_thirteen_months_and_says_so(
             connection.execute(
                 text("delete from activities where entity_type = 'accountant_export'")
             )
+
+
+# ---- the signature recovery (REB-1019) ----------------------------------------------------------
+
+
+def _a_framework_agreement_out_for_signature(
+    settings: Settings, slug: str | None, fake: Any
+) -> UUID:
+    """A framework agreement `sent` on an envelope the fake Documenso says the freelancer signed,
+    as a lost webhook leaves it."""
+    from datetime import UTC, datetime
+
+    from pigrocrm.core.documents.models import Document
+
+    envelope_id = fake.client().create(
+        title="Contratto quadro",
+        external_id="root:00000000-0000-7000-8000-000000000000",
+        filename="contratto-quadro.pdf",
+        pdf=b"%PDF-1.7\nx",
+        signer_email="ada@example.com",
+        signer_name="Ada",
+        fields=[{"type": "SIGNATURE", "page": 1}],
+    )
+    fake.client().distribute(envelope_id)
+    fake.sign(envelope_id, datetime(2026, 11, 3, 10, 0, tzinfo=UTC))
+    with _engine(_url(settings, slug)) as engine, session_factory(engine)() as session:
+        freelancer = Organization(
+            legal_name="Ada Lovelace", country="IT", roles=["freelancer"], custom_fields={}
+        )
+        session.add(freelancer)
+        session.flush()
+        document = Document(
+            customer_id=freelancer.id,
+            type="framework_agreement",
+            title="Contratto quadro",
+            letter_type="ordinary",
+            signature_state="sent",
+            envelope_id=envelope_id,
+            envelope_item_id=fake.envelopes[envelope_id].item_id,
+            sent_at=datetime.now(UTC),
+        )
+        session.add(document)
+        session.commit()
+        return document.id
+
+
+def _forget_signing(settings: Settings) -> None:
+    for slug in (None, *SPACES):
+        with _engine(_url(settings, slug)) as engine, engine.begin() as connection:
+            connection.execute(text("delete from activities where entity_type = 'document'"))
+            connection.execute(text("delete from document_versions"))
+            connection.execute(text("delete from documents"))
+
+
+def _state(settings: Settings, slug: str | None, document_id: UUID) -> str | None:
+    with _engine(_url(settings, slug)) as engine, engine.connect() as connection:
+        return connection.execute(
+            text("select signature_state from documents where id = :id"), {"id": document_id}
+        ).scalar_one()
+
+
+def test_the_daily_pass_recovers_the_signatures_a_lost_webhook_left_in_every_space(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    fake = FakeDocumenso()
+    local = settings.model_copy(
+        update={
+            "storage_local_root": str(tmp_path),
+            "documenso_url": "http://documenso.test",
+            "documenso_api_token": "api_fake0123456789",
+        }
+    )
+    monkeypatch.setattr(cli, "get_settings", lambda: local)
+    monkeypatch.setattr(
+        "pigrocrm.core.cli.signing.client_from_settings", lambda *_args, **_kwargs: fake.client()
+    )
+    waiting = {
+        slug: _a_framework_agreement_out_for_signature(settings, slug, fake)
+        for slug in (None, *SPACES)
+    }
+    try:
+        # A rehearsal only counts: nothing reaches Documenso, nothing moves.
+        assert cli.main(["automations", "--dry-run"]) == 0
+        assert "signatures to look at 1 (dry run)" in capsys.readouterr().out
+        assert fake.called("get") == 0
+        assert {_state(settings, slug, doc) for slug, doc in waiting.items()} == {"sent"}
+
+        assert cli.main(["automations"]) == 0
+
+        out = capsys.readouterr().out
+        for label in ("root", *SPACES):
+            assert f"{label}: signatures recovered 1" in out
+        assert {_state(settings, slug, doc) for slug, doc in waiting.items()} == {"signed"}
+    finally:
+        _forget_signing(settings)
+
+
+def test_a_document_documenso_cannot_be_asked_about_fails_the_pass(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    fake = FakeDocumenso()
+    local = settings.model_copy(update={"storage_local_root": str(tmp_path)})
+    monkeypatch.setattr(cli, "get_settings", lambda: local)
+    monkeypatch.setattr(
+        "pigrocrm.core.cli.signing.client_from_settings", lambda *_args, **_kwargs: fake.client()
+    )
+    waiting = _a_framework_agreement_out_for_signature(settings, None, fake)
+    fake.envelopes.clear()
+    try:
+        assert cli.main(["automations", "--slug", "root"]) == 1
+        assert "root: signatures not confirmed with Documenso 1" in capsys.readouterr().err
+        assert _state(settings, None, waiting) == "sent"
+    finally:
+        _forget_signing(settings)

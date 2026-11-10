@@ -82,6 +82,14 @@ const KIND_LABELS: Record<string, string> = {
   // The month's report of an engagement (REB-1002): received, then approved by a person.
   monthly_report_requested: 'Rendiconto mensile ricevuto',
   monthly_report_approved: 'Rendiconto mensile approvato',
+  // A letter's signature (REB-1019): out for signature, signed, cancelled, the mail sent again, a
+  // notice recorded on a framework agreement, and a signed PDF uploaded when there is no Documenso.
+  signing_sent: 'Inviato per la firma',
+  signing_signed: 'Firmato',
+  signing_cancelled: 'Firma annullata',
+  signing_mail_resent: 'Mail per la firma rimandata',
+  notice_recorded: 'Disdetta registrata',
+  signed_copy_uploaded: 'PDF firmato caricato',
   // The hub's company requests (REB-866): a request filed as a new deal, and one linked by
   // an admin to a deal the CRM already had.
   'hub.request_received': "Richiesta dall'hub ricevuta",

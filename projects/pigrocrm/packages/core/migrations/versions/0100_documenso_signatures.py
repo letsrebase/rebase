@@ -111,15 +111,19 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_index(FRAMEWORK_INDEX, table_name="documents")
-    # The index as it was allows one live framework agreement per freelancer and regime: where a
-    # cancelled or ended one stands beside a newer, the older is put aside by a soft delete.
+    # The index as it was allows one live framework agreement per freelancer and regime: of those
+    # that share one, the best is kept (one that is not cancelled or ended by a notice, then the
+    # newest) and the others are put aside by a soft delete.
+    ended = "(signature_state IN ('cancelled', 'notice_served'))::int"
     op.execute(
         "UPDATE documents SET deleted_at = now() WHERE type = 'framework_agreement' "
-        "AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM documents newer WHERE "
-        "newer.type = 'framework_agreement' AND newer.deleted_at IS NULL "
-        "AND newer.customer_id = documents.customer_id "
-        "AND newer.letter_type = documents.letter_type "
-        "AND (newer.created_at, newer.id) > (documents.created_at, documents.id))"
+        "AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM documents better WHERE "
+        "better.type = 'framework_agreement' AND better.deleted_at IS NULL "
+        "AND better.customer_id = documents.customer_id "
+        "AND better.letter_type = documents.letter_type AND better.id <> documents.id "
+        f"AND ((better.signature_state IN ('cancelled', 'notice_served'))::int < {ended} "
+        f"OR ((better.signature_state IN ('cancelled', 'notice_served'))::int = {ended} "
+        "AND (better.created_at, better.id) > (documents.created_at, documents.id))))"
     )
     op.create_index(
         FRAMEWORK_INDEX,
