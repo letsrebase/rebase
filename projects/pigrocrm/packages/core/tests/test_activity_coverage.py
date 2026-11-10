@@ -102,6 +102,11 @@ _GATES = frozenset({"require_write", "require_admin", "require_unscoped_admin"})
 # 1. It looks like a write and is a read: a role check on a path that only looks, or a
 #    commit that settles a lazy refresh (a token, a cached figure).
 _READS: dict[Method, str] = {
+    ("BankAccountService", "get_bank_account"): "reads an account; nothing is written",
+    ("BankAccountService", "get_coverage"): "reads the months a statement covers",
+    ("BankAccountService", "list_bank_accounts"): "reads the accounts and their balances",
+    ("BankStatementReadService", "list_movements"): "reads the movements of an account",
+    ("BankStatementReadService", "list_statements"): "reads the statements of an account",
     ("LetterService", "preview_letter"): "renders a letter and stores nothing",
     ("LetterService", "preview_framework_agreement"): "renders an agreement and stores nothing",
     ("SigningService", "get"): "reads where a document stands: its state, dates and reason",
