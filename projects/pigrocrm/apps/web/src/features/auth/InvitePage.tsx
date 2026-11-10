@@ -4,7 +4,7 @@ import { Button } from '@rebase/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@rebase/ui/card'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { api, toProblem, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { useAuth } from '@/lib/auth'
@@ -178,7 +178,7 @@ export function InvitePage({
           )}
         </CardHeader>
         <CardContent className="space-y-4">
-          {state.kind === 'loading' && <Skeleton className="h-20 w-full" />}
+          {state.kind === 'loading' && <LoadingState />}
           {state.kind === 'peek' && (
             <>
               {state.peek.name === null ? (

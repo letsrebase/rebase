@@ -8,7 +8,7 @@ import { EntityTask } from '@/features/tasks/EntityTask'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { useOrganization } from '@/features/organizations/queries'
 import { EmailTab } from '@/features/gmail/EmailTab'
 import { useGmailConfigured } from '@/features/gmail/queries'
@@ -66,7 +66,7 @@ export function PersonDetail() {
   // Shares the shell banner's cached health row -- see `useGmailConfigured`.
   const gmailConfigured = useGmailConfigured()
 
-  if (isLoading) return <Skeleton className="m-8 h-96" />
+  if (isLoading) return <LoadingState className="m-8" />
   // See `routes/app/organizations/$organizationId.tsx`'s identical guard for the full
   // reasoning: without this, a 500/502/dropped connection reads as "Persona non
   // trovata." exactly like a genuine 404 does, since both leave `person`

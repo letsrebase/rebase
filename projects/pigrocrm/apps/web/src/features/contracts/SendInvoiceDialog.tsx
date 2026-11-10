@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { formatInvoiceNumber } from '@/features/invoices/format'
 import { useInvoices } from '@/features/invoices/queries'
 import { formatAmount } from './labels'
@@ -71,7 +71,7 @@ export function SendInvoiceDialog({ contractId, customerId, templates, open, onO
         </DialogHeader>
 
         {invoices.isLoading ? (
-          <Skeleton className="h-20 w-full" />
+          <LoadingState />
         ) : invoices.isError ? (
           <QueryErrorBanner error={invoices.error} />
         ) : issued.length === 0 ? (
@@ -114,7 +114,7 @@ export function SendInvoiceDialog({ contractId, customerId, templates, open, onO
             </div>
 
             {preview.isLoading ? (
-              <Skeleton className="h-32 w-full" />
+              <LoadingState />
             ) : preview.isError ? (
               <QueryErrorBanner error={preview.error} />
             ) : preview.data === undefined ? null : (

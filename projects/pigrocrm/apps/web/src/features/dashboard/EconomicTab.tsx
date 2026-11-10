@@ -4,7 +4,7 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { useModules } from '@/lib/modules'
 import { Button } from '@rebase/ui/button'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import {
   Table,
   TableBody,
@@ -166,12 +166,7 @@ export function EconomicTab({
   // Not before the modules are known either: the panels of `taxes` would otherwise be drawn,
   // and ask the API for what a switched-off module refuses, for the length of one read.
   if (query.isPending || !query.data || modules.loading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    )
+    return <LoadingState />
   }
 
   const {

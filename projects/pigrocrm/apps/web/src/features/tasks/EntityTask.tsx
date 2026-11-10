@@ -2,7 +2,7 @@ import { Plus } from 'lucide-react'
 import { useState } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { useCanWrite } from '@/lib/auth'
 import { TaskDialog } from './TaskDialog'
 import { TaskItem } from './TaskItem'
@@ -53,7 +53,7 @@ export function EntityTask({ link }: { link: LinkValue }) {
       {list.isError || completed.isError || cancelled.isError ? (
         <QueryErrorBanner error={list.error ?? completed.error ?? cancelled.error} />
       ) : list.isPending || completed.isPending || cancelled.isPending ? (
-        <Skeleton className="h-12 w-full" />
+        <LoadingState />
       ) : items.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nessuna attività collegata.</p>
       ) : (

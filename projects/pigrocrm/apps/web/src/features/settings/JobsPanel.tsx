@@ -1,6 +1,6 @@
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { JOB_STATES, jobLine } from './jobs'
 import { useScheduledJobs } from './jobsQueries'
 
@@ -37,11 +37,7 @@ export function JobsPanel() {
       {jobs.isError && <QueryErrorBanner error={jobs.error} />}
       {jobs.data === undefined ? (
         jobs.isError ? null : (
-          <div className="space-y-3" role="status" aria-label="Caricamento esecuzioni">
-            {Array.from({ length: 4 }, (_, index) => (
-              <Skeleton key={index} className="h-20 w-full" />
-            ))}
-          </div>
+          <LoadingState label="Caricamento esecuzioni…" />
         )
       ) : (
         <ul className="space-y-3">

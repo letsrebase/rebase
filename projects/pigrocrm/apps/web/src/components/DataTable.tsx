@@ -1,7 +1,7 @@
 import { tableFeatures, useTable, type ColumnDef, type RowData } from '@tanstack/react-table'
 import type { KeyboardEvent } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import {
   Table,
   TableBody,
@@ -87,8 +87,6 @@ interface DataTableProps<T extends RowData> {
   emptyMessage?: string
 }
 
-const LOADING_ROW_COUNT = 5
-
 /**
  * One table for every list this product shows -- Organizations, People, Deal today,
  * whatever a later slice adds tomorrow.
@@ -128,22 +126,11 @@ export function DataTable<T extends RowData>({
 
   if (isLoading) {
     return (
-      /* The same container, and bars the height of the rows they stand in for (`h-12`,
-         `ui/table.tsx`), so the table does not visibly jump the moment the request
-         lands. It is still a deliberately different *shape* -- animated bars, no header
-         -- because "something is happening" is not "here is your data"; what it stops
-         being is a different size. */
-      <div
-        data-slot="data-table"
-        className="overflow-hidden border border-border bg-card p-2"
-        role="status"
-        aria-label="Caricamento"
-      >
-        <div className="space-y-2">
-          {Array.from({ length: LOADING_ROW_COUNT }, (_, index) => (
-            <Skeleton key={index} className="h-12 w-full" />
-          ))}
-        </div>
+      /* The same container, so the table does not change width the moment the request
+         lands. It is still a deliberately different *shape* -- the brand loader, no header
+         -- because "something is happening" is not "here is your data". */
+      <div data-slot="data-table" className="overflow-hidden border border-border bg-card px-4">
+        <LoadingState className="py-8" />
       </div>
     )
   }

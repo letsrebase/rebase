@@ -159,9 +159,9 @@ describe('NotesSection', () => {
 
   it('holds a loading state until the thread arrives', async () => {
     renderSection()
-    expect(screen.getByRole('status', { name: 'Caricamento note' })).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: 'Caricamento note…' })).toBeInTheDocument()
     await screen.findByText(/Richiamare a settembre/)
-    expect(screen.queryByRole('status', { name: 'Caricamento note' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('status', { name: 'Caricamento note…' })).not.toBeInTheDocument()
   })
 
   it('posts only the text, clears the box and refreshes the thread and the timeline', async () => {

@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Card, CardContent } from '@rebase/ui/card'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { NOT_COMPUTABLE, formatPercent } from '@/features/analytics/format'
 import { toProblem } from '@/lib/api'
 import { useAuth, useCan } from '@/lib/auth'
@@ -127,7 +127,7 @@ export function FiscalPanel({
     }
     return <QueryErrorBanner error={estimate.error} />
   }
-  if (estimate.isLoading || !estimate.data) return <Skeleton className="h-64 w-full" />
+  if (estimate.isLoading || !estimate.data) return <LoadingState />
 
   const data = estimate.data
   const missingParameters =

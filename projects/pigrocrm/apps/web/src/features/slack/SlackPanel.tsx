@@ -14,7 +14,7 @@ import {
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { toProblem } from '@/lib/api'
 import { formatInstant } from '@/features/gmail/instants'
 import { SettingsHistory } from '@/features/settings/SettingsHistory'
@@ -74,7 +74,7 @@ export function SlackPanel() {
   // The error branch before the loading one: on a failure `isPending` is false while `data`
   // is still undefined, so a single guard would answer a failed read with a spinner.
   if (query.isError) return <QueryErrorBanner error={query.error} />
-  if (query.isPending || !query.data) return <Skeleton className="h-64 w-full" />
+  if (query.isPending || !query.data) return <LoadingState />
 
   const health = query.data
   if (!health.configured) return <NotConfigured />
@@ -400,7 +400,7 @@ function ChannelSection({ workspace }: { workspace: SlackWorkspace }) {
           {channels.isError ? (
             <QueryErrorBanner error={channels.error} />
           ) : channels.isPending ? (
-            <Skeleton className="h-9 w-72" />
+            <LoadingState label="Leggo i canali…" className="py-2" />
           ) : (
             <Select
               value={workspace.channel_id ?? NO_CHANNEL}

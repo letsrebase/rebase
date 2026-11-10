@@ -5,7 +5,7 @@ import { useLegalEntity } from '@/lib/legalEntity'
 import { toProblem } from '@/lib/api'
 import { useModules } from '@/lib/modules'
 import { Card, CardContent } from '@rebase/ui/card'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { Meter } from './charts'
 import { FILL_TONE, consequence, fill, magnitude } from './ceilingFormat'
 import { money } from './format'
@@ -97,7 +97,7 @@ export function CeilingPanel({
     if (toProblem(headroom.error).status === 404) return null
     return <QueryErrorBanner error={headroom.error} />
   }
-  if (headroom.isLoading || !headroom.data) return <Skeleton className="h-48 w-full" />
+  if (headroom.isLoading || !headroom.data) return <LoadingState />
   const hasCeilings = headroom.data.thresholds.length > 0
   const contracts = readCaps ? (capped.data ?? []) : []
   if (!hasCeilings) {
@@ -105,7 +105,7 @@ export function CeilingPanel({
     // read: wait for them, say why they could not be read, and draw nothing when no active
     // contract has one (or when there is no simulator to give them to).
     if (!simulate) return null
-    if (readCaps && capped.isPending) return <Skeleton className="h-48 w-full" />
+    if (readCaps && capped.isPending) return <LoadingState />
     if (readCaps && capped.isError) return <QueryErrorBanner error={capped.error} />
     if (contracts.length === 0) return null
   }

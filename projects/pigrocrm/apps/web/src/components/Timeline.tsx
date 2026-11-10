@@ -8,7 +8,7 @@ import {
   labelForPayloadValue,
 } from '@/components/activityLabels'
 import { Badge } from '@rebase/ui/badge'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { api, toProblem, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
@@ -311,13 +311,7 @@ export function Timeline({ entityType, entityId, limit = 50, typeLabel }: Timeli
   })
 
   if (isLoading) {
-    return (
-      <div className="space-y-3" role="status" aria-label="Caricamento timeline">
-        {Array.from({ length: 4 }, (_, index) => (
-          <Skeleton key={index} className="h-16 w-full" />
-        ))}
-      </div>
-    )
+    return <LoadingState label="Caricamento timeline…" />
   }
 
   // A failed request is not the same claim as "nothing happened yet" -- showing

@@ -10,7 +10,7 @@ import { RowActions } from '@/components/RowActions'
 import { Timeline } from '@/components/Timeline'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { formatItalianQuantity, MONEY_SCALE, scaledFromDecimalString } from '@/lib/decimal'
 import { EconomicsTab } from '@/features/analytics/EconomicsTab'
 import { useOrganization } from '@/features/organizations/queries'
@@ -221,7 +221,7 @@ export function DealDetail() {
   const timeOn = modules.on('time')
   const costsOn = modules.on('costs')
 
-  if (isLoading) return <Skeleton className="m-8 h-96" />
+  if (isLoading) return <LoadingState className="m-8" />
   // See `routes/app/organizations/$organizationId.tsx`'s identical guard for the full
   // reasoning: without this, a 500/502/dropped connection reads as "Deal non
   // trovato." exactly like a genuine 404 does, since both leave `deal` undefined

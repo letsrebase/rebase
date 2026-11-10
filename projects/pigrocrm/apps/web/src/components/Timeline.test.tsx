@@ -50,7 +50,7 @@ describe('Timeline', () => {
   it('shows a distinguishable loading state before the first response arrives', () => {
     mockGet.mockReturnValue(new Promise(() => {})) // never resolves within this test
     renderWithClient(<Timeline entityType="organization" entityId="c1" />)
-    expect(screen.getByRole('status', { name: 'Caricamento timeline' })).toBeInTheDocument()
+    expect(screen.getByRole('status', { name: 'Caricamento timeline…' })).toBeInTheDocument()
   })
 
   it('shows an honest empty state once loading really has finished with zero entries', async () => {

@@ -5,7 +5,7 @@ import { FilterRow } from '@/components/FilterRow'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { useCanWrite } from '@/lib/auth'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { AssigneeSelect } from './AssigneeSelect'
@@ -176,7 +176,7 @@ export function TodayView({
         {panel.isError ? (
           <QueryErrorBanner error={panel.error} />
         ) : !panel.data ? (
-          <Skeleton className="h-24 w-full" />
+          <LoadingState />
         ) : (
           <>
             <Section

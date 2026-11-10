@@ -9,7 +9,7 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { EconomicsTab } from '@/features/analytics/EconomicsTab'
 import { ContactPointsList } from '@/features/contact-points/ContactPointsList'
 import { OrganizationForm, organizationToFormValues } from '@/features/organizations/OrganizationForm'
@@ -79,12 +79,7 @@ function LinkedList<T>({
   renderItem: (item: T) => ReactNode
 }) {
   if (query.isLoading) {
-    return (
-      <div className="space-y-2">
-        <Skeleton className="h-6 w-full" />
-        <Skeleton className="h-6 w-full" />
-      </div>
-    )
+    return <LoadingState />
   }
   if (query.isError) {
     return <p className="text-sm text-destructive">{toProblem(query.error).detail}</p>
@@ -120,7 +115,7 @@ export function OrganizationDetail() {
   const gmailConfigured = useGmailConfigured()
   const owners = useOrganizationOwners()
 
-  if (isLoading) return <Skeleton className="m-8 h-96" />
+  if (isLoading) return <LoadingState className="m-8" />
   // A failed fetch and a genuine 404 both leave `customer` undefined once loading
   // ends -- collapsing them into the same "Cliente non trovato." a bare `!customer`
   // check would show is exactly the bug `DataTable`/`QueryErrorBanner` and

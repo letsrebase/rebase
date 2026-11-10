@@ -5,7 +5,7 @@ import { formatOccurredAt } from '@/components/activityLabels'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { Textarea } from '@rebase/ui/textarea'
 import { toProblem } from '@/lib/api'
 import { useCan } from '@/lib/auth'
@@ -268,7 +268,7 @@ export function NotesSection({
         )}
 
         {notes.isLoading ? (
-          <Skeleton className="h-16 w-full" role="status" aria-label="Caricamento note" />
+          <LoadingState label="Caricamento note…" />
         ) : notes.isError ? (
           <QueryErrorBanner error={notes.error} />
         ) : items.length === 0 ? (

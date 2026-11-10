@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import {
   Table,
   TableBody,
@@ -52,12 +52,7 @@ export function ReceivablesTab() {
 
   if (query.isError) return <QueryErrorBanner error={query.error} />
   if (query.isPending || !query.data) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-48 w-full" />
-      </div>
-    )
+    return <LoadingState />
   }
 
   const data = query.data

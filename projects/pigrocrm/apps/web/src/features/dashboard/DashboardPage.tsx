@@ -2,7 +2,7 @@ import { LayoutDashboard } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { TAB_MODULES, useModules } from '@/lib/modules'
 import { CommercialTab } from './CommercialTab'
 import { DaFareBand } from './DaFareBand'
@@ -83,7 +83,7 @@ export function DashboardPage({
             pooled connections on the API side -- to draw one screen. §17's placeholders that
             stood here until 6C landed are gone: both dashboards exist now, so a paragraph
             explaining their absence would be the untrue thing on the page. */}
-        {waiting && <Skeleton className="h-64 w-full" />}
+        {waiting && <LoadingState />}
         {!waiting && tab === 'commercial' && <CommercialTab period={{ from, to }} />}
         {!waiting && tab === 'receivables' && <ReceivablesTab />}
         {!waiting && tab === 'year' && <YearTab period={{ from, to }} />}

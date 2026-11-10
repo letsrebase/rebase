@@ -6,7 +6,7 @@ import { Button } from '@rebase/ui/button'
 import { Card, CardContent } from '@rebase/ui/card'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { formatDate } from '@/features/invoices/format'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
@@ -194,7 +194,7 @@ export function RenewalSection({ contract }: { contract: Contract }) {
         <h2 className="mb-3 font-semibold">Rinnovo e ricavi programmati</h2>
 
         {assumption.isLoading ? (
-          <Skeleton className="h-40 w-full" />
+          <LoadingState />
         ) : assumption.isError ? (
           <QueryErrorBanner error={assumption.error} />
         ) : (
@@ -231,7 +231,7 @@ export function RenewalSection({ contract }: { contract: Contract }) {
                 {!validWindow ? (
                   <p className="text-sm text-muted-foreground">Scegli una data dopo oggi.</p>
                 ) : projection.isLoading ? (
-                  <Skeleton className="h-20 w-full" />
+                  <LoadingState />
                 ) : projection.isError ? (
                   <QueryErrorBanner error={projection.error} />
                 ) : projection.data !== undefined ? (
@@ -259,7 +259,7 @@ export function RenewalSection({ contract }: { contract: Contract }) {
                     è ancora cominciato.
                   </p>
                 ) : concentration.isLoading ? (
-                  <Skeleton className="h-12 w-full" />
+                  <LoadingState />
                 ) : concentration.isError ? (
                   <QueryErrorBanner error={concentration.error} />
                 ) : concentration.data !== undefined ? (

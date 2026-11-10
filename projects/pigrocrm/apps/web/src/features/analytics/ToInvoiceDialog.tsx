@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from '@rebase/ui/dialog'
 import { Label } from '@rebase/ui/label'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { formatHoursValue, formatMoneyValue } from '@/features/time/columns'
 import { useTimeEntries } from '@/features/time/queries'
 import { toProblem, type ProblemDetail } from '@/lib/api'
@@ -104,7 +104,7 @@ export function ToInvoiceDialog({ dealId, open, onOpenChange }: ToInvoiceDialogP
           </DialogDescription>
         </DialogHeader>
 
-        {entries.isLoading && <Skeleton className="h-40 w-full" />}
+        {entries.isLoading && <LoadingState />}
 
         {/* A failed read gets the banner and nothing else. A Genera button over a list
             nobody could see would post a selection the user never had the chance to

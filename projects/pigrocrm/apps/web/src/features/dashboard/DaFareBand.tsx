@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { LoadingState } from '@/components/LoadingState'
 import { TaskItem } from '@/features/tasks/TaskItem'
 import { useTaskToday } from '@/features/tasks/queries'
 import { useAuth } from '@/lib/auth'
@@ -42,7 +42,7 @@ export function DaFareBand() {
   if (!panel.data) {
     return (
       <div className="px-8 pb-6">
-        <Skeleton className="h-16 w-full" />
+        <LoadingState />
       </div>
     )
   }
