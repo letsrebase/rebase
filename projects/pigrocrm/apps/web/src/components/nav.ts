@@ -253,6 +253,7 @@ export const SETTINGS_PATHS = {
   periods: '/app/settings/periods',
   gmail: '/app/settings/gmail',
   drive: '/app/settings/drive',
+  mailboxes: '/app/settings/mailboxes',
   slack: '/app/settings/slack',
   'ai-model': '/app/settings/ai-model',
   reminders: '/app/settings/reminders',

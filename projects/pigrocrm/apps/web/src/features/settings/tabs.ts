@@ -71,6 +71,8 @@ export const SETTINGS_GROUPS = [
     tabs: [
       { value: 'gmail', label: 'Gmail' },
       { value: 'drive', label: 'Google Drive' },
+      // The IMAP and PEC mailboxes the space reads, and Gmail's row pointing at its own tab (REB-1044).
+      { value: 'mailboxes', label: 'Caselle' },
       // The Slack app installed in the space, who in it is whom, and the channel (REB-739).
       { value: 'slack', label: 'Slack' },
       // The model PigroCRM reads incoming documents with: off until an admin turns it on (REB-972).
