@@ -14,7 +14,11 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { moneyIn } from '../money'
-import { movementPill, periodLabel, statementFormatLabel } from './labels'
+import { useState } from 'react'
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@rebase/ui/sheet'
+import { useCan } from '@/lib/auth'
+import { matchLine, movementPill, periodLabel, statementFormatLabel } from './labels'
+import { MatchPanelBody, UndoDialog } from './MatchPanel'
 import { useMovements, type BankAccount, type Movement, type MovementFilter, type Statement } from './queries'
 
 const ALL_STATEMENTS = 'all'
@@ -87,6 +91,9 @@ function Description({ movement }: { movement: Movement }) {
       {movement.counterparty_name !== null && (
         <p className="break-words text-xs text-muted-foreground">{movement.counterparty_name}</p>
       )}
+      {matchLine(movement.match) !== null && (
+        <p className="break-words text-xs text-muted-foreground">{matchLine(movement.match)}</p>
+      )}
       {movement.state === 'ignored' && movement.ignored_reason !== null && (
         <p className="break-words text-xs text-muted-foreground">{movement.ignored_reason}</p>
       )}
@@ -99,7 +106,56 @@ function MovementPill({ movement }: { movement: Movement }) {
   return <StatusPill tone={pill.tone}>{pill.label}</StatusPill>
 }
 
-function MovementsTable({ items, currencyOf }: { items: readonly Movement[]; currencyOf: string }) {
+interface RowActions {
+  openId: string | null
+  onOpen: (movement: Movement) => void
+  onUndo: (movementId: string) => void
+}
+
+/** «Abbina» on an unmatched row, «Annulla l’abbinamento» on a matched one; never hover-only. */
+function RowButtons({ movement, actions }: { movement: Movement; actions: RowActions }) {
+  const canConfirm = useCan('confirm_movement_match')
+  const canUndo = useCan('undo_movement_match')
+  if (movement.state === 'unmatched' && canConfirm) {
+    return (
+      <Button
+        size="sm"
+        variant={actions.openId === movement.id ? 'default' : 'outline'}
+        onClick={(event) => {
+          event.stopPropagation()
+          actions.onOpen(movement)
+        }}
+      >
+        Abbina
+      </Button>
+    )
+  }
+  if (movement.state === 'matched' && canUndo) {
+    return (
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={(event) => {
+          event.stopPropagation()
+          actions.onUndo(movement.id)
+        }}
+      >
+        Annulla l’abbinamento
+      </Button>
+    )
+  }
+  return null
+}
+
+function MovementsTable({
+  items,
+  currencyOf,
+  actions,
+}: {
+  items: readonly Movement[]
+  currencyOf: string
+  actions: RowActions
+}) {
   return (
     <div className="overflow-x-auto overflow-y-hidden border bg-card">
       <Table scrollLabel="Movimenti del conto">
@@ -109,11 +165,19 @@ function MovementsTable({ items, currencyOf }: { items: readonly Movement[]; cur
             <TableHead>Descrizione</TableHead>
             <TableHead className="text-right">Importo</TableHead>
             <TableHead>Stato</TableHead>
+            <TableHead>
+              <span className="sr-only">Azioni</span>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {items.map((movement) => (
-            <TableRow key={movement.id} className="align-top">
+            <TableRow
+              key={movement.id}
+              className={cn('align-top', actions.openId === movement.id && 'bg-muted/50')}
+              data-selected={actions.openId === movement.id || undefined}
+              onClick={() => movement.state === 'unmatched' && actions.onOpen(movement)}
+            >
               <TableCell className="whitespace-nowrap tabular-nums">
                 {formatIsoDateItalian(movement.booking_date)}
               </TableCell>
@@ -126,6 +190,9 @@ function MovementsTable({ items, currencyOf }: { items: readonly Movement[]; cur
               <TableCell>
                 <MovementPill movement={movement} />
               </TableCell>
+              <TableCell className="text-right">
+                <RowButtons movement={movement} actions={actions} />
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -134,11 +201,23 @@ function MovementsTable({ items, currencyOf }: { items: readonly Movement[]; cur
   )
 }
 
-function MovementCards({ items, currencyOf }: { items: readonly Movement[]; currencyOf: string }) {
+function MovementCards({
+  items,
+  currencyOf,
+  actions,
+}: {
+  items: readonly Movement[]
+  currencyOf: string
+  actions: RowActions
+}) {
   return (
     <ul aria-label="Movimenti del conto" className="space-y-3">
       {items.map((movement) => (
-        <li key={movement.id} className="space-y-2 border bg-card p-4">
+        <li
+          key={movement.id}
+          className="space-y-2 border bg-card p-4"
+          onClick={() => movement.state === 'unmatched' && actions.onOpen(movement)}
+        >
           <p className="text-lg font-semibold tabular-nums">
             {moneyIn(movement.amount, movement.currency || currencyOf)}
           </p>
@@ -149,6 +228,7 @@ function MovementCards({ items, currencyOf }: { items: readonly Movement[]; curr
           <div className="text-sm">
             <Description movement={movement} />
           </div>
+          <RowButtons movement={movement} actions={actions} />
         </li>
       ))}
     </ul>
@@ -157,8 +237,8 @@ function MovementCards({ items, currencyOf }: { items: readonly Movement[]; curr
 
 /**
  * The queue of movements across the account's statements, newest booking first, 50 at a time:
- * a read-only list with the state each one is in. Matching is not on this page yet, so a row
- * has no action.
+ * with the state each one is in, what is proposed or what it settled, and the matching panel
+ * (REB-1042) beside the table, or in a sheet on a phone.
  */
 export function MovementsPanel({
   account,
@@ -186,6 +266,9 @@ export function MovementsPanel({
   onUpload: () => void
 }) {
   const movements = useMovements(account.id, filter, statementId)
+  const [open, setOpen] = useState<Movement | null>(null)
+  const [undoing, setUndoing] = useState<string | null>(null)
+  const actions: RowActions = { openId: open?.id ?? null, onOpen: setOpen, onUndo: setUndoing }
 
   const empty = !movements.isLoading && !movements.isError && movements.items.length === 0
   let sentence = 'Nessun movimento.'
@@ -221,10 +304,47 @@ export function MovementsPanel({
           {offersUpload && <Button onClick={onUpload}>Carica estratto conto</Button>}
         </div>
       ) : wide ? (
-        <MovementsTable items={movements.items} currencyOf={account.currency} />
+        <div className="flex items-start gap-4">
+          <div className="min-w-0 flex-1">
+            <MovementsTable items={movements.items} currencyOf={account.currency} actions={actions} />
+          </div>
+          {open !== null && (
+            <aside
+              aria-label="Abbinamento del movimento"
+              className="sticky top-4 flex max-h-[calc(100vh-2rem)] w-82.5 shrink-0 flex-col overflow-hidden border bg-card"
+            >
+              <div className="flex justify-end border-b px-2 py-1">
+                <Button variant="ghost" size="sm" onClick={() => setOpen(null)}>
+                  Chiudi
+                </Button>
+              </div>
+              <MatchPanelBody key={open.id} movement={open} phone={false} onUndo={setUndoing} />
+            </aside>
+          )}
+        </div>
       ) : (
-        <MovementCards items={movements.items} currencyOf={account.currency} />
+        <MovementCards items={movements.items} currencyOf={account.currency} actions={actions} />
       )}
+
+      {!wide && open !== null && (
+        <Sheet open onOpenChange={(next) => !next && setOpen(null)}>
+          <SheetContent
+            side="right"
+            closeLabel="Chiudi"
+            className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-none"
+          >
+            <SheetTitle className="sr-only">Abbinamento del movimento</SheetTitle>
+            <SheetDescription className="sr-only">
+              Il movimento, le voci aperte che potrebbe saldare e cosa si può fare.
+            </SheetDescription>
+            <div className="flex min-h-0 flex-1 flex-col pt-12">
+              <MatchPanelBody key={open.id} movement={open} phone onUndo={setUndoing} />
+            </div>
+          </SheetContent>
+        </Sheet>
+      )}
+
+      <UndoDialog movementId={undoing} onClose={() => setUndoing(null)} />
 
       {movements.hasMore && (
         <LoadMore

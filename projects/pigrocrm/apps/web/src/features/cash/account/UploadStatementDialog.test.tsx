@@ -22,6 +22,7 @@ const RESULT = {
   statement: { id: 'st-1' },
   added: 41,
   duplicates: 2,
+  proposed: 3,
 }
 
 const FILE = new File(['<Document/>'], 'estratto.xml', { type: 'text/xml' })
@@ -53,7 +54,7 @@ describe('UploadStatementDialog', () => {
     expect(screen.queryByLabelText('Periodo dal')).toBeNull()
     await user.upload(input, FILE)
     await user.click(screen.getByRole('button', { name: 'Carica' }))
-    expect(await screen.findByText('41 movimenti, 2 già presenti')).toBeTruthy()
+    expect(await screen.findByText('41 movimenti, 2 già presenti, 3 con una proposta')).toBeTruthy()
     const [path, init] = vi.mocked(fetchWithRefresh).mock.calls[0]!
     expect(path).toBe('/api/bank-accounts/acc-1/statements')
     const body = init?.body as FormData
@@ -75,7 +76,7 @@ describe('UploadStatementDialog', () => {
           reason: 'il periodo coperto va indicato',
         }),
       )
-      .mockResolvedValueOnce(json(201, { ...RESULT, added: 1, duplicates: 0 }))
+      .mockResolvedValueOnce(json(201, { ...RESULT, added: 1, duplicates: 0, proposed: 1 }))
     const user = userEvent.setup()
     renderDialog('acc-1')
     await user.upload(screen.getByLabelText('File dell’estratto conto'), FILE)
@@ -86,7 +87,7 @@ describe('UploadStatementDialog', () => {
     await user.type(screen.getByLabelText('Periodo dal'), '2026-10-01')
     await user.type(screen.getByLabelText('Periodo al'), '2026-10-31')
     await user.click(send)
-    expect(await screen.findByText('1 movimento, 0 già presenti')).toBeTruthy()
+    expect(await screen.findByText('1 movimento, 0 già presenti, 1 con una proposta')).toBeTruthy()
     const body = vi.mocked(fetchWithRefresh).mock.calls[1]![1]?.body as FormData
     expect(body.get('period_from')).toBe('2026-10-01')
     expect(body.get('period_to')).toBe('2026-10-31')

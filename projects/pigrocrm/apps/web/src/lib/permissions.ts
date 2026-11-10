@@ -174,6 +174,11 @@ export const MIN_ROLE = {
   archive_bank_account: 'admin',
   list_statements: 'admin',
   list_bank_movements: 'admin',
+  // Matching a movement to the due items it pays (REB-1042): confirming and undoing are a
+  // person's acts and an administrator's, like the movements themselves.
+  get_bank_movement: 'admin',
+  confirm_movement_match: 'admin',
+  undo_movement_match: 'admin',
   import_statement: 'admin',
   revert_statement: 'admin',
   // Contratti: the page's own writes (REB-741..744). `require_write` in the services.

@@ -2,7 +2,7 @@ import type { StatusTone } from '@/components/StatusPill'
 import { formatIsoDateItalian, formatIsoMonthYear } from '@/lib/dates'
 import { money } from '@/features/dashboard/format'
 import { daysCount } from '../days'
-import type { BankAccount, CoverageMonth, Movement, Statement } from './queries'
+import type { BankAccount, CoverageMonth, MatchItem, MatchReason, Movement, MovementMatch, Statement } from './queries'
 
 /** The format a reader reports, as a person names it; a format nobody taught this build about
  *  is shown as the reader returned it (frame § A5: the readers' formats are «to verify»). */
@@ -117,11 +117,49 @@ export function movementsCount(count: number): string {
   return count === 1 ? '1 movimento' : `${count} movimenti`
 }
 
-/** «41 movimenti, 2 già presenti», with the singular where the count is one. */
-export function importSentence(added: number, duplicates: number): string {
+/** «41 movimenti, 2 già presenti, 3 con una proposta»; the proposals are left out when none. */
+export function importSentence(added: number, duplicates: number, proposed: number): string {
   const moved = movementsCount(added)
   const already = duplicates === 1 ? '1 già presente' : `${duplicates} già presenti`
-  return `${moved}, ${already}`
+  if (proposed === 0) return `${moved}, ${already}`
+  return `${moved}, ${already}, ${proposed === 1 ? '1 con una proposta' : `${proposed} con una proposta`}`
+}
+
+/** The reasons a proposal was ranked, as outlined chips (never colour). */
+export const REASON_LABELS: Record<MatchReason, string> = {
+  exact_amount: 'importo totale coincide',
+  items_total: 'le voci tornano al totale',
+  document_number: 'numeri nella causale',
+  known_iban: 'IBAN noto',
+  counterparty_name: 'nome nella causale',
+  already_marked_paid: 'già segnata come pagata',
+}
+
+/** What an item is called in a sentence: «Fattura 2026/35», else its description, else who it is for. */
+export function itemTitle(item: MatchItem): string {
+  if (item.document_number !== null) return `Fattura ${item.document_number}`
+  return item.description ?? item.counterparty_name ?? 'Voce aperta'
+}
+
+/** «Fattura 2026/35», «Fattura 2026/35 e un’altra», «Fattura 2026/35 e altre 2». */
+export function itemsSummary(items: readonly MatchItem[]): string {
+  const first = items[0]
+  if (first === undefined) return ''
+  const others = items.length - 1
+  if (others === 0) return itemTitle(first)
+  return `${itemTitle(first)} e ${others === 1 ? 'un’altra' : `altre ${others}`}`
+}
+
+/**
+ * The line under a movement's description: what is proposed, or what it settled. A proposal that
+ * no longer fits (`is_current` false) is not shown as one.
+ */
+export function matchLine(match: MovementMatch | null): string | null {
+  if (match === null || match.items.length === 0) return null
+  if (match.state === 'confirmed') return `abbinato a ${itemsSummary(match.items)}`
+  if (match.state !== 'proposed' || !match.is_current) return null
+  const who = match.proposed_by_type === 'mcp' ? 'proposta dall’assistente' : 'proposta'
+  return `${who}: ${itemsSummary(match.items)}`
 }
 
 export const REVERT_SENTENCE = 'Rimuove i suoi movimenti e gli abbinamenti automatici'

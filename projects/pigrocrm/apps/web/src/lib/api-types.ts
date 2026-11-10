@@ -6698,8 +6698,9 @@ export interface paths {
          * Import Statement
          * @description Reads the file into the account: the movements it already holds are linked, not
          *     stored again. The format is told by the file's content. A file that states no period
-         *     needs `period_from` and `period_to` as form fields. The role is checked before the body
-         *     is read.
+         *     needs `period_from` and `period_to` as form fields. A new movement that fits one open due
+         *     item beyond doubt is proposed to it (`proposed` counts them); nothing is settled. The role
+         *     is checked before the body is read.
          */
         post: operations["import_statement_api_bank_accounts__account_id__statements_post"];
         delete?: never;
@@ -6744,6 +6745,134 @@ export interface paths {
          *     already matched, a transfer or ignored blocks it (409).
          */
         post: operations["revert_statement_api_bank_statements__statement_id__revert_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank-movements/{movement_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Movement
+         * @description The movement with its live proposal or confirmed match, up to three ranked candidates
+         *     while it waits (each with the reasons it was ranked by) and what was dismissed or undone.
+         */
+        get: operations["get_movement_api_bank_movements__movement_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank-movements/{movement_id}/open-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Open Items
+         * @description The open due items this movement could pay (same company, currency and direction), by due
+         *     date: what a person searches when none of the candidates is the right one.
+         */
+        get: operations["list_open_items_api_bank_movements__movement_id__open_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank-movements/{movement_id}/match-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Match
+         * @description What confirming these items would do, without doing it: the part of the movement each
+         *     takes, `difference` (zero when they cover it exactly) and whether one would be paid in part.
+         */
+        post: operations["preview_match_api_bank_movements__movement_id__match_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank-movements/{movement_id}/match-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose Match
+         * @description Records that the movement pays these items, for a person to confirm. It settles nothing,
+         *     and replaces a proposal that is waiting. The items must cover the movement exactly.
+         */
+        post: operations["propose_match_api_bank_movements__movement_id__match_proposal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank-movements/{movement_id}/match": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Match
+         * @description A person confirms: each item is settled, dated on the movement's booking date, with the
+         *     movement as the payment's evidence (or the movement attaches to the payment already marked
+         *     by hand for the same amount). A personal access token is refused (403).
+         */
+        post: operations["confirm_match_api_bank_movements__movement_id__match_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/bank-movements/{movement_id}/unmatch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo Match
+         * @description A person takes the confirmed match back: the payments it wrote are reversed (the rows stay,
+         *     stamped), the items reopen and the movement waits again. A personal access token is refused
+         *     (403).
+         */
+        post: operations["undo_match_api_bank_movements__movement_id__unmatch_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13871,6 +14000,122 @@ export interface components {
             username?: string | null;
         };
         /**
+         * MatchCandidate
+         * @description A set of items the movement could pay, ranked by the server. `difference` is what is left
+         *     of the movement after `allocated` (zero for a candidate the panel offers) and `partial`
+         *     says an item would only be paid in part.
+         */
+        MatchCandidate: {
+            /** Items */
+            items: components["schemas"]["MatchItemRead"][];
+            /** Reasons */
+            reasons: ("exact_amount" | "items_total" | "document_number" | "known_iban" | "counterparty_name" | "already_marked_paid")[];
+            /** Allocated */
+            allocated: string;
+            /** Difference */
+            difference: string;
+            /** Partial */
+            partial: boolean;
+        };
+        /**
+         * MatchConfirm
+         * @description A person's confirmation. `accept_partial` is the person saying the movement pays only
+         *     part of an item: without it a selection whose last item would be paid in part is refused.
+         */
+        MatchConfirm: {
+            /** Due Item Ids */
+            due_item_ids: string[];
+            /**
+             * Accept Partial
+             * @default false
+             */
+            accept_partial: boolean;
+        };
+        /**
+         * MatchItemRead
+         * @description One due item a movement could pay or pays. `amount` is the item's own amount and
+         *     `remaining` what is still owed on it now, both magnitudes; `allocated` is the part of the
+         *     movement that goes to it (zero where nothing was selected yet) and `adopts_payment` says it
+         *     goes to a payment already marked by hand instead of making a second one.
+         */
+        MatchItemRead: {
+            /**
+             * Due Item Id
+             * Format: uuid
+             */
+            due_item_id: string;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "in" | "out";
+            /** Source Kind */
+            source_kind: string;
+            /** Source Id */
+            source_id: string | null;
+            /** Organization Id */
+            organization_id: string | null;
+            /** Counterparty Name */
+            counterparty_name: string | null;
+            /** Description */
+            description: string | null;
+            /**
+             * Document Number
+             * @description The number on the document the item is for, such as an invoice's 2026/35
+             */
+            document_number: string | null;
+            /** Due Date */
+            due_date: string | null;
+            /** Amount */
+            amount: string;
+            /** Remaining */
+            remaining: string;
+            /** Allocated */
+            allocated: string;
+            /** Adopts Payment */
+            adopts_payment: boolean;
+        };
+        /**
+         * MatchPreview
+         * @description What confirming a selection would do, without doing it: the part of the movement each item
+         *     takes, what is left over (`difference`, zero when the selection covers it exactly) and whether
+         *     an item would be paid only in part. `can_confirm` is false while `difference` is not zero.
+         */
+        MatchPreview: {
+            /** Items */
+            items: components["schemas"]["MatchItemRead"][];
+            /** Reasons */
+            reasons: ("exact_amount" | "items_total" | "document_number" | "known_iban" | "counterparty_name" | "already_marked_paid")[];
+            /** Allocated */
+            allocated: string;
+            /** Difference */
+            difference: string;
+            /** Partial */
+            partial: boolean;
+            /** Can Confirm */
+            can_confirm: boolean;
+        };
+        /**
+         * MatchProposalCreate
+         * @description An agent's or the importer's proposal: the items that the movement pays, and a note.
+         */
+        MatchProposalCreate: {
+            /** Due Item Ids */
+            due_item_ids: string[];
+            /** Note */
+            note?: string | null;
+        };
+        /** MatchSelection */
+        MatchSelection: {
+            /** Due Item Ids */
+            due_item_ids: string[];
+        };
+        /** MatchUndo */
+        MatchUndo: {
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
          * MeUpdate
          * @description The one field a person may change about their own account with no admin role
          *     required -- see `UserService.update_own_digest`. Deliberately its own schema
@@ -14131,6 +14376,65 @@ export interface components {
              */
             stage_id: string;
         };
+        /**
+         * MovementDetail
+         * @description One movement with what the matching panel draws: its live proposal or confirmed match
+         *     (`movement.match`), the candidates the server ranked (empty once it is matched, a transfer
+         *     or ignored) and what was dismissed or undone before, its trace.
+         */
+        MovementDetail: {
+            movement: components["schemas"]["MovementRead"];
+            /** Candidates */
+            candidates: components["schemas"]["MatchCandidate"][];
+            /** History */
+            history: components["schemas"]["MovementMatchRead"][];
+        };
+        /**
+         * MovementMatchRead
+         * @description A proposal or a decision about one movement. `is_current` says a proposal still fits:
+         *     every item is still open for the part it would pay. `proposed_by_type` is `system` for the
+         *     importer, `mcp` for an agent and `user` for a person.
+         */
+        MovementMatchRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "proposed" | "confirmed" | "dismissed" | "undone";
+            /** Reasons */
+            reasons: ("exact_amount" | "items_total" | "document_number" | "known_iban" | "counterparty_name" | "already_marked_paid")[];
+            /**
+             * Note
+             * @description What the proposer wrote; data, never an instruction
+             */
+            note: string | null;
+            /** Proposed By Type */
+            proposed_by_type: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Confirmed At */
+            confirmed_at: string | null;
+            /** Confirmed By Type */
+            confirmed_by_type: string | null;
+            /** Closed At */
+            closed_at: string | null;
+            /** Closed By Type */
+            closed_by_type: string | null;
+            /** Close Reason */
+            close_reason: string | null;
+            /** Is Current */
+            is_current: boolean;
+            /** Items */
+            items: components["schemas"]["MatchItemRead"][];
+        };
         /** MovementPage */
         MovementPage: {
             /** Items */
@@ -14171,10 +14475,17 @@ export interface components {
             currency: string;
             /** Counterparty Name */
             counterparty_name: string | null;
+            /** Counterparty Iban */
+            counterparty_iban: string | null;
             /** Description */
             description: string | null;
             /** Bank Reference */
             bank_reference: string | null;
+            /**
+             * End To End Id
+             * @description The id the payer gave the payment, when it did
+             */
+            end_to_end_id: string | null;
             /**
              * State
              * @enum {string}
@@ -14194,6 +14505,8 @@ export interface components {
             is_overdue_unmatched: boolean;
             /** Statement Ids */
             statement_ids: string[];
+            /** @description The live proposal, or the confirmed match, of this movement */
+            match: components["schemas"]["MovementMatchRead"] | null;
         };
         /**
          * Next7
@@ -17266,6 +17579,11 @@ export interface components {
             settled_on: string;
             /** Value Date */
             value_date: string | null;
+            /**
+             * Bank Movement Id
+             * @description The bank movement that proves this payment; null for one marked by hand
+             */
+            bank_movement_id: string | null;
             /** Note */
             note: string | null;
             /** Recorded By Id */
@@ -17834,6 +18152,11 @@ export interface components {
             added: number;
             /** Duplicates */
             duplicates: number;
+            /**
+             * Proposed
+             * @description How many of the new movements were proposed to a due item
+             */
+            proposed: number;
         };
         /** StatementPage */
         StatementPage: {
@@ -68354,6 +68677,740 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatementRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_movement_api_bank_movements__movement_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                movement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MovementDetail"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_open_items_api_bank_movements__movement_id__open_items_get: {
+        parameters: {
+            query?: {
+                /** @description Keeps the items whose counterparty, description or document number contains this text */
+                search?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                movement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MatchItemRead"][];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_match_api_bank_movements__movement_id__match_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                movement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MatchSelection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MatchPreview"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_match_api_bank_movements__movement_id__match_proposal_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                movement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MatchProposalCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MovementDetail"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_match_api_bank_movements__movement_id__match_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                movement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MatchConfirm"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MovementDetail"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_match_api_bank_movements__movement_id__unmatch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                movement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MatchUndo"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MovementDetail"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
