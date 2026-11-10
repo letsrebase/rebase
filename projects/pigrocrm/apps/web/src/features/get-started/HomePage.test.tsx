@@ -6,7 +6,7 @@
  * chose and what it put above it.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
@@ -149,6 +149,17 @@ describe('the Home', () => {
     renderHome()
     expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
     expect(screen.queryByTestId('solo-home')).toBeNull()
+  })
+
+  it('leads a solo space with «Registra una giornata» and not a company space (REB-1054)', async () => {
+    answers({ '/api/organizations': ONE('c1'), '/api/settings/modules': spaceModules([], 'solo') })
+    renderHome()
+    expect(await screen.findByRole('link', { name: /Registra una giornata/ })).toBeInTheDocument()
+    cleanup()
+    answers({ '/api/organizations': ONE('c1'), '/api/settings/modules': spaceModules([], 'company') })
+    renderHome()
+    expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Registra una giornata/ })).toBeNull()
   })
 
   it('opens a space with no profile yet on the dashboard tabs', async () => {

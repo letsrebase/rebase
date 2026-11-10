@@ -123,6 +123,17 @@ export interface ModuleAccess {
   onboarding: OnboardingState | null
 }
 
+/**
+ * Whether recording work days stays in the background (REB-1054): a `company` space bills by the
+ * deal and the invoice, and records days rarely, so «Giornata» is not a headline action there.
+ * The feature is all still there, on its own page and from the contract. A `solo` space, which
+ * bills a contract by the day, and a space whose profile is not chosen yet are unchanged. This is
+ * the one question the «+» sheet, the Home and the sidebar ask, so they cannot disagree.
+ */
+export function daysInBackground(access: Pick<ModuleAccess, 'profile'>): boolean {
+  return access.profile === 'company'
+}
+
 /** The access a space with this answer has. `undefined` is "not known": all on. */
 export function moduleAccess(data: SpaceModules | undefined, loading = false): ModuleAccess {
   const enabled =

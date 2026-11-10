@@ -58,6 +58,7 @@ export const queryKeys = {
   // The space's profile and module switches (REB-953): one read for the whole shell, kept
   // as fresh as the server's own settings cache (`lib/modules.ts`).
   modules: ['space-modules'] as const,
+  mailboxes: ['mailboxes'] as const,
   aiModel: ['ai-model-settings'] as const,
   users: ['users'] as const,
   // The pending invitations «Inviti in attesa» lists (REB-291). Same reasoning as

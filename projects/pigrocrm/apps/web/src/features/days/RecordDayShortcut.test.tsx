@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render as renderBare, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ModuleKey } from '@/lib/modules'
+import type { ModuleKey, SpaceProfile } from '@/lib/modules'
 import { seedModules } from '@/lib/modules.testing'
 import { RecordDayShortcut } from './RecordDayShortcut'
 
@@ -27,9 +27,9 @@ vi.mock('@/lib/auth', () => ({ useCanWrite: () => canWrite }))
 
 /** The shortcut reads the space's modules (REB-953), so it is mounted in a query client;
  *  with `modulesOff` given they are known, otherwise every module is on. */
-function render(ui: React.ReactElement, modulesOff?: readonly ModuleKey[]) {
+function render(ui: React.ReactElement, modulesOff?: readonly ModuleKey[], profile: SpaceProfile | null = null) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  if (modulesOff !== undefined) seedModules(client, modulesOff)
+  if (modulesOff !== undefined) seedModules(client, modulesOff, profile)
   return renderBare(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
 }
 
@@ -80,6 +80,19 @@ describe('the Home’s way into recording a day', () => {
   it('does nothing with contracts off: there is no register to record the day in', async () => {
     const user = userEvent.setup()
     render(<RecordDayShortcut />, ['contracts'])
+    await user.keyboard('n')
+    expect(navigate).not.toHaveBeenCalled()
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('is drawn for a solo space', () => {
+    render(<RecordDayShortcut />, [], 'solo')
+    expect(screen.getByRole('link', { name: /Registra una giornata/ })).toBeInTheDocument()
+  })
+
+  it('is not drawn for a company space, which records days rarely, and the N key is left alone (REB-1054)', async () => {
+    const user = userEvent.setup()
+    render(<RecordDayShortcut />, [], 'company')
     await user.keyboard('n')
     expect(navigate).not.toHaveBeenCalled()
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
