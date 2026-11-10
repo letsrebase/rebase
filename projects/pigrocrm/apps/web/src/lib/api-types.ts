@@ -5585,9 +5585,10 @@ export interface paths {
         };
         /**
          * Download Export
-         * @description One ZIP for the accountant: the sales register with its VAT columns, the issued
-         *     invoices' files, the open due items and the payments of the period, and an index naming
-         *     every part with its row count and every part left out with its reason.
+         * @description One ZIP for the accountant: the sales register with its VAT columns, the invoices
+         *     issued and received with their files, the receipts and expenses, the open due items and
+         *     the payments of the period, and an index naming every part with its row count, every part
+         *     left out with its reason and every part whose source does not exist yet.
          */
         get: operations["download_export_api_accountant_export_get"];
         put?: never;
