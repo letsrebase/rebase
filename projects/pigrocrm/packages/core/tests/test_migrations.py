@@ -3154,7 +3154,7 @@ def test_0079_creates_the_staff_tables_under_the_scope_policy_and_downgrade_drop
     with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
-        upgrade(config, "0078")
+        upgrade(config, "0080")
         assert _tables_shape(url, both) == (set(), set(), set())
         assert _entity_visible_names(url) == (False, False)
         upgrade(config, "0079")
@@ -3166,3 +3166,87 @@ def test_0079_creates_the_staff_tables_under_the_scope_policy_and_downgrade_drop
         upgrade(config, "0079")
         assert _tables_shape(url, both)[0] == both
         assert _entity_visible_names(url) == (True, True)
+
+
+def _collaborators_shape(url: str) -> tuple[bool, bool, bool]:
+    """Whether `engagements` exists, whether `organizations` has `hub_freelancer_id`, and whether
+    the unique index on it is there."""
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            table = connection.execute(
+                text("SELECT to_regclass('public.engagements') IS NOT NULL")
+            ).scalar_one()
+            column = connection.execute(
+                text(
+                    "SELECT count(*) > 0 FROM information_schema.columns WHERE "
+                    "table_name = 'organizations' AND column_name = 'hub_freelancer_id'"
+                )
+            ).scalar_one()
+            index = connection.execute(
+                text(
+                    "SELECT count(*) > 0 FROM pg_indexes WHERE "
+                    "indexname = 'uq_organizations_hub_freelancer_id'"
+                )
+            ).scalar_one()
+    finally:
+        engine.dispose()
+    return bool(table), bool(column), bool(index)
+
+
+def test_0081_adds_the_hub_freelancer_id_and_the_engagements_table_and_downgrade_removes_them(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-976: a column and a table, nothing backfilled. The checks that keep the payment rule
+    and `days_per_week` honest are in the schema, so a row that breaks them is refused here."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0080")
+        assert _collaborators_shape(url) == (False, False, False)
+        upgrade(config, "0081")
+        assert _collaborators_shape(url) == (True, True, True)
+
+        engine = create_engine(url)
+        try:
+            with engine.begin() as connection:
+                freelancer = connection.execute(
+                    text(
+                        "INSERT INTO organizations "
+                        "(id, legal_name, country, roles, hub_freelancer_id) "
+                        "VALUES (gen_random_uuid(), 'F', 'IT', ARRAY['freelancer']::varchar[], "
+                        "gen_random_uuid()) RETURNING id"
+                    )
+                ).scalar_one()
+            insert = text(
+                "INSERT INTO engagements (id, freelancer_id, role, starts_on, fee, fee_unit, "
+                "payment_rule, payment_days, collection_days, days_per_week) VALUES "
+                "(gen_random_uuid(), :f, 'r', '2026-11-02', 100, 'day', :rule, :days, :coll, :dpw)"
+            )
+            ok = {"f": freelancer, "rule": "fixed_term", "days": 30, "coll": None, "dpw": 2.5}
+            with engine.begin() as connection:
+                connection.execute(insert, ok)
+            for bad in (
+                {**ok, "days": 61},
+                {**ok, "coll": 10},
+                {**ok, "rule": "on_collection", "days": 30, "coll": 10},
+                {**ok, "rule": "on_collection", "days": None, "coll": 61},
+                {**ok, "dpw": 0.7},
+                {**ok, "dpw": 5.5},
+            ):
+                with pytest.raises(IntegrityError), engine.begin() as connection:
+                    connection.execute(insert, bad)
+            with pytest.raises(IntegrityError), engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "INSERT INTO organizations (id, legal_name, country, hub_freelancer_id) "
+                        "VALUES (gen_random_uuid(), 'C', 'IT', gen_random_uuid())"
+                    )
+                )
+        finally:
+            engine.dispose()
+
+        downgrade(config, "0080")
+        assert _collaborators_shape(url) == (False, False, False)
+        upgrade(config, "0081")
+        assert _collaborators_shape(url)[0] is True

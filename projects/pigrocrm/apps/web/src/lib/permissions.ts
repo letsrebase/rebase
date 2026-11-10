@@ -105,6 +105,19 @@ export const MIN_ROLE = {
   reverse_settlement: 'collaborator',
   settle_outgoing_due_item: 'admin',
   reverse_outgoing_settlement: 'admin',
+  // Engagements with freelancers (REB-976): every read and write is an administrator's, as the
+  // hub's matches were. No screen consults them yet; the rows are here so that the one that
+  // does finds the minimum already pinned against the service.
+  read_engagements: 'admin',
+  create_engagement: 'admin',
+  update_engagement: 'admin',
+  cancel_engagement: 'admin',
+  close_engagement: 'admin',
+  send_engagement_for_signature: 'admin',
+  activate_engagement: 'admin',
+  get_freelancer_availability: 'admin',
+  set_freelancer_tax_data: 'admin',
+  set_organization_hub_freelancer: 'admin',
   produce_invoice_artifacts: 'collaborator',
   export_invoice_xml: 'collaborator',
   // The irreversible steps and the money parameters, admin-only in the service

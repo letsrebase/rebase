@@ -33,8 +33,9 @@ from pydantic import BaseModel
 from pigrocrm.core.errors import NotFound, ValidationFailed
 
 # Not the caller's doing and not something an agent can set: the row's own bookkeeping,
-# which moves on every write, a no-op included.
-_BOOKKEEPING: Final[frozenset[str]] = frozenset({"updated_at"})
+# which moves on every write, a no-op included, and what a read derives on the spot (an
+# engagement's `warnings` about overlaps) and is no field of the record.
+_BOOKKEEPING: Final[frozenset[str]] = frozenset({"updated_at", "warnings"})
 
 # The one nested object whose members are fields in their own right: an agent clears
 # `custom_fields.sede` and not «custom_fields».

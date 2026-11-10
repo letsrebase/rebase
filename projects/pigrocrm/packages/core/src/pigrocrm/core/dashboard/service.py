@@ -137,6 +137,7 @@ _MODULE_ENTITIES: dict[str, frozenset[str]] = {
     "time": frozenset({"time_entry"}),
     "costs": frozenset({"cost"}),
     "staff": frozenset({"staff_member", "payroll_settings"}),
+    "collaborators": frozenset({"engagement"}),
 }
 
 

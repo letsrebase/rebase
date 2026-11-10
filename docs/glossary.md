@@ -146,6 +146,10 @@ The English identifier is the usual English rendering; the Italian term is kept 
 | match | match | Already English |
 | contratto quadro | framework_agreement | `quadro` is `framework` (`framework.py` exists) |
 | lettera di incarico | engagement_letter | `lettera` is `letter`, `incarico` is `engagement` |
+| incarico | engagement | The CRM's name for the hub's match with a freelancer (REB-976): table `engagements`, `EngagementService`, `/api/engagements`, MCP `create_engagement`, module `collaborators`. Not the engagements door (`rebase_engagements`, `/api/rebase/engagements`), which sets up a freelancer's own space |
+| giorni a settimana | days_per_week | How much of the week an engagement takes, from 0.5 to 5 in steps of 0.5; availability is computed from it |
+| disponibilita (di un freelance) | availability | The days a week a freelancer is committed to, by ISO week (`libera` is `free`, `impegnata` is `committed`, `sconosciuta` is `unknown`); read from active engagements only |
+| pagamento a incasso | on_collection | The payment rule of a freelancer paid a number of days (`collection_days`) after the client has paid; the other rule is `fixed_term` |
 | disdetta | notice | `record_notice` already exists; `disdetto` is `notice_served` |
 | campagna | campaign | Email campaign |
 | disiscrizione | unsubscribe |  |

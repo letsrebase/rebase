@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.collaborators.models import Engagement
 from pigrocrm.core.config import Settings
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.db import SoftDeleteMixin
@@ -54,18 +55,30 @@ SKIP_ONBOARDING = "skip_space_onboarding"
 # stays in the core), so it never asks for a confirmation. `staff` counts every person
 # recorded, an ended one included: nothing there is deleted.
 _RECORDS: dict[
-    str, type[Deal] | type[Contract] | type[TimeEntry] | type[Cost] | type[StaffMember]
+    str,
+    type[Deal]
+    | type[Contract]
+    | type[TimeEntry]
+    | type[Cost]
+    | type[StaffMember]
+    | type[Engagement],
 ] = {
     "deals": Deal,
     "contracts": Contract,
     "time": TimeEntry,
     "costs": Cost,
     "staff": StaffMember,
+    "collaborators": Engagement,
 }
 
 
 def _live(
-    model: type[Deal] | type[Contract] | type[TimeEntry] | type[Cost] | type[StaffMember],
+    model: type[Deal]
+    | type[Contract]
+    | type[TimeEntry]
+    | type[Cost]
+    | type[StaffMember]
+    | type[Engagement],
 ) -> ColumnElement[bool]:
     """The rows a person would miss: the ones not deleted, and every row of a table that
     deletes nothing."""

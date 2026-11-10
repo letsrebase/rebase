@@ -9,6 +9,7 @@ is the call-through, and `tools/__init__.py` reads `FAMILIES` instead of importi
 from pigrocrm_mcp.tools.families import (
     analytics,
     automations,
+    collaborators,
     contracts,
     dashboard,
     deals,
@@ -42,6 +43,7 @@ FAMILIES = (
     documents,
     inbox,
     due_items,
+    collaborators,
     invoices,
     legal_entities,
     timetracking,

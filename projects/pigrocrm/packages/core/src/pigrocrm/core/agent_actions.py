@@ -225,6 +225,15 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "update_staff_member",
         "get_staff_member",
         "list_staff",
+        # Engagements: creating one draws a letter number a cancellation never gives back,
+        # ending or sending one acts on a legal document, and the tax data is personal data
+        # printed on contracts (collaborators design § 6). The hub id is a freelancer's identity.
+        "create_engagement",
+        "cancel_engagement",
+        "close_engagement",
+        "send_engagement_for_signature",
+        "set_freelancer_tax_data",
+        "set_organization_hub_freelancer",
     }
 )
 

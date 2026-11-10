@@ -1,7 +1,7 @@
 """collaborators: the hub freelancer id on organizations, and the engagements table
 
 Revision ID: 0081
-Revises: 0078
+Revises: 0080
 
 REB-976, § 1 and § 3 of `2026-11-09-collaborators-in-the-crm-design.md`.
 
@@ -28,7 +28,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0081"
-down_revision: str | Sequence[str] | None = "0078"
+down_revision: str | Sequence[str] | None = "0080"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

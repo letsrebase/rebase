@@ -8,8 +8,8 @@ place that decides *whether* a module is on; each surface asks it and never read
 settings keys itself. Which routes, tools, tabs and jobs belong to a module is each
 surface's own table, in the adapter that owns the surface, since core knows no adapter.
 
-A module that is not built is not listed here: `purchases`, `cash` and `collaborators`
-become rows when the card that builds them ships.
+A module that is not built is not listed here: `purchases` and `cash` become rows when the
+card that builds them ships.
 """
 
 from collections.abc import Iterable, Mapping
@@ -19,7 +19,7 @@ from typing import Literal, Protocol
 
 from pigrocrm.core.errors import ModuleOff
 
-ModuleKey = Literal["deals", "contracts", "time", "costs", "taxes", "staff"]
+ModuleKey = Literal["deals", "contracts", "time", "costs", "taxes", "staff", "collaborators"]
 Profile = Literal["solo", "company"]
 
 PROFILES: tuple[Profile, ...] = ("solo", "company")
@@ -45,6 +45,9 @@ class Module:
     requires: tuple[ModuleKey, ...]
     # What each profile switches on when the space has no row for the module.
     default: Mapping[Profile, bool]
+    # The default is an onboarding answer and the onboarding does not ask it yet: with no profile
+    # at all the module reads as off, where every other module reads as on (B2).
+    asks_onboarding: bool = False
 
 
 MODULES: tuple[Module, ...] = (
@@ -94,6 +97,16 @@ MODULES: tuple[Module, ...] = (
         # was skipped reads as off (frame B2).
         {"solo": False, "company": False},
     ),
+    Module(
+        "collaborators",
+        "Collaboratori",
+        "Incarichi con freelance, giorni a settimana e disponibilita'.",
+        (),
+        # `company` on when the onboarding says so, and the onboarding does not ask yet: a
+        # space gets it by switching it on, or because it already holds engagements.
+        {"solo": False, "company": False},
+        asks_onboarding=True,
+    ),
 )
 MODULES_BY_KEY: Mapping[str, Module] = {module.key: module for module in MODULES}
 MODULE_KEYS: tuple[ModuleKey, ...] = tuple(module.key for module in MODULES)
@@ -123,13 +136,15 @@ class _Shaped(Protocol):
     module_costs: bool | None
     module_taxes: bool | None
     module_staff: bool | None
+    module_collaborators: bool | None
 
 
 def profile_default(profile: Profile | None, module: ModuleKey) -> bool:
     """What a module reads as with no row of its own: the profile's default, and on while
-    the space has no profile (everything stays on until somebody chooses, B3)."""
+    the space has no profile (everything stays on until somebody chooses, B3), except a module
+    whose default is an onboarding answer, which reads as off until it is given."""
     if profile is None:
-        return True
+        return not MODULES_BY_KEY[module].asks_onboarding
     return MODULES_BY_KEY[module].default[profile]
 
 

@@ -10917,7 +10917,7 @@ export interface components {
              * Module
              * @enum {string}
              */
-            module: "deals" | "contracts" | "time" | "costs" | "taxes" | "staff";
+            module: "deals" | "contracts" | "time" | "costs" | "taxes" | "staff" | "collaborators";
             /** Label */
             label: string;
             /**
@@ -10942,7 +10942,7 @@ export interface components {
              * Key
              * @enum {string}
              */
-            key: "deals" | "contracts" | "time" | "costs" | "taxes" | "staff";
+            key: "deals" | "contracts" | "time" | "costs" | "taxes" | "staff" | "collaborators";
             /**
              * Label
              * @description The module's name as a person reads it (Italian)
@@ -10957,7 +10957,7 @@ export interface components {
              * Requires
              * @description Modules that must be on for this one to be on: `time` needs `deals`
              */
-            requires: ("deals" | "contracts" | "time" | "costs" | "taxes" | "staff")[];
+            requires: ("deals" | "contracts" | "time" | "costs" | "taxes" | "staff" | "collaborators")[];
             /**
              * Enabled
              * @description Whether the space has the module on right now
@@ -13373,17 +13373,17 @@ export interface components {
              * On
              * @description Modules to switch on
              */
-            on?: ("deals" | "contracts" | "time" | "costs" | "taxes" | "staff")[];
+            on?: ("deals" | "contracts" | "time" | "costs" | "taxes" | "staff" | "collaborators")[];
             /**
              * Off
              * @description Modules to switch off
              */
-            off?: ("deals" | "contracts" | "time" | "costs" | "taxes" | "staff")[];
+            off?: ("deals" | "contracts" | "time" | "costs" | "taxes" | "staff" | "collaborators")[];
             /**
              * Confirm Off
              * @description The modules in `off` that hold records and that the caller agrees to switch off: one that holds data and is not named here is refused. Their data stays
              */
-            confirm_off?: ("deals" | "contracts" | "time" | "costs" | "taxes" | "staff")[];
+            confirm_off?: ("deals" | "contracts" | "time" | "costs" | "taxes" | "staff" | "collaborators")[];
         };
         /** SpaceProfileProposal */
         SpaceProfileProposal: {

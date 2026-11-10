@@ -106,6 +106,8 @@ class OrganizationCreate(BaseModel):
     supplier_supplies: SafeStr | None = Field(default=None, max_length=KIND_MAX_LENGTH)
     customer_kind: SafeStr | None = Field(default=None, max_length=KIND_MAX_LENGTH)
     is_withholding_agent: bool = False
+    # The hub's id of a freelancer: needs the role `freelancer` and an administrator.
+    hub_freelancer_id: UUID | None = None
     custom_fields: dict[str, Any] = {}
 
 
@@ -145,6 +147,7 @@ class OrganizationUpdate(BaseModel):
     supplier_supplies: SafeStr | None = Field(default=None, max_length=KIND_MAX_LENGTH)
     customer_kind: SafeStr | None = Field(default=None, max_length=KIND_MAX_LENGTH)
     is_withholding_agent: bool | None = None
+    hub_freelancer_id: UUID | None = None
     custom_fields: dict[str, Any] | None = None
 
 
@@ -181,6 +184,7 @@ class OrganizationRead(BaseModel):
     supplier_supplies: str | None
     customer_kind: str | None
     is_withholding_agent: bool
+    hub_freelancer_id: UUID | None
     custom_fields: dict[str, Any]
     created_at: datetime
     updated_at: datetime

@@ -106,6 +106,13 @@ FREE_TEXT_TOOLS: frozenset[str] = frozenset(
         "update_staff_member",
         "get_staff_member",
         "list_staff",
+        # Engagements with freelancers: the role is typed by whoever created the engagement,
+        # and the freelancer's organization name comes with the tax data.
+        "create_engagement",
+        "update_engagement",
+        "get_engagement",
+        "list_engagements",
+        "set_freelancer_tax_data",
         # Time, costs and to-dos: descriptions and notes.
         "log_time",
         "update_time_entry",
