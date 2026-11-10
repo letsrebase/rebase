@@ -117,7 +117,8 @@ class EngagementPaymentService:
         out: dict[UUID, str] = {}
         for row in rows:
             dependency = dependencies.get(row.depends_on_id) if row.depends_on_id else None
-            label = invoices.get(dependency.source_id) if dependency is not None else None
+            source_id = dependency.source_id if dependency is not None else None
+            label = invoices.get(source_id) if source_id is not None else None
             if label is not None:
                 out[row.id] = label
         return out

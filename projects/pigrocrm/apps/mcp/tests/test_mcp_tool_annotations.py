@@ -105,7 +105,9 @@ DEFAULT_BUDGET_BYTES = 106_800
 # REB-1022: 128.5 KB, up from 127.0 KB, the same three tools, measured at 128,444.
 # REB-1024: 129.8 KB, up from 128.5 KB, for `list_iva_periods` and `get_iva_register` (a full-access
 # administrator's: a year, a period, a register and a page), measured at 129,771.
-FULL_ACCESS_BUDGET_BYTES = 129_800
+# REB-1035: 129.85 KB, up from 129.8 KB, for `source_id` on `list_due_items` and `bucket` on
+# `list_engagements`, measured at 129,842.
+FULL_ACCESS_BUDGET_BYTES = 129_850
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

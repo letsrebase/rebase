@@ -18050,6 +18050,8 @@ export interface components {
             client_name?: string | null;
             /** Letter Document Id */
             letter_document_id?: string | null;
+            /** Today */
+            today?: string | null;
             /**
              * Created At
              * Format: date-time
