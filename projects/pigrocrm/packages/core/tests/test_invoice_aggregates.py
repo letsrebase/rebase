@@ -419,7 +419,7 @@ def test_unpaid_for_customer_returns_the_rows_unpaid_sums(
 
     repo = InvoiceRepository(db_session)
     rows = repo.unpaid_for_customer(customer.id, limit=50)
-    assert sum(row.total for row in rows) == repo.sum_unpaid()
+    assert sum(row.remaining for row in rows) == repo.sum_unpaid()
     assert len(rows) == 2
 
 
@@ -434,7 +434,7 @@ def test_unpaid_for_customer_excludes_another_organizations_invoice(db_session: 
     _invoice(db_session, theirs, total="999.00")
 
     rows = InvoiceRepository(db_session).unpaid_for_customer(mine.id, limit=50)
-    assert [row.total for row in rows] == [Decimal("1220.00")]
+    assert [row.remaining for row in rows] == [Decimal("1220.00")]
 
 
 def test_unpaid_for_customer_excludes_a_soft_deleted_invoice(
@@ -462,7 +462,7 @@ def test_unpaid_for_customer_orders_by_deadline_with_the_undated_row_last(
     _invoice(db_session, customer, total="200.00", due_date=today_local() - timedelta(days=9))
 
     rows = InvoiceRepository(db_session).unpaid_for_customer(customer.id, limit=50)
-    assert [row.total for row in rows] == [
+    assert [row.remaining for row in rows] == [
         Decimal("200.00"),
         Decimal("300.00"),
         Decimal("100.00"),

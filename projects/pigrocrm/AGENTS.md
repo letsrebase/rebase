@@ -187,8 +187,13 @@ digest's «Incassate» read each settlement by its own date (the ceiling counts 
 `taxable_amount`). The readers that want only the state (the list filter, the calendar, the year CSV)
 keep the projected columns. A test that builds an issued `Invoice` row by hand gets its item from
 `fakes/hand_built_invoices.py`, the stand-in for the boot step; `ensure-space-defaults` runs
-`reconcile_sales_invoices` on every space and on the root, giving each issued invoice without an item its
-item (a paid one settled on its `payment_date`, else its issue date), idempotently.
+`reconcile_sales_invoices` on every space and on the root: it gives each issued invoice without an item
+its item (a paid one settled on its `payment_date`, else its issue date) and brings an item that disagrees
+with its invoice back in step (`repair_invoice`: the old API marked it paid or unpaid, moved the date or
+annulled it after the item existed), idempotently. The old API keeps serving while `migrate` runs, so
+`pigrocrm reconcile-due-items` runs the same step again as the api container starts (compose `command`),
+after the old one is gone, and may run from cron; it answers 1 when a space failed, while the boot step
+follows the boot's convention (a line on stderr, exit 0).
 
 **A router authenticates with `dependencies=[Depends(get_actor)]`, not per handler.** A
 handler that never names the actor is still behind it, and `test_routes_authenticate.py`

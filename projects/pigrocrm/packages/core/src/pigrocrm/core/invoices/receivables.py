@@ -114,6 +114,15 @@ class OpenReceivable(NamedTuple):
     due_date: date
 
 
+class UnpaidInvoice(NamedTuple):
+    """An issued invoice with something left to collect, for one organization's briefing:
+    what its due item still has to collect and when it falls due, `None` when it has no date."""
+
+    invoice: Invoice
+    remaining: Decimal
+    due_date: date | None
+
+
 class Payment(NamedTuple):
     """One payment received against an issued invoice: the settlement's amount on the day it
     was made, so an invoice paid in instalments is as many rows as there were payments."""

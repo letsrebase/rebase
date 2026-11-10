@@ -313,13 +313,44 @@ class DueItemService:
         if paid:
             assert paid_on is not None
             self._settle_invoice_item(item, paid_on, actor)
-        else:
+        elif item.state == "settled":
+            # Only a call that really flips a collected invoice back reverses what was paid.
+            # An invoice that is already unpaid keeps its partial payments: «unpaid» is what
+            # the projection says about it.
             for settlement in self.repo.live_settlements(item.id):
                 self._reverse(settlement, "incasso annullato", actor)
             item.state = "expected"
         self.session.flush()
         self._follow(item)
         self._project(item)
+
+    def repair_invoice(self, invoice: Invoice) -> bool:
+        """Brings the item of an invoice the previous release changed after the item existed
+        back in step with the invoice: the old code wrote `payment_status` and `payment_date`
+        without a settlement and annulled without dropping, and the old API keeps serving
+        while the new release migrates. Answers whether anything changed; idempotent, since
+        after it the item says what the invoice says.
+
+        An invoice marked paid settles what remains on its date, one marked unpaid reverses
+        the settlements of an item that reads settled, a collected invoice whose date moved
+        moves its settlement, and an annulled invoice drops its item."""
+        item = self.repo.by_source(SALES_INVOICE, invoice.id)
+        if item is None:
+            return False
+        if invoice.status == "cancelled":
+            if item.state == "dropped":
+                return False
+            self.drop_for_invoice(invoice.id)
+            return True
+        if item.state == "dropped":
+            return False
+        paid = invoice.payment_status == "paid"
+        paid_on = (invoice.payment_date or invoice.issue_date) if paid else None
+        totals = self.repo.totals(item.id)
+        if (item.state == "settled") == paid and (not paid or totals.last_settled_on == paid_on):
+            return False
+        self.record_invoice_payment(invoice, paid=paid, paid_on=paid_on, actor=Actor.system())
+        return True
 
     def drop_for_invoice(self, invoice_id: UUID) -> None:
         """An annulled invoice owes nothing. The payments recorded against it stay, as cash

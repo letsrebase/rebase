@@ -347,6 +347,10 @@ _INTERNE: dict[Method, str] = {
     ("DueItemService", "open_for_invoice"): "the writer's half: emission and import write the item",
     ("DueItemService", "reconcile_invoice"): "the boot step gives an old invoice its item",
     ("DueItemService", "record_invoice_payment"): "behind the tool set_invoice_payment_state",
+    (
+        "DueItemService",
+        "repair_invoice",
+    ): "the boot step brings an item back in step with its invoice",
     ("DueItemService", "drop_for_invoice"): "the writer's half: annulment drops the item",
 }
 

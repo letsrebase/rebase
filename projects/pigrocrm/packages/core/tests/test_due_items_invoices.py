@@ -20,7 +20,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.repository import AnalyticsRepository
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.due_items.models import DueItem, DueItemSettlement
-from pigrocrm.core.due_items.reconcile import reconcile_sales_invoices
+from pigrocrm.core.due_items.reconcile import Reconciled, reconcile_sales_invoices
 from pigrocrm.core.due_items.sales import SALES_INVOICE
 from pigrocrm.core.due_items.schemas import SettlementCreate
 from pigrocrm.core.due_items.service import DueItemService
@@ -283,7 +283,7 @@ def test_the_boot_gives_a_previous_release_invoice_its_item_and_a_second_boot_ad
         db_session, {"payment_status": "paid"}, due=_days(-30), total=Decimal("80.00")
     )
 
-    assert reconcile_sales_invoices(db_session) == 3
+    assert reconcile_sales_invoices(db_session) == Reconciled(3, 0)
 
     item = _item(db_session, unpaid)
     assert (item.state, item.amount, item.due_date) == ("expected", Decimal("1000.00"), _days(-10))
@@ -303,7 +303,7 @@ def test_the_boot_gives_a_previous_release_invoice_its_item_and_a_second_boot_ad
 
     before = db_session.scalar(select(DueItem.id).order_by(DueItem.id).limit(1))
     count = len(db_session.scalars(select(DueItem.id)).all())
-    assert reconcile_sales_invoices(db_session) == 0
+    assert reconcile_sales_invoices(db_session) == Reconciled(0, 0)
     assert len(db_session.scalars(select(DueItem.id)).all()) == count
     assert db_session.scalar(select(DueItem.id).order_by(DueItem.id).limit(1)) == before
     assert len(db_session.scalars(select(DueItemSettlement.id)).all()) == 2
@@ -320,7 +320,7 @@ def test_the_boot_leaves_a_cancelled_invoice_and_one_with_an_item_alone(
     done = _with_item(db_session, due=_days(-10))
     _pay(db_session, done, "10.00", _days(-1))
 
-    assert reconcile_sales_invoices(db_session) == 0
+    assert reconcile_sales_invoices(db_session) == Reconciled(0, 0)
     assert DueItemService(db_session).repo.by_source(SALES_INVOICE, cancelled.id) is None
     assert _item(db_session, done).state == "expected"
 
@@ -398,3 +398,91 @@ def test_an_invoice_with_nothing_to_collect_has_no_item_and_can_still_be_marked(
         invoice, paid=paid, paid_on=_days(-1) if paid else None, actor=USER
     )
     assert invoice.payment_status == ("paid" if paid else "unpaid")
+
+
+def test_marking_an_already_unpaid_invoice_unpaid_keeps_its_partial_payment(
+    db_session: Session,
+) -> None:
+    invoice = _with_item(db_session, due=_days(-3), total=Decimal("1000.00"))
+    _pay(db_session, invoice, "400.00", _days(-2))
+    DueItemService(db_session).record_invoice_payment(invoice, paid=False, paid_on=None, actor=USER)
+    item = _item(db_session, invoice)
+    assert [row.amount for row in DueItemService(db_session).repo.live_settlements(item.id)] == [
+        Decimal("400.00")
+    ]
+    assert (item.state, invoice.payment_status) == ("expected", "unpaid")
+    assert InvoiceRepository(db_session).sum_unpaid() == Decimal("600.00")
+
+
+# --- the boot converges an item the previous release left disagreeing ------------------------
+
+
+def _old_release_writes(session: Session, invoice: Invoice, **columns: object) -> None:
+    """What the previous API did after the item existed: it changed the invoice's columns and
+    knew nothing of the item."""
+    with suspended():
+        for name, value in columns.items():
+            setattr(invoice, name, value)
+        session.flush()
+
+
+def test_the_boot_settles_an_item_whose_invoice_the_old_release_marked_paid(
+    db_session: Session,
+) -> None:
+    invoice = _with_item(db_session, due=_days(-10), total=Decimal("1000.00"))
+    _pay(db_session, invoice, "400.00", _days(-6))
+    _old_release_writes(db_session, invoice, payment_status="paid", payment_date=_days(-2))
+
+    assert reconcile_sales_invoices(db_session) == Reconciled(0, 1)
+    item = _item(db_session, invoice)
+    assert item.state == "settled"
+    assert [
+        (row.amount, row.settled_on)
+        for row in DueItemService(db_session).repo.live_settlements(item.id)
+    ] == [(Decimal("400.00"), _days(-6)), (Decimal("600.00"), _days(-2))]
+    assert InvoiceRepository(db_session).sum_unpaid() == Decimal("0.00")
+    _assert_projection_agrees(db_session)
+    assert reconcile_sales_invoices(db_session) == Reconciled(0, 0)
+
+
+def test_the_boot_reverses_an_item_whose_invoice_the_old_release_marked_unpaid(
+    db_session: Session,
+) -> None:
+    invoice = _with_item(db_session, due=_days(-10), total=Decimal("500.00"))
+    _pay(db_session, invoice, "500.00", _days(-2))
+    _old_release_writes(db_session, invoice, payment_status="unpaid", payment_date=None)
+
+    assert reconcile_sales_invoices(db_session) == Reconciled(0, 1)
+    assert _item(db_session, invoice).state == "expected"
+    assert InvoiceRepository(db_session).sum_unpaid() == Decimal("500.00")
+    _assert_projection_agrees(db_session)
+    assert reconcile_sales_invoices(db_session) == Reconciled(0, 0)
+
+
+def test_the_boot_moves_the_settlement_of_an_invoice_whose_date_the_old_release_changed(
+    db_session: Session,
+) -> None:
+    invoice = _with_item(db_session, due=_days(-10), total=Decimal("500.00"))
+    _pay(db_session, invoice, "500.00", _days(-2))
+    _old_release_writes(db_session, invoice, payment_date=_days(-5))
+
+    assert reconcile_sales_invoices(db_session) == Reconciled(0, 1)
+    (settlement,) = DueItemService(db_session).repo.live_settlements(_item(db_session, invoice).id)
+    assert settlement.settled_on == _days(-5)
+    _assert_projection_agrees(db_session)
+
+
+def test_the_boot_drops_the_item_of_an_invoice_the_old_release_annulled(
+    db_session: Session,
+) -> None:
+    invoice = _with_item(db_session, due=_days(-10), total=Decimal("500.00"))
+    _old_release_writes(
+        db_session,
+        invoice,
+        status="cancelled",
+        cancelled_at=TODAY,
+        cancellation_reason="errore",
+    )
+    assert reconcile_sales_invoices(db_session) == Reconciled(0, 1)
+    assert _item(db_session, invoice).state == "dropped"
+    assert reconcile_sales_invoices(db_session) == Reconciled(0, 0)

@@ -14,6 +14,7 @@ from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core import cli
+from pigrocrm.core.cli import spaces
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.clock import today_local
@@ -42,7 +43,7 @@ def space(db_engine: Engine) -> Iterator[Engine]:
     registry = ensure_tenants_database(settings)
     with session_factory(registry)() as session:
         TenantService(session, settings).provision(
-            TenantSignup(slug=SLUG, name="Ada", email=f"{SLUG}@studio.it")
+            TenantSignup(first_name="Ada", slug=SLUG, name="Ada", email=f"{SLUG}@studio.it")
         )
     url = tenant_database_url(settings, tenant_database_name(SLUG))
     engine = create_engine(url, future=True)
@@ -100,8 +101,62 @@ def test_the_boot_gives_an_invoice_of_the_previous_release_its_item_once(
     _boot(settings, monkeypatch)
     expected = [("settled", Decimal("250.00"), 1), ("expected", Decimal("1000.00"), 0)]
     assert _items(space) == expected
-    assert f"{SLUG}: due items created for 2 invoices" in capsys.readouterr().out
+    assert f"{SLUG}: due items created for 2 invoices, repaired for 0" in capsys.readouterr().out
 
     _boot(settings, monkeypatch)
     assert _items(space) == expected
+    assert f"{SLUG}: due items already in place" in capsys.readouterr().out
+
+
+def test_a_space_that_fails_is_a_line_on_stderr_and_the_boot_goes_on(
+    db_engine: Engine,
+    space: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The boot's convention: one space's failure is a line naming the exception's type on
+    stderr and never keeps the API down, so `ensure-space-defaults` still answers 0. The step
+    that exists to be run on its own answers 1."""
+    settings = _settings(db_engine)
+
+    def refuse(session: Session) -> object:
+        raise RuntimeError("secret detail")
+
+    monkeypatch.setattr(spaces, "reconcile_sales_invoices", refuse)
+    _boot(settings, monkeypatch)
+    err = capsys.readouterr().err
+    assert f"{SLUG}: due items not reconciled (RuntimeError)" in err
+    assert "secret detail" not in err
+
+    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    assert cli.main(["reconcile-due-items", "--slug", SLUG]) == 1
+    assert f"{SLUG}: due items not reconciled (RuntimeError)" in capsys.readouterr().err
+
+
+def test_the_standalone_step_converges_an_invoice_the_old_release_wrote_after_the_boot(
+    db_engine: Engine,
+    space: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    settings = _settings(db_engine)
+    _write_previous_release_invoices(space)
+    _boot(settings, monkeypatch)
+    capsys.readouterr()
+    # The old API, still serving, marks the open invoice paid after the boot step has run.
+    with session_factory(space)() as session, suspended():
+        session.execute(
+            text(
+                "update invoices set payment_status = 'paid', payment_date = :d "
+                "where total = 1000.00"
+            ),
+            {"d": today_local()},
+        )
+        session.commit()
+    assert [row[0] for row in _items(space)] == ["settled", "expected"]
+
+    assert cli.main(["reconcile-due-items", "--slug", SLUG]) == 0
+    assert f"{SLUG}: due items created for 0 invoices, repaired for 1" in capsys.readouterr().out
+    assert [row[0] for row in _items(space)] == ["settled", "settled"]
+    assert cli.main(["reconcile-due-items", "--slug", SLUG]) == 0
     assert f"{SLUG}: due items already in place" in capsys.readouterr().out

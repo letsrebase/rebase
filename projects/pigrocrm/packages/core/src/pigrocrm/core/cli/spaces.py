@@ -209,21 +209,26 @@ def _ensure_profile(
         print(f"{label}: profile already set, left as it is")
 
 
-def _reconcile_due_items(engine: Engine, label: str) -> None:
-    """One installation's due-item step, on its owner engine: every issued invoice written by
-    the previous release gets its due item (spec 2026-11-09, due items, § 1.1). Idempotent,
-    never raises, says what it did."""
+def _reconcile_due_items(engine: Engine, label: str) -> bool:
+    """One installation's due-item step, on the engine it is given: every invoice written by
+    the previous release gets its due item or is brought back in step with it (spec
+    2026-11-09, due items, § 1.1). Idempotent, says what it did, and answers whether it
+    worked. Never raises: the boot's convention is a line on stderr, so one space cannot keep
+    the API down for the others."""
     try:
         with session_factory(engine)() as space:
             bind_scope(space, Actor.system())
-            created = reconcile_sales_invoices(space)
+            done = reconcile_sales_invoices(space)
     except Exception as exc:  # noqa: BLE001 - one space must not stop the others
         print(f"{label}: due items not reconciled ({type(exc).__name__})", file=sys.stderr)
-        return
-    if created:
-        print(f"{label}: due items created for {created} invoices")
+        return False
+    if done.created or done.repaired:
+        print(
+            f"{label}: due items created for {done.created} invoices, repaired for {done.repaired}"
+        )
     else:
         print(f"{label}: due items already in place")
+    return True
 
 
 def _reconcile_root(settings: Settings) -> None:
@@ -233,6 +238,28 @@ def _reconcile_root(settings: Settings) -> None:
             _reconcile_due_items(engine, ROOT_LABEL)
     except Exception as exc:  # noqa: BLE001 - the boot must not stop here
         print(f"{ROOT_LABEL}: due items not reconciled ({type(exc).__name__})", file=sys.stderr)
+
+
+def reconcile_due_items(settings: Settings, *, slug: str | None = None) -> int:
+    """`pigrocrm reconcile-due-items`: the due-item step alone, over the root and every space
+    (or one), with the application role the cron commands use. The api container runs it as
+    it starts, which closes the window in which the old API kept writing invoices after the
+    boot step had run. It migrates nothing. Answers 1 when the registry cannot be read or any
+    installation failed, so a caller that chains on the status sees it; the api container
+    starts anyway."""
+    walk = read_spaces(settings, slug=slug)
+    failed = report_unreadable(walk)
+    for target in walk.targets:
+        try:
+            with space_engine(target.url) as engine:
+                if not _reconcile_due_items(engine, target.label):
+                    failed = True
+        except Exception as exc:  # noqa: BLE001 - one space must not stop the others
+            print(
+                f"{target.label}: due items not reconciled ({type(exc).__name__})", file=sys.stderr
+            )
+            failed = True
+    return 1 if failed else 0
 
 
 def _profile_root(settings: Settings) -> None:

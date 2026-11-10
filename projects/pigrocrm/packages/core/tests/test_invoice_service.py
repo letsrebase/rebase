@@ -1061,7 +1061,7 @@ def test_unpaid_for_customer_lists_the_issued_unpaid_rows_oldest_deadline_first(
 
     rows = service.unpaid_for_customer(customer.id, ADMIN, limit=10)
 
-    assert [row.id for row in rows] == [earlier.id, later.id]
-    assert [row.id for row in service.unpaid_for_customer(customer.id, ADMIN, limit=1)] == [
+    assert [row.invoice.id for row in rows] == [earlier.id, later.id]
+    assert [row.invoice.id for row in service.unpaid_for_customer(customer.id, ADMIN, limit=1)] == [
         earlier.id
     ]

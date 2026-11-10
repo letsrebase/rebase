@@ -38,6 +38,7 @@ from pigrocrm.core.invoices.receivables import (
     OrganizationRow,
     OverdueRow,
     Payment,
+    UnpaidInvoice,
     _issued_filter,
     _legal_entity_filter,
     _overdue_predicate,
@@ -518,7 +519,7 @@ class InvoiceRepository:
             ).scalar_one()
         )
 
-    def unpaid_for_customer(self, customer_id: UUID, limit: int) -> list[Invoice]:
+    def unpaid_for_customer(self, customer_id: UUID, limit: int) -> list[UnpaidInvoice]:
         """One customer's issued, unpaid invoices, oldest deadline first.
 
         The rows behind `sum_unpaid` restricted to one customer, sharing
@@ -536,15 +537,18 @@ class InvoiceRepository:
         cost is paid in the model's context window on every render, so the caller has to
         say how much of it that window is worth -- a default here is a budget nobody
         decided.
+
+        Each row carries what its due item still has to collect and its due date, which a
+        partly paid invoice's `total` and the frozen `due_date` column are not (spec
+        2026-11-09, § 1.1).
         """
-        return list(
-            self.session.execute(
-                join_sales_item(select(Invoice))
-                .where(*_receivable_filter(), Invoice.customer_id == customer_id)
-                .order_by(DueItem.due_date.asc().nulls_last(), Invoice.id.asc())
-                .limit(limit)
-            ).scalars()
-        )
+        rows = self.session.execute(
+            join_sales_item(select(Invoice, remaining_amount(), DueItem.due_date))
+            .where(*_receivable_filter(), Invoice.customer_id == customer_id)
+            .order_by(DueItem.due_date.asc().nulls_last(), Invoice.id.asc())
+            .limit(limit)
+        ).all()
+        return [UnpaidInvoice(invoice, Decimal(left), due) for invoice, left, due in rows]
 
     def ageing_receivables(self, today: date, legal_entity_id: UUID | None = None) -> list[BandRow]:
         """The receivables in the six buckets of slice 8 §2.1, each with its sum and count,
