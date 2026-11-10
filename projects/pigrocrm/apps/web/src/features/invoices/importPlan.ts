@@ -282,3 +282,8 @@ export function countConfirmed(rows: readonly ConfirmRow[]): Partial<Record<Conf
   for (const row of rows) counts[row.outcome] = (counts[row.outcome] ?? 0) + 1
   return counts
 }
+
+/** «1 fattura» / «3 fatture»: the count with the noun that agrees with it. */
+export function plural(count: number, one: string, many: string): string {
+  return count === 1 ? `1 ${one}` : `${count} ${many}`
+}
