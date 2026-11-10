@@ -27,6 +27,7 @@ from zoneinfo import ZoneInfo
 from pigrocrm.core import telemetry
 from pigrocrm.core.accountant_export.retention import ExportRetention, RetentionReport
 from pigrocrm.core.automations.daily import AutomationPass, PassReport
+from pigrocrm.core.cli.signing import SpaceSweep, sweep_space
 from pigrocrm.core.cli.spaces_walk import (
     read_spaces,
     record_job,
@@ -304,6 +305,25 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
                     file=sys.stderr,
                 )
                 failed = True
+            # Also apart from the rules: signatures a lost webhook left behind are recovered for
+            # every space, the root included, and a space whose rules failed is not left without
+            # (REB-1019). Without a Documenso it moves nothing that needs one.
+            try:
+                recovered = sweep_space(
+                    settings,
+                    engine,
+                    slug=target.slug,
+                    tenant_id=target.tenant_id,
+                    dry_run=dry_run,
+                )
+            except Exception as exc:  # noqa: BLE001 - reported, the pass goes on
+                print(
+                    f"{target.label}: signatures not recovered ({type(exc).__name__})",
+                    file=sys.stderr,
+                )
+                failed = True
+            else:
+                failed = _print_signature_sweep(target.label, recovered, dry_run=dry_run) or failed
             try:
                 with session_factory(engine)() as space:
                     report = AutomationPass(space, settings).run(today=day, dry_run=dry_run)
@@ -365,6 +385,25 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
         if roll is not None:
             failed = _print_year_roll(target.label, roll, dry_run=dry_run) or failed
     return 1 if failed else 0
+
+
+def _print_signature_sweep(slug: str, report: SpaceSweep, *, dry_run: bool) -> bool:
+    """The signature recovery's line (REB-1019): only when there was something to say, so the log
+    of a daily pass does not grow a line that is almost always zero. A document Documenso could
+    not be asked about (a refused token, an unreachable instance) goes to `stderr` as a count and
+    an exit status: nothing else says a signature is stuck."""
+    if dry_run:
+        if report.visited:
+            print(f"{slug}: signatures to look at {report.visited} (dry run)")
+        return False
+    if report.touched:
+        print(f"{slug}: signatures recovered {report.touched}")
+    if report.unconfirmed:
+        print(
+            f"{slug}: signatures not confirmed with Documenso {report.unconfirmed}",
+            file=sys.stderr,
+        )
+    return report.unconfirmed > 0
 
 
 def _print_export_retention(slug: str, report: RetentionReport, *, dry_run: bool) -> bool:

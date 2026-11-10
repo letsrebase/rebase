@@ -11,6 +11,7 @@ import sys
 from collections.abc import Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
+from uuid import UUID
 
 from sqlalchemy import Engine, create_engine, select
 from sqlalchemy.engine import URL
@@ -33,6 +34,7 @@ class SpaceTarget:
     url: str | URL  # the application role's URL
     owner_email: str | None  # the registry's owner, `None` for the root
     public_url: str  # the base of every link a mail or a notification carries
+    tenant_id: UUID | None = None  # the registry's id of the space, `None` for the root
 
 
 @dataclass(frozen=True)
@@ -77,6 +79,7 @@ def read_spaces(settings: Settings, *, slug: str | None = None, include_root: bo
                         tenant_database_url(settings, row.db_name),
                         row.owner_email,
                         space_base_settings(settings, row.slug).public_url,
+                        row.id,
                     )
                     for row in session.scalars(select(Tenant).order_by(Tenant.created_at)).all()
                     if slug is None or row.slug == slug

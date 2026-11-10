@@ -2,9 +2,10 @@
 
 One module per family: `admin` (createadmin, resetpassword), `spaces` (ensure-space-defaults,
 reconcile-due-items, rebuild-identity-index, seed-templates), `cron` (digest, reminders,
-automations), `mail` (mail-sync, alias gmail-sync), `backfill` (owner-backfill,
-duplicate-organizations, vapid-keys). What they share, the walk over the root installation and
-the registry's spaces, is `spaces_walk`.
+automations), `mail` (mail-sync, alias gmail-sync), `signing` (contracts-check, documenso-check and
+the daily recovery of signatures), `backfill` (owner-backfill, duplicate-organizations,
+vapid-keys). What they share, the walk over the root installation and the registry's spaces, is
+`spaces_walk`.
 """
 
 import argparse
@@ -15,6 +16,7 @@ from pigrocrm.core.cli.admin import createadmin, resetpassword
 from pigrocrm.core.cli.backfill import duplicate_organizations, owner_backfill, vapid_keys
 from pigrocrm.core.cli.cron import automations, digest, reminders
 from pigrocrm.core.cli.mail import mail_sync
+from pigrocrm.core.cli.signing import contracts_check, documenso_check
 from pigrocrm.core.cli.spaces import (
     ensure_space_defaults,
     rebuild_identity_index,
@@ -128,6 +130,15 @@ def _build_parser() -> argparse.ArgumentParser:
     backfill.add_argument(
         "--apply", action="store_true", help="Writes; without it, only prints what it would do"
     )
+    sub.add_parser(
+        "contracts-check",
+        help="Typeset every framework agreement and letter text from fiction, and ask where the "
+        "signing blanks land: can this machine typeset a contract? Writes nothing",
+    )
+    sub.add_parser(
+        "documenso-check",
+        help="Does this installation reach its Documenso, and does its token open it?",
+    )
     duplicates = sub.add_parser(
         "duplicate-organizations",
         help="List the organizations of a space that share a VAT number (exit 2 when there are)",
@@ -164,6 +175,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return reminders(settings, slug=args.slug, day=args.date, dry_run=args.dry_run)
         case "automations":
             return automations(settings, slug=args.slug, day=args.date, dry_run=args.dry_run)
+        case "contracts-check":
+            return contracts_check(settings)
+        case "documenso-check":
+            return documenso_check(settings)
         case "duplicate-organizations":
             return duplicate_organizations(settings, slug=args.slug)
         case "owner-backfill":

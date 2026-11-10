@@ -1,10 +1,11 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
     CheckConstraint,
     Date,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -69,6 +70,28 @@ class Document(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     )
     letter_type: Mapped[str | None] = mapped_column(String(20), default=None)
     text_version: Mapped[str | None] = mapped_column(String(20), default=None)
+    # What happened to a letter once it left (collaborators design § 2, REB-1019): null on every
+    # other document. `signature_state` is the hub's own six names (`generated`, `pending`, `sent`,
+    # `signed`, `cancelled`, and `notice_served` on a framework agreement); the envelope is
+    # Documenso's, found again by the webhook, with the item the sealed copy is downloaded by; the
+    # signed PDF is the version numbered `signed_version`, and each signed-copy mail is stamped
+    # only once its own provider accepted it, so a retry never repeats the other's.
+    signature_state: Mapped[str | None] = mapped_column(String(20), default=None)
+    envelope_id: Mapped[str | None] = mapped_column(String(100), default=None)
+    envelope_item_id: Mapped[str | None] = mapped_column(String(100), default=None)
+    signing_url: Mapped[str | None] = mapped_column(Text, default=None)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    sent_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    signed_version: Mapped[int | None] = mapped_column(Integer, default=None)
+    signed_copy_to_freelancer_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    signed_copy_to_issuer_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    notice_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    cancel_reason: Mapped[str | None] = mapped_column(String(200), default=None)
     type: Mapped[str] = mapped_column(String(20), nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     status: Mapped[str | None] = mapped_column(String(20), default=None)
@@ -94,6 +117,24 @@ class Document(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             "num_nonnulls(customer_id, deal_id, contract_id) = 1",
             name="ck_documents_customer_xor_deal",
         ),
+        CheckConstraint(
+            "signature_state IS NULL OR signature_state IN ('generated', 'pending', 'sent', "
+            "'signed', 'cancelled', 'notice_served')",
+            name="ck_documents_signature_state",
+        ),
+        CheckConstraint(
+            "signature_state IS DISTINCT FROM 'notice_served' OR type = 'framework_agreement'",
+            name="ck_documents_notice_for_framework",
+        ),
+        CheckConstraint(
+            "(envelope_id IS NULL) = (envelope_item_id IS NULL)", name="ck_documents_envelope_item"
+        ),
+        CheckConstraint(
+            "envelope_id IS NULL OR signature_state IN ('sent', 'signed', 'cancelled', "
+            "'notice_served')",
+            name="ck_documents_envelope_left",
+        ),
+        Index("uq_documents_envelope_id", "envelope_id", unique=True),
         Index("ix_documents_custom_fields", "custom_fields", postgresql_using="gin"),
         # The global search matches a document by its title -- see
         # `Organization.__table_args__` for why the index is partial on `deleted_at IS NULL`
@@ -127,7 +168,11 @@ class Document(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             "customer_id",
             "letter_type",
             unique=True,
-            postgresql_where=text("type = 'framework_agreement' AND deleted_at IS NULL"),
+            postgresql_where=text(
+                "type = 'framework_agreement' AND deleted_at IS NULL "
+                "AND signature_state IS DISTINCT FROM 'cancelled' "
+                "AND signature_state IS DISTINCT FROM 'notice_served'"
+            ),
         ),
     )
 

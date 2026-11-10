@@ -4196,6 +4196,29 @@ def test_0099_adds_the_message_columns_to_inbox_items_and_downgrade_keeps_the_it
             with engine.connect() as connection:
                 sources = connection.execute(text("SELECT source FROM inbox_items")).scalars().all()
             assert sources == ["upload"]
-            upgrade(config, "0099")
+
+def test_0100_adds_the_signature_columns_and_downgrade_removes_them(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1019: the signature columns of `documents`, and back."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0099")
+        engine = create_engine(url)
+        sql = (
+            "SELECT count(*) FROM information_schema.columns WHERE table_name = 'documents' "
+            "AND column_name IN ('signature_state', 'envelope_id', 'signed_version', 'notice_at')"
+        )
+        try:
+            with engine.connect() as connection:
+                assert connection.execute(text(sql)).scalar_one() == 0
+            upgrade(config, "0100")
+            with engine.connect() as connection:
+                assert connection.execute(text(sql)).scalar_one() == 4
+            downgrade(config, "0099")
+            with engine.connect() as connection:
+                assert connection.execute(text(sql)).scalar_one() == 0
+            upgrade(config, "0100")
         finally:
             engine.dispose()

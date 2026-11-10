@@ -406,6 +406,23 @@ commit=False)`: the items are `source = 'mailbox'` with the message's sender, su
 they stay when the mailbox is disconnected. A personal mailbox cannot hold `billing` and the sink refuses one anyway.
 A sink never commits and `discard` undoes its bytes; the tests use the fake IMAP server with `Part(content=...)`.
 
+**Signing a letter is `SigningService`, and it is off unless the installation has a Documenso (REB-1019).**
+`core/documenso/` is the API v2 client (`client.py`), its no-redirect transport and `routing.py`;
+`core/collaborators/signing.py` sends (`send_engagement`: the framework agreement first when the freelancer has none
+active, the letter waits `pending` and is released when it is signed; a draft text never leaves; **only the freelancer
+signs**), and `signing_recovery.py` confirms, stores the sealed PDF as the document's next version, mails both copies and
+releases letters. The state is columns of the `documents` row (`signature_state`, `envelope_id`, `signed_version`...,
+migration 0099), null on every other document. `PIGROCRM_DOCUMENSO_URL` and `PIGROCRM_DOCUMENSO_API_TOKEN` together switch
+signing on, `PIGROCRM_DOCUMENSO_WEBHOOK_SECRET` the root route `POST /api/documenso/webhook`; empty (the compose default) the
+app boots as before, a send answers 503 `signing_unavailable`, and a letter is downloaded, signed by hand and its PDF uploaded
+(`upload_signed_copy`, a person's act). A new envelope's `externalId` is `<tenant id>:<document id>` (`root:` for the root
+installation): Documenso takes any string there (v2.18.0 `z.string().trim().max(255)`, no index). The webhook routes by it
+(`routing.route_envelope`) and **ignores** an envelope whose `externalId` is not this installation's own, a bare hub document
+id included unless the leads space holds it. Cancelling an engagement must go through `SigningService.engagement_service()`,
+or a letter out for signature refuses it. The signature recovery is a step of the daily `pigrocrm automations` pass
+(`cli/signing.py::sweep_space`), isolated per space; `contracts-check` and `documenso-check` are commands. The MCP container has
+no mail key by design, so the MCP send tools answer 503 there until that is decided.
+
 **A router authenticates with `dependencies=[Depends(get_actor)]`, not per handler.** A
 handler that never names the actor is still behind it, and `test_routes_authenticate.py`
 asks every route of the OpenAPI document once with no credential. The open routes are the

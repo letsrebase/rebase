@@ -149,6 +149,9 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "preview_engagement",
         # The live report of an engagement's days and what is payable: a read.
         "read_engagement_report",
+        # Asking Documenso where a document stands and applying its answer: the same thing the
+        # webhook does, so it only reads Documenso's state (collaborators design § 6).
+        "refresh_document_signature",
     }
 )
 
@@ -271,6 +274,11 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "cancel_engagement",
         "close_engagement",
         "send_engagement_for_signature",
+        # Sending the mail with the link again, cancelling a framework agreement and recording a
+        # notice each act on a legal document or mail a freelancer (collaborators design § 6).
+        "resend_signing_mail",
+        "cancel_framework_agreement",
+        "record_framework_notice",
         "set_freelancer_tax_data",
         "set_organization_hub_freelancer",
     }
@@ -305,9 +313,13 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         "activate_engagement",
         # Writing a letter or a framework agreement as a document: a person reviews the text first,
         # and the agent's way to a legal document is `send_engagement_for_signature` with
-        # `full_access` (a later card). Previews are reads and sit in the allowed set above.
+        # `full_access` (REB-1019). Previews are reads and sit in the allowed set above.
         "create_engagement_letter",
         "create_framework_agreement",
+        # A signature no signing site witnessed (a letter signed by hand, its PDF uploaded) is said
+        # by a person: an agent that read the letter's text must not be able to record that it was
+        # signed (collaborators design § 2).
+        "upload_signed_document",
         # A month's «Rendiconto» is recorded as received and approved by a person: the client's
         # agreement relayed, or its objection, and the tacit date passing, never an agent's act
         # (collaborators design § 4, frame A4). Approval is what makes a day payable.
@@ -425,6 +437,11 @@ ACTION_LABELS: dict[str, str] = {
     "cancel_engagement": "annullare un incarico con un freelance",
     "close_engagement": "chiudere un incarico con un freelance",
     "send_engagement_for_signature": "mandare un incarico in firma",
+    "resend_signing_mail": "rimandare la mail con il link per firmare",
+    "refresh_document_signature": "aggiornare lo stato della firma di un documento",
+    "cancel_framework_agreement": "annullare un contratto quadro non ancora firmato",
+    "record_framework_notice": "registrare la disdetta di un contratto quadro",
+    "upload_signed_document": "caricare il PDF firmato a mano di un documento",
     "activate_engagement": "registrare la firma di un incarico",
     "read_engagement_report": "leggere i giorni di un incarico e quali si pagano",
     "record_monthly_report": "registrare l'arrivo del rendiconto mensile di un incarico",
