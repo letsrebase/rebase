@@ -116,7 +116,7 @@ function MovementsTable({ items, currencyOf }: { items: readonly Movement[]; cur
               <TableCell className="whitespace-nowrap tabular-nums">
                 {formatIsoDateItalian(movement.booking_date)}
               </TableCell>
-              <TableCell className="max-w-xl">
+              <TableCell className="max-w-xl whitespace-normal">
                 <Description movement={movement} />
               </TableCell>
               <TableCell className="whitespace-nowrap text-right tabular-nums">

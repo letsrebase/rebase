@@ -212,7 +212,7 @@ export function AccountDialog({ open, onOpenChange, account, onCreated }: Props)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{isCreate ? 'Aggiungi un conto' : 'Modifica il conto'}</DialogTitle>
         </DialogHeader>

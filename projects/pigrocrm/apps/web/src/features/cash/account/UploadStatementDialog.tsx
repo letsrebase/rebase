@@ -95,7 +95,7 @@ export function UploadStatementDialog({ open, onOpenChange, accountId }: Props) 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Carica estratto conto</DialogTitle>
           <DialogDescription>

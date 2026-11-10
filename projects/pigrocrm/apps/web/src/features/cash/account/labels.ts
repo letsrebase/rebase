@@ -116,9 +116,14 @@ export function checkSentence(check: Statement['check']): string | null {
   return `Il saldo dichiarato non torna${difference}`
 }
 
+/** «1 movimento», «41 movimenti». */
+export function movementsCount(count: number): string {
+  return count === 1 ? '1 movimento' : `${count} movimenti`
+}
+
 /** «41 movimenti, 2 già presenti», with the singular where the count is one. */
 export function importSentence(added: number, duplicates: number): string {
-  const moved = added === 1 ? '1 movimento' : `${added} movimenti`
+  const moved = movementsCount(added)
   const already = duplicates === 1 ? '1 già presente' : `${duplicates} già presenti`
   return `${moved}, ${already}`
 }

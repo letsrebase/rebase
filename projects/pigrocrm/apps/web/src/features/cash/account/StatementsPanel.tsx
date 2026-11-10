@@ -20,6 +20,7 @@ import {
   STATEMENT_STATE_LABELS,
   STATEMENT_STATE_TONES,
   checkSentence,
+  movementsCount,
   monthTitle,
   periodLabel,
   statementFormatLabel,
@@ -59,7 +60,7 @@ function RevertDialog({ statement, onClose }: { statement: Statement | null; onC
   }
   return (
     <Dialog open={statement !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Annulla l’importazione</DialogTitle>
           <DialogDescription>
@@ -101,7 +102,7 @@ function RevertDialog({ statement, onClose }: { statement: Statement | null; onC
 function StatementCells({ statement }: { statement: Statement }) {
   const check = checkSentence(statement.check)
   return (
-    <div className="min-w-0 space-y-0.5">
+    <div className="min-w-0 space-y-0.5 whitespace-normal">
       <p className="font-medium tabular-nums">{periodLabel(statement.period_from, statement.period_to)}</p>
       <p className="text-xs text-muted-foreground">{statementFormatLabel(statement.format)}</p>
       {check !== null && <p className="text-xs text-destructive">{check}</p>}
@@ -120,7 +121,7 @@ function StatementActions({
 }) {
   if (statement.state !== 'imported') return null
   return (
-    <div className="flex flex-col items-start gap-1">
+    <div className="flex flex-col items-start gap-1 whitespace-normal">
       <Button variant="outline" size="sm" onClick={() => onShow(statement.id)}>
         Vedi i movimenti
       </Button>
@@ -241,7 +242,7 @@ export function StatementsPanel({
                   </StatusPill>
                 </div>
                 <p className="text-sm text-muted-foreground tabular-nums">
-                  {row.statement.movement_count} movimenti
+                  {movementsCount(row.statement.movement_count)}
                 </p>
                 <StatementActions statement={row.statement} onShow={onShowMovements} onRevert={setReverting} />
               </li>
