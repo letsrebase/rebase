@@ -529,6 +529,7 @@ function legalEntityRecord(id: string, name: string): LegalEntityRecord {
     signature_key: null,
     email_signature: null,
     tax_regime: null,
+    legal_representative: null,
     fiscal_year_end_month: 12,
     fiscal_year_end_day: 31,
     created_at: '2026-01-01T00:00:00Z',
