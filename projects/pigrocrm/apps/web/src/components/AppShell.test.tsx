@@ -426,7 +426,8 @@ describe('AppShell', () => {
     it('sits after «Acquisti» in «Amministrazione» once the server names a legal entity with registers', async () => {
       answer([ENTITY])
       renderShell(<div />, undefined, [])
-      await settle()
+      // Waits for the entry itself: the answer reaches the sidebar through a query and two renders.
+      await sidebar().findByRole('link', { name: 'IVA' })
       const links = within(sidebar().getByRole('group', { name: 'Amministrazione' }))
         .getAllByRole('link')
         .map((link) => link.textContent)
