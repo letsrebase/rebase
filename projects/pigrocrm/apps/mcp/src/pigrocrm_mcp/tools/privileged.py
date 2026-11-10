@@ -584,6 +584,22 @@ def register(
             .model_dump(mode="json")
         )
 
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def get_tax_calendar(year: int, legal_entity_id: str | None = None) -> dict[str, Any]:
+        """The tax dates of a calendar year for a company, from its fiscal pack (IVA payments, the
+        December advance, income or substitute tax), each with its source and the day it falls due.
+        With several companies pass `legal_entity_id`. An empty list: no dates for that year.
+        """
+
+        return (
+            AnalyticsService(context.session)
+            .get_tax_calendar(
+                year, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
+            )
+            .model_dump(mode="json")
+        )
+
     # ---- staff and directors, with their pay ----------------------------------------
 
     @mcp.tool(annotations=ADDITIVE)
