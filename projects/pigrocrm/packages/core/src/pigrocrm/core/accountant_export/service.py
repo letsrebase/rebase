@@ -66,6 +66,7 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db.base import uuid7
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.documents.schemas import SIZE_MAX
 from pigrocrm.core.errors import DomainError, NotFound, ValidationFailed
 from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE
@@ -348,7 +349,7 @@ class AccountantExportService:
             ):
                 raise NotFound(LEGAL_ENTITY, legal_entity_id)
             entities = [self.legal_entities.require_single(legal_entity_id, entity=ENTITY)]
-        today = dt.datetime.now(dt.UTC).date()
+        today = today_local()
         contexts = [
             self._context(actor, Period(today, today), entity, all_entities=all_entities)
             for entity in entities

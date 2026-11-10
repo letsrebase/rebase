@@ -1,5 +1,5 @@
-import { tableFeatures, useTable, type ColumnDef, type RowData } from '@tanstack/react-table'
-import type { KeyboardEvent } from 'react'
+import { FlexRender, tableFeatures, useTable, type ColumnDef, type Row, type RowData } from '@tanstack/react-table'
+import type { KeyboardEvent, ReactNode } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { LoadingState } from '@/components/LoadingState'
 import {
@@ -11,6 +11,10 @@ import {
   TableRow,
 } from '@rebase/ui/table'
 import { cn } from '@rebase/ui/cn'
+import { useMediaQuery } from '@rebase/ui/use-media-query'
+
+/** Below this the table is a column of cards: the one breakpoint every CRM list switches at. */
+const PHONE = '(max-width: 767px)'
 
 // TanStack Table v9 (pinned exactly in package.json) is a from-scratch rewrite of
 // v8, the API the original brief for this component was written against --
@@ -46,6 +50,8 @@ import { cn } from '@rebase/ui/cn'
 export interface DataTableColumnMeta {
   align?: 'left' | 'right'
   width?: string
+  /** The column that names the row in the phone's stack (`phone="stack"`); the first by default. */
+  title?: boolean
 }
 
 const features = tableFeatures({ columnMeta: {} as DataTableColumnMeta })
@@ -89,6 +95,14 @@ interface DataTableProps<T extends RowData> {
   loadingLabel?: string
   onRowClick?: (row: T) => void
   emptyMessage?: string
+  /** What the table becomes on a phone, where more columns than the screen is wide would
+   *  scroll sideways and hide the last of them (REB-1057). `'stack'` turns each row into a
+   *  card: the first column is its title, a column with an empty header (the row's «⋯» or
+   *  buttons) sits beside the title, and every other column is a «label: value» line, the
+   *  cells being the very ones the table draws. A function draws the card itself, for a
+   *  list whose cells are too wide to be a value (the invoices). Absent: the table scrolls,
+   *  as it always has. */
+  phone?: 'stack' | ((row: T) => ReactNode)
 }
 
 /**
@@ -127,8 +141,11 @@ export function DataTable<T extends RowData>({
   loadingLabel,
   onRowClick,
   emptyMessage = 'Nessun risultato.',
+  phone,
 }: DataTableProps<T>) {
   const table = useTable({ features, columns, data })
+  // Below `PHONE` only. A window with no `matchMedia` answers `false`, the table.
+  const cards = useMediaQuery(PHONE) && phone !== undefined
 
   if (isLoading) {
     return (
@@ -150,7 +167,7 @@ export function DataTable<T extends RowData>({
   // by a pointer, and every row below also gets `tabIndex={0}` so Tab reaches it in
   // the first place. This is the one shared table every future list in the product
   // renders through, so a gap here is not local to a single screen.
-  function handleRowKeyDown(event: KeyboardEvent<HTMLTableRowElement>, row: T) {
+  function handleRowKeyDown(event: KeyboardEvent<HTMLElement>, row: T) {
     if (!onRowClick) return
     // Only the row's own key press: Enter on a button or a link inside a cell belongs to
     // that control, and used to open the row instead of pressing it.
@@ -158,6 +175,40 @@ export function DataTable<T extends RowData>({
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
     onRowClick(row)
+  }
+
+  if (cards) {
+    const rows = table.getRowModel().rows
+    return (
+      <div data-slot="data-table">
+        {rows.length === 0 ? (
+          <p className="border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+            {emptyMessage}
+          </p>
+        ) : (
+          <ul aria-label={label} className="grid grid-cols-1 gap-3">
+            {rows.map((row) => {
+              const open = onRowClick ? () => onRowClick(row.original) : undefined
+              return (
+                <li
+                  key={row.id}
+                  onClick={open}
+                  onKeyDown={(event) => handleRowKeyDown(event, row.original)}
+                  tabIndex={open ? 0 : undefined}
+                  className={cn(
+                    'border border-border bg-card p-4',
+                    open &&
+                      'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+                  )}
+                >
+                  {typeof phone === 'function' ? phone(row.original) : <StackedRow row={row} />}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -233,5 +284,45 @@ export function DataTable<T extends RowData>({
         </TableBody>
       </Table>
     </div>
+  )
+}
+
+/** One row of the phone's stack: the title and the actions on a line, the rest as «label: value». */
+function StackedRow<T extends RowData>({ row }: { row: Row<DataTableFeatures, T> }) {
+  const cells = row.getAllCells()
+  const title = cells.find((cell) => cell.column.columnDef.meta?.title) ?? cells[0]
+  const rest = cells.filter((cell) => cell !== title)
+  const actions = rest.filter((cell) => cell.column.columnDef.header === '')
+  const fields = rest.filter((cell) => cell.column.columnDef.header !== '')
+  return (
+    <>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 break-words font-medium">
+          {title !== undefined && <FlexRender cell={title} />}
+        </div>
+        {actions.length > 0 && (
+          <div className="flex shrink-0 items-center gap-2">
+            {actions.map((cell) => (
+              <FlexRender key={cell.id} cell={cell} />
+            ))}
+          </div>
+        )}
+      </div>
+      {fields.length > 0 && (
+        <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 text-sm">
+          {fields.map((cell) => {
+            const header = cell.column.columnDef.header
+            return (
+              <div key={cell.id} className="contents">
+                <dt className="text-muted-foreground">{typeof header === 'string' ? header : cell.column.id}</dt>
+                <dd className="min-w-0 break-words text-right">
+                  <FlexRender cell={cell} />
+                </dd>
+              </div>
+            )
+          })}
+        </dl>
+      )}
+    </>
   )
 }

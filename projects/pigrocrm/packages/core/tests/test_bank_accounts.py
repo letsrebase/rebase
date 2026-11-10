@@ -10,6 +10,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from frozen_clock import freeze_today
 from openpyxl import Workbook
 from pydantic import ValidationError
 from sqlalchemy import func, select
@@ -434,7 +435,10 @@ def test_an_archived_account_leaves_the_list_and_the_balances_and_keeps_its_rows
         service.archive_bank_account(uuid4(), ADMIN)
 
 
-def test_the_account_read_carries_the_balance_the_server_computed(db_session: Session) -> None:
+def test_the_account_read_carries_the_balance_the_server_computed(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    freeze_today(monkeypatch, TODAY)
     account_id = _create(db_session)
     _Statements(db_session).import_file(account_id, CAMT.read_bytes(), ADMIN)
     read = BankAccountService(db_session).get_bank_account(account_id, ADMIN)

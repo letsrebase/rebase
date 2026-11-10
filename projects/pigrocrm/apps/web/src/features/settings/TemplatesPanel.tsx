@@ -274,6 +274,7 @@ export function TemplatesPanel() {
 
       <DataTable
         label="Template"
+        phone="stack"
         columns={columns}
         data={templates.data?.items ?? []}
         isLoading={templates.isLoading}

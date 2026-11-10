@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { ReactElement } from 'react'
+import { useState, type ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { LegalEntityContext, type LegalEntityRecord, type LegalEntityValue } from '@/lib/legalEntity'
 import { OrganizationForm, organizationToFormValues } from './OrganizationForm'
@@ -973,6 +973,61 @@ describe('the roles and the supplier fields', () => {
       await userEvent.type(screen.getByLabelText('P.IVA'), '{Backspace}')
       await waitFor(() => expect(screen.getByRole('button', { name: 'Salva' })).toBeEnabled())
       expect(screen.queryByText(/Esiste già/)).toBeNull()
+    })
+
+    it('never names the record it just saved when the lookup answers after «Salva», and catches again after a refusal', async () => {
+      // The lookup is still on its way when «Salva» is pressed; it answers after the create
+      // committed, with the record this form saved (REB-1056).
+      const pending: Array<(value: unknown) => void> = []
+      GET.mockImplementation((path: string) =>
+        path === '/api/organizations'
+          ? new Promise((resolve) => {
+              pending.push(resolve)
+            })
+          : Promise.resolve(NONE),
+      )
+      // The parent holds the server's refusal, as the list route does with its mutation's error.
+      type Problem = React.ComponentProps<typeof OrganizationForm>['problem']
+      let refuse: (problem: Problem) => void = () => undefined
+      const onSubmit = vi.fn()
+      function Parent() {
+        const [problem, setProblem] = useState<Problem>(null)
+        refuse = setProblem
+        return (
+          <OrganizationForm
+            title="Nuovo fornitore"
+            open
+            onOpenChange={vi.fn()}
+            customFields={[]}
+            defaultRoles={['supplier']}
+            onSubmit={onSubmit}
+            problem={problem}
+          />
+        )
+      }
+      renderWithClient(<Parent />)
+      await userEvent.type(screen.getByLabelText('P.IVA'), 'IT01234567890')
+      await waitFor(() =>
+        expect(GET).toHaveBeenCalledWith(
+          '/api/organizations',
+          expect.objectContaining({ params: { query: expect.objectContaining({ search: 'IT01234567890' }) } }),
+        ),
+      )
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+      expect(onSubmit).toHaveBeenCalledOnce()
+
+      await act(async () => {
+        for (const answer of pending) {
+          answer({ data: { items: [ZANETTI], next_cursor: null }, response: new Response(null, { status: 200 }) })
+        }
+      })
+      // Give the query the time to hand its answer to the form before looking for the hint.
+      await act(() => new Promise((resolve) => setTimeout(resolve, 100)))
+      expect(screen.queryByText(/Esiste già/)).toBeNull()
+
+      // The server refused the save: the number may really be taken, so the catch is back.
+      act(() => refuse({ type: 'x', title: 'x', status: 409, code: 'conflict', detail: 'partita IVA già presente' }))
+      expect(await screen.findByText('Esiste già: Zanetti Impianti S.r.l. (cliente)')).toBeInTheDocument()
     })
   })
 })
