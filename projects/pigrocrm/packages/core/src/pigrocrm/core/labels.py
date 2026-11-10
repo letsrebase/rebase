@@ -216,6 +216,7 @@ ACTIVITY_KIND: dict[str, str] = {
 # name; only the sentence is in words. An entity without a row reads under its own name.
 ENTITY_NOUN: dict[str, tuple[str, str]] = {
     "approval": ("approvazione", "a"),
+    "bank_account": ("conto bancario", "o"),
     "clause_note": ("nota su una clausola", "a"),
     "contract": ("contratto", "o"),
     "contract_email_template": ("modello di email del contratto", "o"),
@@ -223,6 +224,7 @@ ENTITY_NOUN: dict[str, tuple[str, str]] = {
     "cost": ("costo", "o"),
     "cost_category": ("categoria di costo", "a"),
     "organization": ("cliente", "o"),
+    "organization_iban": ("IBAN della controparte", "o"),
     "deal": ("deal", "o"),
     "document": ("documento", "o"),
     "document_blob": ("file del documento", "o"),

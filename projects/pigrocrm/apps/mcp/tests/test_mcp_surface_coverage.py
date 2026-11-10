@@ -348,6 +348,13 @@ _INTERNE: dict[Method, str] = {
     ("DueItemService", "drop"): "the writer's half: a credit note or an ended contract drops it",
     ("DueItemService", "attach_dependency"): "the writer's half: links a waiting item",
     ("DueItemService", "reschedule"): "the writer's half: the owner of an outgoing item moves it",
+    # REB-998: the writer's half of the bank data, no actor and no commit. The tools that read
+    # and import statements and match movements come with the cards that add them, with their own
+    # authorisation (spec 2026-11-09, § 5).
+    ("BankStatementService", "import_statement"): "the seam a statement reader plugs into",
+    ("OrganizationIbanService", "add"): "the writer's half: supplier XML and movements add IBANs",
+    ("OrganizationIbanService", "accept"): "a person accepts a proposed IBAN, from the app",
+    ("OrganizationIbanService", "list_for"): "read through the organisation, once surfaced",
     # REB-968: the invoice's half of the same writer. Emission, import, annulment and the
     # invoice payment tool (`set_invoice_payment_state`) call these inside their own
     # transaction; the tool is the door, never these.
