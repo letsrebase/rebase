@@ -43,6 +43,7 @@ from typing import Final, Literal
 from pigrocrm.core.fiscal.law import (
     CompanyTaxLaw,
     IncomeTaxAdvanceLaw,
+    IvaSettlementLaw,
     MonthDay,
     PayrollLaw,
     TaxCalendarLaw,
@@ -192,6 +193,12 @@ class FiscalPack:
             governing = law
         return governing
 
+    @property
+    def has_periodic_iva(self) -> bool:
+        """The pack's regime settles IVA by period in some tax year (REB-1021): the ordinary
+        regime does, the flat-rate regime and a company abroad do not."""
+        return any(law.iva is not None for law in self.laws)
+
     def calendar_for(self, year: int) -> TaxCalendarLaw | None:
         """The dates that govern calendar year `year`: the latest entry starting at or before
         it, `None` when the pack carries no dates for that year (never a guess)."""
@@ -237,8 +244,8 @@ SOCIAL_SECURITY_SURCHARGE_INPS = StatutoryCharge(
 # These are the nominal days: the deadline that falls on a Saturday, a Sunday or a national
 # holiday moves to the next working day (`fiscal/calendar.py`, A5 row «A deadline on a
 # Saturday...»). The 1% on a quarterly payment, the 100 euro below which a periodic payment
-# is carried forward and the quarterly eligibility ceilings are verified in A5 and stay out of
-# the pack until a due item computes them; LIPE dates are not in A5's verified rows.
+# is carried forward and the quarterly eligibility ceilings are `IvaSettlementLaw`'s, in the
+# law of `it-standard` below; LIPE dates are not in A5's verified rows.
 _SRC_IVA_PAYMENT = "Agenzia delle Entrate, «F24 IVA Periodica - Come e quando si versa»"
 _SRC_IVA_ADVANCE = "Agenzia delle Entrate, «Come pagare l'Iva», «Acconto Iva»"
 _SRC_IVA_AUGUST = "Agenzia delle Entrate, Scadenzario fiscale, scadenze per Iva del 20-08-2026"
@@ -484,6 +491,15 @@ IT_STANDARD_PACK = FiscalPack(
                 deferral_window_days=30,
             ),
             payroll=ITALIAN_PAYROLL,
+            iva=IvaSettlementLaw(
+                carry_forward_limit=Decimal("100.00"),
+                monthly_carry_periods=tuple(range(1, 11)),
+                quarterly_carry_periods=(1, 2),
+                quarterly_surcharge_percent=Decimal("1.00"),
+                quarterly_surcharge_periods=(1, 2, 3),
+                quarterly_turnover_limit_services=Decimal("500000.00"),
+                quarterly_turnover_limit_other=Decimal("800000.00"),
+            ),
         ),
     ),
     calendars=(_IT_STANDARD_CALENDAR_2026,),

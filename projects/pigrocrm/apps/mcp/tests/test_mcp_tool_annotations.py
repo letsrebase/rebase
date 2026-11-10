@@ -97,7 +97,9 @@ DEFAULT_BUDGET_BYTES = 105_250
 # type, measured at 125,098.
 # REB-1012: 126.4 KB, up from 125.1 KB, for `build_accountant_export` and
 # `get_export_download_url` (a full-access administrator's), measured at 126,346.
-FULL_ACCESS_BUDGET_BYTES = 126_400
+# REB-1021: 127.0 KB, up from 126.4 KB, for `list_iva_settlements` (a full-access
+# administrator's, a year and a company) and the profile's `iva_frequency`, measured at 126,947.
+FULL_ACCESS_BUDGET_BYTES = 127_000
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

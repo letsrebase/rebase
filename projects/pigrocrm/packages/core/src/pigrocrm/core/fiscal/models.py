@@ -1,3 +1,4 @@
+import datetime as dt
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -5,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     ForeignKey,
     Integer,
     Numeric,
@@ -120,11 +122,21 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
     # or 40/60 advances (A5, verified).
     inps_category: Mapped[str | None] = mapped_column(String(30), default=None)
     isa: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    # REB-1021, suppliers design § 6: how often the legal entity settles its IVA. Only a pack
+    # with a periodic IVA reads it (`FiscalPack.law_for(year).iva`); on the others it stays
+    # `monthly` and means nothing. Quarterly is an option the entity exercises in its annual
+    # return, within the turnover limits of `IvaSettlementLaw`.
+    iva_frequency: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="monthly", server_default=text("'monthly'")
+    )
 
     __table_args__ = (
         CheckConstraint(
             "inps_category IN ('gestione_separata', 'artigiani_commercianti')",
             name="ck_fiscal_profile_inps_category",
+        ),
+        CheckConstraint(
+            "iva_frequency IN ('monthly', 'quarterly')", name="ck_fiscal_profile_iva_frequency"
         ),
     )
 
@@ -165,6 +177,71 @@ class FiscalEstimateReading(Base, PrimaryKeyMixin, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("legal_entity_id", "tax_year", name="uq_fiscal_estimates_year"),
     )
+
+
+IVA_FREQUENCIES: tuple[str, ...] = ("monthly", "quarterly")
+# What a period's result came to: paid to the tax office on its date, a debit small enough to
+# wait for the next period's payment, a credit carried forward, or nothing at all.
+IVA_OUTCOMES: tuple[str, ...] = ("due", "carried", "credit", "nil")
+
+
+class IvaSettlement(Base, PrimaryKeyMixin, TimestampMixin):
+    """One period's IVA settlement of one legal entity (REB-1021, suppliers design § 6).
+
+    The figures are the register's totals and the carry-over, frozen when the period is
+    settled and recomputed whenever it is settled again; nothing else writes the row
+    (`IvaSettlementService`). `sales_vat` is the VAT due on the sales of the period (a sale
+    under split payment owes none: the buyer pays it, art. 17-ter DPR 633/72);
+    `reverse_charge_vat` is the VAT the buyer owes on its reverse-charge purchases;
+    `purchase_vat` is the deductible share of the VAT on the purchases registered in the
+    period. `credit_in` is the credit the previous period left and `debit_in` the small
+    debit it left to be paid now, with its interest. `surcharge` is the 1% a quarterly
+    settlement adds. `result` is signed: positive is owed, negative is a credit carried to the
+    next period. The pack and its version are the ones the figures were computed under.
+    """
+
+    __tablename__ = "iva_settlements"
+    __table_args__ = (
+        UniqueConstraint(
+            "legal_entity_id",
+            "frequency",
+            "year",
+            "period_number",
+            name="uq_iva_settlements_period",
+        ),
+        CheckConstraint(f"frequency IN {IVA_FREQUENCIES!r}", name="ck_iva_settlements_frequency"),
+        CheckConstraint(f"outcome IN {IVA_OUTCOMES!r}", name="ck_iva_settlements_outcome"),
+        CheckConstraint(
+            "(frequency = 'monthly' AND period_number BETWEEN 1 AND 12) OR "
+            "(frequency = 'quarterly' AND period_number BETWEEN 1 AND 4)",
+            name="ck_iva_settlements_period_number",
+        ),
+        CheckConstraint("period_start <= period_end", name="ck_iva_settlements_period_order"),
+        CheckConstraint(
+            "credit_in >= 0 AND debit_in >= 0 AND surcharge >= 0",
+            name="ck_iva_settlements_carry_not_negative",
+        ),
+    )
+
+    legal_entity_id: Mapped[UUID] = mapped_column(ForeignKey("legal_entities.id"), nullable=False)
+    frequency: Mapped[str] = mapped_column(String(10), nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 1 to 12 for a month, 1 to 4 for a quarter.
+    period_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    period_start: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    pack_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    pack_version: Mapped[str] = mapped_column(String(10), nullable=False)
+    sales_vat: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    reverse_charge_vat: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    purchase_vat: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    credit_in: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    debit_in: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    surcharge: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    result: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(10), nullable=False)
+    # The day the pack's calendar says this period is paid, after a non-working day moves it.
+    payment_due_on: Mapped[dt.date] = mapped_column(Date, nullable=False)
 
 
 class DeclaredTaxFigure(Base, PrimaryKeyMixin, TimestampMixin):

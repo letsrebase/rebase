@@ -226,6 +226,31 @@ class DueItemService:
         self._follow(item)
         return self._read(item)
 
+    def restate(self, item_id: UUID, *, amount: Decimal, own_date: dt.date) -> DueItemRead:
+        """Corrects what a computed source owes: the IVA settlement of a period recomputed
+        after its registers moved. The amount and the date follow while nothing was paid on
+        the item, and a dropped item owed again is reopened; an item with a payment recorded
+        is left alone when the figures agree and refused when they do not, because a payment
+        reversed is a person's decision and not a recomputation's."""
+        item = self._locked(item_id)
+        unchanged = (item.amount, item.own_date) == (amount, own_date)
+        if unchanged and item.state != "dropped":
+            return self._read(item)
+        if item.state == "settled" or self.repo.totals(item.id).settled != ZERO:
+            raise Conflict(
+                ENTITY,
+                "una scadenza con pagamenti registrati non si ricalcola: prima si annullano",
+                id=str(item.id),
+            )
+        item.amount = amount
+        item.own_date = own_date
+        item.state = "expected"
+        item.dropped_reason = None
+        self.session.flush()
+        self._redate(item)
+        self._follow(item)
+        return self._read(item)
+
     def reschedule(self, item_id: UUID, due_date: dt.date | None) -> DueItemRead:
         """Moves an item's own date. A sales item's date is the invoice's and never moves
         (`MUTABLE_AFTER_ISSUE`): only an outgoing item and a forecast can be rescheduled."""

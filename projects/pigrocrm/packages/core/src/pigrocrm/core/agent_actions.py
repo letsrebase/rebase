@@ -182,6 +182,10 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         # design § 5): the most sensitive data the product holds, so an administrator's token
         # with `full_access`, nothing less. Accepting one read from a document stays a person's.
         "set_declared_tax_figure",
+        # The IVA settlement of a period and the due item it writes (REB-1021): the legal
+        # entity's fiscal position, so an administrator's token with `full_access`.
+        "settle_iva_period",
+        "list_iva_settlements",
         # The space's profile and which modules are on (spec 2026-11-09, B1): what the whole
         # team sees changes. An administrator's token with `full_access`, nothing less; the
         # generic `update_space_settings` stays person-only below.
@@ -415,6 +419,8 @@ ACTION_LABELS: dict[str, str] = {
     "get_export_download_url": "scaricare l'esportazione per il commercialista",
     "list_staff": "leggere l'elenco delle persone dell'azienda e i loro compensi",
     "set_declared_tax_figure": "registrare le cifre della dichiarazione dei redditi",
+    "settle_iva_period": "liquidare l'IVA di un periodo",
+    "list_iva_settlements": "leggere le liquidazioni IVA",
     "set_payroll_pay_day": "impostare il giorno di paga dell'azienda",
     "record_staff_payslip": "registrare le cifre di un cedolino",
     "get_payroll_month": "leggere la stima del mese per le persone dell'azienda",

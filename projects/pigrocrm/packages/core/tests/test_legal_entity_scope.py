@@ -80,6 +80,7 @@ POLICIED = {
     "fiscal_estimates",
     "declared_tax_figures",
     "accountant_exports",
+    "iva_settlements",
     "invoice_counters",
     "invoice_register_gaps",
     "organizations",

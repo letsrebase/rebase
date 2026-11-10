@@ -170,6 +170,43 @@ class PayrollLaw:
 
 
 @dataclass(frozen=True)
+class IvaSettlementLaw:
+    """How a periodic IVA settlement is computed and when a small debit waits (REB-1021,
+    suppliers design § 6). The dates are the pack's calendar (`TaxCalendarLaw`), not repeated.
+
+    Sources, all verified on 2026-11-10 (A5 rows «Quarterly settlement surcharge of 1%...»,
+    «Eligibility thresholds for quarterly settlement» and «The result of a periodic
+    settlement...»): D.P.R. 100/1998 art. 1 c. 1 and c. 4 and D.P.R. 542/1999 art. 7 c. 1
+    lett. a) and c. 3 (Dipartimento delle Finanze, text in force from 6 August 2024), and the
+    Agenzia delle Entrate pages «F24 IVA Periodica - Che cos'è» (30 July 2026) and «Come e
+    quando si versa».
+    """
+
+    # A debit that does not exceed this is paid with the next period's (art. 1 c. 4 and art. 7
+    # c. 1 a). «Not exceeding»: the statute's words, so exactly this amount waits. The Agenzia's
+    # page says «pari o superiore» is paid; the two differ at exactly 100 and the accountant
+    # list (REB-975) carries the point.
+    carry_forward_limit: Decimal
+    # The periods whose small debit may wait: the monthly ones of January to October (November
+    # is paid by 16 December whatever it is, December by 16 January) and the first two
+    # quarters (the third is paid by 16 November whatever it is, the fourth goes with the
+    # annual return).
+    monthly_carry_periods: tuple[int, ...]
+    quarterly_carry_periods: tuple[int, ...]
+    # Interest on a quarterly settlement's debit (art. 7 c. 3), in percent, and the quarters
+    # it is added to. The fourth quarter is not listed: the texts read do not say whether
+    # it carries the 1%, so none is computed for it (A5, to verify, REB-975).
+    quarterly_surcharge_percent: Decimal
+    quarterly_surcharge_periods: tuple[int, ...]
+    # The previous year's turnover above which the quarterly option is closed: services and
+    # professions, and other activities. Which one a legal entity is under is not stored, so
+    # nothing refuses a quarterly setting below the higher limit; it is data of the law for
+    # the page that will ask.
+    quarterly_turnover_limit_services: Decimal
+    quarterly_turnover_limit_other: Decimal
+
+
+@dataclass(frozen=True)
 class TaxYearLaw:
     """The law that governs the tax years from `from_year` until the next entry of the
     same pack. `None` for a section means the pack's regime has nothing of that kind."""
@@ -192,6 +229,9 @@ class TaxYearLaw:
     # and due items (taxes design § 3).
     taxes: tuple[DeclaredTax, ...] = ()
 
+    # The periodic IVA settlement (REB-1021): `None` for a regime with no periodic IVA.
+    iva: IvaSettlementLaw | None = None
+
     @property
     def has_income_estimate(self) -> bool:
         return self.contribution_base is not None
@@ -204,6 +244,7 @@ __all__ = [
     "DateKind",
     "DeclaredTax",
     "IncomeTaxAdvanceLaw",
+    "IvaSettlementLaw",
     "MonthDay",
     "PayrollLaw",
     "TaxCalendarLaw",

@@ -15,6 +15,7 @@ from pigrocrm.core.fiscal.pack import (
     PACK_IT_FLAT_RATE,
     PACK_IT_STANDARD,
     PACK_NON_IT,
+    current_pack,
 )
 from pigrocrm.core.fiscal.regime import resolve_regime
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
@@ -228,6 +229,17 @@ class FiscalProfileService:
                 "default_vat_nature",
                 "una natura con un'aliquota di default diversa da zero viene scartata dallo SdI",
                 expected="nessuna natura",
+            )
+        if (
+            payload.get("iva_frequency") == "quarterly"
+            and not current_pack(pack_id).has_periodic_iva
+        ):
+            # Only a pack with a periodic IVA settles quarterly (REB-1021).
+            raise ValidationFailed(
+                ENTITY,
+                "iva_frequency",
+                "solo il regime ordinario liquida l'IVA: qui non c'e' la liquidazione trimestrale",
+                expected="mensile, o nessun valore",
             )
         if payload["apply_stamp_duty"] and payload["stamp_duty_amount"] <= ZERO:
             raise ValidationFailed(

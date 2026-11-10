@@ -122,6 +122,10 @@ _FORBIDDEN: dict[Method, str] = {
     ("PeriodLockService", "close_period"): "chiusura di periodo (slice 4 §11)",
     ("PeriodLockService", "reopen_period"): "riapertura di periodo (slice 4 §11)",
     ("AnalyticsService", "get_fiscal_estimate"): "posizione fiscale del titolare (slice 4 §11)",
+    (
+        "IvaSettlementService",
+        "list_iva_settlements",
+    ): "REB-1021: the tax position, as `get_tax_calendar`",
     ("AnalyticsService", "get_tax_calendar"): "REB-1004: tax position, like the estimate",
     ("GmailSyncService", "discover"): (
         "interroga Gmail sul dominio del cliente a carico della quota e del consenso "
@@ -371,6 +375,16 @@ _INTERNE: dict[Method, str] = {
     ),
     ("PayrollService", "personnel_cost_in_range"): (
         "the P&L's own read; the actor is checked by `period_pnl`, a tool"
+    ),
+    ("IvaSettlementService", "settle_elapsed_periods"): (
+        "REB-1021: the daily pass's step, with no actor; the tool that reads its result is "
+        "`list_iva_settlements`"
+    ),
+    ("DueItemService", "restate"): "the writer's half: a recomputed settlement corrects its item",
+    ("IvaSettlementService", "settle_iva_period"): (
+        "REB-1021: the IVA settlement is the legal entity's fiscal position, so only a "
+        "`full_access` token may ever run it; its tool arrives with the IVA page's card and "
+        "until then only a service call reaches it"
     ),
     # REB-998: the writer's half of the bank data, no actor and no commit. The tools that read
     # and import statements and match movements come with the cards that add them, with their own

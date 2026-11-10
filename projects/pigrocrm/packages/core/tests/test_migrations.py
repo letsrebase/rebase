@@ -4023,3 +4023,65 @@ def test_0095_adds_the_engagement_monthly_reports_table_and_downgrade_removes_it
         assert _tables_shape(url, tables) == (set(), set(), set())
         upgrade(config, "0095")
         assert _tables_shape(url, tables)[0] == tables
+
+
+def _iva_frequency(url: str) -> list[str] | None:
+    """The `iva_frequency` of every fiscal profile, `None` while the column does not exist."""
+    engine: Engine = create_engine(url)
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("SELECT set_config('pigrocrm.legal_entities', '*', false)"))
+            present = connection.execute(
+                text(
+                    "SELECT count(*) FROM information_schema.columns WHERE "
+                    "table_name = 'fiscal_profile' AND column_name = 'iva_frequency'"
+                )
+            ).scalar_one()
+            if not present:
+                return None
+            return list(
+                connection.execute(text("SELECT iva_frequency FROM fiscal_profile")).scalars()
+            )
+    finally:
+        engine.dispose()
+
+
+def test_0096_creates_the_iva_settlements_table_and_every_profile_settles_monthly(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1021: a new table under the row policy of every table that reaches a legal entity,
+    and a frequency column every existing profile reads as `monthly`; both ways reverse."""
+    entity = "00000000-0000-7000-8000-0000000000e2"
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0095")
+        assert _table_shape(url, "iva_settlements")[0] is False
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO legal_entities (id, name, legal_name, country) "
+                    f"VALUES ('{entity}', 'E', 'E srl', 'IT')"
+                )
+            )
+            connection.execute(text("SELECT set_config('pigrocrm.legal_entities', '*', false)"))
+            connection.execute(
+                text(
+                    "INSERT INTO fiscal_profile (id, legal_entity_id, regime_code, "
+                    "default_vat_rate, apply_stamp_duty, stamp_duty_threshold, stamp_duty_amount, "
+                    "payment_terms, payment_method, due_days, pack_id, pack_version) VALUES "
+                    f"('00000000-0000-7000-8000-0000000000f2', '{entity}', 'RF01', 22, false, "
+                    "77.47, 2.00, 'TP02', 'MP05', 30, 'it-standard', '1')"
+                )
+            )
+        engine.dispose()
+
+        upgrade(config, "0096")
+        assert _table_shape(url, "iva_settlements") == (True, True, {"legal_entity_scope"})
+        assert _iva_frequency(url) == ["monthly"]
+        downgrade(config, "0095")
+        assert _table_shape(url, "iva_settlements")[0] is False
+        assert _iva_frequency(url) is None
+        upgrade(config, "0096")
+        assert _table_shape(url, "iva_settlements")[0] is True

@@ -58,6 +58,7 @@ from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings, gmail_configured
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
+from pigrocrm.core.fiscal.iva_settlement import IvaSettlementService
 from pigrocrm.core.fiscal.schemas import DeclaredTax, DeclaredTaxFigureSet
 from pigrocrm.core.gmail.attachment_text import GmailAttachmentService
 from pigrocrm.core.gmail.sync import GmailSyncService
@@ -605,6 +606,20 @@ def register(
             )
             .model_dump(mode="json")
         )
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def list_iva_settlements(year: int, legal_entity_id: str | None = None) -> dict[str, Any]:
+        """The IVA settlements of a company's year, one per period: sales VAT, deductible purchase
+        VAT, the credit or debit carried in, the result (positive is owed, negative a credit
+        carried forward) and the due item written for an amount owed. They are computed each
+        morning; this reads them. With several companies pass `legal_entity_id`.
+        """
+
+        settlements = IvaSettlementService(context.session).list_iva_settlements(
+            year, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
+        )
+        return {"settlements": [row.model_dump(mode="json") for row in settlements]}
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard

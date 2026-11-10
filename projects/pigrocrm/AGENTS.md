@@ -306,6 +306,25 @@ tabs «Imposte» and «Scadenze», one light page with no tabs for a solo flat-r
 is under `no-browser-arithmetic.test.ts`, so nothing there parses an amount. «Rate», the F24 chip and the date's state pill wait
 for the due items and plans that would drive them, and typing a declared figure is its own screen.
 
+**The IVA settlement is `IvaSettlementService.settle_iva_period` (REB-1021).** For a legal entity whose pack has a
+periodic IVA (`FiscalPack.has_periodic_iva`: `it-standard`), by `FiscalProfile.iva_frequency` (monthly or quarterly),
+it computes one period together with every earlier period back to the first one ever settled, so the carry-over is
+never stale, and stores each in
+`iva_settlements`: sales VAT (not a split-payment sale, the buyer pays that), reverse-charge VAT owed, deductible
+purchase VAT, the credit and the small debit carried in, the quarterly 1% and the signed result. The figures of the
+law (the 100 euro limit, the periods that may wait, the 1%, the quarterly turnover limits) are `IvaSettlementLaw` in
+the pack, the payment date is its calendar's (`payment_date`), and the rows of the A5 register behind them are marked
+verified or to verify. A result that is owed and may not wait becomes a due item (`iva_settlement`, tax office, tax
+`iva`, `DueItemService.create`, then `restate`/`drop` on a recomputation); a payment recorded on it freezes it. A sale is
+placed by its issue date, not its operation date (an invoice stores none): that is in the A5 row and not hidden. The trigger is a step of the daily `pigrocrm automations` pass
+(`AutomationPass._settle_iva`, with the `purchases` module on): `settle_elapsed_periods` settles the latest elapsed
+period of the current year, which recomputes every earlier one, and keeps the previous year in the window until the
+pack's annual-return date. It is idempotent, isolated per legal entity (savepoint, failure counted by class name,
+stderr, exit 1), and a period whose due item already has a payment is reported on stderr and left as it was, not
+raised. `GET /api/iva-settlements?year=` and the MCP tool `list_iva_settlements` (`full_access`) read what it wrote;
+`settle_iva_period` stays a service call. Not here: the December advance, the IVA period lock, cash-basis IVA, the
+page, the srl's IVA dates (the `it-company` pack has no calendar yet).
+
 **A router authenticates with `dependencies=[Depends(get_actor)]`, not per handler.** A
 handler that never names the actor is still behind it, and `test_routes_authenticate.py`
 asks every route of the OpenAPI document once with no credential. The open routes are the
