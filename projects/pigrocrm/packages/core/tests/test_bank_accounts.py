@@ -443,6 +443,24 @@ def test_the_account_read_carries_the_balance_the_server_computed(db_session: Se
     assert read.balance_as_of == D(2026, 10, 31)
     assert read.unmatched_count == 4
     assert (read.stale_days, read.is_stale) == (10, False)
+    assert read.below_zero is False
+
+
+def test_the_account_flags_a_balance_below_zero_and_an_unknown_one_is_not(
+    db_session: Session,
+) -> None:
+    service = BankAccountService(db_session)
+    negative = _create(db_session, opening_balance="-5.00")
+    unknown = _create(
+        db_session,
+        iban="DE89370400440532013000",
+        opening_balance=None,
+        opening_balance_date=None,
+    )
+    zero = _create(db_session, iban="GB82WEST12345698765432", opening_balance="0.00")
+    assert service.get_bank_account(negative, ADMIN).below_zero is True
+    assert service.get_bank_account(unknown, ADMIN).below_zero is False
+    assert service.get_bank_account(zero, ADMIN).below_zero is False
 
 
 def test_the_coverage_read_lists_twelve_months(db_session: Session) -> None:

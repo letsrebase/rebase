@@ -263,6 +263,7 @@ def _read(
         balance_as_of=balance.as_of,
         stale_days=balance.stale_days,
         is_stale=balance.is_stale,
+        below_zero=balance.amount is not None and balance.amount < 0,
         unmatched_count=unmatched_count,
         created_at=account.created_at,
     )

@@ -168,6 +168,7 @@ class BankAccountRead(BaseModel):
     balance_as_of: dt.date | None
     stale_days: int | None
     is_stale: bool
+    below_zero: bool = Field(description="The balance is below zero, compared by the server")
     unmatched_count: int
     created_at: dt.datetime
 

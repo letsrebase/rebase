@@ -203,4 +203,4 @@ def _day(value: str | None) -> dt.date | None:
     try:
         return dt.date.fromisoformat(value[:10])
     except ValueError:
-        raise _refuse("period", f"periodo non valido: {value[:10]}") from None
+        raise _refuse("file", f"periodo non valido: {value[:10]}") from None

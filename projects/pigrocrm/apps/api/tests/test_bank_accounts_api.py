@@ -100,6 +100,7 @@ def test_an_account_is_created_listed_changed_and_archived(logged_in: TestClient
         "2026-09-30",
         False,  # a quarterly account is read once a quarter
     )
+    assert made["below_zero"] is False
     assert made["archived_at"] is None and made["legal_entity_name"]
     assert [a["id"] for a in logged_in.get("/api/bank-accounts").json()] == [made["id"]]
 
