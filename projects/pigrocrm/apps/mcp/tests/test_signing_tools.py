@@ -25,7 +25,6 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.collaborators.models import Engagement
 from pigrocrm.core.collaborators.signing import SigningService
-from pigrocrm.core.collaborators.signing_words import NO_DOCUMENSO
 from pigrocrm.core.config import Settings
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
@@ -79,13 +78,22 @@ class Desk:
 
         monkeypatch.setattr(collaborator_tools, "SigningService", build)
 
-    def server(self, *, full_access: bool, ceiling: bool = True) -> Any:
+    def server(self, *, full_access: bool, ceiling: bool = True, signing: bool = True) -> Any:
         """`ceiling` is the space's `mcp_full_access`; `full_access` is the token's own flag."""
         return build_server(
             lambda: self.session,
             lambda: Actor(id=None, type="mcp", role="admin", full_access=full_access),
             LocalFileStorage(self.tmp_path),
-            Settings(_env_file=None, mcp_full_access=ceiling, module_collaborators=True),  # type: ignore[call-arg]
+            Settings(  # type: ignore[call-arg]
+                _env_file=None,
+                mcp_full_access=ceiling,
+                module_collaborators=True,
+                # The tools check the server holds what signing needs: the service itself is the
+                # fake one `Desk` builds.
+                documenso_url="http://documenso.test" if signing else "",
+                documenso_api_token="api_fake0123456789" if signing else "",
+                resend_api_key="re_fake" if signing else "",
+            ),
             tenant_id=TENANT,
         )
 
@@ -217,20 +225,26 @@ async def test_an_agent_cannot_write_the_framework_agreement_so_a_send_without_o
 
 
 @needs_binaries
-async def test_without_documenso_the_send_says_so_and_changes_nothing(
-    desk: Desk, monkeypatch: pytest.MonkeyPatch
+async def test_a_server_without_the_documenso_token_or_the_mail_key_sends_the_person_to_the_app(
+    desk: Desk,
 ) -> None:
-    monkeypatch.undo()  # the service the tools really build, from settings with no Documenso
+    """The MCP container holds neither, to keep the secrets apart: the tools that send, resend,
+    cancel or refresh say so and name the app, and nothing is called or changed."""
     desk.a_person_writes_the_framework_agreement()
-    async with Client(desk.server(full_access=True)) as client:
-        result = await client.call_tool(
-            "send_engagement_for_signature", {"engagement_id": str(desk.engagement.id)}
-        )
-
-    assert result.is_error
-    assert NO_DOCUMENSO in result.content[0].text  # type: ignore[union-attr]
+    framework = desk.document("framework_agreement")
+    calls = {
+        "send_engagement_for_signature": {"engagement_id": str(desk.engagement.id)},
+        "resend_signing_mail": {"document_id": str(framework.id)},
+        "cancel_framework_agreement": {"document_id": str(framework.id)},
+        "refresh_document_signature": {"document_id": str(framework.id)},
+    }
+    async with Client(desk.server(full_access=True, signing=False)) as client:
+        for name, arguments in calls.items():
+            result = await client.call_tool(name, arguments)
+            assert result.is_error, name
+            assert "Fallo dall'app" in result.content[0].text, name  # type: ignore[union-attr]
     assert desk.engagement_state() == "draft"
-    assert desk.fake.calls == []
+    assert desk.fake.calls == [] and desk.mails.sent == []
 
 
 # ---- refreshing -------------------------------------------------------------------------------

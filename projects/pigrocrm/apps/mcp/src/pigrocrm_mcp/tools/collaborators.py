@@ -18,7 +18,8 @@ from pigrocrm.core.collaborators.schemas import (
 )
 from pigrocrm.core.collaborators.service import EngagementService, FreelancerService
 from pigrocrm.core.collaborators.signing import SigningService
-from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.documenso.client import signing_configured
+from pigrocrm.core.errors import SigningUnavailable, ValidationFailed
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools.changes import refuse_empty, report
 from pigrocrm_mcp.tools.params import iso_date, required_iso_date
@@ -173,36 +174,66 @@ def _signing(context: McpContext) -> SigningService:
     )
 
 
+APP_ONLY = (
+    "Questo server MCP non può parlare con la firma elettronica né mandare email: non ha il "
+    "token di Documenso né la chiave della posta, per tenerli separati. Fallo dall'app: lì il "
+    "documento si invia, si rimanda, si annulla e si aggiorna."
+)
+
+
+def _signing_here(context: McpContext, *, mail: bool = True) -> SigningService:
+    """The signing service, only where this server holds what signing needs. The MCP container
+    holds neither the Documenso token nor the mail key (secret separation), so a tool that sends,
+    resends, cancels or refreshes a document tells the person to do it from the app instead of
+    answering a bare 503."""
+    settings = context.settings
+    if (
+        settings is None
+        or not signing_configured(settings)
+        or (mail and not settings.resend_api_key)
+    ):
+        raise SigningUnavailable(APP_ONLY)
+    return _signing(context)
+
+
 def cancel(context: McpContext, engagement_id: str) -> dict[str, Any]:
     # The engagement service that also cancels the letter's envelope: the plain one refuses to
-    # cancel a letter that is out for signature.
-    done = (
-        _signing(context)
-        .engagement_service()
-        .cancel(_required_uuid("engagement_id", engagement_id), context.actor)
-    )
+    # cancel a letter that is out for signature. A letter out for signature needs Documenso,
+    # which this server may not reach: that refusal says to use the app.
+    try:
+        done = (
+            _signing(context)
+            .engagement_service()
+            .cancel(_required_uuid("engagement_id", engagement_id), context.actor)
+        )
+    except SigningUnavailable as exc:
+        raise SigningUnavailable(APP_ONLY) from exc
     return done.model_dump(mode="json")
 
 
 def send_for_signature(context: McpContext, engagement_id: str) -> dict[str, Any]:
-    sent = _signing(context).send_engagement(
+    sent = _signing_here(context).send_engagement(
         _required_uuid("engagement_id", engagement_id), context.actor
     )
     return sent.model_dump(mode="json")
 
 
 def refresh_signature(context: McpContext, document_id: str) -> dict[str, Any]:
-    found = _signing(context).refresh(_required_uuid("document_id", document_id), context.actor)
+    found = _signing_here(context, mail=False).refresh(
+        _required_uuid("document_id", document_id), context.actor
+    )
     return found.model_dump(mode="json")
 
 
 def resend_signing_mail(context: McpContext, document_id: str) -> dict[str, Any]:
-    found = _signing(context).resend_mail(_required_uuid("document_id", document_id), context.actor)
+    found = _signing_here(context).resend_mail(
+        _required_uuid("document_id", document_id), context.actor
+    )
     return found.model_dump(mode="json")
 
 
 def cancel_framework_agreement(context: McpContext, document_id: str) -> dict[str, Any]:
-    found = _signing(context).cancel_framework_agreement(
+    found = _signing_here(context).cancel_framework_agreement(
         _required_uuid("document_id", document_id), context.actor
     )
     return found.model_dump(mode="json")
