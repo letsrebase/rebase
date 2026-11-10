@@ -17,14 +17,14 @@
     "@rebase/analytics": "workspace:*",
     "@rebase/brand": "workspace:*",
     "@rebase/ui": "workspace:*",
-    "@tailwindcss/vite": "4.3.3",
-    "@tanstack/react-query": "5.105.0",
+    "@tailwindcss/vite": "4.3.4",
+    "@tanstack/react-query": "5.105.3",
     "@tanstack/react-router": "1.170.46",
-    "lucide-react": "^1.62.0",
+    "lucide-react": "^1.67.0",
     "openapi-fetch": "0.17.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "tailwindcss": "4.3.3"
+    "tailwindcss": "4.3.4"
   },
   "devDependencies": {
     "@eslint/js": "catalog:",
