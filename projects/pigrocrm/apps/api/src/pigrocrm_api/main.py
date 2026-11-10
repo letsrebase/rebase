@@ -50,6 +50,7 @@ from pigrocrm_api.routers import (
     mailboxes,
     notes,
     organizations,
+    own_engagement,
     payment_reminders,
     people,
     period_locks,
@@ -182,6 +183,8 @@ def create_app() -> FastAPI:
         collaborators,
         # REB-1019: Documenso's webhook, root only, behind its own secret: routers/documenso.py.
         documenso,
+        # REB-1035: the freelancer's own card on their contract, read from rebase's space.
+        own_engagement,
         # REB-971: the inbox of incoming documents, filled by upload. Before `notes`, which stays
         # last: the web tests type their mock of `api.GET` against the last path of the API.
         inbox,

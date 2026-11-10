@@ -348,6 +348,10 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         # (collaborators design § 4, frame A4). Approval is what makes a day payable.
         "record_monthly_report",
         "approve_monthly_report",
+        # The freelancer's own card on their contract: what rebase's space says of their
+        # engagement, read across spaces. A person's read: it is rebase's data in another
+        # space, and no tool exists for it (brief 2026-11-10, REB-1035).
+        "read_rebase_engagement",
         # Connections to third parties, and mail that leaves in the owner's name.
         "connect_gmail",
         "disconnect_gmail",
@@ -471,6 +475,7 @@ ACTION_LABELS: dict[str, str] = {
     "read_engagement_report": "leggere i giorni di un incarico e quali si pagano",
     "record_monthly_report": "registrare l'arrivo del rendiconto mensile di un incarico",
     "approve_monthly_report": "approvare il rendiconto mensile di un incarico",
+    "read_rebase_engagement": "leggere lo stato del tuo incarico con rebase",
     "set_freelancer_tax_data": "salvare i dati fiscali di un freelance",
     "set_organization_hub_freelancer": "collegare un'anagrafica a un freelance dell'hub",
     "skip_space_onboarding": "rimandare le domande su come lavora lo spazio",

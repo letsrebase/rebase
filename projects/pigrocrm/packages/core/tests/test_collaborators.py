@@ -550,7 +550,7 @@ def test_the_overlap_is_read_across_open_ended_engagements(
 # ---- availability ---------------------------------------------------------------------------
 
 
-def test_availability_shows_the_committed_days_per_week_from_active_engagements(
+def test_availability_shows_the_committed_days_per_week_from_live_engagements(
     db_session: Session, service: EngagementService
 ) -> None:
     who = freelancer(db_session)
@@ -564,7 +564,8 @@ def test_availability_shows_the_committed_days_per_week_from_active_engagements(
         ends_on=D(2026, 12, 13),
         days_per_week=Decimal("2"),
     )  # weeks 47 to 50
-    draft = make(service, who, days_per_week=Decimal("1"))
+    cancelled = make(service, who, days_per_week=Decimal("1"))
+    service.cancel(cancelled.id, ADMIN)
     for made in (first, second):
         activate(service, made.id)
     freelancers = FreelancerService(db_session)
@@ -587,7 +588,7 @@ def test_availability_shows_the_committed_days_per_week_from_active_engagements(
     assert answer.weeks[2].free_days == Decimal("0")
     assert answer.weeks[0].free_days == Decimal("2")
     assert answer.weeks[6].free_days == Decimal("5") and answer.weeks[6].label == "libera"
-    assert draft.id not in {i for week in answer.weeks for i in week.engagement_ids}
+    assert cancelled.id not in {i for week in answer.weeks for i in week.engagement_ids}
     assert (answer.date_from, answer.hub_freelancer_id) == (MONDAY, who.hub_freelancer_id)
 
 

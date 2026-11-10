@@ -27,6 +27,7 @@ describe('visibleSections (REB-953)', () => {
       'Acquisti',
       'Ore',
       'Giornate',
+      'Incarichi',
       'Tasse',
       'Cassa',
       "Persone dell'azienda",
@@ -84,6 +85,7 @@ describe('visibleSections (REB-953)', () => {
       'Acquisti',
       'Ore',
       'Giornate',
+      'Incarichi',
       'Tasse',
       'Cassa',
       "Persone dell'azienda",
@@ -147,6 +149,7 @@ describe('visibleSections (REB-953)', () => {
       'Clienti',
       'Persone',
       'Fatture',
+      'Incarichi',
       'Esporta per il commercialista',
     ]
     expect(labels(['deals', 'contracts', 'time', 'purchases', 'taxes', 'staff', 'cash'])).toEqual(core)
@@ -161,6 +164,7 @@ describe('visibleSections (REB-953)', () => {
       'Fatture',
       'Fornitori',
       'Acquisti',
+      'Incarichi',
       'Tasse',
       'Cassa',
       "Persone dell'azienda",
@@ -200,6 +204,7 @@ describe('the phone bar (REB-959)', () => {
       'Fornitori',
       'Acquisti',
       'Ore',
+      'Incarichi',
       'Tasse',
       'Cassa',
       "Persone dell'azienda",
@@ -215,6 +220,7 @@ describe('the phone bar (REB-959)', () => {
       'Fatture',
       'Fornitori',
       'Acquisti',
+      'Incarichi',
       'Tasse',
       'Cassa',
       "Persone dell'azienda",
@@ -271,5 +277,31 @@ describe('isNavItemActive: one registry page, two entries', () => {
 
   it('marks nothing on another page', () => {
     expect(isNavItemActive(customers, '/app/invoices', undefined)).toBe(false)
+  })
+})
+
+describe('«Incarichi» (REB-1035)', () => {
+  const items = (role: 'admin' | 'collaborator' | 'readonly' | undefined, off: readonly ModuleKey[] = []) =>
+    visibleSections(moduleAccess(spaceModules(off)), role).flatMap((section) =>
+      section.items.map((item) => item.label),
+    )
+
+  it('is drawn for an administrator, after «Giornate», and for nobody else', () => {
+    const admin = items('admin')
+    expect(admin[admin.indexOf('Giornate') + 1]).toBe('Incarichi')
+    expect(items('collaborator')).not.toContain('Incarichi')
+    expect(items('readonly')).not.toContain('Incarichi')
+    expect(items(undefined)).not.toContain('Incarichi')
+  })
+
+  it('is gone with the collaborators module off', () => {
+    expect(items('admin', ['collaborators'])).not.toContain('Incarichi')
+  })
+
+  it('leads «Altro» only for an administrator, which lists it with the rest', () => {
+    const labelsOf = (role: 'admin' | 'collaborator') =>
+      phoneMoreItems(moduleAccess(spaceModules([])), role).map((item) => item.label)
+    expect(labelsOf('admin')).toContain('Incarichi')
+    expect(labelsOf('collaborator')).not.toContain('Incarichi')
   })
 })

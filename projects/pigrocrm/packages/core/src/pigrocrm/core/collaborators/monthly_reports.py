@@ -9,6 +9,7 @@ count.
 """
 
 import datetime as dt
+from collections.abc import Iterable
 from typing import Any
 from uuid import UUID
 
@@ -18,8 +19,9 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.auth.models import User
 from pigrocrm.core.collaborators import rules
-from pigrocrm.core.collaborators.models import Engagement, MonthlyReport
+from pigrocrm.core.collaborators.models import REPORTING_STATES, Engagement, MonthlyReport
 from pigrocrm.core.collaborators.repository import EngagementRepository
 from pigrocrm.core.collaborators.rules import ENTITY
 from pigrocrm.core.collaborators.schemas import (
@@ -33,12 +35,21 @@ from pigrocrm.core.db import today_local
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 
 MONTHLY_REPORT_ENTITY = "monthly_report"
-# A month's report is for an engagement that has started: nothing is reported on a draft or
-# on one that never began.
-REPORTING_STATES = ("active", "concluded")
 
 
-def read_monthly_report(row: MonthlyReport, today: dt.date) -> MonthlyReportRead:
+def decider_names(session: Session, rows: Iterable[MonthlyReport]) -> dict[UUID, str]:
+    """The names of the people who decided these months, by user id: a screen says who approved
+    a month, and a person who has since left the space still reads by name."""
+    ids = {row.decided_by for row in rows if row.decided_by is not None}
+    if not ids:
+        return {}
+    found = session.execute(select(User.id, User.name).where(User.id.in_(ids))).all()
+    return {row[0]: row[1] for row in found}
+
+
+def read_monthly_report(
+    row: MonthlyReport, today: dt.date, decided_by_name: str | None = None
+) -> MonthlyReportRead:
     effective = rules.effective_state(row.state, row.tacit_on, today)
     return MonthlyReportRead(
         id=row.id,
@@ -51,6 +62,7 @@ def read_monthly_report(row: MonthlyReport, today: dt.date) -> MonthlyReportRead
         received_on=row.received_on,
         tacit_on=row.tacit_on,
         decided_on=row.decided_on,
+        decided_by_name=decided_by_name,
         objection=row.objection,
         held_dates=[dt.date.fromisoformat(value) for value in row.held_dates],
         created_at=row.created_at,
@@ -82,10 +94,14 @@ class MonthlyReportService:
         actor.require_admin("read_engagement_report")
         self._engagement(engagement_id)
         today = today_local(self.settings)
+        rows = monthly_reports_of(self.session, engagement_id)
+        names = decider_names(self.session, rows)
         return MonthlyReportPage(
             items=[
-                read_monthly_report(row, today)
-                for row in monthly_reports_of(self.session, engagement_id)
+                read_monthly_report(
+                    row, today, names.get(row.decided_by) if row.decided_by else None
+                )
+                for row in rows
             ]
         )
 
@@ -231,7 +247,10 @@ class MonthlyReportService:
             {"month": month_label, "held": len(held), "before": previous},
         )
         self.session.commit()
-        return read_monthly_report(row, today)
+        names = decider_names(self.session, [row])
+        return read_monthly_report(
+            row, today, names.get(row.decided_by) if row.decided_by else None
+        )
 
     def _engagement(self, engagement_id: UUID, *, lock: bool = False) -> Engagement:
         found = self.repo.get(engagement_id, lock=lock)

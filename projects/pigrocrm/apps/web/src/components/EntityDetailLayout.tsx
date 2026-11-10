@@ -52,6 +52,11 @@ interface EntityDetailLayoutProps {
    */
   purchases?: ReactNode
   /**
+   * The Incarichi tab's contents: only a freelancer has engagements (REB-1035), so the tab
+   * exists only when a page passes it, like every slot above.
+   */
+  engagements?: ReactNode
+  /**
    * The Economia tab's contents -- a Deal's own profit and loss, or an Organization's as the
    * sum of their deals. Filled by slice 4B; absent for the whole of 4A, which is why it
    * is optional rather than required. A tab showing zeros is worse than no tab: the
@@ -108,6 +113,7 @@ export function EntityDetailLayout({
   contracts,
   hours,
   purchases,
+  engagements,
   economics,
   emails,
   tasks,
@@ -134,6 +140,7 @@ export function EntityDetailLayout({
             {contracts && <TabsTrigger value="contracts">Contratti</TabsTrigger>}
             {hours && <TabsTrigger value="hours">Ore</TabsTrigger>}
             {purchases && <TabsTrigger value="purchases">Acquisti</TabsTrigger>}
+            {engagements && <TabsTrigger value="engagements">Incarichi</TabsTrigger>}
             {economics && <TabsTrigger value="economics">Economia</TabsTrigger>}
             {/* Before the Email and the Timeline tabs: those two are a record of what
                 already happened, and this is what is still to be done. */}
@@ -174,6 +181,11 @@ export function EntityDetailLayout({
         {purchases && (
           <TabsContent value="purchases" className="mt-6">
             {purchases}
+          </TabsContent>
+        )}
+        {engagements && (
+          <TabsContent value="engagements" className="mt-6">
+            {engagements}
           </TabsContent>
         )}
         {economics && (

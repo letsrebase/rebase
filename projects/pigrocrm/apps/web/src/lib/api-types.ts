@@ -5225,6 +5225,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/engagements/counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Count Engagements
+         * @description How many engagements wait for a person, are under way and are closed: the three tabs of
+         *     the list. The count on the «Incarichi» entry is `todo`.
+         */
+        get: operations["count_engagements_api_engagements_counts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/engagements/{engagement_id}": {
         parameters: {
             query?: never;
@@ -5245,6 +5266,28 @@ export interface paths {
          *     deal and contract change.
          */
         patch: operations["update_engagement_api_engagements__engagement_id__patch"];
+        trace?: never;
+    };
+    "/api/engagements/{engagement_id}/payments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Engagement Payments
+         * @description What the engagement pays the freelancer, month by month: the due items it wrote, with
+         *     the month each pays for and the client's invoice a date still follows. Read-only: a payment
+         *     is settled on the due item.
+         */
+        get: operations["engagement_payments_api_engagements__engagement_id__payments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/engagements/{engagement_id}/state": {
@@ -5346,8 +5389,9 @@ export interface paths {
         };
         /**
          * Freelancer Availability
-         * @description The days a week a freelancer is committed to, by ISO week, from their active
-         *     engagements; `sconosciuta` where an engagement has no `days_per_week`.
+         * @description The days a week a freelancer is committed to, by ISO week, from their live engagements
+         *     (draft, out for signature and active: the ones the overlap warning counts);
+         *     `sconosciuta` where an engagement has no `days_per_week`.
          */
         get: operations["freelancer_availability_api_freelancers_availability_get"];
         put?: never;
@@ -5649,6 +5693,29 @@ export interface paths {
          *     installation wrote. Answers 200 to every well-formed delivery, handled or not.
          */
         post: operations["documenso_webhook_api_documenso_webhook_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/contracts/{contract_id}/rebase-engagement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Own Engagement
+         * @description The engagement with rebase this contract came from, as its freelancer reads it: the
+         *     letter, their fee and dates, the payment rule and each month's report state, read from
+         *     rebase's space. 404 when the contract did not come from an engagement. A person's read, not
+         *     an agent's: the engagement is rebase's data.
+         */
+        get: operations["own_engagement_api_contracts__contract_id__rebase_engagement_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -7108,8 +7175,9 @@ export interface components {
         };
         /**
          * AvailabilityWeek
-         * @description One ISO week. `unknown` when an active engagement overlapping it has no
-         *     `days_per_week`: never `free`. `committed_days` then counts only the ones that have it.
+         * @description One ISO week. `unknown` when a live engagement (draft, out for signature or active)
+         *     overlapping it has no `days_per_week`: never `free`. `committed_days` then counts only the
+         *     ones that have it.
          */
         AvailabilityWeek: {
             /**
@@ -10581,6 +10649,18 @@ export interface components {
             fourteenth_month?: number | null;
         };
         /**
+         * EngagementCounts
+         * @description How many engagements each bucket of the list holds; `todo` is the count on the entry.
+         */
+        EngagementCounts: {
+            /** Todo */
+            todo: number;
+            /** Ongoing */
+            ongoing: number;
+            /** Closed */
+            closed: number;
+        };
+        /**
          * EngagementCreate
          * @description A new engagement is a draft. `days_per_week` is required (the service says so in words);
          *     only an imported one may lack it. `letter_type` omitted follows the freelancer's fiscal kind:
@@ -10738,6 +10818,54 @@ export interface components {
             /** Next Cursor */
             next_cursor: string | null;
         };
+        /** EngagementPaymentPage */
+        EngagementPaymentPage: {
+            /**
+             * Engagement Id
+             * Format: uuid
+             */
+            engagement_id: string;
+            /** Items */
+            items: components["schemas"]["EngagementPaymentRead"][];
+        };
+        /**
+         * EngagementPaymentRead
+         * @description One due item the engagement wrote for the freelancer. `month` is the first day of the month
+         *     the amount pays for, known only for a forecast (the billing point it was written for); an item
+         *     that replaced one has none. `waiting_for_invoice` is the client's invoice, `2026/71`, whose
+         *     settlement the date still follows. The amounts are `None` when the engagement's client is not
+         *     in this administrator's view, as the fee is.
+         */
+        EngagementPaymentRead: {
+            /**
+             * Due Item Id
+             * Format: uuid
+             */
+            due_item_id: string;
+            /** Month */
+            month: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "forecast" | "expected" | "settled";
+            /** Amount */
+            amount: string | null;
+            /** Settled */
+            settled: string | null;
+            /** Remaining */
+            remaining: string | null;
+            /** Currency */
+            currency: string;
+            /** Due Date */
+            due_date: string | null;
+            /** Due Date Estimated */
+            due_date_estimated: boolean;
+            /** Waiting For Invoice */
+            waiting_for_invoice: string | null;
+            /** Description */
+            description: string | null;
+        };
         /**
          * EngagementRebase
          * @description rebase's own fiscal data, as the customer «rebase» in the freelancer's space.
@@ -10838,6 +10966,25 @@ export interface components {
             freelancer: components["schemas"]["EngagementFreelancer"];
             letter: components["schemas"]["EngagementLetter"];
             rebase: components["schemas"]["EngagementRebase"];
+        };
+        /**
+         * EngagementWaiting
+         * @description One thing the engagement waits for a person to do. A draft waits until its letter is
+         *     written (`letter_not_created`) and sent (`letter_not_sent`); a live one waits for the
+         *     `days_per_week` or the client link an import left out; an active or concluded one waits for
+         *     a person to decide a month received and not yet decided (`report_undecided`, with the month
+         *     and the last day an objection counts).
+         */
+        EngagementWaiting: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "letter_not_created" | "letter_not_sent" | "report_undecided" | "missing_days_per_week" | "missing_client";
+            /** Month */
+            month?: string | null;
+            /** Tacit On */
+            tacit_on?: string | null;
         };
         /**
          * EngagementWarning
@@ -13804,6 +13951,11 @@ export interface components {
             tacit_on: string;
             /** Decided On */
             decided_on: string | null;
+            /**
+             * Decided By Name
+             * @description The person who decided it, by name
+             */
+            decided_by_name?: string | null;
             /** Objection */
             objection: string | null;
             /** Held Dates */
@@ -14432,6 +14584,69 @@ export interface components {
             late_total: string;
             /** Late Count */
             late_count: number;
+        };
+        /**
+         * OwnEngagementMonth
+         * @description One month as the freelancer sees it. `in_progress`: rebase has not received the report
+         *     (the month is running or the report has not arrived); `received`: rebase has it and `answer_by`
+         *     is the last day for the answer; `approved`: a person approved it or nobody objected in time,
+         *     with the dates rebase does not recognise in `held_dates`. The reason of an objection never
+         *     leaves rebase's space: it can carry the client's words.
+         */
+        OwnEngagementMonth: {
+            /**
+             * Month
+             * Format: date
+             */
+            month: string;
+            /** Label */
+            label: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "in_progress" | "received" | "approved";
+            /** Received On */
+            received_on: string | null;
+            /** Answer By */
+            answer_by: string | null;
+            /** Held Dates */
+            held_dates: string[];
+        };
+        /**
+         * OwnEngagementRead
+         * @description What the freelancer reads of their own engagement with rebase, and nothing else: the
+         *     letter, their fee and dates, the payment rule and the months. Never the client's name, price
+         *     or budget, another engagement's figures, a forecast or an objection's reason.
+         */
+        OwnEngagementRead: {
+            /** Letter Number */
+            letter_number: string | null;
+            /** State */
+            state: string;
+            /**
+             * Starts On
+             * Format: date
+             */
+            starts_on: string;
+            /** Ends On */
+            ends_on: string | null;
+            /** Fee */
+            fee: string;
+            /** Fee Unit */
+            fee_unit: string;
+            /** Days Per Week */
+            days_per_week: string | null;
+            /** Payment Rule */
+            payment_rule: string;
+            /** Payment Days */
+            payment_days: number | null;
+            /** Payment End Of Month */
+            payment_end_of_month: boolean;
+            /** Collection Days */
+            collection_days: number | null;
+            /** Months */
+            months: components["schemas"]["OwnEngagementMonth"][];
         };
         /**
          * ParsedInvoice
@@ -19154,6 +19369,16 @@ export interface components {
             missing: string[];
             /** Warnings */
             warnings?: components["schemas"]["EngagementWarning"][];
+            /** Waiting */
+            waiting?: components["schemas"]["EngagementWaiting"][];
+            /** Freelancer Name */
+            freelancer_name?: string | null;
+            /** Client Name */
+            client_name?: string | null;
+            /** Letter Document Id */
+            letter_document_id?: string | null;
+            /** Today */
+            today?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -57697,6 +57922,8 @@ export interface operations {
                 client_organization_id?: string | null;
                 deal_id?: string | null;
                 contract_id?: string | null;
+                /** @description todo (waits for a person) | ongoing (out for signature or active, nothing waiting) | closed (concluded or cancelled, nothing waiting) */
+                bucket?: ("todo" | "ongoing" | "closed") | null;
             };
             header?: never;
             path?: never;
@@ -57832,6 +58059,123 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["pigrocrm__core__collaborators__schemas__EngagementRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    count_engagements_api_engagements_counts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementCounts"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -58074,6 +58418,125 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["pigrocrm__core__collaborators__schemas__EngagementRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    engagement_payments_api_engagements__engagement_id__payments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                engagement_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementPaymentPage"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -58800,6 +59263,8 @@ export interface operations {
                 date_from?: string | null;
                 /** @description Default twelve weeks on; at most 104 weeks in all */
                 date_to?: string | null;
+                /** @description Leave this engagement out, as its own page does for a draft */
+                excluding_engagement_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -60634,6 +61099,137 @@ export interface operations {
                 };
             };
             /** @description The installation has no `PIGROCRM_DOCUMENSO_WEBHOOK_SECRET`: the webhook is off. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
+            };
+        };
+    };
+    own_engagement_api_contracts__contract_id__rebase_engagement_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The contract the door wrote from the letter */
+                contract_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnEngagementRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description rebase's space cannot be reached right now: retry later. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -63083,6 +63679,8 @@ export interface operations {
                 organization_id?: string | null;
                 /** @description Only this source kind. The fiscal kinds (tax, IVA, withholding, payroll) and engagement items are an administrator's; without them they are left out of every page */
                 source_kind?: string | null;
+                /** @description Only the items this record wrote (an engagement, an invoice) */
+                source_id?: string | null;
                 /** @description Due on or after this day */
                 due_from?: string | null;
                 /** @description Due on or before this day */

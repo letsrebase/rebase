@@ -238,6 +238,9 @@ class DueItemListQuery(BaseModel):
     legal_entity_id: UUID | None = None
     organization_id: UUID | None = None
     source_kind: SafeStr | None = Field(default=None, max_length=30)
+    # The record that wrote the item (an engagement, an invoice, a purchase): with `source_kind`
+    # it is how a page lists what one record owes or is owed.
+    source_id: UUID | None = None
     due_from: dt.date | None = None
     due_to: dt.date | None = None
     limit: int = Field(default=50, ge=1, le=200)

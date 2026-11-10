@@ -18,6 +18,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         direction: str | None = None,
         state: str | None = None,
         source_kind: str | None = None,
+        source_id: str | None = None,
         legal_entity_id: str | None = None,
         organization_id: str | None = None,
         due_from: IsoDateStr = None,
@@ -27,13 +28,15 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
     ) -> dict[str, Any]:
         """List amounts due by date, undated last: `direction` `in` or `out`; `state` `forecast`,
         `expected`, `settled` or `dropped` (omitted: forecast and expected). `remaining` is what
-        is still owed. Tax, IVA, withholding and payroll items need a full-access admin token.
+        is still owed. Tax, IVA, withholding, payroll and engagement items need a full-access
+        admin token.
         """
         return due_items.search(
             context,
             direction=direction,
             state=state,
             source_kind=source_kind,
+            source_id=source_id,
             legal_entity_id=legal_entity_id,
             organization_id=organization_id,
             due_from=due_from,
