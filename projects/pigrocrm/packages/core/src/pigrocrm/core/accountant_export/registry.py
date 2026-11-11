@@ -9,6 +9,13 @@ part is never both built and declared missing.
 from pigrocrm.core.accountant_export.due_items import build_open_items, build_settlements
 from pigrocrm.core.accountant_export.invoice_files import build_invoice_files
 from pigrocrm.core.accountant_export.parts import PartDefinition, UnavailablePart
+from pigrocrm.core.accountant_export.payroll import (
+    build_expense_notes,
+    build_hires,
+    build_leavers,
+    build_pay_changes,
+    build_payslips,
+)
 from pigrocrm.core.accountant_export.purchases import (
     build_receipts_and_expenses,
     build_received_invoice_files,
@@ -71,7 +78,67 @@ PARTS: tuple[PartDefinition, ...] = (
         contents="Elenco CSV",
         build=build_settlements,
     ),
+    # Opt-in (§ 4): the people's pay, in no part unless an administrator ticks it.
+    PartDefinition(
+        key="payslips",
+        folder="paghe",
+        label="Cedolini: elenco e file originali",
+        date_rule="per mese di competenza",
+        contents="Elenco CSV e file originali",
+        build=build_payslips,
+        requires_modules=("staff",),
+        not_for_packs=(PACK_NON_IT,),
+        opt_in="payslips",
+    ),
 )
+
+# The parts of «variazioni paghe», the payroll consultant's own export (§ 4): what changed in the
+# staff in the period. An administrator's, and it never travels on a plain link.
+PAYROLL_CHANGE_PARTS: tuple[PartDefinition, ...] = (
+    PartDefinition(
+        key="staff_hires",
+        folder="assunzioni",
+        label="Assunzioni",
+        date_rule="per data di inizio",
+        contents="Elenco CSV",
+        build=build_hires,
+        requires_modules=("staff",),
+        not_for_packs=(PACK_NON_IT,),
+    ),
+    PartDefinition(
+        key="staff_leavers",
+        folder="cessazioni",
+        label="Cessazioni",
+        date_rule="per data di fine",
+        contents="Elenco CSV",
+        build=build_leavers,
+        requires_modules=("staff",),
+        not_for_packs=(PACK_NON_IT,),
+    ),
+    PartDefinition(
+        key="staff_pay_changes",
+        folder="variazioni",
+        label="Variazioni di retribuzione",
+        date_rule="per data della modifica",
+        contents="Elenco CSV",
+        build=build_pay_changes,
+        requires_modules=("staff",),
+        not_for_packs=(PACK_NON_IT,),
+    ),
+    PartDefinition(
+        key="staff_expense_notes",
+        folder="note-spese",
+        label="Note spese da rimborsare in busta paga",
+        date_rule="per mese della busta paga",
+        contents="Elenco CSV",
+        build=build_expense_notes,
+        requires_modules=("staff",),
+        not_for_packs=(PACK_NON_IT,),
+    ),
+)
+
+# The payroll parts of an export that an administrator can ask for.
+PAYROLL_PARTS: tuple[str, ...] = tuple(part.opt_in for part in PARTS if part.opt_in is not None)
 
 # What the design lists and no source feeds yet. Each is listed in the index with its reason
 # rather than left out of it, so the accountant never wonders whether a part was forgotten.
@@ -85,5 +152,6 @@ UNAVAILABLE: tuple[UnavailablePart, ...] = (
     UnavailablePart("bank_movements", "Movimenti di banca con ciò che hanno saldato", _NOT_BUILT),
     UnavailablePart("taxes_and_f24", "Imposte pagate e F24", _NOT_BUILT),
     UnavailablePart("withholdings", "Ritenute versate per conto di terzi", _NOT_BUILT),
-    UnavailablePart("payroll", "Paghe (a richiesta)", _NOT_BUILT),
+    UnavailablePart("payroll_f24", "F24 delle paghe (a richiesta)", _NOT_BUILT),
+    UnavailablePart("payroll_withholdings", "Ritenute sulle paghe (a richiesta)", _NOT_BUILT),
 )

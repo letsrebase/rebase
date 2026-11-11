@@ -10,6 +10,7 @@ entity) is the service's.
 """
 
 from datetime import date
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -19,8 +20,10 @@ from pydantic import BaseModel, Field
 from pigrocrm.core.accountant_export.drive_delivery import ExportDriveService, ExportDriveStatus
 from pigrocrm.core.accountant_export.parts import Period
 from pigrocrm.core.accountant_export.schemas import (
+    ChecklistRead,
     DriveDeliveryStatus,
     DriveWriteRead,
+    ExportKind,
     ExportListRead,
     ExportRead,
     PartPreviewRead,
@@ -29,7 +32,12 @@ from pigrocrm.core.accountant_export.schemas import (
     ShareLinkRead,
 )
 from pigrocrm.core.accountant_export.service import ZIP_MIME, AccountantExportService
-from pigrocrm.core.accountant_export.sharing import DEFAULT_DAYS, MAX_DAYS, ExportShareService
+from pigrocrm.core.accountant_export.sharing import (
+    DEFAULT_DAYS,
+    MAX_DAYS,
+    RECIPIENT_MAX_LENGTH,
+    ExportShareService,
+)
 from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, StorageDep, get_actor
 from pigrocrm_api.downloads import attachment_response
 from pigrocrm_api.errors import PROBLEM_RESPONSES
@@ -56,6 +64,17 @@ class ExportBuild(BaseModel):
             "view is not limited to some legal entities, and not together with legal_entity_id"
         ),
     )
+    kind: ExportKind = Field(
+        default="accountant",
+        description=(
+            "`accountant` for the period bundle, `payroll_changes` for «variazioni paghe», the "
+            "payroll consultant's staff changes of one company"
+        ),
+    )
+    payroll_parts: list[str] = Field(
+        default_factory=list,
+        description="The parts that carry pay to include, by name: `payslips`",
+    )
 
 
 class ShareLinkCreate(BaseModel):
@@ -64,6 +83,14 @@ class ShareLinkCreate(BaseModel):
         ge=1,
         le=MAX_DAYS,
         description=f"How many days the link lives: {DEFAULT_DAYS} by default, at most {MAX_DAYS}",
+    )
+    recipient_email: str | None = Field(
+        default=None,
+        max_length=RECIPIENT_MAX_LENGTH,
+        description=(
+            "The address whoever opens the link is sent a one-time code at. Required for an "
+            "export that carries pay, which has no plain link"
+        ),
     )
 
 
@@ -86,12 +113,16 @@ def build_export(
     their files, the receipts and expenses, the open due items and the payments of the period,
     and an index naming every part with its row count, every part left out with its reason and
     every part whose source does not exist yet. Building the same period again keeps both
-    exports; each is deleted after 13 months."""
+    exports; each is deleted after 13 months. The checklist of the period as it stands is stored
+    with the export. `kind="payroll_changes"` builds «variazioni paghe» instead; it and an
+    export with `payroll_parts` carry pay and are shared only by a link with a code."""
     stored = _service(session, storage, settings).build_accountant_export(
         Period(body.date_from, body.date_to),
         actor,
         body.legal_entity_id,
         all_entities=body.all_entities,
+        kind=body.kind,
+        payroll_parts=body.payroll_parts,
     )
     return stored.export
 
@@ -104,11 +135,39 @@ def describe_parts(
     actor: ActorDep,
     legal_entity_id: UUID | None = None,
     all_entities: bool = False,
+    kind: ExportKind = "accountant",
 ) -> list[PartPreviewRead]:
     """The parts a build for this company would hold, from its modules and fiscal pack, in
-    the order of the index. With `all_entities`, a part that applies to any company."""
+    the order of the index. With `all_entities`, a part that applies to any company. A part
+    that is asked for (the payslips) carries the name to ask it by in `opt_in`."""
     return _service(session, storage, settings).describe_parts(
-        actor, legal_entity_id, all_entities=all_entities
+        actor, legal_entity_id, all_entities=all_entities, kind=kind
+    )
+
+
+@router.get("/checklist")
+def get_checklist(
+    session: SessionDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+    actor: ActorDep,
+    date_from: date,
+    date_to: date,
+    legal_entity_id: UUID | None = None,
+    all_entities: bool = False,
+    payroll_parts: Annotated[list[str] | None, Query()] = None,
+) -> ChecklistRead:
+    """«Il periodo è pronto?»: what would make an export of the period incomplete, one check per
+    thing that can wait, with a count and the first few named. Computed now from the books and
+    stored nowhere: a build computes it again and keeps that with the export. A check of a
+    module that is off is not in the answer, nor the payroll check unless the payslips are
+    asked for in `payroll_parts`."""
+    return _service(session, storage, settings).get_export_checklist(
+        Period(date_from, date_to),
+        actor,
+        legal_entity_id,
+        all_entities=all_entities,
+        payroll_parts=payroll_parts or [],
     )
 
 
@@ -176,9 +235,11 @@ def create_share_link(
 ) -> ShareLinkCreated:
     """A link to one stored export, opened with no account until it expires or is revoked. The
     address is in this answer and nowhere else: it is stored as a hash, so a lost one is revoked
-    and made again. Lives 7 days unless `days` says otherwise, at most 30."""
+    and made again. Lives 7 days unless `days` says otherwise, at most 30. With
+    `recipient_email` the link asks a one-time code mailed to that address before it opens the
+    files; an export with pay has no other kind of link and a plain one is refused."""
     return ExportShareService(session, settings).create_export_share_link(
-        export_id, actor, days=body.days
+        export_id, actor, days=body.days, recipient_email=body.recipient_email
     )
 
 

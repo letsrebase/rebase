@@ -28,8 +28,10 @@ from pigrocrm.core.auth.service import UserService  # noqa: E402
 from pigrocrm.core.config import Settings, get_settings  # noqa: E402
 from pigrocrm.core.legal_entities.models import LegalEntity  # noqa: E402
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository  # noqa: E402
+from pigrocrm.core.mail import RecordingSender  # noqa: E402
 from pigrocrm.core.storage import GDriveStorage, LocalFileStorage  # noqa: E402
 from pigrocrm_api.deps import get_storage  # noqa: E402
+from pigrocrm_api.sessions import get_sender  # noqa: E402
 
 QUARTER = {"date_from": "2026-01-01", "date_to": "2026-03-31"}
 ADDRESS = "203.0.113.9"
@@ -367,3 +369,52 @@ def test_an_admin_writes_an_export_to_the_drive_folder_and_reads_where_it_went(
     )
     listed = logged_in.get(f"/api/accountant-export/exports/{export['id']}/drive-writes").json()
     assert [item["id"] for item in listed] == [body["id"]]
+
+
+def test_an_export_with_pay_is_shared_only_by_a_link_that_asks_a_code(
+    logged_in: TestClient, visitor: TestClient, public_settings: None
+) -> None:
+    sender = RecordingSender()
+    logged_in.app.dependency_overrides[get_sender] = lambda: sender  # type: ignore[attr-defined]
+    export = _export(logged_in, kind="payroll_changes")
+    refused = logged_in.post(f"/api/accountant-export/exports/{export['id']}/share-links", json={})
+    assert refused.status_code == 422 and "con codice" in refused.text
+    link = _link(logged_in, export, recipient_email="paghe@studio-esempio.it")
+    token = _token(link)
+    assert link["recipient_email"] == "paghe@studio-esempio.it"
+
+    seen = visitor.post(f"{DOOR}/describe", json={"token": token}).json()
+    assert seen["requires_code"] and seen["unlocked"] is False and seen["parts"] == []
+    locked = visitor.post(f"{DOOR}/download", json={"token": token, "part": 1})
+    assert locked.status_code == 403 and locked.json()["code"] == "export_code_required"
+
+    sent = visitor.post(f"{DOOR}/code", json={"token": token})
+    assert sent.status_code == 200 and sent.json() == {"sent_to": "p…@studio-esempio.it"}
+    assert token not in sender.sent[0].text
+    again = visitor.post(f"{DOOR}/code", json={"token": token})
+    assert again.status_code == 429 and again.json()["code"] == "export_code_throttled"
+    wrong = visitor.post(f"{DOOR}/verify", json={"token": token, "code": "abcdef"})
+    assert wrong.status_code == 403 and wrong.json()["code"] == "export_code_invalid"
+
+    code = sender.sent[0].text.split("\n\n")[2].strip()
+    access = visitor.post(f"{DOOR}/verify", json={"token": token, "code": code}).json()["access"]
+    opened = visitor.post(f"{DOOR}/describe", json={"token": token, "access": access}).json()
+    assert opened["unlocked"] and len(opened["parts"]) == 1
+    file = visitor.post(f"{DOOR}/download", json={"token": token, "part": 1, "access": access})
+    assert file.status_code == 200 and file.headers["content-type"] == "application/zip"
+    assert file.headers["cache-control"] == "no-store"
+
+
+def test_a_code_cannot_be_mailed_by_an_installation_that_cannot_mail(
+    logged_in: TestClient, visitor: TestClient, public_settings: None
+) -> None:
+    logged_in.app.dependency_overrides[get_sender] = lambda: None  # type: ignore[attr-defined]
+    link = _link(
+        logged_in,
+        _export(logged_in, kind="payroll_changes"),
+        recipient_email="paghe@studio-esempio.it",
+    )
+
+    response = visitor.post(f"{DOOR}/code", json={"token": _token(link)})
+
+    assert response.status_code == 503

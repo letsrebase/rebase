@@ -205,10 +205,12 @@ def test_a_quarter_carries_every_built_part_and_an_index_that_names_each_one(
     assert first.number == 1
 
     parts = {(line.key, line.status) for line in export.index.parts}
+    # The payslips are opt-in: no line in an export that did not ask for them.
+    built = [part for part in PARTS if part.opt_in is None]
     assert {key for key, _ in parts if key in {part.key for part in PARTS}} == {
-        part.key for part in PARTS
+        part.key for part in built
     }
-    assert {(part.key, "included") for part in PARTS} <= parts
+    assert {(part.key, "included") for part in built} <= parts
     assert {(part.key, "unavailable") for part in UNAVAILABLE} <= parts
 
 
@@ -220,12 +222,14 @@ def test_the_index_is_a_csv_with_the_row_counts_and_the_reasons(
     _issue(invoices, acme, "250.50", D(2026, 3, 20))
 
     archive = _open(exports.build(Q1, ADMIN, now=NOW).content)
-    meta, parts_table, missing = _tables(_text(archive, "indice.csv"))
+    meta, parts_table, missing, readiness = _tables(_text(archive, "indice.csv"))
     header, *parts = parts_table
 
     assert ["Azienda", "Studio Rossi"] in meta
     assert ["Periodo", "2026-01-01 - 2026-03-31"] in meta
     assert header[0] == "Sezione" and missing == [["Sezione", "Documento", "File", "Motivo"]]
+    assert readiness[0] == ["Il periodo è pronto"]
+    assert readiness[1] == ["Controllo", "Stato", "Quantità", "Dettaglio"]
     by_file = {row[3]: row for row in parts if row[3]}
     assert by_file["vendite/registro-vendite.csv"][4:6] == ["2", "righe"]
     assert by_file["fatture-emesse/"][4:6] == ["4", "file"]
@@ -402,7 +406,7 @@ def test_an_invoice_with_no_stored_file_is_listed_by_number_in_the_index(
     missing = [(item.missing.document, item.missing.kind) for item in export.index.missing]
     assert ("2026/2", "XML") in missing and ("2026/2", "PDF") in missing
     assert all(document == "2026/2" for document, _ in missing)
-    rows = _tables(_text(archive, "indice.csv"))[-1]
+    rows = _tables(_text(archive, "indice.csv"))[2]
     assert [row[1] for row in rows[1:]] == ["2026/2", "2026/2"]
     assert not any("2026-2" in name for name in archive.namelist() if name.endswith(".pdf"))
 

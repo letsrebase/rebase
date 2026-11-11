@@ -175,6 +175,9 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         # (accountant export design § 5).
         "build_accountant_export",
         "get_export_download_url",
+        # What would make a period's export incomplete (§ 2): counts and the first few names of
+        # open points across the books, an administrator's like the export itself.
+        "get_export_checklist",
         # A time-limited link to one stored export, opened with no account: the address is the
         # credential, so only an administrator's token with `full_access` makes one (§ 5).
         "create_export_share_link",
@@ -526,6 +529,7 @@ ACTION_LABELS: dict[str, str] = {
     "get_staff_member": "leggere il compenso di una persona dell'azienda",
     "build_accountant_export": "preparare l'esportazione per il commercialista",
     "get_export_download_url": "scaricare l'esportazione per il commercialista",
+    "get_export_checklist": "vedere se il periodo è pronto per l'esportazione",
     "create_export_share_link": "creare un link per condividere l'esportazione",
     "list_export_share_links": "vedere i link di condivisione delle esportazioni",
     "revoke_export_share_link": "revocare un link di condivisione",

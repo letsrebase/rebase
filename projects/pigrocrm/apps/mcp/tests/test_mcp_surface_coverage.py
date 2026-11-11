@@ -168,6 +168,11 @@ _FORBIDDEN: dict[Method, str] = {
         "design § 5); the tool is on a `full_access` token's surface only"
     ),
     ("AccountantExportService", "get_export_download_url"): "REB-1012: same as the build",
+    ("AccountantExportService", "get_export_checklist"): (
+        "REB-1048: counts and the first names of what waits across the books of a company (the "
+        "accountant export design § 2 and § 5); the tool is on a `full_access` token's surface "
+        "only"
+    ),
     ("ExportShareService", "create_export_share_link"): (
         "REB-1047: a link anybody holding it opens with no account is the credential itself "
         "(accountant export design § 3 and § 5); the tool is on a `full_access` token's surface "

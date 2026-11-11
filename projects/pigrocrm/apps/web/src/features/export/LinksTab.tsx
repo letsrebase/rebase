@@ -108,6 +108,11 @@ function LinkPanel({
               ? `Revocato il ${formatDateTime(link.revoked_at)}`
               : `${state === 'expired' ? 'Scaduto' : 'Scade'} il ${formatDay(link.expires_at)}`}
           </p>
+          {link.recipient_email === null ? null : (
+            <p className="break-all text-xs text-muted-foreground">
+              Con codice, a {link.recipient_email}
+            </p>
+          )}
         </header>
 
         <section aria-label="Aperture" className="space-y-2">

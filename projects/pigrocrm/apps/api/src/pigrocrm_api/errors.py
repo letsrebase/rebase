@@ -35,6 +35,13 @@ STATUS_BY_CODE: dict[str, int] = {
     "export_link_unknown": 404,
     "export_link_expired": 410,
     "export_link_revoked": 410,
+    # The one-time code of a link to an export with pay (REB-1048): required and wrong are a
+    # 403 the page tells apart by `code`, a code asked too often a 429, and a mail the provider
+    # did not take a 502.
+    "export_code_required": 403,
+    "export_code_invalid": 403,
+    "export_code_throttled": 429,
+    "export_code_mail_failed": 502,
     # REB-292: about the state of the space's admins, not the caller (who is an admin).
     "last_active_admin": 409,
     "self_account_change": 409,
@@ -66,6 +73,10 @@ TITLE_BY_CODE: dict[str, str] = {
     "export_link_unknown": "Link non trovato",
     "export_link_expired": "Link scaduto",
     "export_link_revoked": "Link revocato",
+    "export_code_required": "Serve il codice",
+    "export_code_invalid": "Codice non valido",
+    "export_code_throttled": "Troppi codici",
+    "export_code_mail_failed": "Codice non inviato",
     "last_active_admin": "Amministratore insufficiente",
     "self_account_change": "Modifica non consentita sul proprio account",
     "module_off": "Modulo spento",

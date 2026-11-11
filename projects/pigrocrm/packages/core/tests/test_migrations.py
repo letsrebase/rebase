@@ -4418,3 +4418,35 @@ def test_0105_creates_expense_notes_and_teaches_purchases_the_expense_note_kind(
         assert column is False and "expense_note" not in kind_check
         upgrade(config, "0105")
         assert _table_shape(url, "expense_notes")[0] is True
+
+
+def test_0106_adds_the_export_kind_the_recipient_and_the_code_table(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1048: two columns on the export (every earlier export is an accountant's, with no pay),
+    one on the link (a plain link has no recipient), and the table of one-time codes under the row
+    policy; it reverses and comes back."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0105")
+        assert _table_shape(url, "accountant_export_link_codes")[0] is False
+        assert not _column_exists(url, "accountant_exports", "kind")
+        assert not _column_exists(url, "accountant_export_links", "recipient_email")
+        upgrade(config, "0106")
+        assert _table_shape(url, "accountant_export_link_codes") == (
+            True,
+            True,
+            {"legal_entity_scope"},
+        )
+        for table, column in (
+            ("accountant_exports", "kind"),
+            ("accountant_exports", "payroll"),
+            ("accountant_export_links", "recipient_email"),
+        ):
+            assert _column_exists(url, table, column)
+        downgrade(config, "0105")
+        assert _table_shape(url, "accountant_export_link_codes")[0] is False
+        assert not _column_exists(url, "accountant_exports", "payroll")
+        upgrade(config, "0106")
+        assert _column_exists(url, "accountant_exports", "kind")

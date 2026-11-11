@@ -5,6 +5,7 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
 import { toProblem } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { useModules } from '@/lib/modules'
 import { tenantPrefix } from '@/lib/tenant'
 import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
@@ -12,6 +13,7 @@ import { toast } from '@rebase/ui/sonner'
 import {
   CONTROL_TONES,
   LINK_LABELS,
+  EXPORT_KIND_LABELS,
   LINK_TONES,
   MISSING_SHOWN,
   STATUS_LABELS,
@@ -23,6 +25,7 @@ import {
   formatDay,
   formatMebibytes,
   linkStateOf,
+  openPoints,
   openingsWord,
   partCount,
   partsWord,
@@ -44,6 +47,7 @@ import {
   useRevokeLink,
   useWriteToDrive,
 } from './queries'
+import { Readiness } from './Readiness'
 import { ShareLinkDialog } from './ShareLinkDialog'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -131,12 +135,23 @@ function partsOf(lines: readonly IndexLine[]): PartGroup[] {
 /** The check as it was when the export was made: the documents the build could not attach, the
  *  first few by name and the rest counted. It is never recomputed after the build. */
 function Check({ index }: { index: ExportIndex }) {
+  const readiness = index.readiness
+  const list =
+    readiness === null || readiness.checks.length === 0 ? null : (
+      <Readiness checks={readiness.checks} fix={false} label="Il periodo com’era alla creazione" />
+    )
   if (index.missing.length === 0) {
-    return <p className="text-sm text-muted-foreground">Tutti i documenti erano al loro posto.</p>
+    return (
+      <div className="space-y-2">
+        {list}
+        <p className="text-sm text-muted-foreground">Tutti i documenti erano al loro posto.</p>
+      </div>
+    )
   }
   const rest = andOthers(index.missing.length)
   return (
     <div className="space-y-2">
+      {list}
       <p className="text-sm">
         {index.missing.length === 1
           ? 'Un documento non è stato allegato.'
@@ -202,6 +217,9 @@ function Links({ exportId, onOpenLink }: { exportId: string; onOpenLink: (id: st
             <p className="text-xs tabular-nums">
               Creato il {formatDateTime(link.created_at)} · scade il {formatDay(link.expires_at)}
             </p>
+            {link.recipient_email === null ? null : (
+              <p className="break-all text-xs">Con codice, a {link.recipient_email}</p>
+            )}
             <p className="text-xs">
               {link.download_count === 0 ? (
                 openingsWord(0)
@@ -284,9 +302,14 @@ function Delivery({ item }: { item: StoredExport }) {
   return (
     <Section title="Consegna">
       <Button className="w-full sm:w-auto" onClick={() => setLinkOpen(true)}>
-        Crea un link per il commercialista
+        {item.payroll ? 'Crea un link con codice' : 'Crea un link per il commercialista'}
       </Button>
-      <ShareLinkDialog exportId={item.id} open={linkOpen} onOpenChange={setLinkOpen} />
+      <ShareLinkDialog
+        exportId={item.id}
+        payroll={item.payroll}
+        open={linkOpen}
+        onOpenChange={setLinkOpen}
+      />
       {many ? (
         <p className="text-sm text-muted-foreground">
           {item.parts.length} file ZIP: ognuno si apre da solo, e l’indice dentro il primo dice
@@ -329,6 +352,7 @@ export function ExportPanel({
   const companyName = useCompanyName()
   const builder = useBuilderNames()
   const { user } = useAuth()
+  const modules = useModules()
   const index = useMemo(
     () => (detail.data ? readIndex(detail.data.checklist) : null),
     [detail.data],
@@ -350,7 +374,9 @@ export function ExportPanel({
 
   const item = detail.data
   const status = statusOf(item)
-  const open = index.missing.length
+  const open = openPoints(index)
+  // «Variazioni paghe» has no checklist, so it has no check to wear.
+  const checked = item.kind === 'accountant'
   const when = formatDateTime(item.built_at)
   const who = builder(item.built_by, user?.id ?? null).by
 
@@ -362,9 +388,12 @@ export function ExportPanel({
           <p className="text-sm">
             {periodName(item.period_from, item.period_to)} · {partsWord(partCount(index))}
           </p>
+          {modules.on('staff') ? (
+            <p className="text-xs text-muted-foreground">Tipo: {EXPORT_KIND_LABELS[item.kind]}</p>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <StatusPill tone={STATUS_TONES[status]}>{STATUS_LABELS[status]}</StatusPill>
-            {status === 'ready' ? (
+            {status === 'ready' && checked ? (
               <StatusPill tone={CONTROL_TONES[open === 0 ? 'complete' : 'open']}>
                 {controlLabel(open === 0 ? 'complete' : 'open', open)}
               </StatusPill>
@@ -386,9 +415,11 @@ export function ExportPanel({
           <Contents index={index} />
         </Section>
 
-        <Section title="Controllo alla creazione">
-          <Check index={index} />
-        </Section>
+        {checked ? (
+          <Section title="Controllo alla creazione">
+            <Check index={index} />
+          </Section>
+        ) : null}
 
         {status === 'ready' ? (
           <Section title="Link per il commercialista">

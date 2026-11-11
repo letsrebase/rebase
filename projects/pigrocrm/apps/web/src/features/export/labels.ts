@@ -7,6 +7,23 @@ export type ShareLink = components['schemas']['ShareLinkRead']
 export type CreatedShareLink = components['schemas']['ShareLinkCreated']
 export type DriveWrite = components['schemas']['DriveWriteRead']
 export type DriveStatus = components['schemas']['DriveDeliveryStatus']
+export type Checklist = components['schemas']['ChecklistRead']
+export type ChecklistCheck = components['schemas']['ChecklistCheckRead']
+
+/** The two kinds of export: the accountant's period bundle and the payroll consultant's
+ *  «variazioni paghe» (REB-1048), a «Tipo» of the same form and a chip in the same list. */
+export type ExportKind = StoredExport['kind']
+
+export const EXPORT_KIND_LABELS: Record<ExportKind, string> = {
+  accountant: 'Commercialista',
+  payroll_changes: 'Variazioni paghe',
+}
+
+/** The parts that carry pay, asked one by one on the form: the name the server takes and the
+ *  words next to the checkbox. Only the parts the server lists as asked-for are drawn. */
+export const PAYROLL_PART_LABELS: Record<string, string> = {
+  payslips: 'Cedolini',
+}
 
 /** What `POST /exports` takes. */
 export interface BuildRequest {
@@ -14,6 +31,9 @@ export interface BuildRequest {
   date_to: string
   legal_entity_id: string | null
   all_entities: boolean
+  kind: ExportKind
+  /** The pay parts asked for, by the name the server gives them (`payslips`). */
+  payroll_parts: string[]
 }
 
 /** What the press of «Crea esportazione» asks for, with the words its row in the list wears
@@ -98,6 +118,28 @@ export interface MissingDocument {
 export interface ExportIndex {
   lines: IndexLine[]
   missing: MissingDocument[]
+  /** The checklist of the period as it stood when the export was made, `null` for an export made
+   *  before it existed and for «variazioni paghe», which has none. */
+  readiness: Checklist | null
+}
+
+/** How a check reads: «A posto» when nothing waits, «Da vedere» when something does. An open
+ *  point never stops an export, so it is the waiting gold and never the danger tone. */
+export type CheckState = ChecklistCheck['state']
+
+export const CHECK_LABELS: Record<CheckState, string> = {
+  ok: 'A posto',
+  open: 'Da vedere',
+}
+
+export const CHECK_TONES: Record<CheckState, StatusTone> = {
+  ok: 'ink',
+  open: 'gold',
+}
+
+/** «e altre 12» after the first few open points of a check. */
+export function moreWord(more: number): string {
+  return `e altre ${more}`
 }
 
 const text = (value: unknown): string => (typeof value === 'string' ? value : '')
@@ -142,7 +184,39 @@ export function readIndex(checklist: Record<string, unknown>): ExportIndex {
       reason: text(item.reason),
     })
   }
-  return { lines, missing }
+  return { lines, missing, readiness: readReadiness(checklist.readiness) }
+}
+
+/** The checklist an export kept, read defensively like the rest of the snapshot. */
+function readReadiness(value: unknown): Checklist | null {
+  const root = record(value)
+  if (root === null || !Array.isArray(root.checks)) return null
+  const checks: ChecklistCheck[] = []
+  for (const raw of root.checks) {
+    const check = record(raw)
+    if (check === null || (check.state !== 'ok' && check.state !== 'open')) continue
+    checks.push({
+      key: text(check.key),
+      label: text(check.label),
+      state: check.state,
+      count: typeof check.count === 'number' ? check.count : 0,
+      items: Array.isArray(check.items) ? check.items.filter((item) => typeof item === 'string') : [],
+      more: typeof check.more === 'number' ? check.more : 0,
+      target: text(check.target),
+    })
+  }
+  return {
+    period_from: text(root.period_from),
+    period_to: text(root.period_to),
+    open_count: typeof root.open_count === 'number' ? root.open_count : 0,
+    checks,
+  }
+}
+
+/** The open points an export was made with: the checklist's when it kept one, else the documents
+ *  the build could not attach (an export from before the checklist). */
+export function openPoints(index: ExportIndex): number {
+  return index.readiness === null ? index.missing.length : index.readiness.open_count
 }
 
 /** The parts an export holds, counted once each (a part may write a list and a folder). */

@@ -4,7 +4,9 @@
  * the brief gives a component that it must not break: «Tutte le aziende» never preselected, no
  * part or sentence for a module that is off, an admin's page; and, from REB-1047, the delivery: the
  * share link (made once and shown once, never copied from a list, revoked on one click), the copy
- * in Drive (only where the storage is Drive) and the tab «Link condivisi».
+ * in Drive (only where the storage is Drive) and the tab «Link condivisi»; and, from REB-1048, the
+ * readiness checklist before «Crea esportazione», the «Tipo» «Variazioni paghe» with the pay parts,
+ * and the link with a code for an export that carries pay.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
@@ -34,6 +36,10 @@ vi.mock('@/lib/api', async (importOriginal) => {
 })
 vi.mock('@/lib/download', () => ({ downloadFromApi: vi.fn(() => Promise.resolve()) }))
 vi.mock('@rebase/ui/sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+// The checklist links to the places that fix each point; the page test has no router to draw them.
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={to}>{children}</a>,
+}))
 
 const ok = (data: unknown) => Promise.resolve({ data, response: new Response(null, { status: 200 }) })
 const refused = (status: number, problem: Record<string, unknown>) =>
@@ -59,9 +65,44 @@ function companies(overrides: Partial<LegalEntityValue> = {}): LegalEntityValue 
 const SEVERAL = companies({ legal_entities: [ONE, TWO], several: true })
 
 const PARTS = [
-  { key: 'sales_register', label: 'Registro delle vendite', date_rule: 'per data di emissione', contents: 'Elenco CSV' },
-  { key: 'issued_invoice_files', label: 'Fatture emesse: file originali', date_rule: 'per data del documento', contents: 'File originali' },
+  { key: 'sales_register', label: 'Registro delle vendite', date_rule: 'per data di emissione', contents: 'Elenco CSV', opt_in: null },
+  { key: 'issued_invoice_files', label: 'Fatture emesse: file originali', date_rule: 'per data del documento', contents: 'File originali', opt_in: null },
 ]
+const PAYSLIPS = { key: 'payslips', label: 'Cedolini: elenco e file originali', date_rule: 'per mese di competenza', contents: 'Elenco CSV e file originali', opt_in: 'payslips' }
+
+const check = (overrides: Record<string, unknown>) => ({
+  key: 'inbox',
+  label: 'Documenti in arrivo ancora da guardare',
+  state: 'ok',
+  count: 0,
+  items: [],
+  more: 0,
+  target: 'inbox',
+  ...overrides,
+})
+const MOVEMENT = check({
+  key: 'bank_movements',
+  label: 'Movimenti di banca da abbinare',
+  state: 'open',
+  count: 7,
+  items: ['03/10/2026 Fornitore Rossi', '04/10/2026 Fornitore Bianchi'],
+  more: 5,
+  target: 'cash',
+})
+const PAYSLIP_CHECK = check({
+  key: 'payroll',
+  label: 'Cedolini del periodo',
+  state: 'open',
+  count: 1,
+  items: ['Carla Rossi: cedolino di ottobre 2026 da accettare'],
+  target: 'staff',
+})
+const checklistOf = (...checks: Record<string, unknown>[]) => ({
+  period_from: '2026-10-01',
+  period_to: '2026-10-31',
+  open_count: checks.reduce((sum, item) => sum + (item.count as number), 0),
+  checks,
+})
 
 const line = (overrides: Record<string, unknown>) => ({
   section: 'Lumen Studio S.r.l.',
@@ -81,6 +122,8 @@ const stored = (overrides: Partial<StoredExport> = {}): StoredExport => ({
   id: 'e-1',
   legal_entity_id: 'le-1',
   scope: 'entity',
+  kind: 'accountant',
+  payroll: false,
   period_from: '2026-07-01',
   period_to: '2026-09-30',
   built_by: null,
@@ -110,6 +153,7 @@ const link = (overrides: Partial<ShareLink> = {}): ShareLink => ({
   expires_at: '2026-10-20T08:00:00Z',
   revoked_at: null,
   state: 'active',
+  recipient_email: null,
   download_count: 0,
   period_from: '2026-07-01',
   period_to: '2026-09-30',
@@ -122,6 +166,8 @@ let partsAnswer: Promise<unknown> | unknown
 let linksList: ShareLink[]
 let driveStatus: DriveStatus
 let driveWrites: DriveWrite[]
+let checklistAnswer: unknown
+let staffOn: boolean
 
 beforeEach(() => {
   session.role = 'admin'
@@ -132,6 +178,8 @@ beforeEach(() => {
   linksList = []
   driveStatus = { available: false, reason: 'local_storage' }
   driveWrites = []
+  checklistAnswer = checklistOf(check({}))
+  staffOn = false
   vi.mocked(toast.success).mockClear()
   vi.mocked(toast.error).mockClear()
   vi.mocked(api.POST).mockReset()
@@ -146,6 +194,16 @@ beforeEach(() => {
     }
     if (path === '/api/accountant-export/parts') {
       return partsAnswer instanceof Promise ? partsAnswer : ok(partsAnswer)
+    }
+    if (path === '/api/accountant-export/checklist') {
+      return checklistAnswer instanceof Promise ? checklistAnswer : ok(checklistAnswer)
+    }
+    if (path === '/api/settings/modules') {
+      return ok({
+        profile: 'company',
+        onboarding: 'done',
+        modules: [{ key: 'staff', label: 'Persone', enabled: staffOn }],
+      })
     }
     if (path === '/api/accountant-export/share-links') {
       return ok({ items: linksList, total_count: linksList.length })
@@ -222,9 +280,9 @@ describe('«Prepara»', () => {
       'Registro delle venditeElenco CSV · per data di emissione',
       'Fatture emesse: file originaliFile originali · per data del documento',
     ])
-    // No payroll or checklist block, and no delivery in the form: their own cards build them, and
-    // delivery is done on a stored export (brief, answer 1).
-    expect(screen.queryByText(/Drive|Parti paghe|Variazioni paghe|Il periodo è pronto|Crea un link/)).toBeNull()
+    // No pay block while the space has no staff, and no delivery in the form: delivery is done on a
+    // stored export (brief, answer 1).
+    expect(screen.queryByText(/Drive|Parti paghe|Variazioni paghe|Crea un link/)).toBeNull()
     expect(screen.getByRole('tab', { name: 'Link condivisi' })).toBeInTheDocument()
   })
 
@@ -234,7 +292,9 @@ describe('«Prepara»', () => {
         ? ok({ iva_frequency: 'quarterly' })
         : path === '/api/accountant-export/parts'
           ? ok(PARTS)
-          : ok({ items: [], total_count: 0 })) as never)
+          : path === '/api/accountant-export/checklist'
+            ? ok(checklistOf(check({})))
+            : ok({ items: [], total_count: 0 })) as never)
     page()
     expect(await screen.findByText('dal 01/07/2026 al 30/09/2026')).toBeInTheDocument()
     expect(screen.queryByText('Azienda')).toBeNull()
@@ -247,7 +307,9 @@ describe('«Prepara»', () => {
         ? refused(404, { detail: 'nope' })
         : path === '/api/accountant-export/parts'
           ? ok(PARTS)
-          : ok({ items: [], total_count: 0 })) as never)
+          : path === '/api/accountant-export/checklist'
+            ? ok(checklistOf(check({})))
+            : ok({ items: [], total_count: 0 })) as never)
     page()
     expect(await screen.findByText('dal 01/10/2026 al 31/10/2026')).toBeInTheDocument()
   })
@@ -259,7 +321,14 @@ describe('«Prepara»', () => {
     await screen.findByText('dal 01/10/2026 al 31/10/2026')
     await user.click(screen.getByRole('button', { name: 'Crea esportazione' }))
     expect(posted()).toEqual([
-      { date_from: '2026-10-01', date_to: '2026-10-31', legal_entity_id: 'le-1', all_entities: false },
+      {
+        date_from: '2026-10-01',
+        date_to: '2026-10-31',
+        legal_entity_id: 'le-1',
+        all_entities: false,
+        kind: 'accountant',
+        payroll_parts: [],
+      },
     ])
     expect(onTabChange).toHaveBeenCalledWith('exports')
   })
@@ -281,7 +350,14 @@ describe('«Prepara»', () => {
     expect(screen.getByRole('note')).toHaveTextContent('Comprende anche gli acquisti che non hanno un’azienda.')
     await user.click(screen.getByRole('button', { name: 'Crea esportazione' }))
     expect(posted()).toEqual([
-      { date_from: '2026-10-01', date_to: '2026-10-31', legal_entity_id: null, all_entities: true },
+      {
+        date_from: '2026-10-01',
+        date_to: '2026-10-31',
+        legal_entity_id: null,
+        all_entities: true,
+        kind: 'accountant',
+        payroll_parts: [],
+      },
     ])
   })
 
@@ -339,7 +415,9 @@ describe('«Prepara»', () => {
         ? new Promise(() => {})
         : path === '/api/accountant-export/parts'
           ? ok(PARTS)
-          : ok({ items: [], total_count: 0 })) as never)
+          : path === '/api/accountant-export/checklist'
+            ? ok(checklistOf(check({})))
+            : ok({ items: [], total_count: 0 })) as never)
     page()
     await screen.findByText('Registro delle vendite')
     expect(screen.getByRole('button', { name: 'Crea esportazione' })).toBeDisabled()
@@ -352,6 +430,171 @@ describe('«Prepara»', () => {
     await screen.findByText('dal 01/10/2026 al 31/10/2026')
     await user.dblClick(screen.getByRole('button', { name: 'Crea esportazione' }))
     expect(posted()).toHaveLength(1)
+  })
+})
+
+describe('«Il periodo è pronto?»', () => {
+  it('draws every check as a row, the fine ones included, and links each open one to where it is fixed', async () => {
+    checklistAnswer = checklistOf(check({}), MOVEMENT)
+    page()
+    const list = await screen.findByRole('list', { name: 'Il periodo è pronto?' })
+    const rows = within(list)
+      .getAllByRole('listitem')
+      .filter((row): row is HTMLElement => row.dataset.check !== undefined)
+    expect(rows.map((row) => row.dataset.check)).toEqual(['inbox', 'bank_movements'])
+    const [fine, open] = rows as [HTMLElement, HTMLElement]
+    expect(within(fine).getByText('A posto')).toBeInTheDocument()
+    expect(within(open).getByText('Da vedere · 7')).toBeInTheDocument()
+    // The first points by name and the rest counted, never listed.
+    expect(within(open).getByText('03/10/2026 Fornitore Rossi')).toBeInTheDocument()
+    expect(within(open).getByText('e altre 5')).toBeInTheDocument()
+    expect(within(open).getByRole('link', { name: 'Apri Cassa' })).toHaveAttribute('href', '/app/cash')
+    // A check with nothing to fix has no link.
+    expect(within(fine).queryByRole('link')).toBeNull()
+  })
+
+  it('says open points do not stop the export, and keeps the button pressable', async () => {
+    checklistAnswer = checklistOf(MOVEMENT)
+    page()
+    expect(await screen.findByText(/Ci sono 7 punti da vedere\./)).toHaveTextContent(
+      'Non fermano l’esportazione',
+    )
+    expect(screen.getByRole('button', { name: 'Crea esportazione' })).toBeEnabled()
+  })
+
+  it('reads the period again for the company and the period chosen', async () => {
+    page({ legal: SEVERAL })
+    await screen.findByRole('list', { name: 'Il periodo è pronto?' })
+    const asked = vi
+      .mocked(api.GET)
+      .mock.calls.filter((call) => call[0] === '/api/accountant-export/checklist')
+      .map((call) => (call[1] as { params: { query: unknown } }).params.query)
+    expect(asked[0]).toEqual({
+      date_from: '2026-10-01',
+      date_to: '2026-10-31',
+      legal_entity_id: 'le-1',
+      all_entities: undefined,
+      payroll_parts: undefined,
+    })
+  })
+
+  it('shows a checklist that could not be read as the banner, never as «tutto a posto», and keeps the button', async () => {
+    checklistAnswer = refused(500, { detail: 'Non riesco a leggere il periodo.' })
+    page()
+    expect(await screen.findByText('Non riesco a leggere il periodo.')).toBeInTheDocument()
+    expect(screen.queryByText('A posto')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Crea esportazione' })).toBeEnabled()
+  })
+
+  it('waits with a sentence while the period is checked', async () => {
+    checklistAnswer = new Promise(() => {})
+    page()
+    expect((await screen.findAllByText('Controllo il periodo…')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('A posto')).toBeNull()
+  })
+})
+
+describe('«Variazioni paghe» and the pay parts', () => {
+  beforeEach(() => {
+    staffOn = true
+    partsAnswer = [...PARTS, PAYSLIPS]
+  })
+
+  it('offers the pay parts as checkboxes off by default, with the sentence that they never go on a plain link', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    page()
+    const box = await screen.findByRole('checkbox', { name: 'Cedolini' })
+    expect(box).not.toBeChecked()
+    expect(screen.getByText(/non viaggiano mai su un link semplice/)).toBeInTheDocument()
+    // The part that is asked for is not in «Cosa contiene».
+    const list = screen.getByRole('list', { name: 'Cosa contiene' })
+    expect(within(list).queryByText(/Cedolini/)).toBeNull()
+    // Ticking it asks the checklist for the payroll check, and the build for the part.
+    checklistAnswer = checklistOf(check({}), PAYSLIP_CHECK)
+    vi.mocked(api.POST).mockReturnValue(new Promise(() => {}) as never)
+    await user.click(box)
+    expect(await screen.findByText('Cedolini del periodo')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Crea esportazione' }))
+    expect(posted()).toEqual([expect.objectContaining({ kind: 'accountant', payroll_parts: ['payslips'] })])
+  })
+
+  it('draws «Tipo» only for a space with staff and builds «Variazioni paghe» for a month, with no checklist', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    vi.mocked(api.POST).mockReturnValue(new Promise(() => {}) as never)
+    page()
+    await user.click(await screen.findByRole('button', { name: 'Variazioni paghe' }))
+    expect(screen.queryByRole('list', { name: 'Il periodo è pronto?' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Trimestre' })).toBeNull()
+    expect(screen.queryByRole('checkbox', { name: 'Cedolini' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Crea esportazione' }))
+    expect(posted()).toEqual([expect.objectContaining({ kind: 'payroll_changes', payroll_parts: [] })])
+  })
+
+  it('has no «Tipo» and no pay block while the staff module is off, and names no module', async () => {
+    staffOn = false
+    partsAnswer = PARTS
+    page()
+    await screen.findByRole('list', { name: 'Cosa contiene' })
+    expect(screen.queryByRole('button', { name: 'Variazioni paghe' })).toBeNull()
+    expect(screen.queryByText(/Parti paghe/)).toBeNull()
+  })
+
+  it('tells the two kinds apart in the list with a chip, and shows the checklist an export was made with', async () => {
+    exportsList = [
+      stored({
+        id: 'e-5',
+        checklist: {
+          parts: [line({})],
+          missing: [],
+          readiness: checklistOf(check({}), MOVEMENT),
+        },
+      }),
+      stored({
+        id: 'e-6',
+        kind: 'payroll_changes',
+        payroll: true,
+        checklist: { parts: [line({ key: 'staff_hires', label: 'Assunzioni', path: 'assunzioni/elenco.csv', count: 1 })], missing: [] },
+      }),
+    ]
+    page({ tab: 'exports', item: 'e-5' })
+    expect(await screen.findAllByText('Variazioni paghe')).not.toHaveLength(0)
+    expect(screen.getAllByText('Commercialista').length).toBeGreaterThan(0)
+    // The check of the first reads «7 aperti» from the snapshot, the payroll file wears none.
+    expect((await screen.findAllByText('7 aperti')).length).toBeGreaterThan(0)
+    const panel = await screen.findByRole('complementary', { name: 'Esportazione aperta' })
+    const snapshot = await within(panel).findByRole('list', { name: 'Il periodo com’era alla creazione' })
+    expect(within(snapshot).getByText('Da vedere · 7')).toBeInTheDocument()
+    // A snapshot says how the period stood: no link to fix it now.
+    expect(within(snapshot).queryByRole('link')).toBeNull()
+  })
+
+  it('offers an export with pay only a link with a code, and never submits it without a recipient', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    exportsList = [
+      stored({
+        kind: 'payroll_changes',
+        payroll: true,
+        checklist: { parts: [line({ key: 'staff_hires', label: 'Assunzioni', path: 'assunzioni/elenco.csv', count: 1 })], missing: [] },
+      }),
+    ]
+    vi.mocked(api.POST).mockImplementation(((path: string, init: { body: unknown }) =>
+      path === '/api/accountant-export/exports/{export_id}/share-links'
+        ? ok({
+            ...link({ recipient_email: 'paghe@studio-esempio.it' }),
+            url: 'https://pigro.example/app/shared-export?t=abc',
+            body: init.body,
+          })
+        : ok(undefined)) as never)
+    page({ tab: 'exports', item: 'e-1' })
+    await user.click(await screen.findByRole('button', { name: 'Crea un link con codice' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Link con codice' })
+    const submit = within(dialog).getByRole('button', { name: 'Crea il link con codice' })
+    expect(submit).toBeDisabled()
+    expect(within(dialog).queryByRole('button', { name: 'Crea il link' })).toBeNull()
+    await user.type(within(dialog).getByLabelText('Destinatario'), 'paghe@studio-esempio.it')
+    await user.click(submit)
+    expect(posted()).toEqual([{ days: 7, recipient_email: 'paghe@studio-esempio.it' }])
+    expect(await within(dialog).findByText(/Il codice va a paghe@studio-esempio.it/)).toBeInTheDocument()
   })
 })
 
@@ -731,7 +974,7 @@ describe('handing an export over: the share link', () => {
 
     expect(vi.mocked(api.POST).mock.calls[0]).toEqual([
       '/api/accountant-export/exports/{export_id}/share-links',
-      { params: { path: { export_id: 'e-1' } }, body: { days: 14 } },
+      { params: { path: { export_id: 'e-1' } }, body: { days: 14, recipient_email: null } },
     ])
     expect(await within(dialog).findByDisplayValue(CREATED.url)).toBeInTheDocument()
     expect(within(dialog).getByText('Lo vedi solo ora: non lo conserviamo. Se lo perdi, revocalo e creane un altro.')).toBeInTheDocument()

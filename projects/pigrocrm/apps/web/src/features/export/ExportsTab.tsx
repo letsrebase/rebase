@@ -6,6 +6,7 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
 import { useAuth } from '@/lib/auth'
 import { useLegalEntity } from '@/lib/legalEntity'
+import { useModules } from '@/lib/modules'
 import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
 import { Loader } from '@rebase/ui/loader'
@@ -31,8 +32,10 @@ import {
   CONTROL_TONES,
   STATUS_LABELS,
   STATUS_TONES,
+  EXPORT_KIND_LABELS,
   controlLabel,
   formatDateTime,
+  openPoints,
   partCount,
   partsWord,
   readIndex,
@@ -79,8 +82,8 @@ function StatusCell({ item }: { item: StoredExport }) {
 }
 
 function ControlCell({ item }: { item: StoredExport }) {
-  if (statusOf(item) !== 'ready') return null
-  const open = readIndex(item.checklist).missing.length
+  if (statusOf(item) !== 'ready' || item.kind !== 'accountant') return null
+  const open = openPoints(readIndex(item.checklist))
   const state = open === 0 ? 'complete' : 'open'
   return <StatusPill tone={CONTROL_TONES[state]}>{controlLabel(state, open)}</StatusPill>
 }
@@ -161,6 +164,7 @@ export function ExportsTab({
   const list = useExportList({ legalEntityId: company, year })
   const companyName = useCompanyName()
   const builder = useBuilderNames()
+  const modules = useModules()
 
   const items = list.data?.pages.flatMap((page) => page.items) ?? []
   const total = list.data?.pages.at(-1)?.total_count ?? 0
@@ -209,6 +213,14 @@ export function ExportsTab({
 
   const subtitle = (row: StoredExport) =>
     `${periodName(row.period_from, row.period_to)} · ${partsWord(partCount(readIndex(row.checklist)))}`
+  // The «Tipo» chip sits under the period when the space has staff, since only then is there a
+  // second kind of export to tell apart.
+  const kindChip = (row: StoredExport) =>
+    modules.on('staff') ? (
+      <span className="mt-1 inline-block border px-1.5 py-0.5 text-xs text-muted-foreground">
+        {EXPORT_KIND_LABELS[row.kind]}
+      </span>
+    ) : null
 
   // A page that failed to load after others did keeps the rows and says so under them.
   const body = list.isError && !list.isFetchNextPageError ? (
@@ -281,6 +293,7 @@ export function ExportsTab({
                   <TableCell>
                     <Company name={companyName(row)} />
                     <p className="text-xs text-muted-foreground">{subtitle(row)}</p>
+                    {kindChip(row)}
                   </TableCell>
                   <TableCell className="whitespace-nowrap tabular-nums">
                     {formatDateTime(row.built_at)}
@@ -322,6 +335,7 @@ export function ExportsTab({
               >
                 <Company name={companyName(row)} />
                 <p className="text-xs text-muted-foreground">{subtitle(row)}</p>
+                {kindChip(row)}
                 <p className="text-xs tabular-nums text-muted-foreground">
                   {formatDateTime(row.built_at)} · {builder(row.built_by, me).name}
                 </p>

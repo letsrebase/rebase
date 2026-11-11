@@ -31,10 +31,15 @@ import { useCreateLink } from './queries'
  */
 export function ShareLinkDialog({
   exportId,
+  payroll,
   open,
   onOpenChange,
 }: {
   exportId: string
+  /** The export carries pay: only a link with a code is offered, and it needs the address the
+   *  code goes to. There is no recipient-less way to submit the form (brief, «what a component can
+   *  violate»). */
+  payroll: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
@@ -43,14 +48,20 @@ export function ShareLinkDialog({
     <Dialog open={open} onOpenChange={(next) => (next || !pending) && onOpenChange(next)}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Link per il commercialista</DialogTitle>
+          <DialogTitle>{payroll ? 'Link con codice' : 'Link per il commercialista'}</DialogTitle>
           <DialogDescription>
-            Chi ha il link scarica l’esportazione senza un account, finché non scade o non lo
-            revochi.
+            {payroll
+              ? 'Le paghe non viaggiano su un link semplice. Chi riceve il link, per aprirlo, deve anche inserire un codice che gli mandiamo per email.'
+              : 'Chi ha il link scarica l’esportazione senza un account, finché non scade o non lo revochi.'}
           </DialogDescription>
         </DialogHeader>
         {/* Born with each opening, so a closed dialog never offers last time's address. */}
-        <LinkForm exportId={exportId} onClose={() => onOpenChange(false)} onPending={setPending} />
+        <LinkForm
+          exportId={exportId}
+          payroll={payroll}
+          onClose={() => onOpenChange(false)}
+          onPending={setPending}
+        />
       </DialogContent>
     </Dialog>
   )
@@ -58,14 +69,17 @@ export function ShareLinkDialog({
 
 function LinkForm({
   exportId,
+  payroll,
   onClose,
   onPending,
 }: {
   exportId: string
+  payroll: boolean
   onClose: () => void
   onPending: (pending: boolean) => void
 }) {
   const [days, setDays] = useState<number>(DEFAULT_EXPIRY_DAYS)
+  const [recipient, setRecipient] = useState('')
   const create = useCreateLink(exportId)
   const { reset } = create
   // Held in this component's state and nowhere else: not in the URL, and the mutation's own copy
@@ -83,9 +97,29 @@ function LinkForm({
       className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault()
-        create.mutate(days, { onSuccess: setCreated })
+        create.mutate(
+          { days, ...(payroll ? { recipient_email: recipient.trim() } : {}) },
+          { onSuccess: setCreated },
+        )
       }}
     >
+      {payroll ? (
+        <div className="space-y-2">
+          <Label htmlFor="share-link-recipient">Destinatario</Label>
+          <Input
+            id="share-link-recipient"
+            type="email"
+            required
+            autoComplete="off"
+            placeholder="paghe@studio-esempio.it"
+            value={recipient}
+            onChange={(event) => setRecipient(event.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Il codice arriva a questo indirizzo ogni volta che il destinatario apre il link.
+          </p>
+        </div>
+      ) : null}
       <div className="space-y-2">
         <Label htmlFor="share-link-days">Scade tra</Label>
         <Select value={String(days)} onValueChange={(next) => setDays(EXPIRY_DAYS.find((candidate) => String(candidate) === next) ?? DEFAULT_EXPIRY_DAYS)}>
@@ -107,8 +141,8 @@ function LinkForm({
         </p>
       ) : null}
       <DialogFooter>
-        <Button type="submit" disabled={create.isPending}>
-          Crea il link
+        <Button type="submit" disabled={create.isPending || (payroll && recipient.trim() === '')}>
+          {payroll ? 'Crea il link con codice' : 'Crea il link'}
         </Button>
       </DialogFooter>
     </form>
@@ -134,7 +168,12 @@ function CreatedLink({ link, onClose }: { link: CreatedShareLink; onClose: () =>
           value={link.url}
           onFocus={(event) => event.currentTarget.select()}
         />
-        <p className="text-xs text-muted-foreground">Scade il {formatDay(link.expires_at)}.</p>
+        <p className="text-xs text-muted-foreground">
+          Scade il {formatDay(link.expires_at)}.
+          {link.recipient_email === null
+            ? ''
+            : ` Il codice va a ${link.recipient_email}.`}
+        </p>
       </div>
       <p className="border bg-background px-3 py-2 text-sm">
         Lo vedi solo ora: non lo conserviamo. Se lo perdi, revocalo e creane un altro.

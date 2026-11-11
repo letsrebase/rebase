@@ -6635,7 +6635,9 @@ export interface paths {
          *     their files, the receipts and expenses, the open due items and the payments of the period,
          *     and an index naming every part with its row count, every part left out with its reason and
          *     every part whose source does not exist yet. Building the same period again keeps both
-         *     exports; each is deleted after 13 months.
+         *     exports; each is deleted after 13 months. The checklist of the period as it stands is stored
+         *     with the export. `kind="payroll_changes"` builds «variazioni paghe» instead; it and an
+         *     export with `payroll_parts` carry pay and are shared only by a link with a code.
          */
         post: operations["build_export_api_accountant_export_exports_post"];
         delete?: never;
@@ -6654,9 +6656,34 @@ export interface paths {
         /**
          * Describe Parts
          * @description The parts a build for this company would hold, from its modules and fiscal pack, in
-         *     the order of the index. With `all_entities`, a part that applies to any company.
+         *     the order of the index. With `all_entities`, a part that applies to any company. A part
+         *     that is asked for (the payslips) carries the name to ask it by in `opt_in`.
          */
         get: operations["describe_parts_api_accountant_export_parts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accountant-export/checklist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Checklist
+         * @description «Il periodo è pronto?»: what would make an export of the period incomplete, one check per
+         *     thing that can wait, with a count and the first few named. Computed now from the books and
+         *     stored nowhere: a build computes it again and keeps that with the export. A check of a
+         *     module that is off is not in the answer, nor the payroll check unless the payslips are
+         *     asked for in `payroll_parts`.
+         */
+        get: operations["get_checklist_api_accountant_export_checklist_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6716,7 +6743,9 @@ export interface paths {
          * Create Share Link
          * @description A link to one stored export, opened with no account until it expires or is revoked. The
          *     address is in this answer and nowhere else: it is stored as a hash, so a lost one is revoked
-         *     and made again. Lives 7 days unless `days` says otherwise, at most 30.
+         *     and made again. Lives 7 days unless `days` says otherwise, at most 30. With
+         *     `recipient_email` the link asks a one-time code mailed to that address before it opens the
+         *     files; an export with pay has no other kind of link and a plain one is refused.
          */
         post: operations["create_share_link_api_accountant_export_exports__export_id__share_links_post"];
         delete?: never;
@@ -6847,10 +6876,54 @@ export interface paths {
         /**
          * Describe Shared Export
          * @description What a share link opens: the company and period, who shared it, when it expires and the
-         *     ZIP files with their sizes. Reading it is not an opening. An unknown, expired or revoked
-         *     link answers a refusal that says which.
+         *     ZIP files with their sizes. Reading it is not an opening. A link with a code lists no file
+         *     until the session a right code opened is given. An unknown, expired or revoked link
+         *     answers a refusal that says which.
          */
         post: operations["describe_shared_export_api_accountant_export_shared_describe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accountant-export/shared/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Shared Export Code
+         * @description Mails a one-time code to the address the link was made for: six digits, good for a
+         *     quarter of an hour and five tries. One a minute and five an hour per link. The answer
+         *     says where it went, never the code.
+         */
+        post: operations["send_shared_export_code_api_accountant_export_shared_code_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accountant-export/shared/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify Shared Export Code
+         * @description Trades the one-time code for a session that opens the files for half an hour. A wrong,
+         *     expired or spent code is one refusal, and a client that keeps guessing is held back.
+         */
+        post: operations["verify_shared_export_code_api_accountant_export_shared_verify_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8509,6 +8582,72 @@ export interface components {
             usage: number;
         };
         /**
+         * ChecklistCheckRead
+         * @description One check of «Il periodo è pronto» (accountant export design § 2): a count of what waits
+         *     and the first few named. The server computes it; a page draws it and works out nothing.
+         */
+        ChecklistCheckRead: {
+            /**
+             * Key
+             * @description Which check: `inbox`, `purchase_documents`, `invoice_files`, ...
+             */
+            key: string;
+            /**
+             * Label
+             * @description The check as the page words it
+             */
+            label: string;
+            /**
+             * State
+             * @description `ok` when nothing waits, else `open`
+             * @enum {string}
+             */
+            state: "ok" | "open";
+            /**
+             * Count
+             * @description How many open points there are
+             */
+            count: number;
+            /**
+             * Items
+             * @description The first open points, each as a sentence
+             */
+            items: string[];
+            /**
+             * More
+             * @description How many open points `items` leaves out
+             */
+            more: number;
+            /**
+             * Target
+             * @description Where the point is fixed: `inbox`, `purchases`, `invoices`, `cash`, `iva` or `staff`
+             */
+            target: string;
+        };
+        /** ChecklistRead */
+        ChecklistRead: {
+            /**
+             * Period From
+             * Format: date
+             */
+            period_from: string;
+            /**
+             * Period To
+             * Format: date
+             */
+            period_to: string;
+            /**
+             * Open Count
+             * @description Open points over every check
+             */
+            open_count: number;
+            /**
+             * Checks
+             * @description Only the checks that apply to the company's modules and to what is exported
+             */
+            checks: components["schemas"]["ChecklistCheckRead"][];
+        };
+        /**
          * ClauseNoteCreate
          * @description A reading of one clause: where it is (`clause_reference`, «Art. 8.3 Rinnovo»),
          *     what it says word for word (`literal_text`) and what the person decided it means
@@ -8582,6 +8721,22 @@ export interface components {
             won_monthly_recurring: string;
             /** Conversion Rate */
             conversion_rate?: string | null;
+        };
+        /** CodeAccepted */
+        CodeAccepted: {
+            /**
+             * Access
+             * @description The session the code opened, to present with `describe` and `download` for the next half hour. Shown only in this answer
+             */
+            access: string;
+        };
+        /** CodeSent */
+        CodeSent: {
+            /**
+             * Sent To
+             * @description The address the code went to, with most of it hidden
+             */
+            sent_to: string;
         };
         /**
          * CommercialDashboard
@@ -11825,6 +11980,18 @@ export interface components {
              * @default false
              */
             all_entities: boolean;
+            /**
+             * Kind
+             * @description `accountant` for the period bundle, `payroll_changes` for «variazioni paghe», the payroll consultant's staff changes of one company
+             * @default accountant
+             * @enum {string}
+             */
+            kind: "accountant" | "payroll_changes";
+            /**
+             * Payroll Parts
+             * @description The parts that carry pay to include, by name: `payslips`
+             */
+            payroll_parts?: string[];
         };
         /** ExportListRead */
         ExportListRead: {
@@ -11876,6 +12043,17 @@ export interface components {
              */
             scope: string;
             /**
+             * Kind
+             * @description `accountant`, the period bundle, or `payroll_changes`, «variazioni paghe»
+             * @enum {string}
+             */
+            kind: "accountant" | "payroll_changes";
+            /**
+             * Payroll
+             * @description Whether the files carry pay: never delivered on a plain link, only by a code
+             */
+            payroll: boolean;
+            /**
              * Period From
              * Format: date
              */
@@ -11910,7 +12088,7 @@ export interface components {
             parts: components["schemas"]["ExportPartRead"][];
             /**
              * Checklist
-             * @description The index as it was when the export was built
+             * @description The index as it was when the export was built, and under `readiness` the checklist of the period as it stood then (absent on an export made before it existed and on «variazioni paghe»)
              */
             checklist: {
                 [key: string]: unknown;
@@ -15937,6 +16115,11 @@ export interface components {
              * @description What the part is made of: a CSV list, original files
              */
             contents: string;
+            /**
+             * Opt In
+             * @description The name an administrator ticks to ask for the part (`payslips`); `null` for a part every build holds
+             */
+            opt_in: string | null;
         };
         /** PatRead */
         PatRead: {
@@ -18281,6 +18464,11 @@ export interface components {
              * @default 7
              */
             days: number;
+            /**
+             * Recipient Email
+             * @description The address whoever opens the link is sent a one-time code at. Required for an export that carries pay, which has no plain link
+             */
+            recipient_email?: string | null;
         };
         /** ShareLinkCreated */
         ShareLinkCreated: {
@@ -18315,6 +18503,11 @@ export interface components {
              * @description `active`, `expired` or `revoked`
              */
             state: string;
+            /**
+             * Recipient Email
+             * @description The address a one-time code goes to before the files open; `null` is a plain link
+             */
+            recipient_email: string | null;
             /**
              * Download Count
              * @description How many files were handed out through the link
@@ -18414,6 +18607,11 @@ export interface components {
              */
             state: string;
             /**
+             * Recipient Email
+             * @description The address a one-time code goes to before the files open; `null` is a plain link
+             */
+            recipient_email: string | null;
+            /**
              * Download Count
              * @description How many files were handed out through the link
              */
@@ -18440,6 +18638,26 @@ export interface components {
              * @description The latest openings, newest first; empty in a list, filled for one link
              */
             openings: components["schemas"]["ShareLinkOpeningRead"][];
+        };
+        /** SharedAccess */
+        SharedAccess: {
+            /** Token */
+            token: string;
+            /**
+             * Access
+             * @description The session a right code opened, for a link that asks a code
+             */
+            access?: string | null;
+        };
+        /** SharedCode */
+        SharedCode: {
+            /** Token */
+            token: string;
+            /**
+             * Code
+             * @description The one-time code mailed to the link's recipient
+             */
+            code: string;
         };
         /** SharedExportPartRead */
         SharedExportPartRead: {
@@ -18485,13 +18703,36 @@ export interface components {
              * Format: date-time
              */
             expires_at: string;
-            /** Parts */
+            /**
+             * Requires Code
+             * @description Whether a one-time code sent to the recipient opens the files
+             */
+            requires_code: boolean;
+            /**
+             * Recipient Hint
+             * @description The address the code goes to with most of it hidden, `null` on a plain link
+             */
+            recipient_hint: string | null;
+            /**
+             * Unlocked
+             * @description Whether the files are open: a plain link, or a code already given
+             */
+            unlocked: boolean;
+            /**
+             * Parts
+             * @description The ZIP files; empty while a link with a code is locked
+             */
             parts: components["schemas"]["SharedExportPartRead"][];
         };
         /** SharedPart */
         SharedPart: {
             /** Token */
             token: string;
+            /**
+             * Access
+             * @description The session a right code opened, for a link that asks a code
+             */
+            access?: string | null;
             /**
              * Part
              * @description The number of the ZIP, from 1
@@ -68821,6 +69062,7 @@ export interface operations {
             query?: {
                 legal_entity_id?: string | null;
                 all_entities?: boolean;
+                kind?: "accountant" | "payroll_changes";
             };
             header?: never;
             path?: never;
@@ -68835,6 +69077,129 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PartPreviewRead"][];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_checklist_api_accountant_export_checklist_get: {
+        parameters: {
+            query: {
+                date_from: string;
+                date_to: string;
+                legal_entity_id?: string | null;
+                all_entities?: boolean;
+                payroll_parts?: string[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChecklistRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -70021,7 +70386,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SharedToken"];
+                "application/json": components["schemas"]["SharedAccess"];
             };
         };
         responses: {
@@ -70032,6 +70397,322 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SharedExportRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The share link existed and is over: expired or revoked. `code` tells the two cases apart (`export_link_expired`, `export_link_revoked`). */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before retrying. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
+            };
+        };
+    };
+    send_shared_export_code_api_accountant_export_shared_code_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharedToken"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeSent"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The share link existed and is over: expired or revoked. `code` tells the two cases apart (`export_link_expired`, `export_link_revoked`). */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Too many requests from this address in the last minute (the bucket is kept for each client, not each route): the client must wait `Retry-After` seconds before retrying. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before retrying. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
+            };
+        };
+    };
+    verify_shared_export_code_api_accountant_export_shared_verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharedCode"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeAccepted"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

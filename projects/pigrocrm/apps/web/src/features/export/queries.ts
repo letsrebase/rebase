@@ -3,7 +3,7 @@ import { api, toProblem, unwrap } from '@/lib/api'
 import { useIsAdmin } from '@/lib/auth'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { queryKeys, retryUnlessMissing } from '@/lib/query'
-import { PAGE_SIZE, type BuildRequest } from './labels'
+import { PAGE_SIZE, type BuildRequest, type ExportKind } from './labels'
 
 /**
  * Every read of «Esporta per il commercialista». All of them share one root key, so a build
@@ -72,11 +72,17 @@ export function useExport(id: string) {
   })
 }
 
-/** The parts a build for this company would hold, from the server: the page keeps no list. */
-export function useExportParts(legalEntityId: string | null, allEntities: boolean, enabled: boolean) {
+/** The parts a build for this company would hold, from the server: the page keeps no list. A part
+ *  the admin asks for (the payslips) comes with `opt_in`, the name to ask it by. */
+export function useExportParts(
+  legalEntityId: string | null,
+  allEntities: boolean,
+  enabled: boolean,
+  kind: ExportKind = 'accountant',
+) {
   return useQuery({
     enabled,
-    queryKey: [...ROOT, 'parts', legalEntityId, allEntities] as const,
+    queryKey: [...ROOT, 'parts', legalEntityId, allEntities, kind] as const,
     queryFn: () =>
       unwrap(
         api.GET('/api/accountant-export/parts', {
@@ -84,10 +90,47 @@ export function useExportParts(legalEntityId: string | null, allEntities: boolea
             query: {
               legal_entity_id: legalEntityId ?? undefined,
               all_entities: allEntities ? true : undefined,
+              kind,
             },
           },
         }),
       ),
+  })
+}
+
+/**
+ * «Il periodo è pronto?»: the checklist of a period as the books stand now, from the server. It is
+ * read again for every company, period and pay part chosen and never kept past that: the page
+ * computes nothing, and the build computes it once more and keeps that with the export.
+ */
+export function useExportChecklist(
+  request: {
+    date_from: string
+    date_to: string
+    legal_entity_id: string | null
+    all_entities: boolean
+    payroll_parts: readonly string[]
+  } | null,
+) {
+  return useQuery({
+    enabled: request !== null,
+    queryKey: [...ROOT, 'checklist', request] as const,
+    queryFn: () =>
+      unwrap(
+        api.GET('/api/accountant-export/checklist', {
+          params: {
+            query: {
+              date_from: request?.date_from ?? '',
+              date_to: request?.date_to ?? '',
+              legal_entity_id: request?.legal_entity_id ?? undefined,
+              all_entities: request?.all_entities ? true : undefined,
+              payroll_parts: request?.payroll_parts.length ? [...request.payroll_parts] : undefined,
+            },
+          },
+        }),
+      ),
+    // A period read stays right for the moment it was asked; a returning window asks again.
+    staleTime: 0,
   })
 }
 
@@ -131,6 +174,8 @@ export function useBuildExport() {
             date_to: request.date_to,
             legal_entity_id: request.legal_entity_id,
             all_entities: request.all_entities,
+            kind: request.kind,
+            payroll_parts: request.payroll_parts,
           },
         }),
       ),
@@ -222,11 +267,12 @@ export function useLink(id: string) {
 export function useCreateLink(exportId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (days: number) =>
+    // `recipient_email` makes a link with a one-time code: an export with pay has no other kind.
+    mutationFn: (link: { days: number; recipient_email?: string }) =>
       unwrap(
         api.POST('/api/accountant-export/exports/{export_id}/share-links', {
           params: { path: { export_id: exportId } },
-          body: { days },
+          body: { days: link.days, recipient_email: link.recipient_email ?? null },
         }),
       ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: [...ROOT, 'links'] }),
