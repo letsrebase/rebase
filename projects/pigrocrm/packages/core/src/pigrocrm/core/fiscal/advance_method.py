@@ -18,12 +18,13 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.errors import NotFound
 from pigrocrm.core.fiscal.advance_schemas import (
     AdvanceMethod,
     TaxAdvanceMethodRead,
     TaxAdvanceMethodSet,
 )
-from pigrocrm.core.fiscal.repository import TaxAdvanceMethodRepository
+from pigrocrm.core.fiscal.repository import FiscalProfileRepository, TaxAdvanceMethodRepository
 from pigrocrm.core.fiscal.tax_items import TaxDueItemService
 from pigrocrm.core.legal_entities.service import LegalEntityService
 
@@ -50,6 +51,9 @@ class TaxAdvanceMethodService:
         legal_entity = LegalEntityService(self.session).require_single(
             legal_entity_id, entity=ENTITY
         )
+        if FiscalProfileRepository(self.session).get(legal_entity.id) is None:
+            # As `get_fiscal_estimate` answers: nothing is computed without a profile.
+            raise NotFound("fiscal_profile", legal_entity.id)
         row = self.repo.save(legal_entity.id, data.year, data.method)
         report = TaxDueItemService(self.session).refresh_tax_due_items(legal_entity.id)
         # Who chose and when, and for which year; never an amount, which stays out of the

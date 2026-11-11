@@ -694,3 +694,38 @@ def test_the_real_estimate_feeds_the_items_and_a_year_with_no_revenue_owes_no_ad
         assert {tax: figure for tax, figure in estimated.items() if figure is not None} == expected
     report = TaxDueItemService(db_session).refresh_tax_due_items(flat, today=clock.today)
     assert (report.written, _live(db_session, flat)) == (0, [])
+
+
+def test_a_forecast_tax_item_can_be_paid_and_then_keeps_what_was_paid(
+    db_session: Session, clock: Clock, estimates: Estimates
+) -> None:
+    """No document replaces a tax's forecast, so paying one makes it the item that was paid: it
+    freezes and the carry then sees the real payment."""
+    entity = _entity(db_session)
+    estimates.set(2025, "substitute_tax", "1000.00")
+    TaxDueItemService(db_session).refresh_tax_due_items(entity, today=clock.today)
+    item = db_session.scalars(
+        select(DueItem)
+        .where(DueItem.source_kind == "tax_advance", DueItem.state == "forecast")
+        .order_by(DueItem.due_date)
+    ).first()
+    assert item is not None
+    DueItemService(db_session).settle(
+        item.id, SettlementCreate(amount=item.amount, settled_on=dt.date(2026, 5, 1)), ADMIN
+    )
+    estimates.set(2025, "substitute_tax", "1200.00")
+    TaxDueItemService(db_session).refresh_tax_due_items(entity, today=clock.today)
+    first, second = _live(db_session, entity)
+    assert (first.amount, first.state) == (D("500.00"), "settled")
+    assert (second.amount, second.state) == (D("700.00"), "forecast")
+    assert "da confermare" in (second.text or "")
+
+
+def test_the_method_needs_a_fiscal_profile(db_session: Session, clock: Clock) -> None:
+    from pigrocrm.core.errors import NotFound
+
+    entity = LegalEntity(name="senza profilo", legal_name="Senza profilo", country="IT")
+    db_session.add(entity)
+    db_session.flush()
+    with pytest.raises(NotFound):
+        _method(db_session, entity.id, 2026, "forecast")
