@@ -112,6 +112,8 @@ FORBIDDEN = (
     # The accountant's declared tax figures (REB-1006): an administrator's token with
     # `full_access` and no other.
     "set_declared_tax_figure",
+    # The advance method of a tax year (REB-1074): it moves the tax due items, so the same.
+    "set_tax_advance_method",
     # What the whole team sees (spec 2026-11-09, B1): an administrator's token with
     # `full_access`, and no other.
     "set_space_profile",
@@ -361,6 +363,9 @@ FORBIDDEN_SERVICE_CALLS = (
     # `DeclaredTaxFigureService.set_declared_tax_figure` (REB-1006), behind the tool of the
     # same name.
     "set_declared_tax_figure",
+    # `TaxAdvanceMethodService.set_tax_advance_method` (REB-1074), behind the tool of the same
+    # name.
+    "set_tax_advance_method",
     # `StaffService`'s four, named uniquely for this scan: a bare `get` or `list` would match
     # every other service.
     "create_staff_member",

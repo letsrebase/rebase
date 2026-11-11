@@ -134,6 +134,7 @@ const KIND_LABELS: Record<string, string> = {
   expense_note_reimbursed: 'Nota spese rimborsata',
   payroll_month_closed: 'Mese di paga chiuso',
   declared_tax_figure_set: 'Cifre della dichiarazione registrate',
+  tax_advance_method_set: 'Metodo degli acconti scelto',
   accountant_export_built: 'Esportazione per il commercialista preparata',
   accountant_export_deleted: 'Esportazione per il commercialista eliminata',
   accountant_export_written_to_drive: 'Esportazione scritta su Google Drive',

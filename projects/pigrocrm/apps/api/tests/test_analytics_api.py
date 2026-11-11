@@ -1089,3 +1089,30 @@ def test_a_declared_figure_needs_an_admin_and_one_amount(
     assert collaborator.put("/api/analytics/fiscal/declared", json=body).status_code == 403
     empty = logged_in.put("/api/analytics/fiscal/declared", json={"tax": "irpef", "year": YEAR})
     assert empty.status_code == 422
+
+
+def test_an_admin_chooses_the_advance_method_and_the_answer_reports_what_is_missing(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    put = logged_in.put(
+        "/api/analytics/fiscal/advance-method", json={"year": YEAR, "method": "forecast"}
+    )
+    assert put.status_code == 200, put.text
+    body = put.json()
+    assert (body["year"], body["method"]) == (YEAR, "forecast")
+    assert set(body["items"]) == {"written", "dropped", "kept", "not_written"}
+    # Choosing again replaces the choice.
+    again = logged_in.put(
+        "/api/analytics/fiscal/advance-method", json={"year": YEAR, "method": "historical"}
+    )
+    assert again.status_code == 200 and again.json()["method"] == "historical"
+
+
+def test_the_advance_method_needs_an_admin_and_one_of_the_two_methods(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    collaborator = _second_actor(logged_in, "collaborator")
+    body = {"year": YEAR, "method": "forecast"}
+    assert collaborator.put("/api/analytics/fiscal/advance-method", json=body).status_code == 403
+    bad = logged_in.put("/api/analytics/fiscal/advance-method", json={"year": YEAR, "method": "x"})
+    assert bad.status_code == 422

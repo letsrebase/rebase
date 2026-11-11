@@ -218,6 +218,13 @@ ROWS: list[Row] = [
         admin_only=True,
         body={"tax": "irpef", "year": 2025, "balance": "100.00"},
     ),
+    # --- tax advance method (REB-1074): admin, before any lookup ---------------------------
+    Row(
+        "PUT",
+        "/api/analytics/fiscal/advance-method",
+        admin_only=True,
+        body={"year": 2026, "method": "forecast"},
+    ),
     # --- cost categories: admin on every method (timetracking/categories.py) --------
     # --- bank accounts (REB-1025): `require_admin` (bank/accounts.py, bank/statements.py) ---
     Row(

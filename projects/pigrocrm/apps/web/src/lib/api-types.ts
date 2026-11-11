@@ -2439,6 +2439,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/fiscal/advance-method": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Tax Advance Method
+         * @description How the advances of a tax year are computed (REB-1074): `historical`, the default, on the
+         *     previous year's declared tax or its estimate, or `forecast`, on the current year's estimate.
+         *     `admin`, enforced by the service. Choosing again replaces the choice and recomputes the
+         *     legal entity's tax due items, which the answer reports: each payment left unwritten with the
+         *     figure or the parameter it misses.
+         */
+        put: operations["set_tax_advance_method_api_analytics_fiscal_advance_method_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics/backlog": {
         parameters: {
             query?: never;
@@ -19771,6 +19795,45 @@ export interface components {
             reference_to_remove: boolean;
         };
         /**
+         * TaxAdvanceMethodRead
+         * @description The choice as stored, and what moving the tax due items to it left unwritten.
+         */
+        TaxAdvanceMethodRead: {
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /** Year */
+            year: number;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "historical" | "forecast";
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            items: components["schemas"]["TaxItemsReport"];
+        };
+        /**
+         * TaxAdvanceMethodSet
+         * @description What an administrator chooses: the method of the advances of `year` (the tax year they
+         *     belong to). `historical` is the previous year's declared tax, or its estimate when none is
+         *     declared; `forecast` is the current year's estimate.
+         */
+        TaxAdvanceMethodSet: {
+            /** Year */
+            year: number;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "historical" | "forecast";
+        };
+        /**
          * TaxCalendar
          * @description The tax dates of calendar `year` for one legal entity, from its pack (REB-1004). The dates
          *     are «salvo proroghe»: a decree that moves one is a new entry of the pack. An empty `dates`
@@ -19824,6 +19887,49 @@ export interface components {
             covers: string;
             /** Source */
             source: string;
+        };
+        /**
+         * TaxItemNotWritten
+         * @description A payment of a tax year the due items do not carry, and why. `reason` is English text
+         *     for the reader of the report, not product copy.
+         */
+        TaxItemNotWritten: {
+            /** Tax */
+            tax: string;
+            /** Year */
+            year: number;
+            /**
+             * Part
+             * @enum {string}
+             */
+            part: "balance" | "first_advance" | "second_advance";
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * TaxItemsReport
+         * @description What one recomputation of a legal entity's tax due items did: how many it wrote, dropped
+         *     and left as they were (an item a payment touched is never changed), and every payment it
+         *     could not write, with the missing figure or parameter.
+         */
+        TaxItemsReport: {
+            /**
+             * Written
+             * @default 0
+             */
+            written: number;
+            /**
+             * Dropped
+             * @default 0
+             */
+            dropped: number;
+            /**
+             * Kept
+             * @default 0
+             */
+            kept: number;
+            /** Not Written */
+            not_written?: components["schemas"]["TaxItemNotWritten"][];
         };
         /**
          * TaxReadingLine
@@ -40495,6 +40601,130 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DeclaredTaxFigureRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_tax_advance_method_api_analytics_fiscal_advance_method_put: {
+        parameters: {
+            query?: {
+                /** @description The legal entity to compute for: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one and can be omitted. */
+                legal_entity_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaxAdvanceMethodSet"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaxAdvanceMethodRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

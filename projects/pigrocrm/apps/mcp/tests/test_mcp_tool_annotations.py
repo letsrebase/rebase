@@ -137,7 +137,9 @@ DEFAULT_BUDGET_BYTES = 109_900
 # REB-1048: 144.45 KB, up from 142.9 KB, for `get_export_checklist` and the `kind`,
 # `payroll_parts` and `recipient_email` arguments of the export tools (a full-access
 # administrator's), measured at 144,360.
-FULL_ACCESS_BUDGET_BYTES = 144_450
+# REB-1074: 145.0 KB, up from 144.45 KB, for `set_tax_advance_method` (a full-access
+# administrator's: a year and a method), measured at 144,985.
+FULL_ACCESS_BUDGET_BYTES = 145_050
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.
