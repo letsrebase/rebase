@@ -760,9 +760,11 @@ class AnalyticsService:
             # decision): a social security surcharge line counts toward the ceiling in full but is
             # not
             # taxable income, so it never reaches the coefficiente base here even
-            # though `annual_revenue` sums it in full. Whether the flat-rate basis is the
-            # money collected or invoiced, and whether the INPS surcharge lines come out of
-            # it, is TO VERIFY (A5 row «Flat-rate basis...», REB-975).
+            # though `annual_revenue` sums it in full. The flat-rate basis is the money
+            # collected (`law.income_basis`, REB-1066: L. 190/2014 art. 1 c. 64), while this
+            # sums the invoices issued in the year, until the one-basis revenue function of
+            # REB-1071 reads it from the law. Whether the INPS surcharge lines come out of
+            # it is TO VERIFY (A5 row «Flat-rate basis...», REB-975).
             revenue = taxable_revenue(
                 pack,
                 self.session,
@@ -780,7 +782,7 @@ class AnalyticsService:
             coefficient=profile.profitability_coefficient,
             rate_substitute=profile.substitute_tax_rate,
             social_security_rate=profile.social_security_rate,
-            contribution_base=law.contribution_base if law is not None else None,
+            flat_rate=law.flat_rate if law is not None else None,
         ).model_copy(
             update={
                 "pack_id": pack.id,

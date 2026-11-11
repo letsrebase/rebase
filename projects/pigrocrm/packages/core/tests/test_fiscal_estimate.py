@@ -34,10 +34,11 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.analytics.fiscal import estimate_income
+from pigrocrm.core.analytics.fiscal import coefficient_warning, estimate_income
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.errors import NotFound, PermissionDenied
+from pigrocrm.core.fiscal.law_flat_rate import FLAT_RATE_2026
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 
@@ -79,9 +80,14 @@ def _set_rates(
 # --- the arithmetic, with no session at all -----------------------------------------
 
 
-def test_the_arithmetic_matches_the_previous_systems_at_the_annual_level() -> None:
-    """The formula is carried over unchanged -- it was never the defect. Only the level
-    is different, and the constants now live in a table."""
+def test_the_arithmetic_follows_the_law_at_the_annual_level() -> None:
+    """The order of L. 190/2014 art. 1 c. 64, pinned on one worked example so the formula can
+    be checked against a spreadsheet: the income is the revenue times the coefficient, the
+    INPS contributions are owed on that income, they are deducted from it, and the substitute
+    tax is owed on what is left. Before REB-1066 the contributions were taken on the income
+    less the substitute tax (3350.00 of tax and 16593.56 of contributions on this example);
+    the total to set aside and the net income did not change, the split between the two lines
+    did."""
     estimate = estimate_income(
         year=2026,
         legal_entity_id=LEGAL_ENTITY,
@@ -89,14 +95,47 @@ def test_the_arithmetic_matches_the_previous_systems_at_the_annual_level() -> No
         coefficient=Decimal("67.00"),
         rate_substitute=Decimal("5.00"),
         social_security_rate=Decimal("26.07"),
-        contribution_base="taxable_amount_net_of_substitute_tax",
+        flat_rate=FLAT_RATE_2026,
     )
     assert estimate.taxable_amount == Decimal("67000.00")
-    assert estimate.substitute_tax == Decimal("3350.00")
-    # (67000 - 3350) * 0.2607 = 16593.555, half-up to 16593.56.
-    assert estimate.contributions == Decimal("16593.56")
-    # Off `revenue`, not off `taxable_amount`: 100000 - 3350 - 16593.56.
+    # 67000 * 0.2607 = 17466.90: on the income, not on the income less the tax.
+    assert estimate.contributions == Decimal("17466.90")
+    # 67000 - 17466.90 = 49533.10, the base of the substitute tax.
+    assert estimate.substitute_tax_base == Decimal("49533.10")
+    # 49533.10 * 0.05 = 2476.655, half-up to 2476.66.
+    assert estimate.substitute_tax == Decimal("2476.66")
+    # Off `revenue`, not off `taxable_amount`: 100000 - 2476.66 - 17466.90.
     assert estimate.estimated_net_income == Decimal("80056.44")
+    assert estimate.due_total == Decimal("19943.56")
+
+
+def test_the_law_changes_the_split_and_not_the_total() -> None:
+    """The one example the change is explained by: the former formula and the law's give the
+    same total to set aside and the same net income (to within two cents of rounding), because
+    `t*r + (t - t*r)*s` and `t*s + (t - t*s)*r` are the same number; they differ in how much of
+    it is substitute tax and how much is INPS."""
+    kwargs = dict(
+        year=2026,
+        legal_entity_id=LEGAL_ENTITY,
+        revenue=Decimal("100000.00"),
+        coefficient=Decimal("67.00"),
+        rate_substitute=Decimal("5.00"),
+        social_security_rate=Decimal("26.07"),
+    )
+    new = estimate_income(**kwargs, flat_rate=FLAT_RATE_2026)  # type: ignore[arg-type]
+    taxable = Decimal("67000.00")
+    old_substitute = Decimal("3350.00")
+    old_contributions = Decimal("16593.56")
+    assert (taxable * Decimal("0.05")).quantize(Decimal("0.01")) == old_substitute
+    assert ((taxable - old_substitute) * Decimal("0.2607")).quantize(
+        Decimal("0.01")
+    ) == old_contributions
+    assert new.due_total == old_substitute + old_contributions
+    assert new.substitute_tax != old_substitute
+    assert new.contributions != old_contributions
+    assert new.contributions is not None and new.substitute_tax is not None
+    assert new.contributions > old_contributions
+    assert new.substitute_tax < old_substitute
 
 
 def test_the_rates_are_arguments_and_not_constants() -> None:
@@ -113,12 +152,13 @@ def test_the_rates_are_arguments_and_not_constants() -> None:
         coefficient=Decimal("78.00"),
         rate_substitute=Decimal("15.00"),
         social_security_rate=Decimal("24.00"),
-        contribution_base="taxable_amount_net_of_substitute_tax",
+        flat_rate=FLAT_RATE_2026,
     )
     assert estimate.taxable_amount == Decimal("78000.00")
-    assert estimate.substitute_tax == Decimal("11700.00")
-    # (78000 - 11700) * 0.24
-    assert estimate.contributions == Decimal("15912.00")
+    # 78000 * 0.24
+    assert estimate.contributions == Decimal("18720.00")
+    # (78000 - 18720) * 0.15
+    assert estimate.substitute_tax == Decimal("8892.00")
     assert estimate.estimated_net_income == Decimal("72388.00")
     # Echoed back beside the figures they produced: a reader looking at a number they did
     # not expect needs to see which coefficient it came from.
@@ -137,7 +177,7 @@ def test_it_says_it_is_an_estimate_in_its_own_payload() -> None:
         coefficient=Decimal("67.00"),
         rate_substitute=Decimal("5.00"),
         social_security_rate=Decimal("26.07"),
-        contribution_base="taxable_amount_net_of_substitute_tax",
+        flat_rate=FLAT_RATE_2026,
     )
     assert estimate.estimate is True
     # The three clauses that matter most, because each names a real reason the figure
@@ -162,7 +202,7 @@ def test_a_missing_coefficient_yields_null_not_a_guess() -> None:
         coefficient=None,
         rate_substitute=Decimal("5.00"),
         social_security_rate=Decimal("26.07"),
-        contribution_base="taxable_amount_net_of_substitute_tax",
+        flat_rate=FLAT_RATE_2026,
     )
     assert estimate.taxable_amount is None
     assert estimate.substitute_tax is None
@@ -174,11 +214,12 @@ def test_a_missing_coefficient_yields_null_not_a_guess() -> None:
 
 
 def test_only_the_lines_that_depend_on_the_missing_rate_go_null() -> None:
-    """A missing INPS rate does not blank the tax the user *can* be told about.
+    """A missing INPS rate blanks the lines that depend on it and no others.
 
     Nulling the whole payload whenever any one rate is absent would be the easy shape
-    and the wrong one: two of the four lines are fully determined without it, and the
-    net is not -- because the net is revenue less **both** outgoings.
+    and the wrong one: the taxable amount is fully determined without it. But the substitute
+    tax is owed on the income less the contributions, so without the INPS rate it has no figure
+    either: a figure computed as if nothing were deducted would be a guess.
     """
     estimate = estimate_income(
         year=2026,
@@ -187,11 +228,26 @@ def test_only_the_lines_that_depend_on_the_missing_rate_go_null() -> None:
         coefficient=Decimal("67.00"),
         rate_substitute=Decimal("5.00"),
         social_security_rate=None,
-        contribution_base="taxable_amount_net_of_substitute_tax",
+        flat_rate=FLAT_RATE_2026,
     )
     assert estimate.taxable_amount == Decimal("670.00")
-    assert estimate.substitute_tax == Decimal("33.50")
     assert estimate.contributions is None
+    assert estimate.substitute_tax_base is None
+    assert estimate.substitute_tax is None
+    assert estimate.estimated_net_income is None
+    # A missing substitute rate leaves the contributions, which do not depend on it.
+    estimate = estimate_income(
+        year=2026,
+        legal_entity_id=LEGAL_ENTITY,
+        revenue=Decimal("1000.00"),
+        coefficient=Decimal("67.00"),
+        rate_substitute=None,
+        social_security_rate=Decimal("26.07"),
+        flat_rate=FLAT_RATE_2026,
+    )
+    assert estimate.contributions == Decimal("174.67")
+    assert estimate.substitute_tax_base == Decimal("495.33")
+    assert estimate.substitute_tax is None
     assert estimate.estimated_net_income is None
 
 
@@ -201,21 +257,57 @@ def test_rounding_is_the_projects_own_half_up_at_every_step() -> None:
     estimate = estimate_income(
         year=2026,
         legal_entity_id=LEGAL_ENTITY,
-        revenue=Decimal("1.05"),
+        revenue=Decimal("1.10"),
         coefficient=Decimal("67.00"),
         rate_substitute=Decimal("5.00"),
-        social_security_rate=Decimal("26.07"),
-        contribution_base="taxable_amount_net_of_substitute_tax",
+        social_security_rate=Decimal("32.50"),
+        flat_rate=FLAT_RATE_2026,
     )
-    # 1.05 * 0.67 = 0.7035 -> 0.70 half-up. Banker's rounding would also give 0.70 here,
-    # so the case below is the one that separates them.
-    assert estimate.taxable_amount == Decimal("0.70")
-    # 0.70 * 0.05 = 0.035 -> 0.04 half-up; ROUND_HALF_EVEN would give 0.03.
-    assert estimate.substitute_tax == Decimal("0.04")
-    # The contributions base is the *rounded* tax subtracted from the *rounded* base,
-    # because those are the two figures the reader can see: (0.70 - 0.04) * 0.2607.
-    assert estimate.contributions == Decimal("0.17")
-    assert estimate.estimated_net_income == Decimal("0.84")
+    # 1.10 * 0.67 = 0.737 -> 0.74.
+    assert estimate.taxable_amount == Decimal("0.74")
+    # 0.74 * 0.325 = 0.2405 -> 0.24.
+    assert estimate.contributions == Decimal("0.24")
+    # The substitute tax base is the *rounded* income less the *rounded* contributions,
+    # because those are the two figures the reader can see: 0.74 - 0.24.
+    assert estimate.substitute_tax_base == Decimal("0.50")
+    # 0.50 * 0.05 = 0.025 -> 0.03 half-up; ROUND_HALF_EVEN would give 0.02.
+    assert estimate.substitute_tax == Decimal("0.03")
+    assert estimate.estimated_net_income == Decimal("0.83")
+    # A tie on the contributions: 0.74 * 0.25 = 0.185 -> 0.19 half-up, 0.18 half-even.
+    tie = estimate_income(
+        year=2026,
+        legal_entity_id=LEGAL_ENTITY,
+        revenue=Decimal("1.10"),
+        coefficient=Decimal("67.00"),
+        rate_substitute=Decimal("5.00"),
+        social_security_rate=Decimal("25.00"),
+        flat_rate=FLAT_RATE_2026,
+    )
+    assert tie.contributions == Decimal("0.19")
+
+
+def test_a_coefficient_outside_annex_4_is_a_note_and_never_a_refusal() -> None:
+    """The figures are computed from whatever the profile holds; the estimate only says that
+    the coefficient is not one of the law's, so a profile saved before the table was shipped
+    keeps working (L. 190/2014 annex 4: 40, 54, 62, 67, 78 and 86)."""
+    kwargs = dict(
+        year=2026,
+        legal_entity_id=LEGAL_ENTITY,
+        revenue=Decimal("1000.00"),
+        rate_substitute=Decimal("5.00"),
+        social_security_rate=Decimal("26.07"),
+        flat_rate=FLAT_RATE_2026,
+    )
+    off_table = estimate_income(coefficient=Decimal("70.00"), **kwargs)  # type: ignore[arg-type]
+    assert off_table.taxable_amount == Decimal("700.00")
+    assert off_table.coefficient_warning is not None
+    assert "70%" in off_table.coefficient_warning
+    assert "40%, 54%, 62%, 67%, 78%, 86%" in off_table.coefficient_warning
+    for listed in ("40.00", "54", "62.00", "67.00", "78.00", "86.00"):
+        assert estimate_income(coefficient=Decimal(listed), **kwargs).coefficient_warning is None  # type: ignore[arg-type]
+    # Not stated is not wrong: there is nothing to warn about.
+    assert estimate_income(coefficient=None, **kwargs).coefficient_warning is None  # type: ignore[arg-type]
+    assert coefficient_warning(FLAT_RATE_2026, Decimal("67.00")) is None
 
 
 # --- the service, against a real year of invoices -----------------------------------
@@ -275,10 +367,10 @@ def test_the_service_reads_the_three_rates_from_the_profile_row(
     assert estimate.profitability_coefficient == Decimal("78.00")
     # 1583.83 * 0.78 = 1235.3874 -> 1235.39
     assert estimate.taxable_amount == Decimal("1235.39")
-    # 1235.39 * 0.15 = 185.3085 -> 185.31
-    assert estimate.substitute_tax == Decimal("185.31")
-    # (1235.39 - 185.31) * 0.24 = 252.0192 -> 252.02
-    assert estimate.contributions == Decimal("252.02")
+    # 1235.39 * 0.24 = 296.4936 -> 296.49
+    assert estimate.contributions == Decimal("296.49")
+    # (1235.39 - 296.49) * 0.15 = 140.835 -> 140.84
+    assert estimate.substitute_tax == Decimal("140.84")
     assert estimate.estimated_net_income == Decimal("1146.50")
     # And none of them is what the seeded 67/5/26.07 profile would have produced, which
     # is what makes the four assertions above evidence rather than coincidence.

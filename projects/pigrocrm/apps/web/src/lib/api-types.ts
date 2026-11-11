@@ -12347,6 +12347,10 @@ export interface components {
             estimated_net_income: string | null;
             /** Due Total */
             due_total?: string | null;
+            /** Substitute Tax Base */
+            substitute_tax_base?: string | null;
+            /** Coefficient Warning */
+            coefficient_warning?: string | null;
             /** Pack Id */
             pack_id?: string | null;
             /** Pack Version */

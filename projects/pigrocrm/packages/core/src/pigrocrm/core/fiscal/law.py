@@ -21,14 +21,10 @@ from decimal import Decimal
 from typing import Literal
 
 from pigrocrm.core.fiscal.law_chamber_fee import ChamberFeeLaw
+from pigrocrm.core.fiscal.law_flat_rate import FlatRateLaw
+from pigrocrm.core.fiscal.law_income_basis import IncomeBasisLaw
 from pigrocrm.core.fiscal.law_irap import IrapLaw
 from pigrocrm.core.fiscal.law_irpef import IrpefLaw
-
-# How the flat-rate regime's INPS contributions are based, as the estimate
-# (`analytics/fiscal.py::estimate_income`) reads it. One member today, the formula the estimate
-# has always used; it is a datum of the law and not a branch in the service so that the
-# accountant's answer (REB-975) becomes a second member here, never an `if` there.
-ContributionBase = Literal["taxable_amount_net_of_substitute_tax"]
 
 
 @dataclass(frozen=True)
@@ -228,10 +224,12 @@ class TaxYearLaw:
     same pack. `None` for a section means the pack's regime has nothing of that kind."""
 
     from_year: int
-    # The flat-rate regime's income estimate: `None` for a regime that has none, and the
-    # economic overview then draws no estimate for it instead of a card of zeros
-    # (REB-760). «To verify» (A5 row «Flat-rate contribution base...», REB-975).
-    contribution_base: ContributionBase | None = None
+    # The flat-rate regime's law (`FlatRateLaw`): `None` for a regime that has none, and the
+    # economic overview then draws no estimate for it instead of a card of zeros (REB-760).
+    flat_rate: FlatRateLaw | None = None
+    # The basis the regime's income is measured on, cash or accrual (`IncomeBasisLaw`,
+    # REB-1066): `None` where the pack states none.
+    income_basis: IncomeBasisLaw | None = None
     advances: IncomeTaxAdvanceLaw | None = None
     # A company's own taxes, for the pack that has a company (`it-company`).
     company_tax: CompanyTaxLaw | None = None
@@ -257,13 +255,12 @@ class TaxYearLaw:
 
     @property
     def has_income_estimate(self) -> bool:
-        return self.contribution_base is not None
+        return self.flat_rate is not None
 
 
 __all__ = [
     "Cadence",
     "CompanyTaxLaw",
-    "ContributionBase",
     "DateKind",
     "DeclaredTax",
     "IncomeTaxAdvanceLaw",

@@ -149,6 +149,15 @@ export function FiscalPanel({
         {data.warning}
       </p>
 
+      {data.coefficient_warning && (
+        <p
+          role="note"
+          className="border bg-muted/50 px-3 py-2 text-sm text-muted-foreground"
+        >
+          {data.coefficient_warning}
+        </p>
+      )}
+
       <Card>
         <CardContent className="pt-6">
           <h2 className="mb-3 font-semibold">
@@ -165,13 +174,18 @@ export function FiscalPanel({
             value={formatPercent(data.profitability_coefficient)}
           />
           <Row label="Imponibile" value={money(data.taxable_amount)} />
+          <Row label="Aliquota INPS" value={formatPercent(data.social_security_rate)} />
+          <Row label="Contributi INPS" value={money(data.contributions)} />
+          <Row
+            label="Imponibile al netto dei contributi"
+            value={money(data.substitute_tax_base ?? null)}
+            hint="i contributi si deducono prima dell’imposta sostitutiva"
+          />
           <Row
             label="Aliquota imposta sostitutiva"
             value={formatPercent(data.substitute_tax_rate)}
           />
           <Row label="Imposta sostitutiva" value={money(data.substitute_tax)} />
-          <Row label="Aliquota INPS" value={formatPercent(data.social_security_rate)} />
-          <Row label="Contributi INPS" value={money(data.contributions)} />
           <Row label="Reddito netto stimato" value={money(data.estimated_net_income)} />
         </CardContent>
       </Card>
