@@ -135,6 +135,13 @@ jobs:
       # hosted image are days old at most; a stale index fails that install, and only
       # then is the update paid. Measured on the first run of REB-589: the install step
       # still waited 7 to 14s for the marker, which is the update, not the fetches.
+      # A third source exists for the day the Ubuntu mirrors stop resolving from the
+      # runners (2026-11-11, from 14:09 UTC for hours, REB-1082: every apt fetch failed
+      # with «Temporary failure resolving»): poppler from conda-forge, through a pinned
+      # and digest-checked micromamba, linked into /usr/local/bin. Its pdftotext is a newer
+      # poppler than the image's, which the tests do not mind: they read the words the
+      # renderer put in. apt gives up at once on a failed fetch (`Acquire::Retries=0`),
+      # so a dead mirror costs seconds and not the ten-minute wait below.
       - name: Download the document renderer in the background
         if: inputs.renderer && inputs.test
         run: |
@@ -150,8 +157,13 @@ jobs:
             && curl -fsSLo "${dir}/typst.tar.xz" "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" \
             && echo "${TYPST_SHA256}  ${dir}/typst.tar.xz" | sha256sum -c - \
             && tar -xJf "${dir}/typst.tar.xz" -C "${dir}" \
-            && { sudo apt-get install -y -qq --no-install-recommends poppler-utils \
-                 || { sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends poppler-utils; }; } \
+            && { sudo apt-get install -y -qq -o Acquire::Retries=0 --no-install-recommends poppler-utils \
+                 || { sudo apt-get update -qq -o Acquire::Retries=0 && sudo apt-get install -y -qq -o Acquire::Retries=0 --no-install-recommends poppler-utils; } \
+                 || { curl -fsSLo "${dir}/micromamba" "https://github.com/mamba-org/micromamba-releases/releases/download/2.10.0-0/micromamba-linux-64" \
+                      && echo "701f39c06f8e6a670a0e186c8479b9e5c0502a2f0cda6cef65d83bdd2875e8bd  ${dir}/micromamba" | sha256sum -c - \
+                      && chmod +x "${dir}/micromamba" \
+                      && MAMBA_ROOT_PREFIX="${dir}/mamba" "${dir}/micromamba" create -y -q -p "${dir}/poppler" -c conda-forge poppler \
+                      && sudo ln -sf "${dir}/poppler/bin/pdftotext" /usr/local/bin/pdftotext; }; } \
             && touch "${dir}/done" || touch "${dir}/failed"
           } > "${dir}/log" 2>&1 &
 
