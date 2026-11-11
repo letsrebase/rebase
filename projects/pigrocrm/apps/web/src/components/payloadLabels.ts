@@ -72,6 +72,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   days: 'Giorni',
   with_code: 'Con codice',
   delivery_period: 'Periodo di erogazione',
+  due_item_id: 'Scadenza',
   download_count: 'Download',
   decided_at: 'Deciso il',
   decided_by: 'Deciso da',
