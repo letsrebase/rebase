@@ -233,3 +233,14 @@ opens is `/app/shared-export?t=`. `POST /exports/{id}/drive-writes` copies the Z
 `commercialista/<entity-slug>/<period>/<timestamp>/`, only where the storage is Drive and a person asks (`GET /drive` says whether it is, and why
 not); the copy goes with the export at 13 months. Payroll parts do not exist yet, so the plain-link refusal and the link with a one-time code are
 left to the payroll card; `get_export_checklist` stays with the readiness checklist card.
+
+### Built (REB-1048)
+
+«Il periodo è pronto?» exists: `get_export_checklist` (`GET /api/accountant-export/checklist`) answers seven checks with a count of open points and the first five by name
+(the inbox items waiting, purchases with no document and purchase proposals not accepted, issued invoices with no stored file, bank statements missing or waiting, bank
+movements not matched, an IVA period not closed and, when the payslips are asked for, the payslips not received or not accepted); a check of a module that is off, of a pack
+it does not apply to or of a part not asked for is not drawn. A build computes it again and stores it under `readiness` in the export's snapshot and in a table of
+`indice.csv`. «Variazioni paghe» is `kind="payroll_changes"`: hires, leavers, people whose record was edited in the period (with the terms as they stand, since the timeline
+never keeps from what to what) and the expense notes approved to be reimbursed in a payslip of the period; no absences, since no data holds them. The payslips are the one
+payroll part that has a source and are ticked on the form; the payroll F24s and the payroll withholdings stay «non disponibile» until the F24 grouping exists. Either export
+carries pay, and its share link is a link with a code: the address of the recipient is required, a code of six digits is mailed to it, and the right one opens a half-hour session.

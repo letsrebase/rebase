@@ -25,6 +25,7 @@ from pigrocrm.core.accountant_export.drive_delivery import (
 from pigrocrm.core.accountant_export.models import (
     AccountantExportRow,
     ExportDriveWrite,
+    ExportShareCode,
     ExportShareLink,
     ExportShareOpening,
 )
@@ -32,6 +33,11 @@ from pigrocrm.core.accountant_export.parts import Period
 from pigrocrm.core.accountant_export.retention import ExportRetention
 from pigrocrm.core.accountant_export.service import AccountantExportService
 from pigrocrm.core.accountant_export.sharing import (
+    CODE_MAX_FAILURES,
+    ExportCodeInvalid,
+    ExportCodeMailFailed,
+    ExportCodeRequired,
+    ExportCodeThrottled,
     ExportLinkExpired,
     ExportLinkRevoked,
     ExportLinkUnknown,
@@ -52,6 +58,7 @@ from pigrocrm.core.errors import (
 )
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.repository import LegalEntityRepository
+from pigrocrm.core.mail import RecordingSender
 from pigrocrm.core.storage import DocumentStorage, GDriveStorage
 from pigrocrm.core.storage.errors import StorageNotConfigured
 from pigrocrm.core.storage.local import LocalFileStorage
@@ -634,3 +641,181 @@ def test_the_copies_in_drive_go_with_the_export_after_thirteen_months(
 )
 def test_a_period_is_a_folder_a_person_can_read(first: dt.date, last: dt.date, folder: str) -> None:
     assert period_folder(first, last) == folder
+
+
+# --- an export with pay: the link with a code (REB-1048) ----------------------------------------
+
+
+@pytest.fixture
+def payroll_export_id(db_session: Session, local_storage: LocalFileStorage) -> UUID:
+    return _build(db_session, local_storage, kind="payroll_changes")
+
+
+def _code_of(sender: RecordingSender) -> str:
+    return sender.sent[-1].text.split("\n\n")[2].strip()
+
+
+def _coded(session: Session, export_id: UUID, **kwargs: object) -> tuple[str, UUID]:
+    created = _links(session).create_export_share_link(
+        export_id, ADMIN, recipient_email="Studio.Paghe@Example.COM", now=NOW, **kwargs  # type: ignore[arg-type]
+    )
+    return _token(created.url), created.id
+
+
+def test_an_export_with_pay_has_no_plain_link(
+    db_session: Session, payroll_export_id: UUID, export_id: UUID
+) -> None:
+    with pytest.raises(ValidationFailed, match="solo con un link con codice"):
+        _links(db_session).create_export_share_link(payroll_export_id, ADMIN, now=NOW)
+    with pytest.raises(ValidationFailed, match="solo con un link con codice"):
+        _links(db_session).create_export_share_link(
+            payroll_export_id, ADMIN, recipient_email="  ", now=NOW
+        )
+    with pytest.raises(ValidationFailed, match="non è valido"):
+        _links(db_session).create_export_share_link(
+            payroll_export_id, ADMIN, recipient_email="non-un-indirizzo", now=NOW
+        )
+    # An agent with full access gets the same rule, and a plain export stays plain.
+    with pytest.raises(ValidationFailed):
+        _links(db_session).create_export_share_link(payroll_export_id, FULL_ACCESS_AGENT, now=NOW)
+    plain = _links(db_session).create_export_share_link(export_id, ADMIN, now=NOW)
+    assert plain.recipient_email is None
+
+
+def test_a_link_with_a_code_opens_nothing_until_the_recipient_gives_the_code(
+    db_session: Session, local_storage: LocalFileStorage, payroll_export_id: UUID
+) -> None:
+    token, link_id = _coded(db_session, payroll_export_id)
+    door = _door(db_session, local_storage)
+    sender = RecordingSender()
+
+    seen = door.describe(token, now=NOW)
+    assert seen.requires_code and not seen.unlocked and seen.parts == []
+    assert seen.recipient_hint == "s…@example.com"
+    with pytest.raises(ExportCodeRequired):
+        door.open(token, 1, ADDRESS, now=NOW)
+
+    assert door.send_code(token, sender, now=NOW) == "s…@example.com"
+    mail = sender.sent[0]
+    assert mail.to == "studio.paghe@example.com" and "15 minuti" in mail.text
+    assert token not in mail.text and "?t=" not in mail.text
+    code = _code_of(sender)
+    assert len(code) == 6 and code.isdigit()
+    stored = db_session.scalar(select(ExportShareCode).where(ExportShareCode.link_id == link_id))
+    assert stored is not None and code not in stored.code_hash and stored.consumed_at is None
+
+    access = door.verify_code(token, code, now=NOW + dt.timedelta(minutes=1))
+    unlocked = door.describe(token, access=access, now=NOW + dt.timedelta(minutes=2))
+    assert unlocked.unlocked and [p.part for p in unlocked.parts] == [1]
+    opened = door.open(token, 1, ADDRESS, access=access, now=NOW + dt.timedelta(minutes=2))
+    assert opened.content_type == "application/zip"
+    row = db_session.get(ExportShareLink, link_id)
+    assert row is not None and row.download_count == 1
+    # The code is spent, and the session is not the code.
+    with pytest.raises(ExportCodeInvalid):
+        door.verify_code(token, code, now=NOW + dt.timedelta(minutes=3))
+    with pytest.raises(ExportCodeRequired):
+        door.open(token, 1, ADDRESS, access=code, now=NOW + dt.timedelta(minutes=3))
+    # The session ends after half an hour; the link itself does not.
+    with pytest.raises(ExportCodeRequired):
+        door.open(token, 1, ADDRESS, access=access, now=NOW + dt.timedelta(minutes=45))
+
+
+def test_a_wrong_code_counts_and_five_wrong_answers_burn_the_code(
+    db_session: Session, local_storage: LocalFileStorage, payroll_export_id: UUID
+) -> None:
+    token, _ = _coded(db_session, payroll_export_id)
+    door = _door(db_session, local_storage)
+    sender = RecordingSender()
+    door.send_code(token, sender, now=NOW)
+    code = _code_of(sender)
+    wrong = "000000" if code != "000000" else "111111"
+
+    for _ in range(CODE_MAX_FAILURES):
+        with pytest.raises(ExportCodeInvalid):
+            door.verify_code(token, wrong, now=NOW)
+
+    # The right code now is as refused as a wrong one: a new code has to be asked.
+    with pytest.raises(ExportCodeInvalid):
+        door.verify_code(token, code, now=NOW)
+    door.send_code(token, sender, now=NOW + dt.timedelta(minutes=2))
+    assert door.verify_code(token, _code_of(sender), now=NOW + dt.timedelta(minutes=3))
+
+
+def test_a_code_expires_after_a_quarter_of_an_hour(
+    db_session: Session, local_storage: LocalFileStorage, payroll_export_id: UUID
+) -> None:
+    token, _ = _coded(db_session, payroll_export_id)
+    door = _door(db_session, local_storage)
+    sender = RecordingSender()
+    door.send_code(token, sender, now=NOW)
+
+    with pytest.raises(ExportCodeInvalid):
+        door.verify_code(token, _code_of(sender), now=NOW + dt.timedelta(minutes=16))
+
+
+def test_codes_are_mailed_one_a_minute_and_five_an_hour(
+    db_session: Session, local_storage: LocalFileStorage, payroll_export_id: UUID
+) -> None:
+    token, _ = _coded(db_session, payroll_export_id)
+    door = _door(db_session, local_storage)
+    sender = RecordingSender()
+    door.send_code(token, sender, now=NOW)
+    with pytest.raises(ExportCodeThrottled, match="un minuto"):
+        door.send_code(token, sender, now=NOW + dt.timedelta(seconds=30))
+    for minute in range(2, 6):
+        door.send_code(token, sender, now=NOW + dt.timedelta(minutes=minute))
+    with pytest.raises(ExportCodeThrottled, match="un'ora"):
+        door.send_code(token, sender, now=NOW + dt.timedelta(minutes=7))
+    assert len(sender.sent) == 5
+
+
+def test_a_mail_the_provider_refuses_leaves_no_code_behind(
+    db_session: Session, local_storage: LocalFileStorage, payroll_export_id: UUID
+) -> None:
+    token, link_id = _coded(db_session, payroll_export_id)
+    door = _door(db_session, local_storage)
+
+    with pytest.raises(ExportCodeMailFailed):
+        door.send_code(token, RecordingSender(accepts=False), now=NOW)
+
+    assert db_session.scalars(select(ExportShareCode)).all() == []
+    # So the next ask is not throttled by a mail that never left.
+    door.send_code(token, RecordingSender(), now=NOW + dt.timedelta(seconds=5))
+    assert link_id
+
+
+def test_a_plain_link_has_no_code_to_send_and_a_coded_link_ends_like_any_other(
+    db_session: Session, local_storage: LocalFileStorage, export_id: UUID, payroll_export_id: UUID
+) -> None:
+    plain = _links(db_session).create_export_share_link(export_id, ADMIN, now=NOW)
+    door = _door(db_session, local_storage)
+    with pytest.raises(ValidationFailed, match="non chiede un codice"):
+        door.send_code(_token(plain.url), RecordingSender(), now=NOW)
+    with pytest.raises(ExportCodeInvalid):
+        door.verify_code(_token(plain.url), "123456", now=NOW)
+    assert door.describe(_token(plain.url), now=NOW).unlocked
+
+    token, link_id = _coded(db_session, payroll_export_id)
+    _links(db_session).revoke_export_share_link(link_id, ADMIN, now=NOW)
+    with pytest.raises(ExportLinkRevoked):
+        door.send_code(token, RecordingSender(), now=NOW)
+
+
+def test_a_payroll_row_with_no_recipient_opens_nothing(
+    db_session: Session, local_storage: LocalFileStorage, payroll_export_id: UUID
+) -> None:
+    # Not made by any service: a row written another way is still refused.
+    raw = "a-token-written-by-hand"
+    db_session.add(
+        ExportShareLink(
+            export_id=payroll_export_id,
+            token_hash=hash_token(raw),
+            expires_at=NOW + dt.timedelta(days=1),
+            created_by_type="system",
+        )
+    )
+    db_session.flush()
+
+    with pytest.raises(ExportLinkRevoked):
+        _door(db_session, local_storage).open(raw, 1, ADDRESS, now=NOW)

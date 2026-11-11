@@ -30,6 +30,7 @@ from pigrocrm.core.accountant_export.parts import (
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.csv_cells import BOM, amount_cell, row_line, text_cell
 from pigrocrm.core.db.clock import ITALY_TZ
+from pigrocrm.core.expense_notes.models import ExpenseNote
 from pigrocrm.core.inbox.models import InboxItem
 from pigrocrm.core.staff.models import StaffMember, StaffPayslip
 
@@ -51,10 +52,22 @@ TERMS_COLUMNS = (
 HIRE_COLUMNS = ("Persona", "Data di inizio", *TERMS_COLUMNS)
 LEAVER_COLUMNS = ("Persona", "Tipo", "Data di fine")
 CHANGE_COLUMNS = ("Persona", "Data dell'ultima modifica", *TERMS_COLUMNS, "Nota")
+NOTE_COLUMNS = (
+    "Persona",
+    "Data della spesa",
+    "Descrizione",
+    "Tipo",
+    "Importo",
+    "Mese della busta paga",
+    "Stato",
+    "Approvata dall'autore",
+)
+NOTE_KINDS = {"expense": "Spesa", "mileage": "Chilometri"}
+NOTE_STATES = {"approved": "Da rimborsare", "reimbursed": "Rimborsata"}
 CHANGE_NOTE = "condizioni attuali: i valori precedenti non sono conservati"
 
 
-def _members(ctx: PartContext) -> Select[tuple[StaffMember]]:
+def _members(ctx: PartContext) -> Select[StaffMember]:
     assert ctx.legal_entity is not None
     return select(StaffMember).where(StaffMember.legal_entity_id == ctx.legal_entity.id)
 
@@ -155,8 +168,8 @@ def build_leavers(ctx: PartContext) -> PartOutput:
 
 
 def build_pay_changes(ctx: PartContext) -> PartOutput:
-    """People whose record was edited in the period and who were not hired in it, with their
-    terms as they stand and the day of the last edit."""
+    """People whose record was edited in the period and who were neither hired nor left in it,
+    with their terms as they stand and the day of the last edit."""
     assert ctx.legal_entity is not None
     output = PartOutput()
     day = cast(func.timezone(ITALY_TZ.key, Activity.occurred_at), Date)
@@ -179,11 +192,51 @@ def build_pay_changes(ctx: PartContext) -> PartOutput:
         .order_by(StaffMember.name, StaffMember.id)
     )
     for member in members:
-        if ctx.period.date_from <= member.start_date <= ctx.period.date_to:
+        # A hire and a leaver are in their own files: the edit that made them is not a change.
+        ends = member.end_date
+        if ctx.period.date_from <= member.start_date <= ctx.period.date_to or (
+            ends is not None and ctx.period.date_from <= ends <= ctx.period.date_to
+        ):
             continue
         last: dt.date = edited[member.id]
         rows.append(
             [text_cell(member.name), last.isoformat(), *_terms(member), text_cell(CHANGE_NOTE)]
         )
     _csv(output, "Variazioni di retribuzione del periodo", CHANGE_COLUMNS, rows)
+    return output
+
+
+def build_expense_notes(ctx: PartContext) -> PartOutput:
+    """The approved expense notes whose reimbursement is in the payslip of a month of the period:
+    what the payroll consultant adds to that month's payslip. A note paid by transfer is not
+    here, it is an outgoing due item to the person. `Rimborsata` is one the accepted payslip
+    already settled; one an administrator approved on their own note says so."""
+    assert ctx.legal_entity is not None
+    output = PartOutput()
+    found = ctx.session.execute(
+        select(ExpenseNote, StaffMember.name)
+        .join(StaffMember, StaffMember.id == ExpenseNote.staff_member_id)
+        .where(
+            ExpenseNote.legal_entity_id == ctx.legal_entity.id,
+            ExpenseNote.status.in_(tuple(NOTE_STATES)),
+            ExpenseNote.reimbursement_method == "payslip",
+            ExpenseNote.payroll_month >= ctx.period.date_from.replace(day=1),
+            ExpenseNote.payroll_month <= ctx.period.date_to,
+        )
+        .order_by(ExpenseNote.payroll_month, StaffMember.name, ExpenseNote.date, ExpenseNote.id)
+    )
+    rows = [
+        [
+            text_cell(name),
+            note.date.isoformat(),
+            text_cell(note.description),
+            NOTE_KINDS[note.kind],
+            amount_cell(note.amount),
+            f"{note.payroll_month:%Y-%m}" if note.payroll_month is not None else "",
+            NOTE_STATES[note.status],
+            "Sì" if note.self_approved else "No",
+        ]
+        for note, name in found
+    ]
+    _csv(output, "Note spese da rimborsare in busta paga", NOTE_COLUMNS, rows)
     return output

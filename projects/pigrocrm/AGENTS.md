@@ -571,8 +571,24 @@ from a request's `Host`. «Link condivisi» is the third tab (`?tab=links&link=`
 **Drive delivery** (`drive_delivery.py`, `ExportDriveService`, table `accountant_export_drive_writes`) copies the ZIPs under
 `commercialista/<entity-slug>/<period>/<timestamp>/` (`2026-t3`, `2026-09`, `2026`, or the two dates) when `storage_backend` is `gdrive`; with local
 storage `GET /api/accountant-export/drive` answers `local_storage` and the panel says so with no button, with Drive chosen and no account and folder
-`not_connected`. It is a person's act (`write_export_to_drive` is person only, no tool), and the 13-month deletion removes the copies too. A payroll
-export or one with payroll parts must not travel on a plain link (design § 3): neither exists yet, so the guard and the code link come with the payroll card.
+`not_connected`. It is a person's act (`write_export_to_drive` is person only, no tool), and the 13-month deletion removes the copies too.
+
+**An export says whether its period is ready, and the payroll consultant has an export of its own (REB-1048).** `accountant_export/checklist.py` is «Il periodo è pronto?»
+(design § 2): `compute_checklist` runs the seven `CHECKS` (`inbox`, `purchase_documents`, `invoice_files`, `bank_statements`, `bank_movements`, `iva_period`, `payroll`)
+over the entity's `Unit`s and answers a count of open points and the first five by name per check, never a figure. A check of a module that is off, of a pack it does
+not apply to (IVA for a flat-rate entity) or of a part not asked for (`payroll` only with `payroll_parts=["payslips"]`) is not in the list. `get_export_checklist`
+(`GET /api/accountant-export/checklist`, an administrator's, `full_access` for a token, in `FULL_ACCESS_ACTIONS`) computes it now and stores nothing; **a build computes
+it again and keeps it under `readiness` in the export's `checklist` snapshot and in a table of `indice.csv`**, so what the page showed is never trusted and a later fix
+never rewrites it (an export made before this has no `readiness`; the page then reads the missing documents, as it did). `bank/coverage.py::statement_gaps` is the
+statement check (no grace: a period is exported after the fact). **`kind="payroll_changes"` is «variazioni paghe»** (`registry.py::PAYROLL_CHANGE_PARTS`, `payroll.py`): hires
+and leavers by `start_date` and `end_date`, the people whose record was edited in the period (the timeline stamps the edit and never from what to what, so the file says
+«condizioni attuali: i valori precedenti non sono conservati») and the approved expense notes whose `payroll_month` is in the period; one company, an administrator who reads
+pay, the `staff` module, no checklist. **`payroll_parts=["payslips"]`** adds the payslips part (`PartDefinition.opt_in`, in no build unless asked and listed by
+`GET /parts` with its `opt_in` name). Either sets `accountant_exports.payroll` (migration 0106), and **an export with `payroll` has no plain link**: `create_export_share_link`
+refuses one with no `recipient_email`, and `ExportShareDoor._live` refuses a payroll row's link that has none. A link with a recipient is a **code link**: `/shared/code`
+mails six digits (`mail/export_code.py`, 15 minutes, five wrong answers burn it, one mail a minute and five an hour per link, held only as a salted hash in
+`accountant_export_link_codes`), `/shared/verify` trades the right one for a half-hour `access` (random, held as a hash), and `describe` lists no file and `download` serves
+none without it (`export_code_required` 403). The nginx location of the door names the two new routes (both vhosts).
 
 **A space mailbox's attachments reach the inbox through `BillingSink` and nothing else (REB-1016).** `inbox/mail_intake.py`
 decides from BODYSTRUCTURE which parts to fetch (an accepted extension, not inline, not a small image, not the

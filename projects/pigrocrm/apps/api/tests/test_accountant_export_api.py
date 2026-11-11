@@ -113,7 +113,7 @@ def test_the_parts_a_build_would_hold_are_listed_with_what_they_are_made_of(
     everything = logged_in.get("/api/accountant-export/parts", params={"all_entities": True})
 
     assert parts == named and parts[0]["key"] == "sales_register"
-    assert set(parts[0]) == {"key", "label", "date_rule", "contents"}
+    assert set(parts[0]) == {"key", "label", "date_rule", "contents", "opt_in"}
     assert everything.status_code == 200
     assert (
         logged_in.get(
@@ -182,3 +182,45 @@ def test_a_visitor_with_no_session_is_refused(client: TestClient) -> None:
     assert client.post("/api/accountant-export/exports", json=QUARTER).status_code == 401
     assert client.get("/api/accountant-export/exports").status_code == 401
     assert client.get("/api/accountant-export/parts").status_code == 401
+
+
+def test_the_checklist_of_a_period_is_read_with_its_counts_and_a_build_keeps_it(
+    logged_in: TestClient,
+) -> None:
+    read = logged_in.get("/api/accountant-export/checklist", params=QUARTER)
+
+    assert read.status_code == 200, read.text
+    body = read.json()
+    keys = [check["key"] for check in body["checks"]]
+    assert keys[:3] == ["inbox", "purchase_documents", "invoice_files"]
+    assert "payroll" not in keys
+    assert set(body["checks"][0]) == {"key", "label", "state", "count", "items", "more", "target"}
+    assert body["open_count"] == sum(check["count"] for check in body["checks"])
+    with_pay = logged_in.get(
+        "/api/accountant-export/checklist", params={**QUARTER, "payroll_parts": ["payslips"]}
+    )
+    assert "payroll" in [check["key"] for check in with_pay.json()["checks"]]
+    built = logged_in.post("/api/accountant-export/exports", json=QUARTER).json()
+    assert built["checklist"]["readiness"]["checks"] == body["checks"]
+    assert built["kind"] == "accountant" and built["payroll"] is False
+
+
+def test_variazioni_paghe_is_built_as_its_own_kind_and_a_payslip_part_makes_pay(
+    logged_in: TestClient,
+) -> None:
+    changes = logged_in.post(
+        "/api/accountant-export/exports", json={**QUARTER, "kind": "payroll_changes"}
+    )
+    assert changes.status_code == 201, changes.text
+    assert changes.json()["kind"] == "payroll_changes" and changes.json()["payroll"] is True
+    assert "readiness" not in changes.json()["checklist"]
+    asked = logged_in.post(
+        "/api/accountant-export/exports", json={**QUARTER, "payroll_parts": ["payslips"]}
+    )
+    assert asked.status_code == 201 and asked.json()["payroll"] is True
+    bad = logged_in.post(
+        "/api/accountant-export/exports", json={**QUARTER, "payroll_parts": ["f24"]}
+    )
+    assert bad.status_code == 422
+    parts = logged_in.get("/api/accountant-export/parts", params={"kind": "payroll_changes"})
+    assert [part["key"] for part in parts.json()][:2] == ["staff_hires", "staff_leavers"]

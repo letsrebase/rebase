@@ -19,10 +19,11 @@ const INLINE_PANEL = '(min-width: 1024px)'
  * prepares the archive of one company and one period and finds the ones already made. The tab and
  * the open export are in the URL; what the page shows is the API's to decide, an admin's alone.
  *
- * Built here: «Prepara», the form, «Esportazioni», the stored exports with their panel, the
- * download, the share link and the copy in Drive (REB-1047), and «Link condivisi», every link of
- * the space with its openings. The readiness checklist and the payroll parts follow their own data
- * cards, and until they exist nothing on the page names them.
+ * Built here: «Prepara», the form with the readiness checklist («Il periodo è pronto?») and, where
+ * the space has staff, the «Tipo» «Variazioni paghe» and the pay parts to tick (REB-1048);
+ * «Esportazioni», the stored exports with their panel, the download, the share link (with a code
+ * for an export that carries pay) and the copy in Drive (REB-1047); and «Link condivisi», every
+ * link of the space with its openings.
  */
 export function ExportPage({
   tab,

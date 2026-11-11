@@ -337,7 +337,7 @@ FORBIDDEN_SERVICE_CALLS = (
     "annul",
     "mark_transmitted_externally",
     "export_xml",
-    # `AccountantExportService`'s three and `ExportShareService`'s one, named uniquely for this scan.
+    # `AccountantExportService`'s three and `ExportShareService`'s one, named uniquely here.
     "build_accountant_export",
     "get_export_download_url",
     "get_export_checklist",

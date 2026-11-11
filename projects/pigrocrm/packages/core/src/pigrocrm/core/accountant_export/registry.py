@@ -10,6 +10,7 @@ from pigrocrm.core.accountant_export.due_items import build_open_items, build_se
 from pigrocrm.core.accountant_export.invoice_files import build_invoice_files
 from pigrocrm.core.accountant_export.parts import PartDefinition, UnavailablePart
 from pigrocrm.core.accountant_export.payroll import (
+    build_expense_notes,
     build_hires,
     build_leavers,
     build_pay_changes,
@@ -121,6 +122,16 @@ PAYROLL_CHANGE_PARTS: tuple[PartDefinition, ...] = (
         date_rule="per data della modifica",
         contents="Elenco CSV",
         build=build_pay_changes,
+        requires_modules=("staff",),
+        not_for_packs=(PACK_NON_IT,),
+    ),
+    PartDefinition(
+        key="staff_expense_notes",
+        folder="note-spese",
+        label="Note spese da rimborsare in busta paga",
+        date_rule="per mese della busta paga",
+        contents="Elenco CSV",
+        build=build_expense_notes,
         requires_modules=("staff",),
         not_for_packs=(PACK_NON_IT,),
     ),

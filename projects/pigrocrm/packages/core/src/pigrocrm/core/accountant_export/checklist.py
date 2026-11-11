@@ -21,10 +21,11 @@ the month it should cover, a payslip by the month it pays.
 import datetime as dt
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, Date, cast, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import QueryableAttribute, Session
 
 from pigrocrm.core.accountant_export.parts import Period
 from pigrocrm.core.accountant_export.repository import ExportRepository
@@ -81,7 +82,7 @@ class Unit:
     def legal_entity_id(self) -> UUID | None:
         return self.legal_entity.id if self.legal_entity is not None else None
 
-    def scope(self, column: ColumnElement[UUID | None]) -> ColumnElement[bool]:
+    def scope(self, column: QueryableAttribute[Any]) -> ColumnElement[bool]:
         """The rows of this unit: the entity's own, plus the shared ones when they are its."""
         if self.legal_entity is None:
             return column.is_(None)
@@ -124,7 +125,7 @@ class Check:
     applies: Callable[[Reading, Unit], bool] = lambda read, unit: True
 
 
-def _arrived(column: ColumnElement[dt.datetime], period: Period) -> ColumnElement[bool]:
+def _arrived(column: QueryableAttribute[Any], period: Period) -> ColumnElement[bool]:
     """The day an instant fell in Rome, inside the period."""
     day = cast(func.timezone(ITALY_TZ.key, column), Date)
     return (day >= period.date_from) & (day <= period.date_to)
@@ -170,6 +171,8 @@ def _purchase_documents(read: Reading, unit: Unit) -> list[str]:
             Purchase.status == "registered",
             Purchase.deleted_at.is_(None),
             Purchase.document_id.is_(None),
+            # A staff member's expense note keeps its own receipt, and a mileage note has none.
+            Purchase.kind != "expense_note",
             Purchase.date >= read.period.date_from,
             Purchase.date <= read.period.date_to,
         )
