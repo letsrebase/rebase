@@ -79,6 +79,7 @@ a phone in any form, and a `search_everything` hit's `field` is the kind that ma
 An organization has `roles` (`customer`, `supplier`, `freelancer`; at least one, `customer` if
 omitted): one company is one organization, and a VAT number a live one of the same country
 holds (any role) is refused, so add the missing role with `update_organization` instead.
+A `freelancer` is always a `supplier` too: the role is added for you and cannot be taken away.
 `search_organizations` shows customers unless `role` says `supplier`, `freelancer` or `any`.
 `supplier_payment_days` and `supplier_payment_end_of_month` are the terms it grants us, against
 `payment_days` and `payment_end_of_month` as a customer. `supplier_kind` is `company`,

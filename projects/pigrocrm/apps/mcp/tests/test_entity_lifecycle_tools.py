@@ -119,6 +119,26 @@ async def test_update_customer_still_applies_a_valid_changes_payload(server) -> 
     assert updated["legal_name"] == "ACME Srl"
 
 
+async def test_a_freelancer_made_by_an_agent_is_a_supplier_that_stays_one(server) -> None:
+    async with Client(server) as client:
+        made = await client.call_tool(
+            "create_organization", {"legal_name": "Giulia Verdi", "roles": ["freelancer"]}
+        )
+        assert not made.is_error, made.content
+        freelancer = _payload(made)
+        assert freelancer["roles"] == ["freelancer", "supplier"]
+
+        refused = await client.call_tool(
+            "update_organization",
+            {"organization_id": freelancer["id"], "changes": {"roles": ["freelancer"]}},
+        )
+        assert refused.is_error
+        kept = _payload(
+            await client.call_tool("get_organization", {"organization_id": freelancer["id"]})
+        )
+        assert kept["roles"] == ["freelancer", "supplier"]
+
+
 async def test_update_person_can_still_detach_via_changes(server) -> None:
     async with Client(server) as client:
         customer = _payload(await client.call_tool("create_organization", {"legal_name": "ACME"}))

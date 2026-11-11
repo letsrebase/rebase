@@ -42,6 +42,7 @@ from pigrocrm.core.organizations.duplicates import duplicate_vat_groups, ensure_
 from pigrocrm.core.organizations.merge import COVERED_COLUMNS
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.organizations.roles import VAT_UNIQUE_INDEX
+from pigrocrm.core.organizations.schemas import OrganizationCreate
 from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.pipeline.models import PipelineStage
@@ -419,13 +420,43 @@ def test_the_hub_freelancer_id_passes_to_the_survivor_unless_both_have_one(
     done = OrganizationService(db_session).merge(survivor.id, loser.id, ADMIN, dry_run=False)
     assert done.moves_hub_freelancer_id is True
     assert db_session.get_one(Organization, survivor.id).hub_freelancer_id == hub_id
-    assert db_session.get_one(Organization, survivor.id).roles == ["customer", "freelancer"]
+    # The loser is a legacy freelancer-only row: the union of roles keeps the rule (REB-1061).
+    assert db_session.get_one(Organization, survivor.id).roles == [
+        "customer",
+        "freelancer",
+        "supplier",
+    ]
     assert db_session.get_one(Organization, loser.id).hub_freelancer_id is None
 
     first = make_customer(db_session, roles=["freelancer"], hub_freelancer_id=uuid4())
     second = make_customer(db_session, roles=["freelancer"], hub_freelancer_id=uuid4())
     with pytest.raises(Conflict):
         OrganizationService(db_session).merge(first.id, second.id, ADMIN, dry_run=False)
+
+
+def test_a_merge_keeps_a_freelancer_a_supplier(db_session: Session) -> None:
+    """A freelancer that is merged into, or that absorbs, another organization is a supplier
+    after it, in the preview and in what is written (REB-1061)."""
+    service = OrganizationService(db_session)
+    freelancer = service.create(OrganizationCreate(legal_name="Ada", roles=["freelancer"]), ADMIN)
+    customer = make_customer(db_session, vat_number="01234567897")
+    preview = service.merge(customer.id, freelancer.id, ADMIN)
+    assert preview.roles == ["customer", "freelancer", "supplier"]
+    service.merge(customer.id, freelancer.id, ADMIN, dry_run=False)
+    assert db_session.get_one(Organization, customer.id).roles == [
+        "customer",
+        "freelancer",
+        "supplier",
+    ]
+
+    other = service.create(OrganizationCreate(legal_name="Grace", roles=["freelancer"]), ADMIN)
+    absorbed = make_customer(db_session, vat_number="01234567891")
+    service.merge(other.id, absorbed.id, ADMIN, dry_run=False)
+    assert db_session.get_one(Organization, other.id).roles == [
+        "freelancer",
+        "supplier",
+        "customer",
+    ]
 
 
 def test_pending_contract_proposals_follow_and_decided_ones_do_not(db_session: Session) -> None:

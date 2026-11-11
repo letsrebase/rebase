@@ -78,8 +78,7 @@ class OrganizationListParams(SortedParams, SearchParams, CustomParams):
     role: RoleFilter = Field(
         default="customer",
         description="One role (customer, supplier, freelancer), or `any` for the registry "
-        "across roles, or `customer_or_neither` for the customers and every organization that "
-        "is neither a customer nor a supplier. Customers only when omitted.",
+        "across roles. Customers only when omitted.",
     )
     supplier_kind: SafeStr | None = Field(
         default=None,

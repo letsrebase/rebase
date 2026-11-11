@@ -89,6 +89,7 @@ def test_the_hub_freelancer_id_is_one_organization_and_needs_the_role(db_session
         ADMIN,
     )
     assert created.hub_freelancer_id == hub_id
+    assert created.roles == ["freelancer", "supplier"]
 
     with pytest.raises(Conflict) as twice:
         organizations.create(
