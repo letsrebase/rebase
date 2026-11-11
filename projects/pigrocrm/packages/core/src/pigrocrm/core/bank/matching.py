@@ -64,6 +64,8 @@ from pigrocrm.core.due_items.sales import remaining_amount
 from pigrocrm.core.due_items.schedule_queries import kinds_of_modules_off
 from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.fiscal.f24_models import F24Group
+from pigrocrm.core.fiscal.f24_repository import F24GroupRepository, grouped_item_clause
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.purchases.models import Purchase
@@ -89,6 +91,9 @@ class Allocation:
     fact: ItemFacts
     amount: Decimal
     adopts: bool
+    # A tax credit of an F24 group: it reduces what the movement pays instead of being paid out
+    # of it (`amount` stays a magnitude).
+    credit: bool = False
 
 
 @dataclass(frozen=True)
@@ -103,7 +108,8 @@ class Plan:
 
     @property
     def allocated(self) -> Decimal:
-        return sum((a.amount for a in self.allocations), ZERO)
+        """What the selection takes of the movement: a credit takes its amount off."""
+        return sum((-a.amount if a.credit else a.amount for a in self.allocations), ZERO)
 
 
 @dataclass(frozen=True)
@@ -186,6 +192,7 @@ class MovementMatchService:
         self.session = session
         self.activities = ActivityService(session)
         self.due_items = DueItemService(session)
+        self.f24 = F24GroupRepository(session)
 
     # ---- reads ----------------------------------------------------------------------------
 
@@ -324,6 +331,12 @@ class MovementMatchService:
             match.confirmed_by_type = actor.type
         self.session.flush()
         rows = {row.due_item_id: row for row in self._items(match)}
+        # The group before its items, as `ungroup_f24` takes them: a group taken apart meanwhile
+        # is refused instead of leaving settled items in a dissolved group.
+        for group_id in sorted(set(self.f24.groups_of_items(rows).values()), key=str):
+            locked = self.f24.get(group_id, lock=True)
+            if locked is None or locked.state != "open":
+                raise Conflict(MATCH_ENTITY, "l'F24 e' cambiato: riprova", id=str(group_id))
         for allocation in sorted(plan.allocations, key=lambda a: str(a.fact.item.id)):
             item = allocation.fact.item
             if allocation.adopts:
@@ -333,6 +346,11 @@ class MovementMatchService:
                 settlement = self.due_items.settle_from_movement(item.id, signed, movement, actor)
             rows[item.id].settlement_id = settlement.id
             rows[item.id].adopted = allocation.adopts
+        for group_id in sorted(set(self.f24.groups_of_items(rows).values()), key=str):
+            group = self.f24.get(group_id, lock=True)
+            if group is not None and group.state == "open":
+                self.f24.settle(group, movement.id, movement.booking_date)
+                self.activities.record("f24_group", group.id, "f24_settled", actor)
         movement.state = "matched"
         self.session.flush()
         self._record_match("matched", movement, match, plan, actor)
@@ -369,6 +387,9 @@ class MovementMatchService:
         match.closed_by_type = actor.type
         match.close_reason = data.reason
         movement.state = "unmatched"
+        for group in self.f24.settled_group_of_movement(movement.id):
+            self.f24.reopen(group)
+            self.activities.record("f24_group", group.id, "f24_reopened", actor)
         self.session.flush()
         self._record_match("unmatched", movement, match, None, actor)
         self.session.commit()
@@ -425,8 +446,36 @@ class MovementMatchService:
         self, movement: BankMovement, modules: AbstractSet[str] | None
     ) -> list[MatchCandidate]:
         pool = self._open_pool(movement, modules)
-        ranked = self._rank(movement, pool, self._adoptable(movement, modules))
+        ranked = self._group_candidates(movement, modules) + self._rank(
+            movement, pool, self._adoptable(movement, modules)
+        )
         return [self._candidate(plan) for plan in ranked[:CANDIDATE_LIMIT]]
+
+    def _group_candidates(
+        self, movement: BankMovement, modules: AbstractSet[str] | None
+    ) -> list[Plan]:
+        """The open F24 groups whose net is the movement's, to the cent: an F24 settled by one
+        movement is offered as a whole, never line by line."""
+        if movement.amount >= 0:
+            return []
+        off = kinds_of_modules_off(modules)
+        plans: list[Plan] = []
+        for group in self.f24.open_groups(movement.legal_entity_id):
+            ids = [line.due_item_id for line in self.f24.live_lines(group.id)]
+            facts = facts_for_ids(self.session, ids)
+            chosen = [facts[item_id] for item_id in ids if item_id in facts]
+            if len(chosen) != len(ids) or any(
+                fact.item.currency != movement.currency
+                or fact.item.source_kind in off
+                or fact.item.state != "expected"
+                or fact.remaining != fact.item.amount
+                for fact in chosen
+            ):
+                continue
+            plan = self._group_plan(movement, chosen, group)
+            if plan.difference == 0:
+                plans.append(plan)
+        return plans
 
     def _rank(
         self, movement: BankMovement, pool: list[ItemFacts], adoptable: list[ItemFacts]
@@ -549,6 +598,7 @@ class MovementMatchService:
             raise NotFound("due_item", missing[0])
         off = kinds_of_modules_off(modules)
         chosen = [facts[item_id] for item_id in due_item_ids]
+        group = self._whole_group(due_item_ids)
         for fact in chosen:
             item = fact.item
             if item.legal_entity_id != movement.legal_entity_id:
@@ -561,7 +611,7 @@ class MovementMatchService:
                     "due_item_ids",
                     "la scadenza e' in una valuta diversa da quella del movimento",
                 )
-            if not _fits_direction(movement, item):
+            if group is None and not _fits_direction(movement, item):
                 raise ValidationFailed(
                     MATCH_ENTITY,
                     "due_item_ids",
@@ -575,7 +625,56 @@ class MovementMatchService:
                 raise Conflict(MATCH_ENTITY, "una previsione non e' ancora dovuta", id=str(item.id))
             if item.state == "dropped":
                 raise Conflict(MATCH_ENTITY, "una scadenza scartata non si salda", id=str(item.id))
+        if group is not None:
+            return self._group_plan(movement, chosen, group)
         return self._plan_of(movement, chosen)
+
+    def _whole_group(self, due_item_ids: Sequence[UUID]) -> F24Group | None:
+        """The F24 group a selection names, `None` for a selection of ungrouped items. A line of
+        a group is paid with its group: the selection is all of its lines and nothing else."""
+        grouped = self.f24.groups_of_items(due_item_ids)
+        if not grouped:
+            return None
+        group_ids = set(grouped.values())
+        group = self.f24.get(next(iter(group_ids))) if len(group_ids) == 1 else None
+        lines = {line.due_item_id for line in self.f24.live_lines(group.id)} if group else set()
+        if group is None or lines != set(due_item_ids):
+            raise ValidationFailed(
+                MATCH_ENTITY,
+                "due_item_ids",
+                "una scadenza di un F24 si abbina con tutto il suo gruppo",
+                expected="tutte e sole le scadenze del gruppo",
+            )
+        if group.state != "open":
+            raise Conflict(MATCH_ENTITY, "l'F24 e' gia' saldato", id=str(group.id))
+        return group
+
+    def _group_plan(
+        self, movement: BankMovement, chosen: Sequence[ItemFacts], group: F24Group
+    ) -> Plan:
+        """What one movement does to a whole F24: each line is paid in full, a credit counts
+        off, and the movement must equal the net, which `difference` says. The items' direction
+        is the group's (every line is owed to the tax office): only money out pays it."""
+        if movement.amount > 0:
+            raise ValidationFailed(
+                MATCH_ENTITY,
+                "due_item_ids",
+                "l'F24 si paga con un movimento in uscita",
+            )
+        for fact in chosen:
+            if fact.item.state != "expected" or fact.remaining != fact.item.amount:
+                raise Conflict(
+                    MATCH_ENTITY,
+                    "una scadenza dell'F24 e' gia' saldata, anche in parte",
+                    id=str(fact.item.id),
+                )
+        net = sum((fact.remaining for fact in chosen), ZERO)
+        difference = abs(movement.amount) - net
+        allocations = tuple(
+            Allocation(fact, abs(fact.remaining), False, credit=fact.remaining < 0)
+            for fact in sorted(chosen, key=_earliest)
+        )
+        return Plan(allocations, difference, False, [rank.ITEMS_TOTAL] if difference == 0 else [])
 
     def _plan_of(
         self,
@@ -634,15 +733,22 @@ class MovementMatchService:
 
     @staticmethod
     def _plan_items(plan: Plan) -> list[MatchItemRead]:
-        return [item_read(a.fact, a.amount, a.adopts) for a in plan.allocations]
+        return [item_read(a.fact, a.amount, a.adopts, a.credit) for a in plan.allocations]
 
     @staticmethod
     def _require_covered(plan: Plan) -> None:
-        if plan.difference != 0:
+        if plan.difference > 0:
             raise ValidationFailed(
                 MATCH_ENTITY,
                 "due_item_ids",
                 f"le scadenze indicate non coprono il movimento: mancano {plan.difference}",
+                expected="scadenze che coprono il movimento per intero",
+            )
+        if plan.difference < 0:
+            raise ValidationFailed(
+                MATCH_ENTITY,
+                "due_item_ids",
+                f"le scadenze indicate superano il movimento di {-plan.difference}",
                 expected="scadenze che coprono il movimento per intero",
             )
 
@@ -677,6 +783,8 @@ class MovementMatchService:
         off = kinds_of_modules_off(modules)
         if off:
             stmt = stmt.where(DueItem.source_kind.not_in(off))
+        # A line of an F24 group is paid with its group, which `_group_candidates` offers.
+        stmt = stmt.where(~grouped_item_clause())
         rows = [
             (item, Decimal(remaining))
             for item, remaining in self.session.execute(
@@ -778,6 +886,7 @@ class MovementMatchService:
                     due_item_id=allocation.fact.item.id,
                     legal_entity_id=match.legal_entity_id,
                     amount=allocation.amount,
+                    credit=allocation.credit,
                 )
             )
         self.session.flush()

@@ -42,6 +42,7 @@ SOURCE = {
     "tax_advance": "Acconto d'imposta",
     "chamber_fee": "Diritto camerale",
     "notice_plan": "Rata di un avviso",
+    "tax_credit": "Credito d'imposta",
     "payroll": "Paghe",
     "contract_occurrence": "Contratto",
     "recurring_expense": "Spesa ricorrente",

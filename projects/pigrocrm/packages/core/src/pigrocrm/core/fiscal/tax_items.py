@@ -97,6 +97,7 @@ from pigrocrm.core.fiscal.advances import (
     balance_date,
 )
 from pigrocrm.core.fiscal.basis import year_basis
+from pigrocrm.core.fiscal.f24_repository import F24GroupRepository
 from pigrocrm.core.fiscal.law import DeclaredTax
 from pigrocrm.core.fiscal.models import (
     DEFAULT_ADVANCE_METHOD,
@@ -112,6 +113,7 @@ from pigrocrm.core.fiscal.repository import (
     TaxInstalmentPlanRepository,
 )
 from pigrocrm.core.fiscal.schemas import FiscalProfileRead
+from pigrocrm.core.fiscal.tax_credits import TaxCreditService
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.money import round_money
 
@@ -239,6 +241,7 @@ class TaxDueItemService:
         self.dues = DueItemService(session)
         self.methods = TaxAdvanceMethodRepository(session)
         self.declared = DeclaredTaxFigureRepository(session)
+        self.groups = F24GroupRepository(session)
 
     # ---- the write --------------------------------------------------------------------------
 
@@ -274,6 +277,14 @@ class TaxDueItemService:
         )
         for payment in self._payments(context):
             self._sync(context, payment, report)
+        TaxCreditService(self.session).refresh_withholding_credits(
+            legal_entity,
+            context.pack,
+            today=context.today,
+            years=range(context.today.year - YEARS_BEFORE, context.today.year + 1),
+            in_window=lambda due: self._in_window(context, due),
+            report=report,
+        )
         return report
 
     # ---- what each payment should be --------------------------------------------------------
@@ -361,11 +372,16 @@ class TaxDueItemService:
         )
 
     def _frozen(self, kind: str, slot: UUID) -> DueItem | None:
-        """The live item of a slot when a payment touched it: it owes what it owes."""
+        """The live item of a slot when a payment touched it or it is a line of an F24 group: it
+        owes what it owes."""
         live = self._live(kind, slot)
         if live is None:
             return None
-        paid = live.state == "settled" or self.dues.repo.totals(live.id).settled != ZERO
+        paid = (
+            live.state == "settled"
+            or self.dues.repo.totals(live.id).settled != ZERO
+            or self.groups.group_of(live.id) is not None
+        )
         return live if paid else None
 
     def _live(self, kind: str, slot: UUID) -> DueItem | None:

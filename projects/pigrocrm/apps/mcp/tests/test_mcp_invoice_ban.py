@@ -121,6 +121,10 @@ FORBIDDEN = (
     "update_tax_notice_plan",
     "delete_tax_notice_plan",
     "list_tax_plans",
+    # F24 groups (REB-1076): the fiscal position and the shape of a payment, so the same.
+    "group_f24",
+    "ungroup_f24",
+    "list_f24_groups",
     # What the whole team sees (spec 2026-11-09, B1): an administrator's token with
     # `full_access`, and no other.
     "set_space_profile",
@@ -380,6 +384,10 @@ FORBIDDEN_SERVICE_CALLS = (
     "update_tax_notice_plan",
     "delete_tax_notice_plan",
     "list_tax_plans",
+    # `F24GroupService`'s three behind a tool (REB-1076), named uniquely for this scan.
+    "group_f24",
+    "ungroup_f24",
+    "list_f24_groups",
     # `StaffService`'s four, named uniquely for this scan: a bare `get` or `list` would match
     # every other service.
     "create_staff_member",

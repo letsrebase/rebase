@@ -217,6 +217,13 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "update_tax_notice_plan",
         "delete_tax_notice_plan",
         "list_tax_plans",
+        # Grouping due items into an F24, reading the groups and ungrouping (REB-1076, taxes
+        # design § 5): the fiscal position and a payment's shape, so an administrator's token with
+        # `full_access`. Settling one goes through the bank matching; linking a receipt (a file in
+        # the inbox) stays a person's step, with no agent action.
+        "group_f24",
+        "ungroup_f24",
+        "list_f24_groups",
         # The IVA settlement of a period and the due item it writes (REB-1021): the legal
         # entity's fiscal position, so an administrator's token with `full_access`.
         "settle_iva_period",
@@ -349,6 +356,9 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
 
 PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
     {
+        # Linking an F24's receipt, a file in the inbox, to its group, and taking it off (REB-1076).
+        "attach_f24_receipt",
+        "detach_f24_receipt",
         # Accounts and credentials: a token that minted tokens or administrators would
         # outlive its own revocation.
         "create_user",
@@ -553,6 +563,11 @@ ACTION_LABELS: dict[str, str] = {
     "update_tax_notice_plan": "cambiare il piano di rate di un avviso dell'erario",
     "delete_tax_notice_plan": "eliminare il piano di rate di un avviso dell'erario",
     "list_tax_plans": "leggere le rateazioni delle imposte e dei piani degli avvisi",
+    "group_f24": "raggruppare le scadenze di un giorno in un F24",
+    "ungroup_f24": "sciogliere un F24",
+    "list_f24_groups": "leggere gli F24 raggruppati",
+    "attach_f24_receipt": "collegare la ricevuta di un F24",
+    "detach_f24_receipt": "scollegare la ricevuta di un F24",
     "create_recurring_expense": "registrare una spesa ricorrente",
     "stop_recurring_expense": "terminare una spesa ricorrente",
     "settle_iva_period": "liquidare l'IVA di un periodo",

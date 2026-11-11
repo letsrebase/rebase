@@ -254,6 +254,8 @@ ENTITY_NOUN: dict[str, tuple[str, str]] = {
     "accountant_export": ("esportazione per il commercialista", "a"),
     "accountant_export_link": ("link di condivisione", "o"),
     "declared_tax_figure": ("cifra dichiarata", "a"),
+    "f24_group": ("F24", "o"),
+    "f24_group_receipt": ("ricevuta dell'F24", "a"),
     "tax_advance_method": ("metodo degli acconti", "o"),
     "tax_instalment_plan": ("piano di rate delle imposte", "o"),
     "tax_notice_plan": ("piano di rate di un avviso", "o"),

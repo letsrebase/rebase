@@ -551,7 +551,7 @@ same name, `full_access`, table `tax_advance_methods`). An item is `forecast` on
 `set_tax_advance_method`) and by the daily pass (`AutomationPass._refresh_tax_items`): an item that is as it should be is left
 alone, one that is not is dropped and recreated, one a payment touched is never changed, and the difference a paid advance leaves
 when its base moves is carried to the next item of the tax with «da confermare» in its description. A payment is created only from
-today to `HORIZON_DAYS` ahead. INPS, credits (`tax_credit`) and F24 groups are other cards.
+today to `HORIZON_DAYS` ahead. INPS is another card.
 
 **Instalment plans and notice plans are stored and write their own items (REB-1075).** `TaxInstalmentPlanService.set_tax_instalment_plan`
 (`fiscal/instalment_plan.py`; REST `PUT /api/analytics/fiscal/instalment-plan`, privileged MCP tool of the same name, `full_access`,
@@ -563,6 +563,8 @@ rewriting a payment's instalments once a payment touches one**, and the service 
 November advance is never split. `TaxNoticePlanService` (`fiscal/notice_plan.py`; `POST/PUT/DELETE /api/analytics/fiscal/notice-plans`,
 `GET .../plans`, tools `create_tax_notice_plan`, `update_tax_notice_plan`, `delete_tax_notice_plan`, `list_tax_plans`, table
 `tax_notice_plans`) stores a tax office notice typed by hand and writes its `notice_plan` items with it; the refresh never touches them.
+
+**Tax credits and F24 groups (REB-1076).** A credit is a negative due item of the restricted kind `tax_credit` (`fiscal/tax_credits.py`, table `tax_credits` carries its origin): a withholding suffered on sales (what customers kept on the invoices collected in a tax year, credited to that year's IRPEF on its balance date, only for a pack with `PaymentRulesLaw.withholding_credit`, i.e. a person on the ordinary regime; not written once a declared IRPEF figure exists, which is already net) or the IVA credit the latest settled period leaves (`IvaSettlementService`). `F24GroupService` (`fiscal/f24.py`; REST `/api/f24-groups`, privileged MCP tools `group_f24`, `ungroup_f24`, `list_f24_groups`, `full_access`) groups tax-office due items of one date, credits included, into an F24: each line keeps the pack's code (`fiscal/f24_codes.py`, frozen at grouping) or none, read «codice da verificare» (IVA 60xx, withholding 1040 and payroll codes are not in the pack). A tax forecast becomes `expected` when grouped; a grouped item is frozen (`DueItemService` refuses drop, restate, reschedule and manual settle; the tax refresh keeps it). One bank movement equal to the net settles the group: `MovementMatchService` offers an open group as a candidate and settles it as a whole (`MovementMatchItem.credit`), undo reopens it. Receipts are inbox items of kind `tax_document` linked to the group (`f24_group_receipts`).
 
 **The srl's annual chamber fee is pack data (REB-1068).** `TaxYearLaw.chamber_fee` (`fiscal/law_chamber_fee.py`) holds the 2014 tiers, the 50% cut, the chambers with the provinces they cover and their 2026 increases (20% for the 61 of the decree of 17 March 2026, plus 50% for the six Sicilian ones, Napoli none). `ChamberFeeLaw.fee(year, turnover, province)` answers whole euro and `None` for a year other than 2026, an unknown province, `BT` or `SU` (no chamber verified for them), never a guess. It computes the fee of the head office only; local units are not modelled.
 

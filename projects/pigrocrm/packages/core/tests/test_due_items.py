@@ -107,6 +107,7 @@ def test_every_source_kind_is_listed_and_the_fiscal_ones_are_a_named_subset() ->
         "tax_advance",
         "chamber_fee",
         "notice_plan",
+        "tax_credit",
         "payroll",
         "contract_occurrence",
         "recurring_expense",

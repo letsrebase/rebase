@@ -250,6 +250,23 @@ ROWS: list[Row] = [
         body={"label": "matrice-avviso"},
     ),
     Row("DELETE", "/api/analytics/fiscal/notice-plans/{plan_id}", admin_only=True),
+    # --- F24 groups (REB-1076): admin, before any lookup ----------------------------------
+    Row("GET", "/api/f24-groups", admin_only=True),
+    Row(
+        "POST",
+        "/api/f24-groups",
+        admin_only=True,
+        body={"due_item_ids": ["00000000-0000-0000-0000-000000000001"]},
+    ),
+    Row("GET", "/api/f24-groups/{group_id}", admin_only=True),
+    Row("POST", "/api/f24-groups/{group_id}/ungroup", admin_only=True),
+    Row(
+        "POST",
+        "/api/f24-groups/{group_id}/receipts",
+        admin_only=True,
+        body={"inbox_item_id": "00000000-0000-0000-0000-000000000002"},
+    ),
+    Row("DELETE", "/api/f24-groups/{group_id}/receipts/{inbox_item_id}", admin_only=True),
     # --- cost categories: admin on every method (timetracking/categories.py) --------
     # --- bank accounts (REB-1025): `require_admin` (bank/accounts.py, bank/statements.py) ---
     Row(

@@ -199,6 +199,13 @@ _FORBIDDEN: dict[Method, str] = {
     ("TaxNoticePlanService", "list_tax_plans"): (
         "REB-1075: the tax position, as `get_tax_calendar`"
     ),
+    ("F24GroupService", "group_f24"): (
+        "REB-1076: groups the day's tax due items, credits included, into one F24: the fiscal "
+        "position and the shape of a payment (taxes design § 5); the tool is on a `full_access` "
+        "token's surface only"
+    ),
+    ("F24GroupService", "ungroup_f24"): "REB-1076: same as `group_f24`",
+    ("F24GroupService", "list_f24_groups"): "REB-1076: same as `group_f24`",
     ("StaffService", "create_staff_member"): (
         "REB-977: pay is the most personal data the product holds (staff design § 4); the tool "
         "exists only on an administrator's `full_access` token"
@@ -287,6 +294,14 @@ _OUTSIDE_FROM_SIEVE: dict[Method, str] = {
 #    no-actor rule and is listed for the same reason: it is the intermediate step of
 #    `render_pdf`, not an operation of its own.
 _INTERNE: dict[Method, str] = {
+    ("TaxCreditService", "sync_iva_credit"): (
+        "REB-1076: writes the credit item of a settled IVA period, called by the IVA settlement "
+        "(`settle_iva_period`); no actor, no tool of its own"
+    ),
+    ("TaxCreditService", "refresh_withholding_credits"): (
+        "REB-1076: writes the withholding credits, called by `refresh_tax_due_items`; no actor, no "
+        "tool of its own"
+    ),
     ("TaxDueItemService", "refresh_tax_due_items"): (
         "REB-1074: the writer of the tax due items, called by the two tools that move their "
         "figures (`set_declared_tax_figure`, `set_tax_advance_method`) and by the daily pass; "
@@ -1028,6 +1043,14 @@ _BYTE: dict[Method, str] = {
 #    survive being asked why, and the only way to keep that true is to delete the ones
 #    that do not the moment the tool is written.
 _COVERED_OR_HUMAN: dict[Method, str] = {
+    ("F24GroupService", "get_f24_group"): (
+        "REB-1076: one group is the page's panel; `list_f24_groups` answers every field of it"
+    ),
+    ("F24GroupService", "attach_f24_receipt"): (
+        "REB-1076: a receipt is a file in the inbox, which bytes never enter over MCP, and the "
+        "link to the group is a person's step; `list_f24_groups` reads the receipts attached"
+    ),
+    ("F24GroupService", "detach_f24_receipt"): "REB-1076: same as `attach_f24_receipt`",
     ("ExpenseNoteService", "get_expense_note"): (
         "REB-1046: one note is the page's panel; `list_expense_notes` answers every field of it"
     ),

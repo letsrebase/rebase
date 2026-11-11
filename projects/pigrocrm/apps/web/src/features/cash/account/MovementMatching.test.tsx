@@ -50,6 +50,7 @@ function item(id: string, number: string, amount: string, over: Partial<Item> = 
     remaining: amount,
     allocated: amount,
     adopts_payment: false,
+    credit: false,
     ...over,
   }
 }
