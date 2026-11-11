@@ -110,7 +110,7 @@ test('a member scoped to one azienda sees it pinned, lists its rows alone and ge
     await expect(bPage.getByLabel('Azienda')).toContainText(LTD)
     await expect(bPage.getByRole('combobox', { name: 'Azienda' })).toHaveCount(0)
     // The organizations list: B's azienda's row and not A's.
-    await bPage.goto('/app/organizations')
+    await bPage.goto('/app/customers')
     await expect(bPage.getByText(`Ltd Cliente ${STAMP}`)).toBeVisible()
     await expect(bPage.getByText(`Studio Cliente ${STAMP}`)).toHaveCount(0)
     // By id: the other legal entity's row does not exist for B, and the one B may see does.

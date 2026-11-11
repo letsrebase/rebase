@@ -21749,8 +21749,8 @@ export interface operations {
                 sort?: string | null;
                 dir?: "asc" | "desc";
                 status?: string | null;
-                /** @description One role (customer, supplier, freelancer), or `any` for the registry across roles. Customers only when omitted. */
-                role?: "customer" | "supplier" | "freelancer" | "any";
+                /** @description One role (customer, supplier, freelancer), or `any` for the registry across roles, or `customer_or_neither` for the customers and every organization that is neither a customer nor a supplier. Customers only when omitted. */
+                role?: "customer" | "supplier" | "freelancer" | "any" | "customer_or_neither";
                 /** @description Only suppliers of this fiscal kind (company, professional, flat_rate, occasional, foreign) */
                 supplier_kind?: string | null;
                 /** @description Only this legal entity's rows; omitted, all of them */

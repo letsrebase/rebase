@@ -88,6 +88,31 @@ def test_a_list_shows_customers_unless_it_asks_for_a_role_or_for_all(db_session:
     }
 
 
+def test_the_customers_list_also_holds_what_is_neither_customer_nor_supplier(
+    db_session: Session,
+) -> None:
+    """«Clienti» (REB-1053) lists the customers and the organizations with neither role, so a
+    freelancer-only record is on a list; «Fornitori» stays the suppliers."""
+    _create(db_session, "Only customer")
+    _create(db_session, "Only supplier", roles=["supplier"])
+    _create(db_session, "Both", roles=["customer", "supplier"])
+    _create(db_session, "Freelancer", roles=["freelancer"])
+    _create(db_session, "Freelancer supplier", roles=["freelancer", "supplier"])
+    _create(db_session, "Freelancer customer", roles=["freelancer", "customer"])
+
+    assert _names(db_session, role="customer_or_neither") == {
+        "Only customer",
+        "Both",
+        "Freelancer",
+        "Freelancer customer",
+    }
+    assert _names(db_session, role="supplier") == {"Only supplier", "Both", "Freelancer supplier"}
+    # Every organization is on at least one of the two lists.
+    assert _names(db_session, role="any") == (
+        _names(db_session, role="customer_or_neither") | _names(db_session, role="supplier")
+    )
+
+
 def test_fiscal_matching_and_name_lookup_see_customers_unless_told_otherwise(
     db_session: Session,
 ) -> None:

@@ -6,7 +6,7 @@ import { queryKeys, retryUnlessMissing } from '@/lib/query'
 import { PAGE_SIZE, type EngagementBucket, type EngagementState } from './labels'
 
 /**
- * Everything the pages of «Incarichi» ask the API (REB-1035). Every read here is an
+ * Everything the pages of «Collaboratori» ask the API (REB-1035). Every read here is an
  * administrator's (`read_engagements`, `read_engagement_report`): a page asks only after the role
  * is known, so a collaborator's screen never sends a request that would be refused.
  */
@@ -64,7 +64,7 @@ export function useEngagementList(bucket: EngagementBucket | null, filters: Enga
 
 /**
  * How many engagements each tab holds, as the server counts them over everything the reader
- * sees: the number the tabs wear and `todo` is the count beside «Incarichi» in the sidebar and in
+ * sees: the number the tabs wear and `todo` is the count beside «Collaboratori» in the sidebar and in
  * «Altro». Asked every minute; a failed read draws nothing and is asked again on the next tick.
  */
 export function useEngagementCounts(enabled = true) {

@@ -5,9 +5,8 @@ import { renderFieldValue } from '@/components/DynamicFieldRenderer'
 import type { LegalEntityRecord } from '@/lib/legalEntity'
 import type { FieldDefinition } from '@/lib/schema'
 import type { Organization } from './queries'
-import { RoleChips } from './RoleChips'
 import { supplierKindText, supplierTermsShort } from './roles'
-import type { RegistryRole } from './search'
+import type { RegistryPage } from './search'
 
 const EMPTY = '—'
 
@@ -52,8 +51,8 @@ export interface OrganizationColumnOptions {
    * the same thing on every row.
    */
   legal_entities?: LegalEntityRecord[]
-  /** The registry's view the columns are for; «Clienti» (today's columns) when left out. */
-  role?: RegistryRole
+  /** The registry page the columns are for; «Clienti» (today's columns) when left out. */
+  role?: RegistryPage
 }
 
 export function buildOrganizationColumns(
@@ -90,20 +89,6 @@ export function buildOrganizationColumns(
       <span title={row.original.legal_name} className="block max-w-sm">
         <EntityCell name={row.original.legal_name} />
       </span>
-    ),
-  }
-  // «Tutte»: the same cell with the roles beside it.
-  const namedWithRoles: ColumnDef<DataTableFeatures, Organization> = {
-    ...name,
-    cell: ({ row }) => (
-      <div className="flex items-center gap-3">
-        <span title={row.original.legal_name} className="block min-w-0 max-w-sm">
-          <EntityCell name={row.original.legal_name} />
-        </span>
-        <span className="flex flex-wrap gap-1.5">
-          <RoleChips roles={row.original.roles} />
-        </span>
-      </div>
     ),
   }
   const vat: ColumnDef<DataTableFeatures, Organization> = {
@@ -155,9 +140,8 @@ export function buildOrganizationColumns(
     accessorFn: (row) => renderFieldValue(field, row.custom_fields[field.key]),
   }))
 
-  // The supplier and the all-roles views keep their own short lists (the approved brief of
-  // 2026-11-10); a tenant's custom fields are the customer's.
+  // «Fornitori» keeps its own short list (the approved brief of 2026-11-10); a tenant's custom
+  // fields are the customer's.
   if (role === 'supplier') return [name, ...legal_entity, vat, kind, terms]
-  if (role === 'any') return [namedWithRoles, ...legal_entity, vat, city, email]
   return [...native, ...custom]
 }

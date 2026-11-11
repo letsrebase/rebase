@@ -56,6 +56,8 @@ describe('ModuleGate (REB-953)', () => {
     ['/app/approvals/new', ['contracts'], 'Contratti'],
     ['/app/hours', ['time'], 'Ore'],
     ['/app/settings/cost-categories', ['purchases'], 'Acquisti'],
+    // «Fornitori» is the purchases module's page; a stale bookmark says why (REB-1053).
+    ['/app/suppliers', ['purchases'], 'Acquisti'],
     ['/app/taxes', ['taxes'], 'Tasse'],
   ] as const)('turns %s away when %j is off', (pathname, off, label) => {
     route.pathname = pathname
@@ -71,10 +73,13 @@ describe('ModuleGate (REB-953)', () => {
     expect(screen.queryByText('La pagina')).toBeNull()
   })
 
-  it('lets the core through whatever is off', () => {
-    route.pathname = '/app/organizations'
-    renderGate(['deals', 'contracts', 'time', 'purchases', 'taxes'])
-    expect(screen.getByText('La pagina')).toBeInTheDocument()
+  it('lets the core through whatever is off, «Clienti» and an organization\'s own page included', () => {
+    for (const pathname of ['/app/organizations/o1', '/app/customers']) {
+      route.pathname = pathname
+      const { unmount } = renderGate(['deals', 'contracts', 'time', 'purchases', 'taxes'])
+      expect(screen.getByText('La pagina')).toBeInTheDocument()
+      unmount()
+    }
   })
 
   it('does not turn a page away for one module off beside another that is on', () => {

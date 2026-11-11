@@ -18,12 +18,14 @@ import {
   Receipt,
   Settings,
   ShoppingCart,
+  Store,
   Users,
   Wallet,
   type LucideIcon,
 } from 'lucide-react'
+import type { RegistryPage } from '@/features/organizations/search'
 import { SETTINGS_GROUPS, type SettingsTabValue } from '@/features/settings/tabs'
-import { daysInBackground, modulesOfPath, type ModuleAccess, type ModuleKey } from '@/lib/modules'
+import { daysInBackground, modulesOfPath, type ModuleAccess } from '@/lib/modules'
 import { can, canSeeSettingsTab, type Action, type Role } from '@/lib/permissions'
 
 /**
@@ -65,7 +67,10 @@ export const SECTIONS = [
     id: 'vendite',
     caption: 'Vendite',
     items: [
-      { id: 'customers', to: '/app/organizations', label: 'Clienti', icon: Building2 },
+      // «Clienti» and «Fornitori» are a page each over the one registry (REB-1053, which reversed
+      // the single «Anagrafiche» page of REB-996). `registry` is the view an organization's own page
+      // is read as, so a supplier's page lights «Fornitori» and a customer's «Clienti».
+      { to: '/app/customers', label: 'Clienti', icon: Building2, registry: 'customer' },
       { to: '/app/people', label: 'Persone', icon: Users },
       { to: '/app/deal', label: 'Deal', icon: Handshake },
     ],
@@ -75,29 +80,23 @@ export const SECTIONS = [
     caption: 'Amministrazione',
     items: [
       { to: '/app/invoices', label: 'Fatture', icon: Receipt },
-      // The registry's supplier view (the approved brief, 2026-11-10): one page with two doors,
-      // «Clienti» in «Vendite» and «Fornitori» here, beside the purchases they are paid for.
-      // The page is the core's, so the module is named on the entry and not read from the path.
-      {
-        id: 'suppliers',
-        to: '/app/organizations',
-        search: { role: 'supplier' },
-        modules: ['purchases'],
-        label: 'Fornitori',
-        icon: Building2,
-      },
+      // The suppliers' own page (REB-1053), here beside the purchases they are paid for; the
+      // `purchases` module owns the path (`ROUTE_MODULES`), so the entry follows it.
+      { to: '/app/suppliers', label: 'Fornitori', icon: Store, registry: 'supplier' },
       { to: '/app/purchases', label: 'Acquisti', icon: ShoppingCart },
       // After «Acquisti», the order the money moves (the approved brief, 2026-11-10): shown to an
       // administrator whose space has a legal entity that settles IVA by period (`gate`).
       { to: '/app/vat', label: 'IVA', icon: Percent, action: 'list_iva_periods', gate: 'iva' },
       { to: '/app/hours', label: 'Ore', icon: Clock },
       { to: '/app/days', label: 'Giornate', icon: CalendarCheck },
-      // The freelancers' engagements (the approved brief, 2026-11-10): after «Giornate», drawn for
+      // The collaborators module's page (the approved brief, 2026-11-10): after «Giornate», drawn for
       // an administrator alone (`read_engagements`), with the count of what waits for a person beside it.
+      // It carries the module's own name, which is what Impostazioni → Moduli calls it (REB-1053);
+      // the rows it lists are still «incarichi».
       {
         to: '/app/engagements',
         action: 'read_engagements',
-        label: 'Incarichi',
+        label: 'Collaboratori',
         icon: BriefcaseBusiness,
       },
       { to: '/app/taxes', label: 'Tasse', icon: Landmark },
@@ -119,17 +118,15 @@ export const SECTIONS = [
   },
 ] as const
 
-/** One entry of a section: `to` and `search` are where it links, `modules` overrides the
- *  modules the path alone would need (an entry that opens a core page on a module's view),
- *  `action` hides it from a role that may not do it, and `id` tells apart two entries that open the same page. */
+/** One entry of a section: `to` is where it links, `action` hides it from a role that may not
+ *  do it, and `registry` marks the two registry lists, whose entry is also lit on an
+ *  organization's own page. The modules an entry needs are its path's (`ROUTE_MODULES`). */
 export interface NavItem {
-  readonly id?: string
   /** A condition the module table cannot say: the entry is drawn only when the caller's gate
    *  set holds it (`useNavGates`). */
   readonly gate?: NavGate
   readonly to: LinkTo
-  readonly search?: { readonly role: 'supplier' }
-  readonly modules?: readonly ModuleKey[]
+  readonly registry?: RegistryPage
   /** The action that decides who sees the entry, a row of `lib/permissions.ts`'s table. An entry
    *  with none is open to every role. */
   readonly action?: Action
@@ -143,23 +140,18 @@ export type NavGate = 'iva'
 
 const NO_GATES: ReadonlySet<NavGate> = new Set()
 
-/** The registry's page, which two entries open (`?role=` tells them apart). */
-export const REGISTRY_PATH = '/app/organizations'
-
-/** What tells one entry from another: its `id`, else its path. */
-export const navKey = (item: NavItem) => item.id ?? item.to
+/** An organization's own page (`/app/organizations/<id>`), which both registry lists open. */
+export const ORGANIZATION_PATH = '/app/organizations'
 
 /**
- * Whether an entry is the one the reader is on. The registry page serves two entries, so the
- * path is not enough there: «Fornitori» is the page on `?role=supplier` and «Clienti» the same
- * page on any other view. `role` is the registry view (`useRegistryView`): the URL's `?role=` on
- * the list, the organization's own roles on its page, so a supplier's page is «Fornitori» (REB-1038).
+ * Whether an entry is the one the reader is on: its own page or one below it. An organization's
+ * page belongs to no list by its path, so a registry entry is also lit there when `view`, the
+ * list the organization is read as (`useRegistryView`), is its own: a supplier's page is
+ * «Fornitori» and a customer's «Clienti» (REB-1038).
  */
-export function isNavItemActive(item: NavItem, pathname: string, role: string | undefined) {
-  if (!isUnder(pathname, item.to)) return false
-  if (item.to !== REGISTRY_PATH) return true
-  const onSuppliers = role === 'supplier'
-  return item.search?.role === 'supplier' ? onSuppliers : !onSuppliers
+export function isNavItemActive(item: NavItem, pathname: string, view: RegistryPage | undefined) {
+  if (isUnder(pathname, item.to)) return true
+  return item.registry !== undefined && view === item.registry && isUnder(pathname, ORGANIZATION_PATH)
 }
 
 /**
@@ -178,7 +170,7 @@ export function visibleSections(
     ...section,
     items: (section.items as readonly NavItem[]).filter(
       (item) =>
-        access.on(...(item.modules ?? modulesOfPath(item.to))) &&
+        access.on(...modulesOfPath(item.to)) &&
         (item.action === undefined || (role !== undefined && can(role, item.action))) &&
         (item.gate === undefined || gates.has(item.gate)),
     ),

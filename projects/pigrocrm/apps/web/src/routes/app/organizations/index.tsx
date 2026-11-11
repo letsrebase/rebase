@@ -1,29 +1,24 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { OrganizationsPage } from '@/features/organizations/OrganizationsPage'
-import { DEFAULT_REGISTRY_ROLE, parseOrganizationsSearch } from '@/features/organizations/search'
+import { createFileRoute, redirect } from '@tanstack/react-router'
+import {
+  REGISTRY_PAGE_PATHS,
+  legacyRegistryPage,
+  parseRegistrySearch,
+} from '@/features/organizations/search'
 
 /**
- * The `?search=` term is an entry point, not a live mirror of the box. The palette's
- * «vedi tutti» links here carrying the term the user searched for, and `key` makes
- * arriving with a *different* term a remount, so the filter is seeded even when this
- * route is already open. Typing afterwards stays local: pushing every keystroke through
- * the router would make a controlled input wait on a navigation to echo the character
- * back, which is how a fast typist loses characters.
+ * Old path support (REB-1053): `/app/organizations` was the one «Anagrafiche» page, with the
+ * view in `?role=`. «Clienti» and «Fornitori» have a page each now, so a bookmark or a link
+ * already sent lands on the one it meant: `?role=supplier` on «Fornitori», anything else (the
+ * retired «Tutte» tab included) on «Clienti». The `?search=` term is carried over. The
+ * organization's own page, `$organizationId.tsx`, is still here.
  */
-function OrganizationsRoute() {
-  const { search, role } = Route.useSearch()
-  return (
-    <OrganizationsPage
-      key={search ?? ''}
-      initialSearch={search ?? ''}
-      role={role ?? DEFAULT_REGISTRY_ROLE}
-    />
-  )
-}
-
 export const Route = createFileRoute('/app/organizations/')({
-  component: OrganizationsRoute,
-  // Declared so the palette can link here with a term and the sidebar with a view
-  // (`navigate({ to, search })` is typed against this).
-  validateSearch: parseOrganizationsSearch,
+  validateSearch: (search: Record<string, unknown>) => ({
+    ...parseRegistrySearch(search),
+    role: legacyRegistryPage(search),
+  }),
+  beforeLoad: ({ search }) => {
+    const { role, ...rest } = search
+    throw redirect({ to: REGISTRY_PAGE_PATHS[role], search: rest })
+  },
 })

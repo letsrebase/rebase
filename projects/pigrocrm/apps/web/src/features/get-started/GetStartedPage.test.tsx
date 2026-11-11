@@ -327,7 +327,7 @@ describe('the manual steps', () => {
       'href',
       '/app/settings/legal-entities',
     )
-    expect(steps.getByRole('link', { name: 'A mano: Clienti' })).toHaveAttribute('href', '/app/organizations')
+    expect(steps.getByRole('link', { name: 'A mano: Clienti' })).toHaveAttribute('href', '/app/customers')
     expect(steps.getAllByRole('link', { name: 'A mano: Deal' })).toHaveLength(2)
     expect(steps.getAllByRole('button', { name: 'Chiedilo all’assistente' })).toHaveLength(4)
     // Each action is described by its step, so four identical names still read apart.

@@ -75,8 +75,11 @@ export const ROUTE_MODULES: ReadonlyArray<{ path: string; modules: readonly Modu
   // open point, not an answer).
   { path: '/app/vat', modules: ['purchases'] },
   { path: '/app/settings/cost-categories', modules: ['purchases'] },
-  // collaborators: the freelancers' engagements, «Incarichi» in the sidebar and in «Altro» (the
-  // module's label is «Collaboratori»; the entry is what a person looks for, REB-1035).
+  // «Fornitori» is the registry's supplier list, its own page (REB-1053): the `purchases` module's.
+  // «Clienti» and the organization's own page, which a supplier shares, are the core's.
+  { path: '/app/suppliers', modules: ['purchases'] },
+  // collaborators: the freelancers' engagements, «Collaboratori» in the sidebar and in «Altro» (the
+  // module's own name, REB-1053; its rows are still «incarichi»).
   { path: '/app/engagements', modules: ['collaborators'] },
 ]
 

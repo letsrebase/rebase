@@ -178,14 +178,14 @@ export async function dragDealToStage(page: Page, dealName: string, stageName: s
 }
 
 /**
- * Creates a customer through the real UI (`/app/organizations` → "Nuovo cliente"), the
+ * Creates a customer through the real UI (`/app/customers` → "Nuovo cliente"), the
  * same form flow `crm.spec.ts`'s own customer-creation test drives, and returns the
  * generated, timestamp-suffixed name so a caller can find the row it just made
  * without racing any other customer already on screen.
  */
 export async function createOrganization(page: Page): Promise<string> {
   const name = `Documenti ${Date.now()}`
-  await page.goto('/app/organizations')
+  await page.goto('/app/customers')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill(name)
   await page.getByRole('button', { name: 'Salva' }).click()

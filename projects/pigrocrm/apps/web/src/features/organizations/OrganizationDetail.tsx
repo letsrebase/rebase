@@ -39,6 +39,7 @@ import { useCanWrite, useIsAdmin } from '@/lib/auth'
 import { useModules } from '@/lib/modules'
 import { RowActions } from '@/components/RowActions'
 import { RoleChips } from '@/features/organizations/RoleChips'
+import { REGISTRY_PAGE_PATHS, registryPageOf } from '@/features/organizations/search'
 import { SupplierPurchases } from '@/features/organizations/SupplierPurchases'
 import { FreelancerEngagements } from '@/features/organizations/FreelancerEngagements'
 import {
@@ -173,7 +174,7 @@ export function OrganizationDetail() {
     remove.mutate(customerId, {
       onSuccess: () => {
         toast.success('Cliente archiviato')
-        void navigate({ to: '/app/organizations' })
+        void navigate({ to: REGISTRY_PAGE_PATHS[registryPageOf(customer.roles, purchasesOn)] })
       },
       onError: (error) => {
         // A customer with active deals is refused with a 409 that names how many

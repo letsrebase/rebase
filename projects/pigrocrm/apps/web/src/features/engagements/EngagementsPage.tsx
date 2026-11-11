@@ -123,7 +123,8 @@ function StateSelect({
 }
 
 /**
- * «Incarichi» (REB-1035, the approved brief of 2026-11-10): the engagements of the space, one row
+ * «Collaboratori» (REB-1035, the approved brief of 2026-11-10, named after the module in REB-1053): the
+ * engagements of the space, which it still calls «incarichi», one row
  * each, in three disjoint tabs, «Da fare», «In corso» and «Chiusi». The tab and the filters are in
  * the URL. It is an administrator's page: anyone else who types the address reads one sentence and
  * no figure, and no request is made. A count is drawn only once it arrived, and never beside an
@@ -149,7 +150,7 @@ export function EngagementsPage() {
       <>
         <PageHeader
           icon={BriefcaseBusiness}
-          title="Incarichi"
+          title="Collaboratori"
           description="Le lettere di incarico dei freelance: dalla bozza alla firma, i giorni e i pagamenti."
         />
         <p className="px-8 pb-8 text-sm text-muted-foreground">
@@ -229,7 +230,7 @@ export function EngagementsPage() {
     <Tabs value={search.tab} onValueChange={(next) => change({ tab: next as EngagementBucket })}>
       <PageHeader
         icon={BriefcaseBusiness}
-        title="Incarichi"
+        title="Collaboratori"
         description="Le lettere di incarico dei freelance: dalla bozza alla firma, i giorni e i pagamenti."
         actions={wide ? newButton : undefined}
         tabs={

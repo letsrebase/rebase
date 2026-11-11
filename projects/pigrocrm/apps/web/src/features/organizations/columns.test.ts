@@ -169,22 +169,11 @@ describe('the columns of each registry view (the approved brief of 2026-11-10)',
     expect(read(terms!, { ...FOREIGN, supplier_payment_days: null })).toBe('—')
   })
 
-  it('Tutte: name with the role chips, P.IVA, comune and email', () => {
-    const columns = buildOrganizationColumns([], { role: 'any' })
-    expect(columns.map((column) => column.header)).toEqual(['Ragione sociale', 'P.IVA', 'Comune', 'Email'])
-    renderCell(columns[0]!, { ...BASE_CUSTOMER, roles: ['supplier', 'customer', 'freelancer'] })
-    expect(screen.getAllByText(/^(Cliente|Fornitore|Freelance)$/).map((chip) => chip.textContent)).toEqual([
-      'Cliente',
-      'Fornitore',
-      'Freelance',
-    ])
-  })
-
   it('«Azienda» follows the name on every view, from the second legal entity on', () => {
     const entities = [{ id: 'a-1', name: 'humancraft' }] as NonNullable<
       Parameters<typeof buildOrganizationColumns>[1]
     >['legal_entities']
-    for (const role of ['customer', 'supplier', 'any'] as const) {
+    for (const role of ['customer', 'supplier'] as const) {
       expect(
         buildOrganizationColumns([], { role, legal_entities: entities })
           .map((column) => column.header)
@@ -195,7 +184,7 @@ describe('the columns of each registry view (the approved brief of 2026-11-10)',
 
   it('gives the whole name as the title of the cell, which truncates it', () => {
     const name = 'Consorzio Cooperative Artigiane del Nord Est Italia e Servizi S.r.l.'
-    for (const role of ['customer', 'supplier', 'any'] as const) {
+    for (const role of ['customer', 'supplier'] as const) {
       const [first] = buildOrganizationColumns([], { role })
       const { container, unmount } = renderCell(first!, { ...BASE_CUSTOMER, legal_name: name })
       expect(container.querySelector(`[title="${name}"]`)).not.toBeNull()

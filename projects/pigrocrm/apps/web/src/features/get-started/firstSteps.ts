@@ -20,7 +20,7 @@ export type StepId = 'onboarding' | 'tax' | 'customer' | 'work' | 'document'
 export type StepTarget =
   | '/app/onboarding'
   | '/app/settings/legal-entities'
-  | '/app/organizations'
+  | '/app/customers'
   | '/app/deal'
 
 export interface FirstStep {
@@ -240,7 +240,7 @@ export function useFirstSteps(): FirstStepsState {
       id: 'customer',
       title: 'Il primo cliente',
       hint: 'Un’azienda o una persona per cui lavori. Tutto il resto parte da qui.',
-      to: '/app/organizations',
+      to: '/app/customers',
       screen: 'Clienti',
       canDo: true,
       done: value(customer),
