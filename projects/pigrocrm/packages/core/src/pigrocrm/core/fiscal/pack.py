@@ -870,6 +870,12 @@ def current_pack(pack_id: str) -> FiscalPack:
     return max(versions, key=lambda pack: int(pack.version))
 
 
+def shipped_packs() -> tuple[FiscalPack, ...]:
+    """Every pack, every version, the code ships (the tax law ledger fingerprints each,
+    `fiscal/law_ledger.py`)."""
+    return tuple(_PACKS.values())
+
+
 def known_charge_markers() -> frozenset[str]:
     """The `description_line` of every statutory charge any shipped pack declares. What a
     register reads to tell a charge's line from a fee's, whatever pack the legal entity is on
@@ -905,4 +911,5 @@ __all__ = [
     "current_pack",
     "known_charge_markers",
     "resolve_pack",
+    "shipped_packs",
 ]
