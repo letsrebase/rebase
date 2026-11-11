@@ -73,6 +73,38 @@ const ORDINARY = {
   social_security_rate: null,
 }
 
+const GROUPS = [
+  {
+    key: 'food_and_beverage_industries',
+    number: 1,
+    name: 'Industrie alimentari e delle bevande',
+    ateco_2007: ['10', '11'],
+    coefficient: '40.00',
+  },
+  {
+    key: 'professional_scientific_technical_health_and_other_services',
+    number: 9,
+    name: 'Attività professionali',
+    ateco_2007: ['69', '70'],
+    coefficient: '78.00',
+  },
+]
+
+// The REB-1070 facts, as a save sends them.
+const TAXPAYER_KEYS = [
+  'inps_category',
+  'inps_trade',
+  'inps_covered_elsewhere',
+  'inps_before_1996',
+  'flat_rate_inps_reduction',
+  'isa',
+  'ateco_group',
+  'flat_rate_start_year',
+  'startup_no_prior_activity',
+  'startup_not_a_continuation',
+  'startup_predecessor_within_limit',
+]
+
 function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -282,6 +314,8 @@ describe('FiscalPanel', () => {
       'pack_id',
       'legal_reference',
       'stamp_duty_threshold',
+      // The taxpayer facts of REB-1070, every save, so a stated one is never dropped.
+      ...TAXPAYER_KEYS,
       // The version the form was seeded from (REB-622), beside the fifteen fields.
       'updated_at',
     ].sort())
@@ -324,9 +358,10 @@ describe('FiscalPanel', () => {
       substitute_tax_rate: null,
       social_security_rate: null,
     })
-    // The same fifteen keys as an Italian save, plus the version: a full replace leaves
-    // nothing to the server's defaults, which are the forfettario's.
-    expect(Object.keys(body)).toHaveLength(16)
+    // The same keys as an Italian save, plus the version: a full replace leaves nothing to the
+    // server's defaults, which are the forfettario's. The taxpayer facts go empty.
+    expect(Object.keys(body)).toHaveLength(16 + TAXPAYER_KEYS.length)
+    for (const key of TAXPAYER_KEYS) expect(body[key]).toBeNull()
   })
 
   it('reads a stored foreign profile back as «Estero» with the Italian fields hidden', async () => {
@@ -745,5 +780,152 @@ describe('FiscalPanel', () => {
       updated_at: '2026-08-21T09:00:00Z',
     })
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+  })
+
+  describe('the taxpayer parameters (REB-1070)', () => {
+    it('shows them for the forfettario, each as «non indicato» until stated', async () => {
+      vi.mocked(api.GET).mockImplementation(() =>
+        ok({ ...PROFILE, flat_rate_groups: GROUPS }),
+      )
+      renderPanel()
+
+      await waitFor(() => expect(screen.getByLabelText('Cassa INPS')).toHaveValue(''))
+      expect(screen.getByLabelText('Soggetto agli ISA')).toHaveValue('')
+      expect(screen.getByLabelText('Attività (gruppo ATECO)')).toHaveValue('')
+      expect(screen.getByLabelText('Anno di inizio attività')).toHaveValue('')
+      expect(screen.getByLabelText(/Nessuna attività nei tre anni/)).toHaveValue('')
+      // The pairings the law makes: no gestione chosen, no trade, no 1996, no reduction.
+      expect(screen.queryByLabelText('Gestione INPS')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText(/prima del 1996/)).not.toBeInTheDocument()
+      expect(screen.queryByLabelText(/Riduzione del 35%/)).not.toBeInTheDocument()
+    })
+
+    it('lets an admin set every one and sends them typed', async () => {
+      vi.mocked(api.GET).mockImplementation(() =>
+        ok({ ...PROFILE, flat_rate_groups: GROUPS }),
+      )
+      vi.mocked(api.PUT).mockImplementation(() => ok(PROFILE))
+      renderPanel()
+
+      await userEvent.selectOptions(await screen.findByLabelText('Cassa INPS'), 'artigiani_commercianti')
+      await userEvent.selectOptions(screen.getByLabelText('Gestione INPS'), 'commercianti')
+      await userEvent.selectOptions(screen.getByLabelText(/prima del 1996/), 'true')
+      await userEvent.selectOptions(screen.getByLabelText(/Riduzione del 35%/), 'true')
+      await userEvent.selectOptions(screen.getByLabelText('Soggetto agli ISA'), 'false')
+      await userEvent.selectOptions(
+        screen.getByLabelText('Attività (gruppo ATECO)'),
+        'food_and_beverage_industries',
+      )
+      // The pack's coefficient for the group is shown and proposed in the typed field.
+      expect(screen.getByText(/dell’allegato 4: 40%/)).toBeInTheDocument()
+      expect(screen.getByLabelText('Coefficiente di redditività')).toHaveValue('40.00')
+      await userEvent.type(screen.getByLabelText('Anno di inizio attività'), '2024')
+      await userEvent.selectOptions(screen.getByLabelText(/Nessuna attività nei tre anni/), 'true')
+      await userEvent.selectOptions(screen.getByLabelText(/Non è la prosecuzione/), 'true')
+      await userEvent.selectOptions(screen.getByLabelText(/Ricavi di chi ti ha preceduto/), 'false')
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+      expect(bodyOfSave()).toMatchObject({
+        inps_category: 'artigiani_commercianti',
+        inps_trade: 'commercianti',
+        inps_covered_elsewhere: null,
+        inps_before_1996: true,
+        flat_rate_inps_reduction: true,
+        isa: false,
+        ateco_group: 'food_and_beverage_industries',
+        flat_rate_start_year: 2024,
+        startup_no_prior_activity: true,
+        startup_not_a_continuation: true,
+        startup_predecessor_within_limit: false,
+        profitability_coefficient: '40.00',
+      })
+    })
+
+    it('sends an answer that no longer applies as empty', async () => {
+      vi.mocked(api.GET).mockImplementation(() =>
+        ok({
+          ...PROFILE,
+          inps_category: 'artigiani_commercianti',
+          inps_trade: 'artigiani',
+          inps_before_1996: true,
+          flat_rate_inps_reduction: true,
+        }),
+      )
+      vi.mocked(api.PUT).mockImplementation(() => ok(PROFILE))
+      renderPanel()
+
+      await waitFor(() => expect(screen.getByLabelText('Gestione INPS')).toHaveValue('artigiani'))
+      await userEvent.selectOptions(screen.getByLabelText('Cassa INPS'), 'gestione_separata')
+      expect(screen.queryByLabelText('Gestione INPS')).not.toBeInTheDocument()
+      await userEvent.selectOptions(screen.getByLabelText(/Assicurato altrove/), 'true')
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+      expect(bodyOfSave()).toMatchObject({
+        inps_category: 'gestione_separata',
+        inps_trade: null,
+        inps_before_1996: null,
+        flat_rate_inps_reduction: null,
+        inps_covered_elsewhere: true,
+      })
+    })
+
+    it('shows the INPS facts and the ISA to the ordinary regime, and none of the forfettario ones', async () => {
+      vi.mocked(api.GET).mockImplementation(() => ok(ORDINARY))
+      renderPanel()
+
+      await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF01'))
+      expect(screen.getByLabelText('Cassa INPS')).toBeInTheDocument()
+      expect(screen.getByLabelText('Soggetto agli ISA')).toBeInTheDocument()
+      expect(screen.queryByLabelText('Attività (gruppo ATECO)')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Anno di inizio attività')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText(/Nessuna attività nei tre anni/)).not.toBeInTheDocument()
+    })
+
+    it('shows none of them for an srl, and sends them empty', async () => {
+      vi.mocked(api.GET).mockImplementation(() =>
+        ok({ ...ORDINARY, id: 'f-4', pack_id: 'it-company' }),
+      )
+      vi.mocked(api.PUT).mockImplementation(() => ok(ORDINARY))
+      renderPanel()
+
+      await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('company'))
+      expect(screen.queryByLabelText('Cassa INPS')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Soggetto agli ISA')).not.toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+      expect(bodyOfSave()).toMatchObject({ pack_id: 'it-company', inps_trade: null, ateco_group: null })
+    })
+
+    it('attaches a refusal of a fact to its field', async () => {
+      vi.mocked(api.GET).mockImplementation(() =>
+        ok({ ...PROFILE, flat_rate_groups: GROUPS }),
+      )
+      vi.mocked(api.PUT).mockImplementation(() =>
+        failed(
+          {
+            type: 'https://pigrocrm.dev/errors/validation_failed',
+            title: 'Dati non validi',
+            status: 422,
+            entity: 'fiscal_profile',
+            field: 'flat_rate_start_year',
+            reason: 'anno non valido',
+            detail: 'anno non valido',
+            code: 'validation_failed',
+          },
+          422,
+        ),
+      )
+      renderPanel()
+
+      await userEvent.type(await screen.findByLabelText('Anno di inizio attività'), '20')
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+      await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+      expect(bodyOfSave()).toMatchObject({ flat_rate_start_year: '20' })
+      expect(await screen.findByText('anno non valido')).toBeInTheDocument()
+      expect(screen.getByLabelText('Anno di inizio attività')).toHaveAttribute('aria-invalid', 'true')
+    })
   })
 })

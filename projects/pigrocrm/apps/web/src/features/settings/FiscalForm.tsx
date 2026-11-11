@@ -10,6 +10,7 @@ import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
 import { useSaveFiscalProfile, type FiscalProfile } from '@/features/invoices/queries'
 import {
+  CHOICES,
   FIELDS,
   ORDINARY_RATE,
   PACK_OF,
@@ -19,6 +20,7 @@ import {
   regimeOf,
   valuesFrom,
   withDraft,
+  type ChoiceField,
   type FiscalField,
   type Regime,
   type ValueName,
@@ -114,6 +116,19 @@ export function FiscalForm({ legalEntityId, profile }: { legalEntityId: string; 
     setStale('reloaded')
   }
 
+  // A group picked proposes its coefficient in the typed field, which stays editable: the
+  // estimate reads the typed value, and the group is the activity it was taken from.
+  function pickChoice(choice: ChoiceField, value: string) {
+    const picked =
+      choice.name === 'ateco_group'
+        ? profile?.flat_rate_groups?.find((candidate) => candidate.key === value)
+        : undefined
+    change({
+      [choice.name]: value,
+      ...(picked ? { profitability_coefficient: String(picked.coefficient) } : {}),
+    })
+  }
+
   // Reads `values` and calls the two setters outside any updater: an updater has to be
   // pure (React runs it twice in StrictMode), and the previous shape set `kept` from
   // inside one while reading `kept` from a stale closure.
@@ -185,11 +200,17 @@ export function FiscalForm({ legalEntityId, profile }: { legalEntityId: string; 
   const abroad = regime === 'foreign'
   const flat_rate = regime === 'RF19'
   const visible = FIELDS.filter((field) => field.shownFor?.includes(regime) ?? true)
+  const choices = CHOICES.filter(
+    (choice) => choice.shownFor.includes(regime) && (choice.when?.(values) ?? true),
+  )
+  const groups = profile?.flat_rate_groups ?? []
+  const group = groups.find((candidate) => candidate.key === values.ateco_group)
   // A refusal that names a field this regime does not show (a bollo value sent from
   // hidden state) has nowhere to land: it goes to the banner, never nowhere.
   const rendered = new Set<string>([
     'regime_code',
     ...visible.map((field) => field.name),
+    ...choices.map((choice) => choice.name),
     ...(flat_rate ? ['apply_stamp_duty'] : []),
   ])
   const bannered = problem && (!fieldError || !rendered.has(fieldError.field))
@@ -262,6 +283,51 @@ export function FiscalForm({ legalEntityId, profile }: { legalEntityId: string; 
         ))}
       </div>
 
+      {choices.length > 0 ? (
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-medium">Parametri del contribuente</legend>
+          <p className="text-muted-foreground text-xs">
+            Le tue risposte, non quelle della legge: finché un parametro non è indicato, la cifra
+            che lo richiede resta «non calcolabile».
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {choices.map((choice) => (
+              <div key={choice.name} className="space-y-2">
+                <Label htmlFor={`fiscal-${choice.name}`}>{choice.label}</Label>
+                <select
+                  id={`fiscal-${choice.name}`}
+                  className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+                  value={values[choice.name]}
+                  disabled={save.isPending}
+                  aria-invalid={fieldError?.field === choice.name ? true : undefined}
+                  onChange={(event) => pickChoice(choice, event.target.value)}
+                >
+                  {optionsOf(choice, groups).map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                {fieldError?.field === choice.name ? (
+                  <p className="text-destructive text-sm">{fieldError.message}</p>
+                ) : choice.name === 'ateco_group' && group ? (
+                  <p className="text-muted-foreground text-xs">
+                    Coefficiente di redditività dell’allegato 4: {Number(group.coefficient)}%. Codici
+                    ATECO 2007: {group.ateco_2007.join(', ')}.
+                  </p>
+                ) : choice.name === 'ateco_group' && groups.length === 0 ? (
+                  <p className="text-muted-foreground text-xs">
+                    L’elenco dei gruppi compare dopo il primo salvataggio del profilo.
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground text-xs">{choice.hint}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </fieldset>
+      ) : null}
+
       {flat_rate ? (
         <label className="flex items-center gap-2 text-sm">
           <Checkbox
@@ -280,4 +346,15 @@ export function FiscalForm({ legalEntityId, profile }: { legalEntityId: string; 
       </div>
     </div>
   )
+}
+
+function optionsOf(
+  choice: ChoiceField,
+  groups: readonly { key: string; number: number; name: string }[],
+): readonly { value: string; label: string }[] {
+  if (choice.options) return choice.options
+  return [
+    { value: '', label: 'Non indicato' },
+    ...groups.map((group) => ({ value: group.key, label: `${group.number}. ${group.name}` })),
+  ]
 }

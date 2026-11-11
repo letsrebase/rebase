@@ -64,6 +64,19 @@ export const FROZEN_SENTENCE =
 export const LEGEND = 'In grassetto la cifra che vale: pagato, poi dichiarato, poi stima.'
 export const MISSING_PARAMETER_SENTENCE =
   'Alcune righe sono «non calcolabile» perché manca un parametro: imposta i parametri fiscali in Impostazioni.'
+const PARAMETER_LABELS: Record<string, string> = {
+  profitability_coefficient: 'coefficiente di redditività',
+  substitute_tax_rate: 'aliquota imposta sostitutiva',
+  social_security_rate: 'aliquota INPS',
+}
+
+/** What the estimate says is missing, by the name the settings form gives it; the generic
+ *  sentence when the server names none. */
+export function missingParametersSentence(names: readonly string[] | undefined): string {
+  const labels = (names ?? []).map((name) => PARAMETER_LABELS[name] ?? name)
+  if (labels.length === 0) return MISSING_PARAMETER_SENTENCE
+  return `Alcune righe sono «non calcolabile» perché manca: ${labels.join(', ')}. Compilali nei parametri fiscali, in Impostazioni.`
+}
 export const NO_CALENDAR_SENTENCE = (year: number) =>
   `Il pacchetto fiscale di questo regime non porta ancora le date del ${year}: qui non c’è niente da mostrare. Non vuol dire che non ci sia niente da pagare.`
 export const NOTHING_DUE = 'Nessuna scadenza fiscale in vista.'

@@ -292,6 +292,22 @@ describe('«Tasse»: Imposte', () => {
     ).toBeInTheDocument()
   })
 
+  it('names the parameters the estimate says are missing', async () => {
+    answers['/api/analytics/fiscal'] = estimate({
+      missing_parameters: ['profitability_coefficient', 'social_security_rate'],
+      readings: {
+        ...estimate().readings,
+        lines: [line('substitute_tax', { estimable: true })],
+      },
+    })
+    renderPage()
+    expect(
+      await screen.findByText(
+        'Alcune righe sono «non calcolabile» perché manca: coefficiente di redditività, aliquota INPS. Compilali nei parametri fiscali, in Impostazioni.',
+      ),
+    ).toBeInTheDocument()
+  })
+
   it('does not blame a parameter for a tax the code does not estimate', async () => {
     answers['/api/analytics/fiscal'] = COMPANY
     renderPage()

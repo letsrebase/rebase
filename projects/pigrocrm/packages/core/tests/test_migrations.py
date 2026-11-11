@@ -4450,3 +4450,30 @@ def test_0106_adds_the_export_kind_the_recipient_and_the_code_table(
         assert not _column_exists(url, "accountant_exports", "payroll")
         upgrade(config, "0106")
         assert _column_exists(url, "accountant_exports", "kind")
+
+
+def test_0107_adds_the_taxpayer_facts_to_the_fiscal_profile(pigrocrm_postgres: Any) -> None:
+    """REB-1070: nine nullable columns, so a profile written before keeps reading as «not
+    stated»; it reverses and comes back."""
+    columns = (
+        "inps_trade",
+        "inps_covered_elsewhere",
+        "inps_before_1996",
+        "flat_rate_inps_reduction",
+        "ateco_group",
+        "flat_rate_start_year",
+        "startup_no_prior_activity",
+        "startup_not_a_continuation",
+        "startup_predecessor_within_limit",
+    )
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0106")
+        assert not any(_column_exists(url, "fiscal_profile", name) for name in columns)
+        upgrade(config, "0107")
+        assert all(_column_exists(url, "fiscal_profile", name) for name in columns)
+        downgrade(config, "0106")
+        assert not any(_column_exists(url, "fiscal_profile", name) for name in columns)
+        upgrade(config, "0107")
+        assert _column_exists(url, "fiscal_profile", "inps_trade")

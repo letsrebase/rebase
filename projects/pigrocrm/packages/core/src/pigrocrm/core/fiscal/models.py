@@ -12,6 +12,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -123,6 +124,22 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
     # decides 50/50 or 40/60 advances (A5, verified).
     inps_category: Mapped[str | None] = mapped_column(String(30), default=None)
     isa: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    # REB-1070: the taxpayer facts the wave-1 law needs, each `None` = not stated (no figure,
+    # never a guess). INPS (`InpsYearLaw.contributions`): which gestione of
+    # `artigiani_commercianti`, insured elsewhere or a pensioner (gestione separata's lower
+    # rate), contributions before 1996 (the older ceiling) and the flat-rate 35% reduction
+    # election. Flat-rate regime (`law_flat_rate`): the annex 4 group of the activity (the
+    # coefficient it carries is the pack's), the year the activity started and the three
+    # conditions of c. 65 for the start-up rate, each answered as satisfied or not.
+    inps_trade: Mapped[str | None] = mapped_column(String(20), default=None)
+    inps_covered_elsewhere: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    inps_before_1996: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    flat_rate_inps_reduction: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    ateco_group: Mapped[str | None] = mapped_column(String(60), default=None)
+    flat_rate_start_year: Mapped[int | None] = mapped_column(SmallInteger, default=None)
+    startup_no_prior_activity: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    startup_not_a_continuation: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    startup_predecessor_within_limit: Mapped[bool | None] = mapped_column(Boolean, default=None)
     # REB-1021, suppliers design § 6: how often the legal entity settles its IVA. Only a pack
     # with a periodic IVA reads it (`FiscalPack.law_for(year).iva`); on the others it stays
     # `monthly` and means nothing. Quarterly is an option the entity exercises in its annual
@@ -135,6 +152,9 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
         CheckConstraint(
             "inps_category IN ('gestione_separata', 'artigiani_commercianti')",
             name="ck_fiscal_profile_inps_category",
+        ),
+        CheckConstraint(
+            "inps_trade IN ('artigiani', 'commercianti')", name="ck_fiscal_profile_inps_trade"
         ),
         CheckConstraint(
             "iva_frequency IN ('monthly', 'quarterly')", name="ck_fiscal_profile_iva_frequency"
