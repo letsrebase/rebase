@@ -460,8 +460,7 @@ calendar year a payment or a filing falls in, read through `payment_rules_for(ye
 penalty and the legal interest on a shortfall, the F24 code of each line of `F24Line` (a tax code or an INPS causale,
 `f24_code(line)`), the dates the returns are filed and the year a withholding suffered is credited.
 `fiscal/payment_rules.py` holds the pure lookups (`instalment_schedule`, `instalment_interest_percent`,
-`return_filing_date`); they compute no tax and write no due item. The flat-rate substitute tax's advances are
-`substitute_tax_advances` of the `it-flat-rate` entry, IRPEF's own figures with ISA never 50/50. Every figure names its
+`return_filing_date`); they compute no tax and write no due item. Every figure names its
 primary source and the day it was read (in the entry's own `source` or in the docstring of its law) and is a «verified»
 row of the frame's A5 register; a rule no primary source states (the last instalment of a company with another year end,
 the IRAP return of a person, the withholding credit of a company) is not in the pack and is on the accountant's list

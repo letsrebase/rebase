@@ -276,34 +276,6 @@ def test_a_pack_cannot_carry_one_line_or_one_form_twice() -> None:
         )
 
 
-# --- the flat-rate substitute tax advances ---------------------------------------------
-
-
-def test_the_substitute_tax_advances_are_irpefs_and_never_the_isa_fifty_fifty() -> None:
-    standard = IT_STANDARD_PACK.law_for(2026)
-    assert standard is not None and standard.advances is not None
-    advances = _rules(IT_FLAT_RATE_PACK).substitute_tax_advances
-    assert advances is not None
-    assert advances.advance_percent_of_base == standard.advances.advance_percent_of_base == 100
-    assert (advances.first_advance_percent, advances.second_advance_percent) == (40, 60)
-    # The flat-rate regime is outside ISA, so a profile's `isa` flag reads 40/60 as well.
-    assert (advances.first_advance_percent_isa, advances.second_advance_percent_isa) == (40, 60)
-    assert advances.no_advance_at_or_below == standard.advances.no_advance_at_or_below
-    assert advances.single_november_payment_below == standard.advances.single_november_payment_below
-    assert advances.no_advance_at_or_below == Decimal("51.65")
-    assert advances.single_november_payment_below == Decimal("257.52")
-    # 40% of the single-payment threshold is the 103 euro the law names for the first instalment.
-    assert advances.single_november_payment_below * advances.first_advance_percent / 100 == Decimal(
-        "103.008"
-    )
-    flat_deferral = _rules(IT_FLAT_RATE_PACK).deferral
-    assert advances.deferral_surcharge_percent == flat_deferral.surcharge_percent
-    assert advances.deferral_window_days == _rules(IT_FLAT_RATE_PACK).deferral.window_days
-    # Only the flat-rate regime has substitute tax advances; the others carry their own.
-    assert _rules(IT_STANDARD_PACK).substitute_tax_advances is None
-    assert _rules(IT_COMPANY_PACK).substitute_tax_advances is None
-
-
 # --- filing dates --------------------------------------------------------------------------
 
 

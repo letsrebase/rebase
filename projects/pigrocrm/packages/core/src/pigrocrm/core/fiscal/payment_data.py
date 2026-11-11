@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from pigrocrm.core.fiscal.law import IncomeTaxAdvanceLaw, MonthDay
+from pigrocrm.core.fiscal.law import MonthDay
 from pigrocrm.core.fiscal.law_payment import (
     DeferralLaw,
     F24Code,
@@ -90,31 +90,6 @@ FORECAST_COMPANY = ForecastAdvanceLaw(
 # --- a withholding suffered -------------------------------------------------------------
 
 WITHHOLDING_CREDIT = WithholdingCreditLaw(alternative_in_year_after_before_filing=True)
-
-# --- the advances of the flat-rate substitute tax ----------------------------------------
-
-# Source: L. 190/2014 art. 1 c. 64, last sentence («Si applicano le disposizioni in materia di
-# versamento dell'imposta sui redditi delle persone fisiche», Agenzia delle Entrate's text of
-# commi 54-89, read 2026-11-11); Agenzia, circolare 10/E of 4 April 2016 § 4 («Gli acconti ed il
-# saldo dell'imposta sostitutiva ... sono versati con le modalità ed entro i termini ordinari
-# stabiliti per il versamento degli acconti e del saldo IRPEF ... Si applicano, quindi, tutte le
-# disposizioni vigenti in materia di versamenti a saldo ed in acconto, compensazione e rateazione
-# dell'IRPEF»). The figures are therefore IRPEF's (`IT_STANDARD_PACK`). The 50/50 split of the
-# taxpayers under ISA is not the flat-rate taxpayer's: the ISA general instructions 2026 (period
-# 2025), «cause di esclusione» lett. e), exclude «i contribuenti che si avvalgono del regime
-# forfetario agevolato», so the ISA percentages carry the ordinary 40/60 and a profile's `isa` flag
-# can never turn a substitute-tax advance into 50/50.
-IT_FLAT_RATE_ADVANCES = IncomeTaxAdvanceLaw(
-    advance_percent_of_base=Decimal("100"),
-    first_advance_percent=Decimal("40"),
-    second_advance_percent=Decimal("60"),
-    first_advance_percent_isa=Decimal("40"),
-    second_advance_percent_isa=Decimal("60"),
-    no_advance_at_or_below=Decimal("51.65"),
-    single_november_payment_below=Decimal("257.52"),
-    deferral_surcharge_percent=Decimal("0.40"),
-    deferral_window_days=30,
-)
 
 # --- F24 codes --------------------------------------------------------------------------
 
@@ -383,7 +358,6 @@ IT_FLAT_RATE_PAYMENT_2026 = PaymentRulesLaw(
     shortfall=SHORTFALL,
     f24_codes=(*_SUBSTITUTE_TAX_CODES, _INTEREST_ERARIO_CODE, *_INPS_CODES),
     filings=(_PF_FILING,),
-    substitute_tax_advances=IT_FLAT_RATE_ADVANCES,
 )
 
 IT_COMPANY_PAYMENT_2026 = PaymentRulesLaw(
@@ -404,7 +378,6 @@ IT_COMPANY_PAYMENT_2026 = PaymentRulesLaw(
 
 __all__ = [
     "IT_COMPANY_PAYMENT_2026",
-    "IT_FLAT_RATE_ADVANCES",
     "IT_FLAT_RATE_PAYMENT_2026",
     "IT_STANDARD_PAYMENT_2026",
 ]

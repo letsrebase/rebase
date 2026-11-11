@@ -30,7 +30,7 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
-from pigrocrm.core.fiscal.law import IncomeTaxAdvanceLaw, MonthDay
+from pigrocrm.core.fiscal.law import MonthDay
 
 _CENT = Decimal("0.01")
 _DAYS_IN_A_MONTH = 30  # the commercial method counts every month as thirty days
@@ -366,8 +366,8 @@ class WithholdingCreditLaw:
 @dataclass(frozen=True)
 class PaymentRulesLaw:
     """The payment rules that govern the calendar years from `from_year` until the next entry
-    of the same pack. A section a regime has no rule for is `None` (the withholding credit, the
-    substitute tax advances) or an empty tuple (the filings, the F24 codes)."""
+    of the same pack. A section a regime has no rule for is `None` (the withholding credit) or an
+    empty tuple (the filings, the F24 codes)."""
 
     from_year: int
     instalments: InstalmentLaw
@@ -377,9 +377,6 @@ class PaymentRulesLaw:
     f24_codes: tuple[F24Code, ...]
     filings: tuple[ReturnFilingRule, ...]
     withholding_credit: WithholdingCreditLaw | None = None
-    # The advances of the flat-rate regime's substitute tax (A5, REB-1067): IRPEF's own payment
-    # rules, read the same way as `TaxYearLaw.advances` of the ordinary regime.
-    substitute_tax_advances: IncomeTaxAdvanceLaw | None = None
 
     def f24_code(self, line: F24Line) -> F24Code:
         """The code of `line`; `KeyError` when the pack's regime owes no such line."""
