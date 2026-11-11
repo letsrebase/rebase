@@ -466,6 +466,20 @@ row of the frame's A5 register; a rule no primary source states (the last instal
 the IRAP return of a person, the withholding credit of a company) is not in the pack and is on the accountant's list
 (REB-975).
 
+**The flat-rate law and each regime's income basis are pack data (REB-1066).** `TaxYearLaw.flat_rate` (`fiscal/law_flat_rate.py`)
+holds annex 4 of L. 190/2014 by ATECO 2007 group (`ANNEX_4`, the nine groups and six distinct coefficients), the 15% and
+5% substitute rates with c. 65's start-up conditions, what each rate applies to and the substitute tax advances (from 2026
+only); `TaxYearLaw.income_basis` (`fiscal/law_income_basis.py`) says cash for a person (art. 54 TUIR) and for the flat-rate
+regime (c. 64) and accrual for an srl (art. 83 and 109 TUIR), each with the law's wording. The flat-rate pack has three
+entries because the law changed twice: 2015 (start-up relief is a third off the income), 2016 (a 5% rate) and 2026 (the
+advances were read that year). **The estimate follows c. 64's order:** the INPS contributions are owed on the flat-rate
+income, are deducted from it, and the substitute tax rate applies to the rest (`FiscalEstimate.substitute_tax_base`
+echoes it). Before REB-1066 the contributions were taken on the income less the substitute tax, which no source supports;
+the total to set aside and the net income moved by at most two cents of rounding, the split between the two lines moved. A profile coefficient that is
+not in annex 4 is a `coefficient_warning` on the estimate and never a refusal, so a profile saved earlier keeps working;
+a rule that moves a figure an estimate has shown says so in the pull request with a worked example. The basis is data
+only: the revenue the estimate reads still sums issued invoices until REB-1071 builds one revenue figure per basis.
+
 **«Tasse» draws what the server says and adds nothing (REB-1026).** `GET /api/analytics/fiscal` answers `readings`
 (`fiscal/readings.py`): one line per tax the pack lists for the year (`TaxYearLaw.taxes`, taxes design § 1), each with its
 `estimate`, `declared` (the typed return's tax due) and `paid` (no source writes one yet, so always `null`), the reading that

@@ -508,9 +508,14 @@ def test_the_fiscal_report_is_labelled_an_estimate_in_its_own_payload(
     assert "Stima indicativa" in body["warning"]
     assert body["revenue"] == "400.00"
     assert body["taxable_amount"] == "268.00"
-    assert body["substitute_tax"] == "13.40"
-    assert body["contributions"] == "66.37"
-    assert body["estimated_net_income"] == "320.23"
+    # The contributions are owed on the taxable amount and deducted from it, and the substitute
+    # tax is owed on what is left (L. 190/2014 art. 1 c. 64): 268.00 * 0.2607 = 69.8676, then
+    # (268.00 - 69.87) * 0.05 = 9.9065.
+    assert body["contributions"] == "69.87"
+    assert body["substitute_tax_base"] == "198.13"
+    assert body["substitute_tax"] == "9.91"
+    assert body["estimated_net_income"] == "320.22"
+    assert body["coefficient_warning"] is None
 
 
 # --- the one writer -----------------------------------------------------------------

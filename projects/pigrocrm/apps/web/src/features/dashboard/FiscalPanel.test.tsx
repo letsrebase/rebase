@@ -40,10 +40,11 @@ const estimate = (overrides: Record<string, unknown> = {}) => ({
   revenue: '100000.00',
   profitability_coefficient: '67.00',
   taxable_amount: '67000.00',
+  substitute_tax_base: '49533.10',
   substitute_tax_rate: '5.00',
-  substitute_tax: '3350.00',
+  substitute_tax: '2476.66',
   social_security_rate: '26.07',
-  contributions: '16593.56',
+  contributions: '17466.90',
   estimated_net_income: '80056.44',
   ...overrides,
 })
@@ -104,10 +105,25 @@ describe('FiscalPanel', () => {
     expect(screen.getByText('67,00 %')).toBeInTheDocument()
     expect(screen.getByText('67.000,00 €')).toBeInTheDocument()
     expect(screen.getByText('5,00 %')).toBeInTheDocument()
-    expect(screen.getByText('3.350,00 €')).toBeInTheDocument()
+    expect(screen.getByText('2.476,66 €')).toBeInTheDocument()
     expect(screen.getByText('26,07 %')).toBeInTheDocument()
-    expect(screen.getByText('16.593,56 €')).toBeInTheDocument()
+    expect(screen.getByText('17.466,90 €')).toBeInTheDocument()
+    // The contributions come off the income before the substitute tax rate applies (L.
+    // 190/2014 art. 1 c. 64), so the base the rate was applied to is a line of its own.
+    expect(screen.getByText('Imponibile al netto dei contributi')).toBeInTheDocument()
+    expect(screen.getByText('49.533,10 €')).toBeInTheDocument()
     expect(screen.queryByText(/non calcolabile/i)).not.toBeInTheDocument()
+  })
+
+  it('says so when the coefficient is not one of the law\'s', async () => {
+    vi.mocked(api.GET).mockImplementation(() =>
+      ok(estimate({ coefficient_warning: 'Il coefficiente 70% non è tra quelli della legge.' })),
+    )
+    renderPanel()
+
+    expect(await screen.findByText(/non è tra quelli della legge/)).toBeInTheDocument()
+    // A note and not a refusal: the figures are still drawn.
+    expect(screen.getByText('80.056,44 €')).toBeInTheDocument()
   })
 
   it('shows a line as not computable when its parameter is missing', async () => {
@@ -118,6 +134,7 @@ describe('FiscalPanel', () => {
           revenue: '1000.00',
           profitability_coefficient: null,
           taxable_amount: null,
+          substitute_tax_base: null,
           substitute_tax_rate: null,
           substitute_tax: null,
           social_security_rate: null,

@@ -52,6 +52,8 @@ from pigrocrm.core.fiscal.law import (
     TaxYearLaw,
 )
 from pigrocrm.core.fiscal.law_chamber_fee import CHAMBER_FEE_LAW
+from pigrocrm.core.fiscal.law_flat_rate import FLAT_RATE_2015, FLAT_RATE_2016, FLAT_RATE_2026
+from pigrocrm.core.fiscal.law_income_basis import COMPANY_ACCRUAL, FLAT_RATE_CASH, PERSON_CASH
 from pigrocrm.core.fiscal.law_inps import INPS_2026, InpsYearLaw
 from pigrocrm.core.fiscal.law_irap import IRAP_LAW
 from pigrocrm.core.fiscal.law_payment import PaymentRulesLaw
@@ -565,24 +567,42 @@ IT_FLAT_RATE_PACK = FiscalPack(
         ),
     ),
     charges=(SOCIAL_SECURITY_SURCHARGE_INPS,),
-    # The regime's start year and one arithmetic for every year are TO VERIFY (A5 row «The
-    # flat-rate regime exists from 1 January 2015...»): the estimate has always applied the
-    # same arithmetic to every year, so one entry from the regime's own first year keeps its
-    # figures as they were, and a year before it has no law and so no figure.
-    # Its contribution base is the formula `analytics/fiscal.py` carried
-    # over from the previous system: TO VERIFY with the accountant (A5 row «Flat-rate
-    # contribution base...», REB-975), as are the rest of the estimate's rows (the 5%/15%
-    # substitute rate, the profitability coefficients, the profile's INPS rate the estimate reads
-    # (the INPS law itself is `inps` below), the cash basis of the revenue). Its substitute tax
-    # advances are in `payment_rules` (REB-1067), from 2026, the year their sources were read.
+    # The regime exists from 1 January 2015 (L. 190/2014 art. 1 c. 54-89, Normattiva text in
+    # force from 1-1-2015, read 2026-11-11), so a year before it has no law and so no figure.
+    # The law is the same in every year except two things, which is why there are three
+    # entries (`fiscal/law_flat_rate.py` says what each one holds and where it was read): the
+    # start-up relief of c. 65, a reduction of the income by a third until 2015 and a 5% rate
+    # from 2016 (L. 208/2015 art. 1 c. 111), and the substitute tax advances, verified for
+    # 2026 (the page was read in 2026).
+    # The basis of the revenue is cash (c. 64 and the Agenzia's instructions). The estimate's
+    # contribution rule (the INPS contributions are owed on the flat-rate income and
+    # are then deducted from it before the substitute tax, c. 64) is settled in the same
+    # module. The INPS law itself is `inps` below. The split of the substitute tax advances is
+    # `flat_rate.advances` (from 2026, REB-1066); `payment_rules` (REB-1067) holds the
+    # instalments, F24 codes and filing dates and no split. Still TO VERIFY (A5, REB-975):
+    # whether the INPS surcharge lines stay out of the revenue.
     laws=(
         TaxYearLaw(
             from_year=2015,
-            contribution_base="taxable_amount_net_of_substitute_tax",
+            flat_rate=FLAT_RATE_2015,
+            income_basis=FLAT_RATE_CASH,
             # The payroll dates are those of every employer: the sources were read in 2026 and
             # the provisions are older (D.Lgs. 241/1997 art. 18, now art. 32 and 8 of D.Lgs.
-            # 33/2025), so the entry does not wait for 2026. A reading frozen under this entry
-            # keeps its `law_year` of 2015, which a second entry would have moved.
+            # 33/2025), so the entry does not wait for 2026.
+            payroll=ITALIAN_PAYROLL,
+            taxes=("substitute_tax", "inps"),
+        ),
+        TaxYearLaw(
+            from_year=2016,
+            flat_rate=FLAT_RATE_2016,
+            income_basis=FLAT_RATE_CASH,
+            payroll=ITALIAN_PAYROLL,
+            taxes=("substitute_tax", "inps"),
+        ),
+        TaxYearLaw(
+            from_year=2026,
+            flat_rate=FLAT_RATE_2026,
+            income_basis=FLAT_RATE_CASH,
             payroll=ITALIAN_PAYROLL,
             taxes=("substitute_tax", "inps"),
         ),
@@ -630,6 +650,8 @@ IT_STANDARD_PACK = FiscalPack(
             # IRPEF brackets of art. 11 TUIR (L. 199/2025) and the regional surcharges of every
             # region, read on 2026-11-11 (A5, REB-1062): `fiscal/irpef_2026.py`.
             irpef=IRPEF_2026,
+            # The ordinary person's income is measured on what was collected (art. 54 c. 1 TUIR).
+            income_basis=PERSON_CASH,
             advances=IncomeTaxAdvanceLaw(
                 advance_percent_of_base=Decimal("100"),
                 first_advance_percent=Decimal("40"),
@@ -665,7 +687,7 @@ IT_STANDARD_PACK = FiscalPack(
 # card lands: IVA is C3's, the annual chamber of commerce fee is `chamber_fee` (REB-1068), the
 # payroll and director rows are C7's, and the company's advance split is the estimate card's (its
 # instalments, F24 codes and filing dates are `payment_rules`, REB-1067). No income estimate:
-# `contribution_base` is the flat-rate regime's.
+# `flat_rate` is the flat-rate regime's.
 # The entry starts in 2026, the year the rates below were read; an earlier year has no law in
 # this pack yet, and asks for none.
 IT_COMPANY_PACK = FiscalPack(
@@ -677,6 +699,8 @@ IT_COMPANY_PACK = FiscalPack(
         TaxYearLaw(
             from_year=2026,
             taxes=("ires", "irap"),
+            # A company's income accrues (art. 83 and 109 TUIR; IRAP, art. 5 D.Lgs. 446/1997).
+            income_basis=COMPANY_ACCRUAL,
             company_tax=CompanyTaxLaw(
                 # D.P.R. 917/1986 (TUIR), art. 77 c. 1, read on Normattiva on 2026-11-10 (A5).
                 ires_rate=Decimal("24.00"),

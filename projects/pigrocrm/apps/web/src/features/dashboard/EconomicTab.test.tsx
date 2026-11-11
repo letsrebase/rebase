@@ -293,6 +293,26 @@ describe('EconomicTab', () => {
     )
   })
 
+  it('says a line of the estimate is not computable instead of showing a zero', async () => {
+    // Without the INPS rate neither the contributions nor the substitute tax (owed on the
+    // income less the contributions) have a figure, and the total is not drawn either.
+    const missing = {
+      ...TAX,
+      substitute_tax: null,
+      contributions: null,
+      social_security_rate: null,
+      estimated_net_income: null,
+      due_total: null,
+    }
+    vi.mocked(api.GET).mockImplementation(
+      byPath({ ...RESPONSE, tax: missing, projected_tax: missing }) as never,
+    )
+    renderTab()
+    const total = await screen.findByRole('group', { name: 'Totale da saldare' })
+    expect(total).toHaveTextContent('imposta sostitutiva non calcolabile · INPS non calcolabile')
+    expect(total).not.toHaveTextContent('0,00 €')
+  })
+
   it('shows the fiscal estimate on collected and projected revenue', async () => {
     vi.mocked(api.GET).mockImplementation(byPath(RESPONSE) as never)
     renderTab()

@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { RadioGroup } from 'radix-ui'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
+import { NOT_COMPUTABLE } from '@/features/analytics/format'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { useModules } from '@/lib/modules'
 import { Button } from '@rebase/ui/button'
@@ -31,6 +32,13 @@ function yearOf(period: Period): number {
 
 function due(estimate: FiscalEstimate | null): string {
   return estimate?.due_total ? money(estimate.due_total) : '—'
+}
+
+/** A line of the estimate, or «non calcolabile» when its parameter is missing: the
+ *  substitute tax needs the INPS rate too (it is owed on the income less the
+ *  contributions), and a `0,00 €` would read as «you owe nothing». */
+function estimated(value: string | null): string {
+  return value === null ? NOT_COMPUTABLE : money(value)
 }
 
 /** What the opening sentence says the tab shows, for the modules that are on. */
@@ -245,7 +253,7 @@ export function EconomicTab({
             <BigNumber
               label="Totale da saldare"
               value={due(tax)}
-              hint={`imposta sostitutiva ${money(tax.substitute_tax ?? '0.00')} · INPS ${money(tax.contributions ?? '0.00')}`}
+              hint={`imposta sostitutiva ${estimated(tax.substitute_tax)} · INPS ${estimated(tax.contributions)}`}
             />
             {/* The revenue the estimate was actually computed on, from the estimate
                 itself: under the accrual reading `cassa.proiettato` can be a different

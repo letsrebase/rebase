@@ -296,6 +296,14 @@ class FiscalEstimate(BaseModel):
     # Substitute tax plus contributions: the one figure a person actually has to set
     # aside. Computed here, once, so no screen adds the two lines up on its own.
     due_total: Decimal | None = None
+    # REB-1066: what the substitute tax rate was applied to, the taxable amount less the INPS
+    # contributions deducted from it (L. 190/2014 art. 1 c. 64), so a reader can see why the
+    # tax is not the rate times the taxable amount. `None` when the taxable amount or the
+    # contributions are.
+    substitute_tax_base: Decimal | None = None
+    # REB-1066: set when the profile's coefficient is not one of the annex 4 coefficients of the
+    # year's law. A note, never a refusal: the figures above are still computed from it.
+    coefficient_warning: str | None = None
     # REB-974: what the figures were computed with. The pack the legal entity's profile
     # pointed at, its version and the year its law entry starts (`None` when the pack has no
     # law for the year, and then every figure above is `None`).
