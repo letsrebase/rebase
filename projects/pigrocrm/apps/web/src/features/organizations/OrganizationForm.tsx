@@ -325,11 +325,13 @@ export function OrganizationForm({
   const vatKey = normaliseVat(settledVat)
   const lookup = useOrganizationsByVat(settledVat, open && vatChanged && vatKey.length >= 4)
   // The number «Salva» sent, until the server refuses it or the form opens again: a lookup that
-  // was already on its way when «Salva» was pressed can answer after the create commits and would
-  // name the record this very form just saved («Esiste già: <itself>», REB-1056). After a
-  // refusal the catch is back, since the duplicate may then be real.
+  // was already on its way when «Salva» was pressed, or that the debounce only starts after it,
+  // can answer after the create commits and would name the record this very form just saved
+  // («Esiste già: <itself>», REB-1056). The typed number is kept, not the debounced one, since
+  // «Salva» can come before the typing settles. After a refusal the catch is back, since the
+  // duplicate may then be real.
   const [sentVat, setSentVat] = useState<string | null>(null)
-  const awaitingSave = sentVat !== null && sentVat === vatKey && !problem
+  const awaitingSave = sentVat !== null && sentVat === normaliseVat(vatText) && !problem
   const duplicates =
     vatChanged && !awaitingSave && vatKey === normaliseVat(vatText)
       ? (lookup.data?.items ?? []).filter(
@@ -477,7 +479,7 @@ export function OrganizationForm({
     const contactPoints = pointsForRequest(drafts, initialDrafts)
     if (contactPoints !== undefined) body.contact_points = contactPoints
 
-    setSentVat(vatKey)
+    setSentVat(normaliseVat(vatText))
     onSubmit(body)
   }
 
