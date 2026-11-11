@@ -529,10 +529,17 @@ the entity left the flat-rate pack is served as it was.
 reading only and say how many lines they leave out. A figure that does not exist is `null`, never zero, and `estimable` tells a
 tax the code has no estimate for (its rule is «to verify») from one whose profile parameter is missing. The dates are
 `GET /api/analytics/fiscal/calendar` (an administrator's, module `taxes`). The `it-company` pack carries its own calendar (REB-1033): IVA as the ordinary regime's, IRES and IRAP balance and advances, withholding on pay to others, the chamber of commerce fee date; the income-tax and fee dates are `calendar_year_only` rules, and `tax_calendar(pack, year, calendar_year_end=...)` is the one function any caller reads a pack's dates through (the tax-calendar read passes the legal entity's year end), so a legal entity with another year end gets no date that is wrong. `features/taxes/` holds the page (`/app/taxes`,
-tabs «Imposte» and «Scadenze», one light page with no tabs for a solo flat-rate space) and the Home's next two dates
+tabs «Imposte», «Scadenze» and «Rate», one light page with no tabs for a solo flat-rate space) and the Home's next two dates
 (`HomeTaxDates`: a block after «Quando arrivano i soldi» on the solo Home, under its first figure on a phone, and a band under «Da fare» on the company Home at every width); the folder
-is under `no-browser-arithmetic.test.ts`, so nothing there parses an amount. «Rate», the F24 chip and the date's state pill wait
-for the due items and plans that would drive them, and typing a declared figure is its own screen.
+is under `no-browser-arithmetic.test.ts`, so nothing there parses an amount. «Scadenze» merges the
+pack's dates with the year's tax due items (`useTaxDueItems`: `GET /api/due-items`, open and settled, tax items only), each with its
+amount and state pill («Previsto», «Da pagare», «Scaduto», «Pagato»; a day with items drops the pack's line for the taxes the items
+cover); «Rate» lists the instalment plans and the notice plans (`GET /fiscal/plans`) with the instalments' items; the tax panel
+changes the advance method (`FiscalEstimate.advance_method`) and the June instalments, and «Nuovo piano» enters a notice's plan.
+A carried difference that waits («da confermare» in the description) shows as `DueItemRead.carry_to_confirm` and an administrator
+confirms it with `DueItemService.confirm_tax_carry` (REST `POST /api/due-items/{id}/carry-confirmation`, no MCP tool, column
+`due_items.carry_confirmed_at`, timeline `tax_carry_confirmed`); a rewritten item asks again. A date's net, the F24 chip and typing a
+declared figure wait for their own cards.
 
 **IRAP of an srl is pack data (REB-1065).** `CompanyTaxLaw.irap` (`fiscal/law_irap.py`) holds the base (`IrapBaseItem`: which items of sections A and B of art. 2425 c.c. add, are deducted or are left out, art. 5 c. 1 D.Lgs. 446/1997), the deductions of art. 11 (permanent staff cost, the flat deduction for staff who are not permanent, the small-base table of c. 4-bis, and `small_base_deduction`), the territorial rule of art. 4 and the 2026 ordinary rate of every region and autonomous province (`rate_for(year, region)`, keyed by ISTAT region code with `BZ` and `TN` apart; the caller takes the region from the place data of the address). The lookup answers `None` for a year or key it has no row for, never a guess. The module docstring names the simplification the estimate has to make (revenue, purchases and staff cost instead of the income statement) and what is not modelled: the rates of special subjects and the regional reductions that depend on the company.
 

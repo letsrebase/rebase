@@ -62,6 +62,7 @@ const estimate = (overrides: Record<string, unknown> = {}) => ({
   law_from_year: 2015,
   frozen: false,
   reading: 'estimate',
+  advance_method: 'historical',
   declared: [],
   readings: {
     lines: [
@@ -219,6 +220,8 @@ beforeEach(() => {
   answers = {
     '/api/analytics/fiscal': estimate(),
     '/api/analytics/fiscal/calendar': CALENDAR,
+    '/api/due-items': { items: [], next_cursor: null },
+    '/api/analytics/fiscal/plans': { legal_entity_id: 'le-1', instalment_plans: [], notice_plans: [] },
   }
   vi.mocked(api.GET).mockReset()
   vi.mocked(api.GET).mockImplementation(((path: string) => {
@@ -352,7 +355,14 @@ describe('«Tasse»: Imposte', () => {
     answers['/api/analytics/fiscal'] = {
       ...COMPANY,
       declared: [],
-      basis: { label: 'Ricavi e costi di competenza del 2026' },
+      basis: {
+        label: 'Ricavi e costi di competenza del 2026',
+        wording: 'quello che è maturato nell’anno',
+        period_from: '2026-01-01',
+        period_to: '2026-12-31',
+        assumptions: [],
+        left_out: [],
+      },
       company: {
         ires: tax('8832.00', '36800.00', '24.00', [
           ['revenue', 'Ricavi di competenza', '100000.00'],
@@ -490,10 +500,10 @@ describe('«Tasse»: Imposte', () => {
     expect(requests('/api/analytics/fiscal')).toHaveLength(1)
   })
 
-  it('opens on «Imposte» with «Scadenze» beside it, and no «F24» tab', async () => {
+  it('opens on «Imposte» with «Scadenze» and «Rate» beside it, and no «F24» tab', async () => {
     renderPage()
     await screen.findByText(WARNING)
-    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Imposte', 'Scadenze'])
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Imposte', 'Scadenze', 'Rate'])
     expect(screen.getByRole('tab', { name: 'Imposte' })).toHaveAttribute('aria-selected', 'true')
   })
 })
@@ -510,7 +520,6 @@ describe('«Tasse»: Scadenze', () => {
     expect(rows[0]).toHaveTextContent('Saldo 2025 e primo acconto 2026')
     expect(rows[1]).toHaveTextContent('30/11/2026')
     expect(rows[1]).toHaveTextContent('tra 20 giorni')
-    expect(rows[1]).toHaveTextContent('non calcolabile')
     expect(screen.getByText('Le date sono quelle del pacchetto fiscale, salvo proroghe.')).toBeInTheDocument()
   })
 
@@ -573,7 +582,7 @@ describe('«Tasse»: a solo flat-rate space', () => {
     answers['/api/analytics/fiscal'] = estimate({ pack_id: 'it-standard', law_from_year: 2026 })
     renderPage({ profile: 'solo' })
     await screen.findByText(WARNING)
-    expect(screen.getAllByRole('tab')).toHaveLength(2)
+    expect(screen.getAllByRole('tab')).toHaveLength(3)
   })
 })
 

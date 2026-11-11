@@ -2,19 +2,47 @@ import { useState } from 'react'
 import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
-import { NOT_COMPUTABLE } from '@/features/analytics/format'
+import { StatusPill } from '@/components/StatusPill'
+import { moneyIn } from '@/features/cash/money'
 import { formatIsoDateItalian } from '@/lib/dates'
+import {
+  CARRY_LABEL,
+  TAX_ITEM_STATE_LABEL,
+  TAX_ITEM_STATE_TONE,
+  itemTitle,
+  taxItemState,
+} from './items'
 import { NAMES_ITSELF, dateLabel, distanceLabel, taxOfDate, type DueDay } from './dates'
 
 /** Past this many rows the list says «Mostra altri» (brief, «Many»): a year holds a few dozen at
  *  most. */
 export const PAGE_ROWS = 25
 
-/** The lines a day holds. An IVA line already says IVA in its own words; the other taxes name
- *  themselves beside it. A past day is muted, the day itself and what lies ahead are not. */
-function Lines({ day, past }: { day: DueDay; past: boolean }) {
+/** The lines a day holds. The pack's own lines name the date and the tax beside it (an IVA
+ *  line already says IVA); each due item (a balance, an advance, an instalment, the chamber fee)
+ *  names itself, with its amount and its state as the server gives them. A past day is muted, the
+ *  day itself and what lies ahead are not. */
+function Lines({ day, today, compact }: { day: DueDay; today: string; compact: boolean }) {
+  const past = day.date < today
   return (
-    <div className="space-y-0.5">
+    <div className="space-y-1.5">
+      {day.items.map((item) => {
+        const state = taxItemState(item, today)
+        return (
+          <div key={item.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <p className={cn('text-sm', past && state !== 'overdue' && 'text-muted-foreground')}>
+              {itemTitle(item)}
+            </p>
+            <span className="flex items-center gap-2">
+              {compact ? null : (
+                <span className="text-sm tabular-nums">{moneyIn(item.amount, item.currency)}</span>
+              )}
+              <StatusPill tone={TAX_ITEM_STATE_TONE[state]}>{TAX_ITEM_STATE_LABEL[state]}</StatusPill>
+              {item.carry_to_confirm ? <StatusPill tone="gold">{CARRY_LABEL}</StatusPill> : null}
+            </span>
+          </div>
+        )
+      })}
       {day.entries.map((entry) => (
         <p key={`${entry.tax}-${entry.kind}`} className={cn('text-sm', past && 'text-muted-foreground')}>
           {dateLabel(entry)}
@@ -29,9 +57,10 @@ function Lines({ day, past }: { day: DueDay; past: boolean }) {
 
 /**
  * The calendar of one year: a row per day, past ones muted, each with its distance from today
- * («tra 6 giorni»), the lines it holds and its amount. No tax due item carries a net for a date
- * yet, so the amount reads «non calcolabile»; the F24 chip and the state pill come with the due
- * items that would drive them. `compact` is the flat-rate page's section: date and lines only.
+ * («tra 6 giorni») and the lines it holds, each due item with its own amount and state pill and a
+ * «Da confermare» mark when a carried difference waits. A date's net is the server's and exists
+ * only with an F24 group, so no sum is drawn here. `compact` is the flat-rate page's section: date
+ * and lines only.
  */
 export function DatesTable({
   days,
@@ -59,8 +88,7 @@ export function DatesTable({
             <TableHeader>
               <TableRow>
                 <TableHead>Scadenza</TableHead>
-                <TableHead>Cosa</TableHead>
-                {compact ? null : <TableHead className="text-right">Importo</TableHead>}
+                <TableHead>Cosa e quanto</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -88,13 +116,8 @@ export function DatesTable({
                     <p className="text-xs text-muted-foreground">{distanceLabel(today, day.date)}</p>
                   </TableCell>
                   <TableCell>
-                    <Lines day={day} past={day.date < today} />
+                    <Lines day={day} today={today} compact={compact} />
                   </TableCell>
-                  {compact ? null : (
-                    <TableCell className="whitespace-nowrap text-right tabular-nums text-muted-foreground">
-                      {NOT_COMPUTABLE}
-                    </TableCell>
-                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -118,10 +141,7 @@ export function DatesTable({
                     · {distanceLabel(today, day.date)}
                   </span>
                 </p>
-                <Lines day={day} past={day.date < today} />
-                {compact ? null : (
-                  <p className="text-sm text-muted-foreground tabular-nums">{NOT_COMPUTABLE}</p>
-                )}
+                <Lines day={day} today={today} compact={compact} />
               </button>
             </li>
           ))}

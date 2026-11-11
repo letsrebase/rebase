@@ -1,5 +1,6 @@
 import { daysBetweenIso, isoYearMonth } from '@/lib/dates'
 import type { TaxCalendarEntry } from './labels'
+import type { TaxDueItem } from './queries'
 
 /**
  * The pack's tax dates as the Home and «Tasse» draw them (REB-1026). Nothing here is an amount:
@@ -77,23 +78,45 @@ export function lineText(entry: TaxCalendarEntry): string {
   return NAMES_ITSELF.has(entry.tax) ? dateLabel(entry) : `${dateLabel(entry)} · ${taxOfDate(entry)}`
 }
 
-/** One day on which something falls due, with the lines it holds. */
+/** The taxes whose payments the due items now carry: on a day that holds their items the pack's
+ *  line for the same payment is not drawn twice (the item says what it is and what it owes). */
+const WRITTEN_AS_ITEMS: ReadonlySet<TaxName> = new Set<TaxName>([
+  'income_tax',
+  'substitute_tax',
+  'ires',
+  'irap',
+  'chamber_fee',
+])
+
+/** One day on which something falls due: the pack's lines and, for the taxes whose payments are
+ *  due items, the items themselves (a balance, an advance, an instalment, the chamber fee). */
 export interface DueDay {
   date: string
   entries: TaxCalendarEntry[]
+  items: TaxDueItem[]
 }
 
-/** The entries of one calendar, grouped by the day they fall due, in time order. */
-export function groupByDueDate(entries: readonly TaxCalendarEntry[]): DueDay[] {
-  const days = new Map<string, TaxCalendarEntry[]>()
-  for (const entry of entries) {
-    const day = days.get(entry.due_date)
-    if (day) day.push(entry)
-    else days.set(entry.due_date, [entry])
+/** The entries of one calendar and the due items of the same year, grouped by the day they fall
+ *  due, in time order. A day with items drops the pack's lines of the taxes the items cover. */
+export function groupByDueDate(
+  entries: readonly TaxCalendarEntry[],
+  items: readonly TaxDueItem[] = [],
+): DueDay[] {
+  const days = new Map<string, DueDay>()
+  const day = (date: string): DueDay => {
+    let found = days.get(date)
+    if (!found) {
+      found = { date, entries: [], items: [] }
+      days.set(date, found)
+    }
+    return found
   }
-  return [...days.entries()]
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([date, list]) => ({ date, entries: list }))
+  for (const item of items) if (item.due_date !== null) day(item.due_date).items.push(item)
+  for (const entry of entries) {
+    const found = day(entry.due_date)
+    if (found.items.length === 0 || !WRITTEN_AS_ITEMS.has(entry.tax)) found.entries.push(entry)
+  }
+  return [...days.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
 }
 
 /** The first `limit` days on or after `today` that carry a date. */

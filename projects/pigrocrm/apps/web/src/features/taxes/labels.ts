@@ -97,3 +97,29 @@ export function packLine(estimate: Pick<FiscalEstimate, 'pack_id' | 'pack_versio
     estimate.law_from_year == null ? '' : `, legge in vigore dal ${estimate.law_from_year}`
   return `Pacchetto fiscale ${estimate.pack_id}, versione ${estimate.pack_version ?? '?'}${law}${regime ? ` (${regime})` : ''}`
 }
+
+export type AdvanceMethodName = 'historical' | 'forecast'
+
+/** The two ways to compute a year's advances, as the server names them (`historical` is the
+ *  default), each with the sentence under it. Which figure each one reads is the server's: the
+ *  words only say it. */
+export const ADVANCE_METHOD_LABELS: Record<AdvanceMethodName, { label: string; hint: string }> = {
+  historical: {
+    label: 'Storico',
+    hint: 'Sull’imposta dichiarata dell’anno prima, o sulla sua stima se non c’è un dichiarato.',
+  },
+  forecast: {
+    label: 'Previsionale',
+    hint: 'Sulla stima dell’anno in corso.',
+  },
+}
+
+/** The income taxes a June payment can be split for (the server refuses any other). */
+export const INCOME_TAXES: readonly Tax[] = ['irpef', 'substitute_tax', 'ires', 'irap']
+
+export const PLANS_EMPTY_SENTENCE =
+  'Qui compaiono i piani di rate: quelli che scegli per il saldo e il primo acconto di giugno e quelli di un avviso dell’Agenzia delle Entrate.'
+export const NOT_WRITTEN_SENTENCE = (count: number) =>
+  count === 1
+    ? 'Un pagamento non è stato scritto: manca una cifra o un parametro.'
+    : `${count} pagamenti non sono stati scritti: manca una cifra o un parametro.`
