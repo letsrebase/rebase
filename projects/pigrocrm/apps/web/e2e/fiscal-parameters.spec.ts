@@ -23,7 +23,7 @@ test('an admin sets the taxpayer parameters from the fiscal form', async ({ page
   try {
     await page.goto('/app/settings/legal-entities')
     await page.getByRole('tab', { name }).click()
-    await expect(page.getByLabel('Regime')).toHaveValue('RF19')
+    await expect(page.getByLabel('Regime', { exact: true })).toHaveValue('RF19')
 
     await page.getByLabel('Cassa INPS').selectOption('artigiani_commercianti')
     await page.getByLabel('Gestione INPS').selectOption('commercianti')
@@ -63,7 +63,7 @@ test('an admin sets the taxpayer parameters from the fiscal form', async ({ page
     await expect(page.getByLabel(/Ricavi di chi ti ha preceduto/)).toHaveValue('false')
 
     // The ordinary regime keeps the INPS facts and the ISA flag and drops the flat-rate ones.
-    await page.getByLabel('Regime').selectOption('RF01')
+    await page.getByLabel('Regime', { exact: true }).selectOption('RF01')
     await expect(page.getByLabel('Gestione INPS')).toHaveValue('commercianti')
     await expect(page.getByLabel('Anno di inizio attività')).toHaveCount(0)
     await expect(page.getByLabel('Attività (gruppo ATECO)')).toHaveCount(0)

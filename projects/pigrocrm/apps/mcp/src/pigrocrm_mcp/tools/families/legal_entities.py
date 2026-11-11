@@ -77,13 +77,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         a code from another pack is rejected), `profitability_coefficient`,
         `substitute_tax_rate` and `social_security_rate` as percentages (flat-rate only),
         `payment_method` (SdI code, `MP05` bank transfer), `due_days`, `iban`, VAT
-        and stamp duty parameters. Taxpayer facts, each `null` = not stated and kept when left
-        out: `inps_category`, `isa`, `inps_trade` (`artigiani`/`commercianti`),
-        `inps_covered_elsewhere`, `inps_before_1996`, `flat_rate_inps_reduction`, `ateco_group`
-        (annex 4 group key, listed in `describe_fiscal_profile`'s `flat_rate_groups`),
-        `flat_rate_start_year` and the c. 65 answers `startup_no_prior_activity`,
-        `startup_not_a_continuation`, `startup_predecessor_within_limit`; a pack that does not
-        read one refuses a value (INPS facts: flat-rate and `it-standard`; the rest: flat-rate).
+        and stamp duty parameters. Taxpayer facts (INPS, ISA, ATECO): kept when left out.
         """
         return invoices.update_fiscal_profile(context, data, legal_entity_id)
 
