@@ -797,10 +797,9 @@ def register(
         method: Literal["historical", "forecast"],
         legal_entity_id: str | None = None,
     ) -> dict[str, Any]:
-        """Chooses how a tax year's advances are computed, admin only: `historical` (default) on
-        the previous year's declared tax or estimate, `forecast` on this year's estimate. It
-        moves the tax due items and answers which payments lack a figure. With several
-        companies pass `legal_entity_id`.
+        """Chooses a tax year's advance method, admin only: `historical` (default, last year's tax)
+        or `forecast` (this year's estimate). Moves the tax due items. Several companies: pass
+        `legal_entity_id`.
         """
         data = TaxAdvanceMethodSet(year=year, method=method)
         return (
