@@ -8,7 +8,7 @@ import datetime as dt
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from test_reminders_space import NOON, Space, _admin
+from test_reminders_space import NOON, SETTINGS, Space, _admin
 from test_reminders_space import space as space  # noqa: F401, PLC0414
 
 from pigrocrm.core.actor import Actor
@@ -21,6 +21,8 @@ from pigrocrm.core.reminders.catalogue import Severity
 from pigrocrm.core.reminders.detectors.tax_dates import figure_subject
 from pigrocrm.core.reminders.preferences import ReminderPreferenceService
 from pigrocrm.core.reminders.schemas import ReminderPreferenceWrite
+from pigrocrm.core.reminders.service import ReminderService
+from pigrocrm.core.space_settings import SpaceSetting
 
 DUE = dt.date(2026, 11, 30)
 AMOUNT = "1234.56"
@@ -215,3 +217,77 @@ def test_the_occurrence_is_one_per_entity_tax_and_year() -> None:
     assert figure_subject(entity, "irpef", 2025) == figure_subject(entity, "irpef", 2025)
     assert figure_subject(entity, "irpef", 2025) != figure_subject(entity, "irpef", 2026)
     assert figure_subject(entity, "irpef", 2025) != figure_subject(entity, "ires", 2025)
+
+
+def test_a_recomputed_item_keeps_its_reminders_identity(space: Space) -> None:
+    first = _item(space)
+    day = DUE - dt.timedelta(days=3)
+    before = {r.key for r in space.evaluate(today=day, now=NOON).reminders}
+    # The tax writer drops a changed item and writes a new row for the same slot.
+    first.state = "dropped"
+    again = _item(space)
+    again.source_id = first.source_id
+    space.session.flush()
+
+    after = {r.key for r in space.evaluate(today=day, now=NOON).reminders}
+
+    assert {k for k in before if k.startswith("tax_payment_due")} == {
+        k for k in after if k.startswith("tax_payment_due")
+    }
+
+
+def test_the_titles_name_the_legal_entity(space: Space) -> None:
+    _item(space)
+    entity = space.session.get(LegalEntity, space.legal_entity)
+    assert entity is not None
+
+    evaluation = space.evaluate(today=DUE - dt.timedelta(days=3), now=NOON)
+
+    reminder = next(r for r in evaluation.reminders if r.type == "tax_payment_due")
+    assert reminder.title.endswith(entity.name)
+
+
+def test_an_agent_credential_without_full_access_is_not_shown_the_tax_reminders(
+    space: Space,
+) -> None:
+    _item(space)
+    _old_entity(space)
+    day = FILED + dt.timedelta(days=5)
+    _item(space, due=day + dt.timedelta(days=3))
+    service = ReminderService(space.session, SETTINGS)
+
+    def types(actor: Actor) -> set[str]:
+        return {r.type for r in service.list(actor, today=day, now=NOON)}
+
+    admin = Actor(id=space.owner.id, type="user", role="admin")
+    token = Actor(id=space.owner.id, type="mcp", role="admin", full_access=False)
+    full = Actor(id=space.owner.id, type="mcp", role="admin", full_access=True)
+    tax = {"tax_payment_due", "tax_figure_missing"}
+
+    assert tax <= types(admin)
+    assert tax <= types(full)
+    assert not tax & types(token)
+
+
+def test_a_figure_for_another_year_or_tax_does_not_silence_the_missing_one(space: Space) -> None:
+    _old_entity(space)
+    service = DeclaredTaxFigureService(space.session)
+    for tax, year in (("substitute_tax", 2024), ("irpef", 2025)):
+        service.set_declared_tax_figure(
+            DeclaredTaxFigureSet(tax=tax, year=year, tax_due=Decimal("100.00")),  # type: ignore[arg-type]
+            _admin(),
+            legal_entity_id=space.legal_entity,
+        )
+
+    assert _missing(space, FILED + dt.timedelta(days=5)) != {}
+
+
+def test_both_types_are_skipped_while_the_taxes_module_is_off(space: Space) -> None:
+    _item(space)
+    _old_entity(space)
+    space.session.add(SpaceSetting(key="module_taxes", value="false"))
+    space.session.flush()
+
+    evaluation = space.evaluate(today=FILED + dt.timedelta(days=5), now=NOON)
+
+    assert not {"tax_payment_due", "tax_figure_missing"} & evaluation.ran

@@ -398,6 +398,10 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
 }
 
 
+# The types that name a tax and its date: read only where the fiscal position is (taxes design § 5).
+TAX_FIGURE_TYPES: frozenset[str] = frozenset({"tax_payment_due", "tax_figure_missing"})
+
+
 def reminder_key(type_key: str, subject_id: object) -> str:
     """`type:subject-id`, the identity of one occurrence and what acknowledge, snooze and
     the ledger are keyed by."""

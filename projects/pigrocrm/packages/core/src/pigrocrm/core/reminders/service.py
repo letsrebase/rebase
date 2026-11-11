@@ -18,7 +18,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.errors import Conflict
-from pigrocrm.core.reminders.catalogue import REMINDER_TYPES, SEVERITY_RANK
+from pigrocrm.core.reminders.catalogue import REMINDER_TYPES, SEVERITY_RANK, TAX_FIGURE_TYPES
 from pigrocrm.core.reminders.dispatch import IN_APP
 from pigrocrm.core.reminders.engine import ReminderEngine
 from pigrocrm.core.reminders.models import ReminderDelivery
@@ -45,6 +45,10 @@ class ReminderService:
         mine = ReminderEngine(self.session, self.settings).reminders_of(
             actor.id, today=today, now=now
         )
+        if not actor.reads_pay:
+            # A tax date is the fiscal position (taxes design § 5): an agent credential
+            # without `full_access` does not read it, here as anywhere else.
+            mine = [reminder for reminder in mine if reminder.type not in TAX_FIGURE_TYPES]
         states = states_for(self.session, [actor.id])
         delivered_at: dict[tuple[str, date | None], datetime] = {
             (row.key, row.period): row.delivered_at

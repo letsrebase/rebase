@@ -17,10 +17,10 @@ schedule, which draws it overdue.
 **`tax_figure_missing`** is one reminder per legal entity, income tax and tax year whose return
 the pack says is filed (`fiscal/law_payment.py`, `return_filing_date`) and for which no declared
 figure was typed once that date has passed; its measure is the days since the filing date.
-Only the latest tax year whose filing date has passed is looked at, so a legal entity is never
-told about years before it used the product, and a legal entity created after the filing date
-is not asked for it. A tax whose return the pack carries no rule for raises nothing: there is
-no date to measure from, and none is guessed.
+Only the latest tax year whose filing date has passed is looked at, so a legal entity is not
+told about older years, and one created after that filing date is not asked for it (one created
+before it is, whatever the year the return covers). A tax whose return the pack carries no rule
+for raises nothing: there is no date to measure from, and none is guessed.
 """
 
 from __future__ import annotations
@@ -80,6 +80,10 @@ def _tax_name(tax: str | None) -> str:
     return _LABELS.get(tax, tax.upper())
 
 
+def _entity_names(ctx: DetectorContext) -> dict[UUID, str]:
+    return {row.id: row.name for row in ctx.session.scalars(select(LegalEntity))}
+
+
 # -- tax_payment_due ----------------------------------------------------------------------
 
 
@@ -95,6 +99,7 @@ def detect_payment_due(ctx: DetectorContext) -> list[Detection]:
         )
         .order_by(DueItem.due_date, DueItem.id)
     )
+    entity_names = ctx.once(_entity_names)
     found: list[Detection] = []
     for item in rows:
         recipients = admins_seeing(ctx, item.legal_entity_id)
@@ -105,10 +110,15 @@ def detect_payment_due(ctx: DetectorContext) -> list[Detection]:
         found.append(
             Detection(
                 type="tax_payment_due",
-                subject_id=item.id,
+                # The slot, not the row: a recomputed item is dropped and rewritten under a new
+                # id, and the acknowledgement and delivery must survive it.
+                subject_id=item.source_id or item.id,
                 measure=float(days),
                 recipients=recipients,
-                title=f"{name} da pagare il {_day(item.due_date)}",
+                title=(
+                    f"{name} da pagare il {_day(item.due_date)}: "
+                    f"{entity_names[item.legal_entity_id]}"
+                ),
                 detail=(
                     f"{name} scade il {_day(item.due_date)}, fra {format_days(days)}: "
                     "l'importo è nello scadenzario"
@@ -178,7 +188,7 @@ def detect_figure_missing(ctx: DetectorContext) -> list[Detection]:
                     subject_id=figure_subject(legal_entity.id, tax, year),
                     measure=float(days),
                     recipients=recipients,
-                    title=f"Cifra dichiarata mancante: {name} {year}",
+                    title=f"Cifra dichiarata mancante: {name} {year}, {legal_entity.name}",
                     detail=(
                         f"La dichiarazione {year} andava presentata entro il {_day(due)} e non "
                         f"c'è la cifra dichiarata di {name}: inseriscila, o resta la stima"
