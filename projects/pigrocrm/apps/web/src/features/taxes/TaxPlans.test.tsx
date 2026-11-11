@@ -256,16 +256,14 @@ describe('«Tasse»: Scadenze with the due items', () => {
     renderPage('dates')
     await userEvent.click(await screen.findByRole('row', { name: /30\/11\/2026/ }))
     const panel = await screen.findByRole('complementary', { name: 'Scadenza aperta' })
-    const before = vi.mocked(api.GET).mock.calls.filter(([path]) => path === '/api/due-items').length
+    const dueItemReads = () =>
+      (vi.mocked(api.GET).mock.calls as unknown as Array<[string]>).filter(([path]) => path === '/api/due-items').length
+    const before = dueItemReads()
     await userEvent.click(within(panel).getByRole('button', { name: 'Segna come pagato' }))
     await waitFor(() =>
       expect(api.POST).toHaveBeenCalledWith('/api/due-items/{item_id}/settlements', expect.anything()),
     )
-    await waitFor(() =>
-      expect(vi.mocked(api.GET).mock.calls.filter(([path]) => path === '/api/due-items').length).toBeGreaterThan(
-        before,
-      ),
-    )
+    await waitFor(() => expect(dueItemReads()).toBeGreaterThan(before))
   })
 
   it('offers no confirmation for an item with nothing to confirm', async () => {
