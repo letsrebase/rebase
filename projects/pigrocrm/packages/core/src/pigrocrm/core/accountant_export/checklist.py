@@ -251,8 +251,8 @@ def _has_periodic_iva(read: Reading, unit: Unit) -> bool:
 
 
 def _iva(read: Reading, unit: Unit) -> list[str]:
-    """The IVA periods the export's days touch that nobody closed: one still running, or one
-    that has ended and is not closed. A pack with no IVA by period answers no periods."""
+    """The IVA periods the export's days touch that have ended and that nobody closed. A pack with
+    no IVA by period answers no periods."""
     assert unit.legal_entity is not None
     service = IvaRegisterService(read.session)
     period = read.period
@@ -260,7 +260,8 @@ def _iva(read: Reading, unit: Unit) -> list[str]:
     for year in range(period.date_from.year, period.date_to.year + 1):
         for iva in service.list_periods(year, read.actor, legal_entity_id=unit.legal_entity.id):
             touches = iva.period_start <= period.date_to and iva.period_end >= period.date_from
-            if touches and iva.state != "future" and not iva.closed:
+            # A period closes only once it has ended: one still running is not an open point.
+            if touches and iva.state == "ended" and not iva.closed:
                 points.append(unit.say(iva.label))
     return points
 

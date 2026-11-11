@@ -134,7 +134,10 @@ DEFAULT_BUDGET_BYTES = 109_900
 # administrator's: an export and a number of days) and its docstring, about 660 bytes.
 # REB-1046: 142.9 KB, up from 139.65 KB, for the two default tools and `approve_expense_note`,
 # `reject_expense_note` and `reimburse_expense_note` (a full-access administrator's).
-FULL_ACCESS_BUDGET_BYTES = 142_950
+# REB-1048: 144.45 KB, up from 142.9 KB, for `get_export_checklist` and the `kind`,
+# `payroll_parts` and `recipient_email` arguments of the export tools (a full-access
+# administrator's), measured at 144,360.
+FULL_ACCESS_BUDGET_BYTES = 144_450
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

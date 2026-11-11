@@ -69,10 +69,6 @@ const PARTS = [
   { key: 'issued_invoice_files', label: 'Fatture emesse: file originali', date_rule: 'per data del documento', contents: 'File originali', opt_in: null },
 ]
 const PAYSLIPS = { key: 'payslips', label: 'Cedolini: elenco e file originali', date_rule: 'per mese di competenza', contents: 'Elenco CSV e file originali', opt_in: 'payslips' }
-const CHANGES_PARTS = [
-  { key: 'staff_hires', label: 'Assunzioni', date_rule: 'per data di inizio', contents: 'Elenco CSV', opt_in: null },
-  { key: 'staff_expense_notes', label: 'Note spese da rimborsare in busta paga', date_rule: 'per mese della busta paga', contents: 'Elenco CSV', opt_in: null },
-]
 
 const check = (overrides: Record<string, unknown>) => ({
   key: 'inbox',
@@ -442,16 +438,19 @@ describe('«Il periodo è pronto?»', () => {
     checklistAnswer = checklistOf(check({}), MOVEMENT)
     page()
     const list = await screen.findByRole('list', { name: 'Il periodo è pronto?' })
-    const rows = within(list).getAllByRole('listitem', { name: '' }).filter((row) => row.dataset.check)
+    const rows = within(list)
+      .getAllByRole('listitem')
+      .filter((row): row is HTMLElement => row.dataset.check !== undefined)
     expect(rows.map((row) => row.dataset.check)).toEqual(['inbox', 'bank_movements'])
-    expect(within(rows[0]).getByText('A posto')).toBeInTheDocument()
-    expect(within(rows[1]).getByText('Da vedere · 7')).toBeInTheDocument()
+    const [fine, open] = rows as [HTMLElement, HTMLElement]
+    expect(within(fine).getByText('A posto')).toBeInTheDocument()
+    expect(within(open).getByText('Da vedere · 7')).toBeInTheDocument()
     // The first points by name and the rest counted, never listed.
-    expect(within(rows[1]).getByText('03/10/2026 Fornitore Rossi')).toBeInTheDocument()
-    expect(within(rows[1]).getByText('e altre 5')).toBeInTheDocument()
-    expect(within(rows[1]).getByRole('link', { name: 'Apri Cassa' })).toHaveAttribute('href', '/app/cash')
+    expect(within(open).getByText('03/10/2026 Fornitore Rossi')).toBeInTheDocument()
+    expect(within(open).getByText('e altre 5')).toBeInTheDocument()
+    expect(within(open).getByRole('link', { name: 'Apri Cassa' })).toHaveAttribute('href', '/app/cash')
     // A check with nothing to fix has no link.
-    expect(within(rows[0]).queryByRole('link')).toBeNull()
+    expect(within(fine).queryByRole('link')).toBeNull()
   })
 
   it('says open points do not stop the export, and keeps the button pressable', async () => {

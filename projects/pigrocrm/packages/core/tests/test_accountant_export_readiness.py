@@ -306,6 +306,31 @@ def test_an_iva_period_that_ended_and_is_not_closed_is_open_only_for_a_pack_with
     assert "iva_period" not in {check.key for check in read.checks}
 
 
+def test_an_all_entities_checklist_counts_a_shared_record_once(
+    db_session: Session, service: AccountantExportService
+) -> None:
+    # A space with one entity reads «shared» as that entity's: the shared section must not add it
+    # a second time to the all-entities ask.
+    entity = LegalEntityRepository(db_session).default()
+    assert entity is not None
+    db_session.add(
+        InboxItem(
+            original_name="senza-azienda.pdf",
+            size_bytes=10,
+            sha256=uuid4().hex * 2,
+            content_sha256=uuid4().hex * 2,
+            state="new",
+            created_at=dt.datetime.combine(MIDDLE, dt.time(12), dt.UTC),
+        )
+    )
+    db_session.flush()
+
+    for ask in ({"legal_entity_id": entity.id}, {"all_entities": True}):
+        read = service.get_export_checklist(PERIOD, ADMIN, **ask)  # type: ignore[arg-type]
+        inbox = next(check for check in read.checks if check.key == "inbox")
+        assert inbox.count == 1, ask
+
+
 # --- who asks and what is stored -------------------------------------------------------------
 
 

@@ -86,6 +86,9 @@ CODE_MINUTES = 15
 CODE_MAX_FAILURES = 5
 CODE_RESEND_SECONDS = 60
 CODES_PER_HOUR = 5
+# Wrong answers a link takes over a day, whatever code they were given against: the codes a
+# link can be sent are few, and this is what bounds the guesses a holder of the link makes.
+WRONG_ANSWERS_PER_DAY = 20
 ACCESS_MINUTES = 30
 RECIPIENT_MAX_LENGTH = 320
 _EMAIL = TypeAdapter(EmailStr)
@@ -445,7 +448,9 @@ class ExportShareDoor:
         most of it hidden). One a minute and five an hour per link, so the recipient's inbox
         cannot be flooded through a link. A link with no recipient has no code to send."""
         moment = now or dt.datetime.now(dt.UTC)
-        link, export = self._live(token, moment)
+        # The link row is held until the commit, so two requests at once cannot both pass the
+        # throttle below and each mail a code.
+        link, export = self._live(token, moment, lock=True)
         if link.recipient_email is None:
             raise ValidationFailed(
                 LINK_ENTITY,
@@ -465,6 +470,8 @@ class ExportShareDoor:
             raise ExportCodeThrottled("il codice è già stato mandato: aspetta un minuto")
         if len(recent) >= CODES_PER_HOUR:
             raise ExportCodeThrottled("hai chiesto troppi codici: riprova tra un'ora")
+        if self._wrong_today(link, moment) >= WRONG_ANSWERS_PER_DAY:
+            raise ExportCodeThrottled("troppi tentativi con questo link: riprova domani")
         code = f"{secrets.randbelow(10**CODE_DIGITS):0{CODE_DIGITS}d}"
         self.session.add(
             ExportShareCode(
@@ -493,7 +500,7 @@ class ExportShareDoor:
         the fifth; a code that is wrong, expired or spent is the same refusal."""
         moment = now or dt.datetime.now(dt.UTC)
         link, _ = self._live(token, moment)
-        if link.recipient_email is None:
+        if link.recipient_email is None or self._wrong_today(link, moment) >= WRONG_ANSWERS_PER_DAY:
             raise ExportCodeInvalid
         live = list(
             self.session.scalars(
@@ -558,6 +565,18 @@ class ExportShareDoor:
         self.session.commit()
         return OpenedFile(data, ZIP_MIME, entry["filename"])
 
+    def _wrong_today(self, link: ExportShareLink, now: dt.datetime) -> int:
+        """The wrong answers the codes sent to this link in the last day took."""
+        return int(
+            self.session.scalar(
+                select(func.coalesce(func.sum(ExportShareCode.failures), 0)).where(
+                    ExportShareCode.link_id == link.id,
+                    ExportShareCode.sent_at > now - dt.timedelta(days=1),
+                )
+            )
+            or 0
+        )
+
     def _unlocked(self, link: ExportShareLink, access: str | None, now: dt.datetime) -> bool:
         """A plain link is open; a link with a code is open to the session a code opened."""
         if link.recipient_email is None:
@@ -573,11 +592,12 @@ class ExportShareDoor:
         )
         return opened is not None
 
-    def _live(self, token: str, now: dt.datetime) -> tuple[ExportShareLink, AccountantExportRow]:
+    def _live(
+        self, token: str, now: dt.datetime, *, lock: bool = False
+    ) -> tuple[ExportShareLink, AccountantExportRow]:
         bind_scope(self.session, Actor.system())
-        link = self.session.scalar(
-            select(ExportShareLink).where(ExportShareLink.token_hash == hash_token(token))
-        )
+        query = select(ExportShareLink).where(ExportShareLink.token_hash == hash_token(token))
+        link = self.session.scalar(query.with_for_update() if lock else query)
         if link is None:
             raise ExportLinkUnknown
         if link.revoked_at is not None:

@@ -451,7 +451,9 @@ class AccountantExportService:
         units = [
             Unit(
                 entity,
-                with_shared=self._context(actor, period, entity).owns_shared_purchases,
+                with_shared=self._context(
+                    actor, period, entity, all_entities=all_entities
+                ).owns_shared_purchases,
                 name=entity.name if all_entities else None,
             )
             for entity in entities

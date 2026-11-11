@@ -77,10 +77,21 @@ export function SharedExportPage({ token }: { token: string }) {
   }, [token])
 
   async function unlock(granted: string) {
+    const before = state
     setAccess(granted)
     setNotice(null)
     setState({ kind: 'loading' })
-    setState(await describeLink(token, granted))
+    // The code is spent by now: one more try before giving up, so a blip does not cost a new code.
+    let next = await describeLink(token, granted)
+    if (next.kind === 'refused') next = await describeLink(token, granted)
+    if (next.kind === 'refused' && before.kind === 'ready') {
+      setAccess(null)
+      setNotice('Non sono riuscito ad aprire i file: chiedi un nuovo codice.')
+      setGateKey((key) => key + 1)
+      setState(before)
+      return
+    }
+    setState(next)
   }
 
   async function download(part: number) {

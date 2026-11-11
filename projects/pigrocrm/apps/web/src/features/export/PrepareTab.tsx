@@ -72,7 +72,9 @@ export function PrepareTab({ onCreate }: { onCreate: (target: BuildTarget) => vo
   // «Tutte le aziende» is a separate option and never the preselected one; a scoped admin has no
   // such option, since an export of every company is an unscoped admin's.
   const mayChooseAll = several && !scoped
-  const allChosen = mayChooseAll && companyChoice === ALL
+  // «Variazioni paghe» is one company's file: «Tutte le aziende» is not offered for it.
+  const payrollChanges = exportKind === 'payroll_changes'
+  const allChosen = mayChooseAll && !payrollChanges && companyChoice === ALL
   const chosenId =
     companyChoice !== null && legal_entities.some((entity) => entity.id === companyChoice)
       ? companyChoice
@@ -84,7 +86,6 @@ export function PrepareTab({ onCreate }: { onCreate: (target: BuildTarget) => vo
   // before it arrives would build the month the form is about to leave.
   const frequencyPending = company !== null && frequency.isPending
   // «Variazioni paghe» is the payroll consultant's monthly file: a month, whatever the IVA says.
-  const payrollChanges = exportKind === 'payroll_changes'
   const kind: PeriodKind = payrollChanges
     ? 'month'
     : (kindChoice ?? (frequency.data === 'quarterly' ? 'quarter' : 'month'))
@@ -225,8 +226,10 @@ export function PrepareTab({ onCreate }: { onCreate: (target: BuildTarget) => vo
                         {entity.name}
                       </SelectItem>
                     ))}
-                    {mayChooseAll ? <SelectSeparator /> : null}
-                    {mayChooseAll ? <SelectItem value={ALL}>Tutte le aziende</SelectItem> : null}
+                    {mayChooseAll && !payrollChanges ? <SelectSeparator /> : null}
+                    {mayChooseAll && !payrollChanges ? (
+                      <SelectItem value={ALL}>Tutte le aziende</SelectItem>
+                    ) : null}
                   </SelectContent>
                 </Select>
                 {allChosen ? (

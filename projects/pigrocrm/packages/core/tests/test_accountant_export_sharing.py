@@ -34,6 +34,7 @@ from pigrocrm.core.accountant_export.retention import ExportRetention
 from pigrocrm.core.accountant_export.service import AccountantExportService
 from pigrocrm.core.accountant_export.sharing import (
     CODE_MAX_FAILURES,
+    WRONG_ANSWERS_PER_DAY,
     ExportCodeInvalid,
     ExportCodeMailFailed,
     ExportCodeRequired,
@@ -819,3 +820,27 @@ def test_a_payroll_row_with_no_recipient_opens_nothing(
 
     with pytest.raises(ExportLinkRevoked):
         _door(db_session, local_storage).open(raw, 1, ADDRESS, now=NOW)
+
+
+def test_a_link_takes_a_bounded_number_of_wrong_answers_a_day_whatever_the_codes(
+    db_session: Session, local_storage: LocalFileStorage, payroll_export_id: UUID
+) -> None:
+    token, _ = _coded(db_session, payroll_export_id)
+    door = _door(db_session, local_storage)
+    sender = RecordingSender()
+    moment = NOW
+    spent = 0
+    while spent < WRONG_ANSWERS_PER_DAY:
+        door.send_code(token, sender, now=moment)
+        wrong = "000000" if _code_of(sender) != "000000" else "111111"
+        for _ in range(CODE_MAX_FAILURES):
+            with pytest.raises(ExportCodeInvalid):
+                door.verify_code(token, wrong, now=moment)
+            spent += 1
+        moment += dt.timedelta(minutes=2)
+
+    # The day's guesses are used up: no new code, and even the right one is refused.
+    with pytest.raises(ExportCodeThrottled, match="riprova domani"):
+        door.send_code(token, sender, now=moment)
+    with pytest.raises(ExportCodeInvalid):
+        door.verify_code(token, _code_of(sender), now=moment)
