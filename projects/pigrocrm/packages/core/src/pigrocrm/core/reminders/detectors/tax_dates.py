@@ -9,8 +9,8 @@ scope covers the legal entity). Both types sit under the `taxes` module.
 they name the tax and the date and carry no figure; the amount is on the due item in the app.
 
 **`tax_payment_due`** is one reminder per unsettled tax due item (`tax_balance`, `tax_advance`,
-`tax_instalment`) dated from today on; its measure is the days to the date, so the catalogue's
-`until` ladder (14 and 3 days) says warning and serious. A settled or dropped item is not
+`tax_instalment`, `chamber_fee`) dated from today on; its measure is the days to the date, so
+the catalogue's `until` ladder (14 and 3 days) says warning and serious. A settled or dropped item is not
 open and raises nothing; one past its date is not a «before a date» any more and is left to the
 schedule, which draws it overdue.
 
@@ -31,6 +31,7 @@ from uuid import UUID, uuid5
 from sqlalchemy import select
 
 from pigrocrm.core.due_items.models import (
+    CHAMBER_FEE_SOURCE_KIND,
     OPEN_STATES,
     TAX_ADVANCE_SOURCE_KIND,
     TAX_BALANCE_SOURCE_KIND,
@@ -58,6 +59,7 @@ TAX_DUE_KINDS: dict[str, str] = {
     TAX_BALANCE_SOURCE_KIND: "Saldo",
     TAX_ADVANCE_SOURCE_KIND: "Acconto",
     "tax_instalment": "Rata",
+    CHAMBER_FEE_SOURCE_KIND: "Diritto camerale",
 }
 _FORM: dict[DeclaredTax, ReturnForm] = {
     "irpef": "redditi_pf",
@@ -106,7 +108,9 @@ def detect_payment_due(ctx: DetectorContext) -> list[Detection]:
         if not recipients or item.due_date is None:
             continue
         days = (item.due_date - ctx.today).days
-        name = f"{TAX_DUE_KINDS[item.source_kind]} {_tax_name(item.tax)}"
+        name = TAX_DUE_KINDS[item.source_kind]
+        if item.source_kind != CHAMBER_FEE_SOURCE_KIND:
+            name = f"{name} {_tax_name(item.tax)}"
         found.append(
             Detection(
                 type="tax_payment_due",

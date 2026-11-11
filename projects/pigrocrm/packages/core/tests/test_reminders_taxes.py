@@ -291,3 +291,15 @@ def test_both_types_are_skipped_while_the_taxes_module_is_off(space: Space) -> N
     evaluation = space.evaluate(today=FILED + dt.timedelta(days=5), now=NOON)
 
     assert not {"tax_payment_due", "tax_figure_missing"} & evaluation.ran
+
+
+def test_the_chamber_fee_is_told_like_any_tax_date(space: Space) -> None:
+    item = _item(space, kind="chamber_fee")
+    item.tax = "chamber_fee"
+    space.session.flush()
+
+    evaluation = space.evaluate(today=DUE - dt.timedelta(days=3), now=NOON)
+
+    reminder = next(r for r in evaluation.reminders if r.type == "tax_payment_due")
+    assert reminder.title.startswith("Diritto camerale")
+    assert "€" not in reminder.detail and "1234" not in reminder.detail
