@@ -20413,6 +20413,24 @@ export interface components {
             /** Source */
             source: string;
         };
+        /**
+         * TaxCreditOriginRead
+         * @description Where a credit comes from: `iva_carry_forward` names the IVA settlement that left it,
+         *     `withholding_suffered` the income-tax year whose collected invoices carried the withholding.
+         */
+        TaxCreditOriginRead: {
+            /**
+             * Origin
+             * @enum {string}
+             */
+            origin: "iva_carry_forward" | "withholding_suffered";
+            /** Tax */
+            tax: string;
+            /** Tax Year */
+            tax_year: number;
+            /** Iva Settlement Id */
+            iva_settlement_id: string | null;
+        };
         /** TaxInstalmentPlanRead */
         TaxInstalmentPlanRead: {
             /**
@@ -20463,24 +20481,6 @@ export interface components {
             tax?: ("irpef" | "substitute_tax" | "ires" | "irap") | null;
             /** Instalments */
             instalments: number;
-        };
-        /**
-         * TaxCreditOriginRead
-         * @description Where a credit comes from: `iva_carry_forward` names the IVA settlement that left it,
-         *     `withholding_suffered` the income-tax year whose collected invoices carried the withholding.
-         */
-        TaxCreditOriginRead: {
-            /**
-             * Origin
-             * @enum {string}
-             */
-            origin: "iva_carry_forward" | "withholding_suffered";
-            /** Tax */
-            tax: string;
-            /** Tax Year */
-            tax_year: number;
-            /** Iva Settlement Id */
-            iva_settlement_id: string | null;
         };
         /**
          * TaxItemNotWritten

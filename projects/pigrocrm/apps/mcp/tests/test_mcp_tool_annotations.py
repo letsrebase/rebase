@@ -142,7 +142,9 @@ DEFAULT_BUDGET_BYTES = 109_900
 # REB-1075: 147.45 KB, up from 144.95 KB, for the five tax plan tools (a full-access
 # administrator's: `set_tax_instalment_plan`, the three of a notice plan and `list_tax_plans`),
 # measured at 147,423 with their descriptions cut to one line each.
-FULL_ACCESS_BUDGET_BYTES = 147_450
+# REB-1076: 148.45 KB, up from 147.45 KB, for `group_f24`, `ungroup_f24` and `list_f24_groups` (a
+# full-access administrator's), measured at 148,448 with the tax plan tools.
+FULL_ACCESS_BUDGET_BYTES = 148_450
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.
