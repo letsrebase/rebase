@@ -56,6 +56,7 @@ from pigrocrm.core.fiscal.law_flat_rate import FLAT_RATE_2015, FLAT_RATE_2016, F
 from pigrocrm.core.fiscal.law_income_basis import COMPANY_ACCRUAL, FLAT_RATE_CASH, PERSON_CASH
 from pigrocrm.core.fiscal.law_inps import INPS_2026, InpsYearLaw
 from pigrocrm.core.fiscal.law_irap import IRAP_LAW
+from pigrocrm.core.fiscal.law_municipal_surcharge import MUNICIPAL_SURCHARGE, MunicipalSurchargeLaw
 from pigrocrm.core.fiscal.law_payment import PaymentRulesLaw
 from pigrocrm.core.fiscal.payment_data import (
     IT_COMPANY_PAYMENT_2026,
@@ -194,6 +195,9 @@ class FiscalPack:
     # The INPS contributions of a person, one entry per contribution year (`fiscal/law_inps.py`,
     # REB-1064). Empty for a pack with no person's INPS.
     inps: tuple[InpsYearLaw, ...] = ()
+    # The municipal IRPEF surcharge of every municipality, one list per tax year
+    # (`fiscal/law_municipal_surcharge.py`, REB-1063). `None` for a pack that owes no IRPEF.
+    municipal_surcharge: MunicipalSurchargeLaw | None = None
 
     def __post_init__(self) -> None:
         years = [law.from_year for law in self.laws]
@@ -633,8 +637,9 @@ NON_IT_PACK = FiscalPack(id=PACK_NON_IT, version="1", ceilings=(), charges=())
 # entry starts there: an earlier year has no law in this pack yet, and asks for none. The
 # dates are the calendar's (`_IT_STANDARD_CALENDAR_2026`). No
 # income estimate: the IRPEF brackets and the regional surcharges are verified (REB-1062) and
-# looked up from `irpef`; the municipal surcharge and the INPS rates are TO VERIFY (A5), and a
-# pack states no figure it cannot cite.
+# looked up from `irpef`; the municipal surcharge is looked up from `municipal_surcharge`
+# (REB-1063, the Finanze's lists, no figure for a municipality that has none) and the INPS rates
+# are TO VERIFY (A5), and a pack states no figure it cannot cite.
 IT_STANDARD_PACK = FiscalPack(
     id=PACK_IT_STANDARD,
     version="1",
@@ -678,6 +683,7 @@ IT_STANDARD_PACK = FiscalPack(
     calendars=(_IT_STANDARD_CALENDAR_2026,),
     inps=(INPS_2026,),
     payment_rules=(IT_STANDARD_PAYMENT_2026,),
+    municipal_surcharge=MUNICIPAL_SURCHARGE,
 )
 
 # An srl (REB-1005, taxes design § 1). It invoices exactly like `it-standard`: `RF01`, the

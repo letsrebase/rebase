@@ -1,0 +1,15 @@
+{
+  "source": "Dipartimento delle Finanze, addizionale comunale all'Irpef",
+  "page": "https://www.finanze.gov.it/it/fiscalita/fiscalita-regionale-e-locale/Addizionale-comunale-allIRPEF/aliquote-applicabili/Elenchi-generali-aggiornati-quotidianamente",
+  "url": "https://www1.finanze.gov.it/finanze2/dipartimentopolitichefiscali/fiscalitalocale/nuova_addcomirpef/download/download.php?anno=2026",
+  "tax_year": 2026,
+  "downloaded": "2026-11-11",
+  "final": false,
+  "rows": 7897,
+  "by_status": {
+    "adopted": 4100,
+    "irregular": 4,
+    "pending": 3793
+  },
+  "sha256": "831bcd85bb9f6e4b5b8e7eb7bc05ccbc5452d92e07d3873c187d0922c6e828be"
+}
