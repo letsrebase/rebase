@@ -465,6 +465,8 @@ tabs «Imposte» and «Scadenze», one light page with no tabs for a solo flat-r
 is under `no-browser-arithmetic.test.ts`, so nothing there parses an amount. «Rate», the F24 chip and the date's state pill wait
 for the due items and plans that would drive them, and typing a declared figure is its own screen.
 
+**IRAP of an srl is pack data (REB-1065).** `CompanyTaxLaw.irap` (`fiscal/law_irap.py`) holds the base (`IrapBaseItem`: which items of sections A and B of art. 2425 c.c. add, are deducted or are left out, art. 5 c. 1 D.Lgs. 446/1997), the deductions of art. 11 (permanent staff cost, the flat deduction for staff who are not permanent, the small-base table of c. 4-bis, and `small_base_deduction`), the territorial rule of art. 4 and the 2026 ordinary rate of every region and autonomous province (`rate_for(year, region)`, keyed by ISTAT region code with `BZ` and `TN` apart; the caller takes the region from the place data of the address). The lookup answers `None` for a year or key it has no row for, never a guess. The module docstring names the simplification the estimate has to make (revenue, purchases and staff cost instead of the income statement) and what is not modelled: the rates of special subjects and the regional reductions that depend on the company.
+
 **The IVA settlement is `IvaSettlementService.settle_iva_period` (REB-1021).** For a legal entity whose pack has a
 periodic IVA (`FiscalPack.has_periodic_iva`: `it-standard`), by `FiscalProfile.iva_frequency` (monthly or quarterly),
 it computes one period together with every earlier period back to the first one ever settled, so the carry-over is
