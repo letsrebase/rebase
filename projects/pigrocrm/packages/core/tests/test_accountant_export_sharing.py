@@ -658,7 +658,11 @@ def _code_of(sender: RecordingSender) -> str:
 
 def _coded(session: Session, export_id: UUID, **kwargs: object) -> tuple[str, UUID]:
     created = _links(session).create_export_share_link(
-        export_id, ADMIN, recipient_email="Studio.Paghe@Example.COM", now=NOW, **kwargs  # type: ignore[arg-type]
+        export_id,
+        ADMIN,
+        recipient_email="Studio.Paghe@Example.COM",
+        now=NOW,
+        **kwargs,  # type: ignore[arg-type]
     )
     return _token(created.url), created.id
 

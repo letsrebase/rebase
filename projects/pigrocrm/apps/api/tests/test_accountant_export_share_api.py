@@ -377,9 +377,7 @@ def test_an_export_with_pay_is_shared_only_by_a_link_that_asks_a_code(
     sender = RecordingSender()
     logged_in.app.dependency_overrides[get_sender] = lambda: sender  # type: ignore[attr-defined]
     export = _export(logged_in, kind="payroll_changes")
-    refused = logged_in.post(
-        f"/api/accountant-export/exports/{export['id']}/share-links", json={}
-    )
+    refused = logged_in.post(f"/api/accountant-export/exports/{export['id']}/share-links", json={})
     assert refused.status_code == 422 and "con codice" in refused.text
     link = _link(logged_in, export, recipient_email="paghe@studio-esempio.it")
     token = _token(link)
@@ -402,9 +400,7 @@ def test_an_export_with_pay_is_shared_only_by_a_link_that_asks_a_code(
     access = visitor.post(f"{DOOR}/verify", json={"token": token, "code": code}).json()["access"]
     opened = visitor.post(f"{DOOR}/describe", json={"token": token, "access": access}).json()
     assert opened["unlocked"] and len(opened["parts"]) == 1
-    file = visitor.post(
-        f"{DOOR}/download", json={"token": token, "part": 1, "access": access}
-    )
+    file = visitor.post(f"{DOOR}/download", json={"token": token, "part": 1, "access": access})
     assert file.status_code == 200 and file.headers["content-type"] == "application/zip"
     assert file.headers["cache-control"] == "no-store"
 

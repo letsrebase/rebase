@@ -70,6 +70,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   date: 'Data',
   deal: 'Deal',
   days: 'Giorni',
+  with_code: 'Con codice',
   delivery_period: 'Periodo di erogazione',
   download_count: 'Download',
   decided_at: 'Deciso il',
