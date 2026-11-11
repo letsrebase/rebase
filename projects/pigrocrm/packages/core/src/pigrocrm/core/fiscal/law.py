@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
 
+from pigrocrm.core.fiscal.law_irpef import IrpefLaw
+
 # How the flat-rate regime's INPS contributions are based, as the estimate
 # (`analytics/fiscal.py::estimate_income`) reads it. One member today, the formula the estimate
 # has always used; it is a datum of the law and not a branch in the service so that the
@@ -240,6 +242,10 @@ class TaxYearLaw:
 
     # The periodic IVA settlement (REB-1021): `None` for a regime with no periodic IVA.
     iva: IvaSettlementLaw | None = None
+
+    # The IRPEF brackets and every region's surcharge (`fiscal/law_irpef.py`, REB-1062): `None`
+    # for a regime that owes no IRPEF by brackets.
+    irpef: IrpefLaw | None = None
 
     @property
     def has_income_estimate(self) -> bool:
