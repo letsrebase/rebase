@@ -501,6 +501,8 @@ each with its Italian reason. `AnalyticsService._estimate_year` is the only plac
 register (PigroCRM does not issue them and imports none), so none is netted; a purchase credit note is a negative `cost_amount`.
 A test that issues invoices and asks for a flat-rate estimate collects them first (`fakes/collected_invoices.py`).
 
+**Tax rules change every year, so a year keeps its own law (REB-1083).** `fiscal/pack.py`'s module docstring lists which `FiscalPack` sections are statutory (an entry holds until a later `from_year` entry replaces it: `laws`, `calendars`, `payment_rules`, `ceilings`, `charges`, read with `law_for`, `calendar_for`, `payment_rules_for`, `ceilings_for`, `charges_for`) and which are yearly figures (read by exact year, no figure and a `missing` sentence otherwise: `inps`, `irpef`, `chamber_fees`, and the IRAP, municipal surcharge and legal interest tables). A new year's law is a new entry in the section it changes, never an edit of an earlier one, and a year with no entry in a yearly section is never read from its neighbour.
+
 **An ordinary person's estimate is `fiscal/ordinary_estimate.py` (REB-1072).** `FiscalEstimate.person` (an `OrdinaryEstimate`) carries
 the INPS and the IRPEF with its regional and municipal surcharge, each with `lines`/`parts` (signed, so a screen draws and adds
 nothing), what it assumes, the sentences for what is missing and the sources of its law; `contributions` is its INPS and `due_total`
