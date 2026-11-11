@@ -341,6 +341,8 @@ class WithholdingCreditLaw:
     # The withholding may go either to the income's own year or to the year it was operated
     # when it is operated in the year after and before the return is filed.
     alternative_in_year_after_before_filing: bool
+    # Where the rule was read, for the figure that shows what it was computed from.
+    source: str = ""
 
     def credit_years(
         self, income_year: int, operated_on: date, return_filed_on: date | None

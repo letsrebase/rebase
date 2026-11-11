@@ -202,6 +202,9 @@ class InpsYearLaw:
     year: int
     gestione_separata: GestioneSeparataLaw
     artisans_traders: ArtisansTradersLaw
+    # The circulars the year's figures were read from, for the estimate that shows what it was
+    # computed from.
+    source: str = ""
 
     def contributions(
         self,
@@ -331,6 +334,10 @@ _TERMS_2026 = PercentagePaymentTerms(
 
 INPS_2026 = InpsYearLaw(
     year=2026,
+    source=(
+        "INPS, circolare n. 8 of 3 February 2026 (gestione separata) and circolare n. 14 of 9 "
+        "February 2026 (artigiani e commercianti), read 2026-11-11"
+    ),
     gestione_separata=GestioneSeparataLaw(
         # Circolare 8/2026 § 2: «26,07% (25,00 IVS + 0,72 aliquota aggiuntiva + 0,35 ISCRO)» for
         # «soggetti non assicurati presso altra forma di previdenza obbligatoria»; «24%» for

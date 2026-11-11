@@ -58,7 +58,7 @@ def test_the_flat_rate_pack_carries_the_estimate_for_every_year_of_the_regime() 
     assert [law.from_year for law in IT_FLAT_RATE_PACK.laws] == [2015, 2016, 2026]
 
 
-def test_the_ordinary_pack_carries_the_verified_advance_rules_and_no_estimate() -> None:
+def test_the_ordinary_pack_carries_the_verified_advance_rules_and_its_person_estimate() -> None:
     """Every figure is a verified row of the frame's A5 register, Agenzia delle Entrate,
     «Imposte sui redditi (Irpef, Ires)»: 100% of the base in 40/60 or 50/50 under ISA, no
     advance at or below 51.65, a single November payment below 257.52, 0.40% for paying
@@ -67,7 +67,8 @@ def test_the_ordinary_pack_carries_the_verified_advance_rules_and_no_estimate() 
     assert IT_STANDARD_PACK.law_for(2025) is None
     law = IT_STANDARD_PACK.law_for(2026)
     assert law is not None
-    assert not law.has_income_estimate
+    # An ordinary person's IRPEF and INPS are computed (REB-1072), not the flat-rate regime's.
+    assert law.has_income_estimate and law.flat_rate is None and law.irpef is not None
     advances = law.advances
     assert advances is not None
     assert advances.advance_percent_of_base == Decimal("100")
@@ -398,14 +399,14 @@ def test_a_year_with_no_revenue_has_no_reading_and_no_figure_after_the_move(
     assert estimate.law_from_year == (2026 if YEAR - 2 >= 2026 else None)
 
 
-def test_a_move_between_packs_that_both_compute_nothing_freezes_nothing(
+def test_a_move_out_of_a_pack_that_computes_nothing_freezes_nothing(
     db_session: Session, deal_with_mixed_invoices: UUID
 ) -> None:
-    _move_to_ordinary_regime(db_session)
-    db_session.execute(delete(FiscalEstimateReading))
     FiscalProfileService(db_session).upsert(
         FiscalProfileUpsert(pack_id="non-it", default_vat_nature="N2.1"), ADMIN
     )
+    db_session.execute(delete(FiscalEstimateReading))
+    _move_to_ordinary_regime(db_session)
     assert db_session.execute(select(FiscalEstimateReading)).first() is None
 
 

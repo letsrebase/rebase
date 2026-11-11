@@ -22,6 +22,7 @@ from pigrocrm.core.contracts.schemas import ContractCapSimulation
 from pigrocrm.core.fiscal.basis_schemas import YearBasis
 from pigrocrm.core.fiscal.company_estimate import CompanyEstimate
 from pigrocrm.core.fiscal.law import Cadence, DateKind, TaxName
+from pigrocrm.core.fiscal.ordinary_estimate import OrdinaryEstimate
 from pigrocrm.core.fiscal.pack import CeilingConsequence
 from pigrocrm.core.fiscal.schemas import DeclaredTaxFigureRead, TaxReadings
 
@@ -343,6 +344,12 @@ class FiscalEstimate(BaseModel):
     # what it assumes (`fiscal/company_estimate.py`). `None` for a regime that owes neither, for
     # a «what if» with a revenue the caller supplied, and where there is no basis to start from.
     company: CompanyEstimate | None = None
+    # REB-1072: an ordinary-regime person's INPS contributions and IRPEF with its regional and
+    # municipal surcharges, each with the lines it was computed from, what it assumes and what
+    # is missing (`fiscal/ordinary_estimate.py`). `None` for a regime that owes neither, for a
+    # «what if» with a revenue the caller supplied (its costs are unknown) and where there is no
+    # basis to start from.
+    person: OrdinaryEstimate | None = None
 
 
 class CashMonth(BaseModel):

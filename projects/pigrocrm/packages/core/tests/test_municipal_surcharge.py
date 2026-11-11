@@ -379,3 +379,40 @@ def test_the_parser_flags_a_category_exemption_and_reads_a_general_one_whatever_
 def test_the_parser_refuses_what_it_cannot_make_into_brackets(bad: dict[str, str]) -> None:
     with pytest.raises(importer().Irregular):
         importer().parse_pairs(bad)
+
+
+# --- the amount (REB-1072) ----------------------------------------------------------------
+
+
+def test_the_surcharge_is_the_brackets_by_slice_on_the_whole_income_above_the_exemption() -> None:
+    """Albinea, 2026 list: «28000:0.55|50000:0.7|:0.8» above an exemption of 12,000. At or below the
+    exemption nothing is due (art. 1 c. 11 D.L. 138/2011); above it the whole income is taxed
+    slice by slice, as the IRPEF is."""
+    albinea = LAW.lookup(2026, "A162")
+    assert albinea is not None and albinea.exemption_up_to == D("12000")
+    assert albinea.surcharge(D("12000")) == D("0.00")
+    assert albinea.surcharge(D("12000.01")) == D("66.00")  # 12,000.01 x 0.55%, half up
+    assert albinea.surcharge(D("28000")) == D("154.00")
+    assert albinea.surcharge(D("50000")) == D("308.00")
+    assert albinea.surcharge(D("60000")) == D("388.00")
+    assert albinea.surcharge(D("0")) == D("0.00")
+    with pytest.raises(ValueError, match="negative"):
+        albinea.surcharge(D("-1"))
+
+
+def test_a_flat_rate_municipality_is_its_rate_on_the_whole_income() -> None:
+    palermo = LAW.lookup(2026, "G273")
+    assert palermo is not None
+    assert palermo.surcharge(D("50000")) == D("515.00")  # 1.03%
+
+
+def test_a_municipality_with_no_surcharge_owes_zero_and_one_with_no_figure_has_none() -> None:
+    never = LAW.lookup(2025, "A049")
+    pending = LAW.lookup(2026, "F205")
+    irregular = LAW.lookup(2026, "A112")
+    assert never is not None and never.status == "none"
+    assert never.surcharge(D("50000")) == D("0.00")
+    assert pending is not None and pending.status == "pending"
+    assert pending.surcharge(D("50000")) is None
+    assert irregular is not None and irregular.status == "irregular"
+    assert irregular.surcharge(D("50000")) is None

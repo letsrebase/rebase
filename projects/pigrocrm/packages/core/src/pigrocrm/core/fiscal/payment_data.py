@@ -89,7 +89,13 @@ FORECAST_COMPANY = ForecastAdvanceLaw(
 
 # --- a withholding suffered -------------------------------------------------------------
 
-WITHHOLDING_CREDIT = WithholdingCreditLaw(alternative_in_year_after_before_filing=True)
+WITHHOLDING_CREDIT = WithholdingCreditLaw(
+    alternative_in_year_after_before_filing=True,
+    source=(
+        "D.P.R. 22 dicembre 1986 n. 917 (TUIR), art. 22 c. 1 lett. c), Normattiva, text in force "
+        "on 2026-11-11 (art. 24 c. 1 lett. c) of D.Lgs. 19 giugno 2026 n. 117 from 1 January 2027)"
+    ),
+)
 
 # --- F24 codes --------------------------------------------------------------------------
 

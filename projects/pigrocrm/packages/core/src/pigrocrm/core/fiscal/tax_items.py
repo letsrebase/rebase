@@ -19,8 +19,9 @@ deductions, credits, withholdings and excesses, which is what the law makes the 
 (A5 row «The advance base is the declared tax net of ...», verified).
 
 **A missing figure gives no item and says why.** A tax with no declared figure and no estimate
-(IRPEF has no estimate yet; an srl's IRES and IRAP come from
-`fiscal/company_estimate.py`), an ISA flag the profile does not state, a calendar
+(an estimate that is missing a fact gives none; an srl's IRES and IRAP come from
+`fiscal/company_estimate.py`, a person's IRPEF and INPS from `fiscal/ordinary_estimate.py`), an
+ISA flag the profile does not state, a calendar
 without the year, a year end the dates are not stated for: each is a `TaxItemNotWritten` in the
 report, never a zero and never a guess.
 

@@ -40,6 +40,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from pigrocrm.core.fiscal.law_irpef import (
+    DeductibleCharge,
     IncomeBandDetraction,
     IrpefLaw,
     RateBracket,
@@ -100,6 +101,7 @@ REGIONAL_SURCHARGES_2026: tuple[RegionalSurchargeLaw, ...] = (
         # sull'intero imponibile.» The page says «reddito complessivo»; the pack tests the
         # taxable income it is given, which differs by the deductible charges.
         exempt_up_to=_15K,
+        exempt_tested_on="total",
         unmodelled=(
             "The 15,000 euro exemption is tested on the «reddito complessivo» (before "
             "deductible charges); the lookup tests the taxable income it is given."
@@ -313,6 +315,41 @@ REGIONAL_SURCHARGES_2026: tuple[RegionalSurchargeLaw, ...] = (
     ),
 )
 
-IRPEF_2026 = IrpefLaw(brackets=IRPEF_BRACKETS_2026, regional=REGIONAL_SURCHARGES_2026)
+# The compulsory social security contributions are deducted from the total income (REB-1072): art.
+# 10 c. 1 lett. e) D.P.R. 917/1986 (TUIR), text in force from 31-12-2024 to 31-12-2026 on
+# Normattiva, read 2026-11-11. The Agenzia's page «Aliquote e calcolo dell'Irpef» (updated 13
+# January 2026) says the same: the gross tax is computed on the total income «al netto degli oneri
+# deducibili» and the deductible charges are «per esempio i contributi previdenziali e
+# assistenziali». The article is repealed from 1 January 2027 by D.Lgs. 19 June 2026 n. 117 (the
+# new income tax code); the next year's entry re-reads the corresponding article.
+SOCIAL_SECURITY_DEDUCTION_2026 = DeductibleCharge(
+    wording=(
+        "Dal reddito complessivo si deducono, se non sono deducibili nella determinazione dei "
+        "singoli redditi che concorrono a formarlo, i seguenti oneri sostenuti dal contribuente: "
+        "[...] e) i contributi previdenziali ed assistenziali versati in ottemperanza a "
+        "disposizioni di legge"
+    ),
+    source=(
+        "D.P.R. 22 dicembre 1986 n. 917 (TUIR), art. 10 c. 1 lett. e), Normattiva, text in force "
+        "from 31-12-2024 to 31-12-2026, read 2026-11-11; Agenzia delle Entrate, «Aliquote e "
+        "calcolo dell'Irpef», updated 13 January 2026"
+    ),
+)
 
-__all__ = ["IRPEF_2026", "IRPEF_BRACKETS_2026", "REGIONAL_SURCHARGES_2026"]
+IRPEF_2026 = IrpefLaw(
+    brackets=IRPEF_BRACKETS_2026,
+    regional=REGIONAL_SURCHARGES_2026,
+    social_security_deduction=SOCIAL_SECURITY_DEDUCTION_2026,
+    brackets_source=(
+        "D.P.R. 22 dicembre 1986 n. 917 (TUIR), art. 11 c. 1, Normattiva, text in force on "
+        "2026-11-11, with L. 199/2025 art. 1 c. 3; Agenzia delle Entrate, «Aliquote e calcolo "
+        "dell'Irpef», updated 13 January 2026"
+    ),
+)
+
+__all__ = [
+    "IRPEF_2026",
+    "IRPEF_BRACKETS_2026",
+    "REGIONAL_SURCHARGES_2026",
+    "SOCIAL_SECURITY_DEDUCTION_2026",
+]

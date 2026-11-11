@@ -36,7 +36,7 @@ Umbria, Bolzano). Never negative: the regions' detractions do not make a credit.
 Not computed, and written as text in `RegionalSurchargeLaw.unmodelled`: whatever depends on
 the taxpayer's household or condition (detractions per child, per disabled child, a reduced
 rate for a disabled taxpayer), because the profile holds none of it; and that the surcharge is
-due only if the IRPEF, net of its detractions, is due (art. 50 c. 3 D.Lgs. 446/1997, Finanze
+due only if the IRPEF, net of its detractions, is due (art. 50 c. 2 D.Lgs. 446/1997, Finanze
 «Disciplina del tributo»), which is the estimate card's, as is the exclusion of the flat-rate
 regime from the surcharge (same page).
 """
@@ -92,6 +92,9 @@ class RegionalSurchargeLaw:
     # At or below this income nothing is due (Trento: deduction of 30,000 euro for an income
     # up to 30,000; Valle d'Aosta: exempt up to 15,000 euro).
     exempt_up_to: Decimal | None = None
+    # What the exemption threshold is tested on: the taxable income (net of deductible charges)
+    # or, as Valle d'Aosta's page says, the «reddito complessivo» before them.
+    exempt_tested_on: Literal["taxable", "total"] = "taxable"
     detractions: tuple[IncomeBandDetraction, ...] = ()
     # The rules the region states that depend on the taxpayer's household or condition, in
     # the region's words or a close summary. Not computed.
@@ -123,11 +126,28 @@ class RegionalSurchargeLaw:
 
 
 @dataclass(frozen=True)
+class DeductibleCharge:
+    """A charge the law takes off the total income before the tax is computed, with the words
+    that say so. `wording` is the statute's own Italian text, kept verbatim so a later reader can
+    check it against the source; `source` names it and the day it was read."""
+
+    wording: str
+    source: str
+
+
+@dataclass(frozen=True)
 class IrpefLaw:
-    """The IRPEF of one tax year: the national brackets and every region's surcharge."""
+    """The IRPEF of one tax year: the national brackets and every region's surcharge.
+
+    `social_security_deduction` is the deduction of the compulsory social security contributions
+    a person pays (REB-1072); a law that does not carry it (`None`) makes no deduction, since a
+    deduction no source is cited for is not applied."""
 
     brackets: tuple[RateBracket, ...]
     regional: tuple[RegionalSurchargeLaw, ...]
+    social_security_deduction: DeductibleCharge | None = None
+    # Where the brackets were read, for the figure that shows what it was computed from.
+    brackets_source: str = ""
 
     def gross_tax(self, taxable_income: Decimal) -> Decimal:
         """Gross IRPEF of `taxable_income` (the income net of deductible charges), in euro
@@ -173,10 +193,26 @@ def _tax_by_slice(brackets: tuple[RateBracket, ...], income: Decimal) -> Decimal
     return tax
 
 
+def region_key(region_code: str | None, province: str | None) -> str | None:
+    """The key `IrpefLaw.regional_surcharge` takes for a taxpayer's place (module docstring): the
+    ISTAT region code, or `BZ` or `TN` for Trentino-Alto Adige, whose surcharge is the
+    autonomous province's, so the province decides. `None` when there is no region (an address
+    that is not Italian, a province ISTAT does not list) or, for Trentino-Alto Adige, no
+    province of the two: a region is never guessed."""
+    if region_code is None:
+        return None
+    if region_code == "04":
+        key = (province or "").strip().upper()
+        return key if key in ("BZ", "TN") else None
+    return region_code
+
+
 __all__ = [
+    "DeductibleCharge",
     "IncomeBandDetraction",
     "IrpefLaw",
     "RateBracket",
     "RateMethod",
     "RegionalSurchargeLaw",
+    "region_key",
 ]

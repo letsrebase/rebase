@@ -501,6 +501,27 @@ each with its Italian reason. `AnalyticsService._estimate_year` is the only plac
 register (PigroCRM does not issue them and imports none), so none is netted; a purchase credit note is a negative `cost_amount`.
 A test that issues invoices and asks for a flat-rate estimate collects them first (`fakes/collected_invoices.py`).
 
+**An ordinary person's estimate is `fiscal/ordinary_estimate.py` (REB-1072).** `FiscalEstimate.person` (an `OrdinaryEstimate`) carries
+the INPS and the IRPEF with its regional and municipal surcharge, each with `lines`/`parts` (signed, so a screen draws and adds
+nothing), what it assumes, the sentences for what is missing and the sources of its law; `contributions` is its INPS and `due_total`
+its net IRPEF with surcharges plus INPS. The order is the law's: income (art. 54 TUIR: collected less paid, a loss gives zero), INPS on it
+(`FiscalPack.inps_for`), the contributions deducted from the total income (`IrpefLaw.social_security_deduction`, art. 10 c. 1 lett. e
+TUIR, cited, and the year's own computed contributions stand in for those paid, as in the flat-rate estimate), IRPEF by brackets,
+the regional surcharge of the region of the legal entity's address (`law_irpef.region_key`: ISTAT code, `BZ`/`TN` by province) and
+the municipal one of its cadastral code (`MunicipalSurcharge.surcharge`: the exemption threshold first, then the brackets by slice
+on the whole income), the withholdings the customers kept on the settlements of the year (`withholdings_suffered`, credited to the
+year `WithholdingCreditLaw` says) taken off the gross IRPEF alone, and what they exceed it by kept as `credit`, never a negative
+tax; the surcharges are added after in `irpef.with_surcharges` (which `due_total` uses). **No figure
+without its facts**: no INPS category (and the fact each category reads: `inps_covered_elsewhere`, `inps_trade`, `inps_before_1996` only
+where the ceiling decides) means no INPS and so no IRPEF, since a base with no contributions deducted would overstate it; no
+address means no surcharge; a 2026 municipal row that is `pending` (the Finanze shows `0*` until 20 December) means no municipal
+figure and no total, and the previous year's rate is not borrowed in code: after 20 December the Finanze carries it over on its own
+list, and the next import of that list brings it. With no detraction modelled the gross IRPEF stands in for the net one (art. 13
+TUIR is not applied: the estimate is an upper bound) and says so. The readings' `irpef` is that net IRPEF (`irpef.amount`), which is what the
+advances are based on. A what-if `revenue` carries no `person`, and the economic overview draws no projection or net for it.
+**A frozen year of another pack wins** (`_estimate_year`): the ordinary pack's law covers 2026 too, but a flat-rate year frozen when
+the entity left the flat-rate pack is served as it was.
+
 **«Tasse» draws what the server says and adds nothing (REB-1026).** `GET /api/analytics/fiscal` answers `readings`
 (`fiscal/readings.py`): one line per tax the pack lists for the year (`TaxYearLaw.taxes`, taxes design § 1), each with its
 `estimate`, `declared` (the typed return's tax due) and `paid` (no source writes one yet, so always `null`), the reading that
