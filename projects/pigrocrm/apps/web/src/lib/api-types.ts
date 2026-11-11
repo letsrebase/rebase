@@ -15396,7 +15396,6 @@ export interface components {
             /**
              * Credit
              * @description A tax credit of an F24 group: it takes `allocated` off what the movement pays instead of being paid out of it
-             * @default false
              */
             credit: boolean;
         };

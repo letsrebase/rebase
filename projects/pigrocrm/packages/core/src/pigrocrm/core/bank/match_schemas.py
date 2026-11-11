@@ -55,7 +55,6 @@ class MatchItemRead(BaseModel):
     allocated: Decimal
     adopts_payment: bool
     credit: bool = Field(
-        default=False,
         description=(
             "A tax credit of an F24 group: it takes `allocated` off what the movement pays "
             "instead of being paid out of it"
