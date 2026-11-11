@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
 
+from pigrocrm.core.fiscal.law_chamber_fee import ChamberFeeLaw
 from pigrocrm.core.fiscal.law_irap import IrapLaw
 from pigrocrm.core.fiscal.law_irpef import IrpefLaw
 
@@ -250,6 +251,9 @@ class TaxYearLaw:
     # The IRPEF brackets and every region's surcharge (`fiscal/law_irpef.py`, REB-1062): `None`
     # for a regime that owes no IRPEF by brackets.
     irpef: IrpefLaw | None = None
+
+    # The annual chamber of commerce fee of a company (`fiscal/law_chamber_fee.py`, REB-1068).
+    chamber_fee: ChamberFeeLaw | None = None
 
     @property
     def has_income_estimate(self) -> bool:
