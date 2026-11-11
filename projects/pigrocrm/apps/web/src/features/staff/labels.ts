@@ -13,6 +13,12 @@ export const KIND_LABELS: Record<StaffMember['kind'], string> = {
   director: 'Amministratore',
 }
 
+export const CONTRACT_TYPE_LABELS: Record<NonNullable<StaffMember['contract_type']>, string> = {
+  permanent: 'Tempo indeterminato',
+  fixed_term: 'Tempo determinato',
+  seasonal: 'Stagionale',
+}
+
 /** Where a person's month stands: «Stimato» (nothing arrived), «Ricevuto» (the inbox read a payslip
  *  and nobody accepted it), «Accettato» (a person did) and «Chiuso» (the month was locked). */
 export type MonthState = 'estimated' | 'received' | 'accepted' | 'closed'
@@ -112,6 +118,7 @@ export function termsLine(member: StaffMember): string {
   const parts: string[] = [KIND_LABELS[member.kind]]
   if (member.collective_agreement) parts.push(member.collective_agreement)
   if (member.contract_level) parts.push(`livello ${member.contract_level}`)
+  if (member.contract_type) parts.push(CONTRACT_TYPE_LABELS[member.contract_type].toLowerCase())
   const share = member.part_time_percent === null ? null : formatItalianQuantity(member.part_time_percent)
   if (share !== null && share !== '100') parts.push(`part-time ${share}%`)
   return parts.join(', ')

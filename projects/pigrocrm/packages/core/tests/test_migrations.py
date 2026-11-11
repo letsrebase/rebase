@@ -4541,3 +4541,18 @@ def test_0110_creates_the_credit_and_f24_tables_under_the_scope_policy(
         assert not _column_exists(url, "movement_match_items", "credit")
         upgrade(config, "0110")
         assert all(_table_shape(url, table)[0] for table in tables)
+
+
+def test_0111_adds_the_staff_contract_type_with_no_backfill(pigrocrm_postgres: Any) -> None:
+    """REB-1081: a nullable column («not stated»), so both ways are a pure add and drop."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0110")
+        assert not _column_exists(url, "staff_members", "contract_type")
+        upgrade(config, "0111")
+        assert _column_exists(url, "staff_members", "contract_type")
+        downgrade(config, "0110")
+        assert not _column_exists(url, "staff_members", "contract_type")
+        upgrade(config, "0111")
+        assert _column_exists(url, "staff_members", "contract_type")

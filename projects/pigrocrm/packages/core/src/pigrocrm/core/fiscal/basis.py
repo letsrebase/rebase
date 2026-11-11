@@ -44,7 +44,7 @@ from sqlalchemy import ColumnElement, and_, exists, func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.due_items.models import PAYROLL_SOURCE_KIND, DueItem, DueItemSettlement
-from pigrocrm.core.fiscal.basis_schemas import BasisCosts, BasisLine, YearBasis
+from pigrocrm.core.fiscal.basis_schemas import BasisCosts, BasisEmployee, BasisLine, YearBasis
 from pigrocrm.core.fiscal.ceiling import (
     charge_line_clause,
     collected_charge_lines_for_calendar_year,
@@ -273,6 +273,16 @@ def _accrual(
             staff=personnel.employee,
             director=personnel.director,
             total=round_money(purchases + personnel.employee + personnel.director),
+            employees=[
+                BasisEmployee(
+                    staff_member_id=row.staff_member_id,
+                    name=row.name,
+                    contract_type=row.contract_type,  # type: ignore[arg-type]
+                    cost=row.cost,
+                    days_in_service=row.days_in_service,
+                )
+                for row in personnel.employees
+            ],
         )
         if personnel.not_estimated_members:
             left_out.append(

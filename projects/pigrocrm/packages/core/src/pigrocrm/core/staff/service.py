@@ -79,6 +79,7 @@ EMPLOYEE_ONLY = frozenset(
     {
         "collective_agreement",
         "contract_level",
+        "contract_type",
         "gross_annual_pay",
         "monthly_payments",
         "part_time_percent",

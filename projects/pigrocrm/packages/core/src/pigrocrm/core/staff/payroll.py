@@ -123,6 +123,27 @@ class PersonnelCost:
     employee: Decimal
     director: Decimal
     not_estimated_members: int
+    # Each employee with a cost in the window, by person (REB-1081): what IRAP's deductions
+    # of art. 11 need, the cost told apart by contract type and the days served.
+    employees: tuple["EmployeeCost", ...] = ()
+
+    def by_contract_type(self) -> dict[str | None, Decimal]:
+        """The employees' cost by contract type; `None` collects the ones with no type stated."""
+        totals: dict[str | None, Decimal] = {}
+        for row in self.employees:
+            totals[row.contract_type] = totals.get(row.contract_type, ZERO_MONEY) + row.cost
+        return {key: round_money(value) for key, value in totals.items()}
+
+
+@dataclass(frozen=True)
+class EmployeeCost:
+    """One employee's cost over a window and the days of it the person was in service."""
+
+    staff_member_id: UUID
+    name: str
+    contract_type: str | None
+    cost: Decimal
+    days_in_service: int
 
 
 def _key(item: CashItem) -> str:
@@ -230,7 +251,7 @@ class PayrollService:
         the member's service in that month that the window covers. A month a person closed
         counts as it was closed. No actor: whoever calls it has decided the reader may know the
         figure (`analytics/pnl.py`), and it carries no person."""
-        totals, _ = self._personnel_cost(legal_entity_id, date_from, date_to)
+        totals, _, _ = self._personnel_cost(legal_entity_id, date_from, date_to)
         return round_money(sum(totals.values(), ZERO_MONEY))
 
     def personnel_cost_by_kind(
@@ -241,19 +262,36 @@ class PayrollService:
         in service in the window with no cost to speak of (their pay inputs are missing), since
         a total that silently leaves a person out would read as a cost of zero. Same arithmetic
         and the same rules: no actor, a closed month counts as it was closed."""
-        totals, not_estimated = self._personnel_cost(legal_entity_id, date_from, date_to)
+        totals, not_estimated, per_member = self._personnel_cost(
+            legal_entity_id, date_from, date_to
+        )
+        employees = tuple(
+            EmployeeCost(
+                member.id,
+                member.name,
+                member.contract_type,
+                round_money(per_member[member.id]),
+                days_in_service(member, date_from, date_to),
+            )
+            for member in self.repo.members_of(legal_entity_id)
+            if member.kind == "employee" and member.id in per_member
+        )
         return PersonnelCost(
-            round_money(totals["employee"]), round_money(totals["director"]), len(not_estimated)
+            round_money(totals["employee"]),
+            round_money(totals["director"]),
+            len(not_estimated),
+            employees,
         )
 
     def _personnel_cost(
         self, legal_entity_id: UUID | None, date_from: dt.date, date_to: dt.date
-    ) -> tuple[dict[str, Decimal], set[UUID]]:
+    ) -> tuple[dict[str, Decimal], set[UUID], dict[UUID, Decimal]]:
         totals: dict[str, Decimal] = {"employee": ZERO_MONEY, "director": ZERO_MONEY}
         not_estimated: set[UUID] = set()
+        per_member: dict[UUID, Decimal] = {}
         members = self.repo.members_of(legal_entity_id)
         if not members:
-            return totals, not_estimated
+            return totals, not_estimated, per_member
         context = _Context.load(self.repo, legal_entity_id, members)
         closed = self.repo.closed_months(legal_entity_id)
         month = first_of(date_from)
@@ -274,9 +312,11 @@ class PayrollService:
                     continue
                 if served == 0:
                     continue
-                totals[member.kind] += cost * covered / served
+                share = cost * covered / served
+                totals[member.kind] += share
+                per_member[member.id] = per_member.get(member.id, ZERO_MONEY) + share
             month = add_months(month, 1)
-        return totals, not_estimated
+        return totals, not_estimated, per_member
 
     # ---- the writer's half: no actor, no commit ---------------------------------------------
 

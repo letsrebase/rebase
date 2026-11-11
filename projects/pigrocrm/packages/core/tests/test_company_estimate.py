@@ -146,6 +146,23 @@ def _staff(session: Session, entity: LegalEntity) -> None:
     )
 
 
+def _employee(
+    session: Session, entity: LegalEntity, name: str, contract_type: str | None, start: dt.date
+) -> None:
+    StaffService(session).create_staff_member(
+        EmployeeCreate(
+            legal_entity_id=entity.id,
+            name=name,
+            start_date=start,
+            gross_annual_pay=M("24000.00"),
+            monthly_payments=13,
+            employer_inps_rate=M("30.00"),
+            contract_type=contract_type,  # type: ignore[arg-type]
+        ),
+        STAFF_ADMIN,
+    )
+
+
 def _worked_example(session: Session, **place: str | None) -> LegalEntity:
     entity = _srl(session, **place)  # type: ignore[arg-type]
     _revenue(session, entity, "100000.00")
@@ -391,3 +408,101 @@ def test_the_forecast_advances_of_an_srl_are_written_from_its_estimate(
         ("irap", D(2026, 11, 30), M("1684.80"), "forecast"),
         ("ires", D(2026, 11, 30), M("5299.20"), "forecast"),
     ]
+
+
+def test_a_permanent_employees_cost_leaves_the_irap_base(db_session: Session) -> None:
+    entity = _srl(db_session)
+    _revenue(db_session, entity, "100000.00")
+    _purchase(db_session, entity, "20000.00")
+    _employee(db_session, entity, "Giulia Bianchi", "permanent", D(YEAR, 1, 1))
+    company = _estimate(db_session, entity).company
+    assert company is not None
+
+    assert [(line.code, line.amount) for line in company.irap.lines] == [
+        ("revenue", M("100000.00")),
+        ("purchases", M("-20000.00")),
+        ("permanent_staff", M("-31200.00")),
+        ("small_base", M("-8000.00")),
+    ]
+    # 80,000 - 31,200 - 8,000 = 40,800; 3.90% = 1,591.20.
+    assert (company.irap.base, company.irap.amount) == (M("40800.00"), M("1591.20"))
+    assert not any("non è indicato" in text for text in company.irap.assumptions)
+    assert not any("sovrastimata" in text for text in company.irap.assumptions)
+
+
+def test_mixed_contract_types_each_get_their_own_deduction(db_session: Session) -> None:
+    entity = _srl(db_session)
+    _revenue(db_session, entity, "100000.00")
+    _purchase(db_session, entity, "20000.00")
+    _employee(db_session, entity, "Giulia Bianchi", "permanent", D(YEAR, 1, 1))
+    _employee(db_session, entity, "Luca Verdi", "fixed_term", D(YEAR, 1, 1))
+    _employee(db_session, entity, "Anna Neri", "seasonal", D(YEAR, 1, 1))
+    company = _estimate(db_session, entity).company
+    assert company is not None
+
+    assert [(line.code, line.amount) for line in company.irap.lines] == [
+        ("revenue", M("100000.00")),
+        ("purchases", M("-20000.00")),
+        ("permanent_staff", M("-31200.00")),
+        ("per_employee", M("-3700.00")),
+        ("small_base", M("-8000.00")),
+    ]
+    # 80,000 - 31,200 - 2 x 1,850 - 8,000 = 37,100; 3.90% = 1,446.90.
+    assert (company.irap.base, company.irap.amount) == (M("37100.00"), M("1446.90"))
+    # The seasonal 70% needs facts the records do not hold: said, not applied.
+    assert any("stagionali" in text and "Anna Neri" in text for text in company.irap.assumptions)
+
+
+def test_a_part_year_fixed_term_employee_is_deducted_pro_rata(db_session: Session) -> None:
+    entity = _srl(db_session)
+    _revenue(db_session, entity, "100000.00")
+    _employee(db_session, entity, "Luca Verdi", "fixed_term", D(YEAR, 7, 1))
+    company = _estimate(db_session, entity).company
+    assert company is not None
+    line = next(line for line in company.irap.lines if line.code == "per_employee")
+    # 184 days of 365 at 1,850 a year.
+    assert line.amount == -M("932.60")
+
+
+def test_the_per_employee_deduction_is_not_due_above_the_revenue_limit(
+    db_session: Session,
+) -> None:
+    entity = _srl(db_session)
+    _revenue(db_session, entity, "400000.01")
+    _employee(db_session, entity, "Luca Verdi", "fixed_term", D(YEAR, 1, 1))
+    company = _estimate(db_session, entity).company
+    assert company is not None
+    assert "per_employee" not in [line.code for line in company.irap.lines]
+    assert any("c. 4-bis.1" in text and "non spetta" in text for text in company.irap.assumptions)
+
+
+def test_an_employee_with_no_contract_type_is_named_and_not_deducted(
+    db_session: Session,
+) -> None:
+    entity = _srl(db_session)
+    _revenue(db_session, entity, "100000.00")
+    _employee(db_session, entity, "Giulia Bianchi", "permanent", D(YEAR, 1, 1))
+    _employee(db_session, entity, "Piero Gialli", None, D(YEAR, 1, 1))
+    company = _estimate(db_session, entity).company
+    assert company is not None
+
+    codes = [line.code for line in company.irap.lines]
+    assert "permanent_staff" in codes and "per_employee" not in codes
+    # Only the permanent employee's 31,200 leaves the base, not the untyped one's.
+    permanent = next(line for line in company.irap.lines if line.code == "permanent_staff")
+    assert permanent.amount == -M("31200.00")
+    named = [text for text in company.irap.assumptions if "Piero Gialli" in text]
+    assert len(named) == 1 and "sovrastimata" in named[0]
+    assert not any("Giulia Bianchi" in text and "non è indicato" in text for text in named)
+
+
+def test_a_director_has_no_contract_type(db_session: Session) -> None:
+    entity = _srl(db_session)
+    with pytest.raises(ValueError):
+        DirectorCreate(  # type: ignore[call-arg]
+            legal_entity_id=entity.id,
+            name="Marco Rossi",
+            start_date=D(YEAR, 1, 1),
+            annual_fee=M("12000.00"),
+            contract_type="permanent",
+        )

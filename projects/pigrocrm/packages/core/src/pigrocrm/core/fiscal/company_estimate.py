@@ -24,11 +24,16 @@ The value of production per `IrapLaw`: the year's revenue (item A1) less the yea
 the costs, so it stays in the base, and so do the director fees. Then the deductions of art. 11 the
 data can support:
 
-* c. 4-octies (permanent staff cost) needs to know which staff are on a permanent contract. A staff
-  member carries no such flag, so it is **not applied** and the payload says so: the base is
-  overstated by the cost of permanent employees.
-* c. 4-bis.1 (per-employee deduction) needs the headcount of staff who are not permanent, which is
-  the same missing flag: not applied.
+* c. 4-octies (permanent staff cost) is applied to the cost of the employees whose contract is
+  `permanent` (`StaffMember.contract_type`), at the pack's percentage;
+* c. 4-bis.1 (per-employee deduction) is applied to the employees who are `fixed_term` or
+  `seasonal`, pro rata to the days in service and never above the person's cost, up to the pack's
+  headcount, when the year's revenue (the positive components the estimate sees) does not
+  exceed the pack's limit;
+* an employee whose contract type is not stated gets no deduction and the payload names them, so
+  the base is overstated by that cost. The seasonal deduction of c. 4-octies (70% from 120 days
+  in two tax periods, from the second contract) is not applied: the staff records do not say
+  which contracts follow another, and the payload says so when a seasonal employee exists;
 * c. 4-bis (small base) is applied from the pack's table, to the base net of the other deductions.
 
 The rate is the one of the region of the legal entity's registered office (art. 4 c. 1, single-site
@@ -45,8 +50,9 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
-from pigrocrm.core.fiscal.basis_schemas import YearBasis
+from pigrocrm.core.fiscal.basis_schemas import BasisEmployee, YearBasis
 from pigrocrm.core.fiscal.law import CompanyTaxLaw
+from pigrocrm.core.fiscal.law_irap import IrapLaw
 from pigrocrm.core.money import ZERO_MONEY, round_money
 from pigrocrm.core.places.locate import Place
 
@@ -160,6 +166,101 @@ def _ires(basis: YearBasis, law: CompanyTaxLaw) -> CompanyTaxEstimate:
     )
 
 
+def _names(rows: list[BasisEmployee]) -> str:
+    return ", ".join(row.name for row in rows)
+
+
+def _staff_deductions(basis: YearBasis, irap: IrapLaw) -> list[tuple[CompanyTaxLine | None, str]]:
+    """The deductions of art. 11 that need the staff's contract types (REB-1081): each a line
+    (`None` where nothing is deducted) and the sentence that says what was and was not applied."""
+    costs = basis.costs
+    assert costs is not None
+    out: list[tuple[CompanyTaxLine | None, str]] = []
+    employees = costs.employees
+    if not employees:
+        return out
+    untyped = [row for row in employees if row.contract_type is None]
+    if untyped:
+        out.append(
+            (
+                None,
+                "Il tipo di contratto non è indicato per "
+                f"{_names(untyped)}: il loro costo non è dedotto (a tempo indeterminato, "
+                "art. 11 c. 4-octies, o per dipendente, c. 4-bis.1), quindi la base è "
+                "sovrastimata di quel costo.",
+            )
+        )
+    permanent = [row for row in employees if row.contract_type == "permanent"]
+    if permanent:
+        cost = sum((row.cost for row in permanent), ZERO_MONEY)
+        amount = round_money(cost * irap.permanent_staff.permanent_percent / _HUNDRED)
+        out.append(
+            (
+                CompanyTaxLine(
+                    code="permanent_staff",
+                    label="Deduzione del costo dei dipendenti a tempo indeterminato "
+                    "(art. 11 c. 4-octies)",
+                    amount=-amount,
+                ),
+                f"Dedotto il costo dei dipendenti a tempo indeterminato: {_names(permanent)}.",
+            )
+        )
+    seasonal = [row for row in employees if row.contract_type == "seasonal"]
+    if seasonal:
+        out.append(
+            (
+                None,
+                "La deduzione del "
+                f"{irap.permanent_staff.seasonal_percent.normalize():f}% per gli stagionali "
+                f"con almeno {irap.permanent_staff.seasonal_min_days} giorni in due periodi "
+                "d'imposta (art. 11 c. 4-octies) non è applicata: i dati non dicono se il "
+                f"contratto segue un altro con lo stesso datore ({_names(seasonal)}).",
+            )
+        )
+    other = [row for row in employees if row.contract_type in ("fixed_term", "seasonal")]
+    if other:
+        rule = irap.per_employee
+        if basis.revenue > rule.components_limit:
+            out.append(
+                (
+                    None,
+                    "La deduzione per dipendente (art. 11 c. 4-bis.1) non spetta: i ricavi "
+                    f"superano {rule.components_limit:,.0f} euro.",
+                )
+            )
+        else:
+            period_days = (basis.period_to - basis.period_from).days + 1
+            rows = sorted(
+                (
+                    (
+                        min(round_money(rule.amount * row.days_in_service / period_days), row.cost),
+                        row,
+                    )
+                    for row in other
+                    if row.days_in_service > 0
+                ),
+                key=lambda pair: pair[0],
+                reverse=True,
+            )[: rule.max_employees]
+            amount = sum((value for value, _ in rows), ZERO_MONEY)
+            if amount > 0:
+                out.append(
+                    (
+                        CompanyTaxLine(
+                            code="per_employee",
+                            label="Deduzione per dipendente non a tempo indeterminato "
+                            "(art. 11 c. 4-bis.1)",
+                            amount=-amount,
+                        ),
+                        f"Dedotti {rule.amount:,.0f} euro l'anno per dipendente non a tempo "
+                        f"indeterminato, fino a {rule.max_employees}, in proporzione ai giorni "
+                        "e mai oltre il suo costo; apprendisti e lavoratori disabili, che la "
+                        "legge non conta, non sono distinti.",
+                    )
+                )
+    return out
+
+
 def _irap(
     basis: YearBasis, law: CompanyTaxLaw, place: Place, province: str | None
 ) -> CompanyTaxEstimate:
@@ -179,12 +280,15 @@ def _irap(
         "registra (ammortamenti, variazioni di rimanenze, altri ricavi e proventi).",
         "Il costo del personale e i compensi degli amministratori restano nella base, come "
         "dice la legge (art. 5 D.Lgs. 446/1997).",
-        "La deduzione del costo dei dipendenti a tempo indeterminato (art. 11 c. 4-octies) e "
-        "quella per dipendente (c. 4-bis.1) non sono applicate: non si sa chi è a tempo "
-        "indeterminato, quindi la base è sovrastimata di quel costo.",
         "Si applica l'aliquota ordinaria della regione della sede, con una sola sede.",
     ]
-    small = irap.small_base_deduction(value)
+    deducted = value
+    for line, text in _staff_deductions(basis, irap):
+        if line is not None:
+            lines.append(line)
+            deducted = round_money(deducted + line.amount)
+        assumptions.append(text)
+    small = irap.small_base_deduction(deducted)
     if small != 0:
         lines.append(
             CompanyTaxLine(
@@ -193,7 +297,7 @@ def _irap(
                 amount=-small,
             )
         )
-    base = round_money(value - small)
+    base = round_money(deducted - small)
     loss = base < 0
 
     key = irap_region_key(place, province)

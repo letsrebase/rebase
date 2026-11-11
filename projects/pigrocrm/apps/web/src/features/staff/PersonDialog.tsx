@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from '@rebase/ui/sonner'
 import { useMemberDirectory } from '@/features/users/directory'
 import { fieldErrorFrom, toProblem } from '@/lib/api'
-import { KIND_LABELS } from './labels'
+import { CONTRACT_TYPE_LABELS, KIND_LABELS } from './labels'
 import {
   useCreateStaff,
   useUpdateStaff,
@@ -29,6 +29,7 @@ interface Values {
   user_id: string
   collective_agreement: string
   contract_level: string
+  contract_type: string
   gross_annual_pay: string
   monthly_payments: string
   part_time_percent: string
@@ -56,6 +57,7 @@ function from(member: StaffMember | undefined): Values {
     user_id: text(member?.user_id),
     collective_agreement: text(member?.collective_agreement),
     contract_level: text(member?.contract_level),
+    contract_type: text(member?.contract_type),
     gross_annual_pay: text(member?.gross_annual_pay),
     monthly_payments: text(member?.monthly_payments ?? 13),
     part_time_percent: text(member?.part_time_percent ?? 100),
@@ -88,6 +90,7 @@ const INTEGERS = new Set<keyof Values>(['monthly_payments', 'thirteenth_month', 
 const EMPLOYEE_FIELDS: (keyof Values)[] = [
   'collective_agreement',
   'contract_level',
+  'contract_type',
   'gross_annual_pay',
   'monthly_payments',
   'part_time_percent',
@@ -291,6 +294,21 @@ export function PersonDialog({ open, onOpenChange, legalEntityId, legalEntityNam
               <>
                 {text('collective_agreement', 'Contratto collettivo')}
                 {text('contract_level', 'Livello')}
+                <div className="space-y-1.5">
+                  <Label htmlFor="person-contract_type">Tipo di contratto</Label>
+                  <Select value={values.contract_type === '' ? NONE : values.contract_type} onValueChange={(next) => set('contract_type', next === NONE ? '' : next)}>
+                    <SelectTrigger id="person-contract_type" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>Non indicato</SelectItem>
+                      <SelectItem value="permanent">{CONTRACT_TYPE_LABELS.permanent}</SelectItem>
+                      <SelectItem value="fixed_term">{CONTRACT_TYPE_LABELS.fixed_term}</SelectItem>
+                      <SelectItem value="seasonal">{CONTRACT_TYPE_LABELS.seasonal}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Serve all’IRAP: il costo dei dipendenti a tempo indeterminato si deduce.</p>
+                </div>
                 {text('gross_annual_pay', 'Retribuzione lorda annua (€)', { inputMode: 'decimal' })}
                 <div className="space-y-1.5">
                   <Label htmlFor="person-monthly_payments">Mensilità *</Label>

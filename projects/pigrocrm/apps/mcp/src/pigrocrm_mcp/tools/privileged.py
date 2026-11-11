@@ -1043,10 +1043,9 @@ def register(
         start_date: str,
         details: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Records an employee or a director with their pay, admin only. `details` takes the
-        fields of `update_staff_member`: an employee needs `gross_annual_pay` and
-        `monthly_payments` (13 or 14), a director `annual_fee`. Directors only on a company,
-        no staff abroad.
+        """Records an employee or director with pay, admin only. `details` takes the fields of
+        `update_staff_member`: an employee needs `gross_annual_pay` and `monthly_payments`
+        (13 or 14), a director `annual_fee`. Directors only on a company.
         """
         data = TypeAdapter(StaffMemberCreate).validate_python(
             {
@@ -1078,7 +1077,7 @@ def register(
     @mcp.tool(annotations=READ_ONLY)
     @guard
     def get_staff_member(staff_member_id: UUID) -> dict[str, Any]:
-        """One staff member with pay and pay day, admin only."""
+        """One staff member with pay, admin only."""
         return (
             StaffService(context.session)
             .get_staff_member(staff_member_id, context.actor)
