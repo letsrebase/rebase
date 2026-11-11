@@ -94,9 +94,10 @@ def test_the_pack_carries_the_two_verified_rates_and_no_ceiling_or_charge() -> N
     assert law.company_tax.ires_rate == Decimal("24.00")
     assert law.company_tax.irap_ordinary_rate == Decimal("3.90")
     assert law.company_tax.irap_regional_variation_max_points == Decimal("0.92")
-    # Nothing is invented before the verified entry, and no person's estimate is carried.
+    # Nothing is invented before the verified entry. The srl's own estimate (IRES and IRAP,
+    # REB-1073) is an income estimate; the person's is not carried (no flat-rate law).
     assert IT_COMPANY_PACK.law_for(2025) is None
-    assert not law.has_income_estimate
+    assert law.has_income_estimate and law.flat_rate is None
     assert IT_STANDARD_PACK.law_for(2026) is not None
     assert IT_STANDARD_PACK.law_for(2026).company_tax is None  # type: ignore[union-attr]
 

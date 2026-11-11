@@ -110,7 +110,7 @@ def test_the_totals_add_one_kind_of_reading_and_say_how_many_lines_they_leave_ou
     assert (totals.paid, totals.paid_left_out) == (None, 2)
 
 
-def test_the_ordinary_and_company_packs_list_their_taxes_with_no_estimate(
+def test_the_ordinary_pack_lists_its_taxes_with_no_estimate_and_the_company_its_two(
     db_session: Session,
 ) -> None:
     standard = _entity(db_session, "it-standard", "RF01")
@@ -123,7 +123,9 @@ def test_the_ordinary_and_company_packs_list_their_taxes_with_no_estimate(
     ]
     lines = _readings(db_session, company).lines
     assert [(line.tax, line.estimate, line.declared, line.counts) for line in lines] == [
-        ("ires", None, Decimal("12000.00"), "declared"),
+        # No revenue and no costs: a profit of zero, so an IRES of zero, and the typed figure
+        # counts. IRAP has no region to take its rate from: the entity has no address.
+        ("ires", Decimal("0.00"), Decimal("12000.00"), "declared"),
         ("irap", None, None, None),
     ]
 

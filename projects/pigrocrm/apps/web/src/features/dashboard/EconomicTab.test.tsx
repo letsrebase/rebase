@@ -334,6 +334,29 @@ describe('EconomicTab', () => {
     expect(total).not.toHaveTextContent('0,00 €')
   })
 
+  it('shows an srl’s IRES and IRAP, and says what IRAP lacks, instead of the forfettario cards', async () => {
+    const step = { lines: [], base: '72000.00', loss: false, region: '03', missing: null, assumptions: [] }
+    const srl = {
+      ...TAX,
+      pack_id: 'it-company',
+      substitute_tax: null,
+      contributions: null,
+      taxable_amount: null,
+      due_total: '11640.00',
+      basis: { label: 'Ricavi e costi di competenza del 2026' },
+      company: {
+        ires: { ...step, rate: '24.00', amount: '8832.00' },
+        irap: { ...step, rate: '3.90', amount: '2808.00' },
+      },
+    }
+    vi.mocked(api.GET).mockImplementation(byPath({ ...RESPONSE, tax: srl, projected_tax: null }) as never)
+    renderTab()
+    expect(await screen.findByRole('group', { name: 'IRES stimata' })).toHaveTextContent('8.832,00 €')
+    expect(screen.getByRole('group', { name: 'IRAP stimata' })).toHaveTextContent('2.808,00 €')
+    expect(screen.getByRole('group', { name: 'Totale da saldare' })).toHaveTextContent('11.640,00 €')
+    expect(screen.queryByRole('group', { name: 'Imponibile forfettario stimato' })).toBeNull()
+  })
+
   it('shows the fiscal estimate on collected and projected revenue', async () => {
     vi.mocked(api.GET).mockImplementation(byPath(RESPONSE) as never)
     renderTab()
@@ -368,7 +391,7 @@ describe('EconomicTab', () => {
     renderTab()
     await screen.findByRole('group', { name: 'Ricavi incassati' })
     expect(screen.queryByRole('group', { name: 'Totale da saldare' })).toBeNull()
-    expect(screen.getByText(/serve un profilo fiscale del regime forfettario/)).toBeInTheDocument()
+    expect(screen.getByText(/serve un profilo fiscale del regime forfettario o di una società di capitali/)).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /stima fiscale/i })).toBeNull()
   })
 

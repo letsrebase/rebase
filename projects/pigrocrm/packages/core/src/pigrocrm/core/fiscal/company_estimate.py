@@ -1,0 +1,237 @@
+"""The IRES and IRAP of an srl for one year, estimated from its year basis (REB-1073, taxes
+design § 1 and § 2).
+
+Pure: it takes the year's `YearBasis` (`fiscal/basis.py`, the one basis every estimate reads), the
+pack's law for the year and the region the legal entity's address names, and answers what each tax
+would be and what it was computed from. Nothing here reads a session. The figure is an estimate,
+never the declared one (A6 «Not the books»): the accountant's typed figure outranks it
+(`fiscal/readings.py`).
+
+IRES
+----
+24% (`CompanyTaxLaw.ires_rate`) of the year's accrual profit: revenue less purchases less staff
+cost less director fees, as `year_basis` states them. The simplification is the whole of the
+estimate and the payload says it (`assumptions`): the profit is **not** adjusted for the
+variations of the tax return (non-deductible costs, the deduction of IRAP on staff cost, ACE,
+depreciation differences, the limits on interest and vehicles). A loss gives a tax of zero and
+says so; no loss carry-forward is modelled (art. 84 TUIR would let a loss of an earlier year
+reduce the profit), so a year after a loss is estimated as if there were none.
+
+IRAP
+----
+The value of production per `IrapLaw`: the year's revenue (item A1) less the year's purchases
+(items B6, B7, B8 and B14, as far as PigroCRM records them). Staff cost (item B9) is left out of
+the costs, so it stays in the base, and so do the director fees. Then the deductions of art. 11 the
+data can support:
+
+* c. 4-octies (permanent staff cost) needs to know which staff are on a permanent contract. A staff
+  member carries no such flag, so it is **not applied** and the payload says so: the base is
+  overstated by the cost of permanent employees.
+* c. 4-bis.1 (per-employee deduction) needs the headcount of staff who are not permanent, which is
+  the same missing flag: not applied.
+* c. 4-bis (small base) is applied from the pack's table, to the base net of the other deductions.
+
+The rate is the one of the region of the legal entity's registered office (art. 4 c. 1, single-site
+case, `IrapTerritoryLaw`), `BZ` or `TN` by province for Trentino-Alto Adige. An address that names
+no region gives no IRAP figure and the payload says which address is missing; so does a year or a
+region the pack holds no rate for. The region is never guessed.
+
+A negative value of production gives a tax of zero and says so.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal
+
+from pydantic import BaseModel, ConfigDict
+
+from pigrocrm.core.fiscal.basis_schemas import YearBasis
+from pigrocrm.core.fiscal.law import CompanyTaxLaw
+from pigrocrm.core.money import ZERO_MONEY, round_money
+from pigrocrm.core.places.locate import Place
+
+_HUNDRED = Decimal(100)
+
+# The region of the autonomous provinces of Trentino-Alto Adige, whose rate is each province's
+# own (`IrapLaw.rate_for` keys them `BZ` and `TN`).
+_TRENTINO_ALTO_ADIGE = "04"
+
+
+class CompanyTaxLine(BaseModel):
+    """One step from the basis to a tax's base: `amount` is signed (a cost or a deduction is
+    negative), so a screen draws the lines and their sum without computing anything."""
+
+    model_config = ConfigDict(frozen=True)
+
+    code: str
+    label: str
+    amount: Decimal
+
+
+class CompanyTaxEstimate(BaseModel):
+    """One tax of the srl: `lines` lead to `base` (which can be negative, a loss), `rate` is the
+    percentage applied and `amount` the tax, zero for a loss and `None` when the figure cannot be
+    given, in which case `missing` says what is missing. `assumptions` are the simplifications
+    this figure carries, each a sentence a person reads."""
+
+    model_config = ConfigDict(frozen=True)
+
+    lines: list[CompanyTaxLine]
+    base: Decimal | None
+    rate: Decimal | None
+    amount: Decimal | None
+    loss: bool = False
+    # The region whose rate was applied (IRAP only): the ISTAT code, or `BZ` or `TN`.
+    region: str | None = None
+    missing: str | None = None
+    assumptions: list[str]
+
+
+class CompanyEstimate(BaseModel):
+    """What the srl owes for the year on its income, IRES and IRAP, each with what it was
+    computed from. The year's own figures are the payload's `basis`."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ires: CompanyTaxEstimate
+    irap: CompanyTaxEstimate
+
+
+def irap_region_key(place: Place, province: str | None) -> str | None:
+    """The key of the pack's IRAP rate table for the place of a legal entity: the ISTAT region
+    code, or `BZ`/`TN` for the two autonomous provinces. `None` when the address names no
+    region (not Italian, or no province ISTAT lists)."""
+    code = place.region_code
+    if code is None:
+        return None
+    if code == _TRENTINO_ALTO_ADIGE:
+        key = (province or "").strip().upper()
+        return key if key in ("BZ", "TN") else None
+    return code
+
+
+def estimate_company_taxes(
+    basis: YearBasis,
+    law: CompanyTaxLaw,
+    *,
+    place: Place,
+    province: str | None,
+) -> CompanyEstimate | None:
+    """The estimate of IRES and IRAP for `basis`'s year, `None` when the law carries no IRAP
+    table or the basis has no costs (a year on a basis that deducts none is no srl's)."""
+    costs = basis.costs
+    if costs is None or law.irap is None:
+        return None
+    return CompanyEstimate(
+        ires=_ires(basis, law),
+        irap=_irap(basis, law, place, province),
+    )
+
+
+def _ires(basis: YearBasis, law: CompanyTaxLaw) -> CompanyTaxEstimate:
+    costs = basis.costs
+    assert costs is not None
+    profit = round_money(basis.revenue - costs.total)
+    lines = [
+        CompanyTaxLine(code="revenue", label="Ricavi di competenza", amount=basis.revenue),
+        CompanyTaxLine(code="purchases", label="Acquisti", amount=-costs.purchases),
+        CompanyTaxLine(code="staff", label="Costo del personale", amount=-costs.staff),
+        CompanyTaxLine(
+            code="director", label="Compensi degli amministratori", amount=-costs.director
+        ),
+    ]
+    assumptions = [
+        *(line.reason for line in basis.left_out),
+        "L'utile è ricavi meno acquisti, personale e amministratori, senza le variazioni "
+        "della dichiarazione (costi non deducibili, deduzione dell'IRAP sul costo del lavoro, "
+        "ammortamenti): è una stima, non il calcolo del commercialista.",
+        "Le perdite degli anni precedenti non sono riportate: ogni anno è stimato da solo.",
+    ]
+    loss = profit < 0
+    if loss:
+        assumptions.append("L'anno chiude in perdita: l'IRES stimata è zero.")
+    return CompanyTaxEstimate(
+        lines=lines,
+        base=profit,
+        rate=law.ires_rate,
+        amount=ZERO_MONEY if loss else round_money(profit * law.ires_rate / _HUNDRED),
+        loss=loss,
+        assumptions=assumptions,
+    )
+
+
+def _irap(
+    basis: YearBasis, law: CompanyTaxLaw, place: Place, province: str | None
+) -> CompanyTaxEstimate:
+    costs = basis.costs
+    irap = law.irap
+    assert costs is not None and irap is not None
+    value = round_money(basis.revenue - costs.purchases)
+    lines = [
+        CompanyTaxLine(code="revenue", label="Ricavi di competenza", amount=basis.revenue),
+        CompanyTaxLine(code="purchases", label="Acquisti", amount=-costs.purchases),
+    ]
+    assumptions = [
+        # The staff cost left out of the base's figures (`staff_cost_not_estimated`) does not
+        # move the IRAP base, which keeps staff cost in; what else the basis left out does.
+        *(line.reason for line in basis.left_out if line.code != "staff_cost_not_estimated"),
+        "Il valore della produzione è ricavi meno acquisti: manca ciò che il gestionale non "
+        "registra (ammortamenti, variazioni di rimanenze, altri ricavi e proventi).",
+        "Il costo del personale e i compensi degli amministratori restano nella base, come "
+        "dice la legge (art. 5 D.Lgs. 446/1997).",
+        "La deduzione del costo dei dipendenti a tempo indeterminato (art. 11 c. 4-octies) e "
+        "quella per dipendente (c. 4-bis.1) non sono applicate: non si sa chi è a tempo "
+        "indeterminato, quindi la base è sovrastimata di quel costo.",
+        "Si applica l'aliquota ordinaria della regione della sede, con una sola sede.",
+    ]
+    small = irap.small_base_deduction(value)
+    if small != 0:
+        lines.append(
+            CompanyTaxLine(
+                code="small_base",
+                label="Deduzione per basi imponibili ridotte (art. 11 c. 4-bis)",
+                amount=-small,
+            )
+        )
+    base = round_money(value - small)
+    loss = base < 0
+
+    key = irap_region_key(place, province)
+    missing: str | None = None
+    rate: Decimal | None = None
+    if key is None:
+        missing = (
+            "Manca l'indirizzo della sede dell'azienda (città e provincia in Italia): "
+            "senza la regione non si sa quale aliquota IRAP applicare."
+        )
+    else:
+        rate = irap.rate_for(basis.year, key)
+        if rate is None:
+            missing = (
+                f"Il pacchetto fiscale non ha l'aliquota IRAP {basis.year} della regione "
+                f"della sede ({key})."
+            )
+    if loss:
+        assumptions.append("Il valore della produzione è negativo: l'IRAP stimata è zero.")
+    amount: Decimal | None = None
+    if rate is not None:
+        amount = ZERO_MONEY if loss else round_money(base * rate / _HUNDRED)
+    return CompanyTaxEstimate(
+        lines=lines,
+        base=base,
+        rate=rate,
+        amount=amount,
+        loss=loss,
+        region=key,
+        missing=missing,
+        assumptions=assumptions,
+    )
+
+
+__all__ = [
+    "CompanyEstimate",
+    "CompanyTaxEstimate",
+    "CompanyTaxLine",
+    "estimate_company_taxes",
+    "irap_region_key",
+]

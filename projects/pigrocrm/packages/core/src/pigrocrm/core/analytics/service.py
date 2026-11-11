@@ -49,6 +49,7 @@ from pigrocrm.core.fiscal.ceiling import (
     evaluate_ceiling,
     evaluate_pack,
 )
+from pigrocrm.core.fiscal.company_estimate import estimate_company_taxes
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService, reading_for_year
 from pigrocrm.core.fiscal.law import DeclaredTax
 from pigrocrm.core.fiscal.pack import resolve_pack
@@ -65,6 +66,7 @@ from pigrocrm.core.invoices.models import InvoiceLine
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.money import ZERO_MONEY, round_money, share
+from pigrocrm.core.places.locate import locate
 
 ENTITY = "analytics"
 # What a frozen estimate keeps of the profile (REB-974): the taxpayer's parameters, the
@@ -557,15 +559,19 @@ class AnalyticsService:
                     # figure `get_fiscal_estimate` answers over REST and MCP. Only the projection
                     # below is a «what if».
                     tax = self.get_fiscal_estimate(year, actor, legal_entity_id=owner.id)
-                    projected_tax = self.get_fiscal_estimate(
-                        year, actor, revenue=per_tax_office.projected, legal_entity_id=owner.id
-                    )
-                    if tax.due_total is not None:
-                        net = round_money(per_tax_office.actual_gross - tax.due_total)
-                    if projected_tax.due_total is not None:
-                        projected_net = round_money(
-                            per_tax_office.projected_gross - projected_tax.due_total
+                    # An srl's taxes are on what accrued (IRES and IRAP, REB-1073): no
+                    # projection, which is a «what if» on revenue with no costs, and no net,
+                    # which would take accrual taxes off the cash gross.
+                    if tax.company is None:
+                        projected_tax = self.get_fiscal_estimate(
+                            year, actor, revenue=per_tax_office.projected, legal_entity_id=owner.id
                         )
+                        if tax.due_total is not None:
+                            net = round_money(per_tax_office.actual_gross - tax.due_total)
+                        if projected_tax.due_total is not None:
+                            projected_net = round_money(
+                                per_tax_office.projected_gross - projected_tax.due_total
+                            )
             except NotFound:
                 # No fiscal profile yet, or no legal entity at all: the page says so and
                 # shows the cash alone.
@@ -666,12 +672,19 @@ class AnalyticsService:
             if estimate.pack_id is not None and estimate.pack_version is not None
             else None
         )
-        # The two lines the estimate computes, only in a year whose law carries the estimate.
-        estimates: dict[DeclaredTax, Decimal | None] = (
-            {"substitute_tax": estimate.substitute_tax, "inps": estimate.contributions}
-            if law is not None and law.has_income_estimate
-            else {}
-        )
+        # The lines the estimate computes, only in a year whose law carries the estimate.
+        estimates: dict[DeclaredTax, Decimal | None] = {}
+        if law is not None and law.has_income_estimate:
+            if estimate.company is not None:
+                estimates = {
+                    "ires": estimate.company.ires.amount,
+                    "irap": estimate.company.irap.amount,
+                }
+            else:
+                estimates = {
+                    "substitute_tax": estimate.substitute_tax,
+                    "inps": estimate.contributions,
+                }
         return build_tax_readings(law, estimates, declared)
 
     def estimated_taxes(
@@ -756,6 +769,13 @@ class AnalyticsService:
                     **profile.model_dump(mode="json", include=FROZEN_PARAMETERS),
                     "fiscal_year_end_month": legal_entity.fiscal_year_end_month,
                     "fiscal_year_end_day": legal_entity.fiscal_year_end_day,
+                    # The region an srl's IRAP rate was read for (REB-1073), kept with the
+                    # figures so a year moved to another pack keeps what it was computed for.
+                    **(
+                        {"irap_region": estimate.company.irap.region}
+                        if estimate.company is not None
+                        else {}
+                    ),
                 },
                 figures=estimate.model_dump(mode="json"),
             )
@@ -786,7 +806,7 @@ class AnalyticsService:
             # year. A year the pack states no basis for has no revenue to speak of and no figure.
             basis = year_basis(self.session, legal_entity, year, pack)
             revenue = basis.revenue if basis is not None else ZERO_MONEY
-        return estimate_income(
+        estimate = estimate_income(
             year=year,
             legal_entity_id=legal_entity.id,
             # A caller's own `revenue` is a «what if»: the economic overview's projection,
@@ -808,13 +828,36 @@ class AnalyticsService:
                         )
                         if getattr(profile, name) is None
                     ]
-                    if law is not None and law.has_income_estimate
+                    if law is not None and law.flat_rate is not None
                     else []
                 ),
                 "pack_id": pack.id,
                 "pack_version": pack.version,
                 "law_from_year": law.from_year if law is not None else None,
                 "basis": basis,
+            }
+        )
+        if basis is None or law is None or law.company_tax is None:
+            return estimate
+        # An srl's IRES and IRAP from the same basis (REB-1073): the region is read from the
+        # legal entity's address at this moment, never stored.
+        company = estimate_company_taxes(
+            basis,
+            law.company_tax,
+            place=locate(legal_entity.city, legal_entity.province, legal_entity.country),
+            province=legal_entity.province,
+        )
+        if company is None:
+            return estimate
+        ires, irap = company.ires.amount, company.irap.amount
+        return estimate.model_copy(
+            update={
+                "company": company,
+                # What an srl sets aside is both taxes, and a total with a tax missing would
+                # read as a smaller bill: no total until both are known.
+                "due_total": (
+                    round_money(ires + irap) if ires is not None and irap is not None else None
+                ),
             }
         )
 

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { cn } from '@rebase/ui/cn'
+import { formatPercent } from '@/features/analytics/format'
 import { money } from '@/features/dashboard/format'
 import { formatIsoDateItalian, toIsoDate } from '@/lib/dates'
 import { useLegalEntity } from '@/lib/legalEntity'
@@ -32,6 +33,42 @@ function given(figure: string | null | undefined): string {
 /** «31/12»: the day and month a fiscal year ends, as the legal entity stores them. */
 function dayMonth(day: number, month: number): string {
   return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`
+}
+
+/**
+ * What an srl's IRES or IRAP estimate was computed from (REB-1073): the year's basis, each line
+ * down to the base with its sign, the rate and the tax, and what the figure assumes. Every number
+ * is the server's; nothing is added here.
+ */
+function ComputedFrom({ line, estimate }: { line: TaxReadingLine; estimate: FiscalEstimate }) {
+  const tax = line.tax === 'ires' ? estimate.company?.ires : line.tax === 'irap' ? estimate.company?.irap : undefined
+  if (!tax) return null
+  return (
+    <section className="space-y-2">
+      <h3 className="text-sm font-semibold">Come è calcolata la stima</h3>
+      {estimate.basis ? <p className="text-xs text-muted-foreground">{estimate.basis.label}.</p> : null}
+      <dl>
+        {tax.lines.map((step) => (
+          <Fact key={step.code} label={step.label}>
+            {money(step.amount)}
+          </Fact>
+        ))}
+        <Fact label={tax.loss ? 'Base (in perdita)' : 'Base'} strong>
+          {given(tax.base)}
+        </Fact>
+        <Fact label="Aliquota">{tax.rate == null ? NOT_ONE_YET : formatPercent(tax.rate)}</Fact>
+        <Fact label="Imposta stimata" strong>
+          {given(tax.amount)}
+        </Fact>
+      </dl>
+      {tax.missing ? <p className="text-sm">{tax.missing}</p> : null}
+      <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+        {tax.assumptions.map((assumption) => (
+          <li key={assumption}>{assumption}</li>
+        ))}
+      </ul>
+    </section>
+  )
 }
 
 /**
@@ -85,6 +122,7 @@ export function TaxPanel({
           </p>
         </section>
       ) : null}
+      <ComputedFrom line={line} estimate={estimate} />
       <section className="space-y-1 text-xs text-muted-foreground">
         {pack ? <p>{pack}.</p> : null}
         {entity ? (

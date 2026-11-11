@@ -8854,6 +8854,56 @@ export interface components {
             accepted_offers_deal_not_won: number;
         };
         /**
+         * CompanyEstimate
+         * @description What the srl owes for the year on its income, IRES and IRAP, each with what it was
+         *     computed from. The year's own figures are the payload's `basis`.
+         */
+        CompanyEstimate: {
+            ires: components["schemas"]["CompanyTaxEstimate"];
+            irap: components["schemas"]["CompanyTaxEstimate"];
+        };
+        /**
+         * CompanyTaxEstimate
+         * @description One tax of the srl: `lines` lead to `base` (which can be negative, a loss), `rate` is the
+         *     percentage applied and `amount` the tax, zero for a loss and `None` when the figure cannot be
+         *     given, in which case `missing` says what is missing. `assumptions` are the simplifications
+         *     this figure carries, each a sentence a person reads.
+         */
+        CompanyTaxEstimate: {
+            /** Lines */
+            lines: components["schemas"]["CompanyTaxLine"][];
+            /** Base */
+            base: string | null;
+            /** Rate */
+            rate: string | null;
+            /** Amount */
+            amount: string | null;
+            /**
+             * Loss
+             * @default false
+             */
+            loss: boolean;
+            /** Region */
+            region?: string | null;
+            /** Missing */
+            missing?: string | null;
+            /** Assumptions */
+            assumptions: string[];
+        };
+        /**
+         * CompanyTaxLine
+         * @description One step from the basis to a tax's base: `amount` is signed (a cost or a deduction is
+         *     negative), so a screen draws the lines and their sum without computing anything.
+         */
+        CompanyTaxLine: {
+            /** Code */
+            code: string;
+            /** Label */
+            label: string;
+            /** Amount */
+            amount: string;
+        };
+        /**
          * ConcentrationFigures
          * @description One currency's side of a concentration cap: the customer's invoiced revenue and
          *     the legal entity's total, both in `currency` and never converted, with the share one is of
@@ -12456,6 +12506,7 @@ export interface components {
             basis?: components["schemas"]["YearBasis"] | null;
             /** Missing Parameters */
             missing_parameters?: string[];
+            company?: components["schemas"]["CompanyEstimate"] | null;
         };
         /** FiscalProfileRead */
         FiscalProfileRead: {

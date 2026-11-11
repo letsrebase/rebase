@@ -105,3 +105,39 @@ async def test_the_tool_answers_the_services_figure_and_its_basis(
     assert [line["code"] for line in answers[2027].structured_content["basis"]["left_out"]] == [
         "not_collected"
     ]
+
+
+async def test_the_tool_answers_an_srls_ires_and_irap_as_the_service_does(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    """REB-1073: the srl's two taxes, each with its lines and rate, are the service's own. A Milan
+    srl with 1,000.00 of 2026 revenue and no costs: IRES 24% of 1,000.00 = 240.00; IRAP: the
+    art. 11 c. 4-bis deduction (8,000.00) is capped at the base: base and tax are 0.00."""
+    entity = LegalEntity(name="srl", legal_name="Srl", country="IT", city="Milano", province="MI")
+    mcp_session.add(entity)
+    mcp_session.flush()
+    mcp_session.add(
+        FiscalProfile(legal_entity_id=entity.id, pack_id="it-company", regime_code="RF01")
+    )
+    _invoice(mcp_session, entity, 1, dt.date(2026, 6, 1), None)
+    mcp_session.commit()
+
+    async with Client(_server(mcp_session, tmp_path)) as client:
+        result = await client.call_tool(
+            "get_fiscal_estimate", {"year": 2026, "legal_entity_id": str(entity.id)}
+        )
+    assert not result.is_error, result
+    body = result.structured_content or json.loads(result.content[0].text)
+    service = AnalyticsService(mcp_session).get_fiscal_estimate(
+        2026, ADMIN, legal_entity_id=entity.id
+    )
+    # `_invoice` issues 1,000.00: IRES 240.00; IRAP base 1,000.00 - 1,000.00 (the deduction is
+    # capped at the base) = 0.00, so 0.00.
+    assert body["company"]["ires"]["amount"] == "240.00"
+    assert body["company"]["irap"]["amount"] == "0.00"
+    assert body["company"] == service.model_dump(mode="json")["company"]
+    assert body["due_total"] == str(service.due_total) == "240.00"
+    assert [(line["tax"], line["estimate"]) for line in body["readings"]["lines"]] == [
+        ("ires", "240.00"),
+        ("irap", "0.00"),
+    ]

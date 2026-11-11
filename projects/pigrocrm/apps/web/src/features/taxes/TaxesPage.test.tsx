@@ -338,6 +338,80 @@ describe('«Tasse»: Imposte', () => {
     expect(within(panel).queryByRole('button', { name: /Accetta/ })).not.toBeInTheDocument()
   })
 
+  it('draws an srl’s IRES and IRAP estimates and what each was computed from (REB-1073)', async () => {
+    const tax = (amount: string | null, base: string, rate: string | null, lines: [string, string, string][]) => ({
+      lines: lines.map(([code, label, value]) => ({ code, label, amount: value })),
+      base,
+      rate,
+      amount,
+      loss: false,
+      region: '03',
+      missing: null,
+      assumptions: ['Una semplificazione dichiarata.'],
+    })
+    answers['/api/analytics/fiscal'] = {
+      ...COMPANY,
+      declared: [],
+      basis: { label: 'Ricavi e costi di competenza del 2026' },
+      company: {
+        ires: tax('8832.00', '36800.00', '24.00', [
+          ['revenue', 'Ricavi di competenza', '100000.00'],
+          ['purchases', 'Acquisti', '-20000.00'],
+        ]),
+        irap: tax('2808.00', '72000.00', '3.90', [
+          ['revenue', 'Ricavi di competenza', '100000.00'],
+          ['small_base', 'Deduzione per basi imponibili ridotte (art. 11 c. 4-bis)', '-8000.00'],
+        ]),
+      },
+      readings: {
+        lines: [
+          line('ires', { estimable: true, estimate: '8832.00', counts: 'estimate' }),
+          line('irap', { estimable: true, estimate: '2808.00', counts: 'estimate' }),
+        ],
+        totals: {
+          estimate: '11640.00',
+          estimate_left_out: 0,
+          declared: null,
+          declared_left_out: 2,
+          paid: null,
+          paid_left_out: 2,
+        },
+      },
+    } as never
+    wide()
+    renderPage()
+    await userEvent.click(await screen.findByRole('row', { name: /IRAP/ }))
+    const panel = await screen.findByRole('complementary', { name: 'Imposta aperta' })
+    expect(within(panel).getByText('Come è calcolata la stima')).toBeInTheDocument()
+    expect(within(panel).getByText('Ricavi e costi di competenza del 2026.')).toBeInTheDocument()
+    expect(within(panel).getByText('Deduzione per basi imponibili ridotte (art. 11 c. 4-bis)')).toBeInTheDocument()
+    expect(within(panel).getByText('72.000,00 €')).toBeInTheDocument()
+    expect(within(panel).getByText('3,90 %')).toBeInTheDocument()
+    expect(within(panel).getByText('Una semplificazione dichiarata.')).toBeInTheDocument()
+  })
+
+  it('says which address an srl lacks when IRAP cannot be estimated', async () => {
+    const missing = 'Manca l’indirizzo della sede dell’azienda.'
+    answers['/api/analytics/fiscal'] = {
+      ...COMPANY,
+      declared: [],
+      company: {
+        ires: { lines: [], base: '0.00', rate: '24.00', amount: '0.00', loss: false, missing: null, assumptions: [] },
+        irap: { lines: [], base: '0.00', rate: null, amount: null, loss: false, missing, assumptions: [] },
+      },
+      readings: {
+        lines: [
+          line('ires', { estimable: true, estimate: '0.00', counts: 'estimate' }),
+          line('irap', { estimable: true }),
+        ],
+        totals: { estimate: '0.00', estimate_left_out: 1, declared: null, declared_left_out: 2, paid: null, paid_left_out: 2 },
+      },
+    } as never
+    renderPage()
+    expect(await screen.findByText(missing)).toBeInTheDocument()
+    expect(screen.queryByText(/perché manca un parametro/)).not.toBeInTheDocument()
+  })
+
   it('draws the fiscal year end of the entity the figures are for, not the first one listed', async () => {
     answers['/api/analytics/fiscal'] = { ...COMPANY, legal_entity_id: 'le-2' }
     wide()
