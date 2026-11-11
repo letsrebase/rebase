@@ -369,3 +369,18 @@ def test_an_iva_credit_in_an_f24_survives_the_period_that_takes_it_in(db_session
     db_session.expire_all()
     kept = db_session.get(DueItem, credit.id)
     assert kept is not None and (kept.state, kept.amount) == ("expected", D("-300.00"))
+
+
+def test_a_declared_figure_with_advances_only_leaves_the_credit(db_session: Session) -> None:
+    entity = _person(db_session)
+    _collected(db_session, entity, dt.date(2026, 3, 10))
+    DeclaredTaxFigureService(db_session).set_declared_tax_figure(
+        DeclaredTaxFigureSet(tax="irpef", year=2026, advances=D("500.00")),
+        ADMIN,
+        legal_entity_id=entity,
+    )
+
+    _refresh(db_session, entity)
+
+    # No net tax or balance is declared, so nothing absorbs the withholdings yet.
+    assert [i.amount for i in _credits(db_session, entity)] == [D("-200.00")]

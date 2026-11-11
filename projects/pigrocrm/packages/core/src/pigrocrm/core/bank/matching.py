@@ -331,6 +331,12 @@ class MovementMatchService:
             match.confirmed_by_type = actor.type
         self.session.flush()
         rows = {row.due_item_id: row for row in self._items(match)}
+        # The group before its items, as `ungroup_f24` takes them: a group taken apart meanwhile
+        # is refused instead of leaving settled items in a dissolved group.
+        for group_id in sorted(set(self.f24.groups_of_items(rows).values()), key=str):
+            locked = self.f24.get(group_id, lock=True)
+            if locked is None or locked.state != "open":
+                raise Conflict(MATCH_ENTITY, "l'F24 e' cambiato: riprova", id=str(group_id))
         for allocation in sorted(plan.allocations, key=lambda a: str(a.fact.item.id)):
             item = allocation.fact.item
             if allocation.adopts:

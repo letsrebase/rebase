@@ -137,7 +137,11 @@ class TaxCreditService:
             ):
                 continue
             amount = by_year.get(year, ZERO_MONEY)
-            if any(figure.tax == INCOME_TAX for figure in declared.for_year(legal_entity.id, year)):
+            if any(
+                figure.tax == INCOME_TAX
+                and (figure.tax_due is not None or figure.balance is not None)
+                for figure in declared.for_year(legal_entity.id, year)
+            ):
                 amount = ZERO_MONEY
             due = balance_date(
                 pack,
