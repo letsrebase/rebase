@@ -24,6 +24,7 @@ from decimal import Decimal
 from itertools import count
 from uuid import uuid4
 
+import pytest
 from fakes.customer_fixtures import make_customer
 from sqlalchemy.orm import Session
 
@@ -348,3 +349,45 @@ def test_what_the_basis_left_out_is_an_assumption_of_the_figure(db_session: Sess
     assert any("Persone in servizio" in text for text in company.ires.assumptions)
     # The IRAP base keeps staff cost in, so a missing staff cost does not move it.
     assert not any("Persone in servizio" in text for text in company.irap.assumptions)
+
+
+def test_the_forecast_advances_of_an_srl_are_written_from_its_estimate(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """REB-1074 reads `estimated_taxes`, which reads the readings' lines: IRES 8,832.00 and IRAP
+    2,808.00 give 40% on 30 June and 60% on 30 November, with no stub in between."""
+    from sqlalchemy import select
+
+    from pigrocrm.core.due_items.models import DueItem
+    from pigrocrm.core.fiscal import tax_items
+    from pigrocrm.core.fiscal.advance_method import TaxAdvanceMethodService
+    from pigrocrm.core.fiscal.advance_schemas import TaxAdvanceMethodSet
+    from pigrocrm.core.fiscal.tax_items import TaxDueItemService
+
+    monkeypatch.setattr(tax_items, "today_local", lambda: D(2026, 5, 15))
+    entity = _worked_example(db_session)
+    profile = db_session.scalars(
+        select(FiscalProfile).where(FiscalProfile.legal_entity_id == entity.id)
+    ).one()
+    profile.isa = False
+    db_session.flush()
+    TaxAdvanceMethodService(db_session).set_tax_advance_method(
+        TaxAdvanceMethodSet(year=YEAR, method="forecast"), ADMIN, legal_entity_id=entity.id
+    )
+    TaxDueItemService(db_session).refresh_tax_due_items(entity.id, today=D(2026, 5, 15))
+    db_session.expire_all()
+    rows = db_session.scalars(
+        select(DueItem)
+        .where(
+            DueItem.legal_entity_id == entity.id,
+            DueItem.source_kind == "tax_advance",
+            DueItem.state != "dropped",
+        )
+        .order_by(DueItem.due_date, DueItem.tax)
+    )
+    assert [(r.tax, r.due_date, r.amount, r.state) for r in rows] == [
+        ("irap", D(2026, 6, 30), M("1123.20"), "forecast"),
+        ("ires", D(2026, 6, 30), M("3532.80"), "forecast"),
+        ("irap", D(2026, 11, 30), M("1684.80"), "forecast"),
+        ("ires", D(2026, 11, 30), M("5299.20"), "forecast"),
+    ]
