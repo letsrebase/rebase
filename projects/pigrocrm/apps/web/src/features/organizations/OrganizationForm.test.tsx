@@ -1029,5 +1029,25 @@ describe('the roles and the supplier fields', () => {
       act(() => refuse({ type: 'x', title: 'x', status: 409, code: 'conflict', detail: 'partita IVA già presente' }))
       expect(await screen.findByText('Esiste già: Zanetti Impianti S.r.l. (cliente)')).toBeInTheDocument()
     })
+
+    it('never names the record it just saved when «Salva» comes before the typing settles', async () => {
+      // What the e2e does: the number is filled and «Salva» pressed at once, so the lookup only
+      // starts once the debounce settles, after the create, and finds the record just saved.
+      listing(ZANETTI)
+      const onSubmit = open({ defaultRoles: ['supplier'] })
+      await userEvent.click(screen.getByLabelText('P.IVA'))
+      await userEvent.paste('IT01234567890')
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+      expect(onSubmit).toHaveBeenCalledOnce()
+
+      await waitFor(() =>
+        expect(GET).toHaveBeenCalledWith(
+          '/api/organizations',
+          expect.objectContaining({ params: { query: expect.objectContaining({ search: 'IT01234567890' }) } }),
+        ),
+      )
+      await act(() => new Promise((resolve) => setTimeout(resolve, 100)))
+      expect(screen.queryByText(/Esiste già/)).toBeNull()
+    })
   })
 })
