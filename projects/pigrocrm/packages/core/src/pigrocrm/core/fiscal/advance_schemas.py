@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 AdvanceMethod = Literal["historical", "forecast"]
 # Which payment of a tax year a line is about.
-TaxItemPart = Literal["balance", "first_advance", "second_advance"]
+TaxItemPart = Literal["balance", "first_advance", "second_advance", "chamber_fee"]
 
 
 class TaxAdvanceMethodSet(BaseModel):

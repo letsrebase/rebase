@@ -19902,7 +19902,7 @@ export interface components {
              * Part
              * @enum {string}
              */
-            part: "balance" | "first_advance" | "second_advance";
+            part: "balance" | "first_advance" | "second_advance" | "chamber_fee";
             /** Reason */
             reason: string;
         };

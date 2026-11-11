@@ -3,9 +3,11 @@
 For each legal entity, tax and year this writes the **balance** of the tax year and the
 **advances** of the tax year as due items out, the tax office the counterparty with the tax
 named, on the dates the pack gives (`fiscal/advances.py`). The source kinds are `tax_balance` and
-`tax_advance`, both restricted: they are the fiscal position, so the due items' own gate (an
-administrator whose scope covers the legal entity, an agent only with `full_access`; the schedule
-and the Home leave them out for anybody else) applies to every read and settlement of one.
+`tax_advance`, both restricted (so is `chamber_fee`, the srl's annual chamber of commerce fee,
+REB-1077, written by the same refresh; see `_chamber_fee_payment`): they are the fiscal position,
+so the due items' own gate (an administrator whose scope covers the legal entity, an agent only
+with `full_access`; the schedule and the Home leave them out for anybody else) applies to every
+read and settlement of one.
 
 **What an item says.** `forecast` while the base is an estimate, `expected` once a declared
 figure fixes it, `settled` when paid (`DueItemService`'s own settlement). The base of a balance is
@@ -47,7 +49,7 @@ advances as paid in the amounts the plan gives them.
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from typing import Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -57,6 +59,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.db import today_local
 from pigrocrm.core.due_items.models import (
+    CHAMBER_FEE_SOURCE_KIND,
     TAX_ADVANCE_SOURCE_KIND,
     TAX_BALANCE_SOURCE_KIND,
     DueItem,
@@ -75,6 +78,7 @@ from pigrocrm.core.fiscal.advances import (
     advance_rule,
     balance_date,
 )
+from pigrocrm.core.fiscal.basis import year_basis
 from pigrocrm.core.fiscal.law import DeclaredTax
 from pigrocrm.core.fiscal.models import DEFAULT_ADVANCE_METHOD, DeclaredTaxFigure
 from pigrocrm.core.fiscal.pack import FiscalPack, resolve_pack
@@ -137,7 +141,7 @@ class Payment:
     """One payment of one tax year: where its item is, what it should say, and why it has none
     (`why`, only when a figure or a parameter is missing)."""
 
-    tax: DeclaredTax
+    tax: str
     year: int
     part: TaxItemPart
     due: dt.date | None
@@ -240,6 +244,8 @@ class TaxDueItemService:
                     continue
                 payments.extend(self._advance_payments(context, tax, year))
                 payments.append(self._balance_payment(context, tax, year))
+            if law.chamber_fee is not None:
+                payments.append(self._chamber_fee_payment(context, year))
         return payments
 
     def _advance_dates(
@@ -486,10 +492,81 @@ class TaxDueItemService:
             ),
         )
 
+    def _chamber_fee_payment(self, context: _Context, year: int) -> Payment:
+        """The srl's annual chamber of commerce fee of `year` (REB-1077, `law_chamber_fee`).
+
+        The law reads the turnover of the previous year's IRAP return (MIMIT note 9347 of
+        16 January 2026). No return is held here, so the stand-in is the revenue `year_basis`
+        gives for `year - 1`, which is what makes the item a `forecast`. The pack has no law
+        for that earlier year, so the basis is read under the fee year's accrual rule, which
+        is the same one (art. 83 TUIR). A company's first year pays a fixed amount by another
+        rule and the entity stores no incorporation date: that case is not modelled. The date
+        is the first income-tax advance's, the F24 code the payment rules' (3850)."""
+        entity = context.legal_entity
+        fee_law = context.pack.law_for(year)
+        assert fee_law is not None and fee_law.chamber_fee is not None
+        dates = advance_dates(
+            context.pack,
+            fee_law,
+            "ires",
+            year,
+            entity.fiscal_year_end_month,
+            entity.fiscal_year_end_day,
+        )
+        if isinstance(dates, Missing):
+            return Payment("chamber_fee", year, "chamber_fee", None, None, dates.reason)
+        due = dates.first_advance
+
+        def none(reason: str) -> Payment:
+            return Payment("chamber_fee", year, "chamber_fee", due, None, reason)
+
+        province = (entity.province or "").strip()
+        if not province:
+            return none("the legal entity has no province of the registered office")
+        chamber = fee_law.chamber_fee.chamber_for(province)
+        if chamber is None:
+            return none(
+                f"no chamber of commerce is mapped to the province {province.upper()}: "
+                "to verify with the accountant"
+            )
+        stand_in = replace(context.pack, laws=(replace(fee_law, from_year=year - 1),))
+        basis = year_basis(self.session, entity, year - 1, stand_in)
+        if basis is None:
+            return none(f"the revenue of {year - 1}, the turnover the fee is read on, is unknown")
+        fee = fee_law.chamber_fee.fee(year, basis.revenue, province)
+        if fee is None:
+            return none(f"the pack carries no chamber fee law for {year}")
+        rules = context.pack.payment_rules_for(year)
+        try:
+            code = rules.f24_code("chamber_fee").code if rules is not None else None
+        except KeyError:
+            code = None
+        if code is None:
+            return none("the pack carries no F24 code for the chamber fee")
+        return Payment(
+            "chamber_fee",
+            year,
+            "chamber_fee",
+            due,
+            Wanted(
+                amount=round_money(fee),
+                due=due,
+                state="forecast",
+                description=(
+                    f"Diritto camerale {year}, {chamber.name} (F24 codice tributo {code}), "
+                    f"sul fatturato {year - 1} come stima"
+                ),
+                rule=f"{CHAMBER_FEE_SOURCE_KIND}:{year}",
+            ),
+        )
+
     # ---- one slot ---------------------------------------------------------------------------
 
     def _sync(self, context: _Context, payment: Payment, report: TaxItemsReport) -> None:
-        kind = TAX_BALANCE_SOURCE_KIND if payment.part == "balance" else TAX_ADVANCE_SOURCE_KIND
+        kind = {
+            "balance": TAX_BALANCE_SOURCE_KIND,
+            "chamber_fee": CHAMBER_FEE_SOURCE_KIND,
+        }.get(payment.part, TAX_ADVANCE_SOURCE_KIND)
         slot = slot_id(kind, context.legal_entity.id, payment.tax, payment.year, payment.part)
         current = self._live(kind, slot)
         if current is not None and self._frozen(kind, slot) is not None:

@@ -55,6 +55,7 @@ SOURCE_KIND_MODULES: dict[str, str] = {
     "tax_instalment": "taxes",
     "tax_balance": "taxes",
     "tax_advance": "taxes",
+    "chamber_fee": "taxes",
     "payroll": "staff",
     "engagement": "collaborators",
     "contract_occurrence": "contracts",
