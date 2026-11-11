@@ -453,6 +453,19 @@ empty list), never another year's. A date enters a pack only after its row in th
 «verified» with the source. `get_tax_calendar` (`AnalyticsService`, registered in `tools/privileged.py`, module
 `taxes`) is an administrator's and a `full_access` token's, as `get_fiscal_estimate` is.
 
+**The payment rules of income taxes are pack data too (REB-1067).** `FiscalPack.payment_rules` holds `PaymentRulesLaw`
+entries (`fiscal/law_payment.py`; the figures are built in `fiscal/payment_data.py`), keyed like the calendar by the
+calendar year a payment or a filing falls in, read through `payment_rules_for(year)`: the instalment rule and its interest
+(4% a year to the second instalment, 0.33% for each later one), the 0.40% deferral, the forecast-method conditions, the
+penalty and the legal interest on a shortfall, the F24 code of every line an estimate will write (a tax code or an INPS
+causale, by line name, `f24_code(line)`), the dates the returns are filed and the year a withholding suffered is
+credited. `fiscal/payment_rules.py` holds the pure lookups (`instalment_schedule`, `instalment_interest_percent`,
+`return_filing_date`); they compute no tax and write no due item. The flat-rate substitute tax's advances are
+`TaxYearLaw.advances` of `it-flat-rate`, IRPEF's own figures with ISA never 50/50. Every figure names its primary source and
+the day it was read, and is a «verified» row of the frame's A5 register; a rule no primary source states (the last
+instalment of a company with another year end, the IRAP return of a person, the withholding credit of a company) is not
+in the pack and is on the accountant's list (REB-975).
+
 **«Tasse» draws what the server says and adds nothing (REB-1026).** `GET /api/analytics/fiscal` answers `readings`
 (`fiscal/readings.py`): one line per tax the pack lists for the year (`TaxYearLaw.taxes`, taxes design § 1), each with its
 `estimate`, `declared` (the typed return's tax due) and `paid` (no source writes one yet, so always `null`), the reading that
