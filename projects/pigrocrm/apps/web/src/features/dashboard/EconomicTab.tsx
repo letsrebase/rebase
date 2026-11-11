@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { RadioGroup } from 'radix-ui'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { NOT_COMPUTABLE } from '@/features/analytics/format'
+import { NOT_COMPUTABLE, formatPercent } from '@/features/analytics/format'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { useModules } from '@/lib/modules'
 import { Button } from '@rebase/ui/button'
@@ -239,7 +239,29 @@ export function EconomicTab({
             />
           </>
         )}
-        {!taxesOn ? null : tax ? (
+        {!taxesOn ? null : tax?.company ? (
+          <>
+            {/* An srl owes IRES and IRAP, on what accrued in the year (REB-1073): the same
+                estimate `get_fiscal_estimate` answers, one card per tax and the total the
+                server adds. No projection and no net: the projection is a «what if» on
+                revenue alone and the srl's estimate needs the year's costs. */}
+            <BigNumber
+              label="IRES stimata"
+              value={estimated(tax.company.ires.amount)}
+              hint={tax.company.ires.loss ? 'anno in perdita' : `aliquota ${formatPercent(tax.company.ires.rate)}`}
+            />
+            <BigNumber
+              label="IRAP stimata"
+              value={estimated(tax.company.irap.amount)}
+              hint={tax.company.irap.missing ?? `aliquota ${formatPercent(tax.company.irap.rate)}`}
+            />
+            <BigNumber
+              label="Totale da saldare"
+              value={due(tax)}
+              hint={tax.basis ? `${tax.basis.label}, su base competenza` : 'su base competenza'}
+            />
+          </>
+        ) : tax ? (
           <>
             <BigNumber
               label="Imponibile forfettario stimato"
@@ -300,8 +322,9 @@ export function EconomicTab({
                 the server's own words, and offers the settings screen when that is the
                 answer. */}
             <p className="mt-1 text-sm">
-              Non disponibile qui: serve un profilo fiscale del regime forfettario e un
-              account amministratore. Gli altri regimi non hanno una stima in PigroCRM.
+              Non disponibile qui: serve un profilo fiscale del regime forfettario o di una
+              società di capitali e un account amministratore. Gli altri regimi non hanno una
+              stima in PigroCRM.
             </p>
           </div>
         )}

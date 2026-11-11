@@ -130,6 +130,47 @@ export function FiscalPanel({
   if (estimate.isLoading || !estimate.data) return <LoadingState />
 
   const data = estimate.data
+  // An srl's estimate is IRES and IRAP, each from the year's accrual figures (REB-1073): the
+  // lines, the base, the rate and the tax are the server's, with what each assumes.
+  if (data.company) {
+    const { ires, irap } = data.company
+    const taxes = [
+      { name: 'IRES', tax: ires },
+      { name: 'IRAP', tax: irap },
+    ]
+    return (
+      <div className="space-y-4">
+        <p role="note" className="border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+          {data.warning}
+        </p>
+        {taxes.map(({ name, tax }) => (
+          <Card key={name}>
+            <CardContent className="pt-6">
+              <h2 className="mb-3 font-semibold">
+                {name} stimata {data.year}
+                {title ? ` · ${title}` : ''}
+              </h2>
+              {name === 'IRES' && data.basis ? (
+                <p className="mb-2 text-xs text-muted-foreground">{data.basis.label}.</p>
+              ) : null}
+              {tax.lines.map((line) => (
+                <Row key={line.code} label={line.label} value={money(line.amount)} />
+              ))}
+              <Row label={tax.loss ? 'Base (in perdita)' : 'Base'} value={money(tax.base)} />
+              <Row label="Aliquota" value={formatPercent(tax.rate)} />
+              <Row label={`${name} stimata`} value={money(tax.amount)} />
+              {tax.missing ? <p className="pt-2 text-sm">{tax.missing}</p> : null}
+              <ul className="list-disc space-y-1 pl-4 pt-2 text-xs text-muted-foreground">
+                {tax.assumptions.map((assumption) => (
+                  <li key={assumption}>{assumption}</li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    )
+  }
   const missingParameters =
     data.profitability_coefficient === null ||
     data.substitute_tax_rate === null ||

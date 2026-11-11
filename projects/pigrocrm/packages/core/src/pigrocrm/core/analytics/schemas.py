@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from pigrocrm.core.contracts.schemas import ContractCapSimulation
 from pigrocrm.core.fiscal.basis_schemas import YearBasis
+from pigrocrm.core.fiscal.company_estimate import CompanyEstimate
 from pigrocrm.core.fiscal.law import Cadence, DateKind, TaxName
 from pigrocrm.core.fiscal.pack import CeilingConsequence
 from pigrocrm.core.fiscal.schemas import DeclaredTaxFigureRead, TaxReadings
@@ -338,6 +339,10 @@ class FiscalEstimate(BaseModel):
     # field name (`profitability_coefficient`...), so the screen can say what to fill. Empty
     # when nothing is missing, and for a frozen estimate or a pack with no estimate.
     missing_parameters: list[str] = Field(default_factory=list)
+    # REB-1073: an srl's IRES and IRAP, each with the lines it was computed from, its rate and
+    # what it assumes (`fiscal/company_estimate.py`). `None` for a regime that owes neither, for
+    # a «what if» with a revenue the caller supplied, and where there is no basis to start from.
+    company: CompanyEstimate | None = None
 
 
 class CashMonth(BaseModel):

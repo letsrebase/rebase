@@ -140,7 +140,7 @@ class CompanyTaxLaw:
 
     Both rates are verified (A5 rows «IRES rate» and «IRAP ordinary rate»); the IRAP base and
     the regional rates are `irap`. They are percentages, like the rest of this module's rates.
-    Nothing computes a tax from them yet: that is the estimate card's.
+    `fiscal/company_estimate.py` computes the estimate from them (REB-1073).
     """
 
     # IRES, art. 77 c. 1 of D.P.R. 917/1986: on the net total income.
@@ -307,7 +307,11 @@ class TaxYearLaw:
 
     @property
     def has_income_estimate(self) -> bool:
-        return self.flat_rate is not None
+        """Whether the pack computes the year's income taxes: the flat-rate regime's substitute
+        tax and contributions, or an srl's IRES and IRAP (`fiscal/company_estimate.py`)."""
+        return self.flat_rate is not None or (
+            self.company_tax is not None and self.company_tax.irap is not None
+        )
 
 
 __all__ = [

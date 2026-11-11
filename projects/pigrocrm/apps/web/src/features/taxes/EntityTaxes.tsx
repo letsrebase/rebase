@@ -179,6 +179,15 @@ export function EntityTaxes({
     )
 
     const missingParameter = lines.some((line) => line.estimable && line.estimate === null)
+    // An srl's estimate says what it lacks in its own words (an address, not a parameter of the
+    // profile); the flat-rate one has the one sentence about the settings.
+    const missingNotes = data.company
+      ? [data.company.ires.missing, data.company.irap.missing].filter(
+          (note): note is string => typeof note === 'string',
+        )
+      : missingParameter
+        ? [missingParametersSentence(data.missing_parameters)]
+        : []
     const pack = packLine(data)
     const openTax = open?.kind === 'tax' ? lines.find((line) => line.tax === open.tax) : undefined
     const openDay = open?.kind === 'date' ? days.find((day) => day.date === open.date) : undefined
@@ -196,9 +205,11 @@ export function EntityTaxes({
               onSelect={(tax) => setOpen({ kind: 'tax', tax })}
             />
           ) : null}
-          {missingParameter ? (
-            <p className="text-sm text-muted-foreground">{missingParametersSentence(data.missing_parameters)}</p>
-          ) : null}
+          {missingNotes.map((note) => (
+            <p key={note} className="text-sm text-muted-foreground">
+              {note}
+            </p>
+          ))}
           {pack ? <p className="text-xs text-muted-foreground">{pack}.</p> : null}
         </div>
       )
@@ -230,9 +241,11 @@ export function EntityTaxes({
                 </li>
               ))}
             </ul>
-            {missingParameter ? (
-              <p className="text-sm text-muted-foreground">{missingParametersSentence(data.missing_parameters)}</p>
-            ) : null}
+            {missingNotes.map((note) => (
+              <p key={note} className="text-sm text-muted-foreground">
+                {note}
+              </p>
+            ))}
             {pack ? <p className="text-xs text-muted-foreground">{pack}.</p> : null}
           </section>
         )}
