@@ -793,11 +793,11 @@ describe('FiscalPanel', () => {
       expect(screen.getByLabelText('Soggetto agli ISA')).toHaveValue('')
       expect(screen.getByLabelText('Attività (gruppo ATECO)')).toHaveValue('')
       expect(screen.getByLabelText('Anno di inizio attività')).toHaveValue('')
-      expect(screen.getByLabelText(/Nessuna attività nei tre anni/)).toHaveValue('')
+      expect(screen.getByLabelText(/Nessuna attività prima/)).toHaveValue('')
       // The pairings the law makes: no gestione chosen, no trade, no 1996, no reduction.
       expect(screen.queryByLabelText('Gestione INPS')).not.toBeInTheDocument()
       expect(screen.queryByLabelText(/prima del 1996/)).not.toBeInTheDocument()
-      expect(screen.queryByLabelText(/Riduzione del 35%/)).not.toBeInTheDocument()
+      expect(screen.queryByLabelText(/Riduzione contributiva/)).not.toBeInTheDocument()
     })
 
     it('lets an admin set every one and sends them typed', async () => {
@@ -810,7 +810,7 @@ describe('FiscalPanel', () => {
       await userEvent.selectOptions(await screen.findByLabelText('Cassa INPS'), 'artigiani_commercianti')
       await userEvent.selectOptions(screen.getByLabelText('Gestione INPS'), 'commercianti')
       await userEvent.selectOptions(screen.getByLabelText(/prima del 1996/), 'true')
-      await userEvent.selectOptions(screen.getByLabelText(/Riduzione del 35%/), 'true')
+      await userEvent.selectOptions(screen.getByLabelText(/Riduzione contributiva/), 'true')
       await userEvent.selectOptions(screen.getByLabelText('Soggetto agli ISA'), 'false')
       await userEvent.selectOptions(
         screen.getByLabelText('Attività (gruppo ATECO)'),
@@ -820,7 +820,7 @@ describe('FiscalPanel', () => {
       expect(screen.getByText(/dell’allegato 4: 40%/)).toBeInTheDocument()
       expect(screen.getByLabelText('Coefficiente di redditività')).toHaveValue('40.00')
       await userEvent.type(screen.getByLabelText('Anno di inizio attività'), '2024')
-      await userEvent.selectOptions(screen.getByLabelText(/Nessuna attività nei tre anni/), 'true')
+      await userEvent.selectOptions(screen.getByLabelText(/Nessuna attività prima/), 'true')
       await userEvent.selectOptions(screen.getByLabelText(/Non è la prosecuzione/), 'true')
       await userEvent.selectOptions(screen.getByLabelText(/Ricavi di chi ti ha preceduto/), 'false')
       await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
@@ -871,6 +871,21 @@ describe('FiscalPanel', () => {
       })
     })
 
+    it('keeps a fact set elsewhere while the category is unstated', async () => {
+      vi.mocked(api.GET).mockImplementation(() =>
+        ok({ ...PROFILE, inps_trade: 'artigiani', inps_before_1996: true }),
+      )
+      vi.mocked(api.PUT).mockImplementation(() => ok(PROFILE))
+      renderPanel()
+
+      await waitFor(() => expect(screen.getByLabelText('Cassa INPS')).toHaveValue(''))
+      expect(screen.queryByLabelText('Gestione INPS')).not.toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+      expect(bodyOfSave()).toMatchObject({ inps_trade: 'artigiani', inps_before_1996: true })
+    })
+
     it('shows the INPS facts and the ISA to the ordinary regime, and none of the forfettario ones', async () => {
       vi.mocked(api.GET).mockImplementation(() => ok(ORDINARY))
       renderPanel()
@@ -880,7 +895,7 @@ describe('FiscalPanel', () => {
       expect(screen.getByLabelText('Soggetto agli ISA')).toBeInTheDocument()
       expect(screen.queryByLabelText('Attività (gruppo ATECO)')).not.toBeInTheDocument()
       expect(screen.queryByLabelText('Anno di inizio attività')).not.toBeInTheDocument()
-      expect(screen.queryByLabelText(/Nessuna attività nei tre anni/)).not.toBeInTheDocument()
+      expect(screen.queryByLabelText(/Nessuna attività prima/)).not.toBeInTheDocument()
     })
 
     it('shows none of them for an srl, and sends them empty', async () => {

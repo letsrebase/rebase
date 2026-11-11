@@ -165,6 +165,9 @@ export interface ChoiceField {
   shownFor: readonly Regime[]
   /** Shown only while this holds on the draft: a pairing the law makes. */
   when?: (values: Values) => boolean
+  /** The answer the law's pairing contradicts: only then is a hidden fact sent empty, so a
+   *  fact set through the API while the category was unstated survives a save of this form. */
+  conflicts?: (values: Values) => boolean
   /** `null` for the annex 4 group, whose options come from the pack on the profile read. */
   options: readonly { value: string; label: string }[] | null
 }
@@ -177,6 +180,7 @@ const YES_NO = [
 
 const PERSON: readonly Regime[] = ['RF19', 'RF01']
 const artisanOrTrader = (values: Values) => values.inps_category === 'artigiani_commercianti'
+const separate = (values: Values) => values.inps_category === 'gestione_separata'
 
 export const CHOICES: readonly ChoiceField[] = [
   {
@@ -196,6 +200,7 @@ export const CHOICES: readonly ChoiceField[] = [
     hint: 'Artigiani e commercianti hanno aliquote diverse.',
     shownFor: PERSON,
     when: artisanOrTrader,
+    conflicts: separate,
     options: [
       { value: '', label: 'Non indicata' },
       { value: 'artigiani', label: 'Artigiani' },
@@ -207,7 +212,8 @@ export const CHOICES: readonly ChoiceField[] = [
     label: 'Assicurato altrove o pensionato',
     hint: 'La gestione separata applica un’aliquota più bassa a chi ha già un’altra copertura.',
     shownFor: PERSON,
-    when: (values) => values.inps_category === 'gestione_separata',
+    when: separate,
+    conflicts: artisanOrTrader,
     options: YES_NO,
   },
   {
@@ -216,14 +222,16 @@ export const CHOICES: readonly ChoiceField[] = [
     hint: 'Per chi aveva contributi al 31 dicembre 1995 il massimale contributivo è diverso.',
     shownFor: PERSON,
     when: artisanOrTrader,
+    conflicts: separate,
     options: YES_NO,
   },
   {
     name: 'flat_rate_inps_reduction',
-    label: 'Riduzione del 35% dei contributi',
-    hint: 'Se hai chiesto la riduzione contributiva di artigiani e commercianti nel forfettario.',
+    label: 'Riduzione contributiva del forfettario',
+    hint: 'Se hai chiesto la riduzione dei contributi di artigiani e commercianti nel forfettario.',
     shownFor: ['RF19'],
     when: artisanOrTrader,
+    conflicts: separate,
     options: YES_NO,
   },
   {
@@ -242,22 +250,22 @@ export const CHOICES: readonly ChoiceField[] = [
   },
   {
     name: 'startup_no_prior_activity',
-    label: 'Nessuna attività nei tre anni prima dell’inizio',
-    hint: 'Aliquota agevolata: non hai esercitato attività artistica, professionale o d’impresa.',
+    label: 'Nessuna attività prima dell’inizio',
+    hint: 'Aliquota agevolata (comma 65, lettera a): negli anni precedenti non hai esercitato attività artistica, professionale o d’impresa.',
     shownFor: ['RF19'],
     options: YES_NO,
   },
   {
     name: 'startup_not_a_continuation',
     label: 'Non è la prosecuzione di un lavoro precedente',
-    hint: 'Aliquota agevolata: l’attività non continua un lavoro dipendente o autonomo, salvo il praticantato obbligatorio.',
+    hint: 'Aliquota agevolata (lettera b): l’attività non continua un lavoro dipendente o autonomo, salvo il praticantato obbligatorio.',
     shownFor: ['RF19'],
     options: YES_NO,
   },
   {
     name: 'startup_predecessor_within_limit',
     label: 'Ricavi di chi ti ha preceduto entro il limite',
-    hint: 'Aliquota agevolata: se prosegui l’attività di un altro soggetto, i suoi ricavi dell’anno prima non superano la soglia del forfettario.',
+    hint: 'Aliquota agevolata (lettera c): se prosegui l’attività di un altro soggetto, i suoi ricavi dell’anno prima non superano la soglia del forfettario.',
     shownFor: ['RF19'],
     options: YES_NO,
   },
@@ -408,11 +416,11 @@ function taxpayerFacts(
   values: Omit<Values, 'pack_id' | 'regime_code'>,
   pack: PackId,
 ): Record<string, unknown> {
+  const draft: Values = { ...values, pack_id: pack, regime_code: '' }
   const shown = new Set<string>(
     CHOICES.filter(
       (choice) =>
-        choice.shownFor.includes(regimeOf({ pack_id: pack })) &&
-        (choice.when?.({ ...values, pack_id: pack, regime_code: '' }) ?? true),
+        choice.shownFor.includes(regimeOf({ pack_id: pack })) && (choice.when?.(draft) ?? true),
     ).map((choice) => choice.name),
   )
   const facts: Record<string, unknown> = {}
@@ -421,7 +429,10 @@ function taxpayerFacts(
     // and only a company abroad, which the server refuses a value for, sends them empty.
     const kept =
       (choice.name === 'inps_category' || choice.name === 'isa') && pack !== 'non-it'
-    const raw = shown.has(choice.name) || kept ? values[choice.name] : ''
+    // A fact hidden by a pairing keeps its answer unless the other category contradicts it.
+    const reads = choice.shownFor.includes(regimeOf({ pack_id: pack }))
+    const hiddenByPairing = reads && !shown.has(choice.name) && !choice.conflicts?.(draft)
+    const raw = shown.has(choice.name) || kept || hiddenByPairing ? values[choice.name] : ''
     facts[choice.name] = BOOLEAN_CHOICES.includes(choice.name)
       ? raw === '' ? null : raw === 'true'
       : raw === '' ? null : raw

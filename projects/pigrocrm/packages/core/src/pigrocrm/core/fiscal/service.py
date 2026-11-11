@@ -29,6 +29,8 @@ from pigrocrm.core.fiscal.schemas import (
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.versioning import require_unchanged
 
+# `inps_category` is read beside the facts: the law's pairings are between it and them.
+KEPT_PARAMETERS = ("inps_category", *TAXPAYER_PARAMETERS)
 ENTITY = "fiscal_profile"
 ZERO = Decimal("0.00")
 # The first half of the advisory lock every save takes per legal entity (REB-622), the second
@@ -123,6 +125,15 @@ class FiscalProfileService:
                 ENTITY,
                 sent=data.updated_at,
                 current=None if profile is None else profile.updated_at,
+            )
+        if profile is not None:
+            # A fact the save left out keeps the row's value, so the pairings of the law are
+            # read on what the row will hold, not on the keys of the request alone.
+            self._check_taxpayer_parameters(
+                {
+                    **{key: getattr(profile, key) for key in KEPT_PARAMETERS},
+                    **payload,
+                }
             )
         if profile is not None and profile.pack_id != payload["pack_id"]:
             self._freeze_estimates(actor, legal_entity.id)

@@ -130,3 +130,38 @@ def test_the_laws_own_pairings_are_enforced(db_session: Session) -> None:
         with pytest.raises(ValidationFailed) as refusal:
             service.upsert(FiscalProfileUpsert(regime_code="RF19", **body), ADMIN)
         assert refusal.value.details["field"] == field
+
+
+def test_a_pairing_is_read_on_the_row_a_save_leaves_alone(db_session: Session) -> None:
+    """A save that names only the category is checked against the facts the row keeps."""
+    service = FiscalProfileService(db_session)
+    service.upsert(
+        FiscalProfileUpsert(
+            regime_code="RF19", inps_category="gestione_separata", inps_covered_elsewhere=True
+        ),
+        ADMIN,
+    )
+    with pytest.raises(ValidationFailed) as refusal:
+        service.upsert(
+            FiscalProfileUpsert(regime_code="RF19", inps_category="artigiani_commercianti"), ADMIN
+        )
+    assert refusal.value.details["field"] == "inps_covered_elsewhere"
+    with pytest.raises(ValidationFailed) as refusal:
+        service.upsert(
+            FiscalProfileUpsert(
+                regime_code="RF19", inps_category="artigiani_commercianti", inps_trade="artigiani"
+            ),
+            ADMIN,
+        )
+    assert refusal.value.details["field"] == "inps_covered_elsewhere"
+    # Both sides named together is a consistent save.
+    saved = service.upsert(
+        FiscalProfileUpsert(
+            regime_code="RF19",
+            inps_category="artigiani_commercianti",
+            inps_trade="artigiani",
+            inps_covered_elsewhere=None,
+        ),
+        ADMIN,
+    )
+    assert saved.inps_trade == "artigiani" and saved.inps_covered_elsewhere is None
