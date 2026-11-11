@@ -12,14 +12,23 @@ from decimal import Decimal
 from typing import Any, Literal, get_args
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 from pigrocrm.core.fiscal.law import DeclaredTax
+from pigrocrm.core.fiscal.law_flat_rate import ANNEX_4
 from pigrocrm.core.fiscal.pack import (
     PACK_IT_COMPANY,
     PACK_IT_FLAT_RATE,
     PACK_IT_STANDARD,
     PACK_NON_IT,
+    current_pack,
 )
 from pigrocrm.core.validation import SafeStr
 
@@ -28,9 +37,32 @@ from pigrocrm.core.validation import SafeStr
 # the schema instead of reaching `resolve_pack`'s `KeyError` at the first emission.
 PackId = Literal["it-flat-rate", "it-standard", "it-company", "non-it"]
 InpsCategory = Literal["gestione_separata", "artigiani_commercianti"]
+InpsTrade = Literal["artigiani", "commercianti"]
 IvaFrequency = Literal["monthly", "quarterly"]
+# The taxpayer facts of REB-1070 that the law of the INPS contributions reads (an ordinary or
+# flat-rate person), and the ones only the flat-rate regime reads. A pack that does not use a
+# fact carries none of it (`FiscalProfileService.check` refuses a value, the form hides it).
+INPS_PARAMETERS = (
+    "inps_trade",
+    "inps_covered_elsewhere",
+    "inps_before_1996",
+    "flat_rate_inps_reduction",
+)
+FLAT_RATE_PARAMETERS = (
+    "ateco_group",
+    "flat_rate_start_year",
+    "startup_no_prior_activity",
+    "startup_not_a_continuation",
+    "startup_predecessor_within_limit",
+)
+# `flat_rate_inps_reduction` is the flat-rate regime's election, so it is a flat-rate fact too.
+FLAT_RATE_ONLY = ("flat_rate_inps_reduction", *FLAT_RATE_PARAMETERS)
+TAXPAYER_PARAMETERS = (*INPS_PARAMETERS, *FLAT_RATE_PARAMETERS)
 # The profile keys a save that does not name them leaves as they are (`stored_fields`).
-KEPT_WHEN_OMITTED = ("inps_category", "isa", "iva_frequency")
+KEPT_WHEN_OMITTED = ("inps_category", "isa", "iva_frequency", *TAXPAYER_PARAMETERS)
+ATECO_GROUP_KEYS = tuple(group.key for group in ANNEX_4)
+FLAT_RATE_START_YEAR_MIN = 1900
+FLAT_RATE_START_YEAR_MAX = 2100
 assert set(get_args(PackId)) == {  # noqa: S101
     PACK_IT_FLAT_RATE,
     PACK_IT_STANDARD,
@@ -211,7 +243,25 @@ class FiscalProfileUpsert(BaseModel):
             # A company abroad has no Italian INPS category and no ISA.
             data.setdefault("inps_category", None)
             data.setdefault("isa", None)
+        # The taxpayer facts of REB-1070 follow the pack: a pack that does not read one has
+        # it cleared by a save that names no value, so moving a profile to it leaves none.
+        if pack_id in (PACK_NON_IT, PACK_IT_COMPANY):
+            for key in TAXPAYER_PARAMETERS:
+                data.setdefault(key, None)
+        elif pack_id == PACK_IT_STANDARD:
+            for key in FLAT_RATE_ONLY:
+                data.setdefault(key, None)
         return data
+
+    @field_validator("ateco_group")
+    @classmethod
+    def _known_ateco_group(cls, value: str | None) -> str | None:
+        if value is not None and value not in ATECO_GROUP_KEYS:
+            raise ValueError(
+                "gruppo ATECO sconosciuto: l'allegato 4 della legge 190/2014 ha "
+                + ", ".join(ATECO_GROUP_KEYS)
+            )
+        return value
 
     # Optional in the schema and required by the service on an Italian pack
     # (`resolve_regime`): the same field is legitimately empty on `non-it`, and a
@@ -271,6 +321,21 @@ class FiscalProfileUpsert(BaseModel):
     # verified).
     inps_category: InpsCategory | None = None
     isa: bool | None = None
+    # REB-1070: the facts the INPS and flat-rate law read. `None` is «not stated», never a
+    # default: a figure that needs one names it as missing. Kept when a save leaves them out.
+    inps_trade: InpsTrade | None = None
+    inps_covered_elsewhere: bool | None = None
+    inps_before_1996: bool | None = None
+    flat_rate_inps_reduction: bool | None = None
+    ateco_group: SafeStr | None = Field(default=None, max_length=60)
+    flat_rate_start_year: int | None = Field(
+        default=None, ge=FLAT_RATE_START_YEAR_MIN, le=FLAT_RATE_START_YEAR_MAX
+    )
+    # The three conditions of c. 65 for the 5% rate, answered as the law states them:
+    # `True` when the condition is met.
+    startup_no_prior_activity: bool | None = None
+    startup_not_a_continuation: bool | None = None
+    startup_predecessor_within_limit: bool | None = None
     # REB-1021: how often the entity settles its IVA. Kept as it is when a save leaves it out,
     # like the two above; only a pack with a periodic IVA may say `quarterly`.
     iva_frequency: IvaFrequency = "monthly"
@@ -290,15 +355,26 @@ class FiscalProfileUpsert(BaseModel):
 
     def stored_fields(self) -> dict[str, Any]:
         """The columns a save writes: the body without its version, and without the two
-        taxpayer parameters of REB-974 (`inps_category`, `isa`) when the caller did not name
-        them. The rest of the profile is a whole-row replacement, so a key left out goes
-        back to its default; these two have no default worth restoring and no field in the
-        web form yet, so a save that does not mention them leaves what the row holds."""
+        taxpayer parameters (`KEPT_WHEN_OMITTED`: REB-974's `inps_category` and `isa`, the
+        facts of REB-1070) when the caller did not name them. The rest of the profile is a
+        whole-row replacement, so a key left out goes back to its default; these have no
+        default worth restoring, so a save that does not mention them leaves what the row
+        holds."""
         payload = self.model_dump(exclude={"updated_at"})
         for key in KEPT_WHEN_OMITTED:
             if key not in self.model_fields_set:
                 del payload[key]
         return payload
+
+
+class FlatRateGroupRead(BaseModel):
+    """One row of annex 4 of L. 190/2014 as the form lists it."""
+
+    key: str
+    number: int
+    name: str
+    ateco_2007: list[str]
+    coefficient: Decimal
 
 
 class FiscalProfileRead(BaseModel):
@@ -328,9 +404,46 @@ class FiscalProfileRead(BaseModel):
     pack_version: str
     inps_category: str | None
     isa: bool | None
+    inps_trade: str | None
+    inps_covered_elsewhere: bool | None
+    inps_before_1996: bool | None
+    flat_rate_inps_reduction: bool | None
+    ateco_group: str | None
+    flat_rate_start_year: int | None
+    startup_no_prior_activity: bool | None
+    startup_not_a_continuation: bool | None
+    startup_predecessor_within_limit: bool | None
     iva_frequency: str
     created_at: datetime
     updated_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def flat_rate_groups(self) -> list["FlatRateGroupRead"]:
+        """Annex 4's groups, from the newest law of the flat-rate pack, whichever pack this
+        profile is on: a form that switches the regime to the flat-rate one before saving
+        needs the list too. What the form's group list and the coefficient it shows come
+        from, so the web carries no figure of law."""
+        flat_rate = next(
+            (
+                law.flat_rate
+                for law in reversed(current_pack(PACK_IT_FLAT_RATE).laws)
+                if law.flat_rate is not None
+            ),
+            None,
+        )
+        if flat_rate is None:
+            return []
+        return [
+            FlatRateGroupRead(
+                key=group.key,
+                number=group.number,
+                name=group.name,
+                ateco_2007=list(group.ateco_2007),
+                coefficient=group.coefficient,
+            )
+            for group in flat_rate.coefficients
+        ]
 
 
 # The taxes a declared figure may be typed for: the design's own names (taxes design § 1 and

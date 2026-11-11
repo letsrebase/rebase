@@ -334,6 +334,10 @@ class FiscalEstimate(BaseModel):
     # counted on a stand-in. `None` for a «what if» with a revenue the caller supplied, and for
     # a year the pack states no basis for; there `revenue` is zero and no figure is computed.
     basis: YearBasis | None = None
+    # REB-1070: the profile parameters the estimate needs and the profile does not state, by
+    # field name (`profitability_coefficient`...), so the screen can say what to fill. Empty
+    # when nothing is missing, and for a frozen estimate or a pack with no estimate.
+    missing_parameters: list[str] = Field(default_factory=list)
 
 
 class CashMonth(BaseModel):

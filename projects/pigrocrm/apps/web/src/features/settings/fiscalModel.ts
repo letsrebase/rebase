@@ -20,6 +20,7 @@ export interface FiscalField {
     | 'profitability_coefficient'
     | 'substitute_tax_rate'
     | 'social_security_rate'
+    | 'flat_rate_start_year'
   label: string
   hint?: string
   /** The regimes that read the field; every regime when absent. A field a regime does not
@@ -134,9 +135,155 @@ export const FIELDS: readonly FiscalField[] = [
     hint: 'I contributi previdenziali calcolati sul reddito imponibile',
     shownFor: ['RF19'],
   },
+  {
+    name: 'flat_rate_start_year',
+    label: 'Anno di inizio attività',
+    hint: 'Con le condizioni sotto decide l’aliquota agevolata dei primi anni (legge 190/2014, art. 1 comma 65)',
+    shownFor: ['RF19'],
+  },
 ]
 
-export type Values = Record<FiscalField['name'], string> & {
+/** The facts the INPS and flat-rate law read (REB-1070), each one a choice: a closed list, or
+ *  yes/no/not stated for a nullable boolean (`''` is «not stated», never a default). */
+export type ChoiceName =
+  | 'inps_category'
+  | 'inps_trade'
+  | 'inps_covered_elsewhere'
+  | 'inps_before_1996'
+  | 'flat_rate_inps_reduction'
+  | 'isa'
+  | 'ateco_group'
+  | 'startup_no_prior_activity'
+  | 'startup_not_a_continuation'
+  | 'startup_predecessor_within_limit'
+
+export interface ChoiceField {
+  name: ChoiceName
+  label: string
+  hint: string
+  /** The packs that read the fact, as regimes: the srl and a company abroad have none. */
+  shownFor: readonly Regime[]
+  /** Shown only while this holds on the draft: a pairing the law makes. */
+  when?: (values: Values) => boolean
+  /** The answer the law's pairing contradicts: only then is a hidden fact sent empty, so a
+   *  fact set through the API while the category was unstated survives a save of this form. */
+  conflicts?: (values: Values) => boolean
+  /** `null` for the annex 4 group, whose options come from the pack on the profile read. */
+  options: readonly { value: string; label: string }[] | null
+}
+
+const YES_NO = [
+  { value: '', label: 'Non indicato' },
+  { value: 'true', label: 'Sì' },
+  { value: 'false', label: 'No' },
+] as const
+
+const PERSON: readonly Regime[] = ['RF19', 'RF01']
+const artisanOrTrader = (values: Values) => values.inps_category === 'artigiani_commercianti'
+const separate = (values: Values) => values.inps_category === 'gestione_separata'
+
+export const CHOICES: readonly ChoiceField[] = [
+  {
+    name: 'inps_category',
+    label: 'Cassa INPS',
+    hint: 'La gestione a cui versi i contributi. Senza, le tasse non calcolano i contributi.',
+    shownFor: PERSON,
+    options: [
+      { value: '', label: 'Non indicata' },
+      { value: 'gestione_separata', label: 'Gestione separata' },
+      { value: 'artigiani_commercianti', label: 'Artigiani e commercianti' },
+    ],
+  },
+  {
+    name: 'inps_trade',
+    label: 'Gestione INPS',
+    hint: 'Artigiani e commercianti hanno aliquote diverse.',
+    shownFor: PERSON,
+    when: artisanOrTrader,
+    conflicts: separate,
+    options: [
+      { value: '', label: 'Non indicata' },
+      { value: 'artigiani', label: 'Artigiani' },
+      { value: 'commercianti', label: 'Commercianti' },
+    ],
+  },
+  {
+    name: 'inps_covered_elsewhere',
+    label: 'Assicurato altrove o pensionato',
+    hint: 'La gestione separata applica un’aliquota più bassa a chi ha già un’altra copertura.',
+    shownFor: PERSON,
+    when: separate,
+    conflicts: artisanOrTrader,
+    options: YES_NO,
+  },
+  {
+    name: 'inps_before_1996',
+    label: 'Contributi versati prima del 1996',
+    hint: 'Per chi aveva contributi al 31 dicembre 1995 il massimale contributivo è diverso.',
+    shownFor: PERSON,
+    when: artisanOrTrader,
+    conflicts: separate,
+    options: YES_NO,
+  },
+  {
+    name: 'flat_rate_inps_reduction',
+    label: 'Riduzione contributiva del forfettario',
+    hint: 'Se hai chiesto la riduzione dei contributi di artigiani e commercianti nel forfettario.',
+    shownFor: ['RF19'],
+    when: artisanOrTrader,
+    conflicts: separate,
+    options: YES_NO,
+  },
+  {
+    name: 'isa',
+    label: 'Soggetto agli ISA',
+    hint: 'Decide come si dividono gli acconti delle imposte sui redditi.',
+    shownFor: PERSON,
+    options: YES_NO,
+  },
+  {
+    name: 'ateco_group',
+    label: 'Attività (gruppo ATECO)',
+    hint: 'Il gruppo dell’allegato 4 della legge 190/2014 che corrisponde al tuo codice ATECO 2007.',
+    shownFor: ['RF19'],
+    options: null,
+  },
+  {
+    name: 'startup_no_prior_activity',
+    label: 'Nessuna attività prima dell’inizio',
+    hint: 'Aliquota agevolata (comma 65, lettera a): negli anni precedenti non hai esercitato attività artistica, professionale o d’impresa.',
+    shownFor: ['RF19'],
+    options: YES_NO,
+  },
+  {
+    name: 'startup_not_a_continuation',
+    label: 'Non è la prosecuzione di un lavoro precedente',
+    hint: 'Aliquota agevolata (lettera b): l’attività non continua un lavoro dipendente o autonomo, salvo il praticantato obbligatorio.',
+    shownFor: ['RF19'],
+    options: YES_NO,
+  },
+  {
+    name: 'startup_predecessor_within_limit',
+    label: 'Ricavi di chi ti ha preceduto entro il limite',
+    hint: 'Aliquota agevolata (lettera c): se prosegui l’attività di un altro soggetto, i suoi ricavi dell’anno prima non superano la soglia del forfettario.',
+    shownFor: ['RF19'],
+    options: YES_NO,
+  },
+]
+
+/** The choices that are a nullable boolean on the server: `''` goes as `null`. */
+const BOOLEAN_CHOICES: readonly ChoiceName[] = [
+  'inps_covered_elsewhere',
+  'inps_before_1996',
+  'flat_rate_inps_reduction',
+  'isa',
+  'startup_no_prior_activity',
+  'startup_not_a_continuation',
+  'startup_predecessor_within_limit',
+]
+
+export type Values = Record<FiscalField['name'], string> &
+  Record<ChoiceName, string> & {
   apply_stamp_duty: boolean
   pack_id: PackId
   regime_code: string
@@ -179,6 +326,17 @@ export function emptyValues(): Values {
     profitability_coefficient: '67.00',
     substitute_tax_rate: '5.00',
     social_security_rate: '26.07',
+    flat_rate_start_year: '',
+    inps_category: '',
+    inps_trade: '',
+    inps_covered_elsewhere: '',
+    inps_before_1996: '',
+    flat_rate_inps_reduction: '',
+    isa: '',
+    ateco_group: '',
+    startup_no_prior_activity: '',
+    startup_not_a_continuation: '',
+    startup_predecessor_within_limit: '',
     apply_stamp_duty: true,
   }
 }
@@ -188,6 +346,10 @@ export function valuesFrom(profile: FiscalProfile): Values {
   for (const field of FIELDS) {
     const stored = profile[field.name]
     values[field.name] = stored === null || stored === undefined ? '' : String(stored)
+  }
+  for (const choice of CHOICES) {
+    const stored = profile[choice.name]
+    values[choice.name] = stored === null || stored === undefined ? '' : String(stored)
   }
   values.apply_stamp_duty = profile.apply_stamp_duty
   values.pack_id = isPackId(profile.pack_id) ? profile.pack_id : 'it-flat-rate'
@@ -210,6 +372,7 @@ export function bodyFrom(values: Values): Record<string, unknown> {
   // decimals for them: a blank left from an edit under another regime goes as the default.
   const rest = {
     ...fields,
+    ...taxpayerFacts(fields, pack_id),
     stamp_duty_threshold: fields.stamp_duty_threshold.trim() || '77.47',
     stamp_duty_amount: fields.stamp_duty_amount.trim() || '2.00',
   }
@@ -240,4 +403,42 @@ export function bodyFrom(values: Values): Record<string, unknown> {
     }
   }
   return { ...rest, pack_id, regime_code }
+}
+
+/**
+ * The taxpayer facts of a save, as the server reads them: `''` is «not stated» and goes as
+ * `null`, a yes/no as a boolean, the start year as a number. A fact the pack does not read goes
+ * `null` too (the server refuses a value there), and so does one whose pairing is not met
+ * (a trade with the gestione separata), so a draft that was edited and then changed back never
+ * sends a stale answer.
+ */
+function taxpayerFacts(
+  values: Omit<Values, 'pack_id' | 'regime_code'>,
+  pack: PackId,
+): Record<string, unknown> {
+  const draft: Values = { ...values, pack_id: pack, regime_code: '' }
+  const shown = new Set<string>(
+    CHOICES.filter(
+      (choice) =>
+        choice.shownFor.includes(regimeOf({ pack_id: pack })) && (choice.when?.(draft) ?? true),
+    ).map((choice) => choice.name),
+  )
+  const facts: Record<string, unknown> = {}
+  for (const choice of CHOICES) {
+    // The category and the ISA flag are older than the form: an srl keeps what its row holds,
+    // and only a company abroad, which the server refuses a value for, sends them empty.
+    const kept =
+      (choice.name === 'inps_category' || choice.name === 'isa') && pack !== 'non-it'
+    // A fact hidden by a pairing keeps its answer unless the other category contradicts it.
+    const reads = choice.shownFor.includes(regimeOf({ pack_id: pack }))
+    const hiddenByPairing = reads && !shown.has(choice.name) && !choice.conflicts?.(draft)
+    const raw = shown.has(choice.name) || kept || hiddenByPairing ? values[choice.name] : ''
+    facts[choice.name] = BOOLEAN_CHOICES.includes(choice.name)
+      ? raw === '' ? null : raw === 'true'
+      : raw === '' ? null : raw
+  }
+  const year = pack === 'it-flat-rate' ? values.flat_rate_start_year.trim() : ''
+  // A year that is not four digits goes as typed, for the server to refuse by field name.
+  facts.flat_rate_start_year = year === '' ? null : /^\d{4}$/.test(year) ? Number(year) : year
+  return facts
 }

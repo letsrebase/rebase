@@ -19,10 +19,18 @@ from pigrocrm.core.fiscal.pack import (
 )
 from pigrocrm.core.fiscal.regime import resolve_regime
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
-from pigrocrm.core.fiscal.schemas import FiscalProfileRead, FiscalProfileUpsert, FiscalSnapshot
+from pigrocrm.core.fiscal.schemas import (
+    FLAT_RATE_ONLY,
+    TAXPAYER_PARAMETERS,
+    FiscalProfileRead,
+    FiscalProfileUpsert,
+    FiscalSnapshot,
+)
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.versioning import require_unchanged
 
+# `inps_category` is read beside the facts: the law's pairings are between it and them.
+KEPT_PARAMETERS = ("inps_category", *TAXPAYER_PARAMETERS)
 ENTITY = "fiscal_profile"
 ZERO = Decimal("0.00")
 # The first half of the advisory lock every save takes per legal entity (REB-622), the second
@@ -117,6 +125,15 @@ class FiscalProfileService:
                 ENTITY,
                 sent=data.updated_at,
                 current=None if profile is None else profile.updated_at,
+            )
+        if profile is not None:
+            # A fact the save left out keeps the row's value, so the pairings of the law are
+            # read on what the row will hold, not on the keys of the request alone.
+            self._check_taxpayer_parameters(
+                {
+                    **{key: getattr(profile, key) for key in KEPT_PARAMETERS},
+                    **payload,
+                }
             )
         if profile is not None and profile.pack_id != payload["pack_id"]:
             self._freeze_estimates(actor, legal_entity.id)
@@ -223,6 +240,7 @@ class FiscalProfileService:
                     "un'azienda estera non ha una categoria INPS né l'ISA",
                     expected="nessun valore",
                 )
+        FiscalProfileService._check_taxpayer_parameters(payload)
         if payload["default_vat_rate"] != ZERO and payload.get("default_vat_nature"):
             raise ValidationFailed(
                 ENTITY,
@@ -247,6 +265,51 @@ class FiscalProfileService:
                 "stamp_duty_amount",
                 "il bollo e' attivo ma il suo importo non e' positivo",
                 expected="un importo maggiore di zero",
+            )
+
+    @staticmethod
+    def _check_taxpayer_parameters(payload: dict[str, Any]) -> None:
+        """The facts of REB-1070, against the pack that reads them and against each other.
+        The INPS facts belong to a person (`it-flat-rate`, `it-standard`), the flat-rate ones
+        to the flat-rate regime alone; an srl and a company abroad have none. The refusal
+        names the field, as the other pack refusals do. Only a value is refused: `None` is
+        «not stated» everywhere."""
+        pack_id = payload["pack_id"]
+        refused: tuple[str, ...] = ()
+        if pack_id in (PACK_IT_COMPANY, PACK_NON_IT):
+            refused = TAXPAYER_PARAMETERS
+        elif pack_id == PACK_IT_STANDARD:
+            refused = FLAT_RATE_ONLY
+        for key in refused:
+            if payload.get(key) is not None:
+                whose = {
+                    PACK_NON_IT: "un'azienda estera",
+                    PACK_IT_COMPANY: "una srl",
+                    PACK_IT_STANDARD: "il regime ordinario",
+                }[pack_id]
+                raise ValidationFailed(
+                    ENTITY, key, f"{whose} non ha questo parametro", expected="nessun valore"
+                )
+        # The law's own pairings (`InpsYearLaw.contributions`): the gestione, the older
+        # ceiling and the 35% reduction belong to artigiani e commercianti, the lower rate to
+        # the gestione separata.
+        category = payload.get("inps_category")
+        if category == "gestione_separata":
+            for key in ("inps_trade", "inps_before_1996", "flat_rate_inps_reduction"):
+                if payload.get(key):
+                    raise ValidationFailed(
+                        ENTITY,
+                        key,
+                        "vale solo per artigiani e commercianti, non per la gestione separata",
+                        expected="nessun valore, o la categoria artigiani e commercianti",
+                    )
+        if category == "artigiani_commercianti" and payload.get("inps_covered_elsewhere"):
+            raise ValidationFailed(
+                ENTITY,
+                "inps_covered_elsewhere",
+                "l'aliquota ridotta per chi e' assicurato altrove vale solo per la gestione "
+                "separata",
+                expected="nessun valore, o la gestione separata",
             )
 
     def _require(self, legal_entity_id: UUID | None = None) -> FiscalProfile:

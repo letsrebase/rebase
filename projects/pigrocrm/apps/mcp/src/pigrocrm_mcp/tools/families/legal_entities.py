@@ -77,7 +77,7 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         a code from another pack is rejected), `profitability_coefficient`,
         `substitute_tax_rate` and `social_security_rate` as percentages (flat-rate only),
         `payment_method` (SdI code, `MP05` bank transfer), `due_days`, `iban`, VAT
-        and stamp duty parameters. `inps_category`, `isa`: kept when left out.
+        and stamp duty parameters. Taxpayer facts (INPS, ISA, ATECO): kept when left out.
         """
         return invoices.update_fiscal_profile(context, data, legal_entity_id)
 

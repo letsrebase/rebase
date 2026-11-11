@@ -21,7 +21,7 @@ import {
   FOREIGN_SENTENCE,
   FROZEN_SENTENCE,
   LOADING_SENTENCE,
-  MISSING_PARAMETER_SENTENCE,
+  missingParametersSentence,
   NO_CALENDAR_SENTENCE,
   NO_PROFILE_SENTENCE,
   SALVO_PROROGHE,
@@ -197,7 +197,7 @@ export function EntityTaxes({
             />
           ) : null}
           {missingParameter ? (
-            <p className="text-sm text-muted-foreground">{MISSING_PARAMETER_SENTENCE}</p>
+            <p className="text-sm text-muted-foreground">{missingParametersSentence(data.missing_parameters)}</p>
           ) : null}
           {pack ? <p className="text-xs text-muted-foreground">{pack}.</p> : null}
         </div>
@@ -231,7 +231,7 @@ export function EntityTaxes({
               ))}
             </ul>
             {missingParameter ? (
-              <p className="text-sm text-muted-foreground">{MISSING_PARAMETER_SENTENCE}</p>
+              <p className="text-sm text-muted-foreground">{missingParametersSentence(data.missing_parameters)}</p>
             ) : null}
             {pack ? <p className="text-xs text-muted-foreground">{pack}.</p> : null}
           </section>

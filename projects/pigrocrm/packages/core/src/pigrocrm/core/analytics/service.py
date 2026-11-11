@@ -54,7 +54,12 @@ from pigrocrm.core.fiscal.law import DeclaredTax
 from pigrocrm.core.fiscal.pack import resolve_pack
 from pigrocrm.core.fiscal.readings import build_tax_readings
 from pigrocrm.core.fiscal.repository import FiscalEstimateRepository
-from pigrocrm.core.fiscal.schemas import DeclaredTaxFigureRead, FiscalProfileRead, TaxReadings
+from pigrocrm.core.fiscal.schemas import (
+    TAXPAYER_PARAMETERS,
+    DeclaredTaxFigureRead,
+    FiscalProfileRead,
+    TaxReadings,
+)
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.models import InvoiceLine
 from pigrocrm.core.legal_entities.models import LegalEntity
@@ -72,6 +77,7 @@ FROZEN_PARAMETERS = {
     "social_security_rate",
     "inps_category",
     "isa",
+    *TAXPAYER_PARAMETERS,
 }
 MAX_DAYS_MONTHS = 120
 # The same floor the year routes have, and a lookback of three months before `da` that
@@ -780,6 +786,19 @@ class AnalyticsService:
             flat_rate=law.flat_rate if law is not None else None,
         ).model_copy(
             update={
+                "missing_parameters": (
+                    [
+                        name
+                        for name in (
+                            "profitability_coefficient",
+                            "substitute_tax_rate",
+                            "social_security_rate",
+                        )
+                        if getattr(profile, name) is None
+                    ]
+                    if law is not None and law.has_income_estimate
+                    else []
+                ),
                 "pack_id": pack.id,
                 "pack_version": pack.version,
                 "law_from_year": law.from_year if law is not None else None,

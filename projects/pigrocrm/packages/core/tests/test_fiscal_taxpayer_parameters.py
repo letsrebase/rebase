@@ -1,0 +1,167 @@
+"""REB-1070: the taxpayer facts the INPS and flat-rate law read, on the fiscal profile.
+
+Each is nullable (`None` = not stated), kept when a save leaves it out, and only a pack that reads
+it may carry a value."""
+
+import pytest
+from pydantic import ValidationError
+from sqlalchemy.orm import Session
+
+from pigrocrm.core.actor import Actor
+from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.fiscal.schemas import (
+    FLAT_RATE_ONLY,
+    KEPT_WHEN_OMITTED,
+    TAXPAYER_PARAMETERS,
+    FiscalProfileUpsert,
+)
+from pigrocrm.core.fiscal.service import FiscalProfileService
+
+ADMIN = Actor(id=None, type="system", role="admin")
+
+FULL = {
+    "inps_category": "artigiani_commercianti",
+    "inps_trade": "commercianti",
+    "inps_before_1996": True,
+    "flat_rate_inps_reduction": True,
+    "ateco_group": "wholesale_and_retail_trade",
+    "flat_rate_start_year": 2024,
+    "startup_no_prior_activity": True,
+    "startup_not_a_continuation": True,
+    "startup_predecessor_within_limit": False,
+}
+
+
+def test_every_fact_is_kept_when_a_save_omits_it() -> None:
+    assert set(TAXPAYER_PARAMETERS) <= set(KEPT_WHEN_OMITTED)
+    stored = FiscalProfileUpsert(regime_code="RF19").stored_fields()
+    assert not set(TAXPAYER_PARAMETERS) & set(stored)
+
+
+def test_a_flat_rate_profile_persists_the_facts_and_a_later_save_keeps_them(
+    db_session: Session,
+) -> None:
+    service = FiscalProfileService(db_session)
+    saved = service.upsert(FiscalProfileUpsert(regime_code="RF19", **FULL), ADMIN)
+    for key, value in FULL.items():
+        assert getattr(saved, key) == value
+    assert [group.key for group in saved.flat_rate_groups][:2] == [
+        "food_and_beverage_industries",
+        "wholesale_and_retail_trade",
+    ]
+    again = service.upsert(FiscalProfileUpsert(regime_code="RF19", due_days=45), ADMIN)
+    assert again.due_days == 45
+    for key, value in FULL.items():
+        assert getattr(again, key) == value
+    cleared = service.upsert(
+        FiscalProfileUpsert(regime_code="RF19", ateco_group=None, flat_rate_start_year=None), ADMIN
+    )
+    assert cleared.ateco_group is None and cleared.flat_rate_start_year is None
+    assert cleared.inps_trade == "commercianti"
+
+
+def test_an_unknown_group_or_trade_is_refused() -> None:
+    with pytest.raises(ValidationError):
+        FiscalProfileUpsert(regime_code="RF19", ateco_group="nope")
+    with pytest.raises(ValidationError):
+        FiscalProfileUpsert(regime_code="RF19", inps_trade="liberi")
+
+
+def test_the_ordinary_regime_takes_the_inps_facts_and_refuses_the_flat_rate_ones(
+    db_session: Session,
+) -> None:
+    service = FiscalProfileService(db_session)
+    saved = service.upsert(
+        FiscalProfileUpsert(
+            pack_id="it-standard",
+            inps_category="gestione_separata",
+            inps_covered_elsewhere=True,
+        ),
+        ADMIN,
+    )
+    assert saved.inps_covered_elsewhere is True
+    for key, value in (
+        ("ateco_group", "wholesale_and_retail_trade"),
+        ("flat_rate_start_year", 2020),
+    ):
+        with pytest.raises(ValidationFailed) as refusal:
+            service.upsert(FiscalProfileUpsert(pack_id="it-standard", **{key: value}), ADMIN)
+        assert refusal.value.details["field"] == key
+    assert "flat_rate_inps_reduction" in FLAT_RATE_ONLY
+
+
+@pytest.mark.parametrize("pack_id", ["it-company", "non-it"])
+def test_an_srl_and_a_company_abroad_have_none_of_them(db_session: Session, pack_id: str) -> None:
+    service = FiscalProfileService(db_session)
+    for key in ("inps_trade", "inps_before_1996", "ateco_group", "startup_no_prior_activity"):
+        value = {
+            "inps_trade": "artigiani",
+            "inps_before_1996": True,
+            "ateco_group": "wholesale_and_retail_trade",
+            "startup_no_prior_activity": True,
+        }[key]
+        body = {"pack_id": pack_id, key: value}
+        if pack_id == "non-it":
+            body["default_vat_nature"] = "N2.2"
+        with pytest.raises(ValidationFailed) as refusal:
+            service.upsert(FiscalProfileUpsert(**body), ADMIN)
+        assert refusal.value.details["field"] == key
+    # Moving a profile that carried them to such a pack clears them.
+    service.upsert(FiscalProfileUpsert(regime_code="RF19", **FULL), ADMIN)
+    moved = service.upsert(
+        FiscalProfileUpsert(
+            pack_id=pack_id, **({"default_vat_nature": "N2.2"} if pack_id == "non-it" else {})
+        ),
+        ADMIN,
+    )
+    assert all(getattr(moved, key) is None for key in TAXPAYER_PARAMETERS)
+
+
+def test_the_laws_own_pairings_are_enforced(db_session: Session) -> None:
+    service = FiscalProfileService(db_session)
+    for body, field in (
+        ({"inps_category": "gestione_separata", "inps_trade": "artigiani"}, "inps_trade"),
+        ({"inps_category": "gestione_separata", "inps_before_1996": True}, "inps_before_1996"),
+        (
+            {"inps_category": "artigiani_commercianti", "inps_covered_elsewhere": True},
+            "inps_covered_elsewhere",
+        ),
+    ):
+        with pytest.raises(ValidationFailed) as refusal:
+            service.upsert(FiscalProfileUpsert(regime_code="RF19", **body), ADMIN)
+        assert refusal.value.details["field"] == field
+
+
+def test_a_pairing_is_read_on_the_row_a_save_leaves_alone(db_session: Session) -> None:
+    """A save that names only the category is checked against the facts the row keeps."""
+    service = FiscalProfileService(db_session)
+    service.upsert(
+        FiscalProfileUpsert(
+            regime_code="RF19", inps_category="gestione_separata", inps_covered_elsewhere=True
+        ),
+        ADMIN,
+    )
+    with pytest.raises(ValidationFailed) as refusal:
+        service.upsert(
+            FiscalProfileUpsert(regime_code="RF19", inps_category="artigiani_commercianti"), ADMIN
+        )
+    assert refusal.value.details["field"] == "inps_covered_elsewhere"
+    with pytest.raises(ValidationFailed) as refusal:
+        service.upsert(
+            FiscalProfileUpsert(
+                regime_code="RF19", inps_category="artigiani_commercianti", inps_trade="artigiani"
+            ),
+            ADMIN,
+        )
+    assert refusal.value.details["field"] == "inps_covered_elsewhere"
+    # Both sides named together is a consistent save.
+    saved = service.upsert(
+        FiscalProfileUpsert(
+            regime_code="RF19",
+            inps_category="artigiani_commercianti",
+            inps_trade="artigiani",
+            inps_covered_elsewhere=None,
+        ),
+        ADMIN,
+    )
+    assert saved.inps_trade == "artigiani" and saved.inps_covered_elsewhere is None

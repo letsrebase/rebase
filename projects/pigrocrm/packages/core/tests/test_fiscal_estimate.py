@@ -405,6 +405,12 @@ def test_cleared_rates_reach_the_report_as_null(
     assert estimate.substitute_tax is None
     assert estimate.contributions is None
     assert estimate.estimated_net_income is None
+    # REB-1070: and it names what to fill, so «Tasse» can say it.
+    assert estimate.missing_parameters == [
+        "profitability_coefficient",
+        "substitute_tax_rate",
+        "social_security_rate",
+    ]
 
 
 def test_with_no_fiscal_profile_at_all_it_says_so(db_session: Session) -> None:

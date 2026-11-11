@@ -12430,6 +12430,8 @@ export interface components {
             declared?: components["schemas"]["DeclaredTaxFigureRead"][];
             readings?: components["schemas"]["TaxReadings"] | null;
             basis?: components["schemas"]["YearBasis"] | null;
+            /** Missing Parameters */
+            missing_parameters?: string[];
         };
         /** FiscalProfileRead */
         FiscalProfileRead: {
@@ -12474,6 +12476,24 @@ export interface components {
             inps_category: string | null;
             /** Isa */
             isa: boolean | null;
+            /** Inps Trade */
+            inps_trade: string | null;
+            /** Inps Covered Elsewhere */
+            inps_covered_elsewhere: boolean | null;
+            /** Inps Before 1996 */
+            inps_before_1996: boolean | null;
+            /** Flat Rate Inps Reduction */
+            flat_rate_inps_reduction: boolean | null;
+            /** Ateco Group */
+            ateco_group: string | null;
+            /** Flat Rate Start Year */
+            flat_rate_start_year: number | null;
+            /** Startup No Prior Activity */
+            startup_no_prior_activity: boolean | null;
+            /** Startup Not A Continuation */
+            startup_not_a_continuation: boolean | null;
+            /** Startup Predecessor Within Limit */
+            startup_predecessor_within_limit: boolean | null;
             /** Iva Frequency */
             iva_frequency: string;
             /**
@@ -12486,6 +12506,14 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /**
+             * Flat Rate Groups
+             * @description Annex 4's groups, from the newest law of the flat-rate pack, whichever pack this
+             *     profile is on: a form that switches the regime to the flat-rate one before saving
+             *     needs the list too. What the form's group list and the coefficient it shows come
+             *     from, so the web carries no figure of law.
+             */
+            readonly flat_rate_groups: components["schemas"]["FlatRateGroupRead"][];
         };
         /**
          * FiscalProfileUpsert
@@ -12575,6 +12603,24 @@ export interface components {
             inps_category?: ("gestione_separata" | "artigiani_commercianti") | null;
             /** Isa */
             isa?: boolean | null;
+            /** Inps Trade */
+            inps_trade?: ("artigiani" | "commercianti") | null;
+            /** Inps Covered Elsewhere */
+            inps_covered_elsewhere?: boolean | null;
+            /** Inps Before 1996 */
+            inps_before_1996?: boolean | null;
+            /** Flat Rate Inps Reduction */
+            flat_rate_inps_reduction?: boolean | null;
+            /** Ateco Group */
+            ateco_group?: string | null;
+            /** Flat Rate Start Year */
+            flat_rate_start_year?: number | null;
+            /** Startup No Prior Activity */
+            startup_no_prior_activity?: boolean | null;
+            /** Startup Not A Continuation */
+            startup_not_a_continuation?: boolean | null;
+            /** Startup Predecessor Within Limit */
+            startup_predecessor_within_limit?: boolean | null;
             /**
              * Iva Frequency
              * @default monthly
@@ -12586,6 +12632,22 @@ export interface components {
              * @description The `updated_at` read on the profile this change starts from, `null` for a profile not yet saved: if someone else saved in the meantime, the request is rejected with 409 `stale_row`. Omitted, no check.
              */
             updated_at?: string | null;
+        };
+        /**
+         * FlatRateGroupRead
+         * @description One row of annex 4 of L. 190/2014 as the form lists it.
+         */
+        FlatRateGroupRead: {
+            /** Key */
+            key: string;
+            /** Number */
+            number: number;
+            /** Name */
+            name: string;
+            /** Ateco 2007 */
+            ateco_2007: string[];
+            /** Coefficient */
+            coefficient: string;
         };
         /**
          * FrameworkAgreementRequest
