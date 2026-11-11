@@ -52,6 +52,7 @@ from pigrocrm.core.fiscal.law import (
     TaxYearLaw,
 )
 from pigrocrm.core.fiscal.law_inps import INPS_2026, InpsYearLaw
+from pigrocrm.core.fiscal.law_irap import IRAP_LAW
 
 # The pack ids, as literals so a schema can name them in a `Literal` type
 # (`fiscal/schemas.py::PackId`) and a profile cannot point at a pack that does not exist.
@@ -658,10 +659,11 @@ IT_COMPANY_PACK = FiscalPack(
                 # figure is not the rate. The rate
                 # a company pays is its region's: art. 16 c. 3 lets a region vary it by up to
                 # the points below, c. 1-bis and the D.L. 21/2026 set other rates for other
-                # subjects, and which one applies is the IRAP region rules row, TO VERIFY
-                # (A5), so no figure is computed from this one until that row is verified.
+                # subjects. Which region's rate applies and each region's 2026 ordinary rate
+                # are `irap` below (REB-1065, A5 «IRAP region rules», verified 2026-11-11).
                 irap_ordinary_rate=Decimal("3.90"),
                 irap_regional_variation_max_points=Decimal("0.92"),
+                irap=IRAP_LAW,
             ),
             payroll=ITALIAN_PAYROLL,
         ),

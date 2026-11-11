@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
 
+from pigrocrm.core.fiscal.law_irap import IrapLaw
 from pigrocrm.core.fiscal.law_irpef import IrpefLaw
 
 # How the flat-rate regime's INPS contributions are based, as the estimate
@@ -135,8 +136,8 @@ class TaxCalendarLaw:
 class CompanyTaxLaw:
     """What a company (an srl, the `it-company` pack) owes on its income, by rate.
 
-    Both rates are verified (A5 rows «IRES rate» and «IRAP ordinary rate»; the IRAP region
-    rules row stays to verify). They are percentages, like the rest of this module's rates.
+    Both rates are verified (A5 rows «IRES rate» and «IRAP ordinary rate»); the IRAP base and
+    the regional rates are `irap`. They are percentages, like the rest of this module's rates.
     Nothing computes a tax from them yet: that is the estimate card's.
     """
 
@@ -145,8 +146,11 @@ class CompanyTaxLaw:
     # IRAP's ordinary rate, art. 16 c. 1 of D.Lgs. 446/1997, on the net value of production.
     irap_ordinary_rate: Decimal
     # A region may vary it by up to this many points (art. 16 c. 3). Which region's rate
-    # applies to a company is the legal entity's region and the IRAP region rules: TO VERIFY.
+    # applies and each region's rate are `irap` below (REB-1065).
     irap_regional_variation_max_points: Decimal
+    # IRAP's base, deductions, territorial rule and regional rates (`fiscal/law_irap.py`,
+    # REB-1065). `None` for a pack that has not verified them.
+    irap: IrapLaw | None = None
 
 
 @dataclass(frozen=True)
