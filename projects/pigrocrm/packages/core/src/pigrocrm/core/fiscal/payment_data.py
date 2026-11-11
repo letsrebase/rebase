@@ -383,6 +383,7 @@ IT_FLAT_RATE_PAYMENT_2026 = PaymentRulesLaw(
     shortfall=SHORTFALL,
     f24_codes=(*_SUBSTITUTE_TAX_CODES, _INTEREST_ERARIO_CODE, *_INPS_CODES),
     filings=(_PF_FILING,),
+    substitute_tax_advances=IT_FLAT_RATE_ADVANCES,
 )
 
 IT_COMPANY_PAYMENT_2026 = PaymentRulesLaw(

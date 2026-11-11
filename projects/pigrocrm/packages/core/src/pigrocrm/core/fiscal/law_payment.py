@@ -14,12 +14,12 @@ money-picture-design.md`); a rule no primary source states is not here, it is on
 list (REB-975).
 
 The statutes change on 1 January 2027 and the rules read below keep their content: art. 20 of
-D.Lgs. 241/1997 is replaced by art. 10 of D.Lgs. 33/2025 (Normattiva on 2027-01-02 reads «ARTICOLO
-ABROGATO DAL D.LGS. 24 MARZO 2025, N. 33, COME MODIFICATO DAL D.L. 31 DICEMBRE 2025, N. 200»; its
-c. 2 leaves the interest to the ministerial decree of 2009 that already sets it), and art. 22 of
-the TUIR by art. 24 of the testo unico of D.Lgs. 19 June 2026 n. 117 («PROVVEDIMENTO ABROGATO DAL
-D.LGS. 19 GIUGNO 2026, N. 117», the letter on withholdings is word for word the same). Each rule
-names both.
+D.Lgs. 241/1997 is replaced by art. 10 of D.Lgs. 33/2025 (Normattiva, text as in force on
+2027-01-02, read 2026-11-11: «ARTICOLO ABROGATO DAL D.LGS. 24 MARZO 2025, N. 33, COME MODIFICATO
+DAL D.L. 31 DICEMBRE 2025, N. 200»; its c. 2 leaves the interest to the ministerial decree of
+2009 that already sets it), and art. 22 of the TUIR by art. 24 of the testo unico of D.Lgs. 19
+June 2026 n. 117 («PROVVEDIMENTO ABROGATO DAL D.LGS. 19 GIUGNO 2026, N. 117», the letter on
+withholdings is word for word the same). Each rule names both.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
-from pigrocrm.core.fiscal.law import MonthDay
+from pigrocrm.core.fiscal.law import IncomeTaxAdvanceLaw, MonthDay
 
 _CENT = Decimal("0.01")
 _DAYS_IN_A_MONTH = 30  # the commercial method counts every month as thirty days
@@ -84,6 +84,13 @@ class InstalmentLaw:
 
     def may_be_paid_in_instalments(self, kind: PaymentKind) -> bool:
         return kind in self.rateable
+
+    def second_instalment_interest_percent(self, first_due: date, second_nominal: date) -> Decimal:
+        """The interest of the second instalment: the annual rate by the commercial method from
+        `first_due` to the second instalment's nominal day, two decimals half up (0.18 for 30
+        June to 16 July, as the Agenzia prints it)."""
+        days = commercial_days(first_due, second_nominal)
+        return round_percent(self.annual_interest_percent * days / _DAYS_IN_A_YEAR)
 
 
 # --- the forecast advance method and a shortfall ---------------------------------------
@@ -344,10 +351,11 @@ class WithholdingCreditLaw:
         taxpayer choose."""
         if operated_on.year <= income_year:
             return (income_year,)
-        filed = return_filed_on is not None and return_filed_on < operated_on
-        if filed or operated_on.year > income_year + 1:
+        if return_filed_on is not None and return_filed_on < operated_on:
             return (operated_on.year,)
-        if self.alternative_in_year_after_before_filing:
+        # Not yet filed: the letter's first exception is the year after the income's, and a
+        # withholding operated later than that is the main rule's, the income's own year.
+        if operated_on.year == income_year + 1 and self.alternative_in_year_after_before_filing:
             return (income_year, operated_on.year)
         return (income_year,)
 
@@ -358,7 +366,8 @@ class WithholdingCreditLaw:
 @dataclass(frozen=True)
 class PaymentRulesLaw:
     """The payment rules that govern the calendar years from `from_year` until the next entry
-    of the same pack. `None` for a section means the pack's regime has nothing of that kind."""
+    of the same pack. A section a regime has no rule for is `None` (the withholding credit, the
+    substitute tax advances) or an empty tuple (the filings, the F24 codes)."""
 
     from_year: int
     instalments: InstalmentLaw
@@ -368,6 +377,9 @@ class PaymentRulesLaw:
     f24_codes: tuple[F24Code, ...]
     filings: tuple[ReturnFilingRule, ...]
     withholding_credit: WithholdingCreditLaw | None = None
+    # The advances of the flat-rate regime's substitute tax (A5, REB-1067): IRPEF's own payment
+    # rules, read the same way as `TaxYearLaw.advances` of the ordinary regime.
+    substitute_tax_advances: IncomeTaxAdvanceLaw | None = None
 
     def f24_code(self, line: F24Line) -> F24Code:
         """The code of `line`; `KeyError` when the pack's regime owes no such line."""
@@ -393,7 +405,9 @@ class PaymentRulesLaw:
 
 def commercial_days(start: date, end: date) -> int:
     """Days from `start` to `end` by the commercial method: months of thirty days, a day 31
-    counted as 30 (the Agenzia's «metodo commerciale», Redditi PF 2026 fascicolo 1)."""
+    counted as 30 (the Agenzia's «metodo commerciale», Redditi PF 2026 fascicolo 1). Only a
+    start on the 30th or 31st is exercised by the Agenzia's tables; how the method counts a
+    start on the last day of February is not stated there (A5, to verify, REB-975)."""
     start_day = min(start.day, _DAYS_IN_A_MONTH)
     end_day = min(end.day, _DAYS_IN_A_MONTH)
     return (

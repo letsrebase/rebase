@@ -57,7 +57,6 @@ from pigrocrm.core.fiscal.law_irap import IRAP_LAW
 from pigrocrm.core.fiscal.law_payment import PaymentRulesLaw
 from pigrocrm.core.fiscal.payment_data import (
     IT_COMPANY_PAYMENT_2026,
-    IT_FLAT_RATE_ADVANCES,
     IT_FLAT_RATE_PAYMENT_2026,
     IT_STANDARD_PAYMENT_2026,
 )
@@ -575,8 +574,7 @@ IT_FLAT_RATE_PACK = FiscalPack(
     # contribution base...», REB-975), as are the rest of the estimate's rows (the 5%/15%
     # substitute rate, the profitability coefficients, the profile's INPS rate the estimate reads
     # (the INPS law itself is `inps` below), the cash basis of the revenue). Its substitute tax
-    # advances follow IRPEF's, as L. 190/2014 art. 1 c. 64 says (A5 row, verified 2026-11-11,
-    # REB-1067: `IT_FLAT_RATE_ADVANCES`).
+    # advances are in `payment_rules` (REB-1067), from 2026, the year their sources were read.
     laws=(
         TaxYearLaw(
             from_year=2015,
@@ -586,7 +584,6 @@ IT_FLAT_RATE_PACK = FiscalPack(
             # 33/2025), so the entry does not wait for 2026. A reading frozen under this entry
             # keeps its `law_year` of 2015, which a second entry would have moved.
             payroll=ITALIAN_PAYROLL,
-            advances=IT_FLAT_RATE_ADVANCES,
             taxes=("substitute_tax", "inps"),
         ),
     ),

@@ -129,17 +129,15 @@ def test_the_interest_of_an_instalment_is_looked_up_and_a_missing_one_is_none() 
     assert [e.number for e in instalment_schedule(law, date(2026, 12, 16), 2026)] == [1]
 
 
-def test_the_thirty_day_deferral_is_the_same_for_every_pack_and_agrees_with_the_advance_law() -> (
-    None
-):
+def test_the_thirty_day_deferral_is_the_same_for_every_pack_and_agrees_with_the_advances() -> None:
     for pack in (IT_STANDARD_PACK, IT_FLAT_RATE_PACK, IT_COMPANY_PACK):
         deferral = _rules(pack).deferral
         assert (deferral.surcharge_percent, deferral.window_days) == (Decimal("0.40"), 30)
-    for pack in (IT_STANDARD_PACK, IT_FLAT_RATE_PACK):
-        law = pack.law_for(2026)
-        assert law is not None and law.advances is not None
-        assert law.advances.deferral_surcharge_percent == _rules(pack).deferral.surcharge_percent
-        assert law.advances.deferral_window_days == _rules(pack).deferral.window_days
+    standard = IT_STANDARD_PACK.law_for(2026)
+    assert standard is not None and standard.advances is not None
+    standard_deferral = _rules(IT_STANDARD_PACK).deferral
+    assert standard.advances.deferral_surcharge_percent == standard_deferral.surcharge_percent
+    assert standard.advances.deferral_window_days == standard_deferral.window_days
 
 
 # --- the forecast method and a shortfall --------------------------------------------------
@@ -283,10 +281,9 @@ def test_a_pack_cannot_carry_one_line_or_one_form_twice() -> None:
 
 def test_the_substitute_tax_advances_are_irpefs_and_never_the_isa_fifty_fifty() -> None:
     standard = IT_STANDARD_PACK.law_for(2026)
-    flat = IT_FLAT_RATE_PACK.law_for(2026)
     assert standard is not None and standard.advances is not None
-    assert flat is not None and flat.advances is not None
-    advances = flat.advances
+    advances = _rules(IT_FLAT_RATE_PACK).substitute_tax_advances
+    assert advances is not None
     assert advances.advance_percent_of_base == standard.advances.advance_percent_of_base == 100
     assert (advances.first_advance_percent, advances.second_advance_percent) == (40, 60)
     # The flat-rate regime is outside ISA, so a profile's `isa` flag reads 40/60 as well.
@@ -299,7 +296,12 @@ def test_the_substitute_tax_advances_are_irpefs_and_never_the_isa_fifty_fifty() 
     assert advances.single_november_payment_below * advances.first_advance_percent / 100 == Decimal(
         "103.008"
     )
-    assert IT_FLAT_RATE_PACK.law_for(2020) is flat  # the entry starts with the regime
+    flat_deferral = _rules(IT_FLAT_RATE_PACK).deferral
+    assert advances.deferral_surcharge_percent == flat_deferral.surcharge_percent
+    assert advances.deferral_window_days == _rules(IT_FLAT_RATE_PACK).deferral.window_days
+    # Only the flat-rate regime has substitute tax advances; the others carry their own.
+    assert _rules(IT_STANDARD_PACK).substitute_tax_advances is None
+    assert _rules(IT_COMPANY_PACK).substitute_tax_advances is None
 
 
 # --- filing dates --------------------------------------------------------------------------
@@ -359,8 +361,10 @@ def test_a_withholding_is_credited_to_the_year_of_the_income_with_art_22_excepti
     assert credit.credit_years(2025, date(2026, 3, 10), date(2026, 10, 30)) == (2025, 2026)
     # Operated after the return was filed: the year it was operated.
     assert credit.credit_years(2025, date(2026, 11, 20), date(2026, 10, 30)) == (2026,)
-    # Operated two years later: the year it was operated.
-    assert credit.credit_years(2024, date(2026, 3, 10), None) == (2026,)
+    # Operated two years later with the return not yet filed: neither exception, so the main rule,
+    # the income's own year; once the return is filed, the year it was operated.
+    assert credit.credit_years(2024, date(2026, 3, 10), None) == (2024,)
+    assert credit.credit_years(2024, date(2026, 3, 10), date(2025, 10, 30)) == (2026,)
 
 
 def test_only_a_person_carries_the_withholding_credit_rule() -> None:

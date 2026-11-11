@@ -13,12 +13,7 @@ from datetime import date
 from decimal import Decimal
 
 from pigrocrm.core.fiscal.calendar import next_working_day
-from pigrocrm.core.fiscal.law_payment import (
-    InstalmentLaw,
-    ReturnForm,
-    commercial_days,
-    round_percent,
-)
+from pigrocrm.core.fiscal.law_payment import InstalmentLaw, ReturnForm
 from pigrocrm.core.fiscal.pack import FiscalPack
 
 _AUGUST = 8
@@ -65,8 +60,7 @@ def instalment_schedule(
             return schedule
         number = len(schedule) + 1
         if number == 2:  # noqa: PLR2004 -- the second instalment carries the annual rate
-            days = commercial_days(first_due, nominal)
-            interest = round_percent(law.annual_interest_percent * days / 360)
+            interest = law.second_instalment_interest_percent(first_due, nominal)
         else:
             interest += law.later_instalment_interest_percent
         due = date(year, month, law.august_last_day) if month == _AUGUST else nominal
