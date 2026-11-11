@@ -27,7 +27,7 @@ describe('visibleSections (REB-953)', () => {
       'Acquisti',
       'Ore',
       'Giornate',
-      'Incarichi',
+      'Collaboratori',
       'Tasse',
       'Cassa',
       "Persone dell'azienda",
@@ -85,7 +85,7 @@ describe('visibleSections (REB-953)', () => {
       'Acquisti',
       'Ore',
       'Giornate',
-      'Incarichi',
+      'Collaboratori',
       'Tasse',
       'Cassa',
       "Persone dell'azienda",
@@ -94,13 +94,17 @@ describe('visibleSections (REB-953)', () => {
     expect(sections.find((section) => section.id === 'vendite')?.items[0]?.label).toBe('Clienti')
   })
 
-  it('opens the registry on the supplier view for «Fornitori» and on the default one for «Clienti»', () => {
+  it('opens each registry list at its own path, none of them on a search of the old page', () => {
     const items = visibleSections(moduleAccess(undefined), 'admin').flatMap((section) => section.items)
     expect(items.find((item) => item.label === 'Fornitori')).toMatchObject({
-      to: '/app/organizations',
-      search: { role: 'supplier' },
+      to: '/app/suppliers',
+      registry: 'supplier',
     })
-    expect(items.find((item) => item.label === 'Clienti')?.search).toBeUndefined()
+    expect(items.find((item) => item.label === 'Clienti')).toMatchObject({
+      to: '/app/customers',
+      registry: 'customer',
+    })
+    expect(items.every((item) => !('search' in item))).toBe(true)
   })
 
   it('drops «Giornate» with contracts off and «Ore» with time off, nothing else', () => {
@@ -149,7 +153,7 @@ describe('visibleSections (REB-953)', () => {
       'Clienti',
       'Persone',
       'Fatture',
-      'Incarichi',
+      'Collaboratori',
       'Esporta per il commercialista',
     ]
     expect(labels(['deals', 'contracts', 'time', 'purchases', 'taxes', 'staff', 'cash'])).toEqual(core)
@@ -164,7 +168,7 @@ describe('visibleSections (REB-953)', () => {
       'Fatture',
       'Fornitori',
       'Acquisti',
-      'Incarichi',
+      'Collaboratori',
       'Tasse',
       'Cassa',
       "Persone dell'azienda",
@@ -257,7 +261,7 @@ describe('the phone bar (REB-959)', () => {
       'Fornitori',
       'Acquisti',
       'Ore',
-      'Incarichi',
+      'Collaboratori',
       'Tasse',
       'Cassa',
       "Persone dell'azienda",
@@ -273,7 +277,7 @@ describe('the phone bar (REB-959)', () => {
       'Fatture',
       'Fornitori',
       'Acquisti',
-      'Incarichi',
+      'Collaboratori',
       'Tasse',
       'Cassa',
       "Persone dell'azienda",
@@ -307,33 +311,33 @@ describe('«Esporta per il commercialista» is an administrator\'s entry (REB-10
   })
 })
 
-describe('isNavItemActive: one registry page, two entries', () => {
+describe('isNavItemActive: a page each for «Clienti» and «Fornitori» (REB-1053)', () => {
   const items = visibleSections(moduleAccess(undefined), 'admin').flatMap((section) => section.items)
   const customers = items.find((item) => item.label === 'Clienti')!
   const suppliers = items.find((item) => item.label === 'Fornitori')!
 
-  it('marks «Fornitori» on the supplier view and «Clienti» on every other view of the page', () => {
-    expect(isNavItemActive(suppliers, '/app/organizations', 'supplier')).toBe(true)
-    expect(isNavItemActive(customers, '/app/organizations', 'supplier')).toBe(false)
-    for (const role of [undefined, 'customer', 'any']) {
-      expect(isNavItemActive(customers, '/app/organizations', role)).toBe(true)
-      expect(isNavItemActive(suppliers, '/app/organizations', role)).toBe(false)
-    }
+  it('marks each entry on its own page and never the other', () => {
+    expect(isNavItemActive(customers, '/app/customers', undefined)).toBe(true)
+    expect(isNavItemActive(suppliers, '/app/customers', undefined)).toBe(false)
+    expect(isNavItemActive(suppliers, '/app/suppliers', undefined)).toBe(true)
+    expect(isNavItemActive(customers, '/app/suppliers', undefined)).toBe(false)
   })
 
-  it('follows the view on an organization\'s own page: «Clienti» by default, «Fornitori» for a supplier (REB-1038)', () => {
-    expect(isNavItemActive(customers, '/app/organizations/abc', undefined)).toBe(true)
-    expect(isNavItemActive(suppliers, '/app/organizations/abc', undefined)).toBe(false)
+  it('follows the list an organization is read as on its own page: «Clienti» or «Fornitori» (REB-1038)', () => {
+    expect(isNavItemActive(customers, '/app/organizations/abc', 'customer')).toBe(true)
+    expect(isNavItemActive(suppliers, '/app/organizations/abc', 'customer')).toBe(false)
     expect(isNavItemActive(suppliers, '/app/organizations/abc', 'supplier')).toBe(true)
     expect(isNavItemActive(customers, '/app/organizations/abc', 'supplier')).toBe(false)
+    expect(isNavItemActive(customers, '/app/organizations/abc', undefined)).toBe(false)
   })
 
   it('marks nothing on another page', () => {
     expect(isNavItemActive(customers, '/app/invoices', undefined)).toBe(false)
+    expect(isNavItemActive(suppliers, '/app/invoices', 'supplier')).toBe(false)
   })
 })
 
-describe('«Incarichi» (REB-1035)', () => {
+describe('«Collaboratori» (REB-1035)', () => {
   const items = (role: 'admin' | 'collaborator' | 'readonly' | undefined, off: readonly ModuleKey[] = []) =>
     visibleSections(moduleAccess(spaceModules(off)), role).flatMap((section) =>
       section.items.map((item) => item.label),
@@ -341,21 +345,21 @@ describe('«Incarichi» (REB-1035)', () => {
 
   it('is drawn for an administrator, after «Giornate», and for nobody else', () => {
     const admin = items('admin')
-    expect(admin[admin.indexOf('Giornate') + 1]).toBe('Incarichi')
-    expect(items('collaborator')).not.toContain('Incarichi')
-    expect(items('readonly')).not.toContain('Incarichi')
-    expect(items(undefined)).not.toContain('Incarichi')
+    expect(admin[admin.indexOf('Giornate') + 1]).toBe('Collaboratori')
+    expect(items('collaborator')).not.toContain('Collaboratori')
+    expect(items('readonly')).not.toContain('Collaboratori')
+    expect(items(undefined)).not.toContain('Collaboratori')
   })
 
   it('is gone with the collaborators module off', () => {
-    expect(items('admin', ['collaborators'])).not.toContain('Incarichi')
+    expect(items('admin', ['collaborators'])).not.toContain('Collaboratori')
   })
 
   it('leads «Altro» only for an administrator, which lists it with the rest', () => {
     const labelsOf = (role: 'admin' | 'collaborator') =>
       phoneMoreItems(moduleAccess(spaceModules([])), role).map((item) => item.label)
-    expect(labelsOf('admin')).toContain('Incarichi')
-    expect(labelsOf('collaborator')).not.toContain('Incarichi')
+    expect(labelsOf('admin')).toContain('Collaboratori')
+    expect(labelsOf('collaborator')).not.toContain('Collaboratori')
   })
 })
 

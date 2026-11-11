@@ -40,7 +40,7 @@ This file is the single mapping from the Italian word to the English identifier.
 | Italian | English | Meaning |
 |---|---|---|
 | cliente | customer | Who is billed |
-| anagrafica | organization | A registry entry (company or person-as-company) with roles `customer`, `supplier`, `freelancer`. Since REB-969 it is the entity: table `organizations`, class `Organization`, `OrganizationService`, `/api/organizations`, MCP `create_organization` and `organization://`, web `/app/organizations`. The roles are an array column (`organizations.roles`), one record per company whatever it is to us (REB-970) |
+| anagrafica | organization | A registry entry (company or person-as-company) with roles `customer`, `supplier`, `freelancer`. Since REB-969 it is the entity: table `organizations`, class `Organization`, `OrganizationService`, `/api/organizations`, MCP `create_organization` and `organization://`, web `/app/organizations/$organizationId` for the record and `/app/customers` and `/app/suppliers` for the lists. The roles are an array column (`organizations.roles`), one record per company whatever it is to us (REB-970) |
 | fornitore | supplier (role) | An organisation we pay; a role of an `organization`, not a FatturaPA party |
 | tipo fiscale del fornitore | `supplier_kind` | What a payment to a supplier involves: `company` (società), `professional` (professionista in regime ordinario), `flat_rate` (forfettario), `occasional` (prestazione occasionale), `foreign` (estero, with `supplier_area` `eu` or `extra_eu` and `supplier_supplies` `goods` or `services`) |
 | tipo del cliente | `customer_kind` | What a sale to a customer involves: `business`, `consumer`, `public_body` (ente pubblico, whose `sdi_code` is its 6-character codice IPA) |
@@ -407,7 +407,7 @@ Entries are per project: `pigrocrm`, `hub`, `website`, `shared`.
 | `/api/tenants/{slug}/disponibile` | `/api/tenants/{slug}/available` | GET; REST path as served by FastAPI. |
 | `/app/avvisi` | `/app/reminders` | Browser path. Real page (not a redirect). Linked from nav, digests and bookmarks. |
 | `/app/calendario` | `/app/calendar` | Browser path. Redirect stub. |
-| `/app/clienti` | `/app/organizations` | Browser path. Redirect stub (it pointed at `/app/customers` until REB-969, which keeps its own stub). |
+| `/app/clienti` | `/app/customers` | Browser path. Redirect stub; «Clienti» is the real page at `/app/customers` since REB-1053 (the registry's lists are `/app/customers` and `/app/suppliers`, an organization's own page is `/app/organizations/$organizationId`, and `/app/organizations` redirects). |
 | `/app/clienti/$customerId` | `/app/organizations/$organizationId` | Browser path. Redirect stub. |
 | `/app/deal/lista` | `/app/deal/list` | Browser path. Redirect stub. |
 | `/app/documenti/$documentId` | `/app/documents/$documentId` | Browser path. Redirect stub. |

@@ -347,13 +347,12 @@ export function PurchaseForm({
                     Non lo trovi? Aggiungilo tra i fornitori, poi torna qui:{' '}
                     {/* A new tab: this page holds a half-filled form. */}
                     <Link
-                      to="/app/organizations"
-                      search={{ role: 'supplier' }}
+                      to="/app/suppliers"
                       target="_blank"
                       rel="noreferrer"
                       className="underline underline-offset-2"
                     >
-                      Anagrafiche, Fornitori
+                      Fornitori
                     </Link>
                     .
                   </p>

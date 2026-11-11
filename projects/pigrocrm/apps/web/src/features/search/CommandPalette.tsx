@@ -108,7 +108,7 @@ export function CommandPalette({
   function seeAll(entity: SearchEntity, term: string): (() => void) | null {
     switch (entity) {
       case 'organization':
-        return () => void navigate({ to: '/app/organizations', search: { search: term } })
+        return () => void navigate({ to: '/app/customers', search: { search: term } })
       case 'person':
         return () => void navigate({ to: '/app/people', search: { search: term } })
       case 'deal':

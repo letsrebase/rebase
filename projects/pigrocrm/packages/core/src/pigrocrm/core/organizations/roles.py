@@ -15,9 +15,11 @@ OrganizationRole = Literal["customer", "supplier", "freelancer"]
 ORGANIZATION_ROLES: tuple[str, ...] = get_args(OrganizationRole)
 DEFAULT_ROLE: OrganizationRole = "customer"
 
-# A list filters one role, or `any` for the registry page and the search across roles, the
-# exceptions § 1 names. Every other read keeps the default and sees customers only.
-RoleFilter = Literal["customer", "supplier", "freelancer", "any"]
+# A list filters one role, or `any` for the search across roles, the exceptions § 1 names. Every
+# other read keeps the default and sees customers only. `customer_or_neither` is «Clienti»
+# (REB-1053): the customers plus every organization that is neither a customer nor a supplier
+# (a freelancer-only record), so that no organization is on no list; «Fornitori» is `supplier`.
+RoleFilter = Literal["customer", "supplier", "freelancer", "any", "customer_or_neither"]
 
 # What a payment to a supplier involves (§ 1). `foreign` also carries where it is and what it
 # supplies, which § 7 reads to decide whether reverse charge applies.

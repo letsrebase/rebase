@@ -8,7 +8,7 @@ import { expect, test } from '@playwright/test'
  */
 test.describe('the installable app', () => {
   test('a page links its manifest, which parses and is scoped to the space', async ({ page }) => {
-    await page.goto('/app/organizations')
+    await page.goto('/app/customers')
     await expect(page.locator('link[rel="manifest"]')).toHaveAttribute(
       'href',
       '/app/manifest.webmanifest',
@@ -30,7 +30,7 @@ test.describe('the installable app', () => {
   test('the worker takes control of the page and keeps nothing a person is shown', async ({
     page,
   }) => {
-    await page.goto('/app/organizations')
+    await page.goto('/app/customers')
     await page.evaluate(() => navigator.serviceWorker.ready)
     await page.reload()
     expect(await page.evaluate(() => navigator.serviceWorker.controller?.scriptURL)).toMatch(
@@ -54,14 +54,14 @@ test.describe('the installable app', () => {
     page,
     context,
   }) => {
-    await page.goto('/app/organizations')
+    await page.goto('/app/customers')
     await page.evaluate(() => navigator.serviceWorker.ready)
     await page.reload()
 
     await context.setOffline(true)
-    await page.goto('/app/organizations', { waitUntil: 'load' }).catch(() => {})
+    await page.goto('/app/customers', { waitUntil: 'load' }).catch(() => {})
     await expect(page.getByRole('heading', { level: 1, name: 'Sei offline' })).toBeVisible()
-    expect(new URL(page.url()).pathname).toBe('/app/organizations')
+    expect(new URL(page.url()).pathname).toBe('/app/customers')
 
     // Still offline: asking again gets the same page, not an error.
     await page.getByRole('button', { name: 'Riprova' }).click()
@@ -74,7 +74,7 @@ test.describe('the installable app', () => {
   })
 
   test('a redirect still reaches the browser: the worker does not follow it', async ({ page }) => {
-    await page.goto('/app/organizations')
+    await page.goto('/app/customers')
     await page.evaluate(() => navigator.serviceWorker.ready)
     await page.reload()
     // `/app` answers a 302 to `/app/`: followed by the browser, not turned into an error page.

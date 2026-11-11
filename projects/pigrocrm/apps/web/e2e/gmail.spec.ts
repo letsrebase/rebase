@@ -31,7 +31,7 @@ test('a revoked credential shows a persistent banner in the app shell', async ({
     })
   })
 
-  await page.goto('/app/organizations')
+  await page.goto('/app/customers')
   await expect(page.getByRole('alert').filter({ hasText: 'è stato revocato' })).toBeVisible()
 
   // Persistent: still there after moving to a different page of the same shell, which

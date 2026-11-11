@@ -62,7 +62,7 @@ test("a custom field's whole life: appears everywhere with no restart, and a cle
   const isGet = (response: Response, path: string): boolean =>
     new URL(response.url()).pathname.endsWith(path) && response.request().method() === 'GET'
   await Promise.all([
-    page.goto('/app/organizations'),
+    page.goto('/app/customers'),
     page.waitForResponse((response) => isGet(response, '/api/schema/organization')),
     page.waitForResponse((response) => isGet(response, '/api/organizations')),
   ])
@@ -116,7 +116,7 @@ test('archiving a field a record still holds a value for does not lock that reco
   await createTextField(page, 'Codice interno')
 
   const name = `Archived Trap ${Date.now()}`
-  await page.goto('/app/organizations')
+  await page.goto('/app/customers')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   const createDialog = page.getByRole('dialog')
   await createDialog.getByLabel('Ragione sociale').fill(name)
@@ -178,7 +178,7 @@ test('archiving a field a record still holds a value for does not lock that reco
  */
 test('a numeric zero and a checkbox both read as real values, never as a dash', async ({ page }) => {
   const preexistingName = `Pre-esistente ${Date.now()}`
-  await page.goto('/app/organizations')
+  await page.goto('/app/customers')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill(preexistingName)
   await page.getByRole('button', { name: 'Salva' }).click()
@@ -204,14 +204,14 @@ test('a numeric zero and a checkbox both read as real values, never as a dash', 
 
   // The pre-existing customer never had an opinion on either field -- the
   // checkbox must still read "No", never a dash, and never "Sì" either.
-  await page.goto('/app/organizations')
+  await page.goto('/app/customers')
   await page.getByText(preexistingName).click()
   await expect(detailValueFor(page, 'Attivo campagna')).toHaveText('No')
 
   // A second, brand-new customer sets the numeric field to exactly 0 and
   // switches the checkbox on.
   const zeroName = `Valori Zero ${Date.now()}`
-  await page.goto('/app/organizations')
+  await page.goto('/app/customers')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   const createDialog = page.getByRole('dialog')
   await createDialog.getByLabel('Ragione sociale').fill(zeroName)
@@ -227,7 +227,7 @@ test('a numeric zero and a checkbox both read as real values, never as a dash', 
   // And the same zero, scoped to this customer's own row, on the list column --
   // `!0` is `true` in JavaScript, which is exactly the trap that would render
   // this cell as blank/dash instead.
-  await page.goto('/app/organizations')
+  await page.goto('/app/customers')
   const zeroRow = page.getByRole('row').filter({ hasText: zeroName })
   await expect(zeroRow.getByRole('cell', { name: '0', exact: true })).toBeVisible()
 })

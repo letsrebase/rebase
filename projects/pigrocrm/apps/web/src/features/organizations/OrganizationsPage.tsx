@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router'
-import { Building2, Mail, Plus, Search } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { Building2, Mail, Plus, Search, Store, type LucideIcon } from 'lucide-react'
+import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { DataTable } from '@/components/DataTable'
 import { FilterRow } from '@/components/FilterRow'
@@ -12,7 +12,6 @@ import { Button } from '@rebase/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@rebase/ui/dialog'
 import { Input } from '@rebase/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
-import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
 import { useMediaQuery } from '@rebase/ui/use-media-query'
 import { OrganizationForm } from '@/features/organizations/OrganizationForm'
 import { RoleChips } from '@/features/organizations/RoleChips'
@@ -30,7 +29,7 @@ import {
   supplierTermsShort,
   type SupplierKind,
 } from '@/features/organizations/roles'
-import type { RegistryRole } from '@/features/organizations/search'
+import type { RegistryPage } from '@/features/organizations/search'
 import { useGmailHealth } from '@/features/gmail/queries'
 import { SuggestedOrganizations } from '@/features/gmail/SuggestedOrganizations'
 import { SEARCH_DEBOUNCE_MS } from '@/features/search/queries'
@@ -47,22 +46,29 @@ const ALL_KINDS = '__tutti'
 /** The viewport from which the registry is a table; below it, one column of cards. */
 const TABLE = '(min-width: 768px)'
 
-/** The words of each view, in one place: the button that creates, what an empty list says,
- *  what a created record is called. The brief's sample copy, verbatim where it gives it. */
+/** The words of each page, in one place: its title and sentence, the button that creates, what an
+ *  empty list says, what a created record is called. `icon` is the page's and the sidebar's. */
 const VIEWS: Record<
-  RegistryRole,
-  { tab: string; create: string; created: string; empty: string; plural: string; roles: string[] }
+  RegistryPage,
+  {
+    title: string
+    /** Said under the title; the sentence about the other list only while that list exists. */
+    description: (purchasesOn: boolean) => string
+    icon: LucideIcon
+    create: string
+    created: string
+    empty: string
+    plural: string
+    roles: string[]
+  }
 > = {
-  any: {
-    tab: 'Tutte',
-    create: 'Nuova anagrafica',
-    created: 'Anagrafica creata',
-    empty: 'Nessuna anagrafica. Creane una per iniziare.',
-    plural: 'anagrafiche',
-    roles: ['customer'],
-  },
   customer: {
-    tab: 'Clienti',
+    title: 'Clienti',
+    description: (purchasesOn) =>
+      purchasesOn
+        ? 'Le aziende per cui lavori. Chi è anche fornitore compare anche in Fornitori.'
+        : 'Le aziende per cui lavori.',
+    icon: Building2,
     create: 'Nuovo cliente',
     created: 'Cliente creato',
     empty: 'Nessun cliente. Creane uno per iniziare.',
@@ -70,7 +76,9 @@ const VIEWS: Record<
     roles: ['customer'],
   },
   supplier: {
-    tab: 'Fornitori',
+    title: 'Fornitori',
+    description: () => 'Le aziende da cui compri. Chi è anche cliente compare anche in Clienti.',
+    icon: Store,
     create: 'Nuovo fornitore',
     created: 'Fornitore creato',
     empty: 'Nessun fornitore. Compaiono quando registri una fattura passiva o ne crei uno.',
@@ -80,102 +88,27 @@ const VIEWS: Record<
 }
 
 /**
- * «Anagrafiche»: the registry of every organization the space deals with, one page with a
- * view per role (`?role=`), the approved brief of 2026-11-10. «Clienti» in «Vendite» and
- * «Fornitori» in «Amministrazione» open it on those tabs. A «Fornitori» view with the
- * `purchases` module off is not drawn: its tab is gone and a stale link says why.
+ * «Clienti» and «Fornitori»: one page each over the one registry of organizations (REB-1053,
+ * which reversed the single «Anagrafiche» page of REB-996). Each has its own title, sentence,
+ * strong button and list, with no tab between them; an organization that plays both roles is on
+ * both lists, and its own page is the same either way. The pages differ by `role` alone, which the
+ * API filters: this is the one component, not two copies.
  *
- * Exported so `index.test.tsx` can render the list without a router. The route
- * component is what reads `?search=` and `?role=` out of the URL; this is what draws the page.
+ * `/app/suppliers` is the `purchases` module's (`ROUTE_MODULES`), so the layout's guard turns a
+ * stale link away before this renders.
+ *
+ * Exported so `OrganizationsPage.test.tsx` can render the list without a router. The route
+ * component is what reads `?search=` out of the URL; this is what draws the page.
  */
 export function OrganizationsPage({
   initialSearch,
   role,
 }: {
   initialSearch: string
-  role: RegistryRole
+  role: RegistryPage
 }) {
   const purchasesOn = useModules().on('purchases')
-  const suppliersOff = role === 'supplier' && !purchasesOn
-
-  return suppliersOff ? (
-    <Frame role={role} purchasesOn={false}>
-      <div className="px-8 py-6">
-        <p className="text-sm text-muted-foreground">
-          Il modulo Acquisti è spento: un amministratore può accenderlo in Impostazioni → Moduli.
-        </p>
-      </div>
-    </Frame>
-  ) : (
-    <RegistryList initialSearch={initialSearch} role={role} purchasesOn={purchasesOn} />
-  )
-}
-
-/** The header every view shares: the title is «Anagrafiche» whatever the view, and the view is
- *  the active tab, never a second title. */
-function Frame({
-  role,
-  purchasesOn,
-  actions,
-  filters,
-  children,
-}: {
-  role: RegistryRole
-  purchasesOn: boolean
-  actions?: ReactNode
-  filters?: ReactNode
-  children: ReactNode
-}) {
-  const navigate = useNavigate()
-  const views: RegistryRole[] = purchasesOn ? ['any', 'customer', 'supplier'] : ['any', 'customer']
-  // The number beside each tab: the whole registry for that role. Absent until it arrives.
-  const counts: Record<RegistryRole, number | undefined> = {
-    any: useOrganizationCount('any'),
-    customer: useOrganizationCount('customer'),
-    supplier: useOrganizationCount('supplier', purchasesOn),
-  }
-  return (
-    // The URL says the view: «Clienti» is the page with no `role`, the other two name it.
-    <Tabs
-      value={role}
-      onValueChange={(next) =>
-        void navigate({
-          to: '/app/organizations',
-          // The rest of the URL stays: only the view changes.
-          search: (previous: Record<string, unknown>) => ({
-            ...previous,
-            role: next === 'customer' ? undefined : (next as RegistryRole),
-          }),
-        })
-      }
-    >
-      <PageHeader
-        icon={Building2}
-        title="Anagrafiche"
-        description="Le aziende con cui lavori: clienti, fornitori o entrambi."
-        actions={actions}
-        tabs={
-          <TabsList variant="line">
-            {views.map((view) => (
-              <TabsTrigger key={view} value={view}>
-                {VIEWS[view].tab}
-                {counts[view] !== undefined ? (
-                  <>
-                    {/* Said apart from the name: «Clienti, 12», not «Clienti12». */}
-                    <span className="sr-only">{', '}</span>
-                    <span className="ml-2 tabular-nums text-muted-foreground">{counts[view]}</span>
-                  </>
-                ) : null}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        }
-      >
-        {filters}
-      </PageHeader>
-      {children}
-    </Tabs>
-  )
+  return <RegistryList initialSearch={initialSearch} role={role} purchasesOn={purchasesOn} />
 }
 
 function RegistryList({
@@ -184,7 +117,7 @@ function RegistryList({
   purchasesOn,
 }: {
   initialSearch: string
-  role: RegistryRole
+  role: RegistryPage
   purchasesOn: boolean
 }) {
   const navigate = useNavigate()
@@ -247,9 +180,10 @@ function RegistryList({
 
   return (
     <>
-      <Frame
-        role={role}
-        purchasesOn={purchasesOn}
+      <PageHeader
+        icon={view.icon}
+        title={view.title}
+        description={view.description(purchasesOn)}
         actions={
           canWrite && (
             <>
@@ -263,89 +197,88 @@ function RegistryList({
             </>
           )
         }
-        // The search box, and on the supplier view «Tipo fiscale», which the API filters.
-        filters={
-          <FilterRow>
-            <div className="relative w-full max-w-sm">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="Cerca per ragione sociale, P.IVA, codice fiscale o email…"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </div>
-            {role === 'supplier' ? (
-              <Select
-                value={kind ?? ALL_KINDS}
-                onValueChange={(next) => setKind(next === ALL_KINDS ? null : (next as SupplierKind))}
-              >
-                <SelectTrigger aria-label="Tipo fiscale" className="w-full sm:w-52">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_KINDS}>Tutti i tipi</SelectItem>
-                  {SUPPLIER_KINDS.map((candidate) => (
-                    <SelectItem key={candidate} value={candidate}>
-                      {SUPPLIER_KIND_LABELS[candidate]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : null}
-          </FilterRow>
-        }
       >
-        <div className="px-8 pb-8">
-          {empty ? (
-            <div className="border border-dashed px-6 py-12 text-center">
-              <p className="mx-auto max-w-md text-sm text-muted-foreground">
-                {!narrowed
-                  ? view.empty
-                  : supplierKind !== undefined && settled === ''
-                    ? 'Nessun fornitore con questo tipo fiscale.'
-                    : `Nessun risultato per «${settled}».`}
-              </p>
-              {canWrite && !narrowed ? <div className="mt-4">{createButton}</div> : null}
-            </div>
-          ) : wide ? (
-            <DataTable
-              label={view.tab}
-              columns={columns}
-              data={organizations.items}
-              isLoading={organizations.isLoading}
-              loadingLabel="Leggo le anagrafiche…"
-              isError={organizations.isError}
-              error={organizations.error}
-              onRetry={organizations.retry}
-              onRowClick={openOrganization}
+        {/* The search box, and on «Fornitori» «Tipo fiscale», which the API filters. */}
+        <FilterRow>
+          <div className="relative w-full max-w-sm">
+            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="pl-9"
+              placeholder="Cerca per ragione sociale, P.IVA, codice fiscale o email…"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
             />
-          ) : (
-            <OrganizationCards
-              organizations={organizations.items}
-              isLoading={organizations.isLoading}
-              error={organizations.isError && organizations.items.length === 0 ? organizations.error : null}
-              onRetry={organizations.retry}
-              onOpen={openOrganization}
-              purchasesOn={purchasesOn}
-            />
-          )}
-          {organizations.hasMore && (
-            <LoadMore
-              label="Carica altri"
-              message={
-                total !== undefined && !narrowed
-                  ? `Mostrati ${organizations.items.length} ${view.plural} su ${total}.`
-                  : `Mostrati ${organizations.items.length} ${view.plural}, ce ne sono altri.`
-              }
-              isFetchingMore={organizations.isFetchingMore}
-              hasError={organizations.isError}
-              error={organizations.error}
-              onLoadMore={organizations.loadMore}
-            />
-          )}
-        </div>
-      </Frame>
+          </div>
+          {role === 'supplier' ? (
+            <Select
+              value={kind ?? ALL_KINDS}
+              onValueChange={(next) => setKind(next === ALL_KINDS ? null : (next as SupplierKind))}
+            >
+              <SelectTrigger aria-label="Tipo fiscale" className="w-full sm:w-52">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_KINDS}>Tutti i tipi</SelectItem>
+                {SUPPLIER_KINDS.map((candidate) => (
+                  <SelectItem key={candidate} value={candidate}>
+                    {SUPPLIER_KIND_LABELS[candidate]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+        </FilterRow>
+      </PageHeader>
+
+      <div className="px-8 pb-8">
+        {empty ? (
+          <div className="border border-dashed px-6 py-12 text-center">
+            <p className="mx-auto max-w-md text-sm text-muted-foreground">
+              {!narrowed
+                ? view.empty
+                : supplierKind !== undefined && settled === ''
+                  ? 'Nessun fornitore con questo tipo fiscale.'
+                  : `Nessun risultato per «${settled}».`}
+            </p>
+            {canWrite && !narrowed ? <div className="mt-4">{createButton}</div> : null}
+          </div>
+        ) : wide ? (
+          <DataTable
+            label={view.title}
+            columns={columns}
+            data={organizations.items}
+            isLoading={organizations.isLoading}
+            loadingLabel="Leggo le anagrafiche…"
+            isError={organizations.isError}
+            error={organizations.error}
+            onRetry={organizations.retry}
+            onRowClick={openOrganization}
+          />
+        ) : (
+          <OrganizationCards
+            organizations={organizations.items}
+            isLoading={organizations.isLoading}
+            error={organizations.isError && organizations.items.length === 0 ? organizations.error : null}
+            onRetry={organizations.retry}
+            onOpen={openOrganization}
+            purchasesOn={purchasesOn}
+          />
+        )}
+        {organizations.hasMore && (
+          <LoadMore
+            label="Carica altri"
+            message={
+              total !== undefined && !narrowed
+                ? `Mostrati ${organizations.items.length} ${view.plural} su ${total}.`
+                : `Mostrati ${organizations.items.length} ${view.plural}, ce ne sono altri.`
+            }
+            isFetchingMore={organizations.isFetchingMore}
+            hasError={organizations.isError}
+            error={organizations.error}
+            onLoadMore={organizations.loadMore}
+          />
+        )}
+      </div>
 
       {/* The Gmail proposals (REB-223), for whoever connects the mailbox after the space
           already has work in it and so never sees the Home's door. Mounted only while

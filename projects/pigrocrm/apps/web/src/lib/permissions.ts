@@ -133,7 +133,7 @@ export const MIN_ROLE = {
   reject_expense_note: 'admin',
   reimburse_expense_note: 'admin',
   // Engagements with freelancers (REB-976): every read and write is an administrator's, as the
-  // hub's matches were. «Incarichi», the engagement page and the registry's block consult them
+  // hub's matches were. «Collaboratori», the engagement page and the registry's block consult them
   // (REB-1035); `read_rebase_engagement` is the freelancer's own card, read in their own space
   // by the administrator of it.
   read_engagements: 'admin',

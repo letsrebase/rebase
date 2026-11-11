@@ -336,19 +336,19 @@ describe('«Nuovo acquisto»', () => {
     expect(screen.queryByLabelText(/periodo iva/i)).not.toBeInTheDocument()
   })
 
-  it('does not build a supplier inline: it points to the registry', async () => {
+  it('does not build a supplier inline: it points to «Fornitori»', async () => {
     serve()
     renderPage()
     await screen.findByLabelText('Esercente')
     await pickKind('Fattura')
-    expect(screen.getByRole('link', { name: /anagrafiche, fornitori/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^fornitori$/i })).toHaveAttribute(
       'href',
-      '/app/organizations',
+      '/app/suppliers',
     )
     expect(screen.queryByRole('button', { name: /nuovo fornitore/i })).not.toBeInTheDocument()
     // A new tab: the page holds a half-filled form.
-    expect(screen.getByRole('link', { name: /anagrafiche, fornitori/i })).toHaveAttribute('target', '_blank')
-    expect(screen.getByRole('link', { name: /anagrafiche, fornitori/i })).toHaveAttribute('rel', 'noreferrer')
+    expect(screen.getByRole('link', { name: /^fornitori$/i })).toHaveAttribute('target', '_blank')
+    expect(screen.getByRole('link', { name: /^fornitori$/i })).toHaveAttribute('rel', 'noreferrer')
   })
 
   it('asks the organizations list for suppliers only', async () => {

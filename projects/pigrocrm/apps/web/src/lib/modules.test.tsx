@@ -32,10 +32,12 @@ describe('modulesOfPath', () => {
     expect(modulesOfPath('/app/taxes')).toEqual(['taxes'])
     expect(modulesOfPath('/app/staff')).toEqual(['staff'])
     expect(modulesOfPath('/app/expense-notes')).toEqual(['staff', 'purchases'])
+    expect(modulesOfPath('/app/suppliers')).toEqual(['purchases'])
+    expect(modulesOfPath('/app/engagements')).toEqual(['collaborators'])
     expect(modulesOfPath('/app/settings/cost-categories')).toEqual(['purchases'])
     expect(modulesOfPath('/app/settings/rates')).toEqual(['time'])
     expect(modulesOfPath('/app/settings/pipeline')).toEqual(['deals'])
-    for (const core of ['/app', '/app/organizations', '/app/invoices', '/app/settings/fiscal']) {
+    for (const core of ['/app', '/app/customers', '/app/organizations', '/app/organizations/o1', '/app/invoices', '/app/settings/fiscal']) {
       expect(modulesOfPath(core)).toEqual([])
     }
   })

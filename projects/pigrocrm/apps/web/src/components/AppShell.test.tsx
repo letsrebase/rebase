@@ -11,10 +11,8 @@ import { LegalEntityContext, type LegalEntityRecord, type LegalEntityValue } fro
 import { AppShell } from './AppShell'
 
 const mockRoute = vi.hoisted(() => ({
-  pathname: '/app/organizations',
+  pathname: '/app/customers',
   search: '',
-  /** The registry's `?role=`: the router state's parsed search, which tells «Clienti» from «Fornitori». */
-  role: undefined as string | undefined,
 }))
 
 /**
@@ -66,7 +64,7 @@ vi.mock('@tanstack/react-router', () => ({
   useRouterState: () => ({
     location: {
       pathname: mockRoute.pathname,
-      search: mockRoute.role === undefined ? {} : { role: mockRoute.role },
+      search: {},
     },
   }),
   // The command palette the shell mounts navigates; nothing here asserts on where.
@@ -169,9 +167,8 @@ beforeEach(() => {
   setViewport(true)
   mockAuth.role = 'admin'
   mockAuth.id = undefined
-  mockRoute.pathname = '/app/organizations'
+  mockRoute.pathname = '/app/customers'
   mockRoute.search = ''
-  mockRoute.role = undefined
   localStorage.clear()
   sessionStorage.clear()
   GET.mockReset()
@@ -241,7 +238,7 @@ describe('AppShell', () => {
       'Acquisti',
       'Ore',
       'Giornate',
-      'Incarichi',
+      'Collaboratori',
       'Tasse',
       'Cassa',
       "Persone dell'azienda",
@@ -272,7 +269,7 @@ describe('AppShell', () => {
       'Acquisti',
       'Ore',
       'Giornate',
-      'Incarichi',
+      'Collaboratori',
       'Tasse',
       'Cassa',
       "Persone dell'azienda",
@@ -404,9 +401,8 @@ describe('AppShell', () => {
     expect(sidebar().getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page')
   })
 
-  it('marks «Fornitori» and not «Clienti» on the registry\'s supplier view', () => {
-    mockRoute.pathname = '/app/organizations'
-    mockRoute.role = 'supplier'
+  it('marks «Fornitori» and not «Clienti» on the suppliers\' own page (REB-1053)', () => {
+    mockRoute.pathname = '/app/suppliers'
     renderShell()
     expect(sidebar().getByRole('link', { name: 'Fornitori' })).toHaveAttribute('aria-current', 'page')
     expect(sidebar().getByRole('link', { name: 'Clienti' })).not.toHaveAttribute('aria-current')
@@ -588,7 +584,7 @@ describe('AppShell', () => {
   })
 
   it('keeps a sub-item marked while its list carries a filter in the URL', () => {
-    mockRoute.pathname = '/app/organizations'
+    mockRoute.pathname = '/app/customers'
     mockRoute.search = '?q=acme'
     renderShell()
     expect(sidebar().getByRole('link', { name: 'Clienti' })).toHaveAttribute(

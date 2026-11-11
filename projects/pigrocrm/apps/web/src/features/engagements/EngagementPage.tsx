@@ -64,7 +64,7 @@ function subtitleOf(engagement: Engagement): string {
 }
 
 /**
- * The page of one engagement («Incarichi», REB-1035, the approved brief): the letter and its
+ * The page of one engagement («Collaboratori», REB-1035, the approved brief): the letter and its
  * signature, the three figures, the table of months with the 330 px panel of the month that is open
  * (an inline `aside` from `lg`, a sheet below), and the actions of the state. It is an administrator's
  * page: anyone else who types the address reads one sentence and gets no figure. The days are a read of
@@ -90,7 +90,7 @@ export function EngagementPage() {
   if (!admin) {
     return (
       <>
-        <PageHeader icon={BriefcaseBusiness} title="Incarichi" />
+        <PageHeader icon={BriefcaseBusiness} title="Collaboratori" />
         <p className="px-8 pb-8 text-sm text-muted-foreground">
           Gli incarichi dei freelance li vedono solo gli amministratori.
         </p>

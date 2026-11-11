@@ -19,12 +19,10 @@ import {
   EXPENSE_NOTES_PATH,
   HOME,
   INBOX_PATH,
-  REGISTRY_PATH,
   SETTINGS,
   SETTINGS_PATHS,
   isNavItemActive,
   isUnder,
-  navKey,
   settingsSubItems,
   visibleSections,
 } from './nav'
@@ -60,8 +58,8 @@ export function Sidebar({
 }) {
   const { user } = useAuth()
   const { location } = useRouterState()
-  // The registry's view, which is what tells «Clienti» from «Fornitori» (both open one page).
-  const registryRole = useRegistryView()
+  // The list an organization's own page is read as, so its page lights «Clienti» or «Fornitori».
+  const registryView = useRegistryView()
   // The sidebar's unread count (REB-734): the reminders still open for this person. The
   // Avvisi page reads the same query, so a snooze there moves this number at once.
   const unread = useUnreadCount()
@@ -74,7 +72,7 @@ export function Sidebar({
   // An entry of a module the space has switched off is not drawn (REB-953).
   const modules = useModules()
   const gates = useNavGates()
-  // The engagements that wait for a person (REB-1035): «Incarichi»'s own count, asked for an
+  // The engagements that wait for a person (REB-1035): «Collaboratori»'s own count, asked for an
   // administrator of a space with the module on and for nobody else.
   const engagements = useEngagementsToDoCount(modules.on('collaborators'))
   // The expense notes that wait for a decision (REB-1046): an administrator's count, asked only
@@ -205,14 +203,13 @@ export function Sidebar({
               )}
               {section.items.map((item) => (
                 <NavLeaf
-                  key={navKey(item)}
+                  key={item.to}
                   to={item.to}
-                  search={item.search}
                   label={item.label}
                   icon={item.icon}
                   active={
-                    item.to === REGISTRY_PATH
-                      ? isNavItemActive(item, location.pathname, registryRole)
+                    item.registry !== undefined
+                      ? isNavItemActive(item, location.pathname, registryView)
                       : undefined
                   }
                   rail={rail}

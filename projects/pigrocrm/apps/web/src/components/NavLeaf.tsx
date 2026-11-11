@@ -13,7 +13,6 @@ import { ACTIVE, ACTIVE_BY_ARIA, FOCUS, ITEM, QUIET } from './sidebarStyles'
  */
 export function NavLeaf({
   to,
-  search,
   active,
   label,
   icon: Icon,
@@ -24,10 +23,8 @@ export function NavLeaf({
   overdue,
 }: {
   to: LinkTo
-  /** The view an entry opens its page on (`?role=supplier`). */
-  search?: { role: 'supplier' }
-  /** Given by an entry the path alone cannot tell from its sibling (the registry's two
-   *  doors): the caller decides whether it is the current one, and the link follows. */
+  /** Given by an entry whose page the path alone does not place (a registry list is also the
+   *  page of an organization it lists): the caller decides whether it is the current one. */
   active?: boolean
   label: string
   icon: LucideIcon
@@ -41,15 +38,12 @@ export function NavLeaf({
   return (
     <Link
       to={to}
-      search={search}
       // `includeSearch: false`, because TanStack defaults it to true: none of these links
       // carries a search of its own, so with the default an entry stopped being active
       // the moment its page put anything in the URL -- and Home, whose dashboard writes
       // its tab and period there on load, was never highlighted at all.
-      // An entry whose caller decides (`active`) must not also be marked by the router, which
-      // marks every entry that opens the registry's path: the exact match with the search is
-      // the one case where the router and the caller agree.
-      activeOptions={active === undefined ? { exact, includeSearch: false } : { exact: true, includeSearch: true }}
+      // An entry whose caller decides (`active`) is not marked by the router at all.
+      activeOptions={{ exact, includeSearch: false }}
       {...(active === undefined
         ? { activeProps: { 'aria-current': 'page' as const } }
         : { 'aria-current': active ? ('page' as const) : undefined })}
