@@ -233,6 +233,8 @@ export const MIN_ROLE = {
   // entry in the menu and the download are an administrator's, as the core guards them.
   build_accountant_export: 'admin',
   get_export_download_url: 'admin',
+  // The readiness checklist of a period (REB-1048): the same position as the build.
+  get_export_checklist: 'admin',
   // Handing an export over (REB-1047): the share link, who opened it, ending it, and a copy in
   // the space's Drive are an administrator's. The last three are a person's act and have no
   // agent tool; the first is also a `full_access` token's.

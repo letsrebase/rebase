@@ -791,13 +791,18 @@ def register(
         date_to: str,
         legal_entity_id: str | None = None,
         all_entities: bool = False,
+        kind: Literal["accountant", "payroll_changes"] = "accountant",
+        payroll_parts: list[str] | None = None,
     ) -> dict[str, Any]:
         """Builds and stores the accountant's export of a period (at most 366 days), admin
-        only: every fiscal figure of the company in ZIP files. Answers the export with a
-        REST `download_url` for each ZIP, never the bytes. Building the same period again
-        stores another export and keeps the first; each is deleted after 13 months. With
-        several companies pass `legal_entity_id`, or `all_entities` for every company
-        (an administrator not limited to some companies).
+        only: every fiscal figure of the company in ZIP files, with the readiness checklist
+        of the period as it stood. Answers the export with a REST `download_url` for each ZIP,
+        never the bytes. Building the same period again stores another export and keeps the
+        first; each is deleted after 13 months. With several companies pass `legal_entity_id`,
+        or `all_entities` for every company (an administrator not limited to some companies).
+        `kind="payroll_changes"` builds «variazioni paghe», the payroll consultant's staff
+        changes of one company; `payroll_parts=["payslips"]` adds the payslips. Either carries
+        pay, so its share link needs a `recipient_email` for the one-time code.
         """
         stored = AccountantExportService(
             context.session, context.storage, settings
@@ -806,8 +811,37 @@ def register(
             context.actor,
             parse_legal_entity_id(legal_entity_id),
             all_entities=all_entities,
+            kind=kind,
+            payroll_parts=payroll_parts or [],
         )
         return stored.export.model_dump(mode="json")
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def get_export_checklist(
+        date_from: str,
+        date_to: str,
+        legal_entity_id: str | None = None,
+        all_entities: bool = False,
+        payroll_parts: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Is the period ready to export? One check per thing that can wait (inbox items,
+        purchases without a document, invoices with no file, bank statements and movements,
+        an IVA period not closed, payslips when asked in `payroll_parts`), each with a count
+        and the first open points. Admin only; nothing is stored. An export with open points
+        is allowed.
+        """
+        return (
+            AccountantExportService(context.session, context.storage, settings)
+            .get_export_checklist(
+                Period(_required_day(date_from), _required_day(date_to)),
+                context.actor,
+                parse_legal_entity_id(legal_entity_id),
+                all_entities=all_entities,
+                payroll_parts=payroll_parts or [],
+            )
+            .model_dump(mode="json")
+        )
 
     @mcp.tool(annotations=READ_ONLY)
     @guard
@@ -824,17 +858,22 @@ def register(
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
-    def create_export_share_link(export_id: str, days: int = DEFAULT_DAYS) -> dict[str, Any]:
+    def create_export_share_link(
+        export_id: str, days: int = DEFAULT_DAYS, recipient_email: str | None = None
+    ) -> dict[str, Any]:
         """Makes a link to a stored export, admin only, from the `id` that
         `build_accountant_export` answered: whoever holds the link downloads the export with no
         account until it expires or a person revokes it. Answers the link's `url`, shown only
         now (it is stored as a hash), never the file. Lives 7 days by default, at most 30.
+        An export with pay needs `recipient_email`: the link then asks a code mailed there.
         Handing the url on is the owner's decision: say where it goes. Listing and revoking
         links, and writing an export to Drive, are done by a person in the application.
         """
         return (
             ExportShareService(context.session, settings)
-            .create_export_share_link(UUID(export_id), context.actor, days=days)
+            .create_export_share_link(
+                UUID(export_id), context.actor, days=days, recipient_email=recipient_email
+            )
             .model_dump(mode="json")
         )
 

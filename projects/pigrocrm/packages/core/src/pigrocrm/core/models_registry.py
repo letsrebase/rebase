@@ -6,6 +6,7 @@ Each task that adds a model appends its import here.
 from pigrocrm.core.accountant_export.models import (  # noqa: F401
     AccountantExportRow,
     ExportDriveWrite,
+    ExportShareCode,
     ExportShareLink,
     ExportShareOpening,
 )

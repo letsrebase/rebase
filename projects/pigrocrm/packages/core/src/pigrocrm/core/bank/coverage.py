@@ -121,6 +121,32 @@ def _periods_by_account(
     return found
 
 
+def statement_gaps(
+    session: Session, account: BankAccount, start: dt.date, end: dt.date, today: dt.date
+) -> list[MissingPeriod]:
+    """The months of `start`..`end` that no imported statement of the account covers, one entry
+    per run of consecutive months, for an export's readiness (accountant export design § 2). A
+    month before the account was asked for, and one (a quarter, for a quarterly account) that
+    has not ended by `today`, is not a gap: nobody has a statement of it to give. The grace of
+    `missing` is not applied, since a period is exported after the fact."""
+    periods = _periods_by_account(session, [account.id]).get(account.id, [])
+    asked_from = _first_asked_month(account)
+    runs: list[MissingPeriod] = []
+    run: list[tuple[dt.date, dt.date]] = []
+    month = start.replace(day=1)
+    while month <= end:
+        first, last = month_bounds(month.year, month.month)
+        due = _quarter_end(first) if account.cadence == "quarterly" else last
+        gap = first >= asked_from and due < today and not _covers(periods, first, last)
+        if gap:
+            run.append((first, last))
+        if run and (not gap or month.replace(day=1) == end.replace(day=1)):
+            runs.append(MissingPeriod(account.id, account.name, run[0][0], run[-1][1]))
+            run = []
+        month = add_months(month, 1)
+    return runs
+
+
 def account_coverage(
     session: Session, account: BankAccount, today: dt.date | None = None
 ) -> AccountCoverage:

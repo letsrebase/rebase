@@ -13,6 +13,7 @@ from pigrocrm.core.mail.contracts import (
     signing_request_mail,
 )
 from pigrocrm.core.mail.digest import digest_mail, digest_subject
+from pigrocrm.core.mail.export_code import export_code_mail
 from pigrocrm.core.mail.formatting import day_short, euro
 from pigrocrm.core.mail.invitation import invitation_mail
 from pigrocrm.core.mail.magic_link import magic_link_mail
@@ -51,6 +52,7 @@ __all__ = [
     "digest_subject",
     "document_name",
     "euro",
+    "export_code_mail",
     "day_short",
     "invitation_mail",
     "magic_link_mail",

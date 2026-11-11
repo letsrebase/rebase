@@ -141,6 +141,10 @@ class PartDefinition:
     requires_modules: tuple[ModuleKey, ...] = ()
     # Packs the part does not apply to (no IVA register for `non-it`).
     not_for_packs: tuple[str, ...] = ()
+    # The name an administrator ticks to ask for the part (the payslips, § 4): a part with one
+    # is built only when asked and is not in the list of what a build holds, which the page
+    # draws as checkboxes of their own.
+    opt_in: str | None = None
 
     def omission_cause(self, ctx: PartContext) -> OmissionCause | None:
         """Why this part is left out, as a kind: a module that is off, or a pack it does not

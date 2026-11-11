@@ -28,6 +28,7 @@ import shutil
 import tempfile
 import unicodedata
 import zipfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,7 @@ from sqlalchemy import Select, extract, func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.accountant_export.access import visible_export
+from pigrocrm.core.accountant_export.checklist import Unit, compute_checklist
 from pigrocrm.core.accountant_export.index import (
     INDEX_FILE,
     ExportIndex,
@@ -53,7 +55,12 @@ from pigrocrm.core.accountant_export.parts import (
     Period,
     Spool,
 )
-from pigrocrm.core.accountant_export.registry import PARTS, UNAVAILABLE
+from pigrocrm.core.accountant_export.registry import (
+    PARTS,
+    PAYROLL_CHANGE_PARTS,
+    PAYROLL_PARTS,
+    UNAVAILABLE,
+)
 from pigrocrm.core.accountant_export.retention import (
     ENTITY as EXPORT_TRACE,
 )
@@ -61,7 +68,13 @@ from pigrocrm.core.accountant_export.retention import (
     RETENTION_MONTHS,
     add_months,
 )
-from pigrocrm.core.accountant_export.schemas import ExportPartRead, ExportRead, PartPreviewRead
+from pigrocrm.core.accountant_export.schemas import (
+    ChecklistRead,
+    ExportKind,
+    ExportPartRead,
+    ExportRead,
+    PartPreviewRead,
+)
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, get_settings
@@ -74,11 +87,13 @@ from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.service import ENTITY as LEGAL_ENTITY
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.modules.registry import require_modules
 from pigrocrm.core.storage.base import DocumentStorage, validate_storage_key
 
 ENTITY = "accountant_export"
 ACTION = "build_accountant_export"
 DOWNLOAD_ACTION = "get_export_download_url"
+CHECKLIST_ACTION = "get_export_checklist"
 ALL_ENTITIES_SECTION = "Tutte le aziende"
 SHARED_SECTION = "Acquisti condivisi"
 SHARED_FOLDER = "condivisi"
@@ -152,45 +167,48 @@ class AccountantExportService:
         legal_entity_id: UUID | None = None,
         *,
         all_entities: bool = False,
+        kind: ExportKind = "accountant",
+        payroll_parts: Sequence[str] = (),
         now: dt.datetime | None = None,
     ) -> StoredExport:
         """Builds the bundle of `period` and stores it: one legal entity's (the named one, or
         the only one), or every legal entity's with the shared purchases when `all_entities`.
-        Answers where each ZIP part can be fetched, never the bytes."""
+        `kind="payroll_changes"` builds «variazioni paghe» instead, the payroll consultant's
+        file of staff changes (one legal entity's, an administrator's who may read pay), and
+        `payroll_parts` asks for the parts that carry pay (`payslips`). Either makes an export
+        that never travels on a plain link. The checklist of the period (spec § 2) is computed
+        here, at the build, and stored with the export; whatever the page showed before is not
+        trusted. Answers where each ZIP part can be fetched, never the bytes."""
         actor.require_admin(ACTION)
         self._check_period(period)
+        asked = self._payroll_parts(payroll_parts)
         built_at = now or dt.datetime.now(dt.UTC)
-        if all_entities:
-            actor.require_unscoped_admin(ACTION)
-            if legal_entity_id is not None:
+        payroll_changes = kind == "payroll_changes"
+        if payroll_changes:
+            actor.require_pay_reader(ACTION)
+            require_modules(self.settings, "staff")
+            if all_entities or asked:
                 raise ValidationFailed(
                     ENTITY,
-                    "legal_entity_id",
-                    "un'esportazione di tutte le aziende non ne nomina una",
-                    expected="legal_entity_id oppure all_entities, non entrambi",
+                    "kind",
+                    "«variazioni paghe» è di un'azienda e non ha parti a richiesta",
+                    expected="una sola azienda, senza parti paghe",
                 )
-            entities = list(self.legal_entities.repo.list(only_active=False))
-            scope_name = ALL_ENTITIES_SECTION
-        else:
-            if (
-                legal_entity_id is not None
-                and actor.legal_entities is not None
-                and legal_entity_id not in actor.legal_entities
-            ):
-                # Not told apart from an entity that does not exist: the scope hides it.
-                raise NotFound(LEGAL_ENTITY, legal_entity_id)
-            entities = [
-                self.legal_entities.require_single(legal_entity_id, entity=ENTITY),
-            ]
-            scope_name = entities[0].name
+        elif asked:
+            actor.require_pay_reader(ACTION)
+        entities, scope_name = self._entities(actor, legal_entity_id, all_entities)
 
         index = ExportIndex(period=period, scope=scope_name, built_at=built_at)
+        if not payroll_changes:
+            index.readiness = self._checklist(actor, period, entities, all_entities, bool(asked))
         export_id = uuid7()
         stamp = f"{built_at.astimezone(dt.UTC):%Y%m%dt%H%M%Sz}-{export_id.hex[-8:]}"
         folder = ALL_ENTITIES_FOLDER if all_entities else _storage_slug(entities[0])
         days = f"{period.date_from.isoformat()}_{period.date_to.isoformat()}"
         prefix = f"{STORAGE_ROOT}/{folder}/{days}/{stamp}"
-        base = f"commercialista-{folder}-{days}-{stamp}"
+        name = "variazioni-paghe" if payroll_changes else "commercialista"
+        base = f"{name}-{folder}-{days}-{stamp}"
+        parts = PAYROLL_CHANGE_PARTS if payroll_changes else PARTS
 
         with tempfile.TemporaryDirectory(prefix="pigrocrm-export-") as scratch:
             spool_dir = Path(scratch) / "spool"
@@ -210,11 +228,14 @@ class AccountantExportService:
                             entity_prefix,
                             legal_entity.name,
                             index,
+                            parts=parts,
+                            asked=asked,
                             all_entities=all_entities,
+                            list_unavailable=not payroll_changes,
                         )
                     )
                 if all_entities:
-                    files.extend(self._shared_parts(actor, period, index))
+                    files.extend(self._shared_parts(actor, period, index, asked))
             finally:
                 self._spool = None
 
@@ -232,7 +253,7 @@ class AccountantExportService:
                 self._write_zip(Path(scratch) / f"part-{number}.zip", group, built_at)
                 for number, group in enumerate(groups, start=1)
             ]
-            parts = [
+            stored_parts = [
                 {
                     "key": f"{prefix}/{name}",
                     "filename": name,
@@ -241,16 +262,18 @@ class AccountantExportService:
                 }
                 for name, archive in zip(names, archives, strict=True)
             ]
-            self._put_all(parts, archives)
+            self._put_all(stored_parts, archives)
 
         row = AccountantExportRow(
             id=export_id,
             legal_entity_id=None if all_entities else entities[0].id,
             scope="all_entities" if all_entities else "entity",
+            kind=kind,
+            payroll=payroll_changes or bool(asked),
             period_from=period.date_from,
             period_to=period.date_to,
             prefix=prefix,
-            parts=parts,
+            parts=stored_parts,
             checklist=index.snapshot(),
             built_by=actor.id,
             built_by_type=actor.type,
@@ -270,15 +293,37 @@ class AccountantExportService:
                     "period_from": period.date_from.isoformat(),
                     "period_to": period.date_to.isoformat(),
                     "scope": row.scope,
-                    "files": len(parts),
+                    "kind": kind,
+                    "files": len(stored_parts),
                 },
             )
             self.session.commit()
         except BaseException:
             self.session.rollback()
-            self._delete_all(parts)
+            self._delete_all(stored_parts)
             raise
         return StoredExport(export=self._read(row), index=index)
+
+    def get_export_checklist(
+        self,
+        period: Period,
+        actor: Actor,
+        legal_entity_id: UUID | None = None,
+        *,
+        all_entities: bool = False,
+        payroll_parts: Sequence[str] = (),
+    ) -> ChecklistRead:
+        """«Il periodo è pronto?»: what would make an export of `period` incomplete, one check
+        per thing that can wait, computed from the database as it is now. An admin whose scope
+        covers the company, or an agent with `full_access`. Nothing is stored: the build
+        computes it again and keeps that."""
+        actor.require_admin(CHECKLIST_ACTION)
+        self._check_period(period)
+        asked = self._payroll_parts(payroll_parts)
+        if asked:
+            actor.require_pay_reader(CHECKLIST_ACTION)
+        entities, _ = self._entities(actor, legal_entity_id, all_entities)
+        return self._checklist(actor, period, entities, all_entities, bool(asked))
 
     def get_export_download_url(self, export_id: UUID, actor: Actor) -> ExportRead:
         """Where each ZIP of a stored export can be fetched: REST paths, never bytes. An export
@@ -325,12 +370,43 @@ class AccountantExportService:
         return self.session.scalar(query) or 0
 
     def describe_parts(
-        self, actor: Actor, legal_entity_id: UUID | None = None, *, all_entities: bool = False
+        self,
+        actor: Actor,
+        legal_entity_id: UUID | None = None,
+        *,
+        all_entities: bool = False,
+        kind: ExportKind = "accountant",
     ) -> list[PartPreviewRead]:
         """The parts a build for this company would hold: those that apply to its modules and
         fiscal pack, in the order of the index. For every company, a part that applies to any
-        of them. A part left out is not named here: the build's index says why."""
+        of them. A part left out is not named here: the build's index says why. A part that is
+        asked for (the payslips) carries the name it is asked by in `opt_in`."""
         actor.require_admin(ACTION)
+        entities, _ = self._entities(actor, legal_entity_id, all_entities)
+        today = today_local()
+        contexts = [
+            self._context(actor, Period(today, today), entity, all_entities=all_entities)
+            for entity in entities
+        ]
+        listed = PAYROLL_CHANGE_PARTS if kind == "payroll_changes" else PARTS
+        return [
+            PartPreviewRead(
+                key=part.key,
+                label=part.label,
+                date_rule=part.date_rule,
+                contents=part.contents,
+                opt_in=part.opt_in,
+            )
+            for part in listed
+            if "entity" in part.scopes and any(part.omission(ctx) is None for ctx in contexts)
+        ]
+
+    def _entities(
+        self, actor: Actor, legal_entity_id: UUID | None, all_entities: bool
+    ) -> tuple[list[LegalEntity], str]:
+        """The legal entities an export of this ask reads, and the name the index gives it. The
+        scope is checked here once for every caller: an entity the actor's scope hides is not
+        told apart from one that does not exist."""
         if all_entities:
             actor.require_unscoped_admin(ACTION)
             if legal_entity_id is not None:
@@ -340,27 +416,49 @@ class AccountantExportService:
                     "un'esportazione di tutte le aziende non ne nomina una",
                     expected="legal_entity_id oppure all_entities, non entrambi",
                 )
-            entities = list(self.legal_entities.repo.list(only_active=False))
-        else:
-            if (
-                legal_entity_id is not None
-                and actor.legal_entities is not None
-                and legal_entity_id not in actor.legal_entities
-            ):
-                raise NotFound(LEGAL_ENTITY, legal_entity_id)
-            entities = [self.legal_entities.require_single(legal_entity_id, entity=ENTITY)]
-        today = today_local()
-        contexts = [
-            self._context(actor, Period(today, today), entity, all_entities=all_entities)
+            return list(self.legal_entities.repo.list(only_active=False)), ALL_ENTITIES_SECTION
+        if (
+            legal_entity_id is not None
+            and actor.legal_entities is not None
+            and legal_entity_id not in actor.legal_entities
+        ):
+            raise NotFound(LEGAL_ENTITY, legal_entity_id)
+        entity = self.legal_entities.require_single(legal_entity_id, entity=ENTITY)
+        return [entity], entity.name
+
+    @staticmethod
+    def _payroll_parts(asked: Sequence[str]) -> frozenset[str]:
+        unknown = sorted(set(asked) - set(PAYROLL_PARTS))
+        if unknown:
+            raise ValidationFailed(
+                ENTITY,
+                "payroll_parts",
+                f"parte paghe sconosciuta: {unknown[0]}",
+                expected=", ".join(PAYROLL_PARTS),
+            )
+        return frozenset(asked)
+
+    def _checklist(
+        self,
+        actor: Actor,
+        period: Period,
+        entities: list[LegalEntity],
+        all_entities: bool,
+        payroll: bool,
+    ) -> ChecklistRead:
+        """The checklist over the entities of the ask, plus the section of the records that
+        belong to no legal entity when every entity is exported."""
+        units = [
+            Unit(
+                entity,
+                with_shared=self._context(actor, period, entity).owns_shared_purchases,
+                name=entity.name if all_entities else None,
+            )
             for entity in entities
         ]
-        return [
-            PartPreviewRead(
-                key=part.key, label=part.label, date_rule=part.date_rule, contents=part.contents
-            )
-            for part in PARTS
-            if "entity" in part.scopes and any(part.omission(ctx) is None for ctx in contexts)
-        ]
+        if all_entities:
+            units.append(Unit(None, with_shared=True, name=SHARED_SECTION))
+        return compute_checklist(self.session, self.settings, actor, period, units, payroll=payroll)
 
     @staticmethod
     def _filtered(
@@ -384,6 +482,8 @@ class AccountantExportService:
             id=row.id,
             legal_entity_id=row.legal_entity_id,
             scope=row.scope,
+            kind=row.kind,  # type: ignore[arg-type]
+            payroll=row.payroll,
             period_from=row.period_from,
             period_to=row.period_to,
             built_by=row.built_by,
@@ -518,20 +618,25 @@ class AccountantExportService:
         section: str,
         index: ExportIndex,
         *,
+        parts: tuple[PartDefinition, ...],
+        asked: frozenset[str],
         all_entities: bool,
+        list_unavailable: bool,
     ) -> list[BundleFile]:
         ctx = self._context(actor, period, legal_entity, all_entities=all_entities)
         files = self._run(
-            [part for part in PARTS if "entity" in part.scopes], ctx, prefix, section, index
+            [part for part in parts if "entity" in part.scopes], ctx, prefix, section, index, asked
         )
-        for missing in UNAVAILABLE:
+        for missing in UNAVAILABLE if list_unavailable else ():
             if "entity" in missing.scopes:
                 index.parts.append(
                     PartLine(section, missing.key, missing.label, "unavailable", "", missing.reason)
                 )
         return files
 
-    def _shared_parts(self, actor: Actor, period: Period, index: ExportIndex) -> list[BundleFile]:
+    def _shared_parts(
+        self, actor: Actor, period: Period, index: ExportIndex, asked: frozenset[str]
+    ) -> list[BundleFile]:
         ctx = self._context(actor, period, None)
         files = self._run(
             [part for part in PARTS if "shared" in part.scopes],
@@ -539,6 +644,7 @@ class AccountantExportService:
             f"{SHARED_FOLDER}/",
             SHARED_SECTION,
             index,
+            asked,
         )
         for missing in UNAVAILABLE:
             if "shared" in missing.scopes:
@@ -561,9 +667,12 @@ class AccountantExportService:
         prefix: str,
         section: str,
         index: ExportIndex,
+        asked: frozenset[str],
     ) -> list[BundleFile]:
         files: list[BundleFile] = []
         for part in parts:
+            if part.opt_in is not None and part.opt_in not in asked:
+                continue
             reason = part.omission(ctx)
             if reason is not None:
                 index.parts.append(

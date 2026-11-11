@@ -903,6 +903,13 @@ ROWS: list[Row] = [
     ),
     Row("GET", "/api/accountant-export/exports", admin_only=True),
     Row("GET", "/api/accountant-export/parts", admin_only=True),
+    # The readiness checklist of a period (REB-1048), the same position as the build.
+    Row(
+        "GET",
+        "/api/accountant-export/checklist",
+        admin_only=True,
+        params={"date_from": "2026-01-01", "date_to": "2026-03-31"},
+    ),
     Row("GET", "/api/accountant-export/exports/{export_id}", admin_only=True),
     Row("GET", "/api/accountant-export/exports/{export_id}/parts/{part}", admin_only=True),
     # --- handing an export over: share links and the copy in Drive (REB-1047) --
@@ -953,6 +960,15 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
         "The door of an export's share link (REB-1047): open to whoever holds the token, and it "
         "writes nothing. Not called: a token this suite never made answers 404, which says "
         "nothing about roles; `test_accountant_export_share_api.py` walks it."
+    ),
+    ("POST", "/api/accountant-export/shared/code"): (
+        "The same door, mailing the one-time code of a link to an export with pay (REB-1048): "
+        "open to whoever holds the token, throttled per link and per client, and covered by "
+        "`test_accountant_export_share_api.py`."
+    ),
+    ("POST", "/api/accountant-export/shared/verify"): (
+        "The same door, trading a right code for the session that opens the files (REB-1048): "
+        "unauthenticated by design, a wrong answer counts against the code and the client."
     ),
     ("POST", "/api/accountant-export/shared/download"): (
         "The same door, handing a ZIP out and counting the opening: unauthenticated by design, "

@@ -3,7 +3,9 @@ attach. A CSV like the others (`csv_cells`), so the accountant opens it the same
 
 Three tables separated by a blank line: who and when, the parts (one line per file or
 folder, one line for a part left out), and the documents a part expected to attach and did
-not find. A bundle cut into several archives adds a fourth: which archive holds each file.
+not find. After them, «Il periodo è pronto»: the readiness checklist as the period stood when
+the bundle was built (spec accountant export § 2), one line per check with its open points. A
+bundle cut into several archives adds one more: which archive holds each file.
 """
 
 import datetime as dt
@@ -11,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from pigrocrm.core.accountant_export.parts import IndexEntry, MissingFile, OmissionCause, Period
+from pigrocrm.core.accountant_export.schemas import ChecklistRead
 from pigrocrm.core.csv_cells import BOM, row_line, text_cell
 
 INDEX_FILE = "indice.csv"
@@ -35,6 +38,9 @@ PART_COLUMNS = (
 )
 MISSING_COLUMNS = ("Sezione", "Documento", "File", "Motivo")
 ARCHIVE_COLUMNS = ("File", "Archivio")
+READINESS_TITLE = "Il periodo è pronto"
+READINESS_COLUMNS = ("Controllo", "Stato", "Quantità", "Dettaglio")
+READINESS_STATES = {"ok": "A posto", "open": "Da vedere"}
 
 
 @dataclass(frozen=True)
@@ -67,10 +73,13 @@ class ExportIndex:
     missing: list[MissingLine] = field(default_factory=list)
     # Which archive holds each file, filled in only when the bundle is cut into several.
     archives: dict[str, str] = field(default_factory=dict)
+    # The checklist of the period as it stood at the build; `None` for «variazioni paghe», which
+    # has none.
+    readiness: ChecklistRead | None = None
 
     def snapshot(self) -> dict[str, Any]:
         """The index as data, kept on the stored export (its checklist snapshot)."""
-        return {
+        data: dict[str, Any] = {
             "parts": [
                 {
                     "section": line.section,
@@ -96,6 +105,9 @@ class ExportIndex:
                 for item in self.missing
             ],
         }
+        if self.readiness is not None:
+            data["readiness"] = self.readiness.model_dump(mode="json")
+        return data
 
     def render(self) -> str:
         out = [
@@ -146,6 +158,24 @@ class ExportIndex:
                     ]
                 )
             )
+        if self.readiness is not None:
+            out.append("\r\n")
+            out.append(row_line([text_cell(READINESS_TITLE)]))
+            out.append(row_line([text_cell(column) for column in READINESS_COLUMNS]))
+            for check in self.readiness.checks:
+                detail = "; ".join(check.items)
+                if check.more:
+                    detail += f"; e altre {check.more}"
+                out.append(
+                    row_line(
+                        [
+                            text_cell(check.label),
+                            READINESS_STATES[check.state],
+                            str(check.count),
+                            text_cell(detail),
+                        ]
+                    )
+                )
         if len(set(self.archives.values())) > 1:
             out.append("\r\n")
             out.append(row_line([text_cell(column) for column in ARCHIVE_COLUMNS]))

@@ -2,6 +2,7 @@
 bytes (accountant export design § 5)."""
 
 import datetime as dt
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -15,12 +16,47 @@ class ExportPartRead(BaseModel):
     download_url: str = Field(description="The REST path that serves this ZIP")
 
 
+ExportKind = Literal["accountant", "payroll_changes"]
+
+
+class ChecklistCheckRead(BaseModel):
+    """One check of «Il periodo è pronto» (accountant export design § 2): a count of what waits
+    and the first few named. The server computes it; a page draws it and works out nothing."""
+
+    key: str = Field(description="Which check: `inbox`, `purchase_documents`, `invoice_files`, ...")
+    label: str = Field(description="The check as the page words it")
+    state: Literal["ok", "open"] = Field(description="`ok` when nothing waits, else `open`")
+    count: int = Field(description="How many open points there are")
+    items: list[str] = Field(description="The first open points, each as a sentence")
+    more: int = Field(description="How many open points `items` leaves out")
+    target: str = Field(
+        description=(
+            "Where the point is fixed: `inbox`, `purchases`, `invoices`, `cash`, `iva` or `staff`"
+        )
+    )
+
+
+class ChecklistRead(BaseModel):
+    period_from: dt.date
+    period_to: dt.date
+    open_count: int = Field(description="Open points over every check")
+    checks: list[ChecklistCheckRead] = Field(
+        description="Only the checks that apply to the company's modules and to what is exported"
+    )
+
+
 class ExportRead(BaseModel):
     id: UUID
     legal_entity_id: UUID | None = Field(
         description="The legal entity, `null` for the export of every legal entity"
     )
     scope: str = Field(description="`entity` or `all_entities`")
+    kind: ExportKind = Field(
+        description="`accountant`, the period bundle, or `payroll_changes`, «variazioni paghe»"
+    )
+    payroll: bool = Field(
+        description="Whether the files carry pay: never delivered on a plain link, only by a code"
+    )
     period_from: dt.date
     period_to: dt.date
     built_by: UUID | None
@@ -33,7 +69,11 @@ class ExportRead(BaseModel):
         description="One ZIP, or several when the bundle is too big for one file"
     )
     checklist: dict[str, object] = Field(
-        description="The index as it was when the export was built"
+        description=(
+            "The index as it was when the export was built, and under `readiness` the checklist "
+            "of the period as it stood then (absent on an export made before it existed and on "
+            "«variazioni paghe»)"
+        )
     )
 
 
@@ -47,6 +87,12 @@ class PartPreviewRead(BaseModel):
     label: str = Field(description="The part as the index names it")
     date_rule: str = Field(description="Which date places a row in the period")
     contents: str = Field(description="What the part is made of: a CSV list, original files")
+    opt_in: str | None = Field(
+        description=(
+            "The name an administrator ticks to ask for the part (`payslips`); `null` for a "
+            "part every build holds"
+        )
+    )
 
 
 class ShareLinkOpeningRead(BaseModel):
@@ -67,6 +113,11 @@ class ShareLinkRead(BaseModel):
     expires_at: dt.datetime
     revoked_at: dt.datetime | None
     state: str = Field(description="`active`, `expired` or `revoked`")
+    recipient_email: str | None = Field(
+        description=(
+            "The address a one-time code goes to before the files open; `null` is a plain link"
+        )
+    )
     download_count: int = Field(description="How many files were handed out through the link")
     period_from: dt.date = Field(description="First day of the export's period")
     period_to: dt.date = Field(description="Last day of the export's period")
@@ -105,7 +156,18 @@ class SharedExportRead(BaseModel):
     built_at: dt.datetime
     shared_by: str | None = Field(description="The name of the person who made the link")
     expires_at: dt.datetime
-    parts: list[SharedExportPartRead]
+    requires_code: bool = Field(
+        description="Whether a one-time code sent to the recipient opens the files"
+    )
+    recipient_hint: str | None = Field(
+        description="The address the code goes to with most of it hidden, `null` on a plain link"
+    )
+    unlocked: bool = Field(
+        description="Whether the files are open: a plain link, or a code already given"
+    )
+    parts: list[SharedExportPartRead] = Field(
+        description="The ZIP files; empty while a link with a code is locked"
+    )
 
 
 class DriveDeliveryStatus(BaseModel):

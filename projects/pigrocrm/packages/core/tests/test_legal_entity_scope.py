@@ -82,6 +82,7 @@ POLICIED = {
     "accountant_exports",
     "accountant_export_links",
     "accountant_export_link_openings",
+    "accountant_export_link_codes",
     "accountant_export_drive_writes",
     "iva_settlements",
     "iva_period_locks",
