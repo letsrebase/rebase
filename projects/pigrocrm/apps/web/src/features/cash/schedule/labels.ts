@@ -105,6 +105,7 @@ export const SOURCES: Record<string, SourceInfo> = {
   tax_instalment: { label: 'Imposte' },
   tax_balance: { label: 'Saldo imposte' },
   tax_advance: { label: 'Acconto imposte' },
+  chamber_fee: { label: 'Diritto camerale' },
   cash_basis_vat: { label: 'IVA per cassa' },
   payroll: { label: 'Stipendi' },
   engagement: { label: 'Collaboratore' },
@@ -119,6 +120,7 @@ const RESTRICTED_KINDS: Record<string, true> = {
   tax_instalment: true,
   tax_balance: true,
   tax_advance: true,
+  chamber_fee: true,
   payroll: true,
   cash_basis_vat: true,
   engagement: true,
@@ -152,8 +154,11 @@ export function itemWhat(item: DueItem): string {
   return item.description ?? sourceLabel(item.source_kind)
 }
 
+/** What an item names as its tax besides the income taxes of the «Tasse» page. */
+const OTHER_TAX_NAMES: Record<string, string> = { chamber_fee: 'Diritto camerale' }
+
 /** A tax by the name the «Tasse» page uses; a code it does not know is shown as it came. */
 export function taxName(tax: string | null | undefined): string | null {
   if (!tax) return null
-  return (TAX_LABELS as Record<string, string>)[tax] ?? tax
+  return (TAX_LABELS as Record<string, string>)[tax] ?? OTHER_TAX_NAMES[tax] ?? tax
 }

@@ -40,6 +40,7 @@ SOURCE = {
     "tax_instalment": "Imposta",
     "tax_balance": "Saldo d'imposta",
     "tax_advance": "Acconto d'imposta",
+    "chamber_fee": "Diritto camerale",
     "payroll": "Paghe",
     "contract_occurrence": "Contratto",
     "recurring_expense": "Spesa ricorrente",

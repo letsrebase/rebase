@@ -32,7 +32,11 @@ from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.errors import AgentForbidden, PermissionDenied
 from pigrocrm.core.fiscal import tax_items
 from pigrocrm.core.fiscal.advance_method import TaxAdvanceMethodService
-from pigrocrm.core.fiscal.advance_schemas import TaxAdvanceMethodRead, TaxAdvanceMethodSet
+from pigrocrm.core.fiscal.advance_schemas import (
+    TaxAdvanceMethodRead,
+    TaxAdvanceMethodSet,
+    TaxItemsReport,
+)
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
 from pigrocrm.core.fiscal.models import FiscalProfile, TaxAdvanceMethod
 from pigrocrm.core.fiscal.schemas import DeclaredTaxFigureSet
@@ -729,3 +733,87 @@ def test_the_method_needs_a_fiscal_profile(db_session: Session, clock: Clock) ->
     db_session.flush()
     with pytest.raises(NotFound):
         _method(db_session, entity.id, 2026, "forecast")
+
+
+# --- the srl's chamber of commerce fee (REB-1077) ---------------------------------------------
+
+
+def _fee_rows(session: Session, entity: UUID) -> list[DueItem]:
+    session.expire_all()
+    return list(
+        session.scalars(
+            select(DueItem).where(
+                DueItem.legal_entity_id == entity,
+                DueItem.source_kind == "chamber_fee",
+                DueItem.state != "dropped",
+            )
+        )
+    )
+
+
+def _refresh(session: Session, entity: UUID, province: str | None) -> TaxItemsReport:
+    row = session.get(LegalEntity, entity)
+    assert row is not None
+    row.province = province
+    session.flush()
+    return TaxDueItemService(session).refresh_tax_due_items(entity, today=dt.date(2026, 5, 15))
+
+
+def test_an_srl_in_milano_with_small_turnover_has_the_fee_on_the_first_advance_day(
+    db_session: Session, clock: Clock, estimates: Estimates
+) -> None:
+    entity = _entity(db_session, "it-company", isa=False)
+    report = _refresh(db_session, entity, "MI")
+    (item,) = _fee_rows(db_session, entity)
+    assert (item.amount, item.due_date, item.state, item.tax) == (
+        D("120.00"),
+        dt.date(2026, 6, 30),
+        "forecast",
+        "chamber_fee",
+    )
+    assert item.counterparty_type == "tax_office"
+    assert "3850" in (item.description or "")
+    assert not any(n.part == "chamber_fee" for n in report.not_written)
+    # Idempotent.
+    _refresh(db_session, entity, "MI")
+    assert len(_fee_rows(db_session, entity)) == 1
+
+
+def test_napoli_adds_no_increase(db_session: Session, clock: Clock, estimates: Estimates) -> None:
+    entity = _entity(db_session, "it-company", isa=False)
+    _refresh(db_session, entity, "NA")
+    (item,) = _fee_rows(db_session, entity)
+    assert item.amount == D("100.00")
+
+
+@pytest.mark.parametrize("province", [None, "", "BT", "SU"])
+def test_a_missing_or_unmapped_province_gives_no_fee_and_says_why(
+    db_session: Session, clock: Clock, estimates: Estimates, province: str | None
+) -> None:
+    entity = _entity(db_session, "it-company", isa=False)
+    report = _refresh(db_session, entity, province)
+    assert _fee_rows(db_session, entity) == []
+    reasons = [n.reason for n in report.not_written if n.part == "chamber_fee"]
+    assert len(reasons) == 1
+
+
+def test_a_sole_trader_has_no_chamber_fee(
+    db_session: Session, clock: Clock, estimates: Estimates
+) -> None:
+    entity = _entity(db_session, "it-flat-rate")
+    _refresh(db_session, entity, "MI")
+    assert _fee_rows(db_session, entity) == []
+
+
+def test_a_chamber_fee_can_be_paid_and_then_keeps_what_was_paid(
+    db_session: Session, clock: Clock, estimates: Estimates
+) -> None:
+    entity = _entity(db_session, "it-company", isa=False)
+    _refresh(db_session, entity, "MI")
+    (item,) = _fee_rows(db_session, entity)
+    DueItemService(db_session).settle(
+        item.id, SettlementCreate(amount=D("120.00"), settled_on=dt.date(2026, 5, 20)), ADMIN
+    )
+    _refresh(db_session, entity, "MI")
+    (kept,) = _fee_rows(db_session, entity)
+    assert (kept.id, kept.state, kept.amount) == (item.id, "settled", D("120.00"))

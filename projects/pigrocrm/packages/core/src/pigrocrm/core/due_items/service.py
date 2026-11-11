@@ -30,6 +30,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.bank.models import BankMovement
 from pigrocrm.core.db import today_local
 from pigrocrm.core.due_items.models import (
+    CHAMBER_FEE_SOURCE_KIND,
     EXPENSE_NOTE_SOURCE_KIND,
     OPEN_STATES,
     RESTRICTED_SOURCE_KINDS,
@@ -71,7 +72,11 @@ SETTLEMENT_ENTITY = "due_item_settlement"
 ZERO = Decimal("0.00")
 SALES_INVOICE = "sales_invoice"
 # The tax kinds whose forecast may be paid as it stands: no document replaces it.
-TAX_SOURCE_KINDS_PAYABLE = (TAX_BALANCE_SOURCE_KIND, TAX_ADVANCE_SOURCE_KIND)
+TAX_SOURCE_KINDS_PAYABLE = (
+    TAX_BALANCE_SOURCE_KIND,
+    TAX_ADVANCE_SOURCE_KIND,
+    CHAMBER_FEE_SOURCE_KIND,
+)
 
 
 def _is_fiscal(item: DueItem) -> bool:
