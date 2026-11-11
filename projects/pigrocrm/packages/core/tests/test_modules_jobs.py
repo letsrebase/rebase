@@ -41,6 +41,7 @@ def test_every_detector_of_a_module_is_tied_to_it() -> None:
     assert by_type["contract_expiring"] == ("contracts",)
     assert by_type["worked_without_approval"] == ("contracts",)
     assert by_type["ceiling_approaching"] == ("taxes",)
+    assert by_type["tax_payment_due"] == by_type["tax_figure_missing"] == ("taxes",)
     # The core is never tied: a task, an invoice and the reminders' own health.
     assert by_type["task_due"] == by_type["invoice_overdue"] == by_type["job_late"] == ()
 

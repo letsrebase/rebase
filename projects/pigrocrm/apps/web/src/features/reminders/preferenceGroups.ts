@@ -54,6 +54,7 @@ const GROUPS: readonly { id: string; label: string; keys: readonly string[] }[] 
       'ceiling_approaching',
       'year_end_overrun_projected',
       'tax_payment_due',
+      'tax_figure_missing',
       'month_not_closed',
       'proposal_pending',
       'connection_failing',

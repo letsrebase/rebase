@@ -968,7 +968,8 @@ def test_the_legal_entities_are_read_once_by_evaluation(space: Space) -> None:
     seen: list[str] = []
 
     def record(_c: object, _cur: object, statement: str, *_a: object) -> None:
-        if "FROM legal_entities JOIN fiscal_profile" in statement:
+        # The ceiling pair's own read (the tax dates' one, on every pack, has no pack filter).
+        if "FROM legal_entities JOIN fiscal_profile" in statement and "pack_id = " in statement:
             seen.append(statement)
 
     engine = space.session.get_bind()
@@ -1016,13 +1017,13 @@ def test_every_type_of_the_group_is_for_admins_and_a_space_with_one_admin_keeps_
     group = (
         "ceiling_approaching",
         "year_end_overrun_projected",
+        "tax_payment_due",
+        "tax_figure_missing",
         "month_not_closed",
         "proposal_pending",
         "connection_failing",
         "job_late",
     )
     assert all(REMINDER_TYPES[key].audience == "admins" for key in group)
-    assert "tax_payment_due" not in REMINDER_TYPES, (
-        "the fiscal pack knows no payment date, so the type applies nowhere and is not added"
-    )
+    assert {"tax_payment_due", "tax_figure_missing"} <= set(REMINDER_TYPES)
     assert [d.kind.key for d in DETECTORS][-len(group) :] == list(group)
