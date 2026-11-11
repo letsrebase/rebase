@@ -125,6 +125,11 @@ _READS: dict[Method, str] = {
     ("AnalyticsService", "economic_overview"): "a figure; nothing is written for the person",
     ("AnalyticsService", "get_fiscal_estimate"): "a figure computed from the profile",
     ("AnalyticsService", "get_tax_calendar"): "reads the pack's dates, writes nothing",
+    ("F24GroupService", "get_f24_group"): "reads one F24 group, writes nothing",
+    (
+        "F24GroupService",
+        "list_f24_groups",
+    ): "reads the F24 groups of a legal entity, writes nothing",
     ("TaxNoticePlanService", "list_tax_plans"): "reads the plans of a legal entity, writes nothing",
     (
         "IvaSettlementService",
