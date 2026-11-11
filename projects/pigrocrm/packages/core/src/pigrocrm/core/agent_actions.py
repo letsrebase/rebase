@@ -384,6 +384,9 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         # Settling a due item with a bank movement as its evidence, and taking that back: a
         # person's act, like accepting any other proposal (REB-1042, brief « The matching panel »).
         "confirm_movement_match",
+        # The difference an advance already paid left on a tax item asks a person to confirm it
+        # (REB-1079, REB-1074): its legal treatment is «to verify», so no credential decides it.
+        "confirm_tax_carry",
         "undo_movement_match",
         # The freelancer's signature makes an engagement active: a person records it, never the
         # credential that read the letter's text (collaborators design § 6).
@@ -558,6 +561,7 @@ ACTION_LABELS: dict[str, str] = {
     "list_staff": "leggere l'elenco delle persone dell'azienda e i loro compensi",
     "set_declared_tax_figure": "registrare le cifre della dichiarazione dei redditi",
     "set_tax_advance_method": "scegliere come calcolare gli acconti d'imposta di un anno",
+    "confirm_tax_carry": "confermare la differenza riportata su un'imposta",
     "set_tax_instalment_plan": "rateizzare il saldo e il primo acconto delle imposte di un anno",
     "create_tax_notice_plan": "registrare il piano di rate di un avviso dell'erario",
     "update_tax_notice_plan": "cambiare il piano di rate di un avviso dell'erario",

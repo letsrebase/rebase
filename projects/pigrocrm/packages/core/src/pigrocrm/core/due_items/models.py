@@ -86,6 +86,9 @@ TAX_INSTALMENT_SOURCE_KIND = "tax_instalment"
 NOTICE_PLAN_SOURCE_KIND = "notice_plan"
 # The source of a tax credit (a negative item, taxes design § 2): restricted below like the taxes.
 TAX_CREDIT_SOURCE_KIND = "tax_credit"
+# What a tax item's description ends with while a difference carried onto it from an advance
+# already paid waits for a person to confirm it (`fiscal/tax_items.py`, REB-1074).
+CARRY_TO_CONFIRM_SUFFIX = "da confermare"
 # The source of an approved expense note's one due item (`expense_notes/service.py`).
 EXPENSE_NOTE_SOURCE_KIND = "expense_note"
 # The source of what staff cost and when it leaves (`staff/payroll.py`).
@@ -270,6 +273,12 @@ class DueItem(Base, PrimaryKeyMixin, TimestampMixin):
     rule_day_of_month: Mapped[int | None] = mapped_column(Integer, default=None)
     rule_not_after: Mapped[dt.date | None] = mapped_column(Date, default=None)
     dropped_reason: Mapped[str | None] = mapped_column(String(TEXT_MAX_LENGTH), default=None)
+    # When an administrator confirmed the difference carried onto this tax item (REB-1079). A
+    # rewrite that keeps the same description keeps it (`TaxDueItemService`); another difference
+    # is a new item to confirm.
+    carry_confirmed_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
 
 
 class DueItemSettlement(Base, PrimaryKeyMixin, TimestampMixin):

@@ -19,6 +19,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from pigrocrm.core.contracts.schemas import ContractCapSimulation
+from pigrocrm.core.fiscal.advance_schemas import AdvanceMethod
 from pigrocrm.core.fiscal.basis_schemas import YearBasis
 from pigrocrm.core.fiscal.company_estimate import CompanyEstimate
 from pigrocrm.core.fiscal.law import Cadence, DateKind, TaxName
@@ -350,6 +351,10 @@ class FiscalEstimate(BaseModel):
     # «what if» with a revenue the caller supplied (its costs are unknown) and where there is no
     # basis to start from.
     person: OrdinaryEstimate | None = None
+    # REB-1079: how the advances of this tax year are computed, as an administrator chose it
+    # (`PUT /fiscal/advance-method`); `historical` when none was. Read where a caller is the
+    # admin, never stored in a frozen reading.
+    advance_method: AdvanceMethod = "historical"
 
 
 class CashMonth(BaseModel):

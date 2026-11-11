@@ -222,6 +222,9 @@ class DueItemRead(BaseModel):
     due_date_estimated: bool
     rule: DueRuleRead
     dropped_reason: str | None
+    # A difference carried onto a tax item from an advance already paid waits for confirmation
+    # (REB-1079); false for every other item and once confirmed.
+    carry_to_confirm: bool = False
     created_at: dt.datetime
     updated_at: dt.datetime
 

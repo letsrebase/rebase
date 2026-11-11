@@ -1051,6 +1051,10 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "link to the group is a person's step; `list_f24_groups` reads the receipts attached"
     ),
     ("F24GroupService", "detach_f24_receipt"): "REB-1076: same as `attach_f24_receipt`",
+    ("DueItemService", "confirm_tax_carry"): (
+        "REB-1079: confirming a tax item's carried difference is the fiscal position (taxes "
+        "design § 5); REST only, an administrator's act from «Tasse», no tool"
+    ),
     ("ExpenseNoteService", "get_expense_note"): (
         "REB-1046: one note is the page's panel; `list_expense_notes` answers every field of it"
     ),

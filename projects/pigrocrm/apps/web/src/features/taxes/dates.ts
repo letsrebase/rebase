@@ -1,5 +1,6 @@
 import { daysBetweenIso, isoYearMonth } from '@/lib/dates'
 import type { TaxCalendarEntry } from './labels'
+import type { F24Group, TaxDueItem } from './queries'
 
 /**
  * The pack's tax dates as the Home and «Tasse» draw them (REB-1026). Nothing here is an amount:
@@ -77,23 +78,46 @@ export function lineText(entry: TaxCalendarEntry): string {
   return NAMES_ITSELF.has(entry.tax) ? dateLabel(entry) : `${dateLabel(entry)} · ${taxOfDate(entry)}`
 }
 
-/** One day on which something falls due, with the lines it holds. */
+/** Whether a due item is the payment a pack line announces: the same tax, the pack's «imposte sui
+ *  redditi» being a person's IRPEF. A line the items do not cover stays, so a tax with no item that
+ *  day (no estimate yet) is still said to fall due. */
+function covers(item: TaxDueItem, entry: TaxCalendarEntry): boolean {
+  return item.tax === (entry.tax === 'income_tax' ? 'irpef' : entry.tax)
+}
+
+/** One day on which something falls due: the pack's lines and, for the taxes whose payments are
+ *  due items, the items themselves (a balance, an advance, an instalment, the chamber fee). */
 export interface DueDay {
   date: string
   entries: TaxCalendarEntry[]
+  items: TaxDueItem[]
+  /** The F24 groups paid on this date (open or settled). */
+  groups: F24Group[]
 }
 
-/** The entries of one calendar, grouped by the day they fall due, in time order. */
-export function groupByDueDate(entries: readonly TaxCalendarEntry[]): DueDay[] {
-  const days = new Map<string, TaxCalendarEntry[]>()
-  for (const entry of entries) {
-    const day = days.get(entry.due_date)
-    if (day) day.push(entry)
-    else days.set(entry.due_date, [entry])
+/** The entries of one calendar and the due items of the same year, grouped by the day they fall
+ *  due, in time order. A day with items drops the pack's lines of the taxes the items cover. */
+export function groupByDueDate(
+  entries: readonly TaxCalendarEntry[],
+  items: readonly TaxDueItem[] = [],
+  groups: readonly F24Group[] = [],
+): DueDay[] {
+  const days = new Map<string, DueDay>()
+  const day = (date: string): DueDay => {
+    let found = days.get(date)
+    if (!found) {
+      found = { date, entries: [], items: [], groups: [] }
+      days.set(date, found)
+    }
+    return found
   }
-  return [...days.entries()]
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([date, list]) => ({ date, entries: list }))
+  for (const item of items) if (item.due_date !== null) day(item.due_date).items.push(item)
+  for (const group of groups) day(group.payment_date).groups.push(group)
+  for (const entry of entries) {
+    const found = day(entry.due_date)
+    if (!found.items.some((item) => covers(item, entry))) found.entries.push(entry)
+  }
+  return [...days.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
 }
 
 /** The first `limit` days on or after `today` that carry a date. */

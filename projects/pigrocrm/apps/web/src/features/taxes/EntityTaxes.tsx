@@ -1,10 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { useState, type ReactNode } from 'react'
 import { LoadingState } from '@/components/LoadingState'
-import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
-import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@rebase/ui/sheet'
 import { TabsContent, TabsList, TabsTrigger } from '@rebase/ui/tabs'
 import { useMediaQuery } from '@rebase/ui/use-media-query'
 import { useFiscalEstimate } from '@/features/dashboard/queries'
@@ -12,6 +9,9 @@ import { toProblem } from '@/lib/api'
 import { useCan } from '@/lib/auth'
 import { toIsoDate } from '@/lib/dates'
 import { useModules } from '@/lib/modules'
+import { Detail } from './Detail'
+import { Failure } from './Failure'
+import { PlansTab } from './PlansTab'
 import { groupByDueDate } from './dates'
 import { DatesTable } from './DatesTable'
 import {
@@ -30,7 +30,7 @@ import {
 } from './labels'
 import { DatePanel, TaxPanel } from './Panels'
 import { ReadingsTable, TaxReadingLines } from './ReadingsTable'
-import { useTaxCalendar } from './queries'
+import { useF24Groups, useTaxCalendar, useTaxDueItems } from './queries'
 import { TABS, type TaxesTab } from './search'
 
 /** The table's width from `md`, the inline panel's from `lg`: below them rows are cards and the
@@ -39,56 +39,6 @@ const TABLE = '(min-width: 768px)'
 const INLINE_PANEL = '(min-width: 1024px)'
 
 type Open = { kind: 'tax'; tax: Tax } | { kind: 'date'; date: string } | null
-
-function Failure({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  return (
-    <div className="space-y-3">
-      <QueryErrorBanner error={error} />
-      <Button variant="outline" size="sm" onClick={onRetry}>
-        Riprova
-      </Button>
-    </div>
-  )
-}
-
-/** The panel beside a table from `lg`, a full-screen sheet below it. */
-function Detail({
-  inline,
-  label,
-  onClose,
-  children,
-}: {
-  inline: boolean
-  label: string
-  onClose: () => void
-  children: ReactNode
-}) {
-  if (inline) {
-    return (
-      <aside aria-label={label} className="flex w-82.5 shrink-0 flex-col self-start border bg-card">
-        <div className="flex justify-end border-b px-2 py-1">
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Chiudi
-          </Button>
-        </div>
-        {children}
-      </aside>
-    )
-  }
-  return (
-    <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent
-        side="right"
-        closeLabel="Chiudi"
-        className="gap-0 data-[side=right]:w-full data-[side=right]:sm:max-w-none"
-      >
-        <SheetTitle className="sr-only">{label}</SheetTitle>
-        <SheetDescription className="sr-only">{label}</SheetDescription>
-        <div className="flex min-h-0 flex-1 flex-col pt-12">{children}</div>
-      </SheetContent>
-    </Sheet>
-  )
-}
 
 /**
  * One legal entity's taxes for `year`: the server's warning sentence first, then, with the
@@ -120,6 +70,9 @@ export function EntityTaxes({
   const [open, setOpen] = useState<Open>(null)
   const estimate = useFiscalEstimate(year, legalEntityId, allowed)
   const calendar = useTaxCalendar(year, legalEntityId, allowed && estimate.isSuccess)
+  const entity = estimate.data?.legal_entity_id ?? null
+  const dueItems = useTaxDueItems(year, entity, allowed && estimate.isSuccess)
+  const f24 = useF24Groups(year, entity, allowed && estimate.isSuccess)
 
   const heading = name ? <h2 className="text-lg font-semibold">{name}</h2> : null
   let body: ReactNode
@@ -143,7 +96,7 @@ export function EntityTaxes({
   } else {
     const data = estimate.data
     const light = modules.profile === 'solo' && data.pack_id === FLAT_RATE_PACK
-    const days = groupByDueDate(calendar.data?.dates ?? [])
+    const days = groupByDueDate(calendar.data?.dates ?? [], dueItems.data ?? [], f24.data ?? [])
     const today = toIsoDate(new Date())
     const readings = data.readings
     const lines = readings?.lines ?? []
@@ -160,7 +113,15 @@ export function EntityTaxes({
 
     const dateRows = calendar.isError ? (
       <Failure error={calendar.error} onRetry={() => void calendar.refetch()} />
-    ) : calendar.isPending ? (
+    ) : dueItems.isError || f24.isError ? (
+      <Failure
+        error={dueItems.error ?? f24.error}
+        onRetry={() => {
+          void dueItems.refetch()
+          void f24.refetch()
+        }}
+      />
+    ) : calendar.isPending || dueItems.isPending || f24.isPending ? (
       <LoadingState label={LOADING_SENTENCE} />
     ) : days.length === 0 ? (
       light ? null : <p className="text-sm text-muted-foreground">{NO_CALENDAR_SENTENCE(year)}</p>
@@ -213,6 +174,13 @@ export function EntityTaxes({
               {note}
             </p>
           ))}
+          {data.missing_parameters && data.missing_parameters.length > 0 ? (
+            <p className="text-sm">
+              <Link to="/app/settings/legal-entities" className="underline">
+                Apri i parametri fiscali
+              </Link>
+            </p>
+          ) : null}
           {pack ? <p className="text-xs text-muted-foreground">{pack}.</p> : null}
         </div>
       )
@@ -224,7 +192,7 @@ export function EntityTaxes({
         </Detail>
       ) : chosen === 'dates' && openDay ? (
         <Detail inline={inline} label="Scadenza aperta" onClose={() => setOpen(null)}>
-          <DatePanel day={openDay} />
+          <DatePanel day={openDay} today={today} />
         </Detail>
       ) : null
 
@@ -252,15 +220,22 @@ export function EntityTaxes({
             {pack ? <p className="text-xs text-muted-foreground">{pack}.</p> : null}
           </section>
         )}
-        {days.length > 0 || calendar.isPending || calendar.isError ? (
+        {days.length > 0 || calendar.isPending || calendar.isError || dueItems.isPending || dueItems.isError || f24.isPending || f24.isError ? (
           <section aria-label="Scadenze" className="space-y-3">
             <h3 className="text-base font-semibold">Scadenze</h3>
             {dateRows}
           </section>
         ) : null}
+        <PlansTab
+          legalEntityId={data.legal_entity_id}
+          wide={wide}
+          inline={false}
+          today={today}
+          light
+        />
         {openDay ? (
           <Detail inline={false} label="Scadenza aperta" onClose={() => setOpen(null)}>
-            <DatePanel day={openDay} />
+            <DatePanel day={openDay} today={today} />
           </Detail>
         ) : null}
       </div>
@@ -279,6 +254,9 @@ export function EntityTaxes({
           <div className="min-w-0 flex-1">
             <TabsContent value="taxes">{taxes}</TabsContent>
             <TabsContent value="dates">{dateRows}</TabsContent>
+            <TabsContent value="plans">
+              <PlansTab legalEntityId={data.legal_entity_id} wide={wide} inline={inline} today={today} />
+            </TabsContent>
           </div>
           {inline ? panel : null}
         </div>

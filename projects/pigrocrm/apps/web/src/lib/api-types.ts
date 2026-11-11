@@ -6370,6 +6370,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/due-items/{item_id}/carry-confirmation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Tax Carry
+         * @description Confirms the difference an advance already paid left on a tax item (REB-1079). `admin`,
+         *     enforced by the service; the amount is not changed, the confirmation is recorded.
+         */
+        post: operations["confirm_tax_carry_api_due_items__item_id__carry_confirmation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/due-items/settlements/{settlement_id}/reverse": {
         parameters: {
             query?: never;
@@ -11259,6 +11280,11 @@ export interface components {
             /** Dropped Reason */
             dropped_reason: string | null;
             /**
+             * Carry To Confirm
+             * @default false
+             */
+            carry_to_confirm: boolean;
+            /**
              * Created At
              * Format: date-time
              */
@@ -11344,6 +11370,11 @@ export interface components {
             rule: components["schemas"]["DueRuleRead"];
             /** Dropped Reason */
             dropped_reason: string | null;
+            /**
+             * Carry To Confirm
+             * @default false
+             */
+            carry_to_confirm: boolean;
             /**
              * Created At
              * Format: date-time
@@ -12881,6 +12912,12 @@ export interface components {
             missing_parameters?: string[];
             company?: components["schemas"]["CompanyEstimate"] | null;
             person?: components["schemas"]["OrdinaryEstimate"] | null;
+            /**
+             * Advance Method
+             * @default historical
+             * @enum {string}
+             */
+            advance_method: "historical" | "forecast";
         };
         /** FiscalProfileRead */
         FiscalProfileRead: {
@@ -67817,6 +67854,125 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DueItemDetail"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_tax_carry_api_due_items__item_id__carry_confirmation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

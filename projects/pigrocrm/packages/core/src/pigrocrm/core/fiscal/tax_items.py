@@ -76,6 +76,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.db import today_local
 from pigrocrm.core.due_items.models import (
+    CARRY_TO_CONFIRM_SUFFIX,
     CHAMBER_FEE_SOURCE_KIND,
     TAX_ADVANCE_SOURCE_KIND,
     TAX_BALANCE_SOURCE_KIND,
@@ -787,6 +788,7 @@ class TaxDueItemService:
         )
         text = _instalment_text(wanted.description, item, count)
         current = live.get(item.number)
+        confirmed: dt.datetime | None = None
         if current is not None:
             if (current.amount, current.own_date, current.state, current.description) == (
                 item.amount,
@@ -796,6 +798,7 @@ class TaxDueItemService:
             ):
                 report.kept += 1
                 return
+            confirmed = self._confirmation_to_keep(current, text)
             self.dues.drop(current.id, "importo ricalcolato")
             report.dropped += 1
         elif not replacing and not self._in_window(context, item.due_date):
@@ -804,7 +807,7 @@ class TaxDueItemService:
             f"{TAX_INSTALMENT_SOURCE_KIND}:{payment.tax}:{payment.year}:{payment.part}:"
             f"{item.number}"
         )
-        self.dues.create(
+        created = self.dues.create(
             DueItemCreate(
                 legal_entity_id=context.legal_entity.id,
                 direction="out",
@@ -820,6 +823,7 @@ class TaxDueItemService:
                 own_date=item.due_date,
             )
         )
+        self._keep_confirmation(created.id, confirmed)
         report.written += 1
 
     # ---- one slot ---------------------------------------------------------------------------
@@ -849,6 +853,7 @@ class TaxDueItemService:
                     )
                 )
             return
+        confirmed: dt.datetime | None = None
         if current is not None:
             if (current.amount, current.own_date, current.state, current.description) == (
                 wanted.amount,
@@ -858,11 +863,12 @@ class TaxDueItemService:
             ):
                 report.kept += 1
                 return
+            confirmed = self._confirmation_to_keep(current, wanted.description)
             self.dues.drop(current.id, "importo ricalcolato")
             report.dropped += 1
         elif outcome != "replacing" and not self._in_window(context, wanted.due):
             return
-        self.dues.create(
+        created = self.dues.create(
             DueItemCreate(
                 legal_entity_id=context.legal_entity.id,
                 direction="out",
@@ -878,7 +884,22 @@ class TaxDueItemService:
                 own_date=wanted.due,
             )
         )
+        self._keep_confirmation(created.id, confirmed)
         report.written += 1
+
+    @staticmethod
+    def _confirmation_to_keep(current: DueItem, description: str) -> dt.datetime | None:
+        """The confirmation of an item that is about to be rewritten, when its description (so the
+        difference it carries) is the same: an amount that moved with the estimate does not ask
+        again; a difference that changed does (REB-1079)."""
+        return current.carry_confirmed_at if current.description == description else None
+
+    def _keep_confirmation(self, item_id: UUID, confirmed: dt.datetime | None) -> None:
+        if confirmed is None:
+            return
+        row = self.dues.repo.get(item_id)
+        if row is not None:
+            row.carry_confirmed_at = confirmed
 
     @staticmethod
     def _in_window(context: _Context, due: dt.date) -> bool:
@@ -900,7 +921,10 @@ def _advance_date(dates: AdvanceDates, part: TaxItemPart) -> dt.date:
 
 
 def _carry_text(carry: Decimal) -> str:
-    return f". Include {_money(carry)} euro di differenza sull'acconto gia' pagato: da confermare"
+    return (
+        f". Include {_money(carry)} euro di differenza sull'acconto gia' pagato: "
+        f"{CARRY_TO_CONFIRM_SUFFIX}"
+    )
 
 
 def _instalment_text(base: str, item: PlannedInstalment, count: int) -> str:
