@@ -11,8 +11,8 @@ they name the tax and the date and carry no figure; the amount is on the due ite
 **`tax_payment_due`** is one reminder per unsettled tax due item (`tax_balance`, `tax_advance`,
 `tax_instalment`, `chamber_fee`) dated from today on; its measure is the days to the date, so
 the catalogue's `until` ladder (14 and 3 days) says warning and serious. A settled or dropped
-item is not open and raises nothing; one past its date is not a «before a date» any more and is left to the
-schedule, which draws it overdue.
+item is not open and raises nothing; one past its date is not a «before a date» any more and
+is left to the schedule, which draws it overdue.
 
 **`tax_figure_missing`** is one reminder per legal entity, income tax and tax year whose return
 the pack says is filed (`fiscal/law_payment.py`, `return_filing_date`) and for which no declared
