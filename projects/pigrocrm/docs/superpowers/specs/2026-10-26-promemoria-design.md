@@ -136,6 +136,7 @@ Recipients: **admins only**.
 | `ceiling_approaching` | The year's revenue nears the forfettario ceiling | The fiscal profile is the forfettario | `warning` at 80% of the ceiling; `serious` at 90% (Mastro's `CEILING_SERIOUS_RATIO`); **`critical` at 100%** |
 | `year_end_overrun_projected` | The projection to year end exceeds the ceiling | The fiscal profile is the forfettario | `serious` at 105% of the ceiling; **`critical` at 120%** (Mastro's ratios) |
 | `tax_payment_due` (New) | A tax payment date (saldo or acconto) with its estimate | The fiscal pack knows the dates | `warning` 14 days before; `serious` 3 days before; no urgent step |
+| `tax_figure_missing` (New, REB-1078) | The return of a tax year was due and no declared figure was typed | The fiscal pack carries the return's filing date | `warning` 1 day after the filing date; `serious` at 30; no urgent step |
 | `month_not_closed` (New) | A month ended and is not closed after 10 days | The space closes periods | `warning` at 10 days; `serious` at 20; no urgent step |
 | `proposal_pending` | Agent proposals waiting more than 3 days | Always | `warning` at 3 days; `serious` at 7; **`critical` at 14** (Mastro's ladder) |
 | `connection_failing` | The Gmail or Drive connection is broken or its sync is failing | The space has connected it | `serious` once the sync has been stale for 3 hours; **`critical` for a broken credential** (Mastro's 3 hour figure) |

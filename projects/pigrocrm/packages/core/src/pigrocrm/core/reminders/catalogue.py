@@ -317,6 +317,32 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
             audience="admins",
         ),
         ReminderType(
+            key="tax_payment_due",
+            label="Imposta in scadenza",
+            description=(
+                "Un saldo, un acconto o una rata d'imposta non ancora pagato scade fra pochi "
+                "giorni. Il messaggio dice quale imposta e quando, mai l'importo."
+            ),
+            subject="fiscal",
+            direction="until",
+            unit="days",
+            ladder={"warning": 14, "serious": 3},
+            audience="admins",
+        ),
+        ReminderType(
+            key="tax_figure_missing",
+            label="Cifra dichiarata mancante",
+            description=(
+                "La dichiarazione di un anno doveva essere presentata e manca la cifra "
+                "dichiarata di un'imposta: i giorni sono quelli dalla scadenza della dichiarazione."
+            ),
+            subject="fiscal",
+            direction="since",
+            unit="days",
+            ladder={"warning": 1, "serious": 30},
+            audience="admins",
+        ),
+        ReminderType(
             key="month_not_closed",
             label="Mese non chiuso",
             description=(
@@ -370,6 +396,10 @@ REMINDER_TYPES: Mapping[str, ReminderType] = {
         ),
     )
 }
+
+
+# The types that name a tax and its date: read only where the fiscal position is (taxes design § 5).
+TAX_FIGURE_TYPES: frozenset[str] = frozenset({"tax_payment_due", "tax_figure_missing"})
 
 
 def reminder_key(type_key: str, subject_id: object) -> str:

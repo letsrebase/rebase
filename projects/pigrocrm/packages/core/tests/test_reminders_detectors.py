@@ -758,6 +758,8 @@ def test_the_catalogue_and_the_detectors_name_the_same_types() -> None:
         "work_unit_outside_term",
         "ceiling_approaching",
         "year_end_overrun_projected",
+        "tax_payment_due",
+        "tax_figure_missing",
         "month_not_closed",
         "proposal_pending",
         "connection_failing",
