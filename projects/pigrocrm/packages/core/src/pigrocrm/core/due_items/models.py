@@ -58,6 +58,7 @@ SOURCE_KINDS: tuple[str, ...] = (
     "tax_balance",
     "tax_advance",
     "chamber_fee",
+    "notice_plan",
     "payroll",
     "contract_occurrence",
     "recurring_expense",
@@ -76,6 +77,10 @@ TAX_BALANCE_SOURCE_KIND = "tax_balance"
 TAX_ADVANCE_SOURCE_KIND = "tax_advance"
 # The annual chamber of commerce fee of an srl (`fiscal/tax_items.py`, REB-1077): restricted too.
 CHAMBER_FEE_SOURCE_KIND = "chamber_fee"
+# The source of an instalment of a tax plan (`fiscal/instalment_plan.py`, REB-1075) and of an
+# instalment of a notice from the tax office entered by hand (`fiscal/notice_plan.py`).
+TAX_INSTALMENT_SOURCE_KIND = "tax_instalment"
+NOTICE_PLAN_SOURCE_KIND = "notice_plan"
 # The source of an approved expense note's one due item (`expense_notes/service.py`).
 EXPENSE_NOTE_SOURCE_KIND = "expense_note"
 # The source of what staff cost and when it leaves (`staff/payroll.py`).
@@ -89,7 +94,8 @@ RESTRICTED_SOURCE_KINDS: frozenset[str] = frozenset(
         "integration_vat",
         "iva_settlement",
         "withholding",
-        "tax_instalment",
+        TAX_INSTALMENT_SOURCE_KIND,
+        NOTICE_PLAN_SOURCE_KIND,
         TAX_BALANCE_SOURCE_KIND,
         TAX_ADVANCE_SOURCE_KIND,
         CHAMBER_FEE_SOURCE_KIND,

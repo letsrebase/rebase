@@ -209,6 +209,14 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         # The advance method of a tax year (REB-1074, taxes design § 5): reversible, but it moves
         # the tax due items, so the same position as the figures it reads.
         "set_tax_advance_method",
+        # The instalment plan of the June payments and the plan of a notice from the tax office
+        # (REB-1075, taxes design § 5): they move the tax due items and say what is owed to the
+        # tax office, so the same position as the figures; reading them is the same.
+        "set_tax_instalment_plan",
+        "create_tax_notice_plan",
+        "update_tax_notice_plan",
+        "delete_tax_notice_plan",
+        "list_tax_plans",
         # The IVA settlement of a period and the due item it writes (REB-1021): the legal
         # entity's fiscal position, so an administrator's token with `full_access`.
         "settle_iva_period",
@@ -540,6 +548,11 @@ ACTION_LABELS: dict[str, str] = {
     "list_staff": "leggere l'elenco delle persone dell'azienda e i loro compensi",
     "set_declared_tax_figure": "registrare le cifre della dichiarazione dei redditi",
     "set_tax_advance_method": "scegliere come calcolare gli acconti d'imposta di un anno",
+    "set_tax_instalment_plan": "rateizzare il saldo e il primo acconto delle imposte di un anno",
+    "create_tax_notice_plan": "registrare il piano di rate di un avviso dell'erario",
+    "update_tax_notice_plan": "cambiare il piano di rate di un avviso dell'erario",
+    "delete_tax_notice_plan": "eliminare il piano di rate di un avviso dell'erario",
+    "list_tax_plans": "leggere le rateazioni delle imposte e dei piani degli avvisi",
     "create_recurring_expense": "registrare una spesa ricorrente",
     "stop_recurring_expense": "terminare una spesa ricorrente",
     "settle_iva_period": "liquidare l'IVA di un periodo",

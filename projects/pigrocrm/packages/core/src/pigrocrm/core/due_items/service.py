@@ -37,6 +37,7 @@ from pigrocrm.core.due_items.models import (
     SOURCE_KINDS,
     TAX_ADVANCE_SOURCE_KIND,
     TAX_BALANCE_SOURCE_KIND,
+    TAX_INSTALMENT_SOURCE_KIND,
     DueItem,
     DueItemSettlement,
 )
@@ -71,11 +72,13 @@ ENTITY = "due_item"
 SETTLEMENT_ENTITY = "due_item_settlement"
 ZERO = Decimal("0.00")
 SALES_INVOICE = "sales_invoice"
-# The tax kinds whose forecast may be paid as it stands: no document replaces it.
+# The tax kinds whose forecast may be paid as it stands: no document replaces it. An instalment
+# of a plan over an estimate is one of them (REB-1075).
 TAX_SOURCE_KINDS_PAYABLE = (
     TAX_BALANCE_SOURCE_KIND,
     TAX_ADVANCE_SOURCE_KIND,
     CHAMBER_FEE_SOURCE_KIND,
+    TAX_INSTALMENT_SOURCE_KIND,
 )
 
 

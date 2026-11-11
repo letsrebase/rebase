@@ -530,7 +530,18 @@ same name, `full_access`, table `tax_advance_methods`). An item is `forecast` on
 `set_tax_advance_method`) and by the daily pass (`AutomationPass._refresh_tax_items`): an item that is as it should be is left
 alone, one that is not is dropped and recreated, one a payment touched is never changed, and the difference a paid advance leaves
 when its base moves is carried to the next item of the tax with «da confermare» in its description. A payment is created only from
-today to `HORIZON_DAYS` ahead. INPS, credits (`tax_credit`), instalment plans and F24 groups are other cards.
+today to `HORIZON_DAYS` ahead. INPS, credits (`tax_credit`) and F24 groups are other cards.
+
+**Instalment plans and notice plans are stored and write their own items (REB-1075).** `TaxInstalmentPlanService.set_tax_instalment_plan`
+(`fiscal/instalment_plan.py`; REST `PUT /api/analytics/fiscal/instalment-plan`, privileged MCP tool of the same name, `full_access`,
+table `tax_instalment_plans`) stores the number of monthly instalments of one income tax, or of all of a year's, for the balance of a
+tax year and the first advance of the next (the same day); the dates and the interest are never stored but read from the pack
+(`plan_math.plan_schedule` over `payment_rules.instalment_schedule`, the last instalment 16 December of the year the return is filed).
+`TaxDueItemService` then writes `tax_instalment` items (`instalment_slot_id`) in place of the single June items and **stops
+rewriting a payment's instalments once a payment touches one**, and the service refuses to change or remove a plan then (409); the
+November advance is never split. `TaxNoticePlanService` (`fiscal/notice_plan.py`; `POST/PUT/DELETE /api/analytics/fiscal/notice-plans`,
+`GET .../plans`, tools `create_tax_notice_plan`, `update_tax_notice_plan`, `delete_tax_notice_plan`, `list_tax_plans`, table
+`tax_notice_plans`) stores a tax office notice typed by hand and writes its `notice_plan` items with it; the refresh never touches them.
 
 **The srl's annual chamber fee is pack data (REB-1068).** `TaxYearLaw.chamber_fee` (`fiscal/law_chamber_fee.py`) holds the 2014 tiers, the 50% cut, the chambers with the provinces they cover and their 2026 increases (20% for the 61 of the decree of 17 March 2026, plus 50% for the six Sicilian ones, Napoli none). `ChamberFeeLaw.fee(year, turnover, province)` answers whole euro and `None` for a year other than 2026, an unknown province, `BT` or `SU` (no chamber verified for them), never a guess. It computes the fee of the head office only; local units are not modelled.
 
