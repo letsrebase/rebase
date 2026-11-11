@@ -10,6 +10,7 @@ from decimal import Decimal
 import pytest
 
 from pigrocrm.core.fiscal.irpef_2026 import IRPEF_2026, REGIONAL_SURCHARGES_2026
+from pigrocrm.core.fiscal.law_irpef import region_key
 from pigrocrm.core.fiscal.pack import (
     IT_COMPANY_PACK,
     IT_FLAT_RATE_PACK,
@@ -123,3 +124,29 @@ def test_a_surcharge_is_never_negative_and_never_falls_with_income() -> None:
             assert amount >= 0
             assert amount >= previous, (rule.key, euro)
             previous = amount
+
+
+@pytest.mark.parametrize(
+    ("region_code", "province", "key"),
+    [
+        ("03", "MI", "03"),
+        ("08", None, "08"),
+        ("04", "BZ", "BZ"),
+        ("04", " tn ", "TN"),
+        ("04", None, None),
+        ("04", "RE", None),
+        (None, "MI", None),
+    ],
+)
+def test_the_region_key_is_istats_code_and_for_trentino_alto_adige_the_province(
+    region_code: str | None, province: str | None, key: str | None
+) -> None:
+    assert region_key(region_code, province) == key
+    assert key is None or law().regional_law(key) is not None
+
+
+def test_the_deduction_of_the_contributions_cites_art_10_of_the_tuir() -> None:
+    deduction = law().social_security_deduction
+    assert deduction is not None
+    assert "art. 10 c. 1 lett. e)" in deduction.source
+    assert "contributi previdenziali ed assistenziali versati" in deduction.wording

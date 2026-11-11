@@ -378,6 +378,99 @@ describe('EconomicTab', () => {
     expect(screen.queryByText(/Stima basata sul regime forfettario/)).toBeNull()
   })
 
+  it('shows an ordinary person’s IRPEF and INPS, with no projection and no net (REB-1072)', async () => {
+    const line = (code: string, label: string, amount: string | null) => ({ code, label, amount })
+    const PERSON_TAX = {
+      ...TAX,
+      taxable_amount: null,
+      substitute_tax: null,
+      contributions: '15789.47',
+      due_total: '30859.47',
+      person: {
+        income: {
+          lines: [],
+          professional_income: '65789.47',
+          taxable_income: '50000.00',
+          loss: false,
+          assumptions: [],
+          sources: [],
+        },
+        inps: {
+          lines: [],
+          base: '65789.47',
+          rate: '24.00',
+          parts: [line('percentage', 'Contributi sul reddito', '15789.47')],
+          amount: '15789.47',
+          credit: null,
+          region: null,
+          cadastral_code: null,
+          missing: [],
+          assumptions: [],
+          sources: [],
+        },
+        irpef: {
+          lines: [],
+          base: '50000.00',
+          rate: null,
+          parts: [line('gross_irpef', 'IRPEF lorda', '13700.00')],
+          amount: '13700.00',
+          with_surcharges: '15070.00',
+          credit: '0.00',
+          region: '08',
+          cadastral_code: 'A162',
+          missing: [],
+          assumptions: ['Le detrazioni non sono applicate.'],
+          sources: [],
+        },
+        missing_parameters: [],
+        due_total: '30859.47',
+      },
+    }
+    vi.mocked(api.GET).mockImplementation(
+      byPath(
+        { ...RESPONSE, tax: PERSON_TAX, projected_tax: null, actual_net: null, projected_net: null },
+        { ...PERSON_TAX, warning: 'Stima indicativa dell’ordinario.', year: 2026 },
+      ) as never,
+    )
+    renderTab()
+    expect(await screen.findByRole('group', { name: 'IRPEF stimata' })).toHaveTextContent('13.700,00 €')
+    expect(screen.getByRole('group', { name: 'Contributi INPS stimati' })).toHaveTextContent('15.789,47 €')
+    expect(screen.getByRole('group', { name: 'Totale da saldare' })).toHaveTextContent('30.859,47 €')
+    expect(screen.queryByRole('group', { name: 'Totale da saldare con proiezione' })).toBeNull()
+    expect(screen.queryByRole('group', { name: /Totale netto ricavi/ })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Imponibile forfettario stimato' })).toBeNull()
+    // The card below draws the lines the figures were computed from, from the server's payload.
+    expect(await screen.findByText('IRPEF lorda')).toBeInTheDocument()
+    expect(screen.getByText('Reddito su cui si calcola l’IRPEF')).toBeInTheDocument()
+    expect(screen.getByText('Le detrazioni non sono applicate.')).toBeInTheDocument()
+  })
+
+  it('says an ordinary figure it could not give is not computable, not zero (REB-1072)', async () => {
+    const empty = { lines: [], base: null, rate: null, parts: [], amount: null, credit: null, region: null, cadastral_code: null, missing: ['Manca la categoria INPS.'], assumptions: [], sources: [] }
+    const PERSON_TAX = {
+      ...TAX,
+      taxable_amount: null,
+      substitute_tax: null,
+      contributions: null,
+      due_total: null,
+      person: {
+        income: { lines: [], professional_income: '65789.47', taxable_income: null, loss: false, assumptions: [], sources: [] },
+        inps: empty,
+        irpef: empty,
+        missing_parameters: ['inps_category'],
+        due_total: null,
+      },
+    }
+    vi.mocked(api.GET).mockImplementation(
+      byPath({ ...RESPONSE, tax: PERSON_TAX, projected_tax: null, actual_net: null, projected_net: null }, PERSON_TAX) as never,
+    )
+    renderTab()
+    const irpef = await screen.findByRole('group', { name: 'IRPEF stimata' })
+    expect(irpef).toHaveTextContent('non calcolabile')
+    expect(irpef).not.toHaveTextContent('0,00')
+    expect(screen.getByRole('group', { name: 'Totale da saldare' })).toHaveTextContent('non calcolabile')
+  })
+
   it('shows cash alone, and no link out, when the estimate is not available', async () => {
     vi.mocked(api.GET).mockImplementation(
       byPath({
@@ -391,7 +484,7 @@ describe('EconomicTab', () => {
     renderTab()
     await screen.findByRole('group', { name: 'Ricavi incassati' })
     expect(screen.queryByRole('group', { name: 'Totale da saldare' })).toBeNull()
-    expect(screen.getByText(/serve un profilo fiscale del regime forfettario o di una società di capitali/)).toBeInTheDocument()
+    expect(screen.getByText(/serve un profilo fiscale del regime forfettario, ordinario o di una società di capitali/)).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /stima fiscale/i })).toBeNull()
   })
 

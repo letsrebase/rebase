@@ -55,7 +55,7 @@ below that is not verified says so.
 | Pack | Owes |
 |---|---|
 | `it-flat-rate` | substitute tax at the substitute rate (5% or 15%, to verify) on revenue times the profitability coefficient; INPS contributions on the base the code computes today, the taxable amount minus the rounded substitute tax (`analytics/fiscal.py`); whether contributions are deducted before the substitute tax is «to verify» |
-| `it-standard` (a person, ordinary regime) | IRPEF by brackets with regional and municipal surcharges (to verify), INPS (to verify), IVA from C3, minus the withholdings suffered on its own invoices (C3 § 3) |
+| `it-standard` (a person, ordinary regime) | IRPEF by brackets with regional and municipal surcharges, INPS on the net income, IVA from C3, minus the withholdings suffered on its own invoices (C3 § 3). Estimated since REB-1072 (`fiscal/ordinary_estimate.py`); deductions other than the INPS contributions and every detraction stay out (§ 8) and the figure says it is an upper bound |
 | `it-company` (new: an srl) | IRES and IRAP (rates, to verify), IVA from C3, the annual chamber of commerce fee (to verify), the payroll and director rows C7 owns (coefficients, employer INPS, INAIL, TFR; «gestione separata» for directors, with C5 for occasional workers) |
 | `non-it` | no figure is computed |
 

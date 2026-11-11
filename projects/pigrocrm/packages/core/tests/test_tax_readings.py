@@ -110,16 +110,17 @@ def test_the_totals_add_one_kind_of_reading_and_say_how_many_lines_they_leave_ou
     assert (totals.paid, totals.paid_left_out) == (None, 2)
 
 
-def test_the_ordinary_pack_lists_its_taxes_with_no_estimate_and_the_company_its_two(
+def test_the_ordinary_pack_lists_its_two_taxes_unfigured_and_the_company_its_two(
     db_session: Session,
 ) -> None:
     standard = _entity(db_session, "it-standard", "RF01")
     company = _entity(db_session, "it-company", "RF01")
     _declare(db_session, company, "ires", tax_due=Decimal("12000.00"))
+    # Both are estimated since REB-1072, and with no INPS category stated neither has a figure.
     lines = _readings(db_session, standard).lines
     assert [(line.tax, line.estimable, line.estimate, line.counts) for line in lines] == [
-        ("irpef", False, None, None),
-        ("inps", False, None, None),
+        ("irpef", True, None, None),
+        ("inps", True, None, None),
     ]
     lines = _readings(db_session, company).lines
     assert [(line.tax, line.estimate, line.declared, line.counts) for line in lines] == [

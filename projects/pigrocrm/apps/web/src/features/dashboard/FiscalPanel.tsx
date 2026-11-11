@@ -171,6 +171,70 @@ export function FiscalPanel({
       </div>
     )
   }
+  // An ordinary person's estimate is its INPS and its IRPEF with the regional and municipal
+  // surcharge (REB-1072): the lines, the base and the tax of each are the server's, with what
+  // each assumes and what it lacks.
+  if (data.person) {
+    const { income, inps, irpef } = data.person
+    const taxes = [
+      { name: 'IRPEF', tax: irpef, lines: [...income.lines], notes: income.assumptions },
+      { name: 'Contributi INPS', tax: inps, lines: inps.lines, notes: [] as string[] },
+    ]
+    return (
+      <div className="space-y-4">
+        <p role="note" className="border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+          {data.warning}
+        </p>
+        {taxes.map(({ name, tax, lines, notes }) => (
+          <Card key={name}>
+            <CardContent className="pt-6">
+              <h2 className="mb-3 font-semibold">
+                {name} stimati {data.year}
+                {title ? ` · ${title}` : ''}
+              </h2>
+              {name === 'IRPEF' && data.basis ? (
+                <p className="mb-2 text-xs text-muted-foreground">{data.basis.label}.</p>
+              ) : null}
+              {lines.map((line) => (
+                <Row key={line.code} label={line.label} value={money(line.amount)} />
+              ))}
+              {name === 'IRPEF' ? (
+                <Row
+                  label={income.loss ? 'Reddito (in perdita)' : 'Reddito su cui si calcola l’IRPEF'}
+                  value={money(income.taxable_income)}
+                />
+              ) : (
+                <>
+                  <Row label="Base dei contributi" value={money(tax.base)} />
+                  <Row label="Aliquota" value={formatPercent(tax.rate)} />
+                </>
+              )}
+              {tax.parts.map((part) => (
+                <Row key={part.code} label={part.label} value={money(part.amount)} />
+              ))}
+              <Row label={name === 'IRPEF' ? 'IRPEF stimata' : 'Contributi INPS stimati'} value={money(tax.amount)} />
+              {tax.credit != null && tax.credit !== '0.00' ? (
+                <Row label="Ritenute oltre l’IRPEF (credito)" value={euro(tax.credit)} />
+              ) : null}
+              {name === 'IRPEF' ? (
+                <Row label="IRPEF con le addizionali" value={money(tax.with_surcharges ?? null)} />
+              ) : null}
+              {tax.missing.map((sentence) => (
+                <p key={sentence} className="pt-2 text-sm">
+                  {sentence}
+                </p>
+              ))}
+              <ul className="list-disc space-y-1 pl-4 pt-2 text-xs text-muted-foreground">
+                {[...notes, ...tax.assumptions].map((assumption) => (
+                  <li key={assumption}>{assumption}</li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    )
+  }
   const missingParameters =
     data.profitability_coefficient === null ||
     data.substitute_tax_rate === null ||

@@ -75,7 +75,7 @@ def _legal_entity_filter(legal_entity_id: UUID | None) -> tuple[ColumnElement[bo
     return () if legal_entity_id is None else (Invoice.legal_entity_id == legal_entity_id,)
 
 
-def _collected_in_year_filter(
+def collected_in_year_filter(
     year: int, legal_entity_id: UUID | None = None
 ) -> tuple[ColumnElement[bool], ...]:
     """`cash_received_calendar_year` (REB-344 §8): a payment made within `year`, by the date
@@ -118,7 +118,7 @@ def paid_revenue_for_calendar_year(
     stmt = (
         join_sales_item(select(func.coalesce(func.sum(share), 0)))
         .join(DueItemSettlement, DueItemSettlement.due_item_id == DueItem.id)
-        .where(*_collected_in_year_filter(year, legal_entity_id))
+        .where(*collected_in_year_filter(year, legal_entity_id))
     )
     if issued_in_year:
         stmt = stmt.where(Invoice.year == year)
@@ -148,7 +148,7 @@ def collected_charge_lines_for_calendar_year(
             session.execute(
                 join_sales_item(select(func.coalesce(func.sum(share), 0)))
                 .join(DueItemSettlement, DueItemSettlement.due_item_id == DueItem.id)
-                .where(*_collected_in_year_filter(year, legal_entity_id))
+                .where(*collected_in_year_filter(year, legal_entity_id))
             ).scalar_one()
         )
     )
@@ -240,6 +240,7 @@ def is_statutory_charge_line(line: InvoiceLine) -> bool:
 __all__ = [
     "CeilingStatus",
     "charge_line_clause",
+    "collected_in_year_filter",
     "evaluate_ceiling",
     "evaluate_pack",
     "collected_charge_lines_for_calendar_year",

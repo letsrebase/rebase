@@ -141,3 +141,58 @@ async def test_the_tool_answers_an_srls_ires_and_irap_as_the_service_does(
         ("ires", "240.00"),
         ("irap", "0.00"),
     ]
+
+
+async def test_an_ordinary_persons_tool_answer_is_the_services_person_estimate(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    """REB-1072: over MCP the answer carries the IRPEF (with its surcharges), the INPS, the lines
+    each was computed from and the readings, exactly as the service returns them."""
+    entity = LegalEntity(
+        name="albinea", legal_name="Rossi", country="IT", city="Albinea", province="RE"
+    )
+    mcp_session.add(entity)
+    mcp_session.flush()
+    mcp_session.add(
+        FiscalProfile(
+            legal_entity_id=entity.id,
+            pack_id="it-standard",
+            regime_code="RF01",
+            inps_category="gestione_separata",
+            inps_covered_elsewhere=True,
+        )
+    )
+    invoice = Invoice(
+        legal_entity_id=entity.id,
+        customer_id=make_customer(mcp_session).id,
+        type="invoice",
+        status="issued",
+        year=2026,
+        number=1,
+        issue_date=dt.date(2026, 2, 1),
+        due_date=dt.date(2026, 3, 3),
+        taxable_amount=Decimal("65789.47"),
+        vat_amount=Decimal("0.00"),
+        stamp_duty=Decimal("0.00"),
+        total=Decimal("65789.47"),
+        payment_status="paid",
+        payment_date=dt.date(2026, 2, 10),
+    )
+    mcp_session.add(invoice)
+    mcp_session.commit()
+
+    async with Client(_server(mcp_session, tmp_path)) as client:
+        result = await client.call_tool(
+            "get_fiscal_estimate", {"year": 2026, "legal_entity_id": str(entity.id)}
+        )
+    assert not result.is_error, result
+    body = result.structured_content or json.loads(result.content[0].text)
+    service = AnalyticsService(mcp_session).get_fiscal_estimate(
+        2026, ADMIN, legal_entity_id=entity.id
+    )
+    assert body["person"] == service.model_dump(mode="json")["person"]
+    assert body["person"]["irpef"]["amount"] == "13700.00"
+    assert body["person"]["irpef"]["with_surcharges"] == "15070.00"
+    assert body["person"]["inps"]["amount"] == "15789.47"
+    assert body["readings"] == service.model_dump(mode="json")["readings"]
+    assert body["due_total"] == "30859.47" and body["missing_parameters"] == []

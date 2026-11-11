@@ -261,6 +261,35 @@ export function EconomicTab({
               hint={tax.basis ? `${tax.basis.label}, su base competenza` : 'su base competenza'}
             />
           </>
+        ) : tax?.person ? (
+          <>
+            {/* An ordinary person owes IRPEF with its surcharges and INPS, on what was collected
+                less what was paid in the year (REB-1072): the same estimate `get_fiscal_estimate`
+                answers, one card per tax and the total the server adds. No projection and no
+                net: those start from revenue alone, and this estimate needs the year's costs and
+                withholdings. */}
+            <BigNumber
+              label="IRPEF stimata"
+              value={estimated(tax.person.irpef.amount)}
+              hint={
+                tax.person.irpef.with_surcharges
+                  ? `con le addizionali ${money(tax.person.irpef.with_surcharges)}, al netto delle ritenute`
+                  : 'senza addizionali: i dettagli sono in Tasse'
+              }
+            />
+            <BigNumber
+              label="Contributi INPS stimati"
+              value={estimated(tax.person.inps.amount)}
+              hint={
+                tax.person.inps.amount === null ? 'manca qualcosa: i dettagli sono in Tasse' : undefined
+              }
+            />
+            <BigNumber
+              label="Totale da saldare"
+              value={estimated(tax.due_total ?? null)}
+              hint={tax.basis ? `${tax.basis.label}, su base incasso` : 'su base incasso'}
+            />
+          </>
         ) : tax ? (
           <>
             <BigNumber
@@ -322,7 +351,7 @@ export function EconomicTab({
                 the server's own words, and offers the settings screen when that is the
                 answer. */}
             <p className="mt-1 text-sm">
-              Non disponibile qui: serve un profilo fiscale del regime forfettario o di una
+              Non disponibile qui: serve un profilo fiscale del regime forfettario, ordinario o di una
               società di capitali e un account amministratore. Gli altri regimi non hanno una
               stima in PigroCRM.
             </p>

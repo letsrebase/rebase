@@ -308,9 +308,12 @@ class TaxYearLaw:
     @property
     def has_income_estimate(self) -> bool:
         """Whether the pack computes the year's income taxes: the flat-rate regime's substitute
-        tax and contributions, or an srl's IRES and IRAP (`fiscal/company_estimate.py`)."""
-        return self.flat_rate is not None or (
-            self.company_tax is not None and self.company_tax.irap is not None
+        tax and contributions, an srl's IRES and IRAP (`fiscal/company_estimate.py`) or an ordinary
+        person's IRPEF and INPS (`fiscal/ordinary_estimate.py`, REB-1072)."""
+        return (
+            self.flat_rate is not None
+            or self.irpef is not None
+            or (self.company_tax is not None and self.company_tax.irap is not None)
         )
 
 

@@ -28,12 +28,21 @@ and for a code the list does not carry: no figure, never a guess. Otherwise it i
 `rate(year, cadastral_code, taxable_income)` is the percentage the deliberation applies to that
 income, or `None` when the row has no figure.
 
-What this does not decide
--------------------------
-Whether the rate of a bracket is applied to the whole income or, slice by slice, to the part in
-each bracket is not stated by the list: `rate` only says which bracket an income falls in. How
-the surcharge is computed from it is the estimate card's, and the A5 register keeps the row «to
-verify». A municipality that exempts a category of taxpayer (pensioners, employees, large
+`surcharge(income)` is the amount (REB-1072): the exemption threshold first, then the bracket rates
+slice by slice. Both come from primary text read on 2026-11-11. The threshold: art. 1 c. 11
+D.L. 138/2011, in Normattiva's notes to art. 1 D.Lgs. 360/1998, says the exemption is «un limite
+di reddito al di sotto del quale l'addizionale comunale all'imposta sul reddito delle persone
+fisiche non è dovuta e, nel caso di superamento del suddetto limite, la stessa si applica al
+reddito complessivo»: at or below it nothing, above it the whole income is taxed, not only the
+excess. The brackets: the Finanze's «Disciplina del tributo» says a municipality's rates must be
+«articolate secondo i medesimi scaglioni di reddito stabiliti per l'IRPEF nazionale, nonché
+diversificate e crescenti», and the Agenzia delle Entrate's Redditi PF 2026 instructions (fascicolo
+1, rigo RV9) say the box «Aliquote per scaglioni» is for a municipality that «ha deliberato
+l'applicazione di diverse aliquote articolate per scaglioni di reddito con gli stessi criteri
+previsti per l'Irpef». The IRPEF is computed by slice, so each rate is applied to the part of the
+income inside its bracket. Neither text writes the arithmetic out, so that last step is a reading,
+which the estimate says in its assumptions (A5 row «How a municipality's bracket rates are
+applied»). A municipality that exempts a category of taxpayer (pensioners, employees, large
 families: the Department's flags 5 and 6, and some of flag 0) has `category_exemption` set and
 its general figures are what is carried: the exemption is for a taxpayer this module is not asked
 about, and no figure here applies it.
@@ -44,11 +53,13 @@ from __future__ import annotations
 import csv
 import json
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from functools import cache
 from pathlib import Path
 from typing import Literal
 
+_CENT = Decimal("0.01")
+_HUNDRED = Decimal(100)
 DATASETS = Path(__file__).resolve().parent / "datasets"
 _PREFIX = "municipal_surcharge_"
 
@@ -103,6 +114,34 @@ class MunicipalSurcharge:
             if bracket.up_to is None or taxable_income <= bracket.up_to:
                 return bracket.rate
         raise ValueError("a bracket table must end with an unbounded bracket")
+
+    def surcharge(self, taxable_income: Decimal) -> Decimal | None:
+        """The surcharge on `taxable_income` (the income net of deductible charges), in euro and
+        cents rounded half up: zero for a municipality that never instituted it and at or below
+        the exemption threshold, the rates of the brackets applied slice by slice above it, the
+        whole income counting (see the module docstring). `None` when the row has no figure
+        (`pending`, `irregular`). A negative income is not an income: `ValueError`."""
+        if taxable_income < 0:
+            raise ValueError("a taxable income is not negative")
+        if self.status == "none":
+            return Decimal("0.00")
+        if self.status != "adopted":
+            return None
+        if self.exemption_up_to is not None and taxable_income <= self.exemption_up_to:
+            return Decimal("0.00")
+        amount = Decimal(0)
+        lower = Decimal(0)
+        for bracket in self.brackets:
+            if taxable_income <= lower:
+                break
+            upper = taxable_income if bracket.up_to is None else min(taxable_income, bracket.up_to)
+            amount += (upper - lower) * bracket.rate / _HUNDRED
+            if bracket.up_to is None:
+                break
+            lower = bracket.up_to
+        else:
+            raise ValueError("a bracket table must end with an unbounded bracket")
+        return amount.quantize(_CENT, rounding=ROUND_HALF_UP)
 
 
 @dataclass(frozen=True, slots=True)

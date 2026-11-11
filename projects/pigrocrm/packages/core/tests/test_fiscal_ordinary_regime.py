@@ -201,14 +201,18 @@ def test_an_ordinary_legal_entity_has_no_ceiling_and_no_flat_rate_estimate(
     assert estimate.due_total is None
 
 
-def test_the_economic_overview_draws_no_estimate_for_a_regime_without_one(
+def test_the_economic_overview_carries_the_persons_estimate_and_no_flat_rate_projection(
     service: InvoiceService, db_session: Session
 ) -> None:
-    """The cash is shown and the flat-rate cards are not: an ordinary legal entity gets no
-    card of zeros where the estimate would be, while the flat-rate one keeps its own."""
+    """An ordinary legal entity shows its IRPEF and INPS estimate (REB-1072), which starts
+    from the year's costs and withholdings: no «what if» on revenue alone and no net, which
+    the flat-rate regime keeps."""
     overview = AnalyticsService(db_session).economic_overview(YEAR, ADMIN)
-    assert overview.tax is None and overview.projected_tax is None
-    assert overview.actual_net is None
+    assert overview.tax is not None and overview.tax.person is not None
+    assert overview.projected_tax is None
+    assert overview.actual_net is None and overview.projected_net is None
 
     FiscalProfileService(db_session).upsert(FiscalProfileUpsert(regime_code="RF19"), ADMIN)
-    assert AnalyticsService(db_session).economic_overview(YEAR, ADMIN).tax is not None
+    flat = AnalyticsService(db_session).economic_overview(YEAR, ADMIN)
+    assert flat.tax is not None and flat.tax.person is None
+    assert flat.projected_tax is not None

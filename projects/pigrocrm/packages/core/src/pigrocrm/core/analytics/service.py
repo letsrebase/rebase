@@ -2,6 +2,7 @@ from collections.abc import Callable
 from collections.abc import Set as AbstractSet
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -43,6 +44,7 @@ from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.deals.value import ValueTerm, line_term, share_in
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.fiscal.basis import year_basis
+from pigrocrm.core.fiscal.basis_schemas import YearBasis
 from pigrocrm.core.fiscal.calendar import tax_calendar
 from pigrocrm.core.fiscal.ceiling import (
     CeilingStatus,
@@ -51,8 +53,15 @@ from pigrocrm.core.fiscal.ceiling import (
 )
 from pigrocrm.core.fiscal.company_estimate import estimate_company_taxes
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService, reading_for_year
-from pigrocrm.core.fiscal.law import DeclaredTax
-from pigrocrm.core.fiscal.pack import resolve_pack
+from pigrocrm.core.fiscal.law import DeclaredTax, TaxYearLaw
+from pigrocrm.core.fiscal.law_inps import InpsCategoryName, TradeGestione
+from pigrocrm.core.fiscal.ordinary_estimate import (
+    ORDINARY_WARNING,
+    InpsFacts,
+    OrdinaryEstimate,
+    estimate_ordinary_taxes,
+)
+from pigrocrm.core.fiscal.pack import FiscalPack, resolve_pack
 from pigrocrm.core.fiscal.readings import build_tax_readings
 from pigrocrm.core.fiscal.repository import FiscalEstimateRepository
 from pigrocrm.core.fiscal.schemas import (
@@ -62,6 +71,7 @@ from pigrocrm.core.fiscal.schemas import (
     TaxReadings,
 )
 from pigrocrm.core.fiscal.service import FiscalProfileService
+from pigrocrm.core.fiscal.withholdings_suffered import withholdings_suffered
 from pigrocrm.core.invoices.models import InvoiceLine
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.service import LegalEntityService
@@ -559,10 +569,11 @@ class AnalyticsService:
                     # figure `get_fiscal_estimate` answers over REST and MCP. Only the projection
                     # below is a «what if».
                     tax = self.get_fiscal_estimate(year, actor, legal_entity_id=owner.id)
-                    # An srl's taxes are on what accrued (IRES and IRAP, REB-1073): no
-                    # projection, which is a «what if» on revenue with no costs, and no net,
-                    # which would take accrual taxes off the cash gross.
-                    if tax.company is None:
+                    # An srl's taxes are on what accrued (IRES and IRAP, REB-1073) and an ordinary
+                    # person's start from the year's costs and withholdings (REB-1072): no
+                    # projection, which is a «what if» on revenue alone, and no net, which would
+                    # take those taxes off the cash gross.
+                    if tax.company is None and tax.person is None:
                         projected_tax = self.get_fiscal_estimate(
                             year, actor, revenue=per_tax_office.projected, legal_entity_id=owner.id
                         )
@@ -672,13 +683,21 @@ class AnalyticsService:
             if estimate.pack_id is not None and estimate.pack_version is not None
             else None
         )
-        # The lines the estimate computes, only in a year whose law carries the estimate.
+        # The lines the estimate computes, only in a year whose law carries the estimate: an srl's
+        # IRES and IRAP, an ordinary person's IRPEF (net of withholdings) and INPS (REB-1072), or
+        # the flat-rate regime's substitute tax and INPS.
         estimates: dict[DeclaredTax, Decimal | None] = {}
         if law is not None and law.has_income_estimate:
             if estimate.company is not None:
                 estimates = {
                     "ires": estimate.company.ires.amount,
                     "irap": estimate.company.irap.amount,
+                }
+            elif law.irpef is not None:
+                person = estimate.person
+                estimates = {
+                    "irpef": person.irpef.amount if person is not None else None,
+                    "inps": person.inps.amount if person is not None else None,
                 }
             else:
                 estimates = {
@@ -756,7 +775,7 @@ class AnalyticsService:
             law = pack.law_for(year)
             if law is None or not law.has_income_estimate:
                 continue
-            estimate = self._estimate_year(year, legal_entity, profile, None)
+            estimate = self._compute_year(year, legal_entity, profile, None)
             # The parameters are the profile's and the legal entity's fiscal year end, which
             # the advances will date from.
             readings.save(
@@ -769,11 +788,20 @@ class AnalyticsService:
                     **profile.model_dump(mode="json", include=FROZEN_PARAMETERS),
                     "fiscal_year_end_month": legal_entity.fiscal_year_end_month,
                     "fiscal_year_end_day": legal_entity.fiscal_year_end_day,
-                    # The region an srl's IRAP rate was read for (REB-1073), kept with the
-                    # figures so a year moved to another pack keeps what it was computed for.
+                    # The region an srl's IRAP rate was read for (REB-1073) and the place a person's
+                    # surcharges were read for (REB-1072), kept with the figures so a year moved to
+                    # another pack keeps what it was computed for.
                     **(
                         {"irap_region": estimate.company.irap.region}
                         if estimate.company is not None
+                        else {}
+                    ),
+                    **(
+                        {
+                            "irpef_region": estimate.person.irpef.region,
+                            "municipal_cadastral_code": estimate.person.irpef.cadastral_code,
+                        }
+                        if estimate.person is not None
                         else {}
                     ),
                 },
@@ -788,15 +816,34 @@ class AnalyticsService:
         revenue: Decimal | None,
     ) -> FiscalEstimate:
         """The estimate of `year` for one legal entity under the pack its profile points at.
-        When that pack no longer computes the year and the legal entity's own revenue is the
-        basis (no caller's «what if» `revenue`), the reading frozen when the legal entity
-        left the pack it was computed under is returned as it was."""
+        When the legal entity's own revenue is the basis (no caller's «what if» `revenue`) and
+        a reading was frozen when it left the pack the year was computed under, that reading is
+        returned as it was, when the pack it points at now no longer computes the year or is
+        another pack than the frozen one: a year belongs to the regime it was lived in, so a
+        legal entity that moves to the ordinary pack keeps the flat-rate year it left, though
+        the ordinary pack computes that year too (REB-1072)."""
         pack = resolve_pack(profile.pack_id, profile.pack_version)
         law = pack.law_for(year)
-        if revenue is None and (law is None or not law.has_income_estimate):
+        if revenue is None:
             frozen = FiscalEstimateRepository(self.session).get(legal_entity.id, year)
-            if frozen is not None:
+            if frozen is not None and (
+                law is None or not law.has_income_estimate or frozen.pack_id != pack.id
+            ):
                 return FiscalEstimate.model_validate({**frozen.figures, "frozen": True})
+        return self._compute_year(year, legal_entity, profile, revenue)
+
+    def _compute_year(
+        self,
+        year: int,
+        legal_entity: LegalEntity,
+        profile: FiscalProfileRead,
+        revenue: Decimal | None,
+    ) -> FiscalEstimate:
+        """The estimate of `year` computed now under the pack the profile points at, whatever was
+        frozen before: what `freeze_fiscal_estimates` keeps, so a leaving pack never freezes the
+        figures an earlier freeze kept of another pack."""
+        pack = resolve_pack(profile.pack_id, profile.pack_version)
+        law = pack.law_for(year)
         basis = None
         if revenue is None:
             # The year on the one basis the regime's law names (`fiscal/basis.py`, REB-1071):
@@ -816,27 +863,40 @@ class AnalyticsService:
             rate_substitute=profile.substitute_tax_rate,
             social_security_rate=profile.social_security_rate,
             flat_rate=law.flat_rate if law is not None else None,
-        ).model_copy(
-            update={
-                "missing_parameters": (
-                    [
-                        name
-                        for name in (
-                            "profitability_coefficient",
-                            "substitute_tax_rate",
-                            "social_security_rate",
-                        )
-                        if getattr(profile, name) is None
-                    ]
-                    if law is not None and law.flat_rate is not None
-                    else []
-                ),
-                "pack_id": pack.id,
-                "pack_version": pack.version,
-                "law_from_year": law.from_year if law is not None else None,
-                "basis": basis,
-            }
         )
+        update: dict[str, object] = {
+            "missing_parameters": (
+                [
+                    name
+                    for name in (
+                        "profitability_coefficient",
+                        "substitute_tax_rate",
+                        "social_security_rate",
+                    )
+                    if getattr(profile, name) is None
+                ]
+                if law is not None and law.flat_rate is not None
+                else []
+            ),
+            "pack_id": pack.id,
+            "pack_version": pack.version,
+            "law_from_year": law.from_year if law is not None else None,
+            "basis": basis,
+        }
+        if basis is not None and law is not None and law.irpef is not None:
+            person = self._ordinary_estimate(legal_entity, profile, pack, law, basis)
+            if person is not None:
+                update.update(
+                    {
+                        "person": person,
+                        "warning": ORDINARY_WARNING,
+                        "contributions": person.inps.amount,
+                        "due_total": person.due_total,
+                        "missing_parameters": person.missing_parameters,
+                    }
+                )
+        estimate = estimate.model_copy(update=update)
+
         if basis is None or law is None or law.company_tax is None:
             return estimate
         # An srl's IRES and IRAP from the same basis (REB-1073): the region is read from the
@@ -859,6 +919,40 @@ class AnalyticsService:
                     round_money(ires + irap) if ires is not None and irap is not None else None
                 ),
             }
+        )
+
+    def _ordinary_estimate(
+        self,
+        legal_entity: LegalEntity,
+        profile: FiscalProfileRead,
+        pack: FiscalPack,
+        law: TaxYearLaw,
+        basis: YearBasis,
+    ) -> OrdinaryEstimate | None:
+        """An ordinary person's INPS and IRPEF for the year of `basis` (REB-1072): the figures
+        of `fiscal/ordinary_estimate.py` on the legal entity's profile, the place its address
+        names (read now, never stored) and the withholdings its customers kept on what it
+        collected, for the year the pack's rule credits them against."""
+        rules = pack.payment_rules_for(basis.year)
+        credit_rule = rules.withholding_credit if rules is not None else None
+        withheld = (
+            withholdings_suffered(self.session, legal_entity.id, basis.year, credit_rule)
+            if credit_rule is not None
+            else None
+        )
+        return estimate_ordinary_taxes(
+            basis,
+            pack,
+            law,
+            inps_facts=InpsFacts(
+                category=cast(InpsCategoryName | None, profile.inps_category),
+                trade=cast(TradeGestione | None, profile.inps_trade),
+                covered_elsewhere=profile.inps_covered_elsewhere,
+                before_1996=profile.inps_before_1996,
+            ),
+            place=locate(legal_entity.city, legal_entity.province, legal_entity.country),
+            province=legal_entity.province,
+            withholdings=withheld,
         )
 
 
