@@ -111,9 +111,14 @@ const Months = [
   'dicembre',
 ]
 
-/** Reads a `Row`'s figure as integer hundredths. */
+/**
+ * Reads a `Row`'s figure as integer hundredths, from the figure span alone: the label span
+ * beside it can carry a hint with digits in it («Incassato nel 2026, ...», the basis the
+ * server says the estimate was computed on), which `cents` would otherwise read as part of
+ * the amount.
+ */
 async function amount(locator: Locator): Promise<number> {
-  return cents(await locator.innerText())
+  return cents(await locator.locator(':scope > span').last().innerText())
 }
 
 test.describe('economics', () => {
@@ -147,7 +152,7 @@ test.describe('economics', () => {
     // The per-deal assertions further down need no such care: they are scoped to a deal
     // whose name carries this run's own timestamp.
     await page.goto('/app/?tab=economic')
-    const revenueTaxBefore = await amount(row(page, 'Ricavi incassabili'))
+    const revenueTaxBefore = await amount(row(page, 'Ricavi della stima'))
 
     // 2. A deal that can actually be invoiced.
     //
@@ -297,15 +302,31 @@ test.describe('economics', () => {
     // And there is nothing left to bill, so the button that would offer to is gone.
     await expect(page.getByRole('button', { name: 'Genera bozza di fattura' })).toHaveCount(0)
 
-    // 7. The same invoice reaches the annual estimate -- and it says «stima» first.
+    // 7. The same invoice reaches the annual estimate once it is collected -- and it says
+    // «stima» first.
     //
+    // The forfettario is taxed on what was collected in the year (L. 190/2014 art. 1 c. 64),
+    // so an issued invoice nobody has paid is no revenue of the estimate yet: it counts the
+    // day the payment is recorded, which is what the estimate's own basis line says.
+    const issued = (await (
+      await page.request.get(`/api/invoices?deal_id=${dealId}&status=issued`)
+    ).json()) as { items: { id: string }[] }
+    expect(issued.items).toHaveLength(1)
+    const paidOn = new Date()
+    const paid = await page.request.patch(`/api/invoices/${issued.items[0]!.id}/payment`, {
+      data: {
+        payment_status: 'paid',
+        payment_date: `${paidOn.getFullYear()}-${String(paidOn.getMonth() + 1).padStart(2, '0')}-${String(paidOn.getDate()).padStart(2, '0')}`,
+      },
+    })
+    expect(paid.status(), await paid.text()).toBe(200)
     // In Home → Economica, under the cards: the estimate is a card of the dashboard since
     // the Analisi section left the interface, read for the year the period on screen
     // names, which for a bare `/app/?tab=economic` is the current one.
     await page.goto('/app/?tab=economic')
     await expect(page.getByRole('note')).toContainText(/stima/i)
     await expect
-      .poll(async () => amount(row(page, 'Ricavi incassabili')))
+      .poll(async () => amount(row(page, 'Ricavi della stima')))
       .toBe(revenueTaxBefore + 240_000)
     // The three parameters are configured (e2e-setup.sh seeds the forfettario profile),
     // so every derived line is a figure rather than «non calcolabile» -- which is the

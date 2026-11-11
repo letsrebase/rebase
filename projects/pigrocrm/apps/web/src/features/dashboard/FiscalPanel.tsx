@@ -164,11 +164,9 @@ export function FiscalPanel({
             Stima fiscale {data.year}
             {title ? ` · ${title}` : ''}
           </h2>
-          <Row
-            label="Ricavi incassabili"
-            value={money(data.revenue)}
-            hint="fatture emesse nell’anno"
-          />
+          {/* What the figure was computed from is the server's sentence, on the one basis the
+              regime's law names (cassa for the forfettario): the page adds nothing. */}
+          <Row label="Ricavi della stima" value={money(data.revenue)} hint={data.basis?.label} />
           <Row
             label="Coefficiente di redditività"
             value={formatPercent(data.profitability_coefficient)}

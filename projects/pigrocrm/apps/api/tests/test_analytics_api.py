@@ -500,6 +500,17 @@ def test_the_fiscal_report_is_labelled_an_estimate_in_its_own_payload(
     assert issued.status_code == 200, issued.text
     assert issued.json()["taxable_amount"] == "400.00"
 
+    # The forfettario is taxed on what was collected in the year (REB-1071): the invoice is no
+    # revenue of the estimate until its payment is recorded, and the estimate says so.
+    uncollected = logged_in.get("/api/analytics/fiscal", params={"year": YEAR}).json()
+    assert uncollected["revenue"] == "0.00"
+    assert [line["code"] for line in uncollected["basis"]["left_out"]] == ["not_collected"]
+    paid = logged_in.patch(
+        f"/api/invoices/{issued.json()['id']}/payment",
+        json={"payment_status": "paid", "payment_date": today_local().isoformat()},
+    )
+    assert paid.status_code == 200, paid.text
+
     response = logged_in.get("/api/analytics/fiscal", params={"year": YEAR})
     assert response.status_code == 200, response.text
     body = response.json()
@@ -507,6 +518,11 @@ def test_the_fiscal_report_is_labelled_an_estimate_in_its_own_payload(
     assert body["estimate"] is True
     assert "Stima indicativa" in body["warning"]
     assert body["revenue"] == "400.00"
+    assert body["basis"]["basis"] == "cash"
+    assert body["basis"]["revenue"] == "400.00"
+    assert body["basis"]["costs"] is None
+    assert body["basis"]["left_out"] == []
+    assert "principio di cassa" in body["basis"]["wording"]
     assert body["taxable_amount"] == "268.00"
     # The contributions are owed on the taxable amount and deducted from it, and the substitute
     # tax is owed on what is left (L. 190/2014 art. 1 c. 64): 268.00 * 0.2607 = 69.8676, then
@@ -516,6 +532,14 @@ def test_the_fiscal_report_is_labelled_an_estimate_in_its_own_payload(
     assert body["substitute_tax"] == "9.91"
     assert body["estimated_net_income"] == "320.22"
     assert body["coefficient_warning"] is None
+
+    # The economic overview's estimate is this one: the same figures on the same basis.
+    overview = logged_in.get("/api/analytics/overview", params={"year": YEAR})
+    assert overview.status_code == 200, overview.text
+    tax = overview.json()["tax"]
+    for field in ("revenue", "taxable_amount", "contributions", "substitute_tax", "due_total"):
+        assert tax[field] == body[field], field
+    assert tax["basis"] == body["basis"]
 
 
 # --- the one writer -----------------------------------------------------------------

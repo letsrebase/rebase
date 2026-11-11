@@ -605,10 +605,10 @@ class AnalyticsRepository:
         return {int(m): round_money(Decimal(total)) for m, total in rows}
 
     def annual_revenue(self, year: int, legal_entity_id: UUID | None = None) -> Decimal:
-        """Every issued invoice of the year, deal or no deal: the fiscal estimate is
-        about the person's income, so an invoice with no `deal_id` counts too. Of one
-        legal entity when named (REB-630): the estimate is one legal entity's, and its caller
-        always names one."""
+        """Every issued invoice of the register's year, deal or no deal: what the year invoiced,
+        which is the register's and the concentration's denominator and **not** a tax figure.
+        The estimate reads `fiscal/basis.py::year_basis` since REB-1071 (collected for a cash
+        regime, by competence for an accrual one). Of one legal entity when named (REB-630)."""
         return round_money(
             Decimal(
                 self.session.execute(
@@ -622,15 +622,27 @@ class AnalyticsRepository:
         )
 
     def revenue_years(self, legal_entity_id: UUID | None = None) -> list[int]:
-        """The years in which one legal entity has issued revenue, oldest first: the years
-        whose income estimate there is something to keep for (REB-974)."""
-        years = self.session.execute(
+        """The years in which one legal entity has issued or collected revenue, oldest first:
+        the years whose income estimate there is something to keep for (REB-974). A year with
+        collections and no invoice of its own counts, since the cash basis puts a payment in the
+        year it arrives (REB-1071)."""
+        issued = self.session.execute(
             select(Invoice.year)
             .where(*revenue_filter(), *invoice_legal_entity(legal_entity_id))
             .distinct()
-            .order_by(Invoice.year)
         ).scalars()
-        return [year for year in years if year is not None]
+        collected_year = func.extract("year", DueItemSettlement.settled_on)
+        collected = self.session.execute(
+            join_sales_item(select(collected_year))
+            .join(DueItemSettlement, DueItemSettlement.due_item_id == DueItem.id)
+            .where(
+                *revenue_filter(),
+                *invoice_legal_entity(legal_entity_id),
+                DueItemSettlement.reversed_at.is_(None),
+            )
+            .distinct()
+        ).scalars()
+        return sorted({int(year) for year in (*issued, *collected) if year is not None})
 
     def annual_revenue_by_legal_entity(
         self, year: int, legal_entity_id: UUID | None = None

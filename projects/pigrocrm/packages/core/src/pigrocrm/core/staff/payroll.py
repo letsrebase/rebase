@@ -21,7 +21,8 @@ It has three jobs:
   premium.
 * **`personnel_cost_in_range`**: the personnel line of the period P&L, the estimate's cost, or
   an accepted payslip's gross where there is one, with no person behind it. The caller decides
-  who may read it.
+  who may read it. `personnel_cost_by_kind` is the same read told apart by employees and
+  directors, with the members it could not cost (`fiscal/basis.py`, REB-1071).
 
 Refreshes happen when the inputs, the pay day or a payslip change, and every day in the
 automations pass (`AutomationPass._roll_payroll`), for the months from two back to twelve ahead
@@ -38,6 +39,7 @@ administrators and everyone else sees the aggregate «Stipendi» line
 """
 
 import datetime as dt
+from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID
 
@@ -110,6 +112,17 @@ DESCRIPTION_OF: dict[CashKind, str] = {
 PAYSLIP_KINDS: frozenset[CashKind] = frozenset({"net_pay", "withholding"})
 # Why `restate_payslip_items` drops an item the corrected figures no longer owe.
 CORRECTION_DROP_REASON = "cedolino corretto"
+
+
+@dataclass(frozen=True)
+class PersonnelCost:
+    """What a window's personnel cost is made of (`personnel_cost_by_kind`): the employees'
+    cost, the directors' fees, and how many members were in service in it with no cost
+    estimated because their pay inputs are missing."""
+
+    employee: Decimal
+    director: Decimal
+    not_estimated_members: int
 
 
 def _key(item: CashItem) -> str:
@@ -217,12 +230,32 @@ class PayrollService:
         the member's service in that month that the window covers. A month a person closed
         counts as it was closed. No actor: whoever calls it has decided the reader may know the
         figure (`analytics/pnl.py`), and it carries no person."""
+        totals, _ = self._personnel_cost(legal_entity_id, date_from, date_to)
+        return round_money(sum(totals.values(), ZERO_MONEY))
+
+    def personnel_cost_by_kind(
+        self, legal_entity_id: UUID | None, date_from: dt.date, date_to: dt.date
+    ) -> PersonnelCost:
+        """`personnel_cost_in_range` told apart by kind of member (REB-1071): the employees' cost
+        and the directors' fees, which IRAP reads as different lines, and how many members were
+        in service in the window with no cost to speak of (their pay inputs are missing), since
+        a total that silently leaves a person out would read as a cost of zero. Same arithmetic
+        and the same rules: no actor, a closed month counts as it was closed."""
+        totals, not_estimated = self._personnel_cost(legal_entity_id, date_from, date_to)
+        return PersonnelCost(
+            round_money(totals["employee"]), round_money(totals["director"]), len(not_estimated)
+        )
+
+    def _personnel_cost(
+        self, legal_entity_id: UUID | None, date_from: dt.date, date_to: dt.date
+    ) -> tuple[dict[str, Decimal], set[UUID]]:
+        totals: dict[str, Decimal] = {"employee": ZERO_MONEY, "director": ZERO_MONEY}
+        not_estimated: set[UUID] = set()
         members = self.repo.members_of(legal_entity_id)
         if not members:
-            return ZERO_MONEY
+            return totals, not_estimated
         context = _Context.load(self.repo, legal_entity_id, members)
         closed = self.repo.closed_months(legal_entity_id)
-        total = ZERO_MONEY
         month = first_of(date_from)
         while month <= date_to:
             last = add_months(month, 1) - dt.timedelta(days=1)
@@ -234,12 +267,16 @@ class PayrollService:
                     estimated = context.estimate(member, month, cost_only=True).cost
                     cost = None if estimated is None else estimated.total
                 served = days_in_service(member, month, last)
-                if cost is None or served == 0:
-                    continue
                 covered = days_in_service(member, max(month, date_from), min(last, date_to))
-                total += cost * covered / served
+                if cost is None:
+                    if covered > 0:
+                        not_estimated.add(member.id)
+                    continue
+                if served == 0:
+                    continue
+                totals[member.kind] += cost * covered / served
             month = add_months(month, 1)
-        return round_money(total)
+        return totals, not_estimated
 
     # ---- the writer's half: no actor, no commit ---------------------------------------------
 
@@ -533,4 +570,4 @@ def _read(
     )
 
 
-__all__ = ["HORIZON_MONTHS", "LOOKBACK_MONTHS", "PayrollService"]
+__all__ = ["HORIZON_MONTHS", "LOOKBACK_MONTHS", "PayrollService", "PersonnelCost"]

@@ -73,7 +73,6 @@ PERIOD = PeriodQuery(date_from=date(YEAR, 3, 1), date_to=date(YEAR, 3, 31))
 # The figures, by hand, from the rows the fixture writes.
 P_PAID = Decimal("1000.00")  # the studio's paid invoice
 P_UNPAID = Decimal("200.00")  # the studio's unpaid one, already overdue
-P_REVENUE = Decimal("1200.00")  # both issued: what the estimate reads
 AND_PAID = Decimal("5000.00")
 AND_UNPAID = Decimal("300.00")  # due in a month, not overdue
 COST_SHARED = Decimal("50.00")  # no deal, no azienda: «tutte» alone
@@ -366,8 +365,9 @@ def test_the_estimate_needs_the_legal_entity_on_to_two_legal_entity_space(corpus
         assert refused.value.details["field"] == "legal_entity_id"
         studio = service.get_fiscal_estimate(YEAR, ADMIN, legal_entity_id=corpus.studio)
     assert studio.legal_entity_id == corpus.studio
-    # Every issued invoice of the studio, paid or not, and none of the foreign company's.
-    assert studio.revenue == P_REVENUE
+    # What the studio collected in the year (the flat-rate regime's cash basis), and none of the
+    # foreign company's: its unpaid invoice is no revenue yet.
+    assert studio.revenue == P_PAID
 
 
 def test_the_overview_in_all_carries_no_estimate_and_names_each_share_s_legal_entity(

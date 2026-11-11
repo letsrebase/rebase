@@ -30,6 +30,7 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
+from fakes.collected_invoices import collect_every_issued_invoice
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -313,12 +314,22 @@ def test_a_coefficient_outside_annex_4_is_a_note_and_never_a_refusal() -> None:
 # --- the service, against a real year of invoices -----------------------------------
 
 
-def test_the_service_reads_the_year_from_issued_invoices_only(
+def test_the_service_reads_the_year_from_collected_invoices_only(
     db_session: Session, deal_with_mixed_invoices: UUID
 ) -> None:
-    """The fixture carries every invoice state that exists. Only the three issued
-    `invoice` rows count: an annulled invoice keeps its number and loses its revenue, a
+    """The fixture carries every invoice state that exists. The flat-rate regime counts what
+    was collected in the year, so nothing counts until the three issued `invoice` rows are
+    paid; then only they do: an annulled invoice keeps its number and loses its revenue, a
     confirmed proforma never touches the register, and a draft is a proposal."""
+    before = AnalyticsService(db_session).get_fiscal_estimate(YEAR, ADMIN)
+    assert before.revenue == Decimal("0.00")
+    assert before.basis is not None
+    # What the year invoiced and did not collect is said, so zero is not read as «nothing
+    # happened»: 1000.00 + 250.50 + 333.33.
+    (not_collected,) = before.basis.left_out
+    assert (not_collected.code, not_collected.amount) == ("not_collected", Decimal("1583.83"))
+
+    collect_every_issued_invoice(db_session)
     expected = db_session.execute(
         text(
             "SELECT COALESCE(SUM(taxable_amount), 0) FROM invoices "
@@ -334,6 +345,7 @@ def test_the_service_reads_the_year_from_issued_invoices_only(
     # the 999.00 proforma and the 120.00 draft are all absent from it.
     assert estimate.revenue == Decimal("1583.83")
     assert estimate.year == YEAR
+    assert estimate.basis is not None and estimate.basis.left_out == []
 
 
 def test_a_year_with_no_invoices_is_zero_revenue_and_not_the_whole_register(
@@ -362,6 +374,7 @@ def test_the_service_reads_the_three_rates_from_the_profile_row(
     instead of the row would return the seeded figures here and fail every line.
     """
     _set_rates(db_session, coefficient="78.00", substitute="15.00", social_security="24.00")
+    collect_every_issued_invoice(db_session)
     estimate = AnalyticsService(db_session).get_fiscal_estimate(YEAR, ADMIN)
 
     assert estimate.profitability_coefficient == Decimal("78.00")
@@ -383,6 +396,7 @@ def test_cleared_rates_reach_the_report_as_null(
     """The columns are nullable and clearing them is an explicit act, so the report has
     to survive it -- with the revenue it does know and nothing invented for the rest."""
     _set_rates(db_session, coefficient=None, substitute=None, social_security=None)
+    collect_every_issued_invoice(db_session)
     estimate = AnalyticsService(db_session).get_fiscal_estimate(YEAR, ADMIN)
 
     assert estimate.revenue == Decimal("1583.83")
@@ -464,7 +478,8 @@ def test_the_social_security_surcharge_amount_is_excluded_from_the_coefficient_b
         vat_amount=Decimal("0.00"),
         stamp_duty=Decimal("0.00"),
         total=Decimal("1040.00"),
-        payment_status="unpaid",
+        payment_status="paid",
+        payment_date=date(YEAR, 3, 1),
     )
     db_session.add(invoice)
     db_session.flush()
@@ -500,17 +515,23 @@ def test_the_social_security_surcharge_amount_is_excluded_from_the_coefficient_b
     assert estimate.revenue == Decimal("1000.00")
     # 1000.00 * 0.67 = 670.00 -- and not 1040.00 * 0.67 = 696.80.
     assert estimate.taxable_amount == Decimal("670.00")
+    # And the estimate says what it took out and why, so the 40.00 is not a mystery.
+    assert estimate.basis is not None
+    (surcharge,) = estimate.basis.left_out
+    assert (surcharge.code, surcharge.amount) == ("inps_surcharge", Decimal("40.00"))
+    assert "commercialista" in surcharge.reason
 
 
 def test_an_explicit_revenue_override_is_never_reduced_by_the_pack(
     db_session: Session,
 ) -> None:
-    """The "what if" override (the economic overview's collected/projected figures,
-    per `get_fiscal_estimate`'s own docstring) is the caller's own already-decided
-    number -- the pack's tag applies only to the default, `annual_revenue`-derived
-    path, never to a figure a caller hands in explicitly."""
+    """The "what if" override (the economic overview's projection, per
+    `get_fiscal_estimate`'s own docstring) is the caller's own already-decided number -- the
+    pack's tag applies only to the default, basis-derived path, never to a figure a caller
+    hands in explicitly, and such an estimate names no basis."""
     _set_rates(db_session, coefficient="67.00", substitute="5.00", social_security="26.07")
     estimate = AnalyticsService(db_session).get_fiscal_estimate(
         YEAR, ADMIN, revenue=Decimal("1040.00")
     )
     assert estimate.revenue == Decimal("1040.00")
+    assert estimate.basis is None

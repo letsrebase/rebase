@@ -450,6 +450,10 @@ _INTERNE: dict[Method, str] = {
     ("PayrollService", "personnel_cost_in_range"): (
         "the P&L's own read; the actor is checked by `period_pnl`, a tool"
     ),
+    ("PayrollService", "personnel_cost_by_kind"): (
+        "REB-1071: the same read told apart by employees and directors, for the year basis "
+        "(`fiscal/basis.py`) that `get_fiscal_estimate` reads; the actor is checked there"
+    ),
     ("IvaSettlementService", "settle_elapsed_periods"): (
         "REB-1021: the daily pass's step, with no actor; the tool that reads its result is "
         "`list_iva_settlements`"

@@ -42,12 +42,12 @@ from pigrocrm.core.db.clock import month_bounds
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.deals.value import ValueTerm, line_term, share_in
 from pigrocrm.core.errors import NotFound, ValidationFailed
+from pigrocrm.core.fiscal.basis import year_basis
 from pigrocrm.core.fiscal.calendar import tax_calendar
 from pigrocrm.core.fiscal.ceiling import (
     CeilingStatus,
     evaluate_ceiling,
     evaluate_pack,
-    taxable_revenue,
 )
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService, reading_for_year
 from pigrocrm.core.fiscal.law import DeclaredTax
@@ -59,7 +59,7 @@ from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.models import InvoiceLine
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.service import LegalEntityService
-from pigrocrm.core.money import round_money, share
+from pigrocrm.core.money import ZERO_MONEY, round_money, share
 
 ENTITY = "analytics"
 # What a frozen estimate keeps of the profile (REB-974): the taxpayer's parameters, the
@@ -499,16 +499,16 @@ class AnalyticsService:
         what is projected, with the two nets. **No MCP tool** -- it carries the fiscal
         estimate, and `get_fiscal_estimate`'s reasons apply unchanged.
 
-        `base` moves the charts and the cash cards only. The fiscal block is always
-        computed on the `collection` reading, because the flat-rate regime is taxed on what was
-        collected in the calendar year and a chart that reads by accrual period must not
-        move the taxes (`docs/design/DECISIONS.md`, 2026-09-10). Within one year the two
-        readings' totals agree except for a document whose period and payment fall in
-        different years, which is exactly the case where the tax must follow the money.
+        `base` moves the charts and the cash cards only. The fiscal block never follows it: `tax`
+        is `get_fiscal_estimate` itself, on the one basis the regime's law names for the year
+        (`fiscal/basis.py`, REB-1071), so a chart that reads by accrual period must not move the
+        taxes and the three surfaces answer the same figure. `projected_tax` is a «what if» on
+        the projected revenue, which is no year's basis.
 
-        Under `accrual`, the default, that is the cash view read twice: eight
-        aggregates instead of four, on a page that already runs a dozen. Accepted, rather
-        than threading two readings through `cash_overview`, whose one job is one reading.
+        Under `accrual`, the default, the cash view is read twice for the two nets and the
+        projection: eight aggregates instead of four, on a page that already runs a dozen.
+        Accepted, rather than threading two readings through `cash_overview`, whose one job is
+        one reading.
 
         `customer_concentration` (§1.5, REB-370) is on no reading switch: it is
         `revenue_by_customer(year)` verbatim, a whole-practice, calendar-year share of
@@ -547,9 +547,10 @@ class AnalyticsService:
                         if base == "collection" and pension_fund.legal_entity_id == owner.id
                         else self.cash_overview(year, actor, "collection", owner.id)
                     )
-                    tax = self.get_fiscal_estimate(
-                        year, actor, revenue=per_tax_office.paid, legal_entity_id=owner.id
-                    )
+                    # The estimate itself, on the basis of the regime (REB-1071): the same
+                    # figure `get_fiscal_estimate` answers over REST and MCP. Only the projection
+                    # below is a «what if».
+                    tax = self.get_fiscal_estimate(year, actor, legal_entity_id=owner.id)
                     projected_tax = self.get_fiscal_estimate(
                         year, actor, revenue=per_tax_office.projected, legal_entity_id=owner.id
                     )
@@ -623,6 +624,11 @@ class AnalyticsService:
         to the only legal entity when none is named, and is required, by name, when the
         space has several: a flat-rate regime's coefficients and an SRL's arithmetic do not
         add, so there is no space-wide figure to answer with.
+
+        The revenue is the year on the one basis the regime's law names (`fiscal/basis.py`,
+        REB-1071), and the payload's `basis` says what it was computed from: what was collected
+        in the year for the flat-rate regime and the ordinary person, what accrued in it for an
+        srl, never the year's invoicing. This is the one function every surface reads.
         """
         actor.require_admin("get_fiscal_estimate")
         legal_entity = LegalEntityService(self.session).require_single(
@@ -753,31 +759,20 @@ class AnalyticsService:
             frozen = FiscalEstimateRepository(self.session).get(legal_entity.id, year)
             if frozen is not None:
                 return FiscalEstimate.model_validate({**frozen.figures, "frozen": True})
+        basis = None
         if revenue is None:
-            # Every issued invoice of the year, deal or no deal: the estimate is about
-            # the person's income, and an invoice attached to no deal is still income.
-            # Reduced by the pack's own tagged charges (REB-352 §2, §6's resolved
-            # decision): a social security surcharge line counts toward the ceiling in full but is
-            # not
-            # taxable income, so it never reaches the coefficiente base here even
-            # though `annual_revenue` sums it in full. The flat-rate basis is the money
-            # collected (`law.income_basis`, REB-1066: L. 190/2014 art. 1 c. 64), while this
-            # sums the invoices issued in the year, until the one-basis revenue function of
-            # REB-1071 reads it from the law. Whether the INPS surcharge lines come out of
-            # it is TO VERIFY (A5 row «Flat-rate basis...», REB-975).
-            revenue = taxable_revenue(
-                pack,
-                self.session,
-                year,
-                self.repo.annual_revenue(year, legal_entity.id),
-                legal_entity.id,
-            )
+            # The year on the one basis the regime's law names (`fiscal/basis.py`, REB-1071):
+            # what was collected in the year for a cash regime, what accrued in it for an
+            # accrual one. This is the only place an estimate's revenue is chosen, so the REST
+            # route, the MCP tool and the economic overview answer the same figure for the same
+            # year. A year the pack states no basis for has no revenue to speak of and no figure.
+            basis = year_basis(self.session, legal_entity, year, pack)
+            revenue = basis.revenue if basis is not None else ZERO_MONEY
         return estimate_income(
             year=year,
             legal_entity_id=legal_entity.id,
-            # `revenue` overrides the reduced figure above when the caller asks "what
-            # if": the economic overview passes what was collected, and what is
-            # projected, neither of which the pack's own tag applies to.
+            # A caller's own `revenue` is a «what if»: the economic overview's projection,
+            # which no basis was read for and no pack tag applies to.
             revenue=revenue,
             coefficient=profile.profitability_coefficient,
             rate_substitute=profile.substitute_tax_rate,
@@ -788,6 +783,7 @@ class AnalyticsService:
                 "pack_id": pack.id,
                 "pack_version": pack.version,
                 "law_from_year": law.from_year if law is not None else None,
+                "basis": basis,
             }
         )
 
