@@ -2,6 +2,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { useAuth } from '@/lib/auth'
+import { useExpenseSummary } from '@/features/expense-notes/queries'
 import { useModules } from '@/lib/modules'
 import { can } from '@/lib/permissions'
 import { queryKeys } from '@/lib/query'
@@ -36,15 +37,28 @@ export function useIvaEntities(enabled = true) {
 /**
  * The entries the sidebar and «Altro» draw that need more than a module (`NavGate`): «IVA» is an
  * administrator's, in a space with `purchases` on and at least one legal entity whose pack settles
- * IVA by period. Until the answer is in the entry is not drawn, so it never flashes and goes.
+ * IVA by period; «Note spese» is an administrator's or a user linked to a staff member's, with
+ * `staff` and `purchases` both on (REB-1046). Role alone cannot say «linked», so that gate reads
+ * the expense notes' summary, which also carries the count the entry shows. Until an answer is in
+ * the entry that waits on it is not drawn, so it never flashes and goes.
  */
 export function useNavGates(): ReadonlySet<NavGate> {
   const { user } = useAuth()
+  const modules = useModules()
   const allowed = user !== null && can(user.role, 'list_iva_periods')
-  const purchases = useModules().on('purchases')
+  const purchases = modules.on('purchases')
   const entities = useIvaEntities(allowed && purchases)
+  const notesOn = user !== null && modules.on('staff', 'purchases')
+  const summary = useExpenseSummary(notesOn)
   const gates = new Set<NavGate>()
   if (allowed && purchases && (entities.data?.length ?? 0) > 0) gates.add('iva')
+  if (
+    user !== null &&
+    notesOn &&
+    (can(user.role, 'approve_expense_note') || (summary.data?.staff_member_id ?? null) !== null)
+  ) {
+    gates.add('expense-notes')
+  }
   return gates
 }
 

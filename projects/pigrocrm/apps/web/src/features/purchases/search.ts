@@ -19,7 +19,7 @@ export interface PurchasesSearch {
   cancelled?: boolean
 }
 
-const KINDS: readonly PurchaseKind[] = ['invoice', 'credit_note', 'receipt', 'expense']
+const KINDS: readonly PurchaseKind[] = ['invoice', 'credit_note', 'receipt', 'expense', 'expense_note']
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

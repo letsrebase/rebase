@@ -242,6 +242,7 @@ describe('AppShell', () => {
       'Tasse',
       'Cassa',
       "Persone dell'azienda",
+      'Note spese',
       'Esporta per il commercialista',
       'Agenti',
     ])
@@ -272,6 +273,7 @@ describe('AppShell', () => {
       'Tasse',
       'Cassa',
       "Persone dell'azienda",
+      'Note spese',
       'Esporta per il commercialista',
     ])
     // Agents and Settings come after every section, Settings last.
@@ -512,6 +514,72 @@ describe('AppShell', () => {
       await settle()
       expect(sidebar().queryByRole('link', { name: 'IVA' })).toBeNull()
       expect(GET).not.toHaveBeenCalledWith('/api/iva-periods/entities', expect.anything())
+    })
+  })
+
+  /** REB-1046: «Note spese» follows «Persone dell'azienda»: an administrator's, and a user linked to a staff member's. */
+  describe('«Note spese» (REB-1046)', () => {
+    const summary = (overrides: Record<string, unknown> = {}) => ({
+      staff_member_id: null,
+      staff_member_name: null,
+      staff_member_legal_entity_id: null,
+      can_submit: false,
+      to_approve: 0,
+      to_reimburse: 0,
+      closed: 0,
+      awaiting_reimbursement: '0.00',
+      only_administrator: false,
+      ...overrides,
+    })
+    const answer = (data: unknown) =>
+      GET.mockImplementation(async (path: string) =>
+        path === '/api/expense-notes/summary'
+          ? { data, response: { status: 200 } }
+          : { data: [], response: { status: 200 } },
+      )
+
+    it('is drawn for an administrator right after «Persone dell\'azienda», with the count of notes waiting', async () => {
+      answer(summary({ to_approve: 3 }))
+      renderShell(<div />, undefined, [])
+      const link = await sidebar().findByRole('link', { name: /^Note spese/ })
+      expect(link).toHaveAttribute('href', '/app/expense-notes')
+      await waitFor(() => expect(link).toHaveTextContent('3'))
+      expect(link).toHaveTextContent(', 3 da approvare')
+      const links = within(sidebar().getByRole('group', { name: 'Amministrazione' }))
+        .getAllByRole('link')
+        .map((candidate) => candidate.textContent?.replace(/\d.*$/, ''))
+      expect(links.slice(links.indexOf("Persone dell'azienda"), links.indexOf("Persone dell'azienda") + 2)).toEqual([
+        "Persone dell'azienda",
+        'Note spese',
+      ])
+    })
+
+    it('is drawn for a collaborator once the summary says they are a staff member, and not before', async () => {
+      mockAuth.role = 'collaborator'
+      answer(summary({ staff_member_id: 'm-1', can_submit: true, to_approve: 4 }))
+      renderShell(<div />, undefined, [])
+      expect(sidebar().queryByRole('link', { name: /^Note spese/ })).toBeNull()
+      const link = await sidebar().findByRole('link', { name: /^Note spese/ })
+      // The count of notes to decide is an administrator's: a staff member's entry carries none.
+      expect(link).not.toHaveTextContent('da approvare')
+      expect(sidebar().queryByRole('link', { name: "Persone dell'azienda" })).toBeNull()
+    })
+
+    it('is not drawn for a collaborator who is not a staff member', async () => {
+      mockAuth.role = 'collaborator'
+      answer(summary())
+      renderShell(<div />, undefined, [])
+      await settle()
+      expect(sidebar().queryByRole('link', { name: /^Note spese/ })).toBeNull()
+    })
+
+    it('is gone with staff or purchases off, and asks for nothing', async () => {
+      answer(summary({ staff_member_id: 'm-1' }))
+      renderShell(<div />, undefined, ['purchases'])
+      await settle()
+      expect(sidebar().queryByRole('link', { name: /^Note spese/ })).toBeNull()
+      expect(sidebar().getByRole('link', { name: "Persone dell'azienda" })).toBeInTheDocument()
+      expect(GET).not.toHaveBeenCalledWith('/api/expense-notes/summary', expect.anything())
     })
   })
 

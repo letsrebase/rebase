@@ -31,7 +31,11 @@ from pigrocrm.core.organizations.models import Organization
 
 # The kinds of a solo space's own taxes: the restricted kinds that are not what it pays its
 # people (payroll) or a freelancer (engagement).
-TAX_SOURCE_KINDS: frozenset[str] = RESTRICTED_SOURCE_KINDS - {"payroll", "engagement"}
+TAX_SOURCE_KINDS: frozenset[str] = RESTRICTED_SOURCE_KINDS - {
+    "payroll",
+    "engagement",
+    "expense_note",
+}
 
 # The module each source kind belongs to, read from the code that writes it and the routes that
 # guard it: a kind whose module is off is absent from every figure of the schedule, the
@@ -42,6 +46,7 @@ TAX_SOURCE_KINDS: frozenset[str] = RESTRICTED_SOURCE_KINDS - {"payroll", "engage
 # `contract_occurrence` the contracts'.
 SOURCE_KIND_MODULES: dict[str, str] = {
     "purchase": "purchases",
+    "expense_note": "purchases",
     "recurring_expense": "purchases",
     "integration_vat": "purchases",
     "iva_settlement": "purchases",

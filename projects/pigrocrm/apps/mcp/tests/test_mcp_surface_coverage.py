@@ -185,6 +185,12 @@ _FORBIDDEN: dict[Method, str] = {
     ("StaffService", "get_staff_member"): "REB-977: same as `create_staff_member`",
     ("StaffService", "list_staff"): "REB-977: same as `create_staff_member`",
     ("PayrollService", "get_payroll_month"): "REB-1008: same as `create_staff_member`",
+    ("ExpenseNoteService", "approve_expense_note"): (
+        "REB-1046: deciding on a staff member's expense (staff design § 4); the tool exists only "
+        "on an administrator's `full_access` token, and never on the token owner's own note"
+    ),
+    ("ExpenseNoteService", "reject_expense_note"): "REB-1046: same as `approve_expense_note`",
+    ("ExpenseNoteService", "reimburse_expense_note"): "REB-1046: same as `approve_expense_note`",
     ("StaffService", "close_payroll_month"): (
         "REB-1045: closing a payroll month locks its payslips and estimates (staff design § 4); "
         "the tool exists only on an administrator's `full_access` token"
@@ -444,6 +450,14 @@ _INTERNE: dict[Method, str] = {
         "`list_iva_settlements`"
     ),
     ("DueItemService", "restate"): "the writer's half: a recomputed settlement corrects its item",
+    ("DueItemService", "settle_remaining"): (
+        "REB-1046: the writer's half: an expense note pays its own item (a transfer already made, "
+        "or the payslip that paid it) after `ExpenseNoteService` and `StaffService` authorised"
+    ),
+    ("PurchaseService", "register_expense_note"): (
+        "REB-1046: the writer's half: the approval of an expense note writes its purchase; no "
+        "actor, `ExpenseNoteService` authorised"
+    ),
     ("IvaSettlementService", "settle_iva_period"): (
         "REB-1021: the IVA settlement is the legal entity's fiscal position, so only a "
         "`full_access` token may ever run it; its tool arrives with the IVA page's card and "
@@ -975,6 +989,13 @@ _BYTE: dict[Method, str] = {
 #    survive being asked why, and the only way to keep that true is to delete the ones
 #    that do not the moment the tool is written.
 _COVERED_OR_HUMAN: dict[Method, str] = {
+    ("ExpenseNoteService", "get_expense_note"): (
+        "REB-1046: one note is the page's panel; `list_expense_notes` answers every field of it"
+    ),
+    ("ExpenseNoteService", "summarize_expense_notes"): (
+        "REB-1046: the page's tab counts and whether the caller is a staff member (the staff "
+        "routes refuse a non-administrator); an agent counts from `list_expense_notes`"
+    ),
     ("BankAccountService", "get_bank_account"): (
         "REB-1025: one account is read through `list_bank_accounts`; `update_bank_account` reads "
         "it to report what changed"

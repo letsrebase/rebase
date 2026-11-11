@@ -148,6 +148,10 @@ AGENT_ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "read_engagements",
         "update_engagement",
         "get_freelancer_availability",
+        # An expense note (spec 2026-11-09, staff, § 3 and § 4): an agent submits for the staff
+        # member its owner is, from an inbox item the owner uploaded; the service refuses any
+        # other staff member. Deciding and reading everyone's are the full-access set below.
+        "submit_expense_note",
         # What a letter or framework agreement would say now: a read, with the free text of the
         # texts and of the engagement in it.
         "preview_engagement",
@@ -285,6 +289,12 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         "list_staff",
         # The month's estimate per staff member (REB-1008): cost and cash, so pay.
         "get_payroll_month",
+        # Deciding on an expense note and paying it back, and reading every note in scope (staff
+        # design § 4): an administrator's token with `full_access`, and never on its own note.
+        "approve_expense_note",
+        "reject_expense_note",
+        "reimburse_expense_note",
+        "read_all_expense_notes",
         # Closing a payroll month locks its payslips and its estimates (staff design § 4): an
         # administrator's act and, for an agent, a `full_access` token's.
         "close_payroll_month",
@@ -552,6 +562,11 @@ ACTION_LABELS: dict[str, str] = {
     "import_statement": "caricare un estratto conto",
     "revert_statement": "annullare l'importazione di un estratto conto",
     "bill_contract_fee": "fatturare il canone di un contratto",
+    "submit_expense_note": "inviare una nota spese",
+    "approve_expense_note": "approvare una nota spese",
+    "reject_expense_note": "rifiutare una nota spese",
+    "reimburse_expense_note": "rimborsare una nota spese",
+    "read_all_expense_notes": "leggere le note spese di tutti",
 }
 
 

@@ -33,6 +33,7 @@ DIRECTION = {"in": "Da incassare", "out": "Da pagare"}
 SOURCE = {
     "sales_invoice": "Fattura emessa",
     "purchase": "Acquisto",
+    "expense_note": "Nota spese",
     "integration_vat": "IVA da integrazione",
     "iva_settlement": "Liquidazione IVA",
     "withholding": "Ritenuta",

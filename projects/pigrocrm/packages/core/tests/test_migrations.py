@@ -4371,3 +4371,50 @@ def test_0104_creates_the_export_share_link_tables_under_the_scope_policy(
         assert all(_table_shape(url, table)[0] is False for table in tables)
         upgrade(config, "0104")
         assert _table_shape(url, "accountant_export_links")[0] is True
+
+
+def _purchase_kinds_and_staff_column(url: str) -> tuple[bool, str]:
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            column = bool(
+                connection.execute(
+                    text(
+                        "SELECT count(*) > 0 FROM information_schema.columns WHERE "
+                        "table_name = 'purchases' AND column_name = 'staff_member_id'"
+                    )
+                ).scalar_one()
+            )
+            kind_check = connection.execute(
+                text(
+                    "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+                    "WHERE conname = 'ck_purchases_kind'"
+                )
+            ).scalar_one()
+            return column, str(kind_check)
+    finally:
+        engine.dispose()
+
+
+def test_0105_creates_expense_notes_and_teaches_purchases_the_expense_note_kind(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1046: one new table under the row policy, a new purchase kind and the staff member it
+    pays back; the downgrade removes the purchases of that kind and comes back."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0104")
+        assert _table_shape(url, "expense_notes")[0] is False
+        column, kind_check = _purchase_kinds_and_staff_column(url)
+        assert column is False and "expense_note" not in kind_check
+        upgrade(config, "0105")
+        assert _table_shape(url, "expense_notes") == (True, True, {"legal_entity_scope"})
+        column, kind_check = _purchase_kinds_and_staff_column(url)
+        assert column is True and "expense_note" in kind_check
+        downgrade(config, "0104")
+        assert _table_shape(url, "expense_notes")[0] is False
+        column, kind_check = _purchase_kinds_and_staff_column(url)
+        assert column is False and "expense_note" not in kind_check
+        upgrade(config, "0105")
+        assert _table_shape(url, "expense_notes")[0] is True

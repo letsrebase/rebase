@@ -71,6 +71,12 @@ from pigrocrm.core.config import Settings, gmail_configured
 from pigrocrm.core.contracts.fee_billing import FeeBillingService
 from pigrocrm.core.contracts.fee_schemas import FeeBillRequest
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.expense_notes.schemas import (
+    ExpenseNoteReimburse,
+    ExpenseNoteReject,
+    ReimbursementMethod,
+)
+from pigrocrm.core.expense_notes.service import ExpenseNoteService
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
 from pigrocrm.core.fiscal.iva_lock import IvaPeriodLockService
 from pigrocrm.core.fiscal.iva_register import IvaRegisterService
@@ -947,6 +953,59 @@ def register(
         )
         return (
             StaffService(context.session).list_staff(query, context.actor).model_dump(mode="json")
+        )
+
+    # ---- expense notes: the decisions and the payment (REB-1046) ------------------------
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def approve_expense_note(note_id: UUID) -> dict[str, Any]:
+        """Approves a submitted expense note, admin only and never on the token owner's own
+        note: it becomes a purchase of kind `expense_note` and writes the due item that pays
+        the person. Choosing how it is paid back is `reimburse_expense_note`.
+        """
+        return (
+            ExpenseNoteService(context.session)
+            .approve_expense_note(note_id, context.actor)
+            .model_dump(mode="json")
+        )
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def reject_expense_note(note_id: UUID, reason: str) -> dict[str, Any]:
+        """Rejects a submitted expense note with the reason the person reads, admin only and
+        never on the token owner's own note. Final: a corrected note is a new note.
+        """
+        return (
+            ExpenseNoteService(context.session)
+            .reject_expense_note(note_id, ExpenseNoteReject(reason=reason), context.actor)
+            .model_dump(mode="json")
+        )
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def reimburse_expense_note(
+        note_id: UUID,
+        method: str,
+        date: IsoDateStr = None,
+        paid: bool = False,
+        payroll_month: IsoDateStr = None,
+    ) -> dict[str, Any]:
+        """Chooses how an approved expense note is paid back, admin only and never on the
+        token owner's own note, once. `method` `transfer` needs `date` (`paid` when it already
+        left); `payslip` takes `payroll_month` (default the person's next month without a
+        payslip) and the accepted payslip settles the note's due item, with no second one.
+        """
+        data = ExpenseNoteReimburse(
+            method=literal_arg("method", method, ReimbursementMethod),
+            date=iso_date(date, "date"),
+            paid=paid,
+            payroll_month=iso_date(payroll_month, "payroll_month"),
+        )
+        return (
+            ExpenseNoteService(context.session)
+            .reimburse_expense_note(note_id, data, context.actor)
+            .model_dump(mode="json")
         )
 
     # ---- bank accounts, their statements and movements (REB-1025) --------------------

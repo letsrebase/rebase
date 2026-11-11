@@ -25,7 +25,10 @@ RATE_SCALE = 2
 EXCHANGE_RATE_MAX_DIGITS = 14
 EXCHANGE_RATE_SCALE = 6
 
-PurchaseKind = Literal["invoice", "credit_note", "receipt", "expense"]
+# What a person or an agent registers; an `expense_note` purchase is written only by the
+# approval of an expense note, never created or changed through the purchase.
+PurchaseWriteKind = Literal["invoice", "credit_note", "receipt", "expense"]
+PurchaseKind = Literal["invoice", "credit_note", "receipt", "expense", "expense_note"]
 PurchaseStatus = Literal["registered", "cancelled"]
 
 # `Natura` of FatturaPA: `N1`, `N2.1`, `N3.4`, `N6.9`, `N7`. The shape is checked here; which
@@ -62,7 +65,7 @@ class PurchaseCreate(BaseModel):
     # `merchant_name` now, and a stale caller must hear it and not lose the value in silence.
     model_config = ConfigDict(extra="forbid")
 
-    kind: PurchaseKind = "expense"
+    kind: PurchaseWriteKind = "expense"
     deal_id: UUID | None = None
     # Read only for a purchase without a deal (REB-623, spec §1.7): one with a deal takes the
     # deal's legal entity and refuses a different one; without a deal, `None` is a shared
@@ -116,7 +119,7 @@ class PurchaseUpdate(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: PurchaseKind | None = None
+    kind: PurchaseWriteKind | None = None
     deal_id: UUID | None = None
     legal_entity_id: UUID | None = None
     category_id: UUID | None = None
@@ -160,6 +163,8 @@ class PurchaseRead(BaseModel):
     legal_entity_id: UUID | None
     category_id: UUID
     supplier_id: UUID | None
+    # The staff member an `expense_note` purchase pays back.
+    staff_member_id: UUID | None
     merchant_name: str | None
     number: str | None
     date: dt.date

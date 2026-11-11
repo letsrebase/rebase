@@ -86,7 +86,10 @@ SURFACES: dict[str, dict[str, Any]] = {
 # REB-1025 after the merge with main: 108.1 KB, measured at 108,053 (the cash schedule tool and the
 # fee tools together).
 # REB-1035 (merged): +65 bytes for `source_id` on `list_due_items`.
-DEFAULT_BUDGET_BYTES = 108_200
+# REB-1046: 109.9 KB, up from 108.2 KB, for `submit_expense_note` and `list_expense_notes` (every
+# token's, 1.6 KB): a note has a kind, an amount or kilometres with a rate and a route, measured at
+# 109,844 bytes.
+DEFAULT_BUDGET_BYTES = 109_900
 # REB-957: 111.9 KB, up from 111.6 KB, for `skip_space_onboarding` (a full-access
 # administrator's), measured at 111,786 bytes; `describe_space`'s `onboarding` fits the default.
 # REB-977: 116.2 KB, up from 113.4 KB, for `create_staff_member`, `update_staff_member`,
@@ -129,7 +132,9 @@ DEFAULT_BUDGET_BYTES = 108_200
 # REB-1045: 138.9 KB, up from 138.4 KB, for `close_payroll_month` (a full-access administrator's).
 # REB-1047: 139.65 KB, up from 138.9 KB, for `create_export_share_link` (a full-access
 # administrator's: an export and a number of days) and its docstring, about 660 bytes.
-FULL_ACCESS_BUDGET_BYTES = 139_650
+# REB-1046: 142.9 KB, up from 139.65 KB, for the two default tools and `approve_expense_note`,
+# `reject_expense_note` and `reimburse_expense_note` (a full-access administrator's).
+FULL_ACCESS_BUDGET_BYTES = 142_950
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

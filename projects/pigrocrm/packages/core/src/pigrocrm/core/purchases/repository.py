@@ -1,14 +1,22 @@
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.money import round_money
 from pigrocrm.core.purchases.models import Purchase
 from pigrocrm.core.purchases.schemas import PurchaseListQuery
+
+
+@dataclass(frozen=True)
+class NotesScope:
+    """Whose expense-note purchases a reader sees: the staff member they are (`None`: none)."""
+
+    member_id: UUID | None
 
 
 class PurchaseRepository:
@@ -32,9 +40,15 @@ class PurchaseRepository:
         return purchase
 
     @staticmethod
-    def _filtered(query: PurchaseListQuery) -> Select[Any]:
+    def _filtered(query: PurchaseListQuery, notes_of: NotesScope | None = None) -> Select[Any]:
         """The rows a query selects, before paging: what the page and its totals both read."""
         stmt = select(Purchase).where(Purchase.deleted_at.is_(None))
+        if notes_of is not None:
+            # An expense note's purchase is the note's, as private as the note: only the staff
+            # member it pays back reads it (an administrator reads all, with `notes_of` unset).
+            stmt = stmt.where(
+                or_(Purchase.kind != "expense_note", Purchase.staff_member_id == notes_of.member_id)
+            )
         if query.only_general:
             # `deal_id IS NULL` is a general expense (§7.4). A separate flag is needed
             # because `deal_id=None` on the query already means "do not filter".
@@ -61,20 +75,22 @@ class PurchaseRepository:
             stmt = stmt.where(Purchase.custom_fields.contains(query.custom))
         return stmt
 
-    def totals(self, query: PurchaseListQuery) -> tuple[int, Decimal]:
+    def totals(
+        self, query: PurchaseListQuery, notes_of: NotesScope | None = None
+    ) -> tuple[int, Decimal]:
         """How many purchases the filters select and the sum of their document totals (signed:
         a credit note and a refund subtract), whatever page was asked for. The sum is the
         document's total in euro, the figure a list column shows, and not what the purchase
         costs."""
-        rows = self._filtered(query).subquery()
+        rows = self._filtered(query, notes_of).subquery()
         count, total = self.session.execute(
             select(func.count(), func.coalesce(func.sum(rows.c.amount), 0))
         ).one()
         return int(count), round_money(Decimal(total))
 
     # `list` stays the last method in this class.
-    def list(self, query: PurchaseListQuery) -> list[Purchase]:
-        stmt = self._filtered(query)
+    def list(self, query: PurchaseListQuery, notes_of: NotesScope | None = None) -> list[Purchase]:
+        stmt = self._filtered(query, notes_of)
         if query.cursor is not None:
             anchor = self.session.get(Purchase, query.cursor)
             if anchor is None:

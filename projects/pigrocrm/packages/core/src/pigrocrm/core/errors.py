@@ -114,6 +114,23 @@ class ScopedAdmin(DomainError):
         )
 
 
+class OwnExpenseNote(DomainError):
+    """An administrator asked to decide on a note that is theirs (spec 2026-11-09, staff, § 3):
+    another administrator approves it. The same code as `PermissionDenied`, so the API answers
+    403, with the sentence the page shows beside the note."""
+
+    code = "permission_denied"
+
+    def __init__(self, action: str) -> None:
+        super().__init__(
+            "Non puoi approvare una tua nota: la approva un altro amministratore.",
+            action=action,
+            required_roles=["admin"],
+            actual_role="admin",
+            reason="la nota e' dell'amministratore che la decide",
+        )
+
+
 class AgentForbidden(DomainError):
     """An operation no agent may perform, whatever role its owner has.
 
