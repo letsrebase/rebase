@@ -133,6 +133,7 @@ async def test_a_freelancer_made_by_an_agent_is_a_supplier_that_stays_one(server
             {"organization_id": freelancer["id"], "changes": {"roles": ["freelancer"]}},
         )
         assert refused.is_error
+        assert "fornitore" in refused.content[0].text
         kept = _payload(
             await client.call_tool("get_organization", {"organization_id": freelancer["id"]})
         )

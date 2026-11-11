@@ -167,8 +167,8 @@ registry has a page per role, `/app/customers` and `/app/suppliers` (REB-1053 re
 `DECISIONS.md`, 2026-11-10), each its own title, strong button and list with no tab between them; one component,
 `features/organizations/OrganizationsPage.tsx`, renders both over `GET /api/organizations?role=` (each page asks for its own name,
 «Fornitori» `supplier` and «Clienti» `customer`; no organization is on neither list, because `OrganizationService` keeps `freelancer`
-always with `supplier`: it adds the role to a write that lacks it, refuses to take it away, and a merge keeps it, REB-1061), and an
-organization with both roles is on both. An organization's own page stays `/app/organizations/<id>`; `/app/organizations` and `/app/clienti` are redirect stubs
+always with `supplier`: it adds the role to a write that lacks it, refuses to take it away, and a merge keeps it, REB-1061; «Fornitori» is the `purchases` module's page, so a space that runs `collaborators` with `purchases` off lists a
+freelancer nowhere on the registry, as it already does for any supplier), and an organization with both roles is on both. An organization's own page stays `/app/organizations/<id>`; `/app/organizations` and `/app/clienti` are redirect stubs
 (`?role=supplier` goes to «Fornitori», anything else to «Clienti»; `features/organizations/search.ts`). `/app/suppliers` is the
 `purchases` module's by `ROUTE_MODULES`, like every other page of a module, and a `NavItem` (`components/nav.ts`) reads its modules
 from its path alone; `registry` marks the two lists so an organization's own page lights the one it is read as

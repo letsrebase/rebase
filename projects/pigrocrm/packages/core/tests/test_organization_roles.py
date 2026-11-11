@@ -167,6 +167,14 @@ def test_the_supplier_role_of_a_freelancer_cannot_be_taken_away(
     assert db_session.get_one(Organization, ada.id).roles == ["freelancer", "supplier"]
 
 
+def test_a_supplier_that_becomes_a_freelancer_stays_a_supplier(db_session: Session) -> None:
+    vendor = _create(db_session, "Vendor", roles=["supplier"])
+    updated = OrganizationService(db_session).update(
+        vendor.id, OrganizationUpdate(roles=["freelancer"]), ADMIN
+    )
+    assert updated.roles == ["freelancer", "supplier"]
+
+
 def test_the_freelancer_role_can_go_while_the_supplier_one_stays(db_session: Session) -> None:
     service = OrganizationService(db_session)
     ada = _create(db_session, "Ada", roles=["freelancer", "customer"])

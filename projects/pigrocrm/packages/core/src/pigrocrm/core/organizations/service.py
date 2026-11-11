@@ -174,7 +174,7 @@ def _check_roles_and_kinds(data: dict[str, Any], current: Organization | None) -
     `current` is the stored row on an update and `None` on a create. Normalises `roles` in
     place (no repeats, order kept), and keeps the rule that a freelancer is a supplier
     (REB-1061): a write that names `freelancer` without `supplier` gets `supplier` added, and
-    one that takes `supplier` away from a row that has it is refused.
+    one that takes `supplier` away from a freelancer that has it is refused.
 
     A foreign supplier says where it is and what it supplies; a supplier of any other kind
     does not, since those two answers only mean something for reverse charge (design § 1).
@@ -195,6 +195,7 @@ def _check_roles_and_kinds(data: dict[str, Any], current: Organization | None) -
             "freelancer" in roles
             and "supplier" not in roles
             and current is not None
+            and "freelancer" in current.roles
             and "supplier" in current.roles
         ):
             raise ValidationFailed(

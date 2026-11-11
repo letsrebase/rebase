@@ -1,9 +1,10 @@
 /**
  * The two registry pages (REB-1053): «Clienti» is `/app/customers` and «Fornitori» is
  * `/app/suppliers`, each with its own list, the `role` of `GET /api/organizations` (a page
- * asks for its own name). An organization with both roles is on both, and none is on neither:
- * a freelancer is always a supplier (REB-1061). A read that wants every organization (the pickers,
- * the duplicate check) asks the API for `role: 'any'` itself and is no page.
+ * asks for its own name). An organization with both roles is on both. A freelancer is always a
+ * supplier (REB-1061), so none is on neither list while `purchases`, the module of «Fornitori», is
+ * on. A read that wants every organization (the pickers, the duplicate check) asks the API for
+ * `role: 'any'` itself and is no page.
  */
 export type RegistryPage = 'customer' | 'supplier'
 
