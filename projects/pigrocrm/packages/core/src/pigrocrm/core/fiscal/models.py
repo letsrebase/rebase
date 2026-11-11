@@ -118,10 +118,9 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
     # that depends on one gives no figure rather than a guess. Neither reaches a number yet
     # (the INPS category and the ISA flag are read by the advances and the contributions of
     # the cards that follow); `fiscal_estimates` freezes them beside the ones that do.
-    # The category's values are named in the design; the fixed quarterly minimum of
-    # «artigiani e commercianti» and the rates are TO VERIFY (A5 row «Gestione separata and
-    # artigiani e commercianti rates, minimums and quarterly dates»). `isa` decides 50/50
-    # or 40/60 advances (A5, verified).
+    # The category's values are named in the design; the rates, minimums and dates of the two
+    # are the pack's, per year (`FiscalPack.inps_for`, A5 rows verified by REB-1064). `isa`
+    # decides 50/50 or 40/60 advances (A5, verified).
     inps_category: Mapped[str | None] = mapped_column(String(30), default=None)
     isa: Mapped[bool | None] = mapped_column(Boolean, default=None)
     # REB-1021, suppliers design § 6: how often the legal entity settles its IVA. Only a pack

@@ -266,8 +266,9 @@ class FiscalProfileUpsert(BaseModel):
     )
     # REB-974, taxes design § 1: the taxpayer's other parameters. `None` is «not stated»,
     # never a default: a figure that needs one gives no figure. The category's values are
-    # the design's; its rates, minimums and dates are TO VERIFY (A5). The ISA flag decides
-    # 50/50 or 40/60 income tax advances (A5, verified).
+    # the design's; its rates, minimums and dates are the pack's (`FiscalPack.inps_for`, A5
+    # verified by REB-1064). The ISA flag decides 50/50 or 40/60 income tax advances (A5,
+    # verified).
     inps_category: InpsCategory | None = None
     isa: bool | None = None
     # REB-1021: how often the entity settles its IVA. Kept as it is when a save leaves it out,
