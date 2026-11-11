@@ -94,7 +94,7 @@ def _cash(
 
     collected = paid_revenue_for_calendar_year(session, year, legal_entity.id)
     surcharge = collected_charge_lines_for_calendar_year(
-        session, year, _untaxed_markers(pack), legal_entity.id
+        session, year, _untaxed_markers(pack, year), legal_entity.id
     )
     if surcharge != 0:
         left_out.append(_surcharge_line(surcharge))
@@ -235,7 +235,7 @@ def _accrual(
     competence = func.coalesce(Invoice.accrual_from, Invoice.issue_date)
     in_window = (competence >= first, competence <= last)
     revenue = _sum_taxable(session, legal_entity.id, *in_window)
-    markers = _untaxed_markers(pack)
+    markers = _untaxed_markers(pack, year)
     surcharge = ZERO_MONEY
     if markers:
         surcharge = round_money(
@@ -402,10 +402,13 @@ def _shared_purchases(session: Session, first: date, last: date) -> list[BasisLi
     ]
 
 
-def _untaxed_markers(pack: FiscalPack) -> tuple[str, ...]:
-    """The description of every charge line the pack tags as outside the coefficient base."""
+def _untaxed_markers(pack: FiscalPack, year: int) -> tuple[str, ...]:
+    """The description of every charge line the pack tags, in `year`, as outside the coefficient
+    base."""
     return tuple(
-        charge.description_line for charge in pack.charges if not charge.count_by_the_coefficient
+        charge.description_line
+        for charge in pack.charges_for(year)
+        if not charge.count_by_the_coefficient
     )
 
 

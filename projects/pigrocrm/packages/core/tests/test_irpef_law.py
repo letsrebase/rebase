@@ -22,9 +22,9 @@ D = Decimal
 
 
 def law():
-    irpef = IT_STANDARD_PACK.law_for(2026)
-    assert irpef is not None and irpef.irpef is not None
-    return irpef.irpef
+    irpef = IT_STANDARD_PACK.irpef_for(2026)
+    assert irpef is not None
+    return irpef
 
 
 @pytest.mark.parametrize(
@@ -52,8 +52,7 @@ def test_the_pack_answers_for_2026_only_and_only_the_ordinary_person() -> None:
     assert law() is IRPEF_2026
     assert IT_STANDARD_PACK.law_for(2025) is None
     for other in (IT_FLAT_RATE_PACK, IT_COMPANY_PACK, NON_IT_PACK):
-        governing = other.law_for(2026)
-        assert governing is None or governing.irpef is None
+        assert other.irpef_for(2026) is None
 
 
 def test_every_region_and_autonomous_province_has_one_rule() -> None:

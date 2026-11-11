@@ -32,6 +32,28 @@ REB-974): `FiscalPack.laws`, each entry valid from a tax year, and `law_for(year
 that governs a year, so a year computed under one pack keeps the rules it was computed with
 after the entity changes pack. The pointer stays un-historicised; what is frozen is each
 reading (`FiscalEstimateReading`), which stores the pack, its version and the law year it used.
+
+Tax rules and rates change from year to year, and the pack holds each section the way the law
+changes it (REB-1083). A new year's law is a new entry in the section it changes and never an
+edit of an earlier one, so every past year keeps reading its own.
+
+Statutory sections: an entry holds until a later entry replaces it, and the latest entry at or
+before the year governs (a carry-forward):
+
+- `laws` (`TaxYearLaw`: advances, income basis, flat-rate regime, IVA settlement, company taxes
+  and advances, payroll, the declared lines), by `from_year`, read with `law_for`;
+- `calendars` (`calendar_for`) and `payment_rules` (`payment_rules_for`), by `from_year`;
+- `ceilings` and `charges`, by `from_year` per id (`ceilings_for`, `charges_for`, `charge`).
+
+Yearly figures: the law re-sets them every year, so an entry holds for its own `year` alone and a
+year with no entry gets no figure, with what is missing named in the figure's `missing`, never
+the nearest year's:
+
+- `inps` (`inps_for`), `irpef` (`irpef_for`: the brackets, the regional surcharges and the
+  social security deduction) and `chamber_fees` (`chamber_fee_for`), by `year`;
+- the regional IRAP rates (`IrapLaw.rate_for`), the municipal surcharge lists
+  (`MunicipalSurchargeLaw`) and the legal interest rate (`PaymentRulesLaw.legal_interest_percent`),
+  which are keyed by year inside their own law object.
 """
 
 from __future__ import annotations
@@ -52,11 +74,12 @@ from pigrocrm.core.fiscal.law import (
     TaxDateRule,
     TaxYearLaw,
 )
-from pigrocrm.core.fiscal.law_chamber_fee import CHAMBER_FEE_LAW
+from pigrocrm.core.fiscal.law_chamber_fee import CHAMBER_FEE_LAW, ChamberFeeLaw
 from pigrocrm.core.fiscal.law_flat_rate import FLAT_RATE_2015, FLAT_RATE_2016, FLAT_RATE_2026
 from pigrocrm.core.fiscal.law_income_basis import COMPANY_ACCRUAL, FLAT_RATE_CASH, PERSON_CASH
 from pigrocrm.core.fiscal.law_inps import INPS_2026, InpsYearLaw
 from pigrocrm.core.fiscal.law_irap import IRAP_LAW
+from pigrocrm.core.fiscal.law_irpef import IrpefLaw
 from pigrocrm.core.fiscal.law_municipal_surcharge import MUNICIPAL_SURCHARGE, MunicipalSurchargeLaw
 from pigrocrm.core.fiscal.law_payment import PaymentRulesLaw
 from pigrocrm.core.fiscal.payment_data import (
@@ -103,6 +126,9 @@ class Ceiling:
     (§1.5 of the forecasting spec) and is not modelled here."""
 
     id: str
+    # The first tax year this entry governs: a ceiling is statutory, so the latest entry of an id
+    # at or before a year is the one that year reads (`FiscalPack.ceilings_for`).
+    from_year: int
     label: str
     threshold: Decimal
     basis: CeilingBasis
@@ -139,6 +165,8 @@ class StatutoryCharge:
     """
 
     id: str
+    # The first year this entry governs, as for a `Ceiling` (`FiscalPack.charges_for`).
+    from_year: int
     label: str
     description_line: str
     rate: Decimal
@@ -199,6 +227,13 @@ class FiscalPack:
     # The municipal IRPEF surcharge of every municipality, one list per tax year
     # (`fiscal/law_municipal_surcharge.py`, REB-1063). `None` for a pack that owes no IRPEF.
     municipal_surcharge: MunicipalSurchargeLaw | None = None
+    # The IRPEF of a person, one entry per tax year (`fiscal/law_irpef.py`, REB-1062): a yearly
+    # figure, read by exact year. Empty for a pack that owes no IRPEF.
+    irpef: tuple[IrpefLaw, ...] = ()
+    # The annual chamber of commerce fee of a company, one entry per fee year
+    # (`fiscal/law_chamber_fee.py`, REB-1068): a yearly figure, read by exact year. Empty for a
+    # pack that owes none.
+    chamber_fees: tuple[ChamberFeeLaw, ...] = ()
 
     def __post_init__(self) -> None:
         years = [law.from_year for law in self.laws]
@@ -210,6 +245,20 @@ class FiscalPack:
         inps_years = [law.year for law in self.inps]
         if inps_years != sorted(set(inps_years)):
             raise ValueError(f"pack {self.id!r}: INPS entries must have increasing year")
+        irpef_years = [law.year for law in self.irpef]
+        if irpef_years != sorted(set(irpef_years)):
+            raise ValueError(f"pack {self.id!r}: IRPEF entries must have increasing year")
+        fee_years = [law.year for law in self.chamber_fees]
+        if fee_years != sorted(set(fee_years)):
+            raise ValueError(f"pack {self.id!r}: chamber fee entries must have increasing year")
+        for kind, entries in (("ceiling", self.ceilings), ("charge", self.charges)):
+            for entry_id in {entry.id for entry in entries}:
+                starts = [entry.from_year for entry in entries if entry.id == entry_id]
+                if starts != sorted(set(starts)):
+                    raise ValueError(
+                        f"pack {self.id!r}: {kind} {entry_id!r} entries must have increasing "
+                        "from_year"
+                    )
         payment_years = [entry.from_year for entry in self.payment_rules]
         if payment_years != sorted(set(payment_years)):
             raise ValueError(
@@ -248,6 +297,17 @@ class FiscalPack:
         guess worth making."""
         return next((law for law in self.inps if law.year == year), None)
 
+    def irpef_for(self, year: int) -> IrpefLaw | None:
+        """The IRPEF of tax year `year`, `None` when the pack has none for exactly that year: the
+        brackets and the regional rates are re-set every year, so the latest earlier entry is
+        not a guess worth making."""
+        return next((law for law in self.irpef if law.year == year), None)
+
+    def chamber_fee_for(self, year: int) -> ChamberFeeLaw | None:
+        """The chamber of commerce fee law of fee year `year`, `None` when the pack has none for
+        exactly that year (the tiers and the chambers' increases are re-set by decree)."""
+        return next((law for law in self.chamber_fees if law.year == year), None)
+
     def payment_rules_for(self, year: int) -> PaymentRulesLaw | None:
         """The payment rules that govern calendar year `year`: the latest entry starting at or
         before it, `None` when the pack carries none for that year (never a guess)."""
@@ -258,11 +318,33 @@ class FiscalPack:
             governing = entry
         return governing
 
-    def charge(self, charge_id: str) -> StatutoryCharge:
-        for charge in self.charges:
+    def ceilings_for(self, year: int) -> tuple[Ceiling, ...]:
+        """The ceilings in force in `year`: for each id, the latest entry starting at or before
+        it (statutory, so it carries forward), in the order the pack declares them."""
+        return _in_force(self.ceilings, year)
+
+    def charges_for(self, year: int) -> tuple[StatutoryCharge, ...]:
+        """The statutory charges in force in `year`, picked as `ceilings_for` picks."""
+        return _in_force(self.charges, year)
+
+    def charge(self, charge_id: str, year: int) -> StatutoryCharge:
+        """The charge `charge_id` as it reads in `year`; `KeyError` when the pack has no such
+        charge in force that year."""
+        for charge in self.charges_for(year):
             if charge.id == charge_id:
                 return charge
         raise KeyError(charge_id)
+
+
+def _in_force[T: (Ceiling, StatutoryCharge)](entries: tuple[T, ...], year: int) -> tuple[T, ...]:
+    """The latest entry of each id starting at or before `year`, in declaration order."""
+    latest: dict[str, T] = {}
+    for entry in entries:
+        if entry.from_year <= year and (
+            entry.id not in latest or latest[entry.id].from_year < entry.from_year
+        ):
+            latest[entry.id] = entry
+    return tuple(entry for entry in entries if latest.get(entry.id) is entry)
 
 
 SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID = "rivalsa_inps"
@@ -271,8 +353,15 @@ SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID = "rivalsa_inps"
 # never widened by a recharged stamp duty (`chargeSlotOrder`'s other slot): REB-344 §9
 # confirms PigroCRM never recharges stamp duty to the client, so the base the law and
 # mastro's own pack agree on collapses to the fee alone here.
+#
+# The entry starts in 2012: the earliest year a primary source read says the 4% was in force (INPS,
+# messaggio n. 7751 of 7 May 2012, «Gestione separata - Titolo di rivalsa», on the maggiorazione
+# del 4 per cento of art. 1 c. 212 L. 662/1996, read 2026-11-11). The rate is older than the
+# message, but no earlier year is cited, so none is entered; a later change of the rate is a new
+# entry with its own `from_year`.
 SOCIAL_SECURITY_SURCHARGE_INPS = StatutoryCharge(
     id=SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID,
+    from_year=2012,
     label="Rivalsa contributiva INPS 4%",
     description_line="Rivalsa contributiva INPS 4% (art. 1, comma 212, legge 662/1996)",
     rate=Decimal("0.04"),
@@ -400,7 +489,7 @@ _IT_STANDARD_CALENDAR_2026 = TaxCalendarLaw(
 # Agenzia's deadline calendar lists, so they are marked `calendar_year_only`; another year end,
 # a late approval and the ISA postponement to 20 July are not modelled. The annual chamber of
 # commerce fee falls on the day of the first advance (art. 17 c. 3 lett. a DPR 435/2001); its
-# 2026 amount is the law's `chamber_fee` (REB-1068). Withholding on pay to others (code 1040 for
+# 2026 amount is the pack's `chamber_fees` (REB-1068). Withholding on pay to others (code 1040 for
 # professionals) is due by the 16th of the month after the payment, the same day as IVA's, and
 # the deadline calendar moves it to 20 August in 2026 as it does IVA (the deferral of a payment
 # of 100 euro or less is not modelled). Payroll withholding and contributions are the staff
@@ -532,12 +621,18 @@ ITALIAN_PAYROLL = PayrollLaw(
 # `all_clients`. €85,000 loses the regime from the *following* fiscal year
 # (comma 54, l. 190/2014); €100,000 loses it *immediately*, in the same year
 # (comma 71). Alert ratios ported verbatim (0.8/1.0 and 0.9/1.0).
+# Both entries start in 2023, the year art. 1 c. 54 L. 197/2022 raised the first from 65,000 and
+# added the second (Agenzia delle Entrate, circolare 32/E of 5 December 2023, read 2026-11-11).
+# The 65,000 euro ceiling of the years before, and the 30,000 euro one before it, are not entered:
+# the circular names the former and does not date its start, so a year before 2023 has no ceiling
+# in this pack rather than a made-up one.
 IT_FLAT_RATE_PACK = FiscalPack(
     id=PACK_IT_FLAT_RATE,
     version="1",
     ceilings=(
         Ceiling(
             id="revenue_ceiling",
+            from_year=2023,
             label="Soglia di ricavi e compensi del regime forfettario",
             threshold=Decimal("85000.00"),
             basis="cash_received_calendar_year",
@@ -555,6 +650,7 @@ IT_FLAT_RATE_PACK = FiscalPack(
         ),
         Ceiling(
             id="immediate_exit_ceiling",
+            from_year=2023,
             label="Soglia di fuoriuscita immediata dal regime forfettario",
             threshold=Decimal("100000.00"),
             basis="cash_received_calendar_year",
@@ -638,7 +734,7 @@ NON_IT_PACK = FiscalPack(id=PACK_NON_IT, version="1", ceilings=(), charges=())
 # entry starts there: an earlier year has no law in this pack yet, and asks for none. The
 # dates are the calendar's (`_IT_STANDARD_CALENDAR_2026`). No
 # income estimate: the IRPEF brackets and the regional surcharges are verified (REB-1062) and
-# looked up from `irpef`; the municipal surcharge is looked up from `municipal_surcharge`
+# looked up from `irpef` by year; the municipal surcharge is looked up from `municipal_surcharge`
 # (REB-1063, the Finanze's lists, no figure for a municipality that has none) and the INPS rates
 # are TO VERIFY (A5), and a pack states no figure it cannot cite.
 IT_STANDARD_PACK = FiscalPack(
@@ -653,9 +749,6 @@ IT_STANDARD_PACK = FiscalPack(
         TaxYearLaw(
             from_year=2026,
             taxes=("irpef", "inps"),
-            # IRPEF brackets of art. 11 TUIR (L. 199/2025) and the regional surcharges of every
-            # region, read on 2026-11-11 (A5, REB-1062): `fiscal/irpef_2026.py`.
-            irpef=IRPEF_2026,
             # The ordinary person's income is measured on what was collected (art. 54 c. 1 TUIR).
             income_basis=PERSON_CASH,
             advances=IncomeTaxAdvanceLaw(
@@ -686,13 +779,16 @@ IT_STANDARD_PACK = FiscalPack(
     inps=(INPS_2026,),
     payment_rules=(IT_STANDARD_PAYMENT_2026,),
     municipal_surcharge=MUNICIPAL_SURCHARGE,
+    # IRPEF brackets of art. 11 TUIR (L. 199/2025) and the regional surcharges of every region,
+    # read on 2026-11-11 (A5, REB-1062): `fiscal/irpef_2026.py`. A year is its own entry.
+    irpef=(IRPEF_2026,),
 )
 
 # An srl (REB-1005, taxes design § 1). It invoices exactly like `it-standard`: `RF01`, the
 # same regime strategy (`fiscal/regime.py::ORDINARY`), no ceiling, no statutory charge. It
 # differs in what it owes: IRES and IRAP, whose rates are the two verified ones below. The
 # rest of what the design lists for it stays a label until its figure is verified and its
-# card lands: IVA is C3's, the annual chamber of commerce fee is `chamber_fee` (REB-1068), the
+# card lands: IVA is C3's, the annual chamber of commerce fee is `chamber_fees` (REB-1068), the
 # payroll and director rows are C7's, and the company's advances are `company_advances`
 # (REB-1074; its instalments, F24 codes and filing dates are `payment_rules`, REB-1067). No
 # income estimate: `flat_rate` is the flat-rate regime's.
@@ -727,7 +823,6 @@ IT_COMPANY_PACK = FiscalPack(
                 irap=IRAP_LAW,
             ),
             payroll=ITALIAN_PAYROLL,
-            chamber_fee=CHAMBER_FEE_LAW,
             company_advances=CompanyAdvanceLaw(
                 advance_percent_of_base=Decimal("100"),
                 first_advance_percent=Decimal("40"),
@@ -744,6 +839,7 @@ IT_COMPANY_PACK = FiscalPack(
     ),
     calendars=(_IT_COMPANY_CALENDAR_2026,),
     payment_rules=(IT_COMPANY_PAYMENT_2026,),
+    chamber_fees=(CHAMBER_FEE_LAW,),
 )
 
 _PACKS: dict[tuple[str, str], FiscalPack] = {

@@ -185,30 +185,32 @@ def evaluate_ceiling(ceiling: Ceiling, revenue: Decimal) -> CeilingStatus:
 def evaluate_pack(
     pack: FiscalPack, session: Session, year: int, legal_entity_id: UUID | None = None
 ) -> list[CeilingStatus]:
-    """Every ceiling `pack` declares, evaluated against `year`'s paid revenue -- one
+    """Every ceiling `pack` has in force in `year` (`FiscalPack.ceilings_for`), evaluated against
+    `year`'s paid revenue -- one
     query shared by every ceiling, since `IT_FLAT_RATE_PACK`'s own two share the same
     `all_clients` perimeter and `cash_received_calendar_year` basis. `legal_entity_id` is
     the legal entity whose profile points at `pack` (REB-630)."""
     revenue = paid_revenue_for_calendar_year(session, year, legal_entity_id)
-    return [evaluate_ceiling(ceiling, revenue) for ceiling in pack.ceilings]
+    return [evaluate_ceiling(ceiling, revenue) for ceiling in pack.ceilings_for(year)]
 
 
 def social_security_surcharge_line_for_contract(
-    pack: FiscalPack, *, applies_social_charge: bool, fee_subtotal: Decimal
+    pack: FiscalPack, *, applies_social_charge: bool, fee_subtotal: Decimal, year: int
 ) -> InvoiceLineIn | None:
     """The social security surcharge line to append after a contract-linked invoice's fee lines, or
     `None` when the contract has not elected it (`contracts.applies_social_charge`,
     REB-344 §3/§9). `fee_subtotal` is the fee lines already assembled -- the base the
     charge's own rate applies to, which never widens beyond the fee alone because
     PigroCRM never recharges stamp duty to the client (REB-344 §9's own note; mastro's
-    `chargeSlotOrder` would widen it the day that ever changes)."""
+    `chargeSlotOrder` would widen it the day that ever changes). `year` is the invoice's: the
+    charge is the one the pack has in force then (`FiscalPack.charge`)."""
     if not applies_social_charge:
         return None
     try:
-        charge = pack.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID)
+        charge = pack.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID, year)
     except KeyError:
-        # A pack with no such charge (`non-it`, REB-619): the contract's election names
-        # an Italian charge a foreign legal entity does not owe, so there is no line to add.
+        # A pack with no such charge (`non-it`, REB-619, or a year before it): the contract's
+        # election names a charge that is not owed, so there is no line to add.
         return None
     amount = round_money(fee_subtotal * charge.rate)
     return InvoiceLineIn(

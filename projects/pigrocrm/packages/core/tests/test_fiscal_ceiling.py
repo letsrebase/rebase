@@ -204,7 +204,7 @@ def test_to_social_security_surcharge_line_counts_toward_the_paid_revenue_in_ful
 ) -> None:
     """REB-352 §2's own "no code change is needed for the ceiling side" -- a expense-recovery
     line is one more line inside `Invoice.taxable_amount`, no filtering needed."""
-    charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID)
+    charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID, 2026)
     _paid(
         db_session,
         number=1,
@@ -220,7 +220,10 @@ def test_to_social_security_surcharge_line_counts_toward_the_paid_revenue_in_ful
 def test_no_line_is_produced_without_the_contracts_election() -> None:
     assert (
         social_security_surcharge_line_for_contract(
-            IT_FLAT_RATE_PACK, applies_social_charge=False, fee_subtotal=Decimal("1000.00")
+            IT_FLAT_RATE_PACK,
+            applies_social_charge=False,
+            fee_subtotal=Decimal("1000.00"),
+            year=2026,
         )
         is None
     )
@@ -228,7 +231,7 @@ def test_no_line_is_produced_without_the_contracts_election() -> None:
 
 def test_the_line_is_four_percent_of_the_fee_subtotal() -> None:
     line = social_security_surcharge_line_for_contract(
-        IT_FLAT_RATE_PACK, applies_social_charge=True, fee_subtotal=Decimal("1000.00")
+        IT_FLAT_RATE_PACK, applies_social_charge=True, fee_subtotal=Decimal("1000.00"), year=2026
     )
     assert line is not None
     assert line.unit_price == Decimal("40.00")
@@ -236,14 +239,14 @@ def test_the_line_is_four_percent_of_the_fee_subtotal() -> None:
     assert line.vat_rate == Decimal("0.00")
     assert (
         line.description
-        == IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID).description_line
+        == IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID, 2026).description_line
     )
 
 
 def test_the_line_rounds_half_up_like_every_other_money_figure() -> None:
     # 4% of 12.345 = 0.4938 -> 0.49.
     line = social_security_surcharge_line_for_contract(
-        IT_FLAT_RATE_PACK, applies_social_charge=True, fee_subtotal=Decimal("12.345")
+        IT_FLAT_RATE_PACK, applies_social_charge=True, fee_subtotal=Decimal("12.345"), year=2026
     )
     assert line is not None
     assert line.unit_price == Decimal("0.49")
@@ -253,7 +256,7 @@ def test_to_zero_fee_subtotal_still_produces_to_zero_social_security_surcharge_l
     """`None` means "not elected"; an elected contract with nothing invoiced yet is a
     real, zero-amount line, not the same thing as no election at all."""
     line = social_security_surcharge_line_for_contract(
-        IT_FLAT_RATE_PACK, applies_social_charge=True, fee_subtotal=Decimal("0.00")
+        IT_FLAT_RATE_PACK, applies_social_charge=True, fee_subtotal=Decimal("0.00"), year=2026
     )
     assert line is not None
     assert line.unit_price == Decimal("0.00")
@@ -265,7 +268,7 @@ def test_to_zero_fee_subtotal_still_produces_to_zero_social_security_surcharge_l
 def test_the_collected_charge_lines_sum_only_the_social_security_surcharge_tagged_lines(
     db_session: Session,
 ) -> None:
-    charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID)
+    charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID, 2026)
     _invoice(
         db_session,
         number=1,
@@ -288,7 +291,7 @@ def test_the_collected_charge_lines_sum_only_the_social_security_surcharge_tagge
 def test_the_collected_charge_lines_ignore_what_was_collected_in_another_year(
     db_session: Session,
 ) -> None:
-    charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID)
+    charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID, 2026)
     _invoice(
         db_session,
         number=1,
@@ -310,7 +313,7 @@ def test_a_part_payment_collects_the_same_share_of_the_surcharge_as_of_the_reven
     from pigrocrm.core.due_items.schemas import SettlementCreate
     from pigrocrm.core.due_items.service import DueItemService
 
-    charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID)
+    charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID, 2026)
     invoice = _invoice(
         db_session,
         number=1,
@@ -337,7 +340,7 @@ def test_the_ceiling_and_the_tax_estimate_diverge_by_exactly_the_social_security
     """REB-352 §2's own tension, proven end to end on one invoice: the ceiling's own
     revenue sum and the coefficiente base must diverge by exactly the tagged amount,
     and by nothing else."""
-    charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID)
+    charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID, 2026)
     _paid(
         db_session,
         number=1,
@@ -360,7 +363,7 @@ def test_a_contract_without_the_election_leaves_nothing_to_exclude(
     expense-recovery produces no line, so there is nothing for the tagged-figure query to
     find either -- the two functions agree by construction, not by coincidence."""
     line = social_security_surcharge_line_for_contract(
-        IT_FLAT_RATE_PACK, applies_social_charge=False, fee_subtotal=Decimal("1000.00")
+        IT_FLAT_RATE_PACK, applies_social_charge=False, fee_subtotal=Decimal("1000.00"), year=2026
     )
     assert line is None
     _invoice(

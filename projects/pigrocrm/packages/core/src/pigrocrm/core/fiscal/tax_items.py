@@ -302,8 +302,12 @@ class TaxDueItemService:
                     continue
                 payments.extend(self._advance_payments(context, tax, year))
                 payments.append(self._balance_payment(context, tax, year))
-            # The fee law holds one fee year: a year after it has no law yet and no item.
-            if law.chamber_fee is not None and law.chamber_fee.year == year:
+            # The fee is a yearly figure (`FiscalPack.chamber_fee_for`). A year with a fee law gets
+            # its item; a current or past year without one is reported as not written, and a
+            # later year waits for its law instead of filling the report with what no one can know.
+            if context.pack.chamber_fees and (
+                context.pack.chamber_fee_for(year) is not None or year <= context.today.year
+            ):
                 payments.append(self._chamber_fee_payment(context, year))
         return payments
 
@@ -567,11 +571,11 @@ class TaxDueItemService:
         rule and the entity stores no incorporation date: that case is not modelled. The date
         is the first income-tax advance's, the F24 code the payment rules' (3850)."""
         entity = context.legal_entity
-        fee_law = context.pack.law_for(year)
-        assert fee_law is not None and fee_law.chamber_fee is not None
+        law = context.pack.law_for(year)
+        assert law is not None
         dates = advance_dates(
             context.pack,
-            fee_law,
+            law,
             "ires",
             year,
             entity.fiscal_year_end_month,
@@ -584,22 +588,26 @@ class TaxDueItemService:
         def none(reason: str) -> Payment:
             return Payment("chamber_fee", year, "chamber_fee", due, None, reason)
 
+        fee_law = context.pack.chamber_fee_for(year)
+        if fee_law is None:
+            return none(f"the pack carries no chamber fee law for {year}: not entered yet")
+
         province = (entity.province or "").strip()
         if not province:
             return none("the legal entity has no province of the registered office")
-        chamber = fee_law.chamber_fee.chamber_for(province)
+        chamber = fee_law.chamber_for(province)
         if chamber is None:
             return none(
                 f"no chamber of commerce is mapped to the province {province.upper()}: "
                 "to verify with the accountant"
             )
-        stand_in = replace(context.pack, laws=(replace(fee_law, from_year=year - 1),))
+        stand_in = replace(context.pack, laws=(replace(law, from_year=year - 1),))
         basis = year_basis(self.session, entity, year - 1, stand_in)
         if basis is None:
             return none(f"the revenue of {year - 1}, the turnover the fee is read on, is unknown")
-        fee = fee_law.chamber_fee.fee(year, basis.revenue, province)
+        fee = fee_law.fee(year, basis.revenue, province)
         if fee is None:
-            return none(f"the pack carries no chamber fee law for {year}")
+            return none(f"the chamber fee of {year} cannot be computed for the province {province}")
         rules = context.pack.payment_rules_for(year)
         try:
             code = rules.f24_code("chamber_fee").code if rules is not None else None

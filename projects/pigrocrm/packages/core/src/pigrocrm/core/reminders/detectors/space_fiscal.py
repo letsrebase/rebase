@@ -89,8 +89,8 @@ def _applies(ctx: DetectorContext) -> bool:
     return bool(ctx.once(_load_legal_entities))
 
 
-def _ceiling(pack: FiscalPack, ceiling_id: str) -> Ceiling | None:
-    return next((ceiling for ceiling in pack.ceilings if ceiling.id == ceiling_id), None)
+def _ceiling(pack: FiscalPack, ceiling_id: str, year: int) -> Ceiling | None:
+    return next((ceiling for ceiling in pack.ceilings_for(year) if ceiling.id == ceiling_id), None)
 
 
 def _percent(amount: Decimal, ceiling: Decimal) -> int:
@@ -166,7 +166,7 @@ def detect_overrun(ctx: DetectorContext) -> list[Detection]:
     found: list[Detection] = []
     for legal_entity, pack in ctx.once(_load_legal_entities):
         recipients = admins_seeing(ctx, legal_entity.id)
-        ceiling = _ceiling(pack, REVENUE_CEILING)
+        ceiling = _ceiling(pack, REVENUE_CEILING, year)
         if not recipients or ceiling is None:
             continue
         projected = analytics.cash_overview(
@@ -175,7 +175,7 @@ def detect_overrun(ctx: DetectorContext) -> list[Detection]:
         percent = _percent(projected, ceiling.threshold)
         if percent < ctx.bound(OVERRUN):
             continue
-        immediate = _ceiling(pack, IMMEDIATE_CEILING)
+        immediate = _ceiling(pack, IMMEDIATE_CEILING, year)
         note = ""
         if immediate is not None and projected >= immediate.threshold:
             note = (

@@ -489,7 +489,7 @@ def test_the_social_security_surcharge_amount_is_excluded_from_the_coefficient_b
     )
     db_session.add(invoice)
     db_session.flush()
-    charge = IT_FLAT_RATE_PACK.charge("rivalsa_inps")
+    charge = IT_FLAT_RATE_PACK.charge("rivalsa_inps", 2026)
     db_session.add_all(
         [
             InvoiceLine(

@@ -68,7 +68,7 @@ def test_the_ordinary_pack_carries_the_verified_advance_rules_and_its_person_est
     law = IT_STANDARD_PACK.law_for(2026)
     assert law is not None
     # An ordinary person's IRPEF and INPS are computed (REB-1072), not the flat-rate regime's.
-    assert law.has_income_estimate and law.flat_rate is None and law.irpef is not None
+    assert law.has_income_estimate and law.flat_rate is None and "irpef" in law.taxes
     advances = law.advances
     assert advances is not None
     assert advances.advance_percent_of_base == Decimal("100")
