@@ -46,6 +46,12 @@ from pigrocrm.core.drive.models import GoogleDriveAccount  # noqa: F401
 from pigrocrm.core.due_items.models import DueItem, DueItemSettlement  # noqa: F401
 from pigrocrm.core.expense_notes.models import ExpenseNote  # noqa: F401
 from pigrocrm.core.fields.models import FieldDefinition  # noqa: F401
+from pigrocrm.core.fiscal.f24_models import (  # noqa: F401
+    F24Group,
+    F24GroupItem,
+    F24GroupReceipt,
+    TaxCredit,
+)
 from pigrocrm.core.fiscal.models import (  # noqa: F401
     DeclaredTaxFigure,
     FiscalEstimateReading,

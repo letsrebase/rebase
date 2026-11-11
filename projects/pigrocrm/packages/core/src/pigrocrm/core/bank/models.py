@@ -310,6 +310,11 @@ class MovementMatchItem(Base):
     adopted: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # The item takes `amount` off the movement instead of out of it: a tax credit in an F24 whose
+    # net the movement pays (`fiscal/f24.py`, REB-1076). `amount` stays a magnitude.
+    credit: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
 
 
 class StatementMovement(Base):

@@ -4517,3 +4517,27 @@ def test_0109_creates_the_tax_payment_plan_tables_under_the_scope_policy(
         assert all(_table_shape(url, table)[0] is False for table in tables)
         upgrade(config, "0109")
         assert all(_table_shape(url, table)[0] is True for table in tables)
+
+
+def test_0110_creates_the_credit_and_f24_tables_under_the_scope_policy(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1076: four new tables with the row policy of every table that reaches a legal entity,
+    forced, and the credit flag on the match items. Nothing is backfilled, so both ways are a
+    pure create and drop."""
+    tables = ("tax_credits", "f24_groups", "f24_group_items", "f24_group_receipts")
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0109")
+        assert not any(_table_shape(url, table)[0] for table in tables)
+        assert not _column_exists(url, "movement_match_items", "credit")
+        upgrade(config, "0110")
+        for table in tables:
+            assert _table_shape(url, table) == (True, True, {"legal_entity_scope"})
+        assert _column_exists(url, "movement_match_items", "credit")
+        downgrade(config, "0109")
+        assert not any(_table_shape(url, table)[0] for table in tables)
+        assert not _column_exists(url, "movement_match_items", "credit")
+        upgrade(config, "0110")
+        assert all(_table_shape(url, table)[0] for table in tables)
