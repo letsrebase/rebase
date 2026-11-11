@@ -54,6 +54,12 @@ from pigrocrm.core.fiscal.law import (
 from pigrocrm.core.fiscal.law_chamber_fee import CHAMBER_FEE_LAW
 from pigrocrm.core.fiscal.law_inps import INPS_2026, InpsYearLaw
 from pigrocrm.core.fiscal.law_irap import IRAP_LAW
+from pigrocrm.core.fiscal.law_payment import PaymentRulesLaw
+from pigrocrm.core.fiscal.payment_data import (
+    IT_COMPANY_PAYMENT_2026,
+    IT_FLAT_RATE_PAYMENT_2026,
+    IT_STANDARD_PAYMENT_2026,
+)
 
 # The pack ids, as literals so a schema can name them in a `Literal` type
 # (`fiscal/schemas.py::PackId`) and a profile cannot point at a pack that does not exist.
@@ -174,6 +180,11 @@ class FiscalPack:
     # The tax dates, one entry per change, oldest first (`TaxCalendarLaw`, REB-1004). Empty
     # for a regime with no date of its own (`non-it`).
     calendars: tuple[TaxCalendarLaw, ...] = ()
+    # The payment rules (instalments, the forecast method, a shortfall, F24 codes, the dates
+    # a return is filed, the year of a withholding credit), one entry per change, oldest first,
+    # keyed like the calendar by the calendar year a payment or a filing falls in
+    # (`PaymentRulesLaw`, REB-1067). Empty for a regime with none (`non-it`).
+    payment_rules: tuple[PaymentRulesLaw, ...] = ()
     # The withholding an invoice to a withholding agent carries; `None` for a regime whose
     # invoices carry none (the flat-rate regime is not withheld, L. 190/2014 art. 1 c. 67,
     # and a company abroad issues no FatturaPA).
@@ -192,6 +203,11 @@ class FiscalPack:
         inps_years = [law.year for law in self.inps]
         if inps_years != sorted(set(inps_years)):
             raise ValueError(f"pack {self.id!r}: INPS entries must have increasing year")
+        payment_years = [entry.from_year for entry in self.payment_rules]
+        if payment_years != sorted(set(payment_years)):
+            raise ValueError(
+                f"pack {self.id!r}: payment rule entries must have increasing from_year"
+            )
 
     def law_for(self, year: int) -> TaxYearLaw | None:
         """The law that governs tax year `year`: the latest entry starting at or before it,
@@ -224,6 +240,16 @@ class FiscalPack:
         that year: INPS re-sets every figure each year, so the latest earlier entry is not a
         guess worth making."""
         return next((law for law in self.inps if law.year == year), None)
+
+    def payment_rules_for(self, year: int) -> PaymentRulesLaw | None:
+        """The payment rules that govern calendar year `year`: the latest entry starting at or
+        before it, `None` when the pack carries none for that year (never a guess)."""
+        governing = None
+        for entry in self.payment_rules:
+            if entry.from_year > year:
+                break
+            governing = entry
+        return governing
 
     def charge(self, charge_id: str) -> StatutoryCharge:
         for charge in self.charges:
@@ -547,9 +573,8 @@ IT_FLAT_RATE_PACK = FiscalPack(
     # over from the previous system: TO VERIFY with the accountant (A5 row «Flat-rate
     # contribution base...», REB-975), as are the rest of the estimate's rows (the 5%/15%
     # substitute rate, the profitability coefficients, the profile's INPS rate the estimate reads
-    # (the INPS law itself is `inps` below), the cash basis of the revenue). No advance rule:
-    # the flat-rate regime's substitute tax advances are not in the register (A5 row added by
-    # REB-974, TO VERIFY).
+    # (the INPS law itself is `inps` below), the cash basis of the revenue). Its substitute tax
+    # advances are in `payment_rules` (REB-1067), from 2026, the year their sources were read.
     laws=(
         TaxYearLaw(
             from_year=2015,
@@ -564,6 +589,7 @@ IT_FLAT_RATE_PACK = FiscalPack(
     ),
     calendars=(_IT_FLAT_RATE_CALENDAR_2026,),
     inps=(INPS_2026,),
+    payment_rules=(IT_FLAT_RATE_PAYMENT_2026,),
 )
 
 # A company established outside Italy (REB-619, spec 2026-10-03 §1.3): no ceiling,
@@ -629,6 +655,7 @@ IT_STANDARD_PACK = FiscalPack(
     ),
     calendars=(_IT_STANDARD_CALENDAR_2026,),
     inps=(INPS_2026,),
+    payment_rules=(IT_STANDARD_PAYMENT_2026,),
 )
 
 # An srl (REB-1005, taxes design § 1). It invoices exactly like `it-standard`: `RF01`, the
@@ -636,8 +663,9 @@ IT_STANDARD_PACK = FiscalPack(
 # differs in what it owes: IRES and IRAP, whose rates are the two verified ones below. The
 # rest of what the design lists for it stays a label until its figure is verified and its
 # card lands: IVA is C3's, the annual chamber of commerce fee is `chamber_fee` (REB-1068), the
-# payroll and director rows are C7's, and the company's advance and instalment rules are the
-# estimate card's. No income estimate: `contribution_base` is the flat-rate regime's.
+# payroll and director rows are C7's, and the company's advance split is the estimate card's (its
+# instalments, F24 codes and filing dates are `payment_rules`, REB-1067). No income estimate:
+# `contribution_base` is the flat-rate regime's.
 # The entry starts in 2026, the year the rates below were read; an earlier year has no law in
 # this pack yet, and asks for none.
 IT_COMPANY_PACK = FiscalPack(
@@ -671,6 +699,7 @@ IT_COMPANY_PACK = FiscalPack(
         ),
     ),
     calendars=(_IT_COMPANY_CALENDAR_2026,),
+    payment_rules=(IT_COMPANY_PAYMENT_2026,),
 )
 
 _PACKS: dict[tuple[str, str], FiscalPack] = {
