@@ -32,6 +32,7 @@ from sqlalchemy import select
 
 from pigrocrm.core.due_items.models import (
     CHAMBER_FEE_SOURCE_KIND,
+    NOTICE_PLAN_SOURCE_KIND,
     OPEN_STATES,
     TAX_ADVANCE_SOURCE_KIND,
     TAX_BALANCE_SOURCE_KIND,
@@ -60,6 +61,8 @@ TAX_DUE_KINDS: dict[str, str] = {
     TAX_ADVANCE_SOURCE_KIND: "Acconto",
     "tax_instalment": "Rata",
     CHAMBER_FEE_SOURCE_KIND: "Diritto camerale",
+    # An instalment of a tax office notice entered by hand (REB-1075).
+    NOTICE_PLAN_SOURCE_KIND: "Rata avviso",
 }
 _FORM: dict[DeclaredTax, ReturnForm] = {
     "irpef": "redditi_pf",

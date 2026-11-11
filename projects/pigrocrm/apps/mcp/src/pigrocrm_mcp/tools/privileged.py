@@ -80,9 +80,17 @@ from pigrocrm.core.expense_notes.service import ExpenseNoteService
 from pigrocrm.core.fiscal.advance_method import TaxAdvanceMethodService
 from pigrocrm.core.fiscal.advance_schemas import TaxAdvanceMethodSet
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
+from pigrocrm.core.fiscal.instalment_plan import TaxInstalmentPlanService
 from pigrocrm.core.fiscal.iva_lock import IvaPeriodLockService
 from pigrocrm.core.fiscal.iva_register import IvaRegisterService
 from pigrocrm.core.fiscal.iva_settlement import IvaSettlementService
+from pigrocrm.core.fiscal.notice_plan import TaxNoticePlanService
+from pigrocrm.core.fiscal.plan_schemas import (
+    IncomeTax,
+    TaxInstalmentPlanSet,
+    TaxNoticePlanSet,
+    TaxNoticePlanUpdate,
+)
 from pigrocrm.core.fiscal.schemas import (
     DeclaredTax,
     DeclaredTaxFigureSet,
@@ -807,6 +815,88 @@ def register(
             .set_tax_advance_method(
                 data, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
             )
+            .model_dump(mode="json")
+        )
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def set_tax_instalment_plan(
+        year: int,
+        instalments: int,
+        tax: IncomeTax | None = None,
+        legal_entity_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Splits a tax year's June balance and next first advance into monthly instalments
+        (admin; 1 removes the plan; refused after a payment). No `tax`: all income taxes.
+        """
+        data = TaxInstalmentPlanSet(year=year, tax=tax, instalments=instalments)
+        return (
+            TaxInstalmentPlanService(context.session)
+            .set_tax_instalment_plan(
+                data, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
+            )
+            .model_dump(mode="json")
+        )
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def create_tax_notice_plan(
+        label: str,
+        tax: DeclaredTax,
+        total: str,
+        instalments: list[dict[str, str]],
+        legal_entity_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Records a tax office notice's instalment plan (admin): `total` before interest,
+        `instalments` [{"due_date":"YYYY-MM-DD","interest":"0.00"}]. One due item each.
+        """
+        data = TypeAdapter(TaxNoticePlanSet).validate_python(
+            {"label": label, "tax": tax, "total": total, "instalments": instalments}
+        )
+        return (
+            TaxNoticePlanService(context.session)
+            .create_tax_notice_plan(
+                data, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
+            )
+            .model_dump(mode="json")
+        )
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def update_tax_notice_plan(
+        plan_id: str,
+        label: str | None = None,
+        tax: DeclaredTax | None = None,
+        total: str | None = None,
+        instalments: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
+        """Changes a notice plan (admin); `instalments` replaces the list. Refused after a
+        payment.
+        """
+        given = {"label": label, "tax": tax, "total": total, "instalments": instalments}
+        changes = TaxNoticePlanUpdate.model_validate(
+            {k: v for k, v in given.items() if v is not None}
+        )
+        return (
+            TaxNoticePlanService(context.session)
+            .update_tax_notice_plan(UUID(plan_id), changes, context.actor)
+            .model_dump(mode="json")
+        )
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def delete_tax_notice_plan(plan_id: str) -> dict[str, str]:
+        """Deletes a notice plan and its due items (admin). Refused after a payment."""
+        TaxNoticePlanService(context.session).delete_tax_notice_plan(UUID(plan_id), context.actor)
+        return {"outcome": "notice plan deleted"}
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def list_tax_plans(legal_entity_id: str | None = None) -> dict[str, Any]:
+        """A company's tax instalment and notice plans, with ids."""
+        return (
+            TaxNoticePlanService(context.session)
+            .list_tax_plans(context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id))
             .model_dump(mode="json")
         )
 

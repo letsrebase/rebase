@@ -11,6 +11,8 @@ from pigrocrm.core.fiscal.models import (
     FiscalEstimateReading,
     FiscalProfile,
     TaxAdvanceMethod,
+    TaxInstalmentPlan,
+    TaxNoticePlan,
 )
 
 
@@ -166,3 +168,81 @@ class TaxAdvanceMethodRepository:
         assert row is not None
         self.session.refresh(row)
         return row
+
+
+class TaxInstalmentPlanRepository:
+    """The instalment plans of `tax_instalment_plans`. Never commits."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def for_entity(self, legal_entity_id: UUID) -> dict[tuple[str, int], TaxInstalmentPlan]:
+        """Every plan of the legal entity, by tax and tax year."""
+        return {
+            (row.tax, row.tax_year): row
+            for row in self.session.execute(
+                select(TaxInstalmentPlan).where(
+                    TaxInstalmentPlan.legal_entity_id == legal_entity_id
+                )
+            ).scalars()
+        }
+
+    def save(
+        self, legal_entity_id: UUID, tax: str, tax_year: int, instalments: int
+    ) -> TaxInstalmentPlan:
+        """One row per legal entity, tax and year, replaced by the next choice. An upsert, so two
+        administrators choosing at once both land and the second one stands."""
+        row_id = self.session.execute(
+            pg_insert(TaxInstalmentPlan)
+            .values(
+                legal_entity_id=legal_entity_id,
+                tax=tax,
+                tax_year=tax_year,
+                instalments=instalments,
+            )
+            .on_conflict_do_update(
+                constraint="uq_tax_instalment_plans",
+                set_={"instalments": instalments, "updated_at": func.now()},
+            )
+            .returning(TaxInstalmentPlan.id)
+        ).scalar_one()
+        row = self.session.get(TaxInstalmentPlan, row_id)
+        assert row is not None
+        self.session.refresh(row)
+        return row
+
+    def delete(self, legal_entity_id: UUID, tax: str, tax_year: int) -> TaxInstalmentPlan | None:
+        """Removes the plan and answers it, `None` when there was none."""
+        row = self.for_entity(legal_entity_id).get((tax, tax_year))
+        if row is not None:
+            self.session.delete(row)
+            self.session.flush()
+        return row
+
+
+class TaxNoticePlanRepository:
+    """The notice plans of `tax_notice_plans`. Never commits."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get(self, plan_id: UUID) -> TaxNoticePlan | None:
+        return self.session.get(TaxNoticePlan, plan_id)
+
+    def for_entity(self, legal_entity_id: UUID) -> list[TaxNoticePlan]:
+        return list(
+            self.session.execute(
+                select(TaxNoticePlan)
+                .where(TaxNoticePlan.legal_entity_id == legal_entity_id)
+                .order_by(TaxNoticePlan.created_at, TaxNoticePlan.id)
+            ).scalars()
+        )
+
+    def add(self, row: TaxNoticePlan) -> TaxNoticePlan:
+        self.session.add(row)
+        self.session.flush()
+        return row
+
+    def delete(self, row: TaxNoticePlan) -> None:
+        self.session.delete(row)
+        self.session.flush()

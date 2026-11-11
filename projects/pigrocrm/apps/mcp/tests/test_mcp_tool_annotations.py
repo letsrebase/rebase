@@ -139,7 +139,10 @@ DEFAULT_BUDGET_BYTES = 109_900
 # administrator's), measured at 144,360.
 # REB-1074: 144.95 KB, up from 144.45 KB, for `set_tax_advance_method` (a full-access
 # administrator's: a year and a method), measured at 144,906.
-FULL_ACCESS_BUDGET_BYTES = 144_950
+# REB-1075: 147.45 KB, up from 144.95 KB, for the five tax plan tools (a full-access
+# administrator's: `set_tax_instalment_plan`, the three of a notice plan and `list_tax_plans`),
+# measured at 147,423 with their descriptions cut to one line each.
+FULL_ACCESS_BUDGET_BYTES = 147_450
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

@@ -4496,3 +4496,24 @@ def test_0108_creates_the_tax_advance_methods_table_under_the_scope_policy(
         assert _table_shape(url, "tax_advance_methods")[0] is False
         upgrade(config, "0108")
         assert _table_shape(url, "tax_advance_methods")[0] is True
+
+
+def test_0109_creates_the_tax_payment_plan_tables_under_the_scope_policy(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1075: two new tables with the row policy of every table that reaches a legal entity,
+    forced; nothing is backfilled (no row is one payment, no notice is known), so both ways are a
+    pure create and drop."""
+    tables = ("tax_instalment_plans", "tax_notice_plans")
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0108")
+        assert all(_table_shape(url, table)[0] is False for table in tables)
+        upgrade(config, "0109")
+        for table in tables:
+            assert _table_shape(url, table) == (True, True, {"legal_entity_scope"})
+        downgrade(config, "0108")
+        assert all(_table_shape(url, table)[0] is False for table in tables)
+        upgrade(config, "0109")
+        assert all(_table_shape(url, table)[0] is True for table in tables)

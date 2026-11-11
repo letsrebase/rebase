@@ -45,6 +45,21 @@ a tax that was due before the legal entity used the product is not invented over
 that exists is kept up to date whatever its date. The tax years looked at are the two before
 today's year and the one after it, and a balance whose advances were never written counts the
 advances as paid in the amounts the plan gives them.
+
+**Instalment plans (REB-1075).** An administrator may split the June balance of a tax year and
+the first advance of the next one into monthly instalments (`TaxInstalmentPlan`, one row per
+legal entity, tax and year of the balance). A plan makes this writer produce, for each of the
+two payments, one `tax_instalment` item per instalment instead of the `tax_balance` or
+`tax_advance` item: the amount is split in equal instalments and each adds the interest of the
+pack's schedule (`plan_math.py`). The November advance is never split. The items follow the
+figures as the single item did, until a payment touches one of them: from then on **none of the
+payment's instalments is rewritten**, whatever the figures do, since a partly paid instalment
+keeps its remainder and an unpaid one is not re-split around it; the service refuses to change or
+remove the plan too (`instalment_plan.py`). A payment made in one go before the plan was chosen
+is left as it is and the plan does not apply to it. A plan that cannot be applied (the pack's
+schedule is shorter than its number of instalments, or has no rule) leaves the single item
+written and says why in the report. The difference a paid advance leaves is not carried over an
+advance split in instalments: its instalments are frozen as they were created.
 """
 
 from __future__ import annotations
@@ -63,6 +78,7 @@ from pigrocrm.core.due_items.models import (
     CHAMBER_FEE_SOURCE_KIND,
     TAX_ADVANCE_SOURCE_KIND,
     TAX_BALANCE_SOURCE_KIND,
+    TAX_INSTALMENT_SOURCE_KIND,
     DueItem,
 )
 from pigrocrm.core.due_items.schemas import DueItemCreate
@@ -81,12 +97,18 @@ from pigrocrm.core.fiscal.advances import (
 )
 from pigrocrm.core.fiscal.basis import year_basis
 from pigrocrm.core.fiscal.law import DeclaredTax
-from pigrocrm.core.fiscal.models import DEFAULT_ADVANCE_METHOD, DeclaredTaxFigure
+from pigrocrm.core.fiscal.models import (
+    DEFAULT_ADVANCE_METHOD,
+    MAX_PLAN_INSTALMENTS,
+    DeclaredTaxFigure,
+)
 from pigrocrm.core.fiscal.pack import FiscalPack, resolve_pack
+from pigrocrm.core.fiscal.plan_math import PlannedInstalment, plan_schedule, split_into_instalments
 from pigrocrm.core.fiscal.repository import (
     DeclaredTaxFigureRepository,
     FiscalProfileRepository,
     TaxAdvanceMethodRepository,
+    TaxInstalmentPlanRepository,
 )
 from pigrocrm.core.fiscal.schemas import FiscalProfileRead
 from pigrocrm.core.legal_entities.models import LegalEntity
@@ -116,6 +138,17 @@ State = Literal["forecast", "expected"]
 def slot_id(kind: str, legal_entity_id: UUID, tax: str, year: int, part: TaxItemPart) -> UUID:
     """The `source_id` of the item that stands for one payment of one tax year."""
     return uuid5(_SLOT_NAMESPACE, f"{kind}|{legal_entity_id}|{tax}|{year}|{part}")
+
+
+def instalment_slot_id(
+    legal_entity_id: UUID, tax: str, year: int, part: TaxItemPart, number: int
+) -> UUID:
+    """The `source_id` of the item that stands for instalment `number` of a payment under a plan:
+    a payment's instalments are found again whatever the plan's number of instalments becomes."""
+    return uuid5(
+        _SLOT_NAMESPACE,
+        f"{TAX_INSTALMENT_SOURCE_KIND}|{legal_entity_id}|{tax}|{year}|{part}|{number}",
+    )
 
 
 @dataclass(frozen=True)
@@ -185,6 +218,10 @@ class _Context:
     declared_by_year: dict[int, dict[str, DeclaredTaxFigure]] = field(default_factory=dict)
     estimates_by_year: dict[int, dict[DeclaredTax, Decimal | None]] = field(default_factory=dict)
     advances: dict[tuple[DeclaredTax, int], _Advances | Missing] = field(default_factory=dict)
+    # The instalment count of each plan, by tax and the tax year of its balance, and the live
+    # instalment items by slot, read once: a payment's instalments are looked up by identity.
+    plans: dict[tuple[str, int], int] = field(default_factory=dict)
+    instalment_items: dict[UUID, DueItem] = field(default_factory=dict)
 
 
 def _money(amount: Decimal) -> str:
@@ -226,6 +263,13 @@ class TaxDueItemService:
             pack=resolve_pack(profile.pack_id, profile.pack_version),
             methods=self.methods.for_entity(legal_entity.id),
             today=today if today is not None else today_local(),
+            plans={
+                key: row.instalments
+                for key, row in TaxInstalmentPlanRepository(self.session)
+                .for_entity(legal_entity.id)
+                .items()
+            },
+            instalment_items=self._live_instalment_items(legal_entity.id),
         )
         for payment in self._payments(context):
             self._sync(context, payment, report)
@@ -562,9 +606,211 @@ class TaxDueItemService:
             ),
         )
 
+    # ---- the instalments of a plan ----------------------------------------------------------
+
+    def _live_instalment_items(self, legal_entity_id: UUID) -> dict[UUID, DueItem]:
+        """The live instalment items of the legal entity by slot (the latest of a slot)."""
+        rows = self.session.execute(
+            select(DueItem)
+            .where(
+                DueItem.legal_entity_id == legal_entity_id,
+                DueItem.source_kind == TAX_INSTALMENT_SOURCE_KIND,
+                DueItem.state != "dropped",
+            )
+            .order_by(DueItem.created_at, DueItem.id)
+        ).scalars()
+        return {row.source_id: row for row in rows if row.source_id is not None}
+
+    def _touched(self, item: DueItem) -> bool:
+        """Whether a payment, even a part of one, was recorded on the item."""
+        return item.state == "settled" or self.dues.repo.totals(item.id).settled != ZERO
+
+    def instalments_touched(self, legal_entity_id: UUID, tax: str, plan_year: int) -> bool:
+        """Whether a payment was recorded on an instalment of the plan of `tax` for the balance
+        of `plan_year` (its balance's and its first advance's): such a plan is not changed or
+        removed (`instalment_plan.py`)."""
+        live = self._live_instalment_items(legal_entity_id)
+        parts: tuple[tuple[int, TaxItemPart], ...] = (
+            (plan_year, "balance"),
+            (plan_year + 1, "first_advance"),
+        )
+        for year, part in parts:
+            for number in range(1, MAX_PLAN_INSTALMENTS + 1):
+                item = live.get(instalment_slot_id(legal_entity_id, tax, year, part, number))
+                if item is not None and self._touched(item):
+                    return True
+        return False
+
+    @staticmethod
+    def _plan_year(payment: Payment) -> int:
+        """The tax year of the balance a payment's plan is keyed by: the first advance is the
+        next tax year's and falls on the day of the balance of the year before it."""
+        return payment.year if payment.part == "balance" else payment.year - 1
+
+    def _planned(
+        self, context: _Context, payment: Payment, wanted: Wanted, count: int
+    ) -> list[PlannedInstalment] | Missing:
+        """The instalments the plan makes of `wanted`, or why it cannot."""
+        if payment.due is None:
+            return Missing("the payment has no date, so no instalment has one")
+        part = payment.part
+        if part not in ("balance", "first_advance") or payment.tax not in INCOME_TAXES:
+            return Missing(f"the {payment.tax} {part} is not paid in instalments")
+        entity = context.legal_entity
+        schedule = plan_schedule(
+            context.pack,
+            payment.tax,
+            self._plan_year(payment),
+            (entity.fiscal_year_end_month, entity.fiscal_year_end_day),
+            part,
+            payment.due,
+        )
+        if isinstance(schedule, Missing):
+            return schedule
+        if len(schedule) < count:
+            return Missing(
+                f"the plan has {count} instalments and the law allows {len(schedule)} from "
+                f"{payment.due}"
+            )
+        planned = split_into_instalments(wanted.amount, count, schedule)
+        if any(item.principal <= 0 for item in planned):
+            return Missing(f"{wanted.amount} is too little to split in {count} instalments")
+        return planned
+
+    def _sync_instalments(
+        self, context: _Context, payment: Payment, report: TaxItemsReport
+    ) -> Literal["done", "single", "replacing"]:
+        """Brings the instalment items of a June payment in step with its plan. `done` when the
+        instalments stand for the payment, so its single item is none of the caller's business;
+        `single` when the caller writes the single item (no plan, a plan that cannot be applied,
+        nothing to pay, or a payment already made in one go); `replacing` when the same, and the
+        item stands for a payment that had instalments, so it is written whatever its date: what
+        was owed does not vanish because its day has passed."""
+        if payment.part not in ("balance", "first_advance"):
+            return "single"
+        count = context.plans.get((payment.tax, self._plan_year(payment)))
+        entity_id = context.legal_entity.id
+        live: dict[int, DueItem] = {}
+        for number in range(1, MAX_PLAN_INSTALMENTS + 1):
+            slot = instalment_slot_id(entity_id, payment.tax, payment.year, payment.part, number)
+            if slot in context.instalment_items:
+                live[number] = context.instalment_items[slot]
+        if count is None and not live:
+            return "single"
+        kind = TAX_BALANCE_SOURCE_KIND if payment.part == "balance" else TAX_ADVANCE_SOURCE_KIND
+        single_slot = slot_id(kind, entity_id, payment.tax, payment.year, payment.part)
+        single = self._live(kind, single_slot)
+        if single is not None and self._touched(single):
+            # Paid in one go before the plan was chosen: the plan does not apply to it.
+            self._drop_instalments(live, set(), report, "pagato in unica soluzione")
+            return "single"
+        if any(self._touched(item) for item in live.values()):
+            # A payment touched an instalment: none of them is rewritten (module docstring).
+            report.kept += len(live)
+            return "done"
+        wanted = payment.wanted
+        planned: list[PlannedInstalment] = []
+        if count is not None and wanted is not None:
+            result = self._planned(context, payment, wanted, count)
+            if isinstance(result, Missing):
+                if self._reportable(context, payment):
+                    report.not_written.append(
+                        TaxItemNotWritten(
+                            tax=payment.tax,
+                            year=payment.year,
+                            part=payment.part,
+                            reason=f"the instalment plan is not applied: {result.reason}",
+                        )
+                    )
+            else:
+                planned = result
+        if wanted is None or not planned:
+            self._drop_instalments(live, set(), report, "piano di rateazione non applicato")
+            return "replacing" if live else "single"
+        # The instalments replace what stood for the payment, so every one is written whatever
+        # its date: the part of a plan that is already late stays owed. A plan chosen on a payment
+        # with no item yet follows the window as the single item does.
+        replacing = single is not None or bool(live)
+        if single is not None:
+            self.dues.drop(single.id, "rateizzato")
+            report.dropped += 1
+        for item in planned:
+            self._sync_instalment(
+                context, payment, wanted, item, count or 0, live, report, replacing=replacing
+            )
+        self._drop_instalments(live, {item.number for item in planned}, report, "rata tolta")
+        return "done"
+
+    def _drop_instalments(
+        self,
+        live: dict[int, DueItem],
+        keep: set[int],
+        report: TaxItemsReport,
+        reason: str,
+    ) -> None:
+        for number, item in live.items():
+            if number not in keep and not self._touched(item):
+                self.dues.drop(item.id, reason)
+                report.dropped += 1
+
+    def _sync_instalment(
+        self,
+        context: _Context,
+        payment: Payment,
+        wanted: Wanted,
+        item: PlannedInstalment,
+        count: int,
+        live: dict[int, DueItem],
+        report: TaxItemsReport,
+        *,
+        replacing: bool,
+    ) -> None:
+        slot = instalment_slot_id(
+            context.legal_entity.id, payment.tax, payment.year, payment.part, item.number
+        )
+        text = _instalment_text(wanted.description, item, count)
+        current = live.get(item.number)
+        if current is not None:
+            if (current.amount, current.own_date, current.state, current.description) == (
+                item.amount,
+                item.due_date,
+                wanted.state,
+                text,
+            ):
+                report.kept += 1
+                return
+            self.dues.drop(current.id, "importo ricalcolato")
+            report.dropped += 1
+        elif not replacing and not self._in_window(context, item.due_date):
+            return
+        rule = (
+            f"{TAX_INSTALMENT_SOURCE_KIND}:{payment.tax}:{payment.year}:{payment.part}:"
+            f"{item.number}"
+        )
+        self.dues.create(
+            DueItemCreate(
+                legal_entity_id=context.legal_entity.id,
+                direction="out",
+                counterparty_type="tax_office",
+                tax=payment.tax,
+                amount=item.amount,
+                description=text,
+                state=wanted.state,
+                source_kind=TAX_INSTALMENT_SOURCE_KIND,
+                source_id=slot,
+                source_rule=rule if wanted.state == "forecast" else None,
+                forecast_key=slot if wanted.state == "forecast" else None,
+                own_date=item.due_date,
+            )
+        )
+        report.written += 1
+
     # ---- one slot ---------------------------------------------------------------------------
 
     def _sync(self, context: _Context, payment: Payment, report: TaxItemsReport) -> None:
+        outcome = self._sync_instalments(context, payment, report)
+        if outcome == "done":
+            return
         kind = {
             "balance": TAX_BALANCE_SOURCE_KIND,
             "chamber_fee": CHAMBER_FEE_SOURCE_KIND,
@@ -597,7 +843,7 @@ class TaxDueItemService:
                 return
             self.dues.drop(current.id, "importo ricalcolato")
             report.dropped += 1
-        elif not self._in_window(context, wanted.due):
+        elif outcome != "replacing" and not self._in_window(context, wanted.due):
             return
         self.dues.create(
             DueItemCreate(
@@ -640,6 +886,16 @@ def _carry_text(carry: Decimal) -> str:
     return f". Include {_money(carry)} euro di differenza sull'acconto gia' pagato: da confermare"
 
 
+def _instalment_text(base: str, item: PlannedInstalment, count: int) -> str:
+    """The payment's own words with the instalment after them, and the sentence about a carried
+    difference (`_carry_text`) last, as it stands on a single item."""
+    head, carry_sep, carry = base.partition(". Include ")
+    text = f"{head}, rateizzata: rata {item.number} di {count}"
+    if item.interest_percent > 0:
+        text += f", con interessi dello {item.interest_percent}%".replace(".", ",")
+    return text + carry_sep + carry
+
+
 def _advance_text(tax: DeclaredTax, year: int, item: _Part, single: bool) -> str:
     if single:
         words = "in unica soluzione"
@@ -653,5 +909,6 @@ __all__ = [
     "HORIZON_DAYS",
     "TAX_LABEL",
     "TaxDueItemService",
+    "instalment_slot_id",
     "slot_id",
 ]

@@ -125,6 +125,7 @@ _READS: dict[Method, str] = {
     ("AnalyticsService", "economic_overview"): "a figure; nothing is written for the person",
     ("AnalyticsService", "get_fiscal_estimate"): "a figure computed from the profile",
     ("AnalyticsService", "get_tax_calendar"): "reads the pack's dates, writes nothing",
+    ("TaxNoticePlanService", "list_tax_plans"): "reads the plans of a legal entity, writes nothing",
     (
         "IvaSettlementService",
         "list_iva_settlements",

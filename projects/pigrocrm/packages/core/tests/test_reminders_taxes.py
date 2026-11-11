@@ -303,3 +303,14 @@ def test_the_chamber_fee_is_told_like_any_tax_date(space: Space) -> None:
     reminder = next(r for r in evaluation.reminders if r.type == "tax_payment_due")
     assert reminder.title.startswith("Diritto camerale")
     assert "€" not in reminder.detail and "1234" not in reminder.detail
+
+
+def test_an_instalment_of_a_notice_plan_is_told_like_any_tax_date(space: Space) -> None:
+    _item(space, kind="notice_plan")
+
+    evaluation = space.evaluate(today=DUE - dt.timedelta(days=3), now=NOON)
+
+    reminders = [r for r in evaluation.reminders if r.type == "tax_payment_due"]
+    assert len(reminders) == 2, "one open item, two admins"
+    assert reminders[0].title.startswith("Rata avviso")
+    assert "€" not in reminders[0].detail and "1234" not in reminders[0].detail

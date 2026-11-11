@@ -225,6 +225,31 @@ ROWS: list[Row] = [
         admin_only=True,
         body={"year": 2026, "method": "forecast"},
     ),
+    # --- tax instalment plans and the plans of a notice (REB-1075): admin, before any lookup ---
+    Row(
+        "PUT",
+        "/api/analytics/fiscal/instalment-plan",
+        admin_only=True,
+        body={"year": 2026, "instalments": 3},
+    ),
+    Row(
+        "POST",
+        "/api/analytics/fiscal/notice-plans",
+        admin_only=True,
+        body={
+            "label": "matrice-avviso",
+            "tax": "irpef",
+            "total": "100.00",
+            "instalments": [{"due_date": "2027-01-10"}],
+        },
+    ),
+    Row(
+        "PUT",
+        "/api/analytics/fiscal/notice-plans/{plan_id}",
+        admin_only=True,
+        body={"label": "matrice-avviso"},
+    ),
+    Row("DELETE", "/api/analytics/fiscal/notice-plans/{plan_id}", admin_only=True),
     # --- cost categories: admin on every method (timetracking/categories.py) --------
     # --- bank accounts (REB-1025): `require_admin` (bank/accounts.py, bank/statements.py) ---
     Row(
