@@ -127,6 +127,9 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "update_tax_notice_plan": ("taxes",),
     "delete_tax_notice_plan": ("taxes",),
     "list_tax_plans": ("taxes",),
+    "group_f24": ("taxes",),
+    "ungroup_f24": ("taxes",),
+    "list_f24_groups": ("taxes",),
     # The raw figures are `taxes` alone; `deal_id` and `contract_id` are references into
     # their modules, refused by `ID_REFERENCES` below only when the call carries one.
     "simulate_ceiling": ("taxes",),

@@ -41,6 +41,7 @@ from pigrocrm_api.routers import (
     email_drafts,
     engagements,
     expense_notes,
+    f24_groups,
     fields,
     gmail,
     identity,
@@ -218,6 +219,8 @@ def create_app() -> FastAPI:
         bank_movements,
         # REB-1025: the cash schedule, the payables mirror and the phone's money figures, core.
         cash,
+        # REB-1076: due items grouped into an F24 paid by one movement, behind `taxes`.
+        f24_groups,
     ):
         app.include_router(module.router)
 

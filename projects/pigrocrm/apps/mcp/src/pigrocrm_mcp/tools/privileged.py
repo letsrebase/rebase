@@ -80,6 +80,8 @@ from pigrocrm.core.expense_notes.service import ExpenseNoteService
 from pigrocrm.core.fiscal.advance_method import TaxAdvanceMethodService
 from pigrocrm.core.fiscal.advance_schemas import TaxAdvanceMethodSet
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
+from pigrocrm.core.fiscal.f24 import F24GroupService
+from pigrocrm.core.fiscal.f24_schemas import F24GroupCreate, F24GroupListQuery
 from pigrocrm.core.fiscal.instalment_plan import TaxInstalmentPlanService
 from pigrocrm.core.fiscal.iva_lock import IvaPeriodLockService
 from pigrocrm.core.fiscal.iva_register import IvaRegisterService
@@ -899,6 +901,41 @@ def register(
             .list_tax_plans(context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id))
             .model_dump(mode="json")
         )
+
+    @mcp.tool(annotations=ADDITIVE)
+    @guard
+    def group_f24(due_item_ids: list[UUID], note: str | None = None) -> dict[str, Any]:
+        """Groups one date's tax-office due items, credits included, into an F24, admin only.
+        Lines carry pack codes or «codice da verificare»; `total` is the net to pay.
+        """
+        return (
+            F24GroupService(context.session)
+            .group_f24(
+                F24GroupCreate(due_item_ids=due_item_ids, note=note),
+                context.actor,
+                modules=context.modules,
+            )
+            .model_dump(mode="json")
+        )
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def ungroup_f24(group_id: UUID) -> dict[str, Any]:
+        """Releases an unpaid F24 group, admin only."""
+        return (
+            F24GroupService(context.session)
+            .ungroup_f24(group_id, context.actor)
+            .model_dump(mode="json")
+        )
+
+    @mcp.tool(annotations=READ_ONLY)
+    @guard
+    def list_f24_groups(state: Literal["open", "settled", "dissolved"] = "open") -> dict[str, Any]:
+        """F24 groups by date, admin only: lines with codes, receipts, net to pay."""
+        page = F24GroupService(context.session).list_f24_groups(
+            F24GroupListQuery(state=state), context.actor
+        )
+        return page.model_dump(mode="json")
 
     # ---- the accountant's export ---------------------------------------------------
 
