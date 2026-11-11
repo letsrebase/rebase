@@ -17,7 +17,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from test_bank_matching import _movement
 
-from pigrocrm.core.bank.match_schemas import MatchConfirm, MatchSelection, MatchUndo
+from pigrocrm.core.bank.match_schemas import (
+    MatchConfirm,
+    MatchProposalCreate,
+    MatchSelection,
+    MatchUndo,
+)
 from pigrocrm.core.bank.matching import MovementMatchService
 from pigrocrm.core.bank.models import BankMovement
 from pigrocrm.core.db import today_local
@@ -608,3 +613,25 @@ def test_the_group_row_keeps_who_grouped_it(db_session: Session) -> None:
 
     row = db_session.get(F24Group, group.id)
     assert row is not None and (row.created_by_id, row.created_by_type) == (ADMIN.id, "user")
+
+
+def test_a_proposal_for_a_group_stops_being_current_when_the_group_is_ungrouped(
+    db_session: Session,
+) -> None:
+    world = CashWorld(db_session)
+    entity = _entity(db_session)
+    account = world.account("5000.00", entity=entity)
+    first = _plain(db_session, entity, "300.00")
+    credit = _credit(db_session, entity, "50.00")
+    ids = [first, credit]
+    group = _group(db_session, ids)
+    movement = _movement(db_session, account, "-250.00")
+    service = MovementMatchService(db_session)
+
+    proposed = service.propose_match(movement.id, MatchProposalCreate(due_item_ids=ids), ADMIN)
+    assert proposed.movement.match is not None and proposed.movement.match.is_current
+
+    F24GroupService(db_session).ungroup_f24(group.id, ADMIN)
+
+    stale = service.get_movement(movement.id, ADMIN)
+    assert stale.movement.match is not None and not stale.movement.match.is_current

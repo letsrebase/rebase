@@ -16,6 +16,7 @@ from pigrocrm.core.bank.match_schemas import MatchItemRead, MovementMatchRead
 from pigrocrm.core.bank.models import MovementMatch, MovementMatchItem
 from pigrocrm.core.due_items.models import DueItem, DueItemSettlement
 from pigrocrm.core.due_items.sales import remaining_amount
+from pigrocrm.core.fiscal.f24_repository import F24GroupRepository
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.purchases.models import Purchase
@@ -156,12 +157,32 @@ def item_read(
     )
 
 
+def _group_fits(session: Session, rows: Sequence[MovementMatchItem]) -> bool:
+    """A line of an F24 group is proposed with all of its group and nothing else, and a credit
+    only ever with its group: a proposal made before the group was taken apart, or built after, no
+    longer fits."""
+    repo = F24GroupRepository(session)
+    ids = {row.due_item_id for row in rows}
+    grouped = repo.groups_of_items(ids)
+    if not grouped:
+        return not any(row.credit for row in rows)
+    groups = set(grouped.values())
+    if len(groups) != 1 or set(grouped) != ids:
+        return False
+    (group_id,) = groups
+    return {line.due_item_id for line in repo.live_lines(group_id)} == ids
+
+
 def _is_current(
-    match: MovementMatch, rows: Sequence[MovementMatchItem], facts: dict[UUID, ItemFacts]
+    session: Session,
+    match: MovementMatch,
+    rows: Sequence[MovementMatchItem],
+    facts: dict[UUID, ItemFacts],
 ) -> bool:
     """A proposal still fits when each item is open for the part it would pay, or holds the
-    payment by hand it would adopt. A confirmed or closed match is a record, not a proposal."""
-    if match.state != "proposed":
+    payment by hand it would adopt, and its group, if any, still stands. A confirmed or closed
+    match is a record, not a proposal."""
+    if match.state != "proposed" or not _group_fits(session, rows):
         return False
     for row in rows:
         fact = facts.get(row.due_item_id)
@@ -214,7 +235,7 @@ def match_reads(
             closed_at=match.closed_at,
             closed_by_type=match.closed_by_type,
             close_reason=match.close_reason,
-            is_current=_is_current(match, rows, facts),
+            is_current=_is_current(session, match, rows, facts),
             items=[
                 item_read(facts[row.due_item_id], row.amount, row.adopted, row.credit)
                 for row in ordered
