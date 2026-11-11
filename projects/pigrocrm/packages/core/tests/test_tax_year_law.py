@@ -12,6 +12,7 @@ from itertools import product
 from uuid import UUID
 
 import pytest
+from fakes.collected_invoices import collect_every_issued_invoice
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -317,6 +318,7 @@ def _figures(estimate: FiscalEstimate) -> dict[str, Decimal | None]:
 def test_the_service_estimate_is_the_one_the_formula_gave_and_names_its_law(
     db_session: Session, deal_with_mixed_invoices: UUID
 ) -> None:
+    collect_every_issued_invoice(db_session)
     estimate = AnalyticsService(db_session).get_fiscal_estimate(YEAR, ADMIN)
     expected = _formula_of_the_law(
         Decimal("1583.83"), Decimal("67.00"), Decimal("5.00"), Decimal("26.07")
@@ -338,6 +340,7 @@ def test_a_year_computed_under_the_flat_rate_pack_keeps_its_figures_after_the_mo
     still there after the legal entity moves to the ordinary pack, with the pack and the
     parameters they were computed with, and the move keeps them whether or not anybody had
     opened the year."""
+    collect_every_issued_invoice(db_session)
     service = AnalyticsService(db_session)
     before = service.get_fiscal_estimate(YEAR, ADMIN)
     assert before.estimated_net_income is not None
@@ -423,6 +426,7 @@ def test_a_save_that_keeps_the_pack_freezes_nothing(
 def test_the_frozen_figures_are_the_ones_of_the_profile_when_the_entity_left(
     db_session: Session, deal_with_mixed_invoices: UUID
 ) -> None:
+    collect_every_issued_invoice(db_session)
     FiscalProfileService(db_session).upsert(
         FiscalProfileUpsert(
             regime_code="RF19",

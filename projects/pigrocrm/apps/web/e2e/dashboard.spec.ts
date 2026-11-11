@@ -321,7 +321,7 @@ test.describe('il ciclo completo — metà umana', () => {
     // of its own: the caveat the server sends, and the rows the rates are read from.
     await expect(page.getByRole('note')).toContainText(/stima/i)
     await expect(page.getByText(/^Stima fiscale \d{4}$/)).toBeVisible()
-    await expect(page.getByText('Ricavi incassabili')).toBeVisible()
+    await expect(page.getByText('Ricavi della stima')).toBeVisible()
     await expect(page.getByRole('link', { name: /Apri la stima fiscale/i })).toHaveCount(0)
     // The seeded legal entity is a flat-rate regime, so the room under its two ceilings is on the
     // page, with the simulator under it (REB-755).

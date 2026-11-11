@@ -11,6 +11,7 @@ from decimal import Decimal
 from uuid import UUID
 
 import pytest
+from fakes.collected_invoices import collect_every_issued_invoice
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -183,12 +184,17 @@ def test_an_ordinary_legal_entity_has_no_ceiling_and_no_flat_rate_estimate(
         ADMIN,
     )
     service.issue(draft.id, InvoiceIssue(issue_date=date(YEAR, 3, 1)), ADMIN)
-
+    # The ordinary person is taxed on what was collected (art. 54 TUIR): nothing is revenue
+    # until the customer pays.
     analytics = AnalyticsService(db_session)
+    assert analytics.get_fiscal_estimate(YEAR, ADMIN).revenue == Decimal("0.00")
+    collect_every_issued_invoice(db_session)
+
     headroom = analytics.ceiling_headroom(YEAR, ADMIN)
     assert (headroom.pack_id, headroom.thresholds) == ("it-standard", [])
     estimate = analytics.get_fiscal_estimate(YEAR, ADMIN)
     assert estimate.revenue == Decimal("90000.00")
+    assert estimate.basis is not None and estimate.basis.basis == "cash"
     assert estimate.taxable_amount is None
     assert estimate.substitute_tax is None
     assert estimate.contributions is None

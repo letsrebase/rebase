@@ -8005,6 +8005,42 @@ export interface components {
             legal_entity_id?: string | null;
         };
         /**
+         * BasisCosts
+         * @description The costs of the year by what IRAP and the income tax tell apart: what the purchases
+         *     cost (`Purchase.cost_amount`, frozen from the buyer's pack), the staff's and the directors'
+         *     cost. `total` is their sum, computed once here.
+         */
+        BasisCosts: {
+            /** Purchases */
+            purchases: string;
+            /** Staff */
+            staff: string;
+            /** Director */
+            director: string;
+            /** Total */
+            total: string;
+        };
+        /**
+         * BasisLine
+         * @description One thing a basis left out of its figures, or counted on a stand-in, and why. `code` is
+         *     stable (a screen may key on it); `reason` is the Italian sentence a person reads. `amount`
+         *     is `None` where an amount means nothing (people with no cost estimated), `count` where a
+         *     count does.
+         */
+        BasisLine: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "not_collected" | "inps_surcharge" | "shared_purchases" | "staff_cost_not_estimated" | "purchases_by_document_date";
+            /** Amount */
+            amount?: string | null;
+            /** Count */
+            count?: number | null;
+            /** Reason */
+            reason: string;
+        };
+        /**
          * BillableDays
          * @description The days of a contract that are ready to invoice, as the lines they would make.
          *
@@ -12393,6 +12429,7 @@ export interface components {
             /** Declared */
             declared?: components["schemas"]["DeclaredTaxFigureRead"][];
             readings?: components["schemas"]["TaxReadings"] | null;
+            basis?: components["schemas"]["YearBasis"] | null;
         };
         /** FiscalProfileRead */
         FiscalProfileRead: {
@@ -20885,6 +20922,53 @@ export interface components {
             created_at: string;
             /** Seq */
             seq: number;
+        };
+        /**
+         * YearBasis
+         * @description What a legal entity's year is made of, on the basis its regime's law names.
+         *
+         *     `revenue` is the taxable amount the estimate starts from, net of the pack's tagged charges.
+         *     `costs` is `None` where the regime's income needs none (the flat-rate regime). `period_from`
+         *     and `period_to` are the days the figures are of, both included. `label` is the one Italian
+         *     line a screen prints under the figure; `wording` and `source` are the law's own text for the
+         *     basis (`IncomeBasisLaw`).
+         */
+        YearBasis: {
+            /** Year */
+            year: number;
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "cash" | "accrual";
+            /**
+             * Period From
+             * Format: date
+             */
+            period_from: string;
+            /**
+             * Period To
+             * Format: date
+             */
+            period_to: string;
+            /** Label */
+            label: string;
+            /** Wording */
+            wording: string;
+            /** Source */
+            source: string;
+            /** Revenue */
+            revenue: string;
+            costs: components["schemas"]["BasisCosts"] | null;
+            /** Left Out */
+            left_out: components["schemas"]["BasisLine"][];
+            /** Assumptions */
+            assumptions: components["schemas"]["BasisLine"][];
         };
         /**
          * YearOverview

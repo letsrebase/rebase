@@ -133,6 +133,20 @@ const TAX = {
   contributions: '3423.02',
   estimated_net_income: '16514.54',
   due_total: '4114.08',
+  basis: {
+    year: 2026,
+    legal_entity_id: '00000000-0000-7000-8000-000000000001',
+    basis: 'cash',
+    period_from: '2026-01-01',
+    period_to: '2026-12-31',
+    label: 'Incassato nel 2026, secondo il principio di cassa',
+    wording: 'principio di cassa',
+    source: 'L. 190/2014 art. 1 c. 64',
+    revenue: '20628.62',
+    costs: null,
+    left_out: [],
+    assumptions: [],
+  },
 }
 
 const CONCENTRATION = [
@@ -167,7 +181,14 @@ const RESPONSE = {
     months: Months,
   },
   tax: TAX,
-  projected_tax: { ...TAX, revenue: '30082.65', taxable_amount: '20155.38', due_total: '5999.55' },
+  // A «what if» on the projected revenue names no basis.
+  projected_tax: {
+    ...TAX,
+    basis: null,
+    revenue: '30082.65',
+    taxable_amount: '20155.38',
+    due_total: '5999.55',
+  },
   customer_concentration: CONCENTRATION,
   actual_net: '16217.04',
   projected_net: '23785.60',
@@ -385,8 +406,9 @@ describe('EconomicTab', () => {
       expect(screen.getByText(label)).toBeInTheDocument()
     }
     // The revenue row, addressed by the hint only it carries: its own label shares an
-    // element with that hint, and its figure is also the «Ricavi incassati» card's.
-    expect(screen.getByText(/fatture emesse nell’anno/)).toBeInTheDocument()
+    // element with that hint, and its figure is also the «Ricavi incassati» card's. The hint is
+    // the basis the server computed the figure on.
+    expect(screen.getByText(/Incassato nel 2026, secondo il principio di cassa/)).toBeInTheDocument()
     expect(screen.getByText('67,00 %')).toBeInTheDocument()
     expect(screen.getByText('691,06 €')).toBeInTheDocument()
     expect(screen.getByText('16.514,54 €')).toBeInTheDocument()

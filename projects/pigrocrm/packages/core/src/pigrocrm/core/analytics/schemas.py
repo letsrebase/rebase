@@ -19,6 +19,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from pigrocrm.core.contracts.schemas import ContractCapSimulation
+from pigrocrm.core.fiscal.basis_schemas import YearBasis
 from pigrocrm.core.fiscal.law import Cadence, DateKind, TaxName
 from pigrocrm.core.fiscal.pack import CeilingConsequence
 from pigrocrm.core.fiscal.schemas import DeclaredTaxFigureRead, TaxReadings
@@ -285,6 +286,9 @@ class FiscalEstimate(BaseModel):
     legal_entity_id: UUID
     estimate: Literal[True] = True
     warning: str
+    # The taxable amount the figures start from, on `basis`: what was collected in the year for
+    # a cash regime, what accrued in it for an accrual one, less what the pack tags as outside
+    # the coefficient base (REB-1071). The year's invoicing is not this figure.
     revenue: Decimal
     profitability_coefficient: Decimal | None
     taxable_amount: Decimal | None
@@ -324,6 +328,12 @@ class FiscalEstimate(BaseModel):
     # paid readings, the one that counts and the totals of each column (`fiscal/readings.py`).
     # Empty for a «what if» with a revenue the caller supplied, as `declared` is.
     readings: TaxReadings | None = None
+    # REB-1071, taxes design § 2.1: what `revenue` was computed from, on the one basis the
+    # regime's law names for the year (cash or accrual): the period, the revenue and the costs
+    # by kind (`None` where the regime deducts none), what was left out and why, and what was
+    # counted on a stand-in. `None` for a «what if» with a revenue the caller supplied, and for
+    # a year the pack states no basis for; there `revenue` is zero and no figure is computed.
+    basis: YearBasis | None = None
 
 
 class CashMonth(BaseModel):

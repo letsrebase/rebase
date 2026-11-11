@@ -27,16 +27,15 @@ the "new step" REB-344
    why that, and not `vat_nature`/`legal_reference`, is the tag).
 
 3. **The tagged, subtractable figure.** REB-352 §2 names a real tension: the social security
-surcharge
-   amount counts toward a ceiling's revenue in full but is not taxable income, and
+   surcharge amount counts toward a ceiling's revenue in full but is not taxable income, and
    `estimate_income` has exactly one `revenue` parameter. §6 resolves it: the amount is
    carried as its own tagged figure at the point revenue is summed, not a second
    parameter on `estimate_income` -- so its signature stays stable for every other
-   caller. `excluded_from_coefficient_base` is that tagged figure (identified by
-   `description_line`, the same tag construction wrote); `taxable_revenue` is what
-   `AnalyticsService.get_fiscal_estimate` passes as `revenue` instead of the raw
-   `annual_revenue` figure, so the coefficiente base and the ceiling's own revenue sum
-   can diverge by exactly the social security surcharge amount, as designed.
+   caller. `collected_charge_lines_for_calendar_year` is that tagged figure for the cash
+   basis (identified by `description_line`, the same tag construction wrote), read off the
+   same settlements as the ceiling's revenue; `fiscal/basis.py` takes it off, so the
+   coefficiente base and the ceiling's own revenue sum can diverge by exactly the social
+   security surcharge amount, as designed (REB-1071).
 """
 
 from __future__ import annotations
@@ -76,18 +75,6 @@ def _legal_entity_filter(legal_entity_id: UUID | None) -> tuple[ColumnElement[bo
     return () if legal_entity_id is None else (Invoice.legal_entity_id == legal_entity_id,)
 
 
-def _issued_invoice_filter(
-    year: int, legal_entity_id: UUID | None = None
-) -> tuple[ColumnElement[bool], ...]:
-    return (
-        Invoice.year == year,
-        Invoice.type == "invoice",
-        Invoice.status == "issued",
-        Invoice.deleted_at.is_(None),
-        *_legal_entity_filter(legal_entity_id),
-    )
-
-
 def _collected_in_year_filter(
     year: int, legal_entity_id: UUID | None = None
 ) -> tuple[ColumnElement[bool], ...]:
@@ -109,7 +96,11 @@ def _collected_in_year_filter(
 
 
 def paid_revenue_for_calendar_year(
-    session: Session, year: int, legal_entity_id: UUID | None = None
+    session: Session,
+    year: int,
+    legal_entity_id: UUID | None = None,
+    *,
+    issued_in_year: bool = False,
 ) -> Decimal:
     """The taxable amount received within `year` -- the ceiling's own basis, in full, social
     security surcharge included (REB-352 §2) -- of one legal entity when named (REB-630): a
@@ -118,8 +109,40 @@ def paid_revenue_for_calendar_year(
     Each settlement counts for its share of the invoice's `taxable_amount`, its amount over
     the item's (`taxable_amount * settlement / total`): a payment in full is exactly the
     taxable amount, and one in instalments adds up to it. The shares are summed before they
-    are rounded, so the instalments never drift by a cent."""
+    are rounded, so the instalments never drift by a cent.
+
+    `issued_in_year` keeps to the invoices of the year's own register (`Invoice.year`): what of
+    the year's invoicing was collected in the year, which is what the cash basis says is left
+    for later (`fiscal/basis.py`, REB-1071)."""
     share = Invoice.taxable_amount * DueItemSettlement.amount / DueItem.amount
+    stmt = (
+        join_sales_item(select(func.coalesce(func.sum(share), 0)))
+        .join(DueItemSettlement, DueItemSettlement.due_item_id == DueItem.id)
+        .where(*_collected_in_year_filter(year, legal_entity_id))
+    )
+    if issued_in_year:
+        stmt = stmt.where(Invoice.year == year)
+    return round_money(Decimal(session.execute(stmt).scalar_one()))
+
+
+def collected_charge_lines_for_calendar_year(
+    session: Session, year: int, markers: Iterable[str], legal_entity_id: UUID | None = None
+) -> Decimal:
+    """The part of what was collected within `year` that is the lines carrying one of the
+    charge `markers`, each settlement counting for its share of the invoice's charge lines as
+    `paid_revenue_for_calendar_year` counts it for the taxable amount: the two figures are
+    read off the same settlements, so what a pack tags as not counting toward the coefficient
+    base is taken off exactly what was collected, and by nothing else."""
+    markers = tuple(markers)
+    if not markers:
+        return ZERO_MONEY
+    charges = (
+        select(func.coalesce(func.sum(InvoiceLine.total_price), 0))
+        .where(InvoiceLine.invoice_id == Invoice.id, charge_line_clause(markers))
+        .correlate(Invoice)
+        .scalar_subquery()
+    )
+    share = charges * DueItemSettlement.amount / DueItem.amount
     return round_money(
         Decimal(
             session.execute(
@@ -214,57 +237,13 @@ def is_statutory_charge_line(line: InvoiceLine) -> bool:
     return line.description in known_charge_markers()
 
 
-def excluded_from_coefficient_base(
-    pack: FiscalPack, session: Session, year: int, legal_entity_id: UUID | None = None
-) -> Decimal:
-    """Sigma `InvoiceLine.total_price` of every line the pack tags as counting
-    toward a ceiling but not toward the coefficiente base (REB-352 §2/§6) -- issued
-    invoices of `year`, the same universe `AnalyticsRepository.annual_revenue` sums,
-    identified by `description_line`, the one stable marker available without a new
-    `InvoiceLine`/`Invoice` column (see `pack.py::StatutoryCharge`'s own docstring)."""
-    markers = tuple(
-        charge.description_line for charge in pack.charges if not charge.count_by_the_coefficient
-    )
-    if not markers:
-        return ZERO_MONEY
-    return round_money(
-        Decimal(
-            session.execute(
-                select(func.coalesce(func.sum(InvoiceLine.total_price), 0))
-                .join(Invoice, InvoiceLine.invoice_id == Invoice.id)
-                .where(
-                    *_issued_invoice_filter(year, legal_entity_id),
-                    charge_line_clause(markers),
-                )
-            ).scalar_one()
-        )
-    )
-
-
-def taxable_revenue(
-    pack: FiscalPack,
-    session: Session,
-    year: int,
-    total_revenue: Decimal,
-    legal_entity_id: UUID | None = None,
-) -> Decimal:
-    """`total_revenue` minus the pack's tagged, non-taxable statutory charges --
-    REB-352 §6's resolved decision, applied. `total_revenue` is the caller's own
-    already-computed figure (`AnalyticsRepository.annual_revenue`) rather than one
-    this function recomputes, so the ceiling's revenue sum and the coefficiente base
-    can never read a different universe of invoices by accident -- they diverge by
-    exactly the tagged amount, and by nothing else."""
-    return total_revenue - excluded_from_coefficient_base(pack, session, year, legal_entity_id)
-
-
 __all__ = [
     "CeilingStatus",
     "charge_line_clause",
     "evaluate_ceiling",
     "evaluate_pack",
-    "excluded_from_coefficient_base",
+    "collected_charge_lines_for_calendar_year",
     "is_statutory_charge_line",
     "paid_revenue_for_calendar_year",
     "social_security_surcharge_line_for_contract",
-    "taxable_revenue",
 ]

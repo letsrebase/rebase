@@ -11,17 +11,17 @@ export, is `test_invoice_expense-recovery_line.py`.
 
 from datetime import date
 from decimal import Decimal
+from uuid import UUID
 
 from fakes.customer_fixtures import make_customer
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.fiscal.ceiling import (
+    collected_charge_lines_for_calendar_year,
     evaluate_ceiling,
     evaluate_pack,
-    excluded_from_coefficient_base,
     paid_revenue_for_calendar_year,
     social_security_surcharge_line_for_contract,
-    taxable_revenue,
 )
 from pigrocrm.core.fiscal.pack import IT_FLAT_RATE_PACK, SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
@@ -32,6 +32,19 @@ assert REVENUE_CEILING.id == "revenue_ceiling"
 assert EXIT_CEILING.id == "immediate_exit_ceiling"
 
 YEAR = 2024
+
+
+def _surcharge_collected(
+    session: Session, year: int, legal_entity_id: UUID | None = None
+) -> Decimal:
+    """What was collected in `year` of the lines the flat-rate pack tags as outside the
+    coefficient base: the social security surcharge."""
+    markers = [
+        charge.description_line
+        for charge in IT_FLAT_RATE_PACK.charges
+        if not charge.count_by_the_coefficient
+    ]
+    return collected_charge_lines_for_calendar_year(session, year, markers, legal_entity_id)
 
 
 def _invoice(
@@ -246,10 +259,10 @@ def test_to_zero_fee_subtotal_still_produces_to_zero_social_security_surcharge_l
     assert line.unit_price == Decimal("0.00")
 
 
-# --- excluded_from_coefficiente_base / taxable_ricavi: real rows -------------------
+# --- the collected charge lines the coefficient base leaves out: real rows --------
 
 
-def test_excluded_from_coefficient_base_sums_only_social_security_surcharge_tagged_lines(
+def test_the_collected_charge_lines_sum_only_the_social_security_surcharge_tagged_lines(
     db_session: Session,
 ) -> None:
     charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID)
@@ -269,10 +282,10 @@ def test_excluded_from_coefficient_base_sums_only_social_security_surcharge_tagg
         payment_date=date(YEAR, 7, 1),
     )
 
-    assert excluded_from_coefficient_base(IT_FLAT_RATE_PACK, db_session, YEAR) == Decimal("40.00")
+    assert _surcharge_collected(db_session, YEAR) == Decimal("40.00")
 
 
-def test_excluded_from_coefficient_base_ignores_to_different_years_invoices(
+def test_the_collected_charge_lines_ignore_what_was_collected_in_another_year(
     db_session: Session,
 ) -> None:
     charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID)
@@ -283,23 +296,39 @@ def test_excluded_from_coefficient_base_ignores_to_different_years_invoices(
         lines=[("Consulenza", Decimal("1000.00")), (charge.description_line, Decimal("40.00"))],
         payment_date=date(YEAR - 1, 6, 20),
     )
-    assert excluded_from_coefficient_base(IT_FLAT_RATE_PACK, db_session, YEAR) == Decimal("0.00")
+    assert _surcharge_collected(db_session, YEAR) == Decimal("0.00")
 
 
-def test_taxable_revenue_subtracts_exactly_the_social_security_surcharge_amount(
+def test_a_part_payment_collects_the_same_share_of_the_surcharge_as_of_the_revenue(
     db_session: Session,
 ) -> None:
+    """A payment counts for its share of the taxable amount and, by the same share, of the
+    charge lines on it, so the two figures are read off the same settlements: half the invoice
+    paid in the year is half the revenue and half the surcharge."""
+    from pigrocrm.core.actor import Actor
+    from pigrocrm.core.due_items.sales import SALES_INVOICE
+    from pigrocrm.core.due_items.schemas import SettlementCreate
+    from pigrocrm.core.due_items.service import DueItemService
+
     charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID)
-    _invoice(
+    invoice = _invoice(
         db_session,
         number=1,
         year=YEAR,
         lines=[("Consulenza", Decimal("1000.00")), (charge.description_line, Decimal("40.00"))],
-        payment_date=date(YEAR, 6, 20),
+        payment_status="unpaid",
+        payment_date=None,
     )
-    assert taxable_revenue(IT_FLAT_RATE_PACK, db_session, YEAR, Decimal("1040.00")) == Decimal(
-        "1000.00"
+    service = DueItemService(db_session)
+    item = service.repo.by_source(SALES_INVOICE, invoice.id)
+    assert item is not None
+    service.settle(
+        item.id,
+        SettlementCreate(amount=Decimal("520.00"), settled_on=date(YEAR, 7, 1)),
+        Actor(id=None, type="system", role="admin"),
     )
+    assert paid_revenue_for_calendar_year(db_session, YEAR) == Decimal("520.00")
+    assert _surcharge_collected(db_session, YEAR) == Decimal("20.00")
 
 
 def test_the_ceiling_and_the_tax_estimate_diverge_by_exactly_the_social_security_surcharge_amount(
@@ -317,9 +346,7 @@ def test_the_ceiling_and_the_tax_estimate_diverge_by_exactly_the_social_security
     )
 
     revenue_by_the_limit = paid_revenue_for_calendar_year(db_session, YEAR)
-    revenue_by_the_coefficient = taxable_revenue(
-        IT_FLAT_RATE_PACK, db_session, YEAR, revenue_by_the_limit
-    )
+    revenue_by_the_coefficient = revenue_by_the_limit - _surcharge_collected(db_session, YEAR)
 
     assert revenue_by_the_limit == Decimal("1040.00")
     assert revenue_by_the_coefficient == Decimal("1000.00")
@@ -343,4 +370,4 @@ def test_a_contract_without_the_election_leaves_nothing_to_exclude(
         lines=[("Consulenza", Decimal("1000.00"))],
         payment_date=date(YEAR, 6, 20),
     )
-    assert excluded_from_coefficient_base(IT_FLAT_RATE_PACK, db_session, YEAR) == Decimal("0.00")
+    assert _surcharge_collected(db_session, YEAR) == Decimal("0.00")

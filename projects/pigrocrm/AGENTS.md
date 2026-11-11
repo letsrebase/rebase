@@ -477,8 +477,27 @@ income, are deducted from it, and the substitute tax rate applies to the rest (`
 echoes it). Before REB-1066 the contributions were taken on the income less the substitute tax, which no source supports;
 the total to set aside and the net income moved by at most two cents of rounding, the split between the two lines moved. A profile coefficient that is
 not in annex 4 is a `coefficient_warning` on the estimate and never a refusal, so a profile saved earlier keeps working;
-a rule that moves a figure an estimate has shown says so in the pull request with a worked example. The basis is data
-only: the revenue the estimate reads still sums issued invoices until REB-1071 builds one revenue figure per basis.
+a rule that moves a figure an estimate has shown says so in the pull request with a worked example.
+
+**An estimate reads one revenue and cost basis, `fiscal/basis.py::year_basis` (REB-1071).** Given a legal entity, a year and its
+pack it reads `TaxYearLaw.income_basis` and answers a `YearBasis` (`fiscal/basis_schemas.py`), or `None` where the law states no
+basis for the year (a year before the pack's law, a company abroad: no revenue, no figure, never a basis chosen in a
+service). **Cash** (a person, the flat-rate regime): revenue is the taxable share of every settlement of the year by its own
+date (`fiscal/ceiling.py::paid_revenue_for_calendar_year`, the ceiling's reading, so an invoice issued in December and paid in
+January is January's), less the collected share of the pack's tagged charge lines (the INPS surcharge, `count_by_the_coefficient`;
+whether it stays out is still the accountant's question, REB-975); costs, for a regime that deducts them (not the flat-rate one:
+`costs` is `None`), are the purchases by what their `purchase` due items were paid in the year and, for a purchase with no due item
+(none is written yet), by document date, said as the `purchases_by_document_date` assumption, plus the `payroll` items settled in
+the year. **Accrual** (an srl): revenue by competence (`coalesce(accrual_from, issue_date)`) in the financial year closing in
+`year` by the legal entity's own year end (`financial_year`), purchases by document date, and staff and director cost as
+`PayrollService.personnel_cost_by_kind` accrues them (a month somebody closed counts as closed; a person with no cost is
+`staff_cost_not_estimated`), told apart because IRAP reads them as different lines (REB-1073). What a reader could expect in a
+figure and is not in it is `left_out` (`not_collected`, `inps_surcharge`, `shared_purchases`, the purchases of no legal entity),
+each with its Italian reason. `AnalyticsService._estimate_year` is the only place an estimate's revenue is chosen, so
+`/api/analytics/fiscal`, the MCP `get_fiscal_estimate` and the economic overview's `tax` answer one figure for one year; only
+`projected_tax` is a «what if» on a revenue the caller supplies, and it names no `basis`. Sales credit notes are not in the
+register (PigroCRM does not issue them and imports none), so none is netted; a purchase credit note is a negative `cost_amount`.
+A test that issues invoices and asks for a flat-rate estimate collects them first (`fakes/collected_invoices.py`).
 
 **«Tasse» draws what the server says and adds nothing (REB-1026).** `GET /api/analytics/fiscal` answers `readings`
 (`fiscal/readings.py`): one line per tax the pack lists for the year (`TaxYearLaw.taxes`, taxes design § 1), each with its
