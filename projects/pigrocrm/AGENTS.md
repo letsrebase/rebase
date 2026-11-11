@@ -830,6 +830,15 @@ the picker in «Impostazioni → Aziende», which writes the exact name into the
 `datasets/`, never `data/`:** the root `.gitignore` ignores any directory called `data`, so git refuses to add it and hatchling
 leaves it out of the wheel.
 
+**The municipal IRPEF surcharge is the Finanze's lists, one CSV per tax year (REB-1063).** `fiscal/datasets/municipal_surcharge_<year>.csv`
+(rebuilt by `scripts/import_municipal_surcharge.py --year` from the Department's «Elenchi generali aggiornati quotidianamente», which are
+rebuilt daily; the sidecar JSON says the day, the SHA-256 and whether the list is `final`) is read by `fiscal/law_municipal_surcharge.py`
+and reached as `pack.municipal_surcharge` on `it-standard`: `lookup(year, cadastral_code)` and `rate(year, cadastral_code, income)`,
+keyed by the cadastral code of `LegalEntityRead.place`. A row is `adopted`, `none` (never instituted), `pending` (`0*` before 20 December:
+no deliberation yet, no figure) or `irregular` (a municipality's published sentences are not brackets: no figure); a code or a year
+that is not there is no figure too. 2026 was partial when read (Milano and Roma had none): re-import it after 20 December 2026. How the
+bracket rates are applied to an income is not in the list and not in this module: the estimate card's, with the A5 row «to verify».
+
 ## Deploying
 
 Through CI only, as every project here (`docs/adding-a-project.md` §7): preview on a
