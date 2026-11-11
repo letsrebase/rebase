@@ -3,7 +3,9 @@
 One registry, one row per company (design `2026-11-09-suppliers-purchases-and-iva-design.md`
 § 1): the same company can be a customer and a supplier, so what it is to us is a set of
 **roles** on the row and not a table of its own. `freelancer` is the role the collaborators
-module gives (C5); it is not `collaborator`, which is a permission role.
+module gives (C5); it is not `collaborator`, which is a permission role. A freelancer is
+someone rebase pays, so `freelancer` always comes with `supplier` (REB-1061): an organization
+is never on neither of the two registry lists.
 """
 
 import re
@@ -16,10 +18,18 @@ ORGANIZATION_ROLES: tuple[str, ...] = get_args(OrganizationRole)
 DEFAULT_ROLE: OrganizationRole = "customer"
 
 # A list filters one role, or `any` for the search across roles, the exceptions § 1 names. Every
-# other read keeps the default and sees customers only. `customer_or_neither` is «Clienti»
-# (REB-1053): the customers plus every organization that is neither a customer nor a supplier
-# (a freelancer-only record), so that no organization is on no list; «Fornitori» is `supplier`.
-RoleFilter = Literal["customer", "supplier", "freelancer", "any", "customer_or_neither"]
+# other read keeps the default and sees customers only. «Clienti» asks `customer` and «Fornitori»
+# `supplier`; no organization is on neither, since a freelancer is always a supplier (REB-1061).
+RoleFilter = Literal["customer", "supplier", "freelancer", "any"]
+
+
+def with_freelancer_supplier(roles: list[str]) -> list[str]:
+    """`roles` with `supplier` after `freelancer` when the latter is there and the former is
+    not: a freelancer is someone rebase pays (REB-1061). The order of the rest is kept."""
+    if "freelancer" in roles and "supplier" not in roles:
+        return [*roles, "supplier"]
+    return roles
+
 
 # What a payment to a supplier involves (§ 1). `foreign` also carries where it is and what it
 # supplies, which § 7 reads to decide whether reverse charge applies.

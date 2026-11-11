@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 import pytest
 from fakes.contacts import points, points_in
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -78,7 +79,7 @@ def test_a_list_shows_customers_unless_it_asks_for_a_role_or_for_all(db_session:
     _create(db_session, "Freelancer", roles=["freelancer"])
 
     assert _names(db_session) == {"Only customer", "Both"}
-    assert _names(db_session, role="supplier") == {"Only supplier", "Both"}
+    assert _names(db_session, role="supplier") == {"Only supplier", "Both", "Freelancer"}
     assert _names(db_session, role="freelancer") == {"Freelancer"}
     assert _names(db_session, role="any") == {
         "Only customer",
@@ -88,11 +89,11 @@ def test_a_list_shows_customers_unless_it_asks_for_a_role_or_for_all(db_session:
     }
 
 
-def test_the_customers_list_also_holds_what_is_neither_customer_nor_supplier(
+def test_every_organization_is_on_the_customers_list_or_the_suppliers_list(
     db_session: Session,
 ) -> None:
-    """«Clienti» (REB-1053) lists the customers and the organizations with neither role, so a
-    freelancer-only record is on a list; «Fornitori» stays the suppliers."""
+    """«Clienti» asks `customer` and «Fornitori» `supplier` (REB-1061): a freelancer is always
+    a supplier, so no organization is on neither."""
     _create(db_session, "Only customer")
     _create(db_session, "Only supplier", roles=["supplier"])
     _create(db_session, "Both", roles=["customer", "supplier"])
@@ -100,17 +101,99 @@ def test_the_customers_list_also_holds_what_is_neither_customer_nor_supplier(
     _create(db_session, "Freelancer supplier", roles=["freelancer", "supplier"])
     _create(db_session, "Freelancer customer", roles=["freelancer", "customer"])
 
-    assert _names(db_session, role="customer_or_neither") == {
-        "Only customer",
+    assert _names(db_session, role="customer") == {"Only customer", "Both", "Freelancer customer"}
+    assert _names(db_session, role="supplier") == {
+        "Only supplier",
         "Both",
         "Freelancer",
+        "Freelancer supplier",
         "Freelancer customer",
     }
-    assert _names(db_session, role="supplier") == {"Only supplier", "Both", "Freelancer supplier"}
-    # Every organization is on at least one of the two lists.
     assert _names(db_session, role="any") == (
-        _names(db_session, role="customer_or_neither") | _names(db_session, role="supplier")
+        _names(db_session, role="customer") | _names(db_session, role="supplier")
     )
+
+
+def test_the_list_query_refuses_the_retired_customer_or_neither_role() -> None:
+    with pytest.raises(PydanticValidationError):
+        OrganizationListQuery(role="customer_or_neither")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("given", "stored"),
+    [
+        (["freelancer"], ["freelancer", "supplier"]),
+        (["freelancer", "customer"], ["freelancer", "customer", "supplier"]),
+        (["freelancer", "supplier"], ["freelancer", "supplier"]),
+        (["supplier", "freelancer"], ["supplier", "freelancer"]),
+        (["customer"], ["customer"]),
+    ],
+)
+def test_a_freelancer_is_always_a_supplier_on_create(
+    db_session: Session, given: list[str], stored: list[str]
+) -> None:
+    assert _create(db_session, "Ada", roles=given).roles == stored
+
+
+def test_a_freelancer_gets_the_supplier_role_when_an_update_gives_it_the_freelancer_one(
+    db_session: Session,
+) -> None:
+    service = OrganizationService(db_session)
+    acme = _create(db_session, "Acme")
+    updated = service.update(acme.id, OrganizationUpdate(roles=["customer", "freelancer"]), ADMIN)
+    assert updated.roles == ["customer", "freelancer", "supplier"]
+    # A legacy freelancer-only row (stored before the rule) gets it on its next roles write.
+    legacy = _create(db_session, "Legacy")
+    db_session.execute(
+        text("UPDATE organizations SET roles = ARRAY['freelancer']::varchar[] WHERE id = :id"),
+        {"id": legacy.id},
+    )
+    db_session.commit()
+    db_session.expire_all()
+    updated = service.update(legacy.id, OrganizationUpdate(roles=["freelancer"]), ADMIN)
+    assert updated.roles == ["freelancer", "supplier"]
+
+
+@pytest.mark.parametrize("roles", [["freelancer"], ["freelancer", "customer"]])
+def test_the_supplier_role_of_a_freelancer_cannot_be_taken_away(
+    db_session: Session, roles: list[str]
+) -> None:
+    service = OrganizationService(db_session)
+    ada = _create(db_session, "Ada", roles=["freelancer"])
+    with pytest.raises(ValidationFailed) as exc:
+        service.update(ada.id, OrganizationUpdate(roles=roles), ADMIN)
+    assert exc.value.details["field"] == "roles"
+    assert "fornitore" in exc.value.message
+    assert db_session.get_one(Organization, ada.id).roles == ["freelancer", "supplier"]
+
+
+def test_a_supplier_that_becomes_a_freelancer_stays_a_supplier(db_session: Session) -> None:
+    vendor = _create(db_session, "Vendor", roles=["supplier"])
+    updated = OrganizationService(db_session).update(
+        vendor.id, OrganizationUpdate(roles=["freelancer"]), ADMIN
+    )
+    assert updated.roles == ["freelancer", "supplier"]
+
+
+def test_the_freelancer_role_can_go_while_the_supplier_one_stays(db_session: Session) -> None:
+    service = OrganizationService(db_session)
+    ada = _create(db_session, "Ada", roles=["freelancer", "customer"])
+    updated = service.update(ada.id, OrganizationUpdate(roles=["customer", "supplier"]), ADMIN)
+    assert updated.roles == ["customer", "supplier"]
+
+
+def test_a_freelancer_still_holds_only_a_freelancer_fiscal_kind(db_session: Session) -> None:
+    ok = _create(db_session, "Ada", roles=["freelancer"], supplier_kind="professional")
+    assert ok.roles == ["freelancer", "supplier"]
+    assert ok.supplier_kind == "professional"
+    for kind in ("company", "foreign"):
+        with pytest.raises(ValidationFailed):
+            OrganizationService(db_session).create(
+                OrganizationCreate(
+                    legal_name=f"F {kind}", roles=["freelancer"], supplier_kind=kind
+                ),
+                ADMIN,
+            )
 
 
 def test_fiscal_matching_and_name_lookup_see_customers_unless_told_otherwise(

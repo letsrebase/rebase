@@ -54,6 +54,7 @@ from pigrocrm.core.gmail.models import EmailDraft, GmailMessageLink
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.notes.models import Note
 from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.organizations.roles import with_freelancer_supplier
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.proposals.models import Proposal
 from pigrocrm.core.purchases.models import Purchase
@@ -472,9 +473,9 @@ class OrganizationMerge:
     def _fields(
         self, outcome: MergeOutcome, survivor: Organization, loser: Organization, apply: bool
     ) -> None:
-        outcome.roles = list(survivor.roles) + [
-            role for role in loser.roles if role not in survivor.roles
-        ]
+        outcome.roles = with_freelancer_supplier(
+            list(survivor.roles) + [role for role in loser.roles if role not in survivor.roles]
+        )
         outcome.shares_survivor = (
             survivor.legal_entity_id is not None
             and survivor.legal_entity_id != loser.legal_entity_id

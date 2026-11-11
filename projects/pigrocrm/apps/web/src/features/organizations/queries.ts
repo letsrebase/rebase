@@ -7,7 +7,7 @@ import { asBody } from '@/lib/formValues'
 import { keepWhileTyping } from '@/lib/keepWhileTyping'
 import { queryKeys } from '@/lib/query'
 import { useCursorPages } from '@/lib/useCursorPages'
-import { REGISTRY_API_ROLE, type RegistryPage } from './search'
+import type { RegistryPage } from './search'
 
 /**
  * Wire shape of one customer, taken directly from the generated OpenAPI schema
@@ -28,7 +28,7 @@ interface OrganizationsListParams {
   limit?: number
   legal_entity_id?: string
   /** One role, or `any` for the registry across roles; customers only when left out. */
-  role?: 'customer' | 'supplier' | 'freelancer' | 'any' | 'customer_or_neither'
+  role?: 'customer' | 'supplier' | 'freelancer' | 'any'
   /** A supplier's fiscal kind (`company`, `professional`, ...): the supplier view's «Tipo fiscale». */
   supplier_kind?: string
 }
@@ -88,10 +88,7 @@ export function useOrganizations(
 export function useOrganizationPages(
   params: Pick<OrganizationsListParams, 'search' | 'supplier_kind'> & { role?: RegistryPage } = {},
 ) {
-  const scoped = useLegalEntityScope({
-    ...params,
-    role: params.role === undefined ? undefined : REGISTRY_API_ROLE[params.role],
-  })
+  const scoped = useLegalEntityScope(params)
   const queryClient = useQueryClient()
   // The role is in `scoped`, so each page keeps a cache of its own: a list of suppliers is
   // never what «Clienti» shows while it loads.
@@ -112,7 +109,7 @@ export function useOrganizationPages(
  * not drawn, and never drawn as 0.
  */
 export function useOrganizationCount(role: RegistryPage): number | undefined {
-  const scoped = useLegalEntityScope({ role: REGISTRY_API_ROLE[role] })
+  const scoped = useLegalEntityScope({ role })
   const count = useQuery({
     queryKey: queryKeys.organizations({ ...scoped, count: true }),
     queryFn: () => fetchOrganizationsPage({ ...scoped, limit: 1 }),

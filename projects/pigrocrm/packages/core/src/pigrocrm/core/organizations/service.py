@@ -38,6 +38,7 @@ from pigrocrm.core.organizations.roles import (
     VAT_NUMBER_MAX_LENGTH,
     VAT_UNIQUE_INDEX,
     normalise_vat,
+    with_freelancer_supplier,
 )
 from pigrocrm.core.organizations.schemas import (
     ORGANIZATION_SORTS,
@@ -171,7 +172,9 @@ def _one_of(field: str, value: str, allowed: tuple[str, ...]) -> None:
 def _check_roles_and_kinds(data: dict[str, Any], current: Organization | None) -> None:
     """The role set and the fiscal kinds of a write, against the row they will describe:
     `current` is the stored row on an update and `None` on a create. Normalises `roles` in
-    place (no repeats, order kept).
+    place (no repeats, order kept), and keeps the rule that a freelancer is a supplier
+    (REB-1061): a write that names `freelancer` without `supplier` gets `supplier` added, and
+    one that takes `supplier` away from a freelancer that has it is refused.
 
     A foreign supplier says where it is and what it supplies; a supplier of any other kind
     does not, since those two answers only mean something for reverse charge (design § 1).
@@ -187,7 +190,21 @@ def _check_roles_and_kinds(data: dict[str, Any], current: Organization | None) -
             )
         for role in roles:
             _one_of("roles", role, ORGANIZATION_ROLES)
-        data["roles"] = list(dict.fromkeys(roles))
+        roles = list(dict.fromkeys(roles))
+        if (
+            "freelancer" in roles
+            and "supplier" not in roles
+            and current is not None
+            and "freelancer" in current.roles
+            and "supplier" in current.roles
+        ):
+            raise ValidationFailed(
+                ENTITY,
+                "roles",
+                "un freelance e' sempre anche un fornitore: il ruolo fornitore non si toglie",
+                expected="freelancer e supplier insieme",
+            )
+        data["roles"] = with_freelancer_supplier(roles)
     for field, allowed in (
         ("supplier_kind", SUPPLIER_KINDS),
         ("supplier_area", SUPPLIER_AREAS),
