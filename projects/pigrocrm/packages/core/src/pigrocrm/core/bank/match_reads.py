@@ -134,7 +134,9 @@ def facts_for_ids(session: Session, item_ids: Iterable[UUID]) -> dict[UUID, Item
     return facts_for_items(session, rows)
 
 
-def item_read(fact: ItemFacts, allocated: Decimal, adopts: bool) -> MatchItemRead:
+def item_read(
+    fact: ItemFacts, allocated: Decimal, adopts: bool, credit: bool = False
+) -> MatchItemRead:
     item = fact.item
     return MatchItemRead(
         due_item_id=item.id,
@@ -150,6 +152,7 @@ def item_read(fact: ItemFacts, allocated: Decimal, adopts: bool) -> MatchItemRea
         remaining=fact.remaining_magnitude if item.state != "dropped" else ZERO,
         allocated=allocated,
         adopts_payment=adopts,
+        credit=credit,
     )
 
 
@@ -212,7 +215,10 @@ def match_reads(
             closed_by_type=match.closed_by_type,
             close_reason=match.close_reason,
             is_current=_is_current(match, rows, facts),
-            items=[item_read(facts[row.due_item_id], row.amount, row.adopted) for row in ordered],
+            items=[
+                item_read(facts[row.due_item_id], row.amount, row.adopted, row.credit)
+                for row in ordered
+            ],
         )
     return reads
 

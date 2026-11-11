@@ -65,6 +65,7 @@ from pigrocrm.core.errors import (
 )
 from pigrocrm.core.expense_notes.access import own_staff_member_id, require_may_pay_item
 from pigrocrm.core.expense_notes.projection import project_reimbursement
+from pigrocrm.core.fiscal.f24_repository import F24GroupRepository
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.legal_entities.models import LegalEntity
 
@@ -114,6 +115,7 @@ class DueItemService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.repo = DueItemRepository(session)
+        self.groups = F24GroupRepository(session)
         self.activities = ActivityService(session)
 
     # ---- the writer's half: no actor, no commit -------------------------------------------
@@ -237,6 +239,7 @@ class DueItemService:
                 "una scadenza con pagamenti registrati non si scarta: prima si annullano",
                 id=str(item.id),
             )
+        self._require_not_grouped(item)
         item.state = "dropped"
         item.dropped_reason = reason[:255] if reason else None
         self.session.flush()
@@ -259,6 +262,7 @@ class DueItemService:
                 "una scadenza con pagamenti registrati non si ricalcola: prima si annullano",
                 id=str(item.id),
             )
+        self._require_not_grouped(item)
         item.amount = amount
         item.own_date = own_date
         item.state = "expected"
@@ -272,6 +276,7 @@ class DueItemService:
         """Moves an item's own date. A sales item's date is the invoice's and never moves
         (`MUTABLE_AFTER_ISSUE`): only an outgoing item and a forecast can be rescheduled."""
         item = self._locked(item_id)
+        self._require_not_grouped(item)
         if item.state not in OPEN_STATES:
             raise Conflict(ENTITY, "una scadenza saldata o scartata non si sposta", id=str(item.id))
         if item.direction == "in" and item.state == "expected":
@@ -716,6 +721,7 @@ class DueItemService:
         item = self._locked(item_id)
         _require_settle_permission(actor, item, undo=False)
         self._require_may_pay_note(item, actor)
+        self._require_not_grouped(item)
         self._record_payment(item, data, actor)
         self.session.commit()
         return self._detail(item)
@@ -860,6 +866,14 @@ class DueItemService:
         if item is None:
             raise NotFound(ENTITY, item_id)
         return item
+
+    def _require_not_grouped(self, item: DueItem) -> None:
+        """A line of a live F24 group is paid with its group by the one movement that pays the
+        net, and is not recomputed: ungroup first."""
+        if self.groups.group_of(item.id) is not None:
+            raise Conflict(
+                ENTITY, "la scadenza e' in un F24: prima si scioglie il gruppo", id=str(item.id)
+            )
 
     def _require_organization_of(self, organization_id: UUID, legal_entity_id: UUID) -> None:
         row = self.repo.organization_legal_entity(organization_id)

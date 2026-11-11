@@ -59,6 +59,9 @@ SOURCE_KINDS: tuple[str, ...] = (
     "tax_advance",
     "chamber_fee",
     "notice_plan",
+    # A tax credit as a negative item (`fiscal/tax_credits.py`, REB-1076): a withholding suffered
+    # on sales or an IVA credit carried forward, grouped with the day's F24.
+    "tax_credit",
     "payroll",
     "contract_occurrence",
     "recurring_expense",
@@ -81,6 +84,8 @@ CHAMBER_FEE_SOURCE_KIND = "chamber_fee"
 # instalment of a notice from the tax office entered by hand (`fiscal/notice_plan.py`).
 TAX_INSTALMENT_SOURCE_KIND = "tax_instalment"
 NOTICE_PLAN_SOURCE_KIND = "notice_plan"
+# The source of a tax credit (a negative item, taxes design § 2): restricted below like the taxes.
+TAX_CREDIT_SOURCE_KIND = "tax_credit"
 # The source of an approved expense note's one due item (`expense_notes/service.py`).
 EXPENSE_NOTE_SOURCE_KIND = "expense_note"
 # The source of what staff cost and when it leaves (`staff/payroll.py`).
@@ -99,6 +104,7 @@ RESTRICTED_SOURCE_KINDS: frozenset[str] = frozenset(
         TAX_BALANCE_SOURCE_KIND,
         TAX_ADVANCE_SOURCE_KIND,
         CHAMBER_FEE_SOURCE_KIND,
+        TAX_CREDIT_SOURCE_KIND,
         PAYROLL_SOURCE_KIND,
         "cash_basis_vat",
         # What an engagement owes a freelancer names them and what they are paid (collaborators
