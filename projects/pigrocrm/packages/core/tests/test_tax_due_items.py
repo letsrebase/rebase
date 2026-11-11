@@ -29,7 +29,7 @@ from pigrocrm.core.due_items.models import (
 from pigrocrm.core.due_items.schedule_queries import kinds_of_modules_off
 from pigrocrm.core.due_items.schemas import DueItemListQuery, SettlementCreate
 from pigrocrm.core.due_items.service import DueItemService
-from pigrocrm.core.errors import AgentForbidden, PermissionDenied
+from pigrocrm.core.errors import AgentForbidden, Conflict, PermissionDenied
 from pigrocrm.core.fiscal import tax_items
 from pigrocrm.core.fiscal.advance_method import TaxAdvanceMethodService
 from pigrocrm.core.fiscal.advance_schemas import (
@@ -270,6 +270,83 @@ def test_the_forecast_method_without_an_estimate_writes_nothing_and_says_why(
         "forecast method needs the imposta sostitutiva estimate of 2026"
         in reasons[(2026, "first_advance")]
     )
+
+
+def test_an_administrator_confirms_the_difference_carried_onto_a_tax_item(
+    db_session: Session, clock: Clock, estimates: Estimates
+) -> None:
+    """REB-1079: the item says it is waiting, only an administrator confirms it, the amount stays,
+    the confirmation survives a recomputation and a new difference asks again."""
+    entity = _entity(db_session)
+    estimates.set(2025, "substitute_tax", "1000.00")
+    TaxDueItemService(db_session).refresh_tax_due_items(entity, today=clock.today)
+    _declare(db_session, entity, "substitute_tax", 2025, tax_due="1000.00")
+    _pay(db_session, entity, dt.date(2026, 6, 30), "500.00")
+    _declare(db_session, entity, "substitute_tax", 2025, tax_due="1200.00")
+    service = DueItemService(db_session)
+    item = db_session.scalars(
+        select(DueItem).where(
+            DueItem.legal_entity_id == entity,
+            DueItem.source_kind == "tax_advance",
+            DueItem.state == "expected",
+        )
+    ).one()
+    assert service.get(item.id, ADMIN).carry_to_confirm is True
+
+    for refused in (COLLABORATOR, READONLY):
+        with pytest.raises(PermissionDenied):
+            service.confirm_tax_carry(item.id, refused)
+    with pytest.raises(AgentForbidden):
+        service.confirm_tax_carry(item.id, AGENT)
+
+    confirmed = service.confirm_tax_carry(item.id, ADMIN)
+    assert confirmed.carry_to_confirm is False
+    assert confirmed.amount == D("700.00")
+    # A recomputation with nothing new leaves the item and its confirmation alone.
+    TaxDueItemService(db_session).refresh_tax_due_items(entity, today=clock.today)
+    assert service.get(item.id, ADMIN).carry_to_confirm is False
+    # The difference moves: the item is rewritten and asks again.
+    _declare(db_session, entity, "substitute_tax", 2025, tax_due="900.00")
+    rewritten = db_session.scalars(
+        select(DueItem).where(
+            DueItem.legal_entity_id == entity,
+            DueItem.source_kind == "tax_advance",
+            DueItem.state == "expected",
+            DueItem.due_date == dt.date(2026, 11, 30),
+        )
+    ).one()
+    assert service.get(rewritten.id, ADMIN).carry_to_confirm is True
+    # A plain item has nothing to confirm.
+    first = db_session.scalars(
+        select(DueItem).where(
+            DueItem.legal_entity_id == entity,
+            DueItem.due_date == dt.date(2026, 6, 30),
+            DueItem.state == "settled",
+        )
+    ).one()
+    with pytest.raises(Conflict):
+        service.confirm_tax_carry(first.id, ADMIN)
+
+
+def test_the_estimate_says_which_method_the_advances_of_its_year_use(
+    db_session: Session, clock: Clock, estimates: Estimates
+) -> None:
+    """REB-1079: «Tasse» shows the method in force beside the year's taxes."""
+    entity = _entity(db_session)
+    estimates.set(2025, "substitute_tax", "1000.00")
+    estimates.set(2026, "substitute_tax", "3000.00")
+
+    def method(year: int) -> str:
+        return (
+            AnalyticsService(db_session)
+            .get_fiscal_estimate(year, ADMIN, legal_entity_id=entity)
+            .advance_method
+        )
+
+    assert method(2026) == "historical"
+    _method(db_session, entity, 2026, "forecast")
+    assert method(2026) == "forecast"
+    assert method(2025) == "historical"
 
 
 # --- a declared figure replaces the estimate --------------------------------------------------

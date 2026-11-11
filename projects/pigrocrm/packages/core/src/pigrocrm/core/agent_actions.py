@@ -213,6 +213,8 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         # (REB-1075, taxes design § 5): they move the tax due items and say what is owed to the
         # tax office, so the same position as the figures; reading them is the same.
         "set_tax_instalment_plan",
+        # Confirming the difference an advance already paid left on a tax item (REB-1079).
+        "confirm_tax_carry",
         "create_tax_notice_plan",
         "update_tax_notice_plan",
         "delete_tax_notice_plan",
@@ -558,6 +560,7 @@ ACTION_LABELS: dict[str, str] = {
     "list_staff": "leggere l'elenco delle persone dell'azienda e i loro compensi",
     "set_declared_tax_figure": "registrare le cifre della dichiarazione dei redditi",
     "set_tax_advance_method": "scegliere come calcolare gli acconti d'imposta di un anno",
+    "confirm_tax_carry": "confermare la differenza riportata su un'imposta",
     "set_tax_instalment_plan": "rateizzare il saldo e il primo acconto delle imposte di un anno",
     "create_tax_notice_plan": "registrare il piano di rate di un avviso dell'erario",
     "update_tax_notice_plan": "cambiare il piano di rate di un avviso dell'erario",

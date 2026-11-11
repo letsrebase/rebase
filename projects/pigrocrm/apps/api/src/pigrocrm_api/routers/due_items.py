@@ -95,6 +95,13 @@ def settle(
     return DueItemService(session).settle(item_id, data, actor)
 
 
+@router.post("/{item_id}/carry-confirmation", response_model=DueItemDetail)
+def confirm_tax_carry(item_id: UUID, session: SessionDep, actor: ActorDep) -> DueItemDetail:
+    """Confirms the difference an advance already paid left on a tax item (REB-1079). `admin`,
+    enforced by the service; the amount is not changed, the confirmation is recorded."""
+    return DueItemService(session).confirm_tax_carry(item_id, actor)
+
+
 @router.post("/settlements/{settlement_id}/reverse", response_model=DueItemDetail)
 def reverse_settlement(
     settlement_id: UUID,

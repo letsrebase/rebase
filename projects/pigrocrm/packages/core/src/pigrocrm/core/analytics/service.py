@@ -63,7 +63,10 @@ from pigrocrm.core.fiscal.ordinary_estimate import (
 )
 from pigrocrm.core.fiscal.pack import FiscalPack, resolve_pack
 from pigrocrm.core.fiscal.readings import build_tax_readings
-from pigrocrm.core.fiscal.repository import FiscalEstimateRepository
+from pigrocrm.core.fiscal.repository import (
+    FiscalEstimateRepository,
+    TaxAdvanceMethodRepository,
+)
 from pigrocrm.core.fiscal.schemas import (
     TAXPAYER_PARAMETERS,
     DeclaredTaxFigureRead,
@@ -665,8 +668,10 @@ class AnalyticsService:
         if revenue is not None:
             return estimate
         declared = DeclaredTaxFigureService(self.session).declared_for_year(legal_entity.id, year)
+        chosen = TaxAdvanceMethodRepository(self.session).for_entity(legal_entity.id).get(year)
         return estimate.model_copy(
             update={
+                "advance_method": "forecast" if chosen == "forecast" else "historical",
                 "declared": declared,
                 "reading": reading_for_year(declared),
                 "readings": self._tax_readings(year, estimate, declared),

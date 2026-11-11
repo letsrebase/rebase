@@ -76,6 +76,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.db import today_local
 from pigrocrm.core.due_items.models import (
+    CARRY_TO_CONFIRM_SUFFIX,
     CHAMBER_FEE_SOURCE_KIND,
     TAX_ADVANCE_SOURCE_KIND,
     TAX_BALANCE_SOURCE_KIND,
@@ -900,7 +901,10 @@ def _advance_date(dates: AdvanceDates, part: TaxItemPart) -> dt.date:
 
 
 def _carry_text(carry: Decimal) -> str:
-    return f". Include {_money(carry)} euro di differenza sull'acconto gia' pagato: da confermare"
+    return (
+        f". Include {_money(carry)} euro di differenza sull'acconto gia' pagato: "
+        f"{CARRY_TO_CONFIRM_SUFFIX}"
+    )
 
 
 def _instalment_text(base: str, item: PlannedInstalment, count: int) -> str:

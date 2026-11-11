@@ -734,6 +734,8 @@ ROWS: list[Row] = [
         body={"amount": "10.00", "settled_on": "2026-01-05"},
     ),
     Row("POST", "/api/due-items/settlements/{settlement_id}/reverse", body={}),
+    # The difference an advance already paid left on a tax item (REB-1079): admin, before lookup.
+    Row("POST", "/api/due-items/{item_id}/carry-confirmation", admin_only=True),
     # --- engagements with freelancers (REB-976): every one is `require_admin` ------------------
     Row(
         "POST",

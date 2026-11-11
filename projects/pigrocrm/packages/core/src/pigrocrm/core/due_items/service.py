@@ -30,6 +30,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.bank.models import BankMovement
 from pigrocrm.core.db import today_local
 from pigrocrm.core.due_items.models import (
+    CARRY_TO_CONFIRM_SUFFIX,
     CHAMBER_FEE_SOURCE_KIND,
     EXPENSE_NOTE_SOURCE_KIND,
     OPEN_STATES,
@@ -726,6 +727,33 @@ class DueItemService:
         self.session.commit()
         return self._detail(item)
 
+    def confirm_tax_carry(self, item_id: UUID, actor: Actor) -> DueItemDetail:
+        """An administrator confirms the difference an advance already paid left on this tax item
+        (REB-1074 writes «da confermare» in its description; the legal treatment is «to verify»,
+        taxes design § 2). Only the confirmation is recorded: the amount stays. Confirming twice
+        is a no-op; a rewritten item (the difference moved) is a new one to confirm."""
+        actor.require_admin("confirm_tax_carry")
+        item = self._locked(item_id)
+        if (
+            item.source_kind not in TAX_SOURCE_KINDS_PAYABLE
+            or item.state == "dropped"
+            or not (item.description or "").endswith(CARRY_TO_CONFIRM_SUFFIX)
+        ):
+            raise Conflict(
+                ENTITY, "questa voce non ha una differenza da confermare", id=str(item.id)
+            )
+        if item.carry_confirmed_at is None:
+            item.carry_confirmed_at = _now()
+            self.activities.record(
+                "legal_entity",
+                item.legal_entity_id,
+                "tax_carry_confirmed",
+                actor,
+                {"due_item_id": str(item.id)},
+            )
+            self.session.commit()
+        return self._detail(item)
+
     def reverse_settlement(
         self, settlement_id: UUID, reason: str | None, actor: Actor
     ) -> DueItemDetail:
@@ -983,6 +1011,9 @@ class DueItemService:
                     "not_after": item.rule_not_after,
                 },
                 "dropped_reason": item.dropped_reason,
+                "carry_to_confirm": item.carry_confirmed_at is None
+                and item.state != "dropped"
+                and (item.description or "").endswith(CARRY_TO_CONFIRM_SUFFIX),
                 "created_at": item.created_at,
                 "updated_at": item.updated_at,
             }

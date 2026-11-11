@@ -135,6 +135,7 @@ const KIND_LABELS: Record<string, string> = {
   payroll_month_closed: 'Mese di paga chiuso',
   declared_tax_figure_set: 'Cifre della dichiarazione registrate',
   tax_advance_method_set: 'Metodo degli acconti scelto',
+  tax_carry_confirmed: 'Differenza sull’acconto confermata',
   tax_instalment_plan_set: 'Rateazione delle imposte scelta',
   tax_notice_plan_created: 'Piano di rate di un avviso registrato',
   tax_notice_plan_updated: 'Piano di rate di un avviso cambiato',
