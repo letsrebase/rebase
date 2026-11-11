@@ -42,6 +42,7 @@ from typing import Final, Literal
 
 from pigrocrm.core.fiscal.irpef_2026 import IRPEF_2026
 from pigrocrm.core.fiscal.law import (
+    CompanyAdvanceLaw,
     CompanyTaxLaw,
     IncomeTaxAdvanceLaw,
     IvaSettlementLaw,
@@ -667,6 +668,7 @@ IT_STANDARD_PACK = FiscalPack(
                 single_november_payment_below=Decimal("257.52"),
                 deferral_surcharge_percent=Decimal("0.40"),
                 deferral_window_days=30,
+                single_november_payment_at_or_below_isa=Decimal("206"),
             ),
             payroll=ITALIAN_PAYROLL,
             iva=IvaSettlementLaw(
@@ -691,9 +693,9 @@ IT_STANDARD_PACK = FiscalPack(
 # differs in what it owes: IRES and IRAP, whose rates are the two verified ones below. The
 # rest of what the design lists for it stays a label until its figure is verified and its
 # card lands: IVA is C3's, the annual chamber of commerce fee is `chamber_fee` (REB-1068), the
-# payroll and director rows are C7's, and the company's advance split is the estimate card's (its
-# instalments, F24 codes and filing dates are `payment_rules`, REB-1067). No income estimate:
-# `flat_rate` is the flat-rate regime's.
+# payroll and director rows are C7's, and the company's advances are `company_advances`
+# (REB-1074; its instalments, F24 codes and filing dates are `payment_rules`, REB-1067). No
+# income estimate: `flat_rate` is the flat-rate regime's.
 # The entry starts in 2026, the year the rates below were read; an earlier year has no law in
 # this pack yet, and asks for none.
 IT_COMPANY_PACK = FiscalPack(
@@ -726,6 +728,18 @@ IT_COMPANY_PACK = FiscalPack(
             ),
             payroll=ITALIAN_PAYROLL,
             chamber_fee=CHAMBER_FEE_LAW,
+            company_advances=CompanyAdvanceLaw(
+                advance_percent_of_base=Decimal("100"),
+                first_advance_percent=Decimal("40"),
+                second_advance_percent=Decimal("60"),
+                first_advance_percent_isa=Decimal("50"),
+                second_advance_percent_isa=Decimal("50"),
+                no_advance_at_or_below=Decimal("20.66"),
+                ires_single_payment_at_or_below=Decimal("103"),
+                irap_single_payment_at_or_below=None,
+                balance_months_after_year_end=6,
+                second_advance_month_of_year=11,
+            ),
         ),
     ),
     calendars=(_IT_COMPANY_CALENDAR_2026,),

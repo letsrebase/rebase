@@ -62,6 +62,11 @@ class IncomeTaxAdvanceLaw:
     # Paying within `deferral_window_days` after a deadline adds this percentage.
     deferral_surcharge_percent: Decimal
     deferral_window_days: int
+    # Under ISA the same page says «un unico versamento entro il 30 novembre se l'importo totale
+    # dovuto non supera 206 euro» (Agenzia delle Entrate, «Come si paga l'Irpef», updated
+    # 12-3-2026, the sentence A5 row «Advances of the flat-rate regime's substitute tax» quotes):
+    # a total up to this amount is paid once. `None` for a pack that has not read it.
+    single_november_payment_at_or_below_isa: Decimal | None = None
     # The dates of the advances and of the instalments are the pack's tax calendar
     # (`TaxCalendarLaw`), not repeated here.
 
@@ -148,6 +153,49 @@ class CompanyTaxLaw:
     # IRAP's base, deductions, territorial rule and regional rates (`fiscal/law_irap.py`,
     # REB-1065). `None` for a pack that has not verified them.
     irap: IrapLaw | None = None
+
+
+@dataclass(frozen=True)
+class CompanyAdvanceLaw:
+    """How a company's IRES and IRAP are paid in advance, and the dates that follow its fiscal
+    year (REB-1074, taxes design § 2).
+
+    Source of every figure unless a comment says otherwise: Agenzia delle Entrate, «Imposte sui
+    redditi (Irpef, Ires)» (updated 30 September 2026, section on companies; A5 rows «Income tax
+    advance 100%, in 40%/60% (50%/50% under ISA), June and November», «IRES: the advance is split
+    in two instalments only above €103» and «Company dates»), all verified; the 50% and 50% of an
+    ISA subject is art. 58 D.L. 124/2019 (Normattiva), which the Agenzia's page applies to
+    income taxes and IRAP alike.
+
+    * The advance is 100% of the tax declared for the previous year, net of deductions, credits,
+      withholdings and excesses, paid 40% and 60%, or 50% and 50% for an ISA subject.
+    * No advance is due when the tax does not exceed `no_advance_at_or_below`: 40,000 lire, the
+      figure the pack already carries for IRES and IRAP in `ForecastAdvanceLaw` (art. 4 c. 2
+      D.L. 69/1989; A5 row «Conditions of the forecast method», verified 2026-11-11, REB-1067).
+    * IRES: the advance is split in two only above `ires_single_payment_at_or_below`; up to it,
+      the whole advance is paid once, with the second instalment. No source read states a
+      single-payment limit for IRAP, so `irap_single_payment_at_or_below` is `None` and the IRAP
+      advance is always split (A5, to verify, REB-975).
+    * The balance and the first advance fall on the last day of the `balance_months_after_year_end`
+      month after the fiscal year end (or of the month after a late approval of the financial
+      statements, which is not modelled); the second or only advance on the last day of the
+      `second_advance_month_of_year` month of the tax period. For a year ending 31 December these
+      are the calendar's 30 June and 30 November (`_IT_COMPANY_CALENDAR_2026`); the calendar marks
+      them `calendar_year_only` and holds no date for another year end, so another year end's
+      dates come from here. A date that falls on a non-working day moves forward, as the
+      calendar's do.
+    """
+
+    advance_percent_of_base: Decimal
+    first_advance_percent: Decimal
+    second_advance_percent: Decimal
+    first_advance_percent_isa: Decimal
+    second_advance_percent_isa: Decimal
+    no_advance_at_or_below: Decimal
+    ires_single_payment_at_or_below: Decimal
+    irap_single_payment_at_or_below: Decimal | None
+    balance_months_after_year_end: int
+    second_advance_month_of_year: int
 
 
 @dataclass(frozen=True)
@@ -253,6 +301,10 @@ class TaxYearLaw:
     # The annual chamber of commerce fee of a company (`fiscal/law_chamber_fee.py`, REB-1068).
     chamber_fee: ChamberFeeLaw | None = None
 
+    # How a company's IRES and IRAP are paid in advance and when (`CompanyAdvanceLaw`, REB-1074):
+    # `None` for a regime that is no company.
+    company_advances: CompanyAdvanceLaw | None = None
+
     @property
     def has_income_estimate(self) -> bool:
         return self.flat_rate is not None
@@ -260,6 +312,7 @@ class TaxYearLaw:
 
 __all__ = [
     "Cadence",
+    "CompanyAdvanceLaw",
     "CompanyTaxLaw",
     "DateKind",
     "DeclaredTax",
