@@ -1,6 +1,6 @@
 import { daysBetweenIso, isoYearMonth } from '@/lib/dates'
 import type { TaxCalendarEntry } from './labels'
-import type { TaxDueItem } from './queries'
+import type { F24Group, TaxDueItem } from './queries'
 
 /**
  * The pack's tax dates as the Home and «Tasse» draw them (REB-1026). Nothing here is an amount:
@@ -91,6 +91,8 @@ export interface DueDay {
   date: string
   entries: TaxCalendarEntry[]
   items: TaxDueItem[]
+  /** The F24 groups paid on this date (open or settled). */
+  groups: F24Group[]
 }
 
 /** The entries of one calendar and the due items of the same year, grouped by the day they fall
@@ -98,17 +100,19 @@ export interface DueDay {
 export function groupByDueDate(
   entries: readonly TaxCalendarEntry[],
   items: readonly TaxDueItem[] = [],
+  groups: readonly F24Group[] = [],
 ): DueDay[] {
   const days = new Map<string, DueDay>()
   const day = (date: string): DueDay => {
     let found = days.get(date)
     if (!found) {
-      found = { date, entries: [], items: [] }
+      found = { date, entries: [], items: [], groups: [] }
       days.set(date, found)
     }
     return found
   }
   for (const item of items) if (item.due_date !== null) day(item.due_date).items.push(item)
+  for (const group of groups) day(group.payment_date).groups.push(group)
   for (const entry of entries) {
     const found = day(entry.due_date)
     if (!found.items.some((item) => covers(item, entry))) found.entries.push(entry)

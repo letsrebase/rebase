@@ -30,7 +30,7 @@ import {
 } from './labels'
 import { DatePanel, TaxPanel } from './Panels'
 import { ReadingsTable, TaxReadingLines } from './ReadingsTable'
-import { useTaxCalendar, useTaxDueItems } from './queries'
+import { useF24Groups, useTaxCalendar, useTaxDueItems } from './queries'
 import { TABS, type TaxesTab } from './search'
 
 /** The table's width from `md`, the inline panel's from `lg`: below them rows are cards and the
@@ -72,6 +72,7 @@ export function EntityTaxes({
   const calendar = useTaxCalendar(year, legalEntityId, allowed && estimate.isSuccess)
   const entity = estimate.data?.legal_entity_id ?? null
   const dueItems = useTaxDueItems(year, entity, allowed && estimate.isSuccess)
+  const f24 = useF24Groups(year, entity, allowed && estimate.isSuccess)
 
   const heading = name ? <h2 className="text-lg font-semibold">{name}</h2> : null
   let body: ReactNode
@@ -95,7 +96,7 @@ export function EntityTaxes({
   } else {
     const data = estimate.data
     const light = modules.profile === 'solo' && data.pack_id === FLAT_RATE_PACK
-    const days = groupByDueDate(calendar.data?.dates ?? [], dueItems.data ?? [])
+    const days = groupByDueDate(calendar.data?.dates ?? [], dueItems.data ?? [], f24.data ?? [])
     const today = toIsoDate(new Date())
     const readings = data.readings
     const lines = readings?.lines ?? []
@@ -112,9 +113,15 @@ export function EntityTaxes({
 
     const dateRows = calendar.isError ? (
       <Failure error={calendar.error} onRetry={() => void calendar.refetch()} />
-    ) : dueItems.isError ? (
-      <Failure error={dueItems.error} onRetry={() => void dueItems.refetch()} />
-    ) : calendar.isPending || dueItems.isPending ? (
+    ) : dueItems.isError || f24.isError ? (
+      <Failure
+        error={dueItems.error ?? f24.error}
+        onRetry={() => {
+          void dueItems.refetch()
+          void f24.refetch()
+        }}
+      />
+    ) : calendar.isPending || dueItems.isPending || f24.isPending ? (
       <LoadingState label={LOADING_SENTENCE} />
     ) : days.length === 0 ? (
       light ? null : <p className="text-sm text-muted-foreground">{NO_CALENDAR_SENTENCE(year)}</p>
@@ -213,7 +220,7 @@ export function EntityTaxes({
             {pack ? <p className="text-xs text-muted-foreground">{pack}.</p> : null}
           </section>
         )}
-        {days.length > 0 || calendar.isPending || calendar.isError || dueItems.isPending || dueItems.isError ? (
+        {days.length > 0 || calendar.isPending || calendar.isError || dueItems.isPending || dueItems.isError || f24.isPending || f24.isError ? (
           <section aria-label="Scadenze" className="space-y-3">
             <h3 className="text-base font-semibold">Scadenze</h3>
             {dateRows}

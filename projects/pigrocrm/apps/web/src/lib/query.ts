@@ -196,6 +196,8 @@ export const queryKeys = {
   taxDueItems: (scope: string, legalEntityId: string | null = null) =>
     ['tax-due-items', scope, legalEntityId] as const,
   taxDueItemsAll: ['tax-due-items'] as const,
+  taxF24Groups: (year: number, legalEntityId: string | null = null) =>
+    ['f24-groups', year, legalEntityId] as const,
   taxPlans: (legalEntityId: string | null = null) => ['tax-plans', legalEntityId] as const,
   // The ceilings and the year register are one azienda's as well (REB-755, REB-757), and
   // the simulation is keyed on everything typed: the same deal against another date is

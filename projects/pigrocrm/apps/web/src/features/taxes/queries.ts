@@ -63,6 +63,8 @@ export function useNextTaxDates(legalEntityId?: string | null, enabled = true) {
 }
 
 export type TaxDueItem = components['schemas']['DueItemRead']
+export type F24Group = components['schemas']['F24GroupRead']
+export type F24Line = components['schemas']['F24LineRead']
 export type TaxPlans = components['schemas']['TaxPlansRead']
 export type TaxInstalmentPlan = components['schemas']['TaxInstalmentPlanRead']
 export type TaxNoticePlan = components['schemas']['TaxNoticePlanRead']
@@ -77,6 +79,7 @@ export const TAX_ITEM_KINDS = [
   'tax_instalment',
   'notice_plan',
   'chamber_fee',
+  'tax_credit',
 ] as const
 
 /** The kinds that are an instalment of a plan: the «Rate» tab reads these for any year. */
@@ -186,6 +189,7 @@ export function useRefreshTaxes() {
     void client.invalidateQueries({ queryKey: ['fiscal-estimate'] })
     void client.invalidateQueries({ queryKey: queryKeys.taxDueItemsAll })
     void client.invalidateQueries({ queryKey: ['tax-plans'] })
+    void client.invalidateQueries({ queryKey: ['f24-groups'] })
     void client.invalidateQueries({ queryKey: queryKeys.dashboardAll })
   }
 }
@@ -297,5 +301,103 @@ export function useConfirmTaxCarry() {
       refresh()
       toast.success('Differenza confermata')
     },
+  })
+}
+
+/** The F24 groups of one legal entity whose payment date falls in calendar `year`, open and paid
+ *  (a dissolved group is gone from the page), every page. */
+export function useF24Groups(year: number, legalEntityId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.taxF24Groups(year, legalEntityId),
+    queryFn: async () => {
+      const found: F24Group[] = []
+      for (const state of ['open', 'settled'] as const) {
+        let cursor: string | undefined
+        do {
+          const page = await unwrap(
+            api.GET('/api/f24-groups', {
+              params: {
+                query: {
+                  state,
+                  legal_entity_id: legalEntityId ?? '',
+                  due_from: `${year}-01-01`,
+                  due_to: `${year}-12-31`,
+                  limit: ITEMS_LIMIT,
+                  ...(cursor === undefined ? {} : { cursor }),
+                },
+              },
+            }),
+          )
+          found.push(...page.items)
+          cursor = page.next_cursor ?? undefined
+        } while (cursor !== undefined)
+      }
+      return [...new Map(found.map((group) => [group.id, group])).values()]
+    },
+    enabled: enabled && legalEntityId !== null,
+    retry: retryUnlessMissing,
+  })
+}
+
+/** The inbox's tax documents a receipt can be picked from. */
+export function useTaxDocuments(enabled: boolean) {
+  return useQuery({
+    queryKey: ['inbox-tax-documents'],
+    queryFn: () =>
+      unwrap(api.GET('/api/inbox/items', { params: { query: { kind: 'tax_document', limit: 50 } } })),
+    enabled,
+  })
+}
+
+/** «Raggruppa in un F24»: the due items of one date paid with one document. */
+export function useGroupF24() {
+  const refresh = useRefreshTaxes()
+  return useMutation({
+    mutationFn: (dueItemIds: string[]) =>
+      unwrap(api.POST('/api/f24-groups', { body: { due_item_ids: dueItemIds } })),
+    onSuccess: () => {
+      refresh()
+      toast.success('F24 creato')
+    },
+  })
+}
+
+/** «Sciogli l’F24»: releases the lines of a group nobody has paid. */
+export function useUngroupF24() {
+  const refresh = useRefreshTaxes()
+  return useMutation({
+    mutationFn: (groupId: string) =>
+      unwrap(api.POST('/api/f24-groups/{group_id}/ungroup', { params: { path: { group_id: groupId } } })),
+    onSuccess: () => {
+      refresh()
+      toast.success('F24 sciolto')
+    },
+  })
+}
+
+export function useAttachReceipt(groupId: string) {
+  const refresh = useRefreshTaxes()
+  return useMutation({
+    mutationFn: (inboxItemId: string) =>
+      unwrap(
+        api.POST('/api/f24-groups/{group_id}/receipts', {
+          params: { path: { group_id: groupId } },
+          body: { inbox_item_id: inboxItemId },
+        }),
+      ),
+    onSuccess: refresh,
+  })
+}
+
+export function useDetachReceipt(groupId: string) {
+  const refresh = useRefreshTaxes()
+  return useMutation({
+    mutationFn: (inboxItemId: string) =>
+      unwrap(
+        api.DELETE('/api/f24-groups/{group_id}/receipts/{inbox_item_id}', {
+          params: { path: { group_id: groupId, inbox_item_id: inboxItemId } },
+        }),
+      ),
+    onSuccess: refresh,
   })
 }

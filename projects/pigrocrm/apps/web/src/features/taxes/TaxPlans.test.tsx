@@ -192,6 +192,8 @@ beforeEach(() => {
     '/api/analytics/fiscal': ESTIMATE,
     '/api/analytics/fiscal/calendar': CALENDAR,
     '/api/due-items': { items: [item({})], next_cursor: null },
+    '/api/f24-groups': { items: [], next_cursor: null },
+    '/api/inbox/items': { items: [], next_cursor: null },
     '/api/analytics/fiscal/plans': { legal_entity_id: 'le-1', instalment_plans: [], notice_plans: [] },
   }
   for (const verb of [api.GET, api.PUT, api.POST, api.DELETE]) vi.mocked(verb).mockReset()
@@ -344,6 +346,102 @@ describe('«Tasse»: Imposte, the method and the instalments', () => {
     const link = await screen.findByRole('link', { name: 'Apri i parametri fiscali' })
     expect(link).toHaveAttribute('href', '/app/settings/legal-entities')
     expect(screen.getByText(/coefficiente di redditività/)).toBeInTheDocument()
+  })
+})
+
+const CREDIT = item({
+  id: 'i-9',
+  tax: 'iva',
+  source_kind: 'tax_credit',
+  amount: '-200.00',
+  remaining: '-200.00',
+  description: 'Credito IVA 2025',
+  carry_to_confirm: false,
+})
+
+const GROUP = (overrides: Record<string, unknown> = {}) => ({
+  id: 'g-1',
+  legal_entity_id: 'le-1',
+  payment_date: '2026-11-30',
+  state: 'open',
+  note: null,
+  total: '500.00',
+  debit_total: '700.00',
+  credit_total: '200.00',
+  lines: [
+    { due_item_id: 'i-1', source_kind: 'tax_advance', tax: 'irpef', description: 'x', amount: '700.00', is_credit: false, credit_origin: null, line: 'Secondo acconto IRPEF', code: '4034', code_kind: 'tax_code', code_label: '4034', code_to_verify: false, reference_year: 2026, released: false },
+    { due_item_id: 'i-9', source_kind: 'tax_credit', tax: 'iva', description: 'x', amount: '-200.00', is_credit: true, credit_origin: null, line: null, code: null, code_kind: null, code_label: 'codice da verificare', code_to_verify: true, reference_year: null, released: false },
+  ],
+  receipts: [],
+  bank_movement_id: null,
+  settled_on: null,
+  created_by_type: 'user',
+  created_at: '2026-11-01T00:00:00Z',
+  updated_at: '2026-11-01T00:00:00Z',
+  ...overrides,
+})
+
+describe('«Tasse»: F24 and credits', () => {
+  beforeEach(() => {
+    answers['/api/due-items'] = { items: [item({ carry_to_confirm: false }), CREDIT], next_cursor: null }
+  })
+
+  it('says «F24 da creare» and groups the items of the date, the credit among them', async () => {
+    wide()
+    renderPage('dates')
+    const row = await screen.findByRole('row', { name: /30\/11\/2026/ })
+    expect(row).toHaveTextContent('F24 da creare')
+    expect(row).toHaveTextContent('-200,00')
+    await userEvent.click(row)
+    const panel = await screen.findByRole('complementary', { name: 'Scadenza aperta' })
+    await userEvent.click(within(panel).getByRole('button', { name: 'Raggruppa in un F24' }))
+    await waitFor(() =>
+      expect(api.POST).toHaveBeenCalledWith('/api/f24-groups', { body: { due_item_ids: ['i-1', 'i-9'] } }),
+    )
+  })
+
+  it('shows an open group with the codes, the server’s net, and ungroups it', async () => {
+    answers['/api/f24-groups'] = { items: [GROUP()], next_cursor: null }
+    wide()
+    renderPage('dates')
+    const row = await screen.findByRole('row', { name: /30\/11\/2026/ })
+    expect(row).toHaveTextContent('F24 creato')
+    expect(row).toHaveTextContent('Netto 500,00')
+    await userEvent.click(row)
+    const panel = await screen.findByRole('complementary', { name: 'Scadenza aperta' })
+    expect(within(panel).getByText('Codice 4034 · anno 2026')).toBeInTheDocument()
+    expect(within(panel).getByText(/codice da verificare/)).toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: 'Segna come pagato' })).not.toBeInTheDocument()
+    await userEvent.click(within(panel).getByRole('button', { name: 'Sciogli l’F24' }))
+    await userEvent.click(within(panel).getByRole('button', { name: 'Sciogli il gruppo' }))
+    await waitFor(() =>
+      expect(api.POST).toHaveBeenCalledWith('/api/f24-groups/{group_id}/ungroup', {
+        params: { path: { group_id: 'g-1' } },
+      }),
+    )
+  })
+
+  it('links the receipt of a paid group', async () => {
+    answers['/api/f24-groups'] = {
+      items: [
+        GROUP({
+          state: 'settled',
+          receipts: [{ id: 'r-1', inbox_item_id: 'in-1', original_name: 'ricevuta-f24.pdf', attached_at: '2026-11-30T10:00:00Z' }],
+        }),
+      ],
+      next_cursor: null,
+    }
+    wide()
+    renderPage('dates')
+    const row = await screen.findByRole('row', { name: /30\/11\/2026/ })
+    expect(row).toHaveTextContent('F24 pagato · ricevuta')
+    await userEvent.click(row)
+    const panel = await screen.findByRole('complementary', { name: 'Scadenza aperta' })
+    expect(within(panel).getByRole('link', { name: 'ricevuta-f24.pdf' })).toHaveAttribute(
+      'href',
+      '/api/inbox/items/in-1/file',
+    )
+    expect(within(panel).queryByRole('button', { name: 'Sciogli l’F24' })).not.toBeInTheDocument()
   })
 })
 

@@ -221,6 +221,7 @@ beforeEach(() => {
     '/api/analytics/fiscal': estimate(),
     '/api/analytics/fiscal/calendar': CALENDAR,
     '/api/due-items': { items: [], next_cursor: null },
+    '/api/f24-groups': { items: [], next_cursor: null },
     '/api/analytics/fiscal/plans': { legal_entity_id: 'le-1', instalment_plans: [], notice_plans: [] },
   }
   vi.mocked(api.GET).mockReset()
@@ -664,7 +665,14 @@ const PERSON = estimate({
   taxable_amount: null,
   contributions: '15789.47',
   due_total: '30859.47',
-  basis: { label: 'Incassato nel 2026, secondo il principio di cassa' },
+  basis: {
+    label: 'Incassato nel 2026, secondo il principio di cassa',
+    wording: 'quello che è stato incassato',
+    period_from: '2026-01-01',
+    period_to: '2026-12-31',
+    assumptions: [],
+    left_out: [],
+  },
   person: PERSON_ESTIMATE,
   readings: {
     lines: [

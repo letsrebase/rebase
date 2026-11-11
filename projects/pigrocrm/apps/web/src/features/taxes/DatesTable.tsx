@@ -3,11 +3,15 @@ import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { StatusPill } from '@/components/StatusPill'
+import { money } from '@/features/dashboard/format'
 import { moneyIn } from '@/features/cash/money'
 import { formatIsoDateItalian } from '@/lib/dates'
 import {
   CARRY_LABEL,
   CARRY_TONE,
+  F24_CHIP_LABEL,
+  F24_CHIP_TONE,
+  f24Chip,
   TAX_ITEM_STATE_LABEL,
   TAX_ITEM_STATE_TONE,
   itemTitle,
@@ -25,6 +29,8 @@ export const PAGE_ROWS = 25
  *  day itself and what lies ahead are not. */
 function Lines({ day, today, compact }: { day: DueDay; today: string; compact: boolean }) {
   const past = day.date < today
+  const chip = f24Chip(day)
+  const group = day.groups.find((candidate) => candidate.state !== 'dissolved')
   return (
     <div className="space-y-1.5">
       {day.items.map((item) => {
@@ -44,6 +50,14 @@ function Lines({ day, today, compact }: { day: DueDay; today: string; compact: b
           </div>
         )
       })}
+      {chip ? (
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+          <StatusPill tone={F24_CHIP_TONE[chip]}>{F24_CHIP_LABEL[chip]}</StatusPill>
+          {group && !compact ? (
+            <span className="text-sm tabular-nums">Netto {money(group.total)}</span>
+          ) : null}
+        </div>
+      ) : null}
       {day.entries.map((entry) => (
         <p key={`${entry.tax}-${entry.kind}`} className={cn('text-sm', past && 'text-muted-foreground')}>
           {dateLabel(entry)}

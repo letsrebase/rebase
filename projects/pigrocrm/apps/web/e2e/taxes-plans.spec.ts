@@ -129,3 +129,39 @@ test('the advance method of a tax year is chosen from the tax’s panel and read
     expect(deactivated.status(), await deactivated.text()).toBe(200)
   }
 })
+
+test('a date’s items are grouped in an F24 and the group is dissolved again', async ({ page }) => {
+  const stamp = Date.now()
+  const name = `Srl f24 ${stamp}`
+  await loginAsAdmin(page)
+  const id = await createSrl(page, name)
+  try {
+    const plan = await page.request.post(`/api/analytics/fiscal/notice-plans?legal_entity_id=${id}`, {
+      data: {
+        label: `Avviso ${stamp}`,
+        tax: 'ires',
+        total: '1200.00',
+        instalments: [{ due_date: '2027-03-16', interest: '10.00' }],
+      },
+    })
+    expect(plan.status(), await plan.text()).toBe(201)
+    await page.goto('/app/taxes?tab=dates&year=2027')
+    const section = page.getByRole('region', { name })
+    const row = section.getByRole('row', { name: /16\/03\/2027/ })
+    await expect(row).toContainText('F24 da creare')
+    await row.click()
+    const panel = page.getByRole('complementary', { name: 'Scadenza aperta' })
+    await panel.getByRole('button', { name: 'Raggruppa in un F24' }).click()
+    await expect(row).toContainText('F24 creato')
+    await expect(panel.getByText(/Netto dell’F24/)).toBeVisible()
+    await expect(panel.getByText(/codice da verificare|Codice/).first()).toBeVisible()
+    const groups = await page.request.get(`/api/f24-groups?legal_entity_id=${id}`)
+    expect(((await groups.json()) as { items: unknown[] }).items).toHaveLength(1)
+    await panel.getByRole('button', { name: 'Sciogli l’F24' }).click()
+    await panel.getByRole('button', { name: 'Sciogli il gruppo' }).click()
+    await expect(row).toContainText('F24 da creare')
+  } finally {
+    const deactivated = await page.request.delete(`/api/legal-entities/${id}`)
+    expect(deactivated.status(), await deactivated.text()).toBe(200)
+  }
+})

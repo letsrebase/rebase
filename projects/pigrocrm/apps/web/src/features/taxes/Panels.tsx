@@ -12,6 +12,7 @@ import { formatIsoDateItalian, toIsoDate } from '@/lib/dates'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { dateLabel, taxOfDate, type DueDay } from './dates'
 import { AdvanceMethodDialog } from './AdvanceMethodDialog'
+import { F24Section } from './F24Section'
 import { InstalmentPlanDialog } from './InstalmentPlanDialog'
 import {
   CARRY_LABEL,
@@ -173,6 +174,8 @@ function PersonComputedFrom({ line, estimate }: { line: TaxReadingLine; estimate
 function ComputedFrom({ line, estimate }: { line: TaxReadingLine; estimate: FiscalEstimate }) {
   const tax = line.tax === 'ires' ? estimate.company?.ires : line.tax === 'irap' ? estimate.company?.irap : undefined
   const basis = estimate.basis
+  // An ordinary person's IRPEF and INPS are drawn by `PersonComputedFrom`, which says its own basis.
+  if (estimate.person && (line.tax === 'irpef' || line.tax === 'inps')) return null
   if (!tax && !basis) return null
   return (
     <section className="space-y-2">
@@ -342,13 +345,14 @@ export function TaxPanel({
 
 /** One due item in a date's panel: its words in full, its amount and state, what is left of a
  *  part payment, the mark and the button of a carried difference, and «Segna come pagato». */
-function ItemBlock({ item, today }: { item: TaxDueItem; today: string }) {
+function ItemBlock({ item, today, grouped }: { item: TaxDueItem; today: string; grouped: boolean }) {
   const state = taxItemState(item, today)
   const confirm = useConfirmTaxCarry()
   const settle = useSettleDueItem()
   const refresh = useRefreshTaxes()
   const since = state === 'overdue' ? overdueSince(item, today) : null
-  const open = item.state === 'expected' || item.state === 'forecast'
+  // An item in an F24 is paid with the group's movement, not on its own.
+  const open = (item.state === 'expected' || item.state === 'forecast') && !grouped
   return (
     <li className="space-y-2 text-sm">
       <div className="flex items-baseline justify-between gap-3">
@@ -405,10 +409,16 @@ export function DatePanel({ day, today }: { day: DueDay; today: string }) {
   return (
     <div className="space-y-5 overflow-y-auto p-4">
       <h2 className="text-lg font-semibold">{formatIsoDateItalian(day.date)}</h2>
+      <F24Section day={day} />
       {day.items.length > 0 ? (
         <ul className="space-y-4 border-b pb-4">
           {day.items.map((item) => (
-            <ItemBlock key={item.id} item={item} today={today} />
+            <ItemBlock
+              key={item.id}
+              item={item}
+              today={today}
+              grouped={day.groups.some((group) => group.lines.some((line) => line.due_item_id === item.id))}
+            />
           ))}
         </ul>
       ) : null}

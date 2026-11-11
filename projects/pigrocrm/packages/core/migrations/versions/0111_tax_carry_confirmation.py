@@ -1,7 +1,7 @@
 """when a tax item's carried difference was confirmed
 
-Revision ID: 0110
-Revises: 0109
+Revision ID: 0111
+Revises: 0110
 
 REB-1079. `due_items.carry_confirmed_at` is set when an administrator confirms the difference an
 advance already paid left on a tax item (REB-1074 asks for it in the item's description). Null for
@@ -13,8 +13,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0110"
-down_revision: str | Sequence[str] | None = "0109"
+revision: str = "0111"
+down_revision: str | Sequence[str] | None = "0110"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

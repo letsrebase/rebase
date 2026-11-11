@@ -1,6 +1,7 @@
 import { ITEM_STATE_TONE, isZero } from '@/features/cash/schedule/labels'
 import type { StatusTone } from '@/components/StatusPill'
 import { daysBetweenIso } from '@/lib/dates'
+import type { DueDay } from './dates'
 import type { TaxDueItem } from './queries'
 
 /**
@@ -57,4 +58,43 @@ export function itemTitle(item: TaxDueItem): string {
   const text = item.description ?? ''
   const cut = text.indexOf('. Include ')
   return cut === -1 ? text : text.slice(0, cut)
+}
+
+export type F24Chip = 'todo' | 'created' | 'paid' | 'paid_receipt'
+
+export const F24_CHIP_LABEL: Record<F24Chip, string> = {
+  todo: 'F24 da creare',
+  created: 'F24 creato',
+  paid: 'F24 pagato',
+  paid_receipt: 'F24 pagato · ricevuta',
+}
+
+export const F24_CHIP_TONE: Record<F24Chip, StatusTone> = {
+  todo: 'gold',
+  created: 'muted',
+  paid: 'ink',
+  paid_receipt: 'ink',
+}
+
+/** The items of a day an F24 can still take: open, owed to the tax office, with nothing paid on
+ *  them (the server refuses the rest and says why). A credit is among them. */
+export function groupableItems(day: DueDay): TaxDueItem[] {
+  const grouped = new Set(day.groups.flatMap((group) => group.lines.map((line) => line.due_item_id)))
+  return day.items.filter(
+    (item) =>
+      (item.state === 'forecast' || item.state === 'expected') &&
+      isZero(item.settled) &&
+      !grouped.has(item.id),
+  )
+}
+
+/** The chip on a date's row (brief, question 3): «da creare» when items wait for a document,
+ *  «creato» for an open group, «pagato» for a paid one, with «ricevuta» when a receipt is attached. */
+export function f24Chip(day: DueDay): F24Chip | null {
+  const group = day.groups.find((candidate) => candidate.state !== 'dissolved')
+  if (group) {
+    if (group.state === 'open') return 'created'
+    return group.receipts.length > 0 ? 'paid_receipt' : 'paid'
+  }
+  return groupableItems(day).length > 0 ? 'todo' : null
 }
