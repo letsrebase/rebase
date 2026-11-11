@@ -7,6 +7,7 @@ import {
   CalendarDays,
   Clock,
   FileInput,
+  HandCoins,
   Handshake,
   IdCard,
   Inbox,
@@ -106,6 +107,10 @@ export const SECTIONS = [
       // The people the company pays (the approved brief of 2026-11-10, REB-1027): pay is an
       // administrator's, so the entry is theirs alone, as the service is.
       { to: '/app/staff', action: 'list_staff', label: "Persone dell'azienda", icon: IdCard },
+      // The expense notes of the staff module (REB-1046): an administrator's, and a user linked to
+      // a staff member's. Role alone cannot say «linked», so the entry waits on a gate
+      // (`useNavGates`); the route's two modules (`ROUTE_MODULES`) do the rest.
+      { to: '/app/expense-notes', label: 'Note spese', icon: HandCoins, gate: 'expense-notes' },
       // The archive of a period for the accountant (REB-1028): an administrator's, in the sidebar
       // and in «Altro». It belongs to no module, since the registers it reads are the core's.
       {
@@ -135,8 +140,9 @@ export interface NavItem {
 }
 
 /** What an entry may ask beyond its module: `iva` is an administrator's, with at least one
- *  legal entity whose pack settles IVA by period (REB-1024). */
-export type NavGate = 'iva'
+ *  legal entity whose pack settles IVA by period (REB-1024); `expense-notes` is an administrator's
+ *  or a user linked to a staff member's (REB-1046). */
+export type NavGate = 'iva' | 'expense-notes'
 
 const NO_GATES: ReadonlySet<NavGate> = new Set()
 
@@ -235,6 +241,9 @@ export const INBOX_PATH = '/app/inbox'
 
 /** The engagements' page, whose entry carries the count of engagements waiting for a person. */
 export const ENGAGEMENTS_PATH = '/app/engagements'
+
+/** The expense notes' page, whose entry carries an administrator's count of notes waiting. */
+export const EXPENSE_NOTES_PATH = '/app/expense-notes'
 
 
 /**

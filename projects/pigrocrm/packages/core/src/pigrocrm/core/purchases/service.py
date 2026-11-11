@@ -11,6 +11,8 @@ from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.documents.repository import DocumentRepository
 from pigrocrm.core.due_items.forecast import ForecastService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.expense_notes.access import own_staff_member_id, reads_all_notes
+from pigrocrm.core.expense_notes.models import ExpenseNote
 from pigrocrm.core.fields.custom import merge_custom
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
@@ -30,7 +32,7 @@ from pigrocrm.core.purchases.models import (
     Purchase,
     PurchaseVatLine,
 )
-from pigrocrm.core.purchases.repository import PurchaseRepository
+from pigrocrm.core.purchases.repository import NotesScope, PurchaseRepository
 from pigrocrm.core.purchases.schemas import (
     PurchaseCreate,
     PurchaseListQuery,
@@ -253,6 +255,17 @@ class PurchaseService:
         if purchase is None:
             raise NotFound(ENTITY, purchase_id)
         return purchase
+
+    @staticmethod
+    def _refuse_expense_note(purchase: Purchase) -> None:
+        """An expense note's purchase is the approval's figure: it is changed, cancelled or
+        archived by changing the note, never from here."""
+        if purchase.kind == "expense_note":
+            raise Conflict(
+                ENTITY,
+                "e' l'acquisto di una nota spese approvata: non si cambia da qui",
+                id=str(purchase.id),
+            )
 
     # --- the document -------------------------------------------------------------------
 
@@ -485,6 +498,36 @@ class PurchaseService:
 
     # --- writes -------------------------------------------------------------------------
 
+    def register_expense_note(self, note: ExpenseNote) -> Purchase:
+        """The writer's half: the purchase an approved expense note becomes (spec 2026-11-09,
+        staff, § 3), in the caller's transaction and with no actor, which `ExpenseNoteService`
+        has authorised first. It carries the total only, like a receipt, and costs it: the
+        VAT of a retail receipt is not deductible (see the module docstring), whatever the
+        pack. Flushes, never commits; the timeline entry and the inbox filing are the
+        caller's."""
+        self.categories.require_active(note.category_id)
+        self.locks.assert_writable(ENTITY, "date", note.date)
+        pack_id, pack_version, regime_code = self._buyer_pack(note.legal_entity_id)
+        return self.repo.add(
+            Purchase(
+                kind="expense_note",
+                legal_entity_id=note.legal_entity_id,
+                staff_member_id=note.staff_member_id,
+                category_id=note.category_id,
+                date=note.date,
+                description=note.description,
+                amount=note.amount,
+                inbox_item_id=note.inbox_item_id,
+                buyer_pack_id=pack_id,
+                buyer_pack_version=pack_version,
+                buyer_regime_code=regime_code,
+                cost_amount=purchase_cost(
+                    pack_id=pack_id, amount=note.amount, lines=[], reverse_charge=False
+                ),
+                custom_fields={},
+            )
+        )
+
     def create(self, data: PurchaseCreate, actor: Actor) -> PurchaseRead:
         actor.require_write("create_purchase")
         self._check_refs(data.deal_id, data.document_id, data.inbox_item_id)
@@ -550,6 +593,7 @@ class PurchaseService:
     def update(self, purchase_id: UUID, data: PurchaseUpdate, actor: Actor) -> PurchaseRead:
         actor.require_write("update_purchase")
         purchase = self._require(purchase_id)
+        self._refuse_expense_note(purchase)
         supplier_before = purchase.supplier_id
         if purchase.status == "cancelled":
             raise Conflict(ENTITY, "un acquisto annullato non si modifica", id=str(purchase_id))
@@ -670,6 +714,7 @@ class PurchaseService:
         for a document that was void."""
         actor.require_write("cancel_purchase")
         purchase = self._require(purchase_id)
+        self._refuse_expense_note(purchase)
         if purchase.status == "cancelled":
             raise Conflict(ENTITY, "l'acquisto è già annullato", id=str(purchase_id))
         self.locks.assert_writable(ENTITY, "date", purchase.date)
@@ -683,6 +728,7 @@ class PurchaseService:
     def soft_delete(self, purchase_id: UUID, actor: Actor) -> None:
         actor.require_write("delete_purchase")
         purchase = self._require(purchase_id)
+        self._refuse_expense_note(purchase)
         self.locks.assert_writable(ENTITY, "date", purchase.date)
         self._assert_register_writable(purchase)
         purchase.deleted_at = datetime.now(UTC)
@@ -704,8 +750,22 @@ class PurchaseService:
         self.session.commit()
         return PurchaseRead.model_validate(purchase)
 
+    def _notes_of(self, actor: Actor) -> NotesScope | None:
+        """What the actor reads of the expense-note purchases: all of them for who reads every
+        note (`expense_notes/access.py`), the staff member's own for everyone else."""
+        if reads_all_notes(actor):
+            return None
+        return NotesScope(own_staff_member_id(self.session, actor))
+
     def get(self, purchase_id: UUID, actor: Actor) -> PurchaseRead:
         purchase = self._require(purchase_id)
+        notes_of = self._notes_of(actor)
+        if (
+            notes_of is not None
+            and purchase.kind == "expense_note"
+            and purchase.staff_member_id != notes_of.member_id
+        ):
+            raise NotFound(ENTITY, purchase_id)
         read = PurchaseRead.model_validate(purchase)
         if purchase.status == "registered":
             read.iva_period_closed = self.iva_locks.is_closed(
@@ -715,10 +775,11 @@ class PurchaseService:
 
     # `list` stays the last method in this class -- the unconditional project rule.
     def list(self, query: PurchaseListQuery, actor: Actor) -> PurchasePage:
-        rows = self.repo.list(query)
+        notes_of = self._notes_of(actor)
+        rows = self.repo.list(query, notes_of)
         has_more = len(rows) > query.limit
         items = rows[: query.limit]
-        total_count, total_amount = self.repo.totals(query)
+        total_count, total_amount = self.repo.totals(query, notes_of)
         return PurchasePage(
             items=[PurchaseRead.model_validate(row) for row in items],
             next_cursor=items[-1].id if has_more and items else None,

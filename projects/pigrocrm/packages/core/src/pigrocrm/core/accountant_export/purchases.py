@@ -26,7 +26,7 @@ from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.purchases.models import Purchase
 
 RECEIVED_KINDS = ("invoice", "credit_note")
-LIST_KINDS = ("receipt", "expense")
+LIST_KINDS = ("receipt", "expense", "expense_note")
 LIST_FILE = "elenco.csv"
 
 KIND = {
@@ -34,6 +34,7 @@ KIND = {
     "credit_note": "Nota di credito",
     "receipt": "Ricevuta",
     "expense": "Spesa",
+    "expense_note": "Nota spese",
 }
 LIST_COLUMNS = (
     "Data",

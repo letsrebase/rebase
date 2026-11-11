@@ -141,6 +141,24 @@ describe('can()', () => {
   })
 })
 
+describe('expense notes (REB-1046, design § 3 and § 4)', () => {
+  it('lets a collaborator submit and an administrator alone read all, approve, reject and reimburse', () => {
+    expect(can('collaborator', 'submit_expense_note')).toBe(true)
+    expect(can('admin', 'submit_expense_note')).toBe(true)
+    expect(can('readonly', 'submit_expense_note')).toBe(false)
+    for (const action of [
+      'read_all_expense_notes',
+      'approve_expense_note',
+      'reject_expense_note',
+      'reimburse_expense_note',
+    ]) {
+      expect(can('admin', action)).toBe(true)
+      expect(can('collaborator', action)).toBe(false)
+      expect(can('readonly', action)).toBe(false)
+    }
+  })
+})
+
 describe('the settings tab visibility', () => {
   it('decides every tab in SETTINGS_TABS (the record is exhaustive, this is the drift pin)', () => {
     for (const tab of SETTINGS_TABS) {

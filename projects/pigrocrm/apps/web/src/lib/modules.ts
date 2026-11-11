@@ -64,6 +64,9 @@ export const ROUTE_MODULES: ReadonlyArray<{ path: string; modules: readonly Modu
   { path: '/app/taxes', modules: ['taxes'] },
   // staff: the people the company pays and what they cost (REB-1027).
   { path: '/app/staff', modules: ['staff'] },
+  // expense notes become purchases, so the page needs both modules: with `purchases` off it is
+  // gone and «Persone dell'azienda» stays (REB-1046, the brief's «Module off»).
+  { path: '/app/expense-notes', modules: ['staff', 'purchases'] },
   // purchases: the purchases register, its pages and the cost categories. A deal's own
   // «Acquisti» block stays on its Ore tab, `time` and `purchases` together.
   { path: '/app/purchases', modules: ['purchases'] },

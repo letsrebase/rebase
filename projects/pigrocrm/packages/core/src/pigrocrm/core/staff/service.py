@@ -32,6 +32,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.db import today_local
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.expense_notes.payslips import settle_notes_in_payslip
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.money import round_money
 from pigrocrm.core.schemas import supplied_changes
@@ -289,6 +290,9 @@ class StaffService:
                 inbox_item_id=inbox_item_id,
             )
         )
+        # The expense notes this payslip pays back are settled by it, on their own due items:
+        # the payslip adds none (spec § 3).
+        settle_notes_in_payslip(self.session, member.id, period, actor)
         self.activities.record(ENTITY, member.id, "staff_payslip_recorded", actor, payload)
         self.payroll.refresh_payroll_forecasts(member.legal_entity_id)
         return payslip

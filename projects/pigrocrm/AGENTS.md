@@ -197,6 +197,21 @@ and a dependent share the legal entity of their item by composite foreign key, s
 tables is the plain `legal_entity_visible(legal_entity_id)`. A source kind is a string validated in
 code (`SOURCE_KINDS`), never a CHECK.
 
+**An expense note is `ExpenseNoteService`'s and it owns no figure: its purchase does (REB-1046).** `core/expense_notes/` holds
+`expense_notes` (migration 0105): `submitted`, `approved`, `rejected`, `reimbursed`, no draft. Approving writes one purchase of kind
+`expense_note` (`PurchaseService.register_expense_note`, the writer's half with no actor; `purchases.staff_member_id`; the purchase is
+never edited, cancelled or archived from the purchases, and `PurchaseCreate` refuses the kind) and the one outgoing due item to the
+person (source kind `expense_note`, counterparty `staff_member`, in `RESTRICTED_SOURCE_KINDS`: an administrator's and the staff member's own to read): a purchases due-item writer must skip this kind of purchase. Reimbursing is a second act,
+once: a transfer dates the item (`paid` settles it), otherwise the item is settled like any other and `project_reimbursement`
+(called by `DueItemService._project`) turns the note `reimbursed` or back to `approved` when a payment is reversed; in a payslip,
+`record_staff_payslip` settles the same item through `settle_notes_in_payslip`, so no second due item exists. A note is own when
+the staff member is the deciding user or the user typed it in; only the space's one active administrator decides on an own note
+(`self_approved`, for the export), and an agent never does (`OwnExpenseNote`). A staff member reads their own notes, an
+administrator (and a `full_access` token) every one in scope (`read_all_expense_notes`); `submit_expense_note` is a token's for its
+owner's own staff member only. The surface needs `staff` and `purchases`, but the module's `requires` stays empty: with `purchases`
+off «Persone dell'azienda» stays. `GET /api/expense-notes/summary` is how the web learns whether the caller is a staff member (the
+staff routes refuse non-administrators).
+
 **Bank accounts, statements and movements are written by `BankStatementService` (REB-998).**
 `core/bank/` holds `bank_accounts` (ours, always a legal entity), `bank_statements`, `bank_movements`
 and `statement_movements` (which statement carries which movement), plus `organization_ibans`, the

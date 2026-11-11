@@ -26,6 +26,7 @@ const PURCHASE: Purchase = {
   status: 'registered',
   legal_entity_id: null,
   deal_id: null,
+  staff_member_id: null,
   category_id: 'cat-1',
   date: '2026-03-05',
   amount: '2500.50',

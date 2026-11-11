@@ -40,6 +40,7 @@ from pigrocrm_api.routers import (
     due_items,
     email_drafts,
     engagements,
+    expense_notes,
     fields,
     gmail,
     identity,
@@ -200,6 +201,9 @@ def create_app() -> FastAPI:
         due_items,
         # REB-977: employees and directors with their pay, behind the `staff` module.
         staff,
+        # REB-1046: a staff member's receipts from submission to reimbursement, behind `staff`
+        # and `purchases`.
+        expense_notes,
         # REB-972: the model PigroCRM reads documents with: settings, key, cap, «Prova».
         ai_model,
         # REB-1011: the period bundle for the accountant.

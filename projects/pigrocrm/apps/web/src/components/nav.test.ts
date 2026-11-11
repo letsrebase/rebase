@@ -362,3 +362,46 @@ describe('«Collaboratori» (REB-1035)', () => {
     expect(labelsOf('collaborator')).not.toContain('Collaboratori')
   })
 })
+
+describe('«Note spese» (REB-1046)', () => {
+  const gate = new Set<NavGate>(['expense-notes'])
+  const names = (
+    role: 'admin' | 'collaborator' | 'readonly' | undefined,
+    open: ReadonlySet<NavGate>,
+    off: readonly ModuleKey[] = [],
+  ) =>
+    visibleSections(moduleAccess(spaceModules(off)), role, open).flatMap((section) =>
+      section.items.map((item) => item.label),
+    )
+
+  it("is drawn right after «Persone dell'azienda» when its gate holds, and not before", () => {
+    const shown = names('admin', gate)
+    expect(shown[shown.indexOf("Persone dell'azienda") + 1]).toBe('Note spese')
+    expect(names('admin', new Set())).not.toContain('Note spese')
+  })
+
+  it('follows its gate and not the role: a collaborator linked to a staff member sees it, without «Persone dell\'azienda»', () => {
+    for (const role of ['collaborator', 'readonly'] as const) {
+      const shown = names(role, gate)
+      expect(shown).toContain('Note spese')
+      expect(shown).not.toContain("Persone dell'azienda")
+      expect(names(role, new Set())).not.toContain('Note spese')
+    }
+  })
+
+  it("is gone with staff or purchases off, and «Persone dell'azienda» stays with purchases off", () => {
+    expect(names('admin', gate, ['staff'])).not.toContain('Note spese')
+    const withoutPurchases = names('admin', gate, ['purchases'])
+    expect(withoutPurchases).not.toContain('Note spese')
+    expect(withoutPurchases).toContain("Persone dell'azienda")
+  })
+
+  it('is listed in «Altro» by the same table', () => {
+    const access = moduleAccess(spaceModules([]))
+    expect(phoneMoreItems(access, 'collaborator', gate).map((item) => item.label)).toContain('Note spese')
+    expect(phoneMoreItems(access, 'collaborator').map((item) => item.label)).not.toContain('Note spese')
+    expect(phoneMoreItems(moduleAccess(spaceModules(['purchases'])), 'admin', gate).map((item) => item.label)).not.toContain(
+      'Note spese',
+    )
+  })
+})

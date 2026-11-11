@@ -109,6 +109,7 @@ def test_every_source_kind_is_listed_and_the_fiscal_ones_are_a_named_subset() ->
         "cash_basis_vat",
         "engagement",
         "sales_draft",
+        "expense_note",
     }
     assert set(SOURCE_KINDS) >= RESTRICTED_SOURCE_KINDS
     assert set(SOURCE_KINDS) - RESTRICTED_SOURCE_KINDS == {

@@ -255,7 +255,12 @@ async def test_the_profile_decides_what_a_space_with_no_switch_of_its_own_lists(
     assert not solo & _tools_of("deals") and not solo & _tools_of("time")
     assert solo >= {"create_contract", "create_purchase", "get_year_overview"}
     assert "convert_deal_to_contract" not in solo
-    assert company == unchosen
+    # `staff` is the one module whose default is «off» for both profiles and «on» while no profile
+    # is chosen (it waits for the onboarding's answer): its default-surface tools (REB-1046) are
+    # the only difference.
+    staff_only = _tools_of("staff")
+    assert company | staff_only == unchosen | staff_only
+    assert not company & staff_only
     # An explicit switch outranks the profile.
     kept = await _names(
         _server(mcp_session, tmp_path, _settings(space_profile="solo", module_deals=True))

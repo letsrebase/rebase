@@ -191,6 +191,26 @@ ROWS: list[Row] = [
         admin_only=True,
         body={"hourly_cost": "20.47"},
     ),
+    # --- expense notes (REB-1046): submit is a write (admin or collaborator, the staff member's
+    # own), the three decisions an administrator's, before any lookup ------------------------
+    Row(
+        "POST",
+        "/api/expense-notes",
+        body={
+            "date": "2026-01-02",
+            "description": "matrice-nota",
+            "category_id": "__FAKE__",
+            "amount": "10.00",
+        },
+    ),
+    Row("POST", "/api/expense-notes/{note_id}/approve", admin_only=True),
+    Row("POST", "/api/expense-notes/{note_id}/reject", admin_only=True, body={"reason": "no"}),
+    Row(
+        "POST",
+        "/api/expense-notes/{note_id}/reimburse",
+        admin_only=True,
+        body={"method": "payslip"},
+    ),
     # --- declared tax figures (REB-1006): admin, before any lookup -------------------------
     Row(
         "PUT",
@@ -1304,6 +1324,7 @@ AGENT_REACHABLE: frozenset[tuple[str, str]] = frozenset(
         ("POST", "/api/contracts/{contract_id}/rate-cards"),
         ("POST", "/api/contracts/{contract_id}/renew"),
         ("POST", "/api/contracts/{contract_id}/state"),
+        ("POST", "/api/expense-notes"),
         ("POST", "/api/purchases"),
         ("POST", "/api/purchases/{purchase_id}/cancel"),
         ("POST", "/api/purchases/{purchase_id}/restore"),

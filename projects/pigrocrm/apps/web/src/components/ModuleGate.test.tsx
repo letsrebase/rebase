@@ -59,6 +59,9 @@ describe('ModuleGate (REB-953)', () => {
     // «Fornitori» is the purchases module's page; a stale bookmark says why (REB-1053).
     ['/app/suppliers', ['purchases'], 'Acquisti'],
     ['/app/taxes', ['taxes'], 'Tasse'],
+    // The notes become purchases, so the page needs both modules (REB-1046).
+    ['/app/expense-notes', ['purchases'], 'Acquisti'],
+    ['/app/expense-notes', ['staff'], "Persone dell'azienda"],
   ] as const)('turns %s away when %j is off', (pathname, off, label) => {
     route.pathname = pathname
     renderGate(off)
@@ -71,6 +74,12 @@ describe('ModuleGate (REB-953)', () => {
     renderGate(['deals'])
     expect(screen.getByText(/Il modulo Ore è spento/)).toBeInTheDocument()
     expect(screen.queryByText('La pagina')).toBeNull()
+  })
+
+  it("keeps «Persone dell'azienda» with purchases off, and turns «Note spese» away (REB-1046)", () => {
+    route.pathname = '/app/staff'
+    renderGate(['purchases'])
+    expect(screen.getByText('La pagina')).toBeInTheDocument()
   })
 
   it('lets the core through whatever is off, «Clienti» and an organization\'s own page included', () => {
