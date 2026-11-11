@@ -51,6 +51,7 @@ from pigrocrm.core.fiscal.law import (
     TaxDateRule,
     TaxYearLaw,
 )
+from pigrocrm.core.fiscal.law_chamber_fee import CHAMBER_FEE_LAW
 from pigrocrm.core.fiscal.law_inps import INPS_2026, InpsYearLaw
 from pigrocrm.core.fiscal.law_irap import IRAP_LAW
 
@@ -366,7 +367,7 @@ _IT_STANDARD_CALENDAR_2026 = TaxCalendarLaw(
 # Agenzia's deadline calendar lists, so they are marked `calendar_year_only`; another year end,
 # a late approval and the ISA postponement to 20 July are not modelled. The annual chamber of
 # commerce fee falls on the day of the first advance (art. 17 c. 3 lett. a DPR 435/2001); its
-# amount is TO VERIFY (A5) and not in the pack. Withholding on pay to others (code 1040 for
+# 2026 amount is the law's `chamber_fee` (REB-1068). Withholding on pay to others (code 1040 for
 # professionals) is due by the 16th of the month after the payment, the same day as IVA's, and
 # the deadline calendar moves it to 20 August in 2026 as it does IVA (the deferral of a payment
 # of 100 euro or less is not modelled). Payroll withholding and contributions are the staff
@@ -634,8 +635,8 @@ IT_STANDARD_PACK = FiscalPack(
 # same regime strategy (`fiscal/regime.py::ORDINARY`), no ceiling, no statutory charge. It
 # differs in what it owes: IRES and IRAP, whose rates are the two verified ones below. The
 # rest of what the design lists for it stays a label until its figure is verified and its
-# card lands: IVA is C3's, the annual chamber of commerce fee is TO VERIFY (A5), the payroll
-# and director rows are C7's, and the company's advance and instalment rules are the
+# card lands: IVA is C3's, the annual chamber of commerce fee is `chamber_fee` (REB-1068), the
+# payroll and director rows are C7's, and the company's advance and instalment rules are the
 # estimate card's. No income estimate: `contribution_base` is the flat-rate regime's.
 # The entry starts in 2026, the year the rates below were read; an earlier year has no law in
 # this pack yet, and asks for none.
@@ -666,6 +667,7 @@ IT_COMPANY_PACK = FiscalPack(
                 irap=IRAP_LAW,
             ),
             payroll=ITALIAN_PAYROLL,
+            chamber_fee=CHAMBER_FEE_LAW,
         ),
     ),
     calendars=(_IT_COMPANY_CALENDAR_2026,),
