@@ -323,9 +323,10 @@ LEGAL_ENTITY_FIELDS: Final[set[str]] = {
 }
 
 
-# What `describe_legal_entity` adds beyond the row and `update_legal_entity` ignores on the way
-# back.
-READ_ONLY_FLAGS: Final[frozenset[str]] = frozenset({"has_logo", "has_signature"})
+# What `describe_legal_entity` adds beyond the row, or derives from it, and what
+# `update_legal_entity` ignores on the way back: the two image flags, and `place` (REB-1069),
+# the region and municipality codes read from the address.
+READ_ONLY_FLAGS: Final[frozenset[str]] = frozenset({"has_logo", "has_signature", "place"})
 
 
 def suggest_legal_entity(context: McpContext, country: str | None) -> dict[str, Any]:
@@ -354,8 +355,11 @@ def describe_legal_entity(
     role -- so there is no role for which this is agent-only knowledge. The logo and the
     signature appear as `has_logo` and `has_signature`, since REB-627: the files are uploaded
     over the REST API and their keys are the server's. The write on the same row is
-    `update_legal_entity` (ORB-188). Without `id`, the two state flags, the timestamps and the
-    two image flags, what this returns can be handed back to the write unchanged:
+    `update_legal_entity` (ORB-188). `place` is the address read against ISTAT's list of
+    municipalities (REB-1069): its status is `matched` or `unknown` (the city is not a
+    municipality of the province: write the name as ISTAT spells it), and the codes and the
+    region follow. Without `id`, the two state flags, the timestamps, the two image flags and
+    `place`, what this returns can be handed back to the write unchanged:
     `LegalEntityUpsert` forbids extra keys, and the round trip the write's docstring
     prescribes («leggi prima, rimanda indietro l'oggetto») has to be possible.
     """
@@ -381,8 +385,9 @@ def create_legal_entity(
     §7): `data` in `LegalEntityCreate`'s shape, `tax_profile` in `FiscalProfileUpsert`'s,
     the two bodies the REST route takes as one. Admin-only through the service, and
     agent-allowed like `update_legal_entity` since ORB-188: setting a space up is not a
-    fiscal act. The two image flags are dropped as `update_legal_entity` drops them, so an
-    agent that copies `describe_legal_entity`'s answer as a starting point is not refused."""
+    fiscal act. The read-only keys (the two image flags and `place`) are dropped as
+    `update_legal_entity` drops them, so an agent that copies `describe_legal_entity`'s answer as
+    a starting point is not refused."""
     payload = LegalEntityCreate.model_validate(
         {
             **{key: value for key, value in data.items() if key not in READ_ONLY_FLAGS},
@@ -406,9 +411,9 @@ def update_legal_entity(
     # Spelled as `LegalEntityService(...)` on each call rather than bound to a local:
     # `test_mcp_surface_coverage.py` resolves receivers per function, so a local would be
     # read too; this stays as written because it reads the same either way.
-    # The two image flags `describe_legal_entity` answers are read-only facts, not columns:
-    # dropped here so the read can be handed back whole, as the tool's own docstring
-    # prescribes, without `LegalEntityUpsert` refusing them as extra keys.
+    # The read-only keys `describe_legal_entity` answers (the two image flags and `place`) are
+    # facts about the row, not columns: dropped here so the read can be handed back whole, as
+    # the tool's own docstring prescribes, without `LegalEntityUpsert` refusing them as extra keys.
     payload = LegalEntityUpsert.model_validate(
         {key: value for key, value in data.items() if key not in READ_ONLY_FLAGS}
     )

@@ -14,7 +14,7 @@ from pigrocrm_api.deps import invalidate_space_settings
 
 # What `LegalEntityRead` carries beyond the upsert body: stripped so the read can be sent
 # back, the way the panel does, with `updated_at` kept as the version.
-READ_ONLY = {"id", "is_default", "active", "logo_key", "signature_key", "created_at"}
+READ_ONLY = {"id", "is_default", "active", "logo_key", "signature_key", "created_at", "place"}
 
 
 def _upsert_body(read: dict[str, Any], **changes: Any) -> dict[str, Any]:

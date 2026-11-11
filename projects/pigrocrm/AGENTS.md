@@ -818,6 +818,18 @@ process: the prompt tests did the latter and missed that the modern protocol alr
 answered «Internal server error» on 2.0 (REB-451). Re-read those paths in `.venv` at every
 `mcp` upgrade.
 
+**A legal entity's region and municipality are read from its address, never stored (REB-1069).** `core/places/` holds ISTAT's
+«Elenco comuni italiani» as `datasets/istat_municipalities.csv` (rebuilt by `scripts/import_istat_municipalities.py` from the
+workbook, never the `.csv` ISTAT keeps beside it, which is a 2024 copy; the source, the day and the SHA-256 are in the sidecar
+JSON). `LegalEntityRead.place` (REST, MCP `describe_legal_entity`) is `locate(city, province, country)`: `matched` with the ISTAT
+and cadastral codes and the region, `unknown` when no municipality of that province reads like the city (case, accents,
+apostrophes and spacing ignored, the other language of a bilingual name accepted; the region still comes from the province),
+`not_italian` otherwise. A save never depends on it, a replacement list needs no migration, and `place` is on the read only, so
+`update_legal_entity` drops it on the round trip like the two image flags. `GET /api/legal-entities/municipalities?province=` feeds
+the picker in «Impostazioni → Aziende», which writes the exact name into the city. **Name a shipped dataset directory
+`datasets/`, never `data/`:** the root `.gitignore` ignores any directory called `data`, so git refuses to add it and hatchling
+leaves it out of the wheel.
+
 ## Deploying
 
 Through CI only, as every project here (`docs/adding-a-project.md` §7): preview on a

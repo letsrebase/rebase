@@ -375,6 +375,24 @@ export function useLegalEntities() {
   })
 }
 
+export type MunicipalityOption = components['schemas']['MunicipalityOption']
+
+/**
+ * The municipalities of a province from ISTAT's list (REB-1069), for the picker offered when a
+ * legal entity's city matches none. The list changes with a release and not with a save, so it is
+ * never stale; `province` is the two-letter abbreviation, and nothing is asked without one.
+ */
+export function useMunicipalities(province: string) {
+  const code = province.trim().toUpperCase()
+  return useQuery({
+    queryKey: queryKeys.municipalities(code),
+    queryFn: () =>
+      unwrap(api.GET('/api/legal-entities/municipalities', { params: { query: { province: code } } })),
+    enabled: code.length === 2,
+    staleTime: Infinity,
+  })
+}
+
 /** `PUT`, not `PATCH`: `LegalEntityUpsert` is one shape for every write, because a
  *  write is always a whole row. Slice 3 builds FatturaPA on this row, so a partial
  *  save leaving `vat_number` empty would surface much later as an invalid invoice.

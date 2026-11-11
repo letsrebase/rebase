@@ -125,6 +125,9 @@ export const queryKeys = {
   // The azienda a nation proposes for a new customer (REB-626). Under the `legal_entities`
   // prefix on purpose: a rename or a deactivation invalidates the proposal with the list.
   legalEntityProposal: (country: string) => ['legal_entities', 'proposal', country] as const,
+  // The municipalities of one province, ISTAT's list (REB-1069): static for the life of a
+  // release, so it is not under `legal_entities` and a save does not refetch it.
+  municipalities: (province: string) => ['municipalities', province] as const,
   invoices: (params?: unknown) => ['invoices', params ?? {}] as const,
   // Distinct from `invoices` above: that key holds one `InvoicePage`, this one holds
   // an `useInfiniteQuery`'s own `{pages, pageParams}` shape (`useInvoicesPaged`,

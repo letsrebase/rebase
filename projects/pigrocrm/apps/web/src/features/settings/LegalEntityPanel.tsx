@@ -8,6 +8,7 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
 import { LegalEntityImages } from './LegalEntityImages'
+import { MunicipalityPlace } from './MunicipalityPlace'
 import { useSaveLegalEntity, type LegalEntityRecord } from './queries'
 import { StaleRowBanner } from './StaleRowBanner'
 import { isStaleRow, type StalePhase } from './staleRow'
@@ -210,6 +211,11 @@ function LegalEntityForm({ profile }: { profile: LegalEntityRecord }) {
     setStale('reloaded')
   }
 
+  function setField(name: FieldName, value: string) {
+    setTouched((previous) => new Set(previous).add(name))
+    setValues((previous) => ({ ...previous, [name]: value }))
+  }
+
   const fieldError = problem ? fieldErrorFrom(problem) : null
 
   return (
@@ -237,10 +243,7 @@ function LegalEntityForm({ profile }: { profile: LegalEntityRecord }) {
               // by the row that comes back. The lock lasts one round trip.
               disabled={save.isPending}
               aria-invalid={fieldError?.field === field.name ? true : undefined}
-              onChange={(event) => {
-                setTouched((previous) => new Set(previous).add(field.name))
-                setValues((previous) => ({ ...previous, [field.name]: event.target.value }))
-              }}
+              onChange={(event) => setField(field.name, event.target.value)}
             />
             {fieldError?.field === field.name ? (
               <p className="text-destructive text-sm">{fieldError.message}</p>
@@ -250,6 +253,20 @@ function LegalEntityForm({ profile }: { profile: LegalEntityRecord }) {
           </div>
         ))}
       </div>
+
+      {/* What the server read the address as (REB-1069), and the picker when the city matches
+          no municipality of its province. */}
+      <MunicipalityPlace
+        place={seeded.place}
+        saved={{
+          city: seeded.city ?? '',
+          province: seeded.province ?? '',
+          country: seeded.country,
+        }}
+        draft={values}
+        disabled={save.isPending}
+        onPick={(name) => setField('city', name)}
+      />
 
       <div className="flex justify-end">
         <Button onClick={submit} disabled={save.isPending}>

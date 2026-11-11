@@ -553,6 +553,7 @@ function legalEntityRecord(id: string, name: string): LegalEntityRecord {
     legal_representative: null,
     fiscal_year_end_month: 12,
     fiscal_year_end_day: 31,
+    place: { status: 'unknown' },
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
   }

@@ -26,12 +26,14 @@ from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.legal_entities.assets import ASSETS_ACTION, MAX_IMAGE_BYTES, LegalEntityAssets
 from pigrocrm.core.legal_entities.schemas import (
     COUNTRY_MAX_LENGTH,
+    PROVINCE_MAX_LENGTH,
     LegalEntityCreate,
     LegalEntityDeactivated,
     LegalEntityRead,
     LegalEntityUpsert,
 )
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.places.locate import MunicipalityOption, municipalities_of
 from pigrocrm.core.validation import SafeStr
 from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep, get_actor
 from pigrocrm_api.downloads import attachment_response
@@ -84,6 +86,23 @@ def suggest_legal_entity(
     lives in the service once; `POST /api/organizations` applies the same one
     when `legal_entity_id` is left out."""
     return LegalEntityRead.model_validate(LegalEntityService(session).propose(country))
+
+
+@router.get("/municipalities", response_model=list[MunicipalityOption])
+def list_municipalities(
+    province: Annotated[
+        SafeStr,
+        Query(
+            min_length=PROVINCE_MAX_LENGTH,
+            max_length=PROVINCE_MAX_LENGTH,
+            description="The province's two-letter abbreviation, such as MI",
+        ),
+    ],
+) -> list[MunicipalityOption]:
+    """The municipalities of a province, by name, from ISTAT's list (REB-1069). The form
+    offers them when a legal entity's city matches none; the name it picks matches exactly.
+    Empty for an abbreviation the list does not carry."""
+    return municipalities_of(province)
 
 
 @router.get("/{legal_entity_id}", response_model=LegalEntityRead)

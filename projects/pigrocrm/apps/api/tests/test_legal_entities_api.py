@@ -230,3 +230,59 @@ def test_a_foreign_fiscal_profile_has_no_regime_code_and_an_italian_one_requires
         json={"pack_id": "fr", "regime_code": "RF19"},
     )
     assert unknown.status_code == 422, unknown.text
+
+
+def test_the_read_says_where_the_address_is_and_the_picker_lists_the_province(
+    logged_in: TestClient,
+) -> None:
+    """REB-1069: `place` comes from ISTAT's list, read against the city and the province;
+    a city no municipality matches still saves, reads `unknown`, and the picker lists the
+    province's municipalities, whose name fixes it."""
+    url = legal_entity_url(logged_in)
+    first = logged_in.get(url).json()
+    read_only = {"id", "is_default", "active", "logo_key", "signature_key", "place", "created_at"}
+    body = {k: v for k, v in first.items() if k not in read_only}
+    saved = logged_in.put(url, json={**body, "city": "Reggio Emilia", "province": "RE"})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["place"] == {
+        "status": "unknown",
+        "municipality_code": None,
+        "cadastral_code": None,
+        "municipality_name": None,
+        "region_code": "08",
+        "region_name": "Emilia-Romagna",
+    }
+
+    picker = logged_in.get("/api/legal-entities/municipalities", params={"province": "RE"})
+    assert picker.status_code == 200, picker.text
+    options = picker.json()
+    chosen = next(o for o in options if o["municipality_code"] == "035033")
+    assert chosen == {
+        "municipality_code": "035033",
+        "cadastral_code": "H223",
+        "name": "Reggio nell'Emilia",
+    }
+
+    fixed = logged_in.put(
+        url,
+        json={
+            **body,
+            "city": chosen["name"],
+            "province": "RE",
+            "updated_at": saved.json()["updated_at"],
+        },
+    )
+    assert fixed.status_code == 200, fixed.text
+    assert fixed.json()["place"]["status"] == "matched"
+    assert fixed.json()["place"]["cadastral_code"] == "H223"
+    assert logged_in.get(url).json()["place"] == fixed.json()["place"]
+
+
+def test_the_picker_is_empty_for_an_unknown_province_and_needs_one(logged_in: TestClient) -> None:
+    unknown = logged_in.get("/api/legal-entities/municipalities", params={"province": "XX"})
+    assert unknown.status_code == 200 and unknown.json() == []
+    assert logged_in.get("/api/legal-entities/municipalities").status_code == 422
+    assert (
+        logged_in.get("/api/legal-entities/municipalities", params={"province": "M"}).status_code
+        == 422
+    )
