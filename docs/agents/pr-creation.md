@@ -402,6 +402,21 @@ the `linear-content` shape. The mechanism and the five secrets are
 `docs/adding-a-project.md` § 7; a tag is immutable once pushed (ruleset, 2026-09-10),
 so a wrong one is followed by the next version, never moved.
 
+**The deploy does not install nginx.** The PigroCRM vhosts
+(`projects/pigrocrm/deploy/nginx/pigro.letsrebase.conf` and `preview.pigro.letsrebase.conf`)
+and the shared `infra/origin/nginx/rate-limits.conf` reach the host's `/etc/nginx` only by
+hand, and two releases (the v0.65 and v0.66 PigroCRM tags) went out without it: in
+production a bank statement over 1 MiB got nginx's 413 until 2026-11-11 (REB-1060). So a
+release whose range touches them, which
+`git diff --stat <last tag>..<new tag> -- projects/pigrocrm/deploy/nginx infra/origin/nginx`
+shows, rebuilds each installed vhost from the copy the deploy put in `DEPLOY_PATH`, with
+`__ROOT_SLUG__` replaced and certbot's TLS lines and port-80 redirect block kept as they
+are installed. Back up the installed files to `/root/backups/` first, then `nginx -t`, then
+`systemctl reload nginx`, and prove it with a request that reaches the new location (a
+body over the old limit that now gets the API's 401 rather than nginx's 413, a door that
+answers the application's own JSON). The preview's vhost goes with the preview deploy, the
+production one with the tag.
+
 The project update for the release follows the `**In production:**` comment, and its
 claim is the tag, the run or the URL you read, never the card's title. When that
 release is what kept the project open, the same step moves it to Completed.
