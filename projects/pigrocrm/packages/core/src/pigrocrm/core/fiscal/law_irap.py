@@ -39,8 +39,9 @@ founders, small municipalities and collective agreements), the other sections of
 (financial companies, insurers, holding companies, the flat-rate section), the apportionment
 of a company with sites in several regions (art. 4 c. 2: the rule is in `territory`, the
 staff pay of each region is not known), and the deductions that need a record of each
-employee (`PerEmployeeDeduction` is data; applying it needs the headcount of the staff who are
-not permanent).
+employee (`PerEmployeeDeduction` is data; the estimate applies it to the staff whose contract
+type is stated as fixed-term or seasonal, `StaffMember.contract_type`, and not to the apprentices
+and disabled workers the law leaves out of the headcount, which it cannot tell apart).
 
 Sources, read on 2026-11-11
 ---------------------------

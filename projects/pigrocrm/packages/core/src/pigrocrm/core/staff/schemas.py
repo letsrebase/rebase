@@ -25,6 +25,8 @@ from pigrocrm.core.validation import SafeStr
 Kind = Literal["employee", "director"]
 FeePayment = Literal["monthly", "other"]
 MonthlyPayments = Literal[13, 14]
+# Literal mirrors `models.CONTRACT_TYPES`.
+ContractType = Literal["permanent", "fixed_term", "seasonal"]
 PaySource = Literal["staff_member", "legal_entity"]
 
 MONEY_MAX_DIGITS = 12
@@ -107,6 +109,7 @@ class EmployeeCreate(_StaffCreate):
     kind: Literal["employee"] = "employee"
     collective_agreement: SafeStr | None = Field(default=None, max_length=AGREEMENT_MAX_LENGTH)
     contract_level: SafeStr | None = Field(default=None, max_length=LEVEL_MAX_LENGTH)
+    contract_type: ContractType | None = None
     gross_annual_pay: _Money
     monthly_payments: MonthlyPayments
     part_time_percent: _PartTime = Decimal("100")
@@ -159,6 +162,7 @@ class StaffMemberUpdate(BaseModel):
     pay_month_offset: _MonthOffset | None = None
     collective_agreement: SafeStr | None = Field(default=None, max_length=AGREEMENT_MAX_LENGTH)
     contract_level: SafeStr | None = Field(default=None, max_length=LEVEL_MAX_LENGTH)
+    contract_type: ContractType | None = None
     gross_annual_pay: _Money | None = None
     monthly_payments: MonthlyPayments | None = None
     part_time_percent: _PartTime | None = None
@@ -193,6 +197,7 @@ class StaffMemberRead(BaseModel):
     effective_pay_day: EffectivePayDay | None = None
     collective_agreement: str | None
     contract_level: str | None
+    contract_type: ContractType | None
     gross_annual_pay: Decimal | None
     monthly_payments: int | None
     part_time_percent: Decimal | None

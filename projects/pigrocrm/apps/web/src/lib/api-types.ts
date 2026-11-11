@@ -8244,6 +8244,32 @@ export interface components {
             director: string;
             /** Total */
             total: string;
+            /**
+             * Employees
+             * @default []
+             */
+            employees: components["schemas"]["BasisEmployee"][];
+        };
+        /**
+         * BasisEmployee
+         * @description One employee's share of the year's staff cost (REB-1081): what IRAP's deductions of
+         *     art. 11 read. `contract_type` is `None` when the person's contract is not stated; the days
+         *     are those of the basis period the person was in service.
+         */
+        BasisEmployee: {
+            /**
+             * Staff Member Id
+             * Format: uuid
+             */
+            staff_member_id: string;
+            /** Name */
+            name: string;
+            /** Contract Type */
+            contract_type: ("permanent" | "fixed_term" | "seasonal") | null;
+            /** Cost */
+            cost: string;
+            /** Days In Service */
+            days_in_service: number;
         };
         /**
          * BasisLine
@@ -11694,6 +11720,8 @@ export interface components {
             collective_agreement?: string | null;
             /** Contract Level */
             contract_level?: string | null;
+            /** Contract Type */
+            contract_type?: ("permanent" | "fixed_term" | "seasonal") | null;
             /** Gross Annual Pay */
             gross_annual_pay: number | string;
             /**
@@ -19908,6 +19936,8 @@ export interface components {
             collective_agreement: string | null;
             /** Contract Level */
             contract_level: string | null;
+            /** Contract Type */
+            contract_type: ("permanent" | "fixed_term" | "seasonal") | null;
             /** Gross Annual Pay */
             gross_annual_pay: string | null;
             /** Monthly Payments */
@@ -19969,6 +19999,8 @@ export interface components {
             collective_agreement?: string | null;
             /** Contract Level */
             contract_level?: string | null;
+            /** Contract Type */
+            contract_type?: ("permanent" | "fixed_term" | "seasonal") | null;
             /** Gross Annual Pay */
             gross_annual_pay?: number | string | null;
             /** Monthly Payments */

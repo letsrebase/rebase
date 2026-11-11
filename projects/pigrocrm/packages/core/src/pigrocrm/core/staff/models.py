@@ -49,6 +49,10 @@ from pigrocrm.core.fiscal.pack import PACK_IT_COMPANY, PACK_IT_FLAT_RATE, PACK_I
 KINDS: tuple[str, ...] = ("employee", "director")
 # Employees are paid in 13 or 14 monthly payments (design § 1).
 MONTHLY_PAYMENTS: tuple[int, ...] = (13, 14)
+# What an employee's contract is, for the deductions of IRAP (art. 11 c. 4-octies and
+# 4-bis.1): `NULL` is «not stated», so nothing is deducted for the person and the estimate
+# names them. A director is not an employee and has none.
+CONTRACT_TYPES: tuple[str, ...] = ("permanent", "fixed_term", "seasonal")
 # A director's fee is paid monthly or otherwise; the otherwise has no further structure yet.
 FEE_PAYMENTS: tuple[str, ...] = ("monthly", "other")
 
@@ -107,6 +111,7 @@ class StaffMember(Base, PrimaryKeyMixin, TimestampMixin):
             "AND gross_annual_pay IS NULL AND monthly_payments IS NULL "
             "AND part_time_percent IS NULL AND employer_inps_rate IS NULL "
             "AND employer_inail_rate IS NULL AND employee_inps_rate IS NULL "
+            "AND contract_type IS NULL "
             "AND thirteenth_month IS NULL AND fourteenth_month IS NULL)",
             name="ck_staff_members_director_columns",
         ),
@@ -114,6 +119,10 @@ class StaffMember(Base, PrimaryKeyMixin, TimestampMixin):
             "gross_annual_pay IS NULL OR gross_annual_pay > 0", name="ck_staff_members_gross_pay"
         ),
         CheckConstraint("annual_fee IS NULL OR annual_fee > 0", name="ck_staff_members_fee"),
+        CheckConstraint(
+            f"contract_type IS NULL OR contract_type IN {CONTRACT_TYPES!r}",
+            name="ck_staff_members_contract_type",
+        ),
         CheckConstraint(
             f"monthly_payments IS NULL OR monthly_payments IN {MONTHLY_PAYMENTS!r}",
             name="ck_staff_members_monthly_payments",
@@ -190,6 +199,8 @@ class StaffMember(Base, PrimaryKeyMixin, TimestampMixin):
         String(AGREEMENT_MAX_LENGTH), default=None
     )
     contract_level: Mapped[str | None] = mapped_column(String(LEVEL_MAX_LENGTH), default=None)
+    # `permanent`, `fixed_term` or `seasonal`; `NULL` is «not stated» (REB-1081).
+    contract_type: Mapped[str | None] = mapped_column(String(10), default=None)
     gross_annual_pay: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), default=None)
     monthly_payments: Mapped[int | None] = mapped_column(Integer, default=None)
     # The share of a full-time contract, in percent.

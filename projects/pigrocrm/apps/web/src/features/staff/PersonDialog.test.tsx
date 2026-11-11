@@ -131,6 +131,21 @@ describe('PersonDialog', () => {
     )
   })
 
+  it('asks an employee\'s contract type and sends it, or clears it on an edit', async () => {
+    vi.mocked(api.PATCH).mockResolvedValue({ data: {}, response: new Response(null, { status: 200 }) } as never)
+    const user = userEvent.setup()
+    draw({ member: { ...member, contract_type: 'seasonal' } as StaffMember })
+    await user.click(screen.getByLabelText('Tipo di contratto'))
+    await user.click(await screen.findByRole('option', { name: 'Tempo indeterminato' }))
+    await user.click(screen.getByRole('button', { name: 'Salva le condizioni' }))
+    await waitFor(() =>
+      expect(api.PATCH).toHaveBeenCalledWith('/api/staff/{staff_member_id}', {
+        params: { path: { staff_member_id: 'm-1' } },
+        body: { contract_type: 'permanent' },
+      }),
+    )
+  })
+
   it('shows the server\'s refusal as it says it', async () => {
     vi.mocked(api.POST).mockResolvedValue({ error: { detail: 'l\'azienda non ha ancora un profilo fiscale' }, response: new Response(null, { status: 422 }) } as never)
     const user = userEvent.setup()

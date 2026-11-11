@@ -127,7 +127,11 @@ async def test_a_full_access_admin_creates_reads_updates_and_lists_staff(
                 "kind": "employee",
                 "name": "Giulia Bianchi",
                 "start_date": "2026-01-01",
-                "details": {**EMPLOYEE_DETAILS, "contract_level": "3"},
+                "details": {
+                    **EMPLOYEE_DETAILS,
+                    "contract_level": "3",
+                    "contract_type": "permanent",
+                },
             },
         )
         assert not created.is_error, created.content
@@ -137,6 +141,7 @@ async def test_a_full_access_admin_creates_reads_updates_and_lists_staff(
             "30000.00",
             "3",
         )
+        assert member["contract_type"] == "permanent"
 
         updated = _payload(
             await client.call_tool(

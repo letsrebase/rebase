@@ -36,6 +36,20 @@ class BasisLine(BaseModel):
     reason: str
 
 
+class BasisEmployee(BaseModel):
+    """One employee's share of the year's staff cost (REB-1081): what IRAP's deductions of
+    art. 11 read. `contract_type` is `None` when the person's contract is not stated; the days
+    are those of the basis period the person was in service."""
+
+    model_config = ConfigDict(frozen=True)
+
+    staff_member_id: UUID
+    name: str
+    contract_type: Literal["permanent", "fixed_term", "seasonal"] | None
+    cost: Decimal
+    days_in_service: int
+
+
 class BasisCosts(BaseModel):
     """The costs of the year by what IRAP and the income tax tell apart: what the purchases
     cost (`Purchase.cost_amount`, frozen from the buyer's pack), the staff's and the directors'
@@ -47,6 +61,7 @@ class BasisCosts(BaseModel):
     staff: Decimal
     director: Decimal
     total: Decimal
+    employees: list[BasisEmployee] = []
 
 
 class YearBasis(BaseModel):
@@ -74,4 +89,4 @@ class YearBasis(BaseModel):
     assumptions: list[BasisLine]
 
 
-__all__ = ["BasisCosts", "BasisLine", "LineCode", "YearBasis"]
+__all__ = ["BasisCosts", "BasisEmployee", "BasisLine", "LineCode", "YearBasis"]
