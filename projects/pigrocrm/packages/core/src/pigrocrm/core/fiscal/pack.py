@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Final, Literal
 
+from pigrocrm.core.fiscal.irpef_2026 import IRPEF_2026
 from pigrocrm.core.fiscal.law import (
     CompanyTaxLaw,
     IncomeTaxAdvanceLaw,
@@ -568,8 +569,9 @@ NON_IT_PACK = FiscalPack(id=PACK_NON_IT, version="1", ceilings=(), charges=())
 # The advance rules are the Agenzia page's of today, read in 2026 (A5, verified), so the
 # entry starts there: an earlier year has no law in this pack yet, and asks for none. The
 # dates are the calendar's (`_IT_STANDARD_CALENDAR_2026`). No
-# income estimate: the ordinary regime's IRPEF brackets, regional and municipal surcharges
-# and INPS rates are TO VERIFY (A5), and a pack states no figure it cannot cite.
+# income estimate: the IRPEF brackets and the regional surcharges are verified (REB-1062) and
+# looked up from `irpef`; the municipal surcharge and the INPS rates are TO VERIFY (A5), and a
+# pack states no figure it cannot cite.
 IT_STANDARD_PACK = FiscalPack(
     id=PACK_IT_STANDARD,
     version="1",
@@ -582,6 +584,9 @@ IT_STANDARD_PACK = FiscalPack(
         TaxYearLaw(
             from_year=2026,
             taxes=("irpef", "inps"),
+            # IRPEF brackets of art. 11 TUIR (L. 199/2025) and the regional surcharges of every
+            # region, read on 2026-11-11 (A5, REB-1062): `fiscal/irpef_2026.py`.
+            irpef=IRPEF_2026,
             advances=IncomeTaxAdvanceLaw(
                 advance_percent_of_base=Decimal("100"),
                 first_advance_percent=Decimal("40"),
