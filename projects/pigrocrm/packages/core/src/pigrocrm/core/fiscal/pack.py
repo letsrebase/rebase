@@ -50,6 +50,7 @@ from pigrocrm.core.fiscal.law import (
     TaxDateRule,
     TaxYearLaw,
 )
+from pigrocrm.core.fiscal.law_inps import INPS_2026, InpsYearLaw
 
 # The pack ids, as literals so a schema can name them in a `Literal` type
 # (`fiscal/schemas.py::PackId`) and a profile cannot point at a pack that does not exist.
@@ -174,6 +175,9 @@ class FiscalPack:
     # invoices carry none (the flat-rate regime is not withheld, L. 190/2014 art. 1 c. 67,
     # and a company abroad issues no FatturaPA).
     sales_withholding: SalesWithholding | None = None
+    # The INPS contributions of a person, one entry per contribution year (`fiscal/law_inps.py`,
+    # REB-1064). Empty for a pack with no person's INPS.
+    inps: tuple[InpsYearLaw, ...] = ()
 
     def __post_init__(self) -> None:
         years = [law.from_year for law in self.laws]
@@ -182,6 +186,9 @@ class FiscalPack:
         calendar_years = [calendar.from_year for calendar in self.calendars]
         if calendar_years != sorted(set(calendar_years)):
             raise ValueError(f"pack {self.id!r}: calendar entries must have increasing from_year")
+        inps_years = [law.year for law in self.inps]
+        if inps_years != sorted(set(inps_years)):
+            raise ValueError(f"pack {self.id!r}: INPS entries must have increasing year")
 
     def law_for(self, year: int) -> TaxYearLaw | None:
         """The law that governs tax year `year`: the latest entry starting at or before it,
@@ -208,6 +215,12 @@ class FiscalPack:
                 break
             governing = calendar
         return governing
+
+    def inps_for(self, year: int) -> InpsYearLaw | None:
+        """The INPS law of contribution year `year`, `None` when the pack has none for exactly
+        that year: INPS re-sets every figure each year, so the latest earlier entry is not a
+        guess worth making."""
+        return next((law for law in self.inps if law.year == year), None)
 
     def charge(self, charge_id: str) -> StatutoryCharge:
         for charge in self.charges:
@@ -530,9 +543,10 @@ IT_FLAT_RATE_PACK = FiscalPack(
     # Its contribution base is the formula `analytics/fiscal.py` carried
     # over from the previous system: TO VERIFY with the accountant (A5 row «Flat-rate
     # contribution base...», REB-975), as are the rest of the estimate's rows (the 5%/15%
-    # substitute rate, the profitability coefficients, the INPS rates and their minimums,
-    # the cash basis of the revenue). No advance rule: the flat-rate regime's substitute tax
-    # advances are not in the register (A5 row added by REB-974, TO VERIFY).
+    # substitute rate, the profitability coefficients, the profile's INPS rate the estimate reads
+    # (the INPS law itself is `inps` below), the cash basis of the revenue). No advance rule:
+    # the flat-rate regime's substitute tax advances are not in the register (A5 row added by
+    # REB-974, TO VERIFY).
     laws=(
         TaxYearLaw(
             from_year=2015,
@@ -546,6 +560,7 @@ IT_FLAT_RATE_PACK = FiscalPack(
         ),
     ),
     calendars=(_IT_FLAT_RATE_CALENDAR_2026,),
+    inps=(INPS_2026,),
 )
 
 # A company established outside Italy (REB-619, spec 2026-10-03 §1.3): no ceiling,
@@ -606,6 +621,7 @@ IT_STANDARD_PACK = FiscalPack(
         ),
     ),
     calendars=(_IT_STANDARD_CALENDAR_2026,),
+    inps=(INPS_2026,),
 )
 
 # An srl (REB-1005, taxes design § 1). It invoices exactly like `it-standard`: `RF01`, the
