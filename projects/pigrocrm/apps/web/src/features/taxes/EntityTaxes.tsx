@@ -180,14 +180,17 @@ export function EntityTaxes({
 
     const missingParameter = lines.some((line) => line.estimable && line.estimate === null)
     // An srl's estimate says what it lacks in its own words (an address, not a parameter of the
-    // profile); the flat-rate one has the one sentence about the settings.
+    // profile) and so does an ordinary person's (an INPS fact, an address, a rate not yet
+    // published, REB-1072); the flat-rate one has the one sentence about the settings.
     const missingNotes = data.company
       ? [data.company.ires.missing, data.company.irap.missing].filter(
           (note): note is string => typeof note === 'string',
         )
-      : missingParameter
-        ? [missingParametersSentence(data.missing_parameters)]
-        : []
+      : data.person
+        ? [...data.person.inps.missing, ...data.person.irpef.missing]
+        : missingParameter
+          ? [missingParametersSentence(data.missing_parameters)]
+          : []
     const pack = packLine(data)
     const openTax = open?.kind === 'tax' ? lines.find((line) => line.tax === open.tax) : undefined
     const openDay = open?.kind === 'date' ? days.find((day) => day.date === open.date) : undefined

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { cn } from '@rebase/ui/cn'
-import { formatPercent } from '@/features/analytics/format'
+import { NOT_COMPUTABLE, formatPercent } from '@/features/analytics/format'
 import { money } from '@/features/dashboard/format'
 import { formatIsoDateItalian, toIsoDate } from '@/lib/dates'
 import { useLegalEntity } from '@/lib/legalEntity'
@@ -12,6 +12,7 @@ import {
   TAX_LABELS,
   packLine,
   type FiscalEstimate,
+  type OrdinaryLine,
   type TaxReadingLine,
 } from './labels'
 import { readingCell } from './readings'
@@ -33,6 +34,113 @@ function given(figure: string | null | undefined): string {
 /** «31/12»: the day and month a fiscal year ends, as the legal entity stores them. */
 function dayMonth(day: number, month: number): string {
   return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`
+}
+
+/** A line of an estimate: the figure, or «non calcolabile» for one the server could not give
+ *  (never `0,00 €`: a zero reads as «you owe nothing»). */
+function figure(value: string | null | undefined): string {
+  return value == null ? NOT_COMPUTABLE : money(value)
+}
+
+function Lines({ lines }: { lines: readonly OrdinaryLine[] }) {
+  return (
+    <>
+      {lines.map((line) => (
+        <Fact key={line.code} label={line.label}>
+          {figure(line.amount)}
+        </Fact>
+      ))}
+    </>
+  )
+}
+
+/** What an ordinary person's estimate says it assumes, was read from, and lacks: the server's
+ *  sentences, drawn as they come. */
+function Notes({
+  missing,
+  assumptions,
+  sources,
+}: {
+  missing: readonly string[]
+  assumptions: readonly string[]
+  sources: readonly string[]
+}) {
+  return (
+    <>
+      {missing.map((sentence) => (
+        <p key={sentence} className="text-sm">
+          {sentence}
+        </p>
+      ))}
+      <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+        {assumptions.map((assumption) => (
+          <li key={assumption}>{assumption}</li>
+        ))}
+      </ul>
+      {sources.length === 0 ? null : (
+        <div className="space-y-1 text-xs text-muted-foreground">
+          <p className="font-medium">Fonti della legge</p>
+          <ul className="list-disc space-y-1 pl-4">
+            {sources.map((source) => (
+              <li key={source}>{source}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  )
+}
+
+/**
+ * What an ordinary person's IRPEF or INPS estimate was computed from (REB-1072): the year's
+ * basis, the income from the collected revenue to the base of the IRPEF, the tax's own lines
+ * with the surcharges and the withholdings, and what the figure assumes. Every number is the
+ * server's; nothing is added here.
+ */
+function PersonComputedFrom({ line, estimate }: { line: TaxReadingLine; estimate: FiscalEstimate }) {
+  const person = estimate.person
+  if (!person || (line.tax !== 'irpef' && line.tax !== 'inps')) return null
+  const tax = line.tax === 'irpef' ? person.irpef : person.inps
+  return (
+    <section className="space-y-3">
+      <h3 className="text-sm font-semibold">Come è calcolata la stima</h3>
+      {estimate.basis ? <p className="text-xs text-muted-foreground">{estimate.basis.label}.</p> : null}
+      {line.tax === 'irpef' ? (
+        <dl>
+          <Lines lines={person.income.lines} />
+          <Fact label={person.income.loss ? 'Reddito (in perdita)' : 'Reddito su cui si calcola l’IRPEF'} strong>
+            {figure(person.income.taxable_income)}
+          </Fact>
+          <Lines lines={tax.parts.filter((part) => !part.code.endsWith('_surcharge'))} />
+          <Fact label="IRPEF stimata" strong>
+            {figure(tax.amount)}
+          </Fact>
+          {tax.credit != null && tax.credit !== '0.00' ? (
+            <Fact label="Ritenute oltre l’IRPEF (credito)">{money(tax.credit)}</Fact>
+          ) : null}
+          <Lines lines={tax.parts.filter((part) => part.code.endsWith('_surcharge'))} />
+          <Fact label="IRPEF con le addizionali" strong>
+            {figure(tax.with_surcharges)}
+          </Fact>
+        </dl>
+      ) : (
+        <dl>
+          <Lines lines={tax.lines} />
+          <Fact label="Base dei contributi">{figure(tax.base)}</Fact>
+          <Fact label="Aliquota">{tax.rate == null ? NOT_COMPUTABLE : formatPercent(tax.rate)}</Fact>
+          <Lines lines={tax.parts} />
+          <Fact label="Contributi stimati" strong>
+            {figure(tax.amount)}
+          </Fact>
+        </dl>
+      )}
+      <Notes
+        missing={tax.missing}
+        assumptions={line.tax === 'irpef' ? [...person.income.assumptions, ...tax.assumptions] : tax.assumptions}
+        sources={line.tax === 'irpef' ? [...new Set([...person.income.sources, ...tax.sources])] : tax.sources}
+      />
+    </section>
+  )
 }
 
 /**
@@ -123,6 +231,7 @@ export function TaxPanel({
         </section>
       ) : null}
       <ComputedFrom line={line} estimate={estimate} />
+      <PersonComputedFrom line={line} estimate={estimate} />
       <section className="space-y-1 text-xs text-muted-foreground">
         {pack ? <p>{pack}.</p> : null}
         {entity ? (

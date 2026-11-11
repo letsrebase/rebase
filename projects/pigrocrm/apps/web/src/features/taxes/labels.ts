@@ -13,6 +13,9 @@ export type TaxReadingLine = components['schemas']['TaxReadingLine']
 export type TaxReadings = components['schemas']['TaxReadings']
 export type DeclaredFigure = components['schemas']['DeclaredTaxFigureRead']
 export type FiscalEstimate = components['schemas']['FiscalEstimate']
+export type OrdinaryEstimate = components['schemas']['OrdinaryEstimate']
+export type OrdinaryTax = components['schemas']['OrdinaryTax']
+export type OrdinaryLine = components['schemas']['OrdinaryLine']
 
 export type Tax = TaxReadingLine['tax']
 export type Stage = 'estimate' | 'declared' | 'paid'
@@ -68,6 +71,10 @@ const PARAMETER_LABELS: Record<string, string> = {
   profitability_coefficient: 'coefficiente di redditività',
   substitute_tax_rate: 'aliquota imposta sostitutiva',
   social_security_rate: 'aliquota INPS',
+  inps_category: 'cassa INPS',
+  inps_trade: 'gestione INPS (artigiani o commercianti)',
+  inps_covered_elsewhere: 'se sei assicurato altrove o pensionato',
+  inps_before_1996: 'se hai contributi versati prima del 1996',
 }
 
 /** What the estimate says is missing, by the name the settings form gives it; the generic

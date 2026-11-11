@@ -595,6 +595,189 @@ describe('«Tasse»: Tutte le aziende', () => {
   })
 })
 
+const step = (code: string, label: string, amount: string | null) => ({ code, label, amount })
+
+/** An ordinary person in Albinea who collected 65.789,47 euro: INPS 15.789,47, an IRPEF base of
+ *  50.000, the Agenzia's 13.700 plus the two surcharges (REB-1072). */
+const PERSON_ESTIMATE = {
+    income: {
+      lines: [
+        step('revenue', 'Incassato nell’anno', '65789.47'),
+        step('costs', 'Spese pagate nell’anno', '0.00'),
+        step('inps_deducted', 'Contributi INPS dedotti (art. 10 c. 1 lett. e) TUIR)', '-15789.47'),
+      ],
+      professional_income: '65789.47',
+      taxable_income: '50000.00',
+      loss: false,
+      assumptions: ['Non ci sono altri redditi, né altri oneri deducibili.'],
+      sources: ['D.P.R. 917/1986 (TUIR), art. 10 c. 1 lett. e), Normattiva'],
+    },
+    inps: {
+      lines: [step('income', 'Reddito dell’anno', '65789.47')],
+      base: '65789.47',
+      rate: '24.00',
+      parts: [step('percentage', 'Contributi sul reddito', '15789.47')],
+      amount: '15789.47',
+      credit: null,
+      region: null,
+      cadastral_code: null,
+      missing: [],
+      assumptions: ['Le contributi sono calcolate sul reddito dell’anno.'],
+      sources: ['INPS, circolare n. 8 of 3 February 2026'],
+    },
+    irpef: {
+      lines: [],
+      base: '50000.00',
+      rate: null,
+      parts: [
+        step('gross_irpef', 'IRPEF lorda', '13700.00'),
+        step('regional_surcharge', 'Addizionale regionale (Emilia-Romagna)', '1062.00'),
+        step('municipal_surcharge', 'Addizionale comunale (Albinea)', '308.00'),
+        step('withholdings', 'Ritenute subite sulle fatture incassate', '0.00'),
+      ],
+      amount: '13700.00',
+      with_surcharges: '15070.00',
+      credit: '0.00',
+      region: '08',
+      cadastral_code: 'A162',
+      missing: [],
+      assumptions: ['Le detrazioni dell’articolo 13 del TUIR non sono applicate: l’imposta è per eccesso.'],
+      sources: ['Agenzia delle Entrate, «Aliquote e calcolo dell’Irpef», updated 13 January 2026'],
+    },
+    missing_parameters: [],
+    due_total: '30859.47',
+}
+
+const PERSON = estimate({
+  pack_id: 'it-standard',
+  law_from_year: 2026,
+  substitute_tax: null,
+  taxable_amount: null,
+  contributions: '15789.47',
+  due_total: '30859.47',
+  basis: { label: 'Incassato nel 2026, secondo il principio di cassa' },
+  person: PERSON_ESTIMATE,
+  readings: {
+    lines: [
+      line('irpef', { estimable: true, estimate: '13700.00', counts: 'estimate' }),
+      line('inps', { estimable: true, estimate: '15789.47', counts: 'estimate' }),
+    ],
+    totals: {
+      estimate: '29489.47',
+      estimate_left_out: 0,
+      declared: null,
+      declared_left_out: 2,
+      paid: null,
+      paid_left_out: 2,
+    },
+  },
+})
+
+describe('«Tasse»: an ordinary person', () => {
+  it('draws IRPEF with its surcharges and what each was computed from (REB-1072)', async () => {
+    answers['/api/analytics/fiscal'] = PERSON
+    wide()
+    renderPage({ profile: 'solo' })
+    const table = await screen.findByRole('table')
+    const [irpef, inps] = within(table).getAllByRole('row').slice(1, 3)
+    expect(within(irpef as HTMLElement).getAllByRole('cell').map((cell) => cell.textContent)).toEqual([
+      'IRPEF',
+      '13.700,00\u00a0€',
+      '—',
+      '—',
+    ])
+    expect(within(inps as HTMLElement).getAllByRole('cell')[1]).toHaveTextContent('15.789,47')
+
+    await userEvent.click(irpef as HTMLElement)
+    const panel = await screen.findByRole('complementary', { name: 'Imposta aperta' })
+    expect(within(panel).getByText('Come è calcolata la stima')).toBeInTheDocument()
+    expect(within(panel).getByText('Incassato nel 2026, secondo il principio di cassa.')).toBeInTheDocument()
+    expect(within(panel).getByText('Contributi INPS dedotti (art. 10 c. 1 lett. e) TUIR)')).toBeInTheDocument()
+    expect(within(panel).getByText('50.000,00 €')).toBeInTheDocument()
+    expect(within(panel).getByText('IRPEF lorda')).toBeInTheDocument()
+    expect(within(panel).getAllByText('13.700,00 €').length).toBeGreaterThanOrEqual(2)
+    expect(within(panel).getByText('Addizionale regionale (Emilia-Romagna)')).toBeInTheDocument()
+    expect(within(panel).getByText('1.062,00 €')).toBeInTheDocument()
+    expect(within(panel).getByText('Addizionale comunale (Albinea)')).toBeInTheDocument()
+    expect(within(panel).getByText('308,00 €')).toBeInTheDocument()
+    expect(within(panel).getByText('IRPEF stimata')).toBeInTheDocument()
+    expect(within(panel).getByText('IRPEF con le addizionali')).toBeInTheDocument()
+    expect(within(panel).getByText('15.070,00 €')).toBeInTheDocument()
+    expect(within(panel).getByText(/per eccesso/)).toBeInTheDocument()
+    expect(within(panel).getByText(/art\. 10 c\. 1 lett\. e\), Normattiva/)).toBeInTheDocument()
+  })
+
+  it('draws the INPS lines, base, rate and the contributions', async () => {
+    answers['/api/analytics/fiscal'] = PERSON
+    wide()
+    renderPage({ profile: 'solo' })
+    await userEvent.click(await screen.findByRole('row', { name: /Contributi INPS/ }))
+    const panel = await screen.findByRole('complementary', { name: 'Imposta aperta' })
+    expect(within(panel).getByText('Base dei contributi')).toBeInTheDocument()
+    expect(within(panel).getByText('24,00 %')).toBeInTheDocument()
+    expect(within(panel).getByText('Contributi stimati')).toBeInTheDocument()
+    expect(within(panel).getByText('Le contributi sono calcolate sul reddito dell’anno.')).toBeInTheDocument()
+  })
+
+  it('says why IRPEF has no figure, in the server’s words, instead of the generic sentence', async () => {
+    const pending =
+      'L’aliquota 2026 dell’addizionale comunale di Milano non è ancora pubblicata: l’elenco della Finanze letto il 2026-11-11 non ha la delibera.'
+    answers['/api/analytics/fiscal'] = {
+      ...PERSON,
+      due_total: null,
+      person: {
+        ...PERSON_ESTIMATE,
+        due_total: null,
+        irpef: {
+          ...PERSON_ESTIMATE.irpef,
+          with_surcharges: null,
+          missing: [pending],
+          parts: [
+            step('gross_irpef', 'IRPEF lorda', '13700.00'),
+            step('regional_surcharge', 'Addizionale regionale (Lombardia)', '768.30'),
+            step('municipal_surcharge', 'Addizionale comunale (Milano)', null),
+          ],
+        },
+      },
+      readings: {
+        ...PERSON.readings,
+        lines: [line('irpef', { estimable: true }), line('inps', { estimable: true, estimate: '15789.47', counts: 'estimate' })],
+      },
+    }
+    wide()
+    renderPage({ profile: 'solo' })
+    expect(await screen.findByText(pending)).toBeInTheDocument()
+    expect(screen.queryByText(/perché manca un parametro/)).not.toBeInTheDocument()
+    const row = await screen.findByRole('row', { name: /IRPEF/ })
+    expect(within(row).getAllByRole('cell')[1]).toHaveTextContent('non calcolabile')
+    await userEvent.click(row)
+    const panel = await screen.findByRole('complementary', { name: 'Imposta aperta' })
+    expect(within(panel).getByText('Addizionale comunale (Milano)')).toBeInTheDocument()
+    expect(within(panel).getAllByText('non calcolabile').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('names the INPS fact the profile lacks', async () => {
+    answers['/api/analytics/fiscal'] = {
+      ...PERSON,
+      missing_parameters: ['inps_category'],
+      person: {
+        ...PERSON_ESTIMATE,
+        inps: {
+          ...PERSON_ESTIMATE.inps,
+          amount: null,
+          missing: ['Manca la categoria INPS (gestione separata, oppure artigiani e commercianti).'],
+        },
+      },
+      readings: {
+        ...PERSON.readings,
+        lines: [line('irpef', { estimable: true }), line('inps', { estimable: true })],
+      },
+    }
+    renderPage({ profile: 'solo' })
+    expect(await screen.findByText(/Manca la categoria INPS/)).toBeInTheDocument()
+  })
+})
+
 describe('«Tasse»: who may read', () => {
   it('draws one sentence for a collaborator and asks for no figure', async () => {
     session.role = 'collaborator'

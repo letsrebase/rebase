@@ -12602,6 +12602,7 @@ export interface components {
             /** Missing Parameters */
             missing_parameters?: string[];
             company?: components["schemas"]["CompanyEstimate"] | null;
+            person?: components["schemas"]["OrdinaryEstimate"] | null;
         };
         /** FiscalProfileRead */
         FiscalProfileRead: {
@@ -15776,6 +15777,95 @@ export interface components {
             signals: components["schemas"]["Signal"][];
             /** Recent Activity */
             recent_activity: components["schemas"]["ActivityRead"][];
+        };
+        /**
+         * OrdinaryEstimate
+         * @description What the ordinary-regime person owes for the year on its income, with what each figure was
+         *     computed from. The year's own figures are the payload's `basis`. `missing_parameters` are the
+         *     profile fields the INPS needs and the profile does not state, by field name.
+         */
+        OrdinaryEstimate: {
+            income: components["schemas"]["OrdinaryIncome"];
+            inps: components["schemas"]["OrdinaryTax"];
+            irpef: components["schemas"]["OrdinaryTax"];
+            /** Missing Parameters */
+            missing_parameters: string[];
+            /** Due Total */
+            due_total: string | null;
+        };
+        /**
+         * OrdinaryIncome
+         * @description The income the taxes are computed on: `lines` lead from the revenue collected to the
+         *     income of art. 54 (`professional_income`, negative for a loss) and from it, less the INPS
+         *     contributions deducted, to the IRPEF base (`taxable_income`, never negative, `None` when the
+         *     contributions to deduct are not known).
+         */
+        OrdinaryIncome: {
+            /** Lines */
+            lines: components["schemas"]["OrdinaryLine"][];
+            /** Professional Income */
+            professional_income: string | null;
+            /** Taxable Income */
+            taxable_income: string | null;
+            /**
+             * Loss
+             * @default false
+             */
+            loss: boolean;
+            /** Assumptions */
+            assumptions: string[];
+            /** Sources */
+            sources: string[];
+        };
+        /**
+         * OrdinaryLine
+         * @description One step or one piece of a figure: `amount` is signed (a cost, a deduction or a credit is
+         *     negative), so a screen draws the lines and their sum without computing anything, and `None`
+         *     when that piece cannot be given, which `missing` explains.
+         */
+        OrdinaryLine: {
+            /** Code */
+            code: string;
+            /** Label */
+            label: string;
+            /** Amount */
+            amount: string | null;
+        };
+        /**
+         * OrdinaryTax
+         * @description One tax of the person. `lines` are the steps from the income to `base` and `rate` is the
+         *     percentage applied (INPS); `parts` are the pieces that add up to `amount`, in the order a
+         *     reader adds them (the surcharges and the withholdings of the IRPEF, the fixed and the
+         *     percentage part of the INPS). `amount` is `None` when the figure cannot be given, in which
+         *     case `missing` says what is missing, one sentence each. `credit` is, for the IRPEF, what the
+         *     withholdings exceed the tax by. `assumptions` are the simplifications the figure carries and
+         *     `sources` where its law was read.
+         */
+        OrdinaryTax: {
+            /** Lines */
+            lines: components["schemas"]["OrdinaryLine"][];
+            /** Base */
+            base: string | null;
+            /** Rate */
+            rate: string | null;
+            /** Parts */
+            parts: components["schemas"]["OrdinaryLine"][];
+            /** Amount */
+            amount: string | null;
+            /** Credit */
+            credit?: string | null;
+            /** With Surcharges */
+            with_surcharges?: string | null;
+            /** Region */
+            region?: string | null;
+            /** Cadastral Code */
+            cadastral_code?: string | null;
+            /** Missing */
+            missing: string[];
+            /** Assumptions */
+            assumptions: string[];
+            /** Sources */
+            sources: string[];
         };
         /** OrganizationCreate */
         OrganizationCreate: {

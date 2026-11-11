@@ -542,6 +542,81 @@ def test_the_fiscal_report_is_labelled_an_estimate_in_its_own_payload(
     assert tax["basis"] == body["basis"]
 
 
+def test_an_ordinary_persons_estimate_is_one_figure_on_the_fiscal_route_and_the_overview(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    """REB-1072: IRPEF with its regional and municipal surcharge and INPS, over HTTP, for a
+    person in Albinea (Emilia-Romagna) who collected 65,789.47 in 2026 and is insured elsewhere:
+    the Agenzia's example of 13,700 euro at an income of 50,000 once the INPS is deducted. The
+    economic overview carries the same payload, and `readings` the two lines."""
+    default = logged_in.get("/api/legal-entities").json()[0]["id"]
+    address = logged_in.put(
+        legal_entity_url(logged_in),
+        json={"legal_name": "Studio Rossi", "city": "Albinea", "province": "RE", "country": "IT"},
+    )
+    assert address.status_code == 200, address.text
+    profile = logged_in.put(
+        legal_entity_url(logged_in, "/fiscal-profile"),
+        json={
+            "pack_id": "it-standard",
+            "regime_code": "RF01",
+            "inps_category": "gestione_separata",
+            "inps_covered_elsewhere": True,
+        },
+    )
+    assert profile.status_code == 200, profile.text
+    customer = Organization(legal_name="Cliente Albinea", country="IT")
+    customer.legal_entity_id = default  # type: ignore[assignment]
+    api_session.add(customer)
+    api_session.flush()
+    api_session.add(
+        Invoice(
+            customer_id=customer.id,
+            legal_entity_id=default,
+            type="invoice",
+            status="issued",
+            year=2026,
+            number=1,
+            payment_status="paid",
+            issue_date=date(2026, 2, 1),
+            payment_date=date(2026, 2, 10),
+            taxable_amount=Decimal("65789.47"),
+            vat_amount=Decimal("0.00"),
+            stamp_duty=Decimal("0.00"),
+            total=Decimal("65789.47"),
+            custom_fields={},
+        )
+    )
+    api_session.flush()
+
+    response = logged_in.get("/api/analytics/fiscal", params={"year": 2026})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    person = body["person"]
+    assert person["inps"]["amount"] == "15789.47"
+    assert person["income"]["taxable_income"] == "50000.00"
+    parts = {part["code"]: part["amount"] for part in person["irpef"]["parts"]}
+    assert parts == {
+        "gross_irpef": "13700.00",
+        "regional_surcharge": "1062.00",
+        "municipal_surcharge": "308.00",
+        "withholdings": "0.00",
+    }
+    assert person["irpef"]["amount"] == "13700.00"
+    assert person["irpef"]["with_surcharges"] == "15070.00"
+    assert body["contributions"] == "15789.47" and body["due_total"] == "30859.47"
+    assert body["missing_parameters"] == []
+    assert {line["tax"]: line["estimate"] for line in body["readings"]["lines"]} == {
+        "irpef": "13700.00",
+        "inps": "15789.47",
+    }
+
+    overview = logged_in.get("/api/analytics/overview", params={"year": 2026})
+    assert overview.status_code == 200, overview.text
+    assert overview.json()["tax"] == body
+    assert overview.json()["projected_tax"] is None and overview.json()["actual_net"] is None
+
+
 # --- the one writer -----------------------------------------------------------------
 
 
