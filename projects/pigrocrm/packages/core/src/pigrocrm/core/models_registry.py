@@ -52,6 +52,7 @@ from pigrocrm.core.fiscal.models import (  # noqa: F401
     FiscalProfile,
     IvaPeriodLock,
     IvaSettlement,
+    TaxAdvanceMethod,
 )
 from pigrocrm.core.gmail.models import (  # noqa: F401
     EmailDraft,

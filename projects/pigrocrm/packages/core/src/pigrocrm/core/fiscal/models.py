@@ -346,3 +346,30 @@ class DeclaredTaxFigure(Base, PrimaryKeyMixin, TimestampMixin):
             name="ck_declared_tax_figures_not_negative",
         ),
     )
+
+
+# How the advances of a tax year are computed (taxes design § 2): on the previous year's
+# declared tax (or its estimate when none is declared), or on the current year's estimate.
+ADVANCE_METHODS: tuple[str, ...] = ("historical", "forecast")
+DEFAULT_ADVANCE_METHOD = "historical"
+
+
+class TaxAdvanceMethod(Base, PrimaryKeyMixin, TimestampMixin):
+    """The advance method an administrator chose for one legal entity and tax year (REB-1074).
+
+    One row per legal entity and year, for every income tax of the year at once: a year with no
+    row is `historical`, the default. `tax_year` is the year the advances belong to, not the
+    year of the previous return they would be computed on. Written only by
+    `TaxAdvanceMethodService.set_tax_advance_method`.
+    """
+
+    __tablename__ = "tax_advance_methods"
+
+    legal_entity_id: Mapped[UUID] = mapped_column(ForeignKey("legal_entities.id"), nullable=False)
+    tax_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    method: Mapped[str] = mapped_column(String(10), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("legal_entity_id", "tax_year", name="uq_tax_advance_methods"),
+        CheckConstraint(f"method IN {ADVANCE_METHODS!r}", name="ck_tax_advance_methods_method"),
+    )
