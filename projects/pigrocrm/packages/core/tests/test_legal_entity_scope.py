@@ -80,6 +80,8 @@ POLICIED = {
     "fiscal_estimates",
     "declared_tax_figures",
     "tax_advance_methods",
+    "tax_instalment_plans",
+    "tax_notice_plans",
     "accountant_exports",
     "accountant_export_links",
     "accountant_export_link_openings",

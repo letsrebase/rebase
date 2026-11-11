@@ -373,3 +373,56 @@ class TaxAdvanceMethod(Base, PrimaryKeyMixin, TimestampMixin):
         UniqueConstraint("legal_entity_id", "tax_year", name="uq_tax_advance_methods"),
         CheckConstraint(f"method IN {ADVANCE_METHODS!r}", name="ck_tax_advance_methods_method"),
     )
+
+
+# The most instalments a plan can have: June to December is seven by the Agenzia's own table, a
+# company with a broken fiscal year gets up to twelve (`payment_rules.instalment_schedule`).
+MAX_PLAN_INSTALMENTS = 12
+
+
+class TaxInstalmentPlan(Base, PrimaryKeyMixin, TimestampMixin):
+    """The instalment plan an administrator chose for one legal entity, tax and tax year
+    (REB-1075, taxes design § 2).
+
+    `tax_year` is the tax year of the balance being paid: the plan covers that balance and the
+    first advance of the next tax year, which fall on the same day. `instalments` is the number
+    of monthly instalments, from 2; the dates and the interest of each are the pack's
+    (`payment_rules.instalment_schedule`), never stored. No row means the two are paid in one
+    payment. Written only by `TaxInstalmentPlanService.set_tax_instalment_plan`.
+    """
+
+    __tablename__ = "tax_instalment_plans"
+
+    legal_entity_id: Mapped[UUID] = mapped_column(ForeignKey("legal_entities.id"), nullable=False)
+    tax: Mapped[str] = mapped_column(String(30), nullable=False)
+    tax_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    instalments: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("legal_entity_id", "tax", "tax_year", name="uq_tax_instalment_plans"),
+        CheckConstraint(
+            f"instalments BETWEEN 2 AND {MAX_PLAN_INSTALMENTS}",
+            name="ck_tax_instalment_plans_instalments",
+        ),
+    )
+
+
+class TaxNoticePlan(Base, PrimaryKeyMixin, TimestampMixin):
+    """A payment plan from a notice of the tax office («avviso bonario», «cartella»), entered by
+    hand by an administrator (REB-1075, taxes design § 2).
+
+    `total` is what the notice asks before interest; `instalments` is the list of
+    `{"due_date": "YYYY-MM-DD", "interest": "0.00"}` the notice states, one per instalment, in
+    order: the principal is split equally over them and each instalment's interest is added.
+    Written only by `TaxNoticePlanService`.
+    """
+
+    __tablename__ = "tax_notice_plans"
+
+    legal_entity_id: Mapped[UUID] = mapped_column(ForeignKey("legal_entities.id"), nullable=False)
+    label: Mapped[str] = mapped_column(String(120), nullable=False)
+    tax: Mapped[str] = mapped_column(String(30), nullable=False)
+    total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    instalments: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+
+    __table_args__ = (CheckConstraint("total > 0", name="ck_tax_notice_plans_total"),)
