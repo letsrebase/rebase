@@ -77,6 +77,8 @@ from pigrocrm.core.expense_notes.schemas import (
     ReimbursementMethod,
 )
 from pigrocrm.core.expense_notes.service import ExpenseNoteService
+from pigrocrm.core.fiscal.advance_method import TaxAdvanceMethodService
+from pigrocrm.core.fiscal.advance_schemas import TaxAdvanceMethodSet
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
 from pigrocrm.core.fiscal.iva_lock import IvaPeriodLockService
 from pigrocrm.core.fiscal.iva_register import IvaRegisterService
@@ -783,6 +785,26 @@ def register(
         return (
             DeclaredTaxFigureService(context.session)
             .set_declared_tax_figure(
+                data, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
+            )
+            .model_dump(mode="json")
+        )
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def set_tax_advance_method(
+        year: int,
+        method: Literal["historical", "forecast"],
+        legal_entity_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Chooses a tax year's advance method, admin only: `historical` (default, last year's tax)
+        or `forecast` (this year's estimate). Moves the tax due items. Several companies: pass
+        `legal_entity_id`.
+        """
+        data = TaxAdvanceMethodSet(year=year, method=method)
+        return (
+            TaxAdvanceMethodService(context.session)
+            .set_tax_advance_method(
                 data, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
             )
             .model_dump(mode="json")

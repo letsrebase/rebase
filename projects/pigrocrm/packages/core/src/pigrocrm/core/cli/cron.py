@@ -372,6 +372,13 @@ def automations(settings: Settings, *, slug: str | None, day: date | None, dry_r
                 file=sys.stderr,
             )
             failed = True
+        if report.tax_items_failed:
+            print(
+                f"{target.label}: tax due items not recomputed {report.tax_items_failed} "
+                f"({', '.join(sorted(set(report.tax_items_failures)))})",
+                file=sys.stderr,
+            )
+            failed = True
         if report.iva_frozen:
             # A reminder and not a failure: the item was paid, so the figures it would take
             # are a person's decision.
@@ -449,6 +456,11 @@ def _print_automation_report(
         print(f"{slug}: payroll forecasts refreshed {report.payroll_refreshed}{suffix}")
     if report.iva_settled:
         print(f"{slug}: IVA settled for {report.iva_settled} legal entities{suffix}")
+    if report.tax_items_refreshed:
+        print(
+            f"{slug}: tax due items recomputed for {report.tax_items_refreshed} legal "
+            f"entities{suffix}"
+        )
     print(
         f"{slug}: forecasts created {forecasts.created}, revised {forecasts.revised}, "
         f"dropped {forecasts.dropped}{suffix}"

@@ -41,9 +41,9 @@ TAX_SOURCE_KINDS: frozenset[str] = RESTRICTED_SOURCE_KINDS - {
 # guard it: a kind whose module is off is absent from every figure of the schedule, the
 # payables and the summary. A kind not named here is the core's (`sales_invoice`, `sales_draft`).
 # The IVA and withholding kinds are the purchases design's (`iva_settlements` is a `purchases`
-# route; withholdings a company pays for others are due items it writes), `tax_instalment` the
-# taxes design's, `payroll` the staff module's, `engagement` the collaborators' and
-# `contract_occurrence` the contracts'.
+# route; withholdings a company pays for others are due items it writes), `tax_instalment`,
+# `tax_balance` and `tax_advance` the taxes design's, `payroll` the staff module's, `engagement`
+# the collaborators' and `contract_occurrence` the contracts'.
 SOURCE_KIND_MODULES: dict[str, str] = {
     "purchase": "purchases",
     "expense_note": "purchases",
@@ -53,6 +53,8 @@ SOURCE_KIND_MODULES: dict[str, str] = {
     "withholding": "purchases",
     "cash_basis_vat": "purchases",
     "tax_instalment": "taxes",
+    "tax_balance": "taxes",
+    "tax_advance": "taxes",
     "payroll": "staff",
     "engagement": "collaborators",
     "contract_occurrence": "contracts",

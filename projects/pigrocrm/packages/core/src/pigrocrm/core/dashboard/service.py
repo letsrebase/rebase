@@ -130,7 +130,7 @@ _MODULE_ENTITIES: dict[str, frozenset[str]] = {
     "contracts": frozenset({"contract", "contract_expense", "work_unit", "approval"}),
     "time": frozenset({"time_entry"}),
     "purchases": frozenset({"purchase"}),
-    "taxes": frozenset({"declared_tax_figure"}),
+    "taxes": frozenset({"declared_tax_figure", "tax_advance_method"}),
     "staff": frozenset({"staff_member", "payroll_settings", "payroll_month", "expense_note"}),
     "collaborators": frozenset({"engagement"}),
     "cash": frozenset({"bank_account", "bank_statement", "bank_movement"}),

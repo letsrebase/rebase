@@ -33,6 +33,8 @@ from pigrocrm.core.analytics.schemas import (
     YearOverview,
 )
 from pigrocrm.core.analytics.service import AnalyticsService
+from pigrocrm.core.fiscal.advance_method import TaxAdvanceMethodService
+from pigrocrm.core.fiscal.advance_schemas import TaxAdvanceMethodRead, TaxAdvanceMethodSet
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
 from pigrocrm.core.fiscal.schemas import DeclaredTaxFigureRead, DeclaredTaxFigureSet
 from pigrocrm.core.modules import enabled_modules, require_modules
@@ -208,6 +210,27 @@ def set_declared_tax_figure(
     never computed and a newer estimate leaves them alone: `/fiscal` shows them beside the
     estimate and says the year's reading is declared."""
     return DeclaredTaxFigureService(session).set_declared_tax_figure(
+        data, actor, legal_entity_id=legal_entity_id
+    )
+
+
+@router.put(
+    "/fiscal/advance-method",
+    response_model=TaxAdvanceMethodRead,
+    dependencies=[module_guard("taxes")],
+)
+def set_tax_advance_method(
+    data: TaxAdvanceMethodSet,
+    session: SessionDep,
+    actor: ActorDep,
+    legal_entity_id: LegalEntityRequired = None,
+) -> TaxAdvanceMethodRead:
+    """How the advances of a tax year are computed (REB-1074): `historical`, the default, on the
+    previous year's declared tax or its estimate, or `forecast`, on the current year's estimate.
+    `admin`, enforced by the service. Choosing again replaces the choice and recomputes the
+    legal entity's tax due items, which the answer reports: each payment left unwritten with the
+    figure or the parameter it misses."""
+    return TaxAdvanceMethodService(session).set_tax_advance_method(
         data, actor, legal_entity_id=legal_entity_id
     )
 

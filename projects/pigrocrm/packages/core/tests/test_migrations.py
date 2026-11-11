@@ -4477,3 +4477,22 @@ def test_0107_adds_the_taxpayer_facts_to_the_fiscal_profile(pigrocrm_postgres: A
         assert not any(_column_exists(url, "fiscal_profile", name) for name in columns)
         upgrade(config, "0107")
         assert _column_exists(url, "fiscal_profile", "inps_trade")
+
+
+def test_0108_creates_the_tax_advance_methods_table_under_the_scope_policy(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1074: a new table with the row policy of every table that reaches a legal entity,
+    forced; nothing is backfilled (a year with no row is `historical`), so both ways are a pure
+    create and drop."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0107")
+        assert _table_shape(url, "tax_advance_methods")[0] is False
+        upgrade(config, "0108")
+        assert _table_shape(url, "tax_advance_methods") == (True, True, {"legal_entity_scope"})
+        downgrade(config, "0107")
+        assert _table_shape(url, "tax_advance_methods")[0] is False
+        upgrade(config, "0108")
+        assert _table_shape(url, "tax_advance_methods")[0] is True

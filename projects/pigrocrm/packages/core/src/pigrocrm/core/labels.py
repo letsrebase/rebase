@@ -254,6 +254,7 @@ ENTITY_NOUN: dict[str, tuple[str, str]] = {
     "accountant_export": ("esportazione per il commercialista", "a"),
     "accountant_export_link": ("link di condivisione", "o"),
     "declared_tax_figure": ("cifra dichiarata", "a"),
+    "tax_advance_method": ("metodo degli acconti", "o"),
     "monthly_report": ("rendiconto mensile", "o"),
     "note": ("nota", "a"),
     "payroll_month": ("mese di paga", "o"),

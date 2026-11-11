@@ -38,6 +38,8 @@ SOURCE = {
     "iva_settlement": "Liquidazione IVA",
     "withholding": "Ritenuta",
     "tax_instalment": "Imposta",
+    "tax_balance": "Saldo d'imposta",
+    "tax_advance": "Acconto d'imposta",
     "payroll": "Paghe",
     "contract_occurrence": "Contratto",
     "recurring_expense": "Spesa ricorrente",

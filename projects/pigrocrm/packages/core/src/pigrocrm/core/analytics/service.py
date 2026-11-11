@@ -674,6 +674,18 @@ class AnalyticsService:
         )
         return build_tax_readings(law, estimates, declared)
 
+    def estimated_taxes(
+        self, year: int, legal_entity: LegalEntity, profile: FiscalProfileRead
+    ) -> dict[DeclaredTax, Decimal | None]:
+        """The estimate of each tax of `year` the code computes for the legal entity, `None`
+        for one whose parameter is missing; a tax the code has no estimate for is absent. The
+        figures of `get_fiscal_estimate`, with no role check of its own: its caller is the
+        writer of the tax due items (`fiscal/tax_items.py`), which has asked for an
+        administrator or runs in the system scope."""
+        estimate = self._estimate_year(year, legal_entity, profile, None)
+        lines = self._tax_readings(year, estimate, []).lines
+        return {line.tax: line.estimate for line in lines if line.estimable}
+
     def get_tax_calendar(
         self, year: int, actor: Actor, *, legal_entity_id: UUID | None = None
     ) -> TaxCalendar:

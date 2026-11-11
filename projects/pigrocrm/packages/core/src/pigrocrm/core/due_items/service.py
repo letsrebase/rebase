@@ -34,6 +34,8 @@ from pigrocrm.core.due_items.models import (
     OPEN_STATES,
     RESTRICTED_SOURCE_KINDS,
     SOURCE_KINDS,
+    TAX_ADVANCE_SOURCE_KIND,
+    TAX_BALANCE_SOURCE_KIND,
     DueItem,
     DueItemSettlement,
 )
@@ -68,6 +70,8 @@ ENTITY = "due_item"
 SETTLEMENT_ENTITY = "due_item_settlement"
 ZERO = Decimal("0.00")
 SALES_INVOICE = "sales_invoice"
+# The tax kinds whose forecast may be paid as it stands: no document replaces it.
+TAX_SOURCE_KINDS_PAYABLE = (TAX_BALANCE_SOURCE_KIND, TAX_ADVANCE_SOURCE_KIND)
 
 
 def _is_fiscal(item: DueItem) -> bool:
@@ -537,6 +541,11 @@ class DueItemService:
     ) -> DueItemSettlement:
         """The checks and the write of one payment against a locked item, shared by `settle` and
         by the matching of a bank movement. Flushes and projects, never commits."""
+        if item.state == "forecast" and item.source_kind in TAX_SOURCE_KINDS_PAYABLE:
+            # A tax has no document that replaces its forecast: the F24 is the payment, so a
+            # tax forecast that is paid becomes the item that was paid (REB-1074).
+            item.state = "expected"
+            item.forecast_key = None
         if item.state == "forecast":
             raise Conflict(
                 ENTITY,

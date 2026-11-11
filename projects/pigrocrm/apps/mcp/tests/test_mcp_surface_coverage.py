@@ -182,6 +182,10 @@ _FORBIDDEN: dict[Method, str] = {
         "REB-1006: the accountant's declared tax figures are the most sensitive data the "
         "product holds (taxes design § 5); the tool is on a `full_access` token's surface only"
     ),
+    ("TaxAdvanceMethodService", "set_tax_advance_method"): (
+        "REB-1074: the advance method moves the tax due items, which are the fiscal position "
+        "(taxes design § 5); the tool is on a `full_access` token's surface only"
+    ),
     ("StaffService", "create_staff_member"): (
         "REB-977: pay is the most personal data the product holds (staff design § 4); the tool "
         "exists only on an administrator's `full_access` token"
@@ -270,6 +274,15 @@ _OUTSIDE_FROM_SIEVE: dict[Method, str] = {
 #    no-actor rule and is listed for the same reason: it is the intermediate step of
 #    `render_pdf`, not an operation of its own.
 _INTERNE: dict[Method, str] = {
+    ("TaxDueItemService", "refresh_tax_due_items"): (
+        "REB-1074: the writer of the tax due items, called by the two tools that move their "
+        "figures (`set_declared_tax_figure`, `set_tax_advance_method`) and by the daily pass; "
+        "no actor, no tool of its own"
+    ),
+    ("AnalyticsService", "estimated_taxes"): (
+        "REB-1074: the estimate the tax due items stand on, `get_fiscal_estimate`'s figures with "
+        "no role check; read inside the writer, which is `full_access` only"
+    ),
     ("DeclaredTaxFigureService", "declared_for_year"): (
         "REB-1006: read inside `get_fiscal_estimate`, which is `full_access` only; no tool of "
         "its own"

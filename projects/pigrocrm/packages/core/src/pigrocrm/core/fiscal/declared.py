@@ -22,6 +22,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.fiscal.models import DeclaredTaxFigure
 from pigrocrm.core.fiscal.repository import DeclaredTaxFigureRepository
 from pigrocrm.core.fiscal.schemas import DeclaredTaxFigureRead, DeclaredTaxFigureSet
+from pigrocrm.core.fiscal.tax_items import TaxDueItemService
 from pigrocrm.core.legal_entities.service import LegalEntityService
 
 ENTITY = "declared_tax_figure"
@@ -63,6 +64,9 @@ class DeclaredTaxFigureService:
             advances=data.advances,
             source="typed",
         )
+        # The advances and the balance that read this figure move with it (REB-1074); the
+        # difference a paid advance leaves is carried to the next item of the tax.
+        TaxDueItemService(self.session).refresh_tax_due_items(legal_entity.id)
         # Who typed it and when; never the amounts, which are the most sensitive figures the
         # product holds and stay out of the timeline.
         self.activities.record(ENTITY, row.id, "declared_tax_figure_set", actor)
