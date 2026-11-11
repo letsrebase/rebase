@@ -11,7 +11,7 @@ from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import Response
 from pydantic import Field
 
@@ -36,6 +36,16 @@ from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.fiscal.advance_method import TaxAdvanceMethodService
 from pigrocrm.core.fiscal.advance_schemas import TaxAdvanceMethodRead, TaxAdvanceMethodSet
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
+from pigrocrm.core.fiscal.instalment_plan import TaxInstalmentPlanService
+from pigrocrm.core.fiscal.notice_plan import TaxNoticePlanService
+from pigrocrm.core.fiscal.plan_schemas import (
+    TaxInstalmentPlanResult,
+    TaxInstalmentPlanSet,
+    TaxNoticePlanRead,
+    TaxNoticePlanSet,
+    TaxNoticePlanUpdate,
+    TaxPlansRead,
+)
 from pigrocrm.core.fiscal.schemas import DeclaredTaxFigureRead, DeclaredTaxFigureSet
 from pigrocrm.core.modules import enabled_modules, require_modules
 from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor, module_guard
@@ -233,6 +243,82 @@ def set_tax_advance_method(
     return TaxAdvanceMethodService(session).set_tax_advance_method(
         data, actor, legal_entity_id=legal_entity_id
     )
+
+
+@router.put(
+    "/fiscal/instalment-plan",
+    response_model=TaxInstalmentPlanResult,
+    dependencies=[module_guard("taxes")],
+)
+def set_tax_instalment_plan(
+    data: TaxInstalmentPlanSet,
+    session: SessionDep,
+    actor: ActorDep,
+    legal_entity_id: LegalEntityRequired = None,
+) -> TaxInstalmentPlanResult:
+    """In how many monthly instalments, up to 16 December, the June balance of tax year `year` and
+    the first advance of the next one are paid (REB-1075); the November advance is never split.
+    `tax` omitted is every income tax of the year together, `instalments: 1` removes the plan.
+    `admin`, enforced by the service. Choosing again replaces the plan and rewrites the tax due
+    items, which the answer reports; a plan with a payment recorded on one of its instalments is
+    neither changed nor removed (409)."""
+    return TaxInstalmentPlanService(session).set_tax_instalment_plan(
+        data, actor, legal_entity_id=legal_entity_id
+    )
+
+
+@router.get("/fiscal/plans", response_model=TaxPlansRead, dependencies=[module_guard("taxes")])
+def list_tax_plans(
+    session: SessionDep, actor: ActorDep, legal_entity_id: LegalEntityRequired = None
+) -> TaxPlansRead:
+    """The instalment plans and the notice plans of one legal entity (REB-1075). `admin`,
+    enforced by the service."""
+    return TaxNoticePlanService(session).list_tax_plans(actor, legal_entity_id=legal_entity_id)
+
+
+@router.post(
+    "/fiscal/notice-plans",
+    status_code=status.HTTP_201_CREATED,
+    response_model=TaxNoticePlanRead,
+    dependencies=[module_guard("taxes")],
+)
+def create_tax_notice_plan(
+    data: TaxNoticePlanSet,
+    session: SessionDep,
+    actor: ActorDep,
+    legal_entity_id: LegalEntityRequired = None,
+) -> TaxNoticePlanRead:
+    """A payment plan from a notice of the tax office («avviso bonario», «cartella»), typed by
+    hand (REB-1075): its label, the tax, the total before interest and each instalment's day and
+    interest. It writes one due item per instalment. `admin`, enforced by the service."""
+    return TaxNoticePlanService(session).create_tax_notice_plan(
+        data, actor, legal_entity_id=legal_entity_id
+    )
+
+
+@router.put(
+    "/fiscal/notice-plans/{plan_id}",
+    response_model=TaxNoticePlanRead,
+    dependencies=[module_guard("taxes")],
+)
+def update_tax_notice_plan(
+    plan_id: UUID, data: TaxNoticePlanUpdate, session: SessionDep, actor: ActorDep
+) -> TaxNoticePlanRead:
+    """Changes what is passed (`instalments` replaces the whole list) and rewrites the plan's due
+    items. A plan with a payment recorded on one of its items is not changed (409). `admin`,
+    enforced by the service."""
+    return TaxNoticePlanService(session).update_tax_notice_plan(plan_id, data, actor)
+
+
+@router.delete(
+    "/fiscal/notice-plans/{plan_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[module_guard("taxes")],
+)
+def delete_tax_notice_plan(plan_id: UUID, session: SessionDep, actor: ActorDep) -> None:
+    """Drops the plan's due items and removes it. A plan with a payment recorded on one of its
+    items is not deleted (409). `admin`, enforced by the service."""
+    TaxNoticePlanService(session).delete_tax_notice_plan(plan_id, actor)
 
 
 @router.get("/backlog", response_model=UnbilledBacklog)

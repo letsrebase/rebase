@@ -186,6 +186,19 @@ _FORBIDDEN: dict[Method, str] = {
         "REB-1074: the advance method moves the tax due items, which are the fiscal position "
         "(taxes design § 5); the tool is on a `full_access` token's surface only"
     ),
+    ("TaxInstalmentPlanService", "set_tax_instalment_plan"): (
+        "REB-1075: an instalment plan moves the tax due items, which are the fiscal position "
+        "(taxes design § 5); the tool is on a `full_access` token's surface only"
+    ),
+    ("TaxNoticePlanService", "create_tax_notice_plan"): (
+        "REB-1075: what the tax office asks is the fiscal position (taxes design § 5); the tool "
+        "is on a `full_access` token's surface only"
+    ),
+    ("TaxNoticePlanService", "update_tax_notice_plan"): "REB-1075: as `create_tax_notice_plan`",
+    ("TaxNoticePlanService", "delete_tax_notice_plan"): "REB-1075: as `create_tax_notice_plan`",
+    ("TaxNoticePlanService", "list_tax_plans"): (
+        "REB-1075: the tax position, as `get_tax_calendar`"
+    ),
     ("StaffService", "create_staff_member"): (
         "REB-977: pay is the most personal data the product holds (staff design § 4); the tool "
         "exists only on an administrator's `full_access` token"
@@ -278,6 +291,10 @@ _INTERNE: dict[Method, str] = {
         "REB-1074: the writer of the tax due items, called by the two tools that move their "
         "figures (`set_declared_tax_figure`, `set_tax_advance_method`) and by the daily pass; "
         "no actor, no tool of its own"
+    ),
+    ("TaxDueItemService", "instalments_touched"): (
+        "REB-1075: whether a payment is on an instalment of a plan, read inside "
+        "`set_tax_instalment_plan` to refuse changing it; no actor, no tool of its own"
     ),
     ("AnalyticsService", "estimated_taxes"): (
         "REB-1074: the estimate the tax due items stand on, `get_fiscal_estimate`'s figures with "

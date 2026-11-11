@@ -1116,3 +1116,92 @@ def test_the_advance_method_needs_an_admin_and_one_of_the_two_methods(
     assert collaborator.put("/api/analytics/fiscal/advance-method", json=body).status_code == 403
     bad = logged_in.put("/api/analytics/fiscal/advance-method", json={"year": YEAR, "method": "x"})
     assert bad.status_code == 422
+
+
+def test_an_admin_splits_the_june_payments_and_removes_the_plan(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    put = logged_in.put(
+        "/api/analytics/fiscal/instalment-plan",
+        json={"year": YEAR, "tax": "substitute_tax", "instalments": 3},
+    )
+    assert put.status_code == 200, put.text
+    body = put.json()
+    assert body["year"] == YEAR
+    assert [(p["tax"], p["tax_year"], p["instalments"]) for p in body["plans"]] == [
+        ("substitute_tax", YEAR, 3)
+    ]
+    assert set(body["items"]) == {"written", "dropped", "kept", "not_written"}
+    listed = logged_in.get("/api/analytics/fiscal/plans")
+    assert listed.status_code == 200, listed.text
+    assert [p["instalments"] for p in listed.json()["instalment_plans"]] == [3]
+    # One instalment is one payment: the plan goes.
+    removed = logged_in.put(
+        "/api/analytics/fiscal/instalment-plan",
+        json={"year": YEAR, "tax": "substitute_tax", "instalments": 1},
+    )
+    assert removed.status_code == 200 and removed.json()["plans"] == []
+
+
+def test_more_instalments_than_the_law_allows_are_a_422(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    refused = logged_in.put(
+        "/api/analytics/fiscal/instalment-plan",
+        json={"year": YEAR, "tax": "substitute_tax", "instalments": 12},
+    )
+    assert refused.status_code == 422, refused.text
+    zero = logged_in.put(
+        "/api/analytics/fiscal/instalment-plan", json={"year": YEAR, "instalments": 0}
+    )
+    assert zero.status_code == 422
+
+
+def test_an_admin_enters_changes_and_deletes_the_plan_of_a_notice(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    created = logged_in.post(
+        "/api/analytics/fiscal/notice-plans",
+        json={
+            "label": "Cartella 2022",
+            "tax": "irpef",
+            "total": "300.00",
+            "instalments": [
+                {"due_date": "2031-01-10", "interest": "0.00"},
+                {"due_date": "2031-02-10", "interest": "1.50"},
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    plan = created.json()
+    assert [i["amount"] for i in plan["instalments"]] == ["150.00", "151.50"]
+    changed = logged_in.put(
+        f"/api/analytics/fiscal/notice-plans/{plan['id']}", json={"label": "Cartella 2022 bis"}
+    )
+    assert changed.status_code == 200 and changed.json()["label"] == "Cartella 2022 bis"
+    listed = logged_in.get("/api/analytics/fiscal/plans").json()
+    assert [p["id"] for p in listed["notice_plans"]] == [plan["id"]]
+    gone = logged_in.delete(f"/api/analytics/fiscal/notice-plans/{plan['id']}")
+    assert gone.status_code == 204
+    assert logged_in.get("/api/analytics/fiscal/plans").json()["notice_plans"] == []
+    assert logged_in.delete(f"/api/analytics/fiscal/notice-plans/{plan['id']}").status_code == 404
+
+
+def test_the_plans_need_an_admin(logged_in: TestClient, fiscal_profile: dict[str, Any]) -> None:
+    collaborator = _second_actor(logged_in, "collaborator")
+    notice = {
+        "label": "x",
+        "tax": "irpef",
+        "total": "10.00",
+        "instalments": [{"due_date": "2031-01-10"}],
+    }
+    assert (
+        collaborator.put(
+            "/api/analytics/fiscal/instalment-plan", json={"year": YEAR, "instalments": 3}
+        ).status_code
+        == 403
+    )
+    assert collaborator.post("/api/analytics/fiscal/notice-plans", json=notice).status_code == 403
+    assert collaborator.get("/api/analytics/fiscal/plans").status_code == 403
+    unordered = {**notice, "instalments": [{"due_date": "2031-02-10"}, {"due_date": "2031-01-10"}]}
+    assert logged_in.post("/api/analytics/fiscal/notice-plans", json=unordered).status_code == 422
