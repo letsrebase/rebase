@@ -132,8 +132,7 @@ SICILY = {"AG", "CL", "ME", "PA", "EN", "CT", "RG", "SR", "TP"}
 def test_the_company_pack_carries_the_law() -> None:
     from pigrocrm.core.fiscal.pack import IT_COMPANY_PACK
 
-    law = IT_COMPANY_PACK.law_for(2026)
-    assert law is not None and law.chamber_fee is LAW
+    assert IT_COMPANY_PACK.chamber_fee_for(2026) is LAW
 
 
 def test_every_province_has_one_chamber_but_bt_and_su() -> None:

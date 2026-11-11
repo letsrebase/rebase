@@ -326,7 +326,7 @@ def test_the_flat_rate_surcharge_is_taken_off_what_was_collected_and_said(
     db_session: Session,
 ) -> None:
     flat = _entity(db_session, "it-flat-rate")
-    charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID)
+    charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID, 2026)
     _invoice(
         db_session,
         flat,

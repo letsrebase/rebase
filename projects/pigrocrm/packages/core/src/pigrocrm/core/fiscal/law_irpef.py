@@ -137,12 +137,16 @@ class DeductibleCharge:
 
 @dataclass(frozen=True)
 class IrpefLaw:
-    """The IRPEF of one tax year: the national brackets and every region's surcharge.
+    """The IRPEF of tax year `year`: the national brackets and every region's surcharge. The
+    pack holds one per year and reads it by exact year (`FiscalPack.irpef_for`): the brackets and
+    the regional rates are re-set by law and by every region, so a later year never reads an
+    earlier one's.
 
     `social_security_deduction` is the deduction of the compulsory social security contributions
     a person pays (REB-1072); a law that does not carry it (`None`) makes no deduction, since a
     deduction no source is cited for is not applied."""
 
+    year: int
     brackets: tuple[RateBracket, ...]
     regional: tuple[RegionalSurchargeLaw, ...]
     social_security_deduction: DeductibleCharge | None = None

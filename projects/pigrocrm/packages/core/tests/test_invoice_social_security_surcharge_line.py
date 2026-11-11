@@ -79,7 +79,7 @@ def customer_id(db_session: Session) -> UUID:
 def _lines_with_social_security_surcharge(fee: Decimal) -> list[InvoiceLineIn]:
     fee_line = InvoiceLineIn(description="Consulenza", unit_price=fee)
     social_security_surcharge = social_security_surcharge_line_for_contract(
-        IT_FLAT_RATE_PACK, applies_social_charge=True, fee_subtotal=fee
+        IT_FLAT_RATE_PACK, applies_social_charge=True, fee_subtotal=fee, year=2026
     )
     assert social_security_surcharge is not None
     return [fee_line, social_security_surcharge]
@@ -100,7 +100,7 @@ def test_an_invoice_with_to_social_security_surcharge_line_is_created_with_the_r
     social_security_surcharge_line = lines[1]
     assert (
         social_security_surcharge_line.description
-        == IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID).description_line
+        == IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID, 2026).description_line
     )
     assert social_security_surcharge_line.vat_nature == "N2.2"
     assert social_security_surcharge_line.vat_rate == Decimal("0.00")
@@ -156,7 +156,10 @@ def test_a_contract_without_the_election_produces_no_such_line(
     total is the fee alone."""
     assert (
         social_security_surcharge_line_for_contract(
-            IT_FLAT_RATE_PACK, applies_social_charge=False, fee_subtotal=Decimal("1000.00")
+            IT_FLAT_RATE_PACK,
+            applies_social_charge=False,
+            fee_subtotal=Decimal("1000.00"),
+            year=2026,
         )
         is None
     )

@@ -909,3 +909,18 @@ def test_a_chamber_fee_can_be_paid_and_then_keeps_what_was_paid(
     _refresh(db_session, entity, "MI")
     (kept,) = _fee_rows(db_session, entity)
     assert (kept.id, kept.state, kept.amount) == (item.id, "settled", D("120.00"))
+
+
+def test_an_srl_in_a_year_without_a_chamber_fee_law_has_no_item_and_says_so(
+    db_session: Session, clock: Clock, estimates: Estimates
+) -> None:
+    """The fee is a yearly figure (REB-1083): in 2027 the 2026 law is not read again."""
+    entity = _entity(db_session, "it-company", isa=False)
+    row = db_session.get(LegalEntity, entity)
+    assert row is not None
+    row.province = "MI"
+    db_session.flush()
+    report = TaxDueItemService(db_session).refresh_tax_due_items(entity, today=dt.date(2027, 5, 15))
+    assert _fee_rows(db_session, entity) == []
+    reasons = [n.reason for n in report.not_written if n.part == "chamber_fee" and n.year == 2027]
+    assert len(reasons) == 1 and "2027" in reasons[0]

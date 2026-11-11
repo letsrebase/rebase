@@ -698,7 +698,7 @@ class AnalyticsService:
                     "ires": estimate.company.ires.amount,
                     "irap": estimate.company.irap.amount,
                 }
-            elif law.irpef is not None:
+            elif "irpef" in law.taxes:
                 person = estimate.person
                 estimates = {
                     "irpef": person.irpef.amount if person is not None else None,
@@ -888,7 +888,7 @@ class AnalyticsService:
             "law_from_year": law.from_year if law is not None else None,
             "basis": basis,
         }
-        if basis is not None and law is not None and law.irpef is not None:
+        if basis is not None and law is not None and "irpef" in law.taxes:
             person = self._ordinary_estimate(legal_entity, profile, pack, law, basis)
             if person is not None:
                 update.update(

@@ -32,7 +32,9 @@ table: the figures are those of the read date.
 
 Only tax year 2026 is here. The IRPEF of 2025 (23%, 35%, 43%: art. 1 c. 2 L. 207/2024) is not
 entered, because the pack's other 2025 sections (advances, calendar, IVA) are not verified for
-2025 and `law_for(2025)` must stay empty rather than half right.
+2025 and `law_for(2025)` must stay empty rather than half right. Each year is its own `IrpefLaw`
+in the pack's `irpef`, read by exact year: a year with no entry gets no IRPEF figure, never
+2026's, and the year's law is added next to this one without touching it.
 """
 
 from __future__ import annotations
@@ -337,6 +339,7 @@ SOCIAL_SECURITY_DEDUCTION_2026 = DeductibleCharge(
 )
 
 IRPEF_2026 = IrpefLaw(
+    year=2026,
     brackets=IRPEF_BRACKETS_2026,
     regional=REGIONAL_SURCHARGES_2026,
     social_security_deduction=SOCIAL_SECURITY_DEDUCTION_2026,

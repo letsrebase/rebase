@@ -165,21 +165,23 @@ def estimate_ordinary_taxes(
     province: str | None,
     withholdings: Decimal | None,
 ) -> OrdinaryEstimate | None:
-    """The estimate of INPS and IRPEF for `basis`'s year, `None` when the law carries no IRPEF or
-    the basis has no costs (a year on a basis that deducts none is no ordinary person's).
+    """The estimate of INPS and IRPEF for `basis`'s year, `None` when the regime owes no IRPEF
+    or the basis has no costs (a year on a basis that deducts none is no ordinary person's). When
+    the pack has no IRPEF figures for the year (`FiscalPack.irpef_for`) the IRPEF is computed
+    nowhere and says so in its `missing`; the INPS stands on its own.
     `withholdings` is what the customers withheld in the year, `None` when the pack states no rule
     for the year a withholding is credited against."""
     costs = basis.costs
-    irpef_law = law.irpef
-    if costs is None or irpef_law is None:
+    if costs is None or "irpef" not in law.taxes:
         return None
+    irpef_law = pack.irpef_for(basis.year)
 
     professional = round_money(basis.revenue - costs.total)
     loss = professional < 0
     income_for_inps = max(professional, _ZERO)
 
     inps, inps_missing_parameters = _inps(pack, basis.year, income_for_inps, inps_facts)
-    deduction = irpef_law.social_security_deduction
+    deduction = irpef_law.social_security_deduction if irpef_law is not None else None
     deducted: Decimal | None = None
     taxable: Decimal | None = None
     if inps.amount is not None and deduction is not None:
@@ -217,8 +219,20 @@ def estimate_ordinary_taxes(
         assumptions=income_assumptions,
         sources=[basis.source] + ([deduction.source] if deduction is not None else []),
     )
-    irpef = _irpef(
-        pack, law, basis.year, taxable, place, province, withholdings, inps, income_for_inps
+    irpef = (
+        _irpef(
+            pack,
+            irpef_law,
+            basis.year,
+            taxable,
+            place,
+            province,
+            withholdings,
+            inps,
+            income_for_inps,
+        )
+        if irpef_law is not None
+        else _no_irpef(basis.year)
     )
     due_total = (
         round_money(irpef.with_surcharges + inps.amount)
@@ -380,9 +394,26 @@ def _no_inps(
 # --- IRPEF ---------------------------------------------------------------------------------
 
 
+def _no_irpef(year: int) -> OrdinaryTax:
+    """The IRPEF of a year the pack has no figures for: no amount, and what is missing."""
+    return OrdinaryTax(
+        lines=[],
+        base=None,
+        rate=None,
+        parts=[],
+        amount=None,
+        missing=[
+            f"Il pacchetto fiscale non ha ancora le cifre dell'IRPEF del {year}: la legge le "
+            "fissa ogni anno e non si usano quelle dell'anno prima."
+        ],
+        assumptions=[],
+        sources=[],
+    )
+
+
 def _irpef(
     pack: FiscalPack,
-    law: TaxYearLaw,
+    irpef_law: IrpefLaw,
     year: int,
     taxable: Decimal | None,
     place: Place,
@@ -391,8 +422,6 @@ def _irpef(
     inps: OrdinaryTax,
     total_income: Decimal,
 ) -> OrdinaryTax:
-    irpef_law = law.irpef
-    assert irpef_law is not None
     assumptions = [
         "Le detrazioni dell'articolo 13 del TUIR (tra cui quella per i redditi di lavoro "
         "autonomo, comma 5) e le altre detrazioni e crediti non sono applicate: l'imposta è "

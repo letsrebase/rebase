@@ -10,6 +10,7 @@ payload's source, `get_fiscal_estimate`, and the economic overview answer one fi
 """
 
 import datetime as dt
+from dataclasses import replace
 from decimal import Decimal
 from itertools import count
 from uuid import uuid4
@@ -26,6 +27,7 @@ from pigrocrm.core.fiscal.basis_schemas import BasisCosts, YearBasis
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
 from pigrocrm.core.fiscal.irpef_2026 import IRPEF_2026
 from pigrocrm.core.fiscal.law_inps import INPS_2026
+from pigrocrm.core.fiscal.law_irpef import RateBracket
 from pigrocrm.core.fiscal.models import FiscalEstimateReading, FiscalProfile
 from pigrocrm.core.fiscal.ordinary_estimate import (
     InpsFacts,
@@ -241,11 +243,63 @@ def test_an_income_above_the_ceiling_shows_the_part_left_out() -> None:
 
 
 def test_a_year_with_no_inps_law_has_no_figure_not_the_year_before() -> None:
-    """The pack's IRPEF entry governs later years too, but INPS re-sets every figure each year
-    and a year it has no circular for is not given the previous one's."""
+    """The pack's 2026 law governs later years, but INPS re-sets every figure each year and a
+    year it has no circular for is not given the previous one's."""
     estimate = _estimate(_basis("40000.00", year=2027))
     assert estimate.inps.amount is None and "2027" in estimate.inps.missing[0]
     assert estimate.irpef.amount is None
+
+
+def test_a_year_with_no_irpef_entry_has_no_irpef_and_says_so_but_keeps_its_inps() -> None:
+    """IRPEF is a yearly figure (REB-1083): 2027 has the carried-forward law but no brackets, so
+    its IRPEF is not 2026's. The INPS has its own year and stands."""
+    pack = replace(IT_STANDARD_PACK, inps=(INPS_2026, replace(INPS_2026, year=2027)))
+    law = pack.law_for(2027)
+    assert law is not None
+    estimate = estimate_ordinary_taxes(
+        _basis("65789.47", year=2027),
+        pack,
+        law,
+        inps_facts=GS_COVERED,
+        place=ALBINEA,
+        province="RE",
+        withholdings=ZERO_MONEY,
+    )
+    assert estimate is not None
+    assert estimate.inps.amount == D("15789.47")
+    assert estimate.irpef.amount is None and estimate.irpef.with_surcharges is None
+    assert estimate.irpef.parts == [] and estimate.due_total is None
+    assert len(estimate.irpef.missing) == 1
+    assert "IRPEF del 2027" in estimate.irpef.missing[0]
+
+
+def test_two_irpef_years_coexist_and_each_reads_its_own() -> None:
+    later = replace(
+        IRPEF_2026, year=2027, brackets=(RateBracket(None, D("20")),), brackets_source="a test"
+    )
+    pack = replace(
+        IT_STANDARD_PACK,
+        irpef=(IRPEF_2026, later),
+        inps=(INPS_2026, replace(INPS_2026, year=2027)),
+    )
+    assert pack.irpef_for(2026) is IRPEF_2026 and pack.irpef_for(2027) is later
+    assert pack.irpef_for(2028) is None and pack.irpef_for(2025) is None
+    gross: dict[int, Decimal | None] = {}
+    for year in (2026, 2027):
+        law = pack.law_for(year)
+        assert law is not None
+        estimate = estimate_ordinary_taxes(
+            _basis("65789.47", year=year),
+            pack,
+            law,
+            inps_facts=GS_COVERED,
+            place=ALBINEA,
+            province="RE",
+            withholdings=ZERO_MONEY,
+        )
+        assert estimate is not None
+        gross[year] = _part(estimate.irpef, "gross_irpef")
+    assert gross == {2026: D("13700.00"), 2027: D("10000.00")}
 
 
 def test_no_address_gives_no_surcharge_and_names_the_address() -> None:
@@ -620,7 +674,8 @@ def test_a_year_the_pack_has_no_basis_for_has_no_person_estimate(
     db_session: Session, year: int
 ) -> None:
     """2025 is before the law the pack carries. 2027 has the 2026 entry's basis but no INPS
-    circular, so its INPS and IRPEF have no figure rather than the year before's."""
+    circular and no IRPEF entry, so its INPS and IRPEF have no figure rather than the year
+    before's, and the IRPEF says its figures are not entered."""
     entity = _person(db_session)
     estimate = AnalyticsService(db_session).get_fiscal_estimate(
         year, ADMIN, legal_entity_id=entity.id
@@ -630,6 +685,7 @@ def test_a_year_the_pack_has_no_basis_for_has_no_person_estimate(
     else:
         assert estimate.person is not None
         assert estimate.person.inps.amount is None and estimate.person.irpef.amount is None
+        assert "IRPEF del 2027" in estimate.person.irpef.missing[0]
 
 
 def test_the_legal_entity_id_is_never_confused_between_two_people(db_session: Session) -> None:
