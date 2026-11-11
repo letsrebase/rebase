@@ -6,7 +6,12 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.fiscal.models import DeclaredTaxFigure, FiscalEstimateReading, FiscalProfile
+from pigrocrm.core.fiscal.models import (
+    DeclaredTaxFigure,
+    FiscalEstimateReading,
+    FiscalProfile,
+    TaxAdvanceMethod,
+)
 
 
 class FiscalProfileRepository:
@@ -125,6 +130,39 @@ class DeclaredTaxFigureRepository:
             .returning(DeclaredTaxFigure.id)
         ).scalar_one()
         row = self.session.get(DeclaredTaxFigure, row_id)
+        assert row is not None
+        self.session.refresh(row)
+        return row
+
+
+class TaxAdvanceMethodRepository:
+    """The method chosen for the advances of a tax year, `tax_advance_methods`. Never commits."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def for_entity(self, legal_entity_id: UUID) -> dict[int, str]:
+        """Every year the legal entity chose a method for, by tax year."""
+        return {
+            row.tax_year: row.method
+            for row in self.session.execute(
+                select(TaxAdvanceMethod).where(TaxAdvanceMethod.legal_entity_id == legal_entity_id)
+            ).scalars()
+        }
+
+    def save(self, legal_entity_id: UUID, tax_year: int, method: str) -> TaxAdvanceMethod:
+        """One row per legal entity and year, replaced by the next choice. An upsert, so two
+        administrators choosing at once both land and the second one stands."""
+        row_id = self.session.execute(
+            pg_insert(TaxAdvanceMethod)
+            .values(legal_entity_id=legal_entity_id, tax_year=tax_year, method=method)
+            .on_conflict_do_update(
+                constraint="uq_tax_advance_methods",
+                set_={"method": method, "updated_at": func.now()},
+            )
+            .returning(TaxAdvanceMethod.id)
+        ).scalar_one()
+        row = self.session.get(TaxAdvanceMethod, row_id)
         assert row is not None
         self.session.refresh(row)
         return row

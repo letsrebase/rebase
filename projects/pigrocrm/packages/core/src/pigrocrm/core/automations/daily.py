@@ -127,6 +127,11 @@ class PassReport:
     iva_frozen: tuple[str, ...] = ()
     iva_failed: int = 0
     iva_failures: tuple[str, ...] = ()
+    # The tax due items (REB-1074): legal entities recomputed, and the class name of each that
+    # failed.
+    tax_items_refreshed: int = 0
+    tax_items_failed: int = 0
+    tax_items_failures: tuple[str, ...] = ()
 
     @property
     def open(self) -> int:
@@ -195,6 +200,10 @@ class AutomationPass:
         iva_failed: tuple[str, ...] = ()
         if "purchases" in modules_on:
             iva_settled, iva_frozen, iva_failed = self._settle_iva(day, dry_run=dry_run)
+        tax_refreshed = 0
+        tax_failed: tuple[str, ...] = ()
+        if "taxes" in modules_on:
+            tax_refreshed, tax_failed = self._refresh_tax_items(day, dry_run=dry_run)
         return PassReport(
             rules=rules,
             payroll_refreshed=refreshed,
@@ -204,7 +213,38 @@ class AutomationPass:
             iva_frozen=iva_frozen,
             iva_failed=len(iva_failed),
             iva_failures=iva_failed,
+            tax_items_refreshed=tax_refreshed,
+            tax_items_failed=len(tax_failed),
+            tax_items_failures=tax_failed,
         )
+
+    def _refresh_tax_items(self, day: date, *, dry_run: bool) -> tuple[int, tuple[str, ...]]:
+        """Recomputes the tax due items (REB-1074) of every legal entity with a fiscal profile
+        whose pack owes an income tax: an estimate moves as invoices are collected, and nothing
+        else calls the writer between two declared figures. Each legal entity is its own savepoint
+        and its own commit, so one that fails is counted by class name and the rest go on."""
+        from pigrocrm.core.fiscal.models import FiscalProfile
+        from pigrocrm.core.fiscal.pack import resolve_pack
+        from pigrocrm.core.fiscal.tax_items import TaxDueItemService
+
+        entities = [
+            profile.legal_entity_id
+            for profile in self.session.scalars(select(FiscalProfile))
+            if any(law.taxes for law in resolve_pack(profile.pack_id, profile.pack_version).laws)
+        ]
+        done = 0
+        failed: list[str] = []
+        for entity in entities:
+            try:
+                with self.session.begin_nested():
+                    TaxDueItemService(self.session).refresh_tax_due_items(entity, today=day)
+            except Exception as exc:  # noqa: BLE001 - counted and reported, the pass goes on
+                failed.append(type(exc).__name__)
+                continue
+            done += 1
+            if not dry_run:
+                self.session.commit()
+        return done, tuple(failed)
 
     def _settle_iva(
         self, day: date, *, dry_run: bool

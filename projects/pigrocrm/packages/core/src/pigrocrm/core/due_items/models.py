@@ -55,6 +55,8 @@ SOURCE_KINDS: tuple[str, ...] = (
     "iva_settlement",
     "withholding",
     "tax_instalment",
+    "tax_balance",
+    "tax_advance",
     "payroll",
     "contract_occurrence",
     "recurring_expense",
@@ -67,6 +69,10 @@ SOURCE_KINDS: tuple[str, ...] = (
     # restricted, since it names a person and what they are paid back.
     "expense_note",
 )
+# The source of an income tax's balance and of its advances (`fiscal/tax_items.py`, REB-1074):
+# restricted below, since a tax due item is the fiscal position.
+TAX_BALANCE_SOURCE_KIND = "tax_balance"
+TAX_ADVANCE_SOURCE_KIND = "tax_advance"
 # The source of an approved expense note's one due item (`expense_notes/service.py`).
 EXPENSE_NOTE_SOURCE_KIND = "expense_note"
 # The source of what staff cost and when it leaves (`staff/payroll.py`).
@@ -81,6 +87,8 @@ RESTRICTED_SOURCE_KINDS: frozenset[str] = frozenset(
         "iva_settlement",
         "withholding",
         "tax_instalment",
+        TAX_BALANCE_SOURCE_KIND,
+        TAX_ADVANCE_SOURCE_KIND,
         PAYROLL_SOURCE_KIND,
         "cash_basis_vat",
         # What an engagement owes a freelancer names them and what they are paid (collaborators

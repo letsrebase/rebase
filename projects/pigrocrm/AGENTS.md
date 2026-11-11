@@ -441,8 +441,8 @@ and year, what the accountant's return says: tax due, balance (signed) and advan
 token with `full_access` (REST `PUT /api/analytics/fiscal/declared` and the privileged MCP tool of the same name), and
 typing again replaces the row whole. `AnalyticsService.get_fiscal_estimate` answers the figures beside the estimate
 (`declared`) and says the year's `reading` (`declared` as soon as one exists), so a newer estimate, which is written by
-another path, never touches them; a «what if» with a supplied revenue carries none. Reading a figure from a document and
-the advances and due items that follow are their own cards.
+another path, never touches them; a «what if» with a supplied revenue carries none. Typing one recomputes the legal
+entity's tax due items (REB-1074, below). Reading a figure from a document is its own card.
 
 **The tax calendar is pack data keyed by the calendar year a date falls in (REB-1004).** `FiscalPack.calendars`
 holds `TaxCalendarLaw` entries (`fiscal/law.py`), each a list of `TaxDateRule` with the nominal days and the primary
@@ -514,6 +514,23 @@ is under `no-browser-arithmetic.test.ts`, so nothing there parses an amount. «R
 for the due items and plans that would drive them, and typing a declared figure is its own screen.
 
 **IRAP of an srl is pack data (REB-1065).** `CompanyTaxLaw.irap` (`fiscal/law_irap.py`) holds the base (`IrapBaseItem`: which items of sections A and B of art. 2425 c.c. add, are deducted or are left out, art. 5 c. 1 D.Lgs. 446/1997), the deductions of art. 11 (permanent staff cost, the flat deduction for staff who are not permanent, the small-base table of c. 4-bis, and `small_base_deduction`), the territorial rule of art. 4 and the 2026 ordinary rate of every region and autonomous province (`rate_for(year, region)`, keyed by ISTAT region code with `BZ` and `TN` apart; the caller takes the region from the place data of the address). The lookup answers `None` for a year or key it has no row for, never a guess. The module docstring names the simplification the estimate has to make (revenue, purchases and staff cost instead of the income statement) and what is not modelled: the rates of special subjects and the regional reductions that depend on the company.
+
+**Tax balances and advances are due items (REB-1074).** `TaxDueItemService.refresh_tax_due_items` (`fiscal/tax_items.py`) writes, per legal entity,
+tax (`irpef`, `substitute_tax`, `ires`, `irap`) and tax year, the balance and the two advances as due items out to the tax office
+(`tax_balance` and `tax_advance`, restricted kinds of the module `taxes`, so every read, settlement, schedule line and Home figure of
+one is an administrator's and a `full_access` token's). `fiscal/advances.py` holds the pure lookups over the pack: the rule
+(`advance_rule`: percentage, 40/60 or 50/50, floor, single-payment limit, from `IncomeTaxAdvanceLaw`, `FlatRateAdvanceLaw` or
+`CompanyAdvanceLaw`), the amounts and the dates (a person's and the flat-rate regime's from the pack's calendar, a company's from
+its fiscal year end for a year end on the last day of a month); a rule, figure or date the pack does not state is a `Missing` with
+its reason and gives no item. The base of an advance is the **historical** method's (default: the previous year's declared tax,
+else its estimate) or the **forecast** method's (the current estimate), chosen per legal entity and tax year with
+`TaxAdvanceMethodService.set_tax_advance_method` (REST `PUT /api/analytics/fiscal/advance-method`, privileged MCP tool of the
+same name, `full_access`, table `tax_advance_methods`). An item is `forecast` on an estimate, `expected` on a declared figure,
+`settled` when paid. The refresh is idempotent and called where a figure or choice changes (`set_declared_tax_figure`,
+`set_tax_advance_method`) and by the daily pass (`AutomationPass._refresh_tax_items`): an item that is as it should be is left
+alone, one that is not is dropped and recreated, one a payment touched is never changed, and the difference a paid advance leaves
+when its base moves is carried to the next item of the tax with «da confermare» in its description. A payment is created only from
+today to `HORIZON_DAYS` ahead. INPS, credits (`tax_credit`), instalment plans and F24 groups are other cards.
 
 **The srl's annual chamber fee is pack data (REB-1068).** `TaxYearLaw.chamber_fee` (`fiscal/law_chamber_fee.py`) holds the 2014 tiers, the 50% cut, the chambers with the provinces they cover and their 2026 increases (20% for the 61 of the decree of 17 March 2026, plus 50% for the six Sicilian ones, Napoli none). `ChamberFeeLaw.fee(year, turnover, province)` answers whole euro and `None` for a year other than 2026, an unknown province, `BT` or `SU` (no chamber verified for them), never a guess. It computes the fee of the head office only; local units are not modelled.
 
