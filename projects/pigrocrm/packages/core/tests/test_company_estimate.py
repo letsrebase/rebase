@@ -364,8 +364,8 @@ def test_what_the_basis_left_out_is_an_assumption_of_the_figure(db_session: Sess
     company = _estimate(db_session, entity).company
     assert company is not None
     assert any("Persone in servizio" in text for text in company.ires.assumptions)
-    # The IRAP base keeps staff cost in, so a missing staff cost does not move it.
-    assert not any("Persone in servizio" in text for text in company.irap.assumptions)
+    # A permanent employee's cost is deducted from the IRAP base, so a missing cost moves it.
+    assert any("Persone in servizio" in text for text in company.irap.assumptions)
 
 
 def test_the_forecast_advances_of_an_srl_are_written_from_its_estimate(

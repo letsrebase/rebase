@@ -44,7 +44,7 @@ test('an srl’s Tasse page shows its IRES and IRAP estimates', async ({ page })
     const panel = page.getByRole('complementary', { name: 'Imposta aperta' })
     await expect(panel.getByText('Come è calcolata la stima')).toBeVisible()
     await expect(panel.getByText('3,90 %')).toBeVisible()
-    await expect(panel.getByText(/tempo indeterminato/)).toBeVisible()
+    await expect(panel.getByText(/compensi degli amministratori restano nella base/)).toBeVisible()
 
     const without = page.getByRole('region', { name: nowhere })
     await expect(without.getByText(/Manca l.indirizzo della sede/)).toBeVisible()

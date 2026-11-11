@@ -273,13 +273,11 @@ def _irap(
         CompanyTaxLine(code="purchases", label="Acquisti", amount=-costs.purchases),
     ]
     assumptions = [
-        # The staff cost left out of the base's figures (`staff_cost_not_estimated`) does not
-        # move the IRAP base, which keeps staff cost in; what else the basis left out does.
-        *(line.reason for line in basis.left_out if line.code != "staff_cost_not_estimated"),
+        *(line.reason for line in basis.left_out),
         "Il valore della produzione è ricavi meno acquisti: manca ciò che il gestionale non "
         "registra (ammortamenti, variazioni di rimanenze, altri ricavi e proventi).",
-        "Il costo del personale e i compensi degli amministratori restano nella base, come "
-        "dice la legge (art. 5 D.Lgs. 446/1997).",
+        "Il costo del personale e i compensi degli amministratori restano nella base (art. 5 "
+        "D.Lgs. 446/1997), salvo le deduzioni dell'art. 11 indicate qui sotto.",
         "Si applica l'aliquota ordinaria della regione della sede, con una sola sede.",
     ]
     deducted = value
