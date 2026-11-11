@@ -213,8 +213,6 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         # (REB-1075, taxes design § 5): they move the tax due items and say what is owed to the
         # tax office, so the same position as the figures; reading them is the same.
         "set_tax_instalment_plan",
-        # Confirming the difference an advance already paid left on a tax item (REB-1079).
-        "confirm_tax_carry",
         "create_tax_notice_plan",
         "update_tax_notice_plan",
         "delete_tax_notice_plan",
@@ -386,6 +384,9 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         # Settling a due item with a bank movement as its evidence, and taking that back: a
         # person's act, like accepting any other proposal (REB-1042, brief « The matching panel »).
         "confirm_movement_match",
+        # The difference an advance already paid left on a tax item asks a person to confirm it
+        # (REB-1079, REB-1074): its legal treatment is «to verify», so no credential decides it.
+        "confirm_tax_carry",
         "undo_movement_match",
         # The freelancer's signature makes an engagement active: a person records it, never the
         # credential that read the letter's text (collaborators design § 6).

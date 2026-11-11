@@ -78,15 +78,12 @@ export function lineText(entry: TaxCalendarEntry): string {
   return NAMES_ITSELF.has(entry.tax) ? dateLabel(entry) : `${dateLabel(entry)} · ${taxOfDate(entry)}`
 }
 
-/** The taxes whose payments the due items now carry: on a day that holds their items the pack's
- *  line for the same payment is not drawn twice (the item says what it is and what it owes). */
-const WRITTEN_AS_ITEMS: ReadonlySet<TaxName> = new Set<TaxName>([
-  'income_tax',
-  'substitute_tax',
-  'ires',
-  'irap',
-  'chamber_fee',
-])
+/** Whether a due item is the payment a pack line announces: the same tax, the pack's «imposte sui
+ *  redditi» being a person's IRPEF. A line the items do not cover stays, so a tax with no item that
+ *  day (no estimate yet) is still said to fall due. */
+function covers(item: TaxDueItem, entry: TaxCalendarEntry): boolean {
+  return item.tax === (entry.tax === 'income_tax' ? 'irpef' : entry.tax)
+}
 
 /** One day on which something falls due: the pack's lines and, for the taxes whose payments are
  *  due items, the items themselves (a balance, an advance, an instalment, the chamber fee). */
@@ -114,7 +111,7 @@ export function groupByDueDate(
   for (const item of items) if (item.due_date !== null) day(item.due_date).items.push(item)
   for (const entry of entries) {
     const found = day(entry.due_date)
-    if (found.items.length === 0 || !WRITTEN_AS_ITEMS.has(entry.tax)) found.entries.push(entry)
+    if (!found.items.some((item) => covers(item, entry))) found.entries.push(entry)
   }
   return [...days.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
 }

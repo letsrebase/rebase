@@ -730,8 +730,10 @@ class DueItemService:
     def confirm_tax_carry(self, item_id: UUID, actor: Actor) -> DueItemDetail:
         """An administrator confirms the difference an advance already paid left on this tax item
         (REB-1074 writes «da confermare» in its description; the legal treatment is «to verify»,
-        taxes design § 2). Only the confirmation is recorded: the amount stays. Confirming twice
-        is a no-op; a rewritten item (the difference moved) is a new one to confirm."""
+        taxes design § 2). A decision for a person: no agent credential takes it, `full_access` or
+        not. Only the confirmation is recorded: the amount stays. Confirming twice is a no-op; an
+        item rewritten with another difference is a new one to confirm."""
+        actor.require_person("confirm_tax_carry")
         actor.require_admin("confirm_tax_carry")
         item = self._locked(item_id)
         if (

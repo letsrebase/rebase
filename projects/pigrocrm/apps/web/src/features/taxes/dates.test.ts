@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { dateLabel, distanceLabel, groupByDueDate, nextDays, taxOfDate } from './dates'
 import type { TaxCalendarEntry } from './labels'
+import type { TaxDueItem } from './queries'
 
 const entry = (overrides: Partial<TaxCalendarEntry>): TaxCalendarEntry => ({
   nominal_date: '2026-06-30',
@@ -98,5 +99,35 @@ describe('distanceLabel', () => {
     expect(distanceLabel('2026-11-10', '2026-11-11')).toBe('domani')
     expect(distanceLabel('2026-11-10', '2026-11-09')).toBe('ieri')
     expect(distanceLabel('2026-11-10', '2026-11-07')).toBe('3 giorni fa')
+  })
+})
+
+describe('groupByDueDate with the year’s due items', () => {
+  const item = (tax: string, due: string, id = tax): TaxDueItem =>
+    ({ id, tax, due_date: due, source_kind: 'tax_balance' }) as TaxDueItem
+
+  it('drops a pack line only for the tax an item pays that day', () => {
+    const days = groupByDueDate(
+      [
+        entry({ tax: 'ires' }),
+        entry({ tax: 'irap' }),
+        entry({ tax: 'iva', kind: 'annual_balance' }),
+      ],
+      [item('ires', '2026-06-30')],
+    )
+    expect(days).toHaveLength(1)
+    expect(days[0]?.items.map((one) => one.tax)).toEqual(['ires'])
+    expect(days[0]?.entries.map((one) => one.tax)).toEqual(['irap', 'iva'])
+  })
+
+  it('reads the pack’s «imposte sui redditi» as a person’s IRPEF', () => {
+    const days = groupByDueDate([entry({ tax: 'income_tax' })], [item('irpef', '2026-06-30')])
+    expect(days[0]?.entries).toEqual([])
+  })
+
+  it('makes a day of an item the pack has no line for, in time order', () => {
+    const days = groupByDueDate([entry({})], [item('ires', '2026-03-16', 'n-1')])
+    expect(days.map((day) => day.date)).toEqual(['2026-03-16', '2026-06-30'])
+    expect(days[0]?.entries).toEqual([])
   })
 })

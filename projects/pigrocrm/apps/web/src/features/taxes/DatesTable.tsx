@@ -7,6 +7,7 @@ import { moneyIn } from '@/features/cash/money'
 import { formatIsoDateItalian } from '@/lib/dates'
 import {
   CARRY_LABEL,
+  CARRY_TONE,
   TAX_ITEM_STATE_LABEL,
   TAX_ITEM_STATE_TONE,
   itemTitle,
@@ -38,7 +39,7 @@ function Lines({ day, today, compact }: { day: DueDay; today: string; compact: b
                 <span className="text-sm tabular-nums">{moneyIn(item.amount, item.currency)}</span>
               )}
               <StatusPill tone={TAX_ITEM_STATE_TONE[state]}>{TAX_ITEM_STATE_LABEL[state]}</StatusPill>
-              {item.carry_to_confirm ? <StatusPill tone="gold">{CARRY_LABEL}</StatusPill> : null}
+              {item.carry_to_confirm ? <StatusPill tone={CARRY_TONE}>{CARRY_LABEL}</StatusPill> : null}
             </span>
           </div>
         )

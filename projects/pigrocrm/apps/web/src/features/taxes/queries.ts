@@ -86,17 +86,52 @@ const PLAN_ITEM_KINDS = ['tax_instalment', 'notice_plan'] as const
 const ITEMS_LIMIT = 200
 
 /** What `useTaxDueItems` reads: the open items (`forecast` and `expected` come together when
- *  `state` is left out) and the settled ones, tax items only. */
+ *  `state` is left out) and the settled ones of one tax source kind, every page, so a busy year of
+ *  purchases and payroll never pushes a tax item off the end. */
+async function readKind(
+  legalEntityId: string,
+  kind: string,
+  extra: { due_from?: string; due_to?: string },
+): Promise<TaxDueItem[]> {
+  const found: TaxDueItem[] = []
+  for (const state of [undefined, 'settled' as const]) {
+    let cursor: string | undefined
+    do {
+      const page = await unwrap(
+        api.GET('/api/due-items', {
+          params: {
+            query: {
+              legal_entity_id: legalEntityId,
+              direction: 'out',
+              source_kind: kind,
+              limit: ITEMS_LIMIT,
+              ...(state === undefined ? {} : { state }),
+              ...(cursor === undefined ? {} : { cursor }),
+              ...extra,
+            },
+          },
+        }),
+      )
+      found.push(...page.items)
+      cursor = page.next_cursor ?? undefined
+    } while (cursor !== undefined)
+  }
+  return found
+}
+
+/** The tax items of `kinds`, one request series per kind (never the IVA settlements or the
+ *  purchases that share the table), each item once. */
 async function readTaxItems(
   legalEntityId: string,
-  extra: { source_kind?: string; due_from?: string; due_to?: string },
+  kinds: readonly string[],
+  extra: { due_from?: string; due_to?: string },
 ): Promise<TaxDueItem[]> {
-  const base = { legal_entity_id: legalEntityId, direction: 'out' as const, limit: ITEMS_LIMIT, ...extra }
-  const [open, settled] = await Promise.all([
-    unwrap(api.GET('/api/due-items', { params: { query: base } })),
-    unwrap(api.GET('/api/due-items', { params: { query: { ...base, state: 'settled' as const } } })),
-  ])
-  return [...open.items, ...settled.items].filter((item) => item.tax !== null)
+  const lists = await Promise.all(kinds.map((kind) => readKind(legalEntityId, kind, extra)))
+  const byId = new Map<string, TaxDueItem>()
+  for (const item of lists.flat()) {
+    if (TAX_ITEM_KINDS.some((kind) => kind === item.source_kind)) byId.set(item.id, item)
+  }
+  return [...byId.values()]
 }
 
 /**
@@ -108,7 +143,10 @@ export function useTaxDueItems(year: number, legalEntityId: string | null, enabl
   return useQuery({
     queryKey: queryKeys.taxDueItems(String(year), legalEntityId),
     queryFn: () =>
-      readTaxItems(legalEntityId ?? '', { due_from: `${year}-01-01`, due_to: `${year}-12-31` }),
+      readTaxItems(legalEntityId ?? '', TAX_ITEM_KINDS, {
+        due_from: `${year}-01-01`,
+        due_to: `${year}-12-31`,
+      }),
     enabled: enabled && legalEntityId !== null,
     retry: retryUnlessMissing,
   })
@@ -118,12 +156,7 @@ export function useTaxDueItems(year: number, legalEntityId: string | null, enabl
 export function useTaxPlanItems(legalEntityId: string | null, enabled = true) {
   return useQuery({
     queryKey: queryKeys.taxDueItems('plans', legalEntityId),
-    queryFn: async () => {
-      const lists = await Promise.all(
-        PLAN_ITEM_KINDS.map((kind) => readTaxItems(legalEntityId ?? '', { source_kind: kind })),
-      )
-      return lists.flat()
-    },
+    queryFn: () => readTaxItems(legalEntityId ?? '', PLAN_ITEM_KINDS, {}),
     enabled: enabled && legalEntityId !== null,
     retry: retryUnlessMissing,
   })
@@ -147,7 +180,7 @@ export function useTaxPlans(legalEntityId: string | null, enabled = true) {
 
 /** Every read the plans, the advances and the items move: the estimate and its readings, the
  *  items, the plans, the calendar and the cash schedule that lists the same items. */
-function useRefreshTaxes() {
+export function useRefreshTaxes() {
   const client = useQueryClient()
   return () => {
     void client.invalidateQueries({ queryKey: ['fiscal-estimate'] })

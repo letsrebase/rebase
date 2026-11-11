@@ -15,6 +15,7 @@ import { AdvanceMethodDialog } from './AdvanceMethodDialog'
 import { InstalmentPlanDialog } from './InstalmentPlanDialog'
 import {
   CARRY_LABEL,
+  CARRY_TONE,
   TAX_ITEM_STATE_LABEL,
   TAX_ITEM_STATE_TONE,
   overdueSince,
@@ -35,7 +36,7 @@ import {
   type Tax,
   type TaxReadingLine,
 } from './labels'
-import { failureText, useConfirmTaxCarry, useTaxPlans, type TaxDueItem } from './queries'
+import { failureText, useConfirmTaxCarry, useRefreshTaxes, useTaxPlans, type TaxDueItem } from './queries'
 import { readingCell } from './readings'
 
 function Fact({ label, children, strong = false }: { label: string; children: ReactNode; strong?: boolean }) {
@@ -345,6 +346,7 @@ function ItemBlock({ item, today }: { item: TaxDueItem; today: string }) {
   const state = taxItemState(item, today)
   const confirm = useConfirmTaxCarry()
   const settle = useSettleDueItem()
+  const refresh = useRefreshTaxes()
   const since = state === 'overdue' ? overdueSince(item, today) : null
   const open = item.state === 'expected' || item.state === 'forecast'
   return (
@@ -357,7 +359,7 @@ function ItemBlock({ item, today }: { item: TaxDueItem; today: string }) {
       <div className="flex flex-wrap items-center gap-2">
         <StatusPill tone={TAX_ITEM_STATE_TONE[state]}>{TAX_ITEM_STATE_LABEL[state]}</StatusPill>
         {since ? <span className="text-xs text-muted-foreground">{since}</span> : null}
-        {item.carry_to_confirm ? <StatusPill tone="gold">{CARRY_LABEL}</StatusPill> : null}
+        {item.carry_to_confirm ? <StatusPill tone={CARRY_TONE}>{CARRY_LABEL}</StatusPill> : null}
       </div>
       {partlyPaid(item) ? (
         <p className="text-xs text-muted-foreground">
@@ -384,7 +386,7 @@ function ItemBlock({ item, today }: { item: TaxDueItem; today: string }) {
           </Button>
         ) : null}
         {open ? (
-          <Button size="sm" disabled={settle.isPending} onClick={() => settle.mutate({ item, today })}>
+          <Button size="sm" disabled={settle.isPending} onClick={() => settle.mutate({ item, today }, { onSuccess: refresh })}>
             Segna come pagato
           </Button>
         ) : null}

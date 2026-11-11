@@ -537,8 +537,9 @@ amount and state pill («Previsto», «Da pagare», «Scaduto», «Pagato»; a d
 cover); «Rate» lists the instalment plans and the notice plans (`GET /fiscal/plans`) with the instalments' items; the tax panel
 changes the advance method (`FiscalEstimate.advance_method`) and the June instalments, and «Nuovo piano» enters a notice's plan.
 A carried difference that waits («da confermare» in the description) shows as `DueItemRead.carry_to_confirm` and an administrator
-confirms it with `DueItemService.confirm_tax_carry` (REST `POST /api/due-items/{id}/carry-confirmation`, no MCP tool, column
-`due_items.carry_confirmed_at`, timeline `tax_carry_confirmed`); a rewritten item asks again. A date's net, the F24 chip and typing a
+confirms it with `DueItemService.confirm_tax_carry` (REST `POST /api/due-items/{id}/carry-confirmation`, person-only: no agent
+credential, no MCP tool; column `due_items.carry_confirmed_at`, timeline `tax_carry_confirmed`); a rewrite with the same description keeps the
+confirmation, another difference asks again. A date's net, the F24 chip and typing a
 declared figure wait for their own cards.
 
 **IRAP of an srl is pack data (REB-1065).** `CompanyTaxLaw.irap` (`fiscal/law_irap.py`) holds the base (`IrapBaseItem`: which items of sections A and B of art. 2425 c.c. add, are deducted or are left out, art. 5 c. 1 D.Lgs. 446/1997), the deductions of art. 11 (permanent staff cost, the flat deduction for staff who are not permanent, the small-base table of c. 4-bis, and `small_base_deduction`), the territorial rule of art. 4 and the 2026 ordinary rate of every region and autonomous province (`rate_for(year, region)`, keyed by ISTAT region code with `BZ` and `TN` apart; the caller takes the region from the place data of the address). The lookup answers `None` for a year or key it has no row for, never a guess. The module docstring names the simplification the estimate has to make (revenue, purchases and staff cost instead of the income statement) and what is not modelled: the rates of special subjects and the regional reductions that depend on the company.

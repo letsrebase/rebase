@@ -255,10 +255,6 @@ FORBIDDEN = (
 REST_ONLY_FORBIDDEN = frozenset(
     {
         "set_drive_roots",
-        # REB-1079: confirming the difference an advance already paid left on a tax item. It
-        # has no tool: an administrator confirms it from «Tasse», over REST, which a
-        # `full_access` token could too.
-        "confirm_tax_carry",
         "set_drive_storage_folder",
         "connect_drive",
         "disconnect_drive",

@@ -47,16 +47,23 @@ export function PlansTab({
   wide,
   inline,
   today,
+  light = false,
 }: {
   legalEntityId: string
   wide: boolean
   inline: boolean
   today: string
+  /** The solo flat-rate page's section: a heading, no strong action, and nothing at all while
+   *  there is no plan (brief, question 4). */
+  light?: boolean
 }) {
   const [selected, onSelect] = useState<string | null>(null)
   const plans = useTaxPlans(legalEntityId)
   const items = useTaxPlanItems(legalEntityId)
   const [adding, setAdding] = useState(false)
+  if (light && plans.isSuccess && plans.data.instalment_plans.length + plans.data.notice_plans.length === 0) {
+    return null
+  }
   if (plans.isError) return <Failure error={plans.error} onRetry={() => void plans.refetch()} />
   if (items.isError) return <Failure error={items.error} onRetry={() => void items.refetch()} />
   if (plans.isPending || items.isPending) return <LoadingState label={LOADING_SENTENCE} />
@@ -67,12 +74,16 @@ export function PlansTab({
       <PlanPanel row={open} legalEntityId={legalEntityId} today={today} onClose={() => onSelect(null)} />
     </Detail>
   ) : null
-  return (
+  const body = (
     <div className="flex items-start gap-6">
     <div className="min-w-0 flex-1 space-y-3">
-      <div className="flex justify-end">
-        <Button onClick={() => setAdding(true)}>Nuovo piano</Button>
-      </div>
+      {light ? (
+        <h3 className="text-base font-semibold">Rate</h3>
+      ) : (
+        <div className="flex justify-end">
+          <Button onClick={() => setAdding(true)}>Nuovo piano</Button>
+        </div>
+      )}
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">{PLANS_EMPTY_SENTENCE}</p>
       ) : wide ? (
@@ -167,5 +178,6 @@ export function PlansTab({
     {panel}
     </div>
   )
+  return light ? <section aria-label="Rate">{body}</section> : body
 }
 

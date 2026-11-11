@@ -19,6 +19,7 @@ from fakes.cash_fixtures import ADMIN, AGENT, AGENT_FULL, COLLABORATOR, READONLY
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.due_items.models import (
@@ -296,12 +297,26 @@ def test_an_administrator_confirms_the_difference_carried_onto_a_tax_item(
     for refused in (COLLABORATOR, READONLY):
         with pytest.raises(PermissionDenied):
             service.confirm_tax_carry(item.id, refused)
-    with pytest.raises(AgentForbidden):
-        service.confirm_tax_carry(item.id, AGENT)
+    # A decision for a person: no agent credential takes it, a `full_access` one included.
+    for agent in (AGENT, AGENT_FULL):
+        with pytest.raises(AgentForbidden):
+            service.confirm_tax_carry(item.id, agent)
 
     confirmed = service.confirm_tax_carry(item.id, ADMIN)
     assert confirmed.carry_to_confirm is False
     assert confirmed.amount == D("700.00")
+    # Twice is the same answer, and one entry in the timeline.
+    assert service.confirm_tax_carry(item.id, ADMIN).carry_to_confirm is False
+    assert (
+        len(
+            db_session.scalars(
+                select(Activity).where(
+                    Activity.entity_type == "legal_entity", Activity.kind == "tax_carry_confirmed"
+                )
+            ).all()
+        )
+        == 1
+    )
     # A recomputation with nothing new leaves the item and its confirmation alone.
     TaxDueItemService(db_session).refresh_tax_due_items(entity, today=clock.today)
     assert service.get(item.id, ADMIN).carry_to_confirm is False

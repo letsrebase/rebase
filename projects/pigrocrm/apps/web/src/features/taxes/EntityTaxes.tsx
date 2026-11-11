@@ -219,6 +219,13 @@ export function EntityTaxes({
             {dateRows}
           </section>
         ) : null}
+        <PlansTab
+          legalEntityId={data.legal_entity_id}
+          wide={wide}
+          inline={false}
+          today={today}
+          light
+        />
         {openDay ? (
           <Detail inline={false} label="Scadenza aperta" onClose={() => setOpen(null)}>
             <DatePanel day={openDay} today={today} />

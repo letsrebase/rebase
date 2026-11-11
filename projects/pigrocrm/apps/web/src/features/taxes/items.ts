@@ -35,6 +35,8 @@ export const TAX_ITEM_STATE_TONE: Record<TaxItemState, StatusTone> = {
 }
 
 export const CARRY_LABEL = 'Da confermare'
+/** A difference waiting for a person is waiting like a payment: `gold`, never `accent`. */
+export const CARRY_TONE: StatusTone = 'gold'
 
 /** «da 3 giorni»: how long an item has been overdue, a difference of two dates. */
 export function overdueSince(item: TaxDueItem, today: string): string | null {

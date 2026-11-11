@@ -273,8 +273,9 @@ class DueItem(Base, PrimaryKeyMixin, TimestampMixin):
     rule_day_of_month: Mapped[int | None] = mapped_column(Integer, default=None)
     rule_not_after: Mapped[dt.date | None] = mapped_column(Date, default=None)
     dropped_reason: Mapped[str | None] = mapped_column(String(TEXT_MAX_LENGTH), default=None)
-    # When an administrator confirmed the difference carried onto this tax item (REB-1079). The
-    # item is dropped and rewritten when the difference changes, which clears it.
+    # When an administrator confirmed the difference carried onto this tax item (REB-1079). A
+    # rewrite that keeps the same description keeps it (`TaxDueItemService`); another difference
+    # is a new item to confirm.
     carry_confirmed_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )

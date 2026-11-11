@@ -251,6 +251,23 @@ describe('«Tasse»: Scadenze with the due items', () => {
     )
   })
 
+  it('refreshes the list after an item is marked paid, so the button cannot be pressed twice', async () => {
+    wide()
+    renderPage('dates')
+    await userEvent.click(await screen.findByRole('row', { name: /30\/11\/2026/ }))
+    const panel = await screen.findByRole('complementary', { name: 'Scadenza aperta' })
+    const before = vi.mocked(api.GET).mock.calls.filter(([path]) => path === '/api/due-items').length
+    await userEvent.click(within(panel).getByRole('button', { name: 'Segna come pagato' }))
+    await waitFor(() =>
+      expect(api.POST).toHaveBeenCalledWith('/api/due-items/{item_id}/settlements', expect.anything()),
+    )
+    await waitFor(() =>
+      expect(vi.mocked(api.GET).mock.calls.filter(([path]) => path === '/api/due-items').length).toBeGreaterThan(
+        before,
+      ),
+    )
+  })
+
   it('offers no confirmation for an item with nothing to confirm', async () => {
     answers['/api/due-items'] = { items: [item({ carry_to_confirm: false })], next_cursor: null }
     wide()
@@ -329,6 +346,36 @@ describe('«Tasse»: Imposte, the method and the instalments', () => {
     const link = await screen.findByRole('link', { name: 'Apri i parametri fiscali' })
     expect(link).toHaveAttribute('href', '/app/settings/legal-entities')
     expect(screen.getByText(/coefficiente di redditività/)).toBeInTheDocument()
+  })
+})
+
+describe('«Tasse»: a solo flat-rate space', () => {
+  function renderSolo() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(queryKeys.modules, spaceModules([], 'solo'))
+    return render(
+      <QueryClientProvider client={client}>
+        <LegalEntityContext.Provider value={ONE}>
+          <TaxesPage tab="taxes" year={2026} onTabChange={vi.fn()} onYearChange={vi.fn()} />
+        </LegalEntityContext.Provider>
+      </QueryClientProvider>,
+    )
+  }
+
+  it('draws «Rate» only when a plan exists, with no strong action', async () => {
+    answers['/api/analytics/fiscal/plans'] = { legal_entity_id: 'le-1', instalment_plans: [], notice_plans: [NOTICE] }
+    answers['/api/due-items'] = { items: [PLAN_ITEM], next_cursor: null }
+    renderSolo()
+    const section = await screen.findByRole('region', { name: 'Rate' })
+    expect(within(section).getByText('Avviso bonario 2023')).toBeInTheDocument()
+    expect(within(section).queryByRole('button', { name: 'Nuovo piano' })).not.toBeInTheDocument()
+  })
+
+  it('draws no «Rate» section while there is no plan', async () => {
+    renderSolo()
+    await screen.findByText('Stima indicativa.')
+    await waitFor(() => expect(api.GET).toHaveBeenCalledWith('/api/analytics/fiscal/plans', expect.anything()))
+    expect(screen.queryByRole('region', { name: 'Rate' })).not.toBeInTheDocument()
   })
 })
 
