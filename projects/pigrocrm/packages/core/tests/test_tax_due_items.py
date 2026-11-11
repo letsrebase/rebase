@@ -803,3 +803,17 @@ def test_a_sole_trader_has_no_chamber_fee(
     entity = _entity(db_session, "it-flat-rate")
     _refresh(db_session, entity, "MI")
     assert _fee_rows(db_session, entity) == []
+
+
+def test_a_chamber_fee_can_be_paid_and_then_keeps_what_was_paid(
+    db_session: Session, clock: Clock, estimates: Estimates
+) -> None:
+    entity = _entity(db_session, "it-company", isa=False)
+    _refresh(db_session, entity, "MI")
+    (item,) = _fee_rows(db_session, entity)
+    DueItemService(db_session).settle(
+        item.id, SettlementCreate(amount=D("120.00"), settled_on=dt.date(2026, 5, 20)), ADMIN
+    )
+    _refresh(db_session, entity, "MI")
+    (kept,) = _fee_rows(db_session, entity)
+    assert (kept.id, kept.state, kept.amount) == (item.id, "settled", D("120.00"))

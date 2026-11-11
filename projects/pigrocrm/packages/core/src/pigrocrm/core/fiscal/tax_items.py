@@ -244,7 +244,8 @@ class TaxDueItemService:
                     continue
                 payments.extend(self._advance_payments(context, tax, year))
                 payments.append(self._balance_payment(context, tax, year))
-            if law.chamber_fee is not None:
+            # The fee law holds one fee year: a year after it has no law yet and no item.
+            if law.chamber_fee is not None and law.chamber_fee.year == year:
                 payments.append(self._chamber_fee_payment(context, year))
         return payments
 
