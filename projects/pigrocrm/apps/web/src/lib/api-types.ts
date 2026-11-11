@@ -2776,6 +2776,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/legal-entities/municipalities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Municipalities
+         * @description The municipalities of a province, by name, from ISTAT's list (REB-1069). The form
+         *     offers them when a legal entity's city matches none; the name it picks matches exactly.
+         *     Empty for an abbreviation the list does not carry.
+         */
+        get: operations["list_municipalities_api_legal_entities_municipalities_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/legal-entities/{legal_entity_id}": {
         parameters: {
             query?: never;
@@ -14521,6 +14543,8 @@ export interface components {
             updated_at: string;
             /** Linked Organizations */
             linked_organizations: number;
+            /** @description Where the address is, read from ISTAT's list of municipalities (REB-1069): the municipality's codes and the region, or `unknown` when the city is not a municipality of the province. Never stored and never sent back on a write. */
+            readonly place: components["schemas"]["Place"];
         };
         /** LegalEntityRead */
         LegalEntityRead: {
@@ -14585,6 +14609,8 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** @description Where the address is, read from ISTAT's list of municipalities (REB-1069): the municipality's codes and the region, or `unknown` when the city is not a municipality of the province. Never stored and never sent back on a write. */
+            readonly place: components["schemas"]["Place"];
         };
         /**
          * LegalEntityUpsert
@@ -15277,6 +15303,27 @@ export interface components {
             statement_ids: string[];
             /** @description The live proposal, or the confirmed match, of this movement */
             match: components["schemas"]["MovementMatchRead"] | null;
+        };
+        /**
+         * MunicipalityOption
+         * @description One municipality of a province, as the picker beside an address offers it.
+         */
+        MunicipalityOption: {
+            /**
+             * Municipality Code
+             * @description ISTAT's six-digit code of the municipality
+             */
+            municipality_code: string;
+            /**
+             * Cadastral Code
+             * @description The municipality's cadastral (Belfiore) code
+             */
+            cadastral_code: string;
+            /**
+             * Name
+             * @description The name to write in the address: it matches this municipality exactly
+             */
+            name: string;
         };
         /**
          * Next7
@@ -16893,6 +16940,48 @@ export interface components {
             default_probability?: number | null;
             /** Type */
             type?: ("open" | "won" | "lost") | null;
+        };
+        /**
+         * Place
+         * @description Where an Italian address is, as ISTAT's list of municipalities names it.
+         *
+         *     `matched`: the city is a municipality of the province; every field is filled. `unknown`:
+         *     it is not (or no city or province was given); the region is still filled when the
+         *     province is one ISTAT lists, since a province belongs to one region, and the rest is
+         *     `null`. `not_italian`: the country is not Italy, so none of this applies.
+         */
+        Place: {
+            /**
+             * Status
+             * @description `matched` when the city is a municipality of the province, `unknown` when it is not, `not_italian` when the country is not IT
+             * @enum {string}
+             */
+            status: "matched" | "unknown" | "not_italian";
+            /**
+             * Municipality Code
+             * @description ISTAT's six-digit code of the municipality
+             */
+            municipality_code?: string | null;
+            /**
+             * Cadastral Code
+             * @description The municipality's cadastral (Belfiore) code, such as F205
+             */
+            cadastral_code?: string | null;
+            /**
+             * Municipality Name
+             * @description The municipality's name as ISTAT writes it
+             */
+            municipality_name?: string | null;
+            /**
+             * Region Code
+             * @description ISTAT's two-digit code of the region, 01 to 20
+             */
+            region_code?: string | null;
+            /**
+             * Region Name
+             * @description The region's name as ISTAT writes it
+             */
+            region_name?: string | null;
         };
         /** PnlTotals */
         PnlTotals: {
@@ -42202,6 +42291,126 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LegalEntityRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_municipalities_api_legal_entities_municipalities_get: {
+        parameters: {
+            query: {
+                /** @description The province's two-letter abbreviation, such as MI */
+                province: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MunicipalityOption"][];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

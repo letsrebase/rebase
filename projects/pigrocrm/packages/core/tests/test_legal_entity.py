@@ -524,3 +524,53 @@ def test_a_creation_takes_no_version(db_session: Session) -> None:
             fiscal_profile=FiscalProfileUpsert(),
             updated_at=datetime(2026, 1, 1, tzinfo=UTC),  # type: ignore[call-arg]
         )
+
+
+# -- the place an address names (REB-1069) --------------------------------------------
+
+
+def test_the_read_says_where_the_address_is(db_session: Session) -> None:
+    read = LegalEntityService(db_session).upsert_default(_upsert(), ADMIN)
+    assert read.place.status == "matched"
+    assert (read.place.municipality_code, read.place.cadastral_code) == ("015146", "F205")
+    assert (read.place.region_code, read.place.region_name) == ("03", "Lombardia")
+
+
+def test_an_address_no_municipality_matches_is_saved_and_read_as_unknown(
+    db_session: Session,
+) -> None:
+    service = LegalEntityService(db_session)
+    read = service.upsert_default(_upsert(city="Reggio Emilia", province="RE"), ADMIN)
+    assert read.city == "Reggio Emilia"
+    assert read.place.status == "unknown"
+    assert read.place.municipality_code is None
+    assert read.place.region_name == "Emilia-Romagna"
+    # Picking the municipality of the province writes its name; the read follows.
+    fixed = service.upsert_default(_upsert(city="Reggio nell'Emilia", province="RE"), ADMIN)
+    assert fixed.place.status == "matched"
+    assert fixed.place.municipality_code == "035033"
+
+
+def test_the_place_follows_the_row_with_no_migration_and_no_stored_copy(
+    db_session: Session,
+) -> None:
+    """A row written before the list was read (here, by hand with no save) answers with its
+    place all the same: nothing was stored, so nothing had to be filled."""
+    row = _second_legal_entity(db_session, city="TORINO", province="TO")
+    assert LegalEntityService(db_session).get(ADMIN, row.id).place.municipality_code == "001272"
+
+
+def test_a_foreign_legal_entity_has_no_italian_place(db_session: Session) -> None:
+    read = LegalEntityService(db_session).upsert_default(
+        _upsert(country="FR", vat_number="FR12345678901", city="Milano", province="MI"), ADMIN
+    )
+    assert read.place.status == "not_italian"
+    assert read.place.region_code is None
+
+
+def test_the_place_is_not_a_template_variable(db_session: Session) -> None:
+    service = LegalEntityService(db_session)
+    service.upsert_default(_upsert(), ADMIN)
+    scope = service.as_template_values(ADMIN)["emittente"]
+    assert scope["comune"] == "Milano"
+    assert "place" not in scope

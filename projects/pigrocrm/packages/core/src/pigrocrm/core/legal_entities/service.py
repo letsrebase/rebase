@@ -264,7 +264,8 @@ class LegalEntityService:
         business (and `LegalEntityRead` already drops nothing else).
         """
         profile = self.get(actor, legal_entity_id)
-        fields = profile.model_dump(mode="json", exclude=set(TEMPLATE_EXCLUDED_FIELDS))
+        # `place` is derived from `city` and `province`, which a template already prints.
+        fields = profile.model_dump(mode="json", exclude={*TEMPLATE_EXCLUDED_FIELDS, "place"})
         return {"emittente": with_seat(italian_keys(fields, LEGAL_ENTITY_KEYS))}
 
     # -- writes --------------------------------------------------------------

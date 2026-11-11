@@ -45,6 +45,14 @@ const LEGAL_ENTITY: LegalEntityRecord = {
   legal_representative: null,
   fiscal_year_end_month: 12,
   fiscal_year_end_day: 31,
+  place: {
+    status: 'matched',
+    municipality_code: '015146',
+    cadastral_code: 'F205',
+    municipality_name: 'Milano',
+    region_code: '03',
+    region_name: 'Lombardia',
+  },
   created_at: '2026-08-20T09:00:00Z',
   updated_at: '2026-08-20T09:00:00Z',
 }
@@ -271,5 +279,76 @@ describe('LegalEntityPanel', () => {
       updated_at: '2026-08-21T09:00:00Z',
     })
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+  })
+})
+
+describe('LegalEntityPanel: the place the address names (REB-1069)', () => {
+  const UNKNOWN: LegalEntityRecord = {
+    ...LEGAL_ENTITY,
+    city: 'Reggio Emilia',
+    province: 'RE',
+    place: { status: 'unknown', region_code: '08', region_name: 'Emilia-Romagna' },
+  }
+  const OPTIONS = [
+    { municipality_code: '035032', cadastral_code: 'H122', name: 'Reggiolo' },
+    { municipality_code: '035033', cadastral_code: 'H223', name: "Reggio nell'Emilia" },
+  ]
+
+  it('says which municipality and region the saved address was read as', () => {
+    renderPanel()
+    expect(screen.getByTestId('place-matched')).toHaveTextContent(
+      'Comune riconosciuto: Milano, Lombardia (codice ISTAT 015146).',
+    )
+    expect(screen.queryByTestId('place-unknown')).not.toBeInTheDocument()
+  })
+
+  it('says nothing about a municipality for an address abroad', () => {
+    renderPanel({ ...LEGAL_ENTITY, country: 'FR', place: { status: 'not_italian' } })
+    expect(screen.queryByTestId('place-matched')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('place-unknown')).not.toBeInTheDocument()
+  })
+
+  it('lets the person pick the municipality of the province when the comune matches none, and sends its name', async () => {
+    vi.mocked(api.GET).mockResolvedValue(ok(OPTIONS))
+    vi.mocked(api.PUT).mockResolvedValue(ok(LEGAL_ENTITY))
+    renderPanel(UNKNOWN)
+    expect(screen.getByTestId('place-unknown')).toHaveTextContent('Comune non riconosciuto')
+    await waitFor(() =>
+      expect(api.GET).toHaveBeenCalledWith('/api/legal-entities/municipalities', {
+        params: { query: { province: 'RE' } },
+      }),
+    )
+    await userEvent.click(await screen.findByRole('combobox', { name: /Comune dell’elenco ISTAT/ }))
+    await userEvent.click(await screen.findByRole('option', { name: "Reggio nell'Emilia" }))
+    expect(screen.getByLabelText('Comune')).toHaveValue("Reggio nell'Emilia")
+    // The answer described the address as saved: it goes while the comune is being changed.
+    expect(screen.queryByTestId('place-unknown')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(1))
+    expect(saveCall()[1].body.city).toBe("Reggio nell'Emilia")
+  })
+
+  it('does not ask for a list until the province is a two-letter code', () => {
+    renderPanel({ ...UNKNOWN, province: null })
+    expect(screen.getByTestId('place-unknown')).toHaveTextContent('Indica la provincia')
+    expect(api.GET).not.toHaveBeenCalled()
+  })
+
+  it('says so when the province is a code the list does not carry', async () => {
+    vi.mocked(api.GET).mockResolvedValue(ok([]))
+    renderPanel({ ...UNKNOWN, province: 'XX' })
+    expect(await screen.findByText(/La sigla XX non è nell’elenco ISTAT/)).toBeInTheDocument()
+  })
+
+  it('says so when the list cannot be loaded, instead of offering a dead control', async () => {
+    vi.mocked(api.GET).mockResolvedValue(failed({ code: 'internal_error', detail: 'boom' }, 500))
+    renderPanel(UNKNOWN)
+    expect(await screen.findByText(/Elenco dei comuni non disponibile/)).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: /Comune dell’elenco ISTAT/ })).not.toBeInTheDocument()
+  })
+
+  it('asks nothing of an address with no comune yet', () => {
+    renderPanel({ ...UNKNOWN, city: null })
+    expect(screen.queryByTestId('place-unknown')).not.toBeInTheDocument()
   })
 })

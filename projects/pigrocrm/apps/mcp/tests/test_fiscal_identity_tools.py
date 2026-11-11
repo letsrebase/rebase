@@ -132,6 +132,29 @@ async def test_the_legal_entity_read_can_be_handed_back_to_the_write_unchanged(
         assert back.structured_content["country"] == "IT"
 
 
+async def test_the_legal_entity_read_says_where_the_address_is_and_hands_back_without_it(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    """REB-1069: `place` is derived from the city and the province, so it is on the read and
+    never on the write: the object read goes back whole, and fixing the city is what moves it."""
+    server = _server(mcp_session, ADMIN, tmp_path)
+    async with Client(server) as client:
+        await client.call_tool("update_legal_entity", {"data": {**LEGAL_ENTITY, "city": "Milano"}})
+        read = await client.call_tool("describe_legal_entity", {})
+        place = read.structured_content["place"]
+        assert (place["status"], place["municipality_code"], place["region_name"]) == (
+            "matched",
+            "015146",
+            "Lombardia",
+        )
+        back = await client.call_tool(
+            "update_legal_entity", {"data": {**read.structured_content, "city": "Milan"}}
+        )
+        assert not back.is_error, back.content[0].text
+        assert back.structured_content["place"]["status"] == "unknown"
+        assert back.structured_content["place"]["region_name"] == "Lombardia"
+
+
 async def test_to_collaborator_agent_is_refused_both_writes_and_nothing_changes(
     mcp_session: Session, tmp_path: Path
 ) -> None:

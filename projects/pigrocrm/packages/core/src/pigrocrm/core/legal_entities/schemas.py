@@ -1,9 +1,10 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
+from pigrocrm.core.places.locate import Place, locate
 from pigrocrm.core.validation import SafeStr
 
 # Mirror LegalEntity's column widths exactly (emitter/models.py). Without these an
@@ -144,6 +145,17 @@ class LegalEntityRead(BaseModel):
     fiscal_year_end_day: int
     created_at: datetime
     updated_at: datetime
+
+    @computed_field(  # type: ignore[prop-decorator]
+        description=(
+            "Where the address is, read from ISTAT's list of municipalities (REB-1069): the "
+            "municipality's codes and the region, or `unknown` when the city is not a "
+            "municipality of the province. Never stored and never sent back on a write."
+        )
+    )
+    @property
+    def place(self) -> Place:
+        return locate(self.city, self.province, self.country)
 
 
 class LegalEntityDeactivated(LegalEntityRead):

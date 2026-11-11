@@ -1,0 +1,9 @@
+{
+  "source": "ISTAT, Elenco comuni italiani (codici delle unita amministrative)",
+  "page": "https://www.istat.it/classificazione/codici-dei-comuni-delle-province-e-delle-regioni/",
+  "url": "https://www.istat.it/storage/codici-unita-amministrative/Elenco-comuni-italiani.xlsx",
+  "downloaded": "2026-11-11",
+  "sheet": "CODICI al 21_02_2026",
+  "rows": 7894,
+  "sha256": "83842076860450f7e482daecea6b7a769f5f93d0bf5b0d48802b44896d7a26d5"
+}

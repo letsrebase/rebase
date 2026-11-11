@@ -132,3 +132,49 @@ test('a member scoped to one azienda sees it pinned, lists its rows alone and ge
     )
   }
 })
+
+/**
+ * The place an address names (REB-1069). The seeded legal entity is in Roma (RM), which ISTAT's
+ * list knows; a city no municipality of the province matches is saved all the same, the page says
+ * it was not recognised, and picking the municipality of the province writes its exact name.
+ */
+test('a city that matches no municipality is saved, flagged and fixed from the picker', async ({
+  page,
+}) => {
+  await loginAsAdmin(page)
+  await page.goto('/app/settings/legal-entities')
+  const city = page.getByLabel('Comune', { exact: true })
+  await expect(city).toHaveValue('Roma')
+  await expect(page.getByTestId('place-matched')).toHaveText(
+    'Comune riconosciuto: Roma, Lazio (codice ISTAT 058091).',
+  )
+  try {
+    await city.fill('Roma Capitale')
+    // The answer describes the address as saved, so it goes while the city is being edited.
+    await expect(page.getByTestId('place-matched')).toHaveCount(0)
+    await page.getByRole('button', { name: 'Salva' }).first().click()
+    await expect(page.getByText('Azienda salvata')).toBeVisible()
+    await expect(page.getByTestId('place-unknown')).toContainText('Comune non riconosciuto')
+
+    await page.getByRole('combobox', { name: 'Comune dell’elenco ISTAT' }).click()
+    await page.getByRole('option', { name: 'Roma', exact: true }).click()
+    await expect(city).toHaveValue('Roma')
+    await page.getByRole('button', { name: 'Salva' }).first().click()
+    await expect(page.getByTestId('place-matched')).toHaveText(
+      'Comune riconosciuto: Roma, Lazio (codice ISTAT 058091).',
+    )
+  } finally {
+    // The other specs of the suite share this stack: the seeded address goes back as it was.
+    const rows = (await (await page.request.get('/api/legal-entities')).json()) as Record<
+      string,
+      unknown
+    >[]
+    const studio = rows.find((row) => row.is_default === true)!
+    const readOnly = ['id', 'is_default', 'active', 'logo_key', 'signature_key', 'place', 'created_at']
+    const body = Object.fromEntries(Object.entries(studio).filter(([key]) => !readOnly.includes(key)))
+    const restored = await page.request.put(`/api/legal-entities/${studio.id as string}`, {
+      data: { ...body, city: 'Roma' },
+    })
+    expect(restored.status(), await restored.text()).toBe(200)
+  }
+})
