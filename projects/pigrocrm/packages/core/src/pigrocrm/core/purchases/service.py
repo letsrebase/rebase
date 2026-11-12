@@ -25,6 +25,7 @@ from pigrocrm.core.inbox.models import InboxItem
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.money import ZERO_MONEY, round_money
 from pigrocrm.core.organizations.repository import OrganizationRepository
+from pigrocrm.core.purchases.capabilities import purchase_capabilities
 from pigrocrm.core.purchases.cost import VatFigures, purchase_cost
 from pigrocrm.core.purchases.models import (
     BASE_CURRENCY,
@@ -53,6 +54,8 @@ ENTITY: EntityType = "purchase"
 # did on each line: a cent per group would be exact, five cents is what a document with a
 # dozen groups can drift by and still be the document the supplier sent.
 TOTAL_TOLERANCE = Decimal("0.05")
+# The kinds of purchase that can be an asset to depreciate (REB-1089).
+ASSET_KINDS = ("invoice", "receipt", "expense")
 # A withholding is its rate on its base, to the cent.
 WITHHOLDING_TOLERANCE = Decimal("0.01")
 # What an update merges with its changes, and what `_check` reads.
@@ -76,6 +79,8 @@ _DOCUMENT_FIELDS = (
     "split_payment",
     "reverse_charge",
     "corrects_purchase_id",
+    "deductibility_kind",
+    "asset_group",
 )
 
 
@@ -321,6 +326,31 @@ class PurchaseService:
         self._check_vat(values, lines, vat_kind=vat_kind, sign=sign)
         self._check_currency(values, sign)
         self._check_withholding(values, pack_id=pack_id)
+        asset_group = values["asset_group"]
+        if asset_group is not None and (kind not in ASSET_KINDS or sign < 0):
+            raise ValidationFailed(
+                ENTITY,
+                "asset_group",
+                "un bene ammortizzabile è una fattura, una ricevuta o una spesa di importo "
+                "positivo: una nota di credito o un rimborso non lo è",
+                expected="nessun gruppo di ammortamento",
+            )
+
+    @staticmethod
+    def _check_deductibility(stated: dict[str, Any], pack_id: str | None) -> None:
+        """What a person states about how the law treats the cost is read by the packs whose law
+        has income variations only (`purchase_capabilities`); stating it for another is refused.
+        Only what is being written is checked: a purchase that holds a value from before the
+        buyer changed pack stays editable."""
+        for field in ("deductibility_kind", "asset_group"):
+            if stated.get(field) is not None and not purchase_capabilities(pack_id).deductibility:
+                raise ValidationFailed(
+                    ENTITY,
+                    field,
+                    "la natura fiscale del costo e il bene ammortizzabile servono alla stima "
+                    "delle imposte di una società: non si indicano per il regime di questa azienda",
+                    expected="nessun valore",
+                )
 
     def _check_vat(
         self, values: dict[str, Any], lines: list[VatLine], *, vat_kind: bool, sign: int
@@ -557,6 +587,7 @@ class PurchaseService:
         self._default_iva_period(values)
         self.iva_locks.assert_writable(ENTITY, "iva_period", legal_entity_id, values["iva_period"])
         self._check_document(values, data.vat_lines, pack_id=pack_id, own_id=None)
+        self._check_deductibility(values, pack_id)
 
         purchase = self.repo.add(
             Purchase(
@@ -676,6 +707,10 @@ class PurchaseService:
         self.iva_locks.assert_writable(ENTITY, "iva_period", legal_entity_id, values["iva_period"])
         self._check_document(
             values, lines, pack_id=pack[0], own_id=purchase.id, kept_supplier=purchase.supplier_id
+        )
+        self._check_deductibility(
+            {k: v for k, v in changes.items() if k in ("deductibility_kind", "asset_group")},
+            pack[0],
         )
         changes.update({name: value for name, value in values.items() if name not in changes})
         changes["iva_period"] = values["iva_period"]

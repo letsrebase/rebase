@@ -115,6 +115,7 @@ from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.modules import ModuleKey, Profile
 from pigrocrm.core.modules.schemas import SpaceModulesSet, SpaceProfileSet
 from pigrocrm.core.modules.service import SpaceModulesService
+from pigrocrm.core.purchases.deductibility import DeductibilityKind
 from pigrocrm.core.staff.payroll import PayrollService
 from pigrocrm.core.staff.schemas import (
     Kind,
@@ -524,23 +525,46 @@ def register(
 
     @mcp.tool(annotations=ADDITIVE)
     @guard
-    def create_cost_category(name: str, position: int = 0) -> dict[str, Any]:
+    def create_cost_category(
+        name: str, position: int = 0, deductibility_kind: DeductibilityKind | None = None
+    ) -> dict[str, Any]:
         """Creates a cost category: all future costs will see it. `position` decides
-        the order in the list.
+        the order in the list. `deductibility_kind` states what the law does to every cost
+        of the category (`vehicle`, `vehicle_agent`, `vehicle_employee`, `phone`,
+        `hospitality`, `representation`, or `full` for no limit); leave it out to state nothing.
         """
         return (
             CostCategoryService(context.session)
-            .create_cost_category(CostCategoryCreate(name=name, position=position), context.actor)
+            .create_cost_category(
+                CostCategoryCreate(
+                    name=name, position=position, deductibility_kind=deductibility_kind
+                ),
+                context.actor,
+            )
             .model_dump(mode="json")
         )
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard
-    def update_cost_category(category_id: str, name: str) -> dict[str, Any]:
-        """Renames a cost category. Costs already logged keep pointing to it."""
+    def update_cost_category(
+        category_id: str,
+        name: str | None = None,
+        deductibility_kind: DeductibilityKind | None = None,
+    ) -> dict[str, Any]:
+        """Renames a cost category and/or states what the law does to its costs. Costs already
+        logged keep pointing to it. `deductibility_kind` is the sort of cost whose deduction
+        the law limits (`vehicle`, `vehicle_agent`, `vehicle_employee`, `phone`, `hospitality`,
+        `representation`) or `full` for a cost deductible without limit; a purchase's own kind
+        overrides it.
+        """
+        changes: dict[str, Any] = {}
+        if name is not None:
+            changes["name"] = name
+        if deductibility_kind is not None:
+            changes["deductibility_kind"] = deductibility_kind
         return (
             CostCategoryService(context.session)
-            .update_cost_category(UUID(category_id), CostCategoryUpdate(name=name), context.actor)
+            .update_cost_category(UUID(category_id), CostCategoryUpdate(**changes), context.actor)
             .model_dump(mode="json")
         )
 

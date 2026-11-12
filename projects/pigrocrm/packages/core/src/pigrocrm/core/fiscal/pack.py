@@ -46,6 +46,8 @@ before the year governs (a carry-forward):
 - `ceilings` and `charges`, by `from_year` per id (`ceilings_for`, `charges_for`, `charge`);
 - `loss_carry` (`loss_carry_for`: how an earlier year's loss reduces a later year's income, art. 84
   and art. 8 TUIR), by `from_year`.
+- `ires_variations` (`ires_variations_for`: the IRAP deducted from IRES, the costs the law limits
+  by kind, depreciation), by `from_year`.
 
 Yearly figures: the law re-sets them every year, so an entry holds for its own `year` alone and a
 year with no entry gets no figure, with what is missing named in the figure's `missing`, never
@@ -81,6 +83,7 @@ from pigrocrm.core.fiscal.law_flat_rate import FLAT_RATE_2015, FLAT_RATE_2016, F
 from pigrocrm.core.fiscal.law_income_basis import COMPANY_ACCRUAL, FLAT_RATE_CASH, PERSON_CASH
 from pigrocrm.core.fiscal.law_inps import INPS_2026, InpsYearLaw
 from pigrocrm.core.fiscal.law_irap import IRAP_LAW
+from pigrocrm.core.fiscal.law_ires import IRES_VARIATIONS_2026, IresVariationsLaw
 from pigrocrm.core.fiscal.law_irpef import IrpefLaw
 from pigrocrm.core.fiscal.law_loss_carry import COMPANY_LOSS_CARRY, PERSON_LOSS_CARRY, LossCarryLaw
 from pigrocrm.core.fiscal.law_municipal_surcharge import MUNICIPAL_SURCHARGE, MunicipalSurchargeLaw
@@ -241,6 +244,10 @@ class FiscalPack:
     # first (`fiscal/law_loss_carry.py`, REB-1088): statutory, read with `loss_carry_for`. Empty
     # for a pack whose regime owes no tax a loss is carried against.
     loss_carry: tuple[LossCarryLaw, ...] = ()
+    # The variations of a company's income the estimate models (IRAP deducted from IRES, the
+    # costs limited by kind, depreciation), one entry per change, oldest first
+    # (`fiscal/law_ires.py`, REB-1089): a statutory section, read with `ires_variations_for`.
+    ires_variations: tuple[IresVariationsLaw, ...] = ()
 
     def __post_init__(self) -> None:
         years = [law.from_year for law in self.laws]
@@ -261,6 +268,11 @@ class FiscalPack:
         fee_years = [law.year for law in self.chamber_fees]
         if fee_years != sorted(set(fee_years)):
             raise ValueError(f"pack {self.id!r}: chamber fee entries must have increasing year")
+        variation_years = [entry.from_year for entry in self.ires_variations]
+        if variation_years != sorted(set(variation_years)):
+            raise ValueError(
+                f"pack {self.id!r}: income variation entries must have increasing from_year"
+            )
         for kind, entries in (("ceiling", self.ceilings), ("charge", self.charges)):
             for entry_id in {entry.id for entry in entries}:
                 starts = [entry.from_year for entry in entries if entry.id == entry_id]
@@ -323,6 +335,16 @@ class FiscalPack:
         or before it, `None` when the pack carries none for that year (never a guess)."""
         governing = None
         for entry in self.loss_carry:
+            if entry.from_year > year:
+                break
+            governing = entry
+        return governing
+
+    def ires_variations_for(self, year: int) -> IresVariationsLaw | None:
+        """The variations of the income that govern tax year `year`: the latest entry starting
+        at or before it, `None` when the pack carries none for that year (never a guess)."""
+        governing = None
+        for entry in self.ires_variations:
             if entry.from_year > year:
                 break
             governing = entry
@@ -919,6 +941,7 @@ IT_COMPANY_PACK = FiscalPack(
     payment_rules=(IT_COMPANY_PAYMENT_2026,),
     chamber_fees=(CHAMBER_FEE_LAW,),
     loss_carry=(COMPANY_LOSS_CARRY,),
+    ires_variations=(IRES_VARIATIONS_2026,),
 )
 
 _PACKS: dict[tuple[str, str], FiscalPack] = {

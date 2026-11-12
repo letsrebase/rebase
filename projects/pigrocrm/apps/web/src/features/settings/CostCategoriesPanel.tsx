@@ -15,6 +15,18 @@ import {
 } from '@rebase/ui/dialog'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@rebase/ui/select'
+import {
+  DEDUCTIBILITY_KIND_LABELS,
+  NOT_STATED,
+  type DeductibilityKind,
+} from '@/features/purchases/deductibilityLabels'
 import { useCostCategories, type CostCategory } from '@/features/purchases/queries'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import {
@@ -25,6 +37,40 @@ import {
   useUpdateCostCategory,
 } from './queries.timetracking'
 import { costCategoryCodeLabel } from './labels'
+
+/** The kind select shared by a row and the create dialog: «Non indicata» is the API's `null`. */
+function KindSelect({
+  id,
+  label,
+  value,
+  onChange,
+  className,
+}: {
+  id: string
+  label: string
+  value: DeductibilityKind | null
+  onChange: (value: DeductibilityKind | null) => void
+  className?: string
+}) {
+  return (
+    <Select
+      value={value ?? NOT_STATED}
+      onValueChange={(next) => onChange(next === NOT_STATED ? null : (next as DeductibilityKind))}
+    >
+      <SelectTrigger id={id} aria-label={label} className={className}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NOT_STATED}>Natura non indicata</SelectItem>
+        {(Object.keys(DEDUCTIBILITY_KIND_LABELS) as DeductibilityKind[]).map((item) => (
+          <SelectItem key={item} value={item}>
+            {DEDUCTIBILITY_KIND_LABELS[item]}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
 
 /**
  * One row, its own component, because the rename mutation is built from the category's
@@ -45,7 +91,8 @@ function CategoryRow({
   const rename = useUpdateCostCategory(category.id)
   const archive = useArchiveCostCategory()
   const unarchive = useUnarchiveCostCategory()
-  const dirty = name.trim() !== category.name
+  const [kind, setKind] = useState<DeductibilityKind | null>(category.deductibility_kind)
+  const dirty = name.trim() !== category.name || kind !== category.deductibility_kind
 
   /* Behind the «⋯» like every other row action (§4). «Salva» is *disabled* rather than
      absent when there is nothing to save, which is `RowActions`' own rule: an item that
@@ -65,9 +112,13 @@ function CategoryRow({
       // folder already does exactly this.
       onProblem(null)
       rename.mutate(
-        { name: name.trim() },
+        // Only what changed: a rename never carries the kind, and a kind change never the name.
         {
-          onSuccess: () => toast.success('Categoria rinominata'),
+          ...(name.trim() !== category.name ? { name: name.trim() } : {}),
+          ...(kind !== category.deductibility_kind ? { deductibility_kind: kind } : {}),
+        },
+        {
+          onSuccess: () => toast.success('Categoria aggiornata'),
           onError: (error) => onProblem(toProblem(error).detail),
         },
       )
@@ -109,6 +160,13 @@ function CategoryRow({
       {/* The code, beside the name and never in a control: it is the category's
           identity, the thing a report or an import keys on, and the reason renaming is
           safe at all. A seeded category has one; one created here does not. */}
+      <KindSelect
+        id={`category-kind-${category.id}`}
+        label={`Natura fiscale della categoria ${category.name}`}
+        value={kind}
+        onChange={setKind}
+        className="w-full sm:w-64"
+      />
       <code className="text-xs text-muted-foreground">{category.code ? costCategoryCodeLabel(category.code) : '—'}</code>
       {/* The state through the one pill every state in the product goes through
           (design spec §4): `muted`, because archiving claims nothing and the other
@@ -127,6 +185,7 @@ export function CostCategoriesPanel() {
   const [includeArchived, setIncludeArchived] = useState(false)
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
+  const [newKind, setNewKind] = useState<DeductibilityKind | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   // Separate from `problem` on purpose: the list banner sits behind the dialog overlay,
   // so a create that fails there would report itself somewhere nobody can see. Kept as
@@ -185,6 +244,7 @@ export function CostCategoriesPanel() {
             onClick={() => {
               setDialogProblem(null)
               setName('')
+              setNewKind(null)
               setOpen(true)
             }}
           >
@@ -252,6 +312,19 @@ export function CostCategoriesPanel() {
               predefinite, che i rapporti riconoscono per codice e non per nome.
             </p>
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="category-new-kind">Natura fiscale</Label>
+            <KindSelect
+              id="category-new-kind"
+              label="Natura fiscale"
+              value={newKind}
+              onChange={setNewKind}
+              className="w-full"
+            />
+            <p className="text-xs text-muted-foreground">
+              Vale per ogni acquisto della categoria che non ne indica una propria.
+            </p>
+          </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setOpen(false)}>
               Annulla
@@ -261,7 +334,7 @@ export function CostCategoriesPanel() {
               onClick={() => {
                 setDialogProblem(null)
                 create.mutate(
-                  { name: name, position: rows.length },
+                  { name: name, position: rows.length, deductibility_kind: newKind },
                   {
                     onSuccess: () => {
                       toast.success('Categoria creata')

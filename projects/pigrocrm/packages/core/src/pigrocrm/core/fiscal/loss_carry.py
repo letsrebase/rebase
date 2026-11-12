@@ -291,15 +291,21 @@ def loss_offset_for(
     pack: FiscalPack,
     tax: LossTax,
     basis: YearBasis,
+    *,
+    income: Decimal | None = None,
 ) -> LossOffset | None:
     """What the losses of earlier years do to `tax` in `basis`'s year for one legal entity, `None`
-    when the pack carries no loss against that tax in the year or the basis has no income. The
+    when the pack carries no loss against that tax in the year or the basis has no income.
+    `income` is the year's income when it is not the basis's own: the srl's IRES reads it after
+    the variations of the return (REB-1089), since a loss is taken off the income of the year as
+    the return states it. Earlier years' estimated incomes stay before any variation. The
     typed losses are read from `tax_losses`; an srl's estimated ones come from the earlier years'
     own income. The income of an earlier year is its estimate before any loss, never a figure
     already reduced by one."""
     year = basis.year
     law = pack.loss_carry_for(year)
-    income = income_before_loss(basis)
+    if income is None:
+        income = income_before_loss(basis)
     if law is None or income is None:
         return None
     rule = law.company if tax == "ires" else law.person_business

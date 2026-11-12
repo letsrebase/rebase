@@ -11,7 +11,7 @@ REB-1085 is the card that enters 2027; open a card of the same shape for each la
 The module docstring of `pack.py` is the list; this is the summary.
 
 - **Statutory** sections hold until a later entry replaces them: `laws`, `calendars`,
-  `payment_rules`, `ceilings`, `charges`, `loss_carry` (and the pack's `sales_withholding`). The latest entry at
+  `payment_rules`, `ceilings`, `charges`, `loss_carry`, `ires_variations` (and the pack's `sales_withholding`). The latest entry at
   or before the year governs. For each year you must **confirm the rule still holds** (below) and
   add an entry only where the law changed.
 - **Yearly** sections hold for their own year alone and give no figure for a year with no entry:

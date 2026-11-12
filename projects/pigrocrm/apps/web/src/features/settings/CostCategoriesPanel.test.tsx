@@ -34,6 +34,7 @@ const SOFTWARE = {
   position: 1,
   code: 'software_licenses',
   archived: false,
+  deductibility_kind: null,
   ...TIMES,
 }
 const CONSULTING = {
@@ -42,6 +43,7 @@ const CONSULTING = {
   position: 0,
   code: 'external_consulting',
   archived: false,
+  deductibility_kind: null,
   ...TIMES,
 }
 /** No `code`: created by hand from this very panel, and archived later. */
@@ -51,6 +53,7 @@ const OLD = {
   position: 7,
   code: null,
   archived: true,
+  deductibility_kind: null,
   ...TIMES,
 }
 
@@ -125,8 +128,8 @@ describe('CostCategoriesPanel', () => {
 
     const row = await waitFor(() => rowFor('Vecchia voce'))
     expect(within(row).getByText('—')).toBeInTheDocument()
-    // Exactly one control in the row, the name: the code is rendered as text, so
-    // there is nothing to type a new one into.
+    // One text control in the row, the name: the code is rendered as text, so there is
+    // nothing to type a new one into. The kind is a select, not a textbox.
     expect(within(row).getAllByRole('textbox')).toHaveLength(1)
   })
 
@@ -181,7 +184,7 @@ describe('CostCategoriesPanel', () => {
 
     await waitFor(() =>
       expect(api.POST).toHaveBeenCalledWith('/api/cost-categories', {
-        body: { name: 'Formazione', position: 2 },
+        body: { name: 'Formazione', position: 2, deductibility_kind: null },
       }),
     )
   })
@@ -339,6 +342,68 @@ describe('CostCategoriesPanel', () => {
       expect(api.PATCH).toHaveBeenCalledWith('/api/cost-categories/{category_id}', {
         params: { path: { category_id: 'cat-1' } },
         body: { name: 'Consulenze' },
+      }),
+    )
+  })
+
+  it('sets the kind of a category and sends it alone', async () => {
+    respond([CONSULTING])
+    vi.mocked(api.PATCH).mockImplementation(() =>
+      ok({ ...CONSULTING, deductibility_kind: 'phone' }),
+    )
+    renderPanel()
+
+    await userEvent.click(
+      await screen.findByRole('combobox', { name: 'Natura fiscale della categoria Consulenza esterna' }),
+    )
+    await userEvent.click(await screen.findByRole('option', { name: 'Telefonia' }))
+    await openRowMenu('Consulenza esterna')
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Salva' }))
+
+    await waitFor(() =>
+      expect(api.PATCH).toHaveBeenCalledWith('/api/cost-categories/{category_id}', {
+        params: { path: { category_id: 'cat-1' } },
+        body: { deductibility_kind: 'phone' },
+      }),
+    )
+  })
+
+  it('clears the kind of a category with null', async () => {
+    respond([{ ...CONSULTING, deductibility_kind: 'hospitality' }])
+    vi.mocked(api.PATCH).mockImplementation(() => ok(CONSULTING))
+    renderPanel()
+
+    const select = await screen.findByRole('combobox', {
+      name: 'Natura fiscale della categoria Consulenza esterna',
+    })
+    expect(select).toHaveTextContent('Alberghi e ristoranti')
+    await userEvent.click(select)
+    await userEvent.click(await screen.findByRole('option', { name: 'Natura non indicata' }))
+    await openRowMenu('Consulenza esterna')
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Salva' }))
+
+    await waitFor(() =>
+      expect(api.PATCH).toHaveBeenCalledWith('/api/cost-categories/{category_id}', {
+        params: { path: { category_id: 'cat-1' } },
+        body: { deductibility_kind: null },
+      }),
+    )
+  })
+
+  it('creates a category with the kind chosen in the dialog', async () => {
+    respond([CONSULTING])
+    vi.mocked(api.POST).mockImplementation(() => ok(CONSULTING, 201))
+    renderPanel()
+
+    await userEvent.click(await screen.findByRole('button', { name: /nuova categoria/i }))
+    await userEvent.type(screen.getByLabelText('Nome'), 'Rappresentanza')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Natura fiscale' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Spese di rappresentanza' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Crea' }))
+
+    await waitFor(() =>
+      expect(api.POST).toHaveBeenCalledWith('/api/cost-categories', {
+        body: { name: 'Rappresentanza', position: 1, deductibility_kind: 'representation' },
       }),
     )
   })

@@ -10218,6 +10218,8 @@ export interface components {
              * @default 0
              */
             position: number;
+            /** Deductibility Kind */
+            deductibility_kind?: ("full" | "vehicle" | "vehicle_agent" | "vehicle_employee" | "phone" | "hospitality" | "representation") | null;
         };
         /** CostCategoryRead */
         CostCategoryRead: {
@@ -10234,6 +10236,8 @@ export interface components {
             code: string | null;
             /** Archived */
             archived: boolean;
+            /** Deductibility Kind */
+            deductibility_kind: ("full" | "vehicle" | "vehicle_agent" | "vehicle_employee" | "phone" | "hospitality" | "representation") | null;
             /**
              * Created At
              * Format: date-time
@@ -10251,6 +10255,8 @@ export interface components {
             name?: string | null;
             /** Position */
             position?: number | null;
+            /** Deductibility Kind */
+            deductibility_kind?: ("full" | "vehicle" | "vehicle_agent" | "vehicle_employee" | "phone" | "hospitality" | "representation") | null;
         };
         /** CoverageMonthRead */
         CoverageMonthRead: {
@@ -18236,6 +18242,8 @@ export interface components {
             reverse_charge: boolean;
             /** Split Payment */
             split_payment: boolean;
+            /** Deductibility */
+            deductibility: boolean;
         };
         /** PurchaseCreate */
         PurchaseCreate: {
@@ -18308,6 +18316,10 @@ export interface components {
              * @default false
              */
             reverse_charge: boolean;
+            /** Deductibility Kind */
+            deductibility_kind?: ("full" | "vehicle" | "vehicle_agent" | "vehicle_employee" | "phone" | "hospitality" | "representation") | null;
+            /** Asset Group */
+            asset_group?: ("office_furniture" | "office_electronics" | "cars" | "goods_vehicles" | "other") | null;
             /** Corrects Purchase Id */
             corrects_purchase_id?: string | null;
             /** Inbox Item Id */
@@ -18408,6 +18420,10 @@ export interface components {
             split_payment: boolean;
             /** Reverse Charge */
             reverse_charge: boolean;
+            /** Deductibility Kind */
+            deductibility_kind: ("full" | "vehicle" | "vehicle_agent" | "vehicle_employee" | "phone" | "hospitality" | "representation") | null;
+            /** Asset Group */
+            asset_group: ("office_furniture" | "office_electronics" | "cars" | "goods_vehicles" | "other") | null;
             /** Corrects Purchase Id */
             corrects_purchase_id: string | null;
             /** Inbox Item Id */
@@ -18496,6 +18512,10 @@ export interface components {
             split_payment?: boolean | null;
             /** Reverse Charge */
             reverse_charge?: boolean | null;
+            /** Deductibility Kind */
+            deductibility_kind?: ("full" | "vehicle" | "vehicle_agent" | "vehicle_employee" | "phone" | "hospitality" | "representation") | null;
+            /** Asset Group */
+            asset_group?: ("office_furniture" | "office_electronics" | "cars" | "goods_vehicles" | "other") | null;
             /** Corrects Purchase Id */
             corrects_purchase_id?: string | null;
             /** Inbox Item Id */

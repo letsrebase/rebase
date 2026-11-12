@@ -11,7 +11,13 @@ LTD = {
     "country": "GB",
     "fiscal_profile": {"pack_id": "non-it", "default_vat_rate": "20.00"},
 }
-EVERYTHING = {"vat_recap": True, "withholding": True, "reverse_charge": True, "split_payment": True}
+EVERYTHING = {
+    "vat_recap": True,
+    "withholding": True,
+    "reverse_charge": True,
+    "split_payment": True,
+    "deductibility": True,
+}
 
 
 def _set_pack(client: TestClient, pack_id: str, **extra: str) -> str:
@@ -27,7 +33,12 @@ def test_the_default_entity_answers_when_none_is_named(logged_in: TestClient) ->
     response = logged_in.get("/api/purchases/capabilities")
 
     assert response.status_code == 200, response.text
-    assert response.json() == {**EVERYTHING, "legal_entity_id": entity, "withholding": False}
+    assert response.json() == {
+        **EVERYTHING,
+        "legal_entity_id": entity,
+        "withholding": False,
+        "deductibility": False,
+    }
 
 
 def test_a_named_entity_answers_for_its_own_pack(logged_in: TestClient) -> None:
@@ -38,7 +49,7 @@ def test_a_named_entity_answers_for_its_own_pack(logged_in: TestClient) -> None:
     foreign = logged_in.get("/api/purchases/capabilities", params={"legal_entity_id": second})
 
     assert flat.json()["withholding"] is False and flat.json()["legal_entity_id"] == default
-    assert foreign.json() == {**EVERYTHING, "legal_entity_id": second}
+    assert foreign.json() == {**EVERYTHING, "deductibility": False, "legal_entity_id": second}
 
 
 def test_with_two_entities_and_none_named_nothing_is_resolved_and_all_is_true(

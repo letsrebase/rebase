@@ -199,6 +199,45 @@ describe('toPurchaseRequestBody', () => {
   })
 })
 
+describe('the deductibility of a purchase (REB-1089)', () => {
+  const stated = { deductibility_kind: 'phone', asset_group: 'cars' }
+
+  it('sends the kind and the asset group, and leaves both out when the pack does not read them', () => {
+    const on = toPurchaseRequestBody(values({ kind: 'expense', ...stated }), { isRenderedCustomKey: KEEP_ALL })
+    expect(on).toMatchObject(stated)
+    const off = toPurchaseRequestBody(values({ kind: 'expense', ...stated }), {
+      isRenderedCustomKey: KEEP_ALL,
+      shown: { deductibility: false },
+    })
+    expect(off).not.toHaveProperty('deductibility_kind')
+    expect(off).not.toHaveProperty('asset_group')
+  })
+
+  it('never sends an asset group for a credit note, but sends its kind', () => {
+    const body = toPurchaseRequestBody(
+      values({ kind: 'credit_note', supplier_id: 's1', ...stated }),
+      { isRenderedCustomKey: KEEP_ALL },
+    )
+    expect(body).toMatchObject({ deductibility_kind: 'phone' })
+    expect(body).not.toHaveProperty('asset_group')
+  })
+
+  it('clears a stated kind with null on an edit, and sends nothing when both stayed blank', () => {
+    const initial = values({ kind: 'expense', ...stated })
+    const cleared = toPurchaseRequestBody(
+      values({ kind: 'expense', deductibility_kind: null, asset_group: 'cars' }),
+      { initial, isRenderedCustomKey: KEEP_ALL },
+    )
+    expect(cleared).toMatchObject({ deductibility_kind: null })
+    expect(cleared).not.toHaveProperty('asset_group')
+
+    const blank = values({ kind: 'expense', deductibility_kind: null, asset_group: null })
+    const untouched = toPurchaseRequestBody(blank, { initial: blank, isRenderedCustomKey: KEEP_ALL })
+    expect(untouched).not.toHaveProperty('deductibility_kind')
+    expect(untouched).not.toHaveProperty('asset_group')
+  })
+})
+
 describe('editing an existing purchase', () => {
   const PURCHASE = {
     id: 'p1',

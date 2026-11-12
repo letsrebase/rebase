@@ -102,7 +102,13 @@ class CostCategoryService:
         if self.repo.get_by_name(name):
             raise _conflicting_name(name)
 
-        category = CostCategory(name=name, position=data.position, code=None, archived=False)
+        category = CostCategory(
+            name=name,
+            position=data.position,
+            code=None,
+            archived=False,
+            deductibility_kind=data.deductibility_kind,
+        )
         # The pre-check above cannot cover a race between two concurrent requests: there the
         # functional unique index is the only authority, and the savepoint keeps its failure
         # from touching the rest of the caller's session.
