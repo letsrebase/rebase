@@ -356,6 +356,34 @@ def test_a_business_loss_reduces_the_irpef_base_and_not_the_inps_base() -> None:
     assert PERSON_BUSINESS_LOSS_RULE.source in estimate.income.sources
 
 
+def test_the_detractions_read_the_income_after_the_loss() -> None:
+    """Art. 8 c. 1 and 3 TUIR make the total income the incomes less the losses and art. 13 reads
+    the total income, so the self-employment detraction is worked on the income after the loss: a
+    loss that brings it down changes the detraction, and the contributions deducted never exceed
+    what is left."""
+    with_loss = _person("65789.47", "20000.00")
+    without = _person("65789.47", None)
+    assert with_loss is not None and without is not None
+
+    def detractions(estimate) -> Decimal:  # type: ignore[no-untyped-def]
+        return sum(
+            (part.amount for part in estimate.irpef.parts if part.code.startswith("detraction")),
+            D("0.00"),
+        )
+
+    # Parts are signed: the income of 65,789.47 is above the detraction's top bracket and gets
+    # none, the income after the loss (45,789.47) gets one.
+    assert detractions(without) == D("0.00")
+    assert detractions(with_loss) < D("0.00")
+    # A loss that leaves less income than the contributions caps the deduction at that income.
+    capped = _person("20000.00", "15000.00")
+    assert capped is not None
+    deducted = [line for line in capped.income.lines if line.code == "inps_deducted"]
+    assert deducted and deducted[0].amount is not None
+    assert -deducted[0].amount <= D("5000.00")
+    assert capped.income.taxable_income == D("5000.00") + deducted[0].amount
+
+
 def test_the_person_limit_is_eighty_percent_of_the_income() -> None:
     estimate = _person("100000.00", "90000.00")
     assert estimate is not None
