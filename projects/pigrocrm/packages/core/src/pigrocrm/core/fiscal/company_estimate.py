@@ -92,7 +92,6 @@ from pydantic import BaseModel, ConfigDict
 from pigrocrm.core.fiscal.basis_schemas import BasisEmployee, YearBasis
 from pigrocrm.core.fiscal.company_seasonal import seasonal_outcome
 from pigrocrm.core.fiscal.income_variations import IncomeVariations
-from pigrocrm.core.fiscal.ires_adjustment import ires_adjustment
 from pigrocrm.core.fiscal.irap_sites import (
     IrapRegionPart,
     RegionRate,
@@ -100,6 +99,7 @@ from pigrocrm.core.fiscal.irap_sites import (
     split_irap_base,
     splits,
 )
+from pigrocrm.core.fiscal.ires_adjustment import ires_adjustment
 from pigrocrm.core.fiscal.law import CompanyTaxLaw
 from pigrocrm.core.fiscal.law_irap import (
     IrapActivity,

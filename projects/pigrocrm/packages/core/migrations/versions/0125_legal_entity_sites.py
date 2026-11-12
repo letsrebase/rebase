@@ -1,7 +1,7 @@
 """legal entity sites and where a staff member works, for the IRAP split between regions
 
-Revision ID: 0123
-Revises: 0122
+Revision ID: 0125
+Revises: 0124
 
 REB-1092. A company with establishments in more than one region splits the IRAP base by the pay of
 the staff assigned to each of them for at least three months (art. 4 c. 2 D.Lgs. 446/1997).
@@ -24,8 +24,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0123"
-down_revision: str | Sequence[str] | None = "0122"
+revision: str = "0125"
+down_revision: str | Sequence[str] | None = "0124"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

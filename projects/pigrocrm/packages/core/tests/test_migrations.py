@@ -4943,7 +4943,7 @@ def test_0124_adds_the_purchase_deductibility_columns_with_no_backfill(
         assert all(_column_exists(url, table, name) for table, name in columns)
 
 
-def test_0123_adds_the_sites_table_and_the_workplace_columns_keeping_the_staff(
+def test_0125_adds_the_sites_table_and_the_workplace_columns_keeping_the_staff(
     pigrocrm_postgres: Any,
 ) -> None:
     """REB-1092: a policed table for the sites and two staff columns that say nothing until a
@@ -4976,7 +4976,7 @@ def test_0123_adds_the_sites_table_and_the_workplace_columns_keeping_the_staff(
                 ),
                 {"id": member, "entity": entity},
             )
-        upgrade(config, "0123")
+        upgrade(config, "0125")
         assert _table_shape(url, "legal_entity_sites") == (True, True, {"legal_entity_scope"})
         with engine.begin() as connection:
             row = connection.execute(
@@ -5005,10 +5005,10 @@ def test_0123_adds_the_sites_table_and_the_workplace_columns_keeping_the_staff(
                 text("UPDATE staff_members SET legal_entity_id = :other WHERE id = :id"),
                 {"other": other, "id": member},
             )
-        downgrade(config, "0122")
+        downgrade(config, "0124")
         assert not _table_shape(url, "legal_entity_sites")[0]
         assert not _column_exists(url, "staff_members", "site_id")
         assert not _column_exists(url, "staff_members", "at_registered_office")
-        upgrade(config, "0123")
+        upgrade(config, "0125")
         assert _column_exists(url, "staff_members", "at_registered_office")
         engine.dispose()

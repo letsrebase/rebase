@@ -449,8 +449,9 @@ def test_two_regions_split_the_base_by_pay(db_session: Session) -> None:
         (VENETO, "Veneto", M("24000.00"), M("40.00"), M("28800.00"), M("4.08"), M("1175.04")),
     ]
     assert irap.amount == M("2859.84")
-    # IRES: 100,000 - 20,000 - 31,200 - 31,200 - 12,000 = 5,600; 24% = 1,344.00.
-    assert estimate.due_total == M("2859.84") + M("1344.00")
+    # IRES: 100,000 - 20,000 - 31,200 - 31,200 - 12,000 = 5,600, less the IRAP deducted in full
+    # (2,859.84) = 2,740.16; 24% = 657.64.
+    assert estimate.due_total == M("2859.84") + M("657.64")
     assert any("art. 4 c. 2" in text for text in irap.assumptions)
     assert not any("una sola sede" in text for text in irap.assumptions)
     # Each region's rate says where it comes from, as the single-region one does.

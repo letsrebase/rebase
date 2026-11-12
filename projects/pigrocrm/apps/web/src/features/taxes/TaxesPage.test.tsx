@@ -447,8 +447,8 @@ describe('«Tasse»: Imposte', () => {
     const table = within(panel).getByText('Veneto').closest('table') as HTMLElement
     const rows = within(table).getAllByRole('row').slice(1)
     expect(rows.map((row) => within(row).getAllByRole('cell').map((cell) => cell.textContent?.replace(/\u00a0/g, ' ')))).toEqual([
-      ['Veneto', '60,00 %', '42.000,00 €', '3,90 %', '1.638,00 €'],
-      ['Lombardia', '40,00 %', '28.000,00 €', '4,40 %', '1.232,00 €'],
+      ['VenetoQuota 60,00 % · base 42.000,00 € · aliquota 3,90 %', '1.638,00 €'],
+      ['LombardiaQuota 40,00 % · base 28.000,00 € · aliquota 4,40 %', '1.232,00 €'],
     ])
     expect(within(panel).queryByText('non calcolabile')).not.toBeInTheDocument()
     expect(within(panel).queryByText('Aliquota', { selector: 'dt' })).not.toBeInTheDocument()

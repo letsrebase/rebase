@@ -100,7 +100,12 @@ test('a site in another region splits the srl’s IRAP between the two', async (
 
     // The taxes page draws the split, not a rate.
     await page.goto('/app/taxes?tab=taxes&year=2026')
-    const section = page.getByRole('region', { name: srl })
+    // One srl on the page has no heading of its own, and its section is named «Tasse»; with
+    // several each carries its name. Either way the page has exactly one of the two.
+    const section = page
+      .getByRole('region', { name: srl })
+      .or(page.getByRole('region', { name: 'Tasse', exact: true }))
+    await expect(section).toBeVisible()
     await section.getByRole('row', { name: /IRAP/ }).click()
     const detail = page.getByRole('complementary', { name: 'Imposta aperta' })
     await expect(detail.getByText(/Ripartita su 2 regioni/)).toBeVisible()

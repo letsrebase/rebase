@@ -300,6 +300,10 @@ _OUTSIDE_FROM_SIEVE: dict[Method, str] = {
 #    no-actor rule and is listed for the same reason: it is the intermediate step of
 #    `render_pdf`, not an operation of its own.
 _INTERNE: dict[Method, str] = {
+    ("PayrollService", "staff_pay_in_range"): (
+        "REB-1092: the pay of each person over a range, the base of the IRAP split between "
+        "regions, read inside `get_fiscal_estimate`; no actor, no tool of its own"
+    ),
     ("TaxDueItemService", "refresh_tax_due_items"): (
         "REB-1074: the writer of the tax due items, called by the tools that move their "
         "figures (`set_declared_tax_figure`, `set_tax_loss`, `set_tax_advance_method`) and by "
@@ -833,6 +837,24 @@ _CREDENZIALI: dict[Method, str] = {
 #    the configuration is. Exposing them would also mean an agent could rewrite the field
 #    definitions its own `describe_schema` output is derived from.
 _CONFIGURATION: dict[Method, str] = {
+    ("LegalEntitySiteService", "add_legal_entity_site"): (
+        "REB-1092: the places of business of an srl split its IRAP between regions: a tax fact "
+        "of the company, stated from Impostazioni → Aziende by an administrator "
+        "(`update_legal_entity_sites` is person-only)"
+    ),
+    ("LegalEntitySiteService", "update_legal_entity_site"): (
+        "REB-1092: same act as `add_legal_entity_site`, person-only"
+    ),
+    ("LegalEntitySiteService", "remove_legal_entity_site"): (
+        "REB-1092: same act as `add_legal_entity_site`, person-only"
+    ),
+    ("LegalEntitySiteService", "list_legal_entity_sites"): (
+        "REB-1092: the read side of the Sedi section of Impostazioni → Aziende, which only the "
+        "writer's administrator uses; the split an agent can read is in `get_fiscal_estimate`"
+    ),
+    ("LegalEntitySiteService", "list_irap_regions"): (
+        "REB-1092: the options of the region picker in the Sedi section; no agent states a site"
+    ),
     ("StaffService", "set_payroll_pay_day"): (
         "REB-977, staff design § 4: the day net pay leaves for a whole legal entity is set from "
         "the staff page by a person; `update_staff_member`'s own override is the agent's"

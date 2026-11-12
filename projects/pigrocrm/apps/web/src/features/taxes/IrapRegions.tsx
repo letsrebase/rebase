@@ -21,19 +21,18 @@ export function IrapRegions({ regions }: { regions: readonly IrapRegion[] }) {
           <TableHeader>
             <TableRow>
               <TableHead>Regione</TableHead>
-              <TableHead className="text-right">Quota</TableHead>
-              <TableHead className="text-right">Base</TableHead>
-              <TableHead className="text-right">Aliquota</TableHead>
               <TableHead className="text-right">Imposta</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {regions.map((part) => (
               <TableRow key={part.region}>
-                <TableCell>{part.name}</TableCell>
-                <TableCell className="text-right tabular-nums">{formatPercent(part.share)}</TableCell>
-                <TableCell className="text-right tabular-nums">{money(part.base)}</TableCell>
-                <TableCell className="text-right tabular-nums">{formatPercent(part.rate)}</TableCell>
+                <TableCell className="whitespace-normal">
+                  <span className="block">{part.name}</span>
+                  <span className="block text-xs text-muted-foreground tabular-nums">
+                    Quota {formatPercent(part.share)} · base {money(part.base)} · aliquota {formatPercent(part.rate)}
+                  </span>
+                </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {part.amount === null ? NOT_COMPUTABLE : money(part.amount)}
                 </TableCell>
