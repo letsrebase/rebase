@@ -4573,3 +4573,54 @@ def test_0113_adds_what_a_filed_f24_group_records_both_ways(pigrocrm_postgres: A
         assert not any(_column_exists(url, "f24_group_items", column) for column in columns)
         upgrade(config, "0113")
         assert all(_column_exists(url, "f24_group_items", column) for column in columns)
+
+
+def test_0114_adds_the_income_kind_and_refuses_split_payment_with_reverse_charge(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1099: a purchase that carries both flags stops the upgrade and names itself, once
+    corrected the check holds; the income kind is a nullable, checked column."""
+    category = "00000000-0000-7000-8000-00000000000a"
+    supplier = "00000000-0000-7000-8000-0000000000e1"
+    purchase = "00000000-0000-7000-8000-0000000000f1"
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0113")
+        assert not _column_exists(url, "fiscal_profile", "income_kind")
+        engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO cost_categories (id, name, position, archived, created_at, "
+                    "updated_at) VALUES (:id, 'Altro', 0, false, now(), now())"
+                ),
+                {"id": category},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO organizations (id, legal_name, country, custom_fields, roles) "
+                    "VALUES (:id, 'Acme Srl', 'IT', '{}', ARRAY['supplier']::varchar[])"
+                ),
+                {"id": supplier},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO purchases (id, kind, category_id, supplier_id, date, amount, "
+                    "cost_amount, description, custom_fields, split_payment, reverse_charge) "
+                    "VALUES (:id, 'invoice', :category, :supplier, '2026-03-02', 122, 122, 'x', "
+                    "'{}', true, true)"
+                ),
+                {"id": purchase, "category": category, "supplier": supplier},
+            )
+        with pytest.raises(RuntimeError, match=purchase):
+            upgrade(config, "0114")
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE purchases SET split_payment = false"))
+        upgrade(config, "0114")
+        assert _column_exists(url, "fiscal_profile", "income_kind")
+        with pytest.raises(IntegrityError), engine.begin() as connection:
+            connection.execute(text("UPDATE purchases SET split_payment = true"))
+        engine.dispose()
+        downgrade(config, "0113")
+        assert not _column_exists(url, "fiscal_profile", "income_kind")

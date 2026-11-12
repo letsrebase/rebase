@@ -152,6 +152,7 @@ export type ChoiceName =
   | 'inps_before_1996'
   | 'flat_rate_inps_reduction'
   | 'isa'
+  | 'income_kind'
   | 'ateco_group'
   | 'startup_no_prior_activity'
   | 'startup_not_a_continuation'
@@ -240,6 +241,17 @@ export const CHOICES: readonly ChoiceField[] = [
     hint: 'Decide come si dividono gli acconti delle imposte sui redditi.',
     shownFor: PERSON,
     options: YES_NO,
+  },
+  {
+    name: 'income_kind',
+    label: 'Tipo di reddito',
+    hint: 'Arte o professione (lavoro autonomo, art. 53 del TUIR) oppure impresa (negozio, artigiano). La ritenuta d’acconto del 20% sulle tue fatture si calcola solo sul lavoro autonomo. Senza risposta si presume un professionista.',
+    shownFor: ['RF01'],
+    options: [
+      { value: '', label: 'Non indicato (si presume un professionista)' },
+      { value: 'self_employment', label: 'Arte o professione' },
+      { value: 'business', label: 'Impresa' },
+    ],
   },
   {
     name: 'ateco_group',
@@ -333,6 +345,7 @@ export function emptyValues(): Values {
     inps_before_1996: '',
     flat_rate_inps_reduction: '',
     isa: '',
+    income_kind: '',
     ateco_group: '',
     startup_no_prior_activity: '',
     startup_not_a_continuation: '',

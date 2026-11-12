@@ -185,8 +185,12 @@ class SalesWithholding:
     Certificazione Unica 2026 instructions' «prestazioni di lavoro autonomo rientranti
     nell'esercizio di arte o professione abituale». `taxpayer_type` is FPR12's `RT01`, the
     withholding on a natural person: the ordinary regime of this pack is a person's. Whether
-    the issuer is an independent worker at all is not modelled: the accountant's list (REB-975)
-    has the question, and the ordinary regime is read as one, as the design says.
+    the issuer is an independent worker is the taxpayer fact `FiscalProfile.income_kind`
+    (REB-1099): art. 25 c. 1 DPR 600/1973 withholds on «compensi ... per prestazioni di lavoro
+    autonomo», the income of art. 53 TUIR, so only `self_employment` is withheld; a profile that
+    has not answered is read as a professional, as the product always has. The 0.5% (2028) and
+    1% (2029 on) withholding on business income of L. 199/2025 art. 1 c. 115 is a row of the
+    register for later and is not here.
     """
 
     rate: Decimal

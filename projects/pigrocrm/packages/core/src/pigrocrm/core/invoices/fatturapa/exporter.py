@@ -798,7 +798,13 @@ class InvoicePaExporter:
             due_date.text = self._iso(invoice.due_date)
         amount = etree.SubElement(detail, "ImportoPagamento")
         # What the customer pays: the total less the withholding it keeps and, on a split
-        # payment, the VAT it pays to the tax office itself (`net_receivable`).
+        # payment, the VAT it pays to the tax office itself (`net_receivable`). The
+        # specifications (v1.9.1) define the element only as «importo relativo al pagamento»
+        # and state no formula; the official worked examples of the Agenzia/SdI compilation
+        # guide (v1.0, § 2.4.2.6) put the net in it: invoice 410, 12,852.00 + 2,698.92 -
+        # 2,520.00 withholding = 13,030.92, and invoice 14, 1,664.00 + 349.44 - 332.80 =
+        # 1,680.64. Examples, not a norm. Nothing read covers the split-payment VAT
+        # subtraction (the guide predates split payment, 2015).
         amount.text = format_amount_2(invoice.net_receivable)
         if (tax.iban or "").strip():
             self._text(

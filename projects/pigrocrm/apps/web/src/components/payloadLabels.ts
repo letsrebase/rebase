@@ -329,6 +329,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   fiscal_year_end_day: 'Giorno di chiusura dell’esercizio',
   fiscal_year_end_month: 'Mese di chiusura dell’esercizio',
   inps_category: 'Categoria INPS',
+  income_kind: 'Tipo di reddito',
   iva_frequency: 'Cadenza della liquidazione IVA',
   isa: 'ISA',
   inps_trade: 'Gestione INPS',

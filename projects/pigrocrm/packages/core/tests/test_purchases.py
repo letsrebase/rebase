@@ -260,6 +260,23 @@ def test_an_invoice_names_its_supplier_and_splits_its_vat(
     assert service.get(invoice.id, READER).vat_lines == invoice.vat_lines
 
 
+def test_split_payment_and_reverse_charge_exclude_each_other(
+    db_session: Session, seeded_category_id: UUID
+) -> None:
+    """REB-1099: art. 17-ter c. 1 DPR 633/1972 and Circolare 14/E of 2015 § 4."""
+    service = PurchaseService(db_session)
+    supplier = _supplier(db_session)
+    with pytest.raises(ValidationFailed) as both:
+        _invoice(service, seeded_category_id, supplier, split_payment=True, reverse_charge=True)
+    assert both.value.details["field"] == "split_payment"
+    # Under reverse charge the VAT is the buyer's and is not in what is paid.
+    for one in (
+        {"split_payment": True},
+        {"reverse_charge": True, "amount": Decimal("100.00")},
+    ):
+        assert _invoice(service, seeded_category_id, supplier, **one).kind == "invoice"
+
+
 def test_an_invoices_total_must_match_its_recap(
     db_session: Session, seeded_category_id: UUID
 ) -> None:

@@ -127,6 +127,12 @@ class Purchase(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             "AND iva_period IS NULL AND fund_rate IS NULL)",
             name="ck_purchases_vat_kinds_only",
         ),
+        # Split payment is for a buyer that is not the VAT debtor; under reverse charge it is
+        # (art. 17-ter c. 1 DPR 633/1972, Circolare 14/E of 2015 § 4): never both (REB-1099).
+        CheckConstraint(
+            "NOT (split_payment AND reverse_charge)",
+            name="ck_purchases_split_payment_not_reverse_charge",
+        ),
         Index(
             "ix_purchases_deal_date", "deal_id", "date", postgresql_where=text("deleted_at IS NULL")
         ),

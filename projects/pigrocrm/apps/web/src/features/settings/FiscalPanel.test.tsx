@@ -98,6 +98,7 @@ const TAXPAYER_KEYS = [
   'inps_before_1996',
   'flat_rate_inps_reduction',
   'isa',
+  'income_kind',
   'ateco_group',
   'flat_rate_start_year',
   'startup_no_prior_activity',
@@ -896,6 +897,33 @@ describe('FiscalPanel', () => {
       expect(screen.queryByLabelText('Attività (gruppo ATECO)')).not.toBeInTheDocument()
       expect(screen.queryByLabelText('Anno di inizio attività')).not.toBeInTheDocument()
       expect(screen.queryByLabelText(/Nessuna attività prima/)).not.toBeInTheDocument()
+    })
+
+    it('asks the ordinary regime whether its income is an art or a business (REB-1099)', async () => {
+      vi.mocked(api.GET).mockImplementation(() => ok(ORDINARY))
+      vi.mocked(api.PUT).mockImplementation(() => ok(ORDINARY))
+      renderPanel()
+
+      const question = await screen.findByLabelText('Tipo di reddito')
+      expect(question).toHaveValue('')
+      expect(screen.getByText(/Senza risposta si presume un professionista/)).toBeInTheDocument()
+      await userEvent.selectOptions(question, 'business')
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+      expect(bodyOfSave()).toMatchObject({ pack_id: 'it-standard', income_kind: 'business' })
+    })
+
+    it('does not ask the forfettario or an srl about it, and sends nothing', async () => {
+      vi.mocked(api.GET).mockImplementation(() => ok({ ...PROFILE, flat_rate_groups: GROUPS }))
+      vi.mocked(api.PUT).mockImplementation(() => ok(PROFILE))
+      renderPanel()
+
+      await waitFor(() => expect(screen.getByLabelText('Cassa INPS')).toBeInTheDocument())
+      expect(screen.queryByLabelText('Tipo di reddito')).not.toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+      await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+      expect(bodyOfSave()).toMatchObject({ income_kind: null })
     })
 
     it('shows none of them for an srl, and sends them empty', async () => {

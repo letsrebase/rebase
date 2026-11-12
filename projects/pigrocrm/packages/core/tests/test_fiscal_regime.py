@@ -250,6 +250,15 @@ def test_ordinary_refuses_to_zero_rate_because_it_has_no_vat_nature_to_pair_with
     assert caught.value.details["field"] == "vat_rate"
 
 
-def test_ordinary_never_charges_the_stamp_duty() -> None:
-    profile = _profile(regime_code="RF01", default_vat_nature=None)
+def test_ordinary_charges_the_stamp_duty_on_the_untaxed_base_only() -> None:
+    """REB-1099: stamp duty tariff art. 13 c. 1 and note 2 a) DPR 642/1972, art. 6 of table B
+    (revenue agency answer 491/2021): a document owes 2 euro when its amount outside VAT, `N2.1`
+    and `N2.2` included,
+    is above 77.47; one entirely under VAT owes none. The ordinary profile keeps
+    `apply_stamp_duty` false and the duty is still owed: it is the statute's."""
+    profile = _profile(regime_code="RF01", default_vat_nature=None, apply_stamp_duty=False)
     assert ORDINARY.stamp_duty([_group("22.00", "9999.00", None)], profile) == Decimal("0.00")
+    assert ORDINARY.stamp_duty([_group("0.00", "77.47", "N2.1")], profile) == Decimal("0.00")
+    assert ORDINARY.stamp_duty([_group("0.00", "77.48", "N2.1")], profile) == Decimal("2.00")
+    mixed = [_group("22.00", "5000.00", None), _group("0.00", "50.00", "N2.1")]
+    assert ORDINARY.stamp_duty(mixed, profile) == Decimal("0.00")

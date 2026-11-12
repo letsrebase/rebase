@@ -38,6 +38,10 @@ from pigrocrm.core.validation import SafeStr
 PackId = Literal["it-flat-rate", "it-standard", "it-company", "non-it"]
 InpsCategory = Literal["gestione_separata", "artigiani_commercianti"]
 InpsTrade = Literal["artigiani", "commercianti"]
+# Which kind of income the activity of an ordinary-regime person produces (REB-1099): art or
+# profession (art. 53 TUIR, the income art. 25 DPR 600/1973 withholds on) or business. `None` is
+# «not stated» and is read as a professional's, the way the product has always read it.
+IncomeKind = Literal["self_employment", "business"]
 IvaFrequency = Literal["monthly", "quarterly"]
 # The taxpayer facts of REB-1070 that the law of the INPS contributions reads (an ordinary or
 # flat-rate person), and the ones only the flat-rate regime reads. A pack that does not use a
@@ -59,7 +63,7 @@ FLAT_RATE_PARAMETERS = (
 FLAT_RATE_ONLY = ("flat_rate_inps_reduction", *FLAT_RATE_PARAMETERS)
 TAXPAYER_PARAMETERS = (*INPS_PARAMETERS, *FLAT_RATE_PARAMETERS)
 # The profile keys a save that does not name them leaves as they are (`stored_fields`).
-KEPT_WHEN_OMITTED = ("inps_category", "isa", "iva_frequency", *TAXPAYER_PARAMETERS)
+KEPT_WHEN_OMITTED = ("inps_category", "isa", "income_kind", "iva_frequency", *TAXPAYER_PARAMETERS)
 ATECO_GROUP_KEYS = tuple(group.key for group in ANNEX_4)
 FLAT_RATE_START_YEAR_MIN = 1900
 FLAT_RATE_START_YEAR_MAX = 2100
@@ -192,6 +196,9 @@ class FiscalSnapshot(BaseModel):
     payment_method: str = Field(max_length=PAYMENT_METHOD_MAX_LENGTH)
     due_days: int = Field(ge=DUE_DAYS_MIN, le=DUE_DAYS_MAX)
     iban: str | None = Field(default=None, max_length=IBAN_MAX_LENGTH)
+    # REB-1099. `None` (not answered, and every snapshot frozen before the field) keeps the
+    # withholding: the product has always read the ordinary regime as a professional's.
+    income_kind: str | None = None
 
 
 class FiscalProfileUpsert(BaseModel):
@@ -321,6 +328,10 @@ class FiscalProfileUpsert(BaseModel):
     # verified).
     inps_category: InpsCategory | None = None
     isa: bool | None = None
+    # REB-1099: whether the income is an art or profession or a business. Only the ordinary
+    # regime of a person (`it-standard`) is asked; the 20% withholding of art. 25 DPR 600/1973
+    # is owed on the first alone. `None` keeps today's reading, a professional.
+    income_kind: IncomeKind | None = None
     # REB-1070: the facts the INPS and flat-rate law read. `None` is «not stated», never a
     # default: a figure that needs one names it as missing. Kept when a save leaves them out.
     inps_trade: InpsTrade | None = None
@@ -364,6 +375,11 @@ class FiscalProfileUpsert(BaseModel):
         for key in KEPT_WHEN_OMITTED:
             if key not in self.model_fields_set:
                 del payload[key]
+        if self.pack_id != PACK_IT_STANDARD and "income_kind" not in self.model_fields_set:
+            # Moving a person to another pack leaves no answer behind: the question is only
+            # asked of the ordinary regime (REB-1099). A value sent for another pack is
+            # refused by `FiscalProfileService.check`, not dropped here.
+            payload["income_kind"] = None
         return payload
 
 
@@ -404,6 +420,7 @@ class FiscalProfileRead(BaseModel):
     pack_version: str
     inps_category: str | None
     isa: bool | None
+    income_kind: str | None
     inps_trade: str | None
     inps_covered_elsewhere: bool | None
     inps_before_1996: bool | None
