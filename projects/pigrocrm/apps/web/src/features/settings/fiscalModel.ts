@@ -331,11 +331,61 @@ const BOOLEAN_CHOICES: readonly ChoiceName[] = [
   'startup_predecessor_within_limit',
 ]
 
+/**
+ * The household of the IRPEF's family detractions (REB-1087), as the editor holds it: every
+ * input a string, the answer a mode, each member a row with a key of its own so a removal
+ * never moves what is typed in the rows after it. `unstated` is `household: null`, `none` is
+ * «nobody is dependent on me», `listed` is the rows.
+ */
+export type HouseholdMode = 'unstated' | 'none' | 'listed'
+export type MemberKind = 'spouse' | 'child' | 'ascendant'
+
+export interface MemberDraft {
+  key: string
+  kind: MemberKind
+  birth_date: string
+  disabled: boolean
+  share_percent: string
+  months: string
+}
+
+export interface HouseholdDraft {
+  mode: HouseholdMode
+  year: string
+  taxpayer_disabled: boolean
+  other_supporters_income: string
+  members: MemberDraft[]
+}
+
+export const MEMBERS_MAX = 20
+
+export const MemberKinds: readonly { value: MemberKind; label: string }[] = [
+  { value: 'spouse', label: 'Coniuge' },
+  { value: 'child', label: 'Figlio' },
+  { value: 'ascendant', label: 'Ascendente convivente' },
+]
+
+let addedMembers = 0
+
+/** A blank row, one more than the last: a child on the whole detraction, twelve months. */
+export function newMember(kind: MemberKind): MemberDraft {
+  addedMembers += 1
+  return {
+    key: `added-${addedMembers}`,
+    kind,
+    birth_date: '',
+    disabled: false,
+    share_percent: '100',
+    months: '12',
+  }
+}
+
 export type Values = Record<FiscalField['name'], string> &
   Record<ChoiceName, string> & {
   apply_stamp_duty: boolean
   pack_id: PackId
   regime_code: string
+  household: HouseholdDraft
 }
 
 export type ValueName = keyof Values
@@ -391,6 +441,14 @@ export function emptyValues(): Values {
     startup_not_a_continuation: '',
     startup_predecessor_within_limit: '',
     apply_stamp_duty: true,
+    household: {
+      mode: 'unstated',
+      // The statement counts only for its own year's estimate: it offers the current one.
+      year: String(new Date().getFullYear()),
+      taxpayer_disabled: false,
+      other_supporters_income: '',
+      members: [],
+    },
   }
 }
 
@@ -409,6 +467,26 @@ export function valuesFrom(profile: FiscalProfile): Values {
   values.apply_stamp_duty = profile.apply_stamp_duty
   values.pack_id = isPackId(profile.pack_id) ? profile.pack_id : 'it-flat-rate'
   values.regime_code = profile.regime_code ?? ''
+  const stored = profile.household
+  if (stored) {
+    values.household = {
+      mode: (stored.members ?? []).length > 0 ? 'listed' : 'none',
+      year: String(stored.year),
+      taxpayer_disabled: stored.taxpayer_disabled,
+      other_supporters_income:
+        stored.other_supporters_income === null || stored.other_supporters_income === undefined
+          ? ''
+          : String(stored.other_supporters_income),
+      members: (stored.members ?? []).map((member, index) => ({
+        key: `stored-${index}`,
+        kind: member.kind,
+        birth_date: member.birth_date ?? '',
+        disabled: member.disabled,
+        share_percent: String(member.share_percent),
+        months: String(member.months),
+      })),
+    }
+  }
   return values
 }
 
@@ -425,9 +503,11 @@ export function bodyFrom(values: Values): Record<string, unknown> {
   const { pack_id, regime_code, ...fields } = values
   // The bollo amounts are hidden outside the flat-rate regime and the server still wants
   // decimals for them: a blank left from an edit under another regime goes as the default.
+  const { household, ...scalars } = fields
   const rest = {
-    ...fields,
+    ...scalars,
     ...taxpayerFacts(fields, pack_id),
+    household: householdBody(household, pack_id),
     stamp_duty_threshold: fields.stamp_duty_threshold.trim() || '77.47',
     stamp_duty_amount: fields.stamp_duty_amount.trim() || '2.00',
   }
@@ -458,6 +538,37 @@ export function bodyFrom(values: Values): Record<string, unknown> {
     }
   }
   return { ...rest, pack_id, regime_code }
+}
+
+/** A number input's text as the API reads it: digits as a number, anything else as typed,
+ *  for the server to refuse by field name rather than the form guessing. */
+function whole(text: string): number | string {
+  const trimmed = text.trim()
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : trimmed
+}
+
+/**
+ * The household of a save: `null` for «not stated» and on every pack but the ordinary
+ * regime's, which the server refuses a value on. A spouse is always the whole detraction and
+ * only a child carries a birth date; the supporters' income goes only while a disabled
+ * member makes it a question, empty as `null`. Every figure of the law is the server's.
+ */
+function householdBody(household: HouseholdDraft, pack: PackId): Record<string, unknown> | null {
+  if (pack !== 'it-standard' || household.mode === 'unstated') return null
+  const members = household.mode === 'listed' ? household.members : []
+  const income = household.other_supporters_income.trim()
+  return {
+    year: whole(household.year),
+    members: members.map((member) => ({
+      kind: member.kind,
+      birth_date: member.kind === 'child' ? member.birth_date || null : null,
+      disabled: member.disabled,
+      share_percent: member.kind === 'spouse' ? 100 : whole(member.share_percent),
+      months: whole(member.months),
+    })),
+    taxpayer_disabled: household.taxpayer_disabled,
+    other_supporters_income: members.some((member) => member.disabled) && income !== '' ? income : null,
+  }
 }
 
 /**

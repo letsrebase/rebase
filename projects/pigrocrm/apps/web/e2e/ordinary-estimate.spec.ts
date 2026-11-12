@@ -63,7 +63,11 @@ test('an ordinary person reads IRPEF and INPS on Tasse and what each is computed
     await section.getByRole('row', { name: /IRPEF/ }).click()
     await expect(page.getByText('Come è calcolata la stima')).toBeVisible()
     await expect(page.getByText('IRPEF lorda', { exact: true })).toBeVisible()
-    await expect(page.getByText(/non sono applicate: l.imposta è quindi per eccesso/)).toBeVisible()
+    await expect(
+      page.getByText(
+        "Gli oneri detraibili dell'articolo 15 del TUIR (per esempio le spese sanitarie) e i crediti d'imposta non sono applicati.",
+      ),
+    ).toBeVisible()
 
     // A profile with no INPS category: no figure, and the sentence names what is missing.
     const other = page.getByRole('region', { name: lacking })

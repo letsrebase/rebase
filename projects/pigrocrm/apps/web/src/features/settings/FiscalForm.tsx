@@ -26,6 +26,7 @@ import {
   type ValueName,
   type Values,
 } from './fiscalModel'
+import { HouseholdFields } from './HouseholdFields'
 import { StaleRowBanner } from './StaleRowBanner'
 import { isStaleRow, type StalePhase } from './staleRow'
 
@@ -218,7 +219,12 @@ export function FiscalForm({ legalEntityId, profile }: { legalEntityId: string; 
     ...choices.map((choice) => choice.name),
     ...(flat_rate ? ['apply_stamp_duty'] : []),
   ])
-  const bannered = problem && (!fieldError || !rendered.has(fieldError.field))
+  // The household's refusals name `household` or a path under it (a member's field).
+  const householdShown = regime === 'RF01'
+  const householdError =
+    householdShown && fieldError?.field.split(/[.[]/)[0] === 'household' ? fieldError.message : null
+  const bannered =
+    problem && (!fieldError || (!rendered.has(fieldError.field) && !householdError))
 
   return (
     <div className="space-y-4">
@@ -349,6 +355,15 @@ export function FiscalForm({ legalEntityId, profile }: { legalEntityId: string; 
             ))}
           </div>
         </fieldset>
+      ) : null}
+
+      {householdShown ? (
+        <HouseholdFields
+          household={values.household}
+          disabled={save.isPending}
+          error={householdError}
+          onChange={(household) => change({ household })}
+        />
       ) : null}
 
       {flat_rate ? (
