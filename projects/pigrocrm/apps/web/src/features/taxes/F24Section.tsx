@@ -115,7 +115,7 @@ function FilingBlock({ group, today }: { group: F24Group; today: string }) {
     <div className="space-y-2 rounded-md border p-3">
       <p className="text-sm">
         Questo F24 non ha nulla da pagare, quindi nessun movimento in banca lo salda. Va comunque
-        presentato con i servizi telematici dell’Agenzia delle entrate: quando l’hai fatto, segnalo qui.
+        presentato con i servizi telematici dell’Agenzia delle entrate: quando l’hai presentato, indicalo qui.
       </p>
       {open ? (
         <div className="space-y-3">
