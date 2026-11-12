@@ -26,7 +26,11 @@ from pigrocrm.core.fiscal.law import TaxYearLaw
 from pigrocrm.core.fiscal.law_flat_rate import FLAT_RATE_2026
 from pigrocrm.core.fiscal.models import FiscalEstimateReading
 from pigrocrm.core.fiscal.pack import IT_FLAT_RATE_PACK, IT_STANDARD_PACK, NON_IT_PACK, FiscalPack
-from pigrocrm.core.fiscal.schemas import TAXPAYER_PARAMETERS, FiscalProfileUpsert
+from pigrocrm.core.fiscal.schemas import (
+    COMPANY_PARAMETERS,
+    TAXPAYER_PARAMETERS,
+    FiscalProfileUpsert,
+)
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
@@ -377,6 +381,7 @@ def test_a_year_computed_under_the_flat_rate_pack_keeps_its_figures_after_the_mo
         "inps_category": None,
         "isa": None,
         **dict.fromkeys(TAXPAYER_PARAMETERS),
+        **dict.fromkeys(COMPANY_PARAMETERS),
         "fiscal_year_end_month": 12,
         "fiscal_year_end_day": 31,
     }
