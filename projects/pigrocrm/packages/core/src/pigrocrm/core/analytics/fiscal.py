@@ -95,6 +95,7 @@ def estimate_income(
     rate_substitute: Decimal | None,
     social_security_rate: Decimal | None,
     flat_rate: FlatRateLaw | None,
+    contributions_paid: Decimal | None = None,
 ) -> FiscalEstimate:
     """Taxable base, substitute tax, contributions and estimated net for one year.
 
@@ -117,10 +118,11 @@ def estimate_income(
     substitute tax is computed on the *rounded* income less the *rounded* contributions,
     because those are the figures the reader can see.
 
-    The contributions deducted are the year's own, as the estimate computes them. The law
-    deducts the contributions *paid* in the tax period (the balance of the year before and the
-    advances of this one), which a year's own figures approximate and an accountant's declared
-    figure replaces (taxes design § 2).
+    The contributions deducted are the ones *paid* in the tax period (L. 190/2014 art. 1 c. 64:
+    «versati»; the balance of the year before and the advances of this one), from the INPS
+    payments recorded in the year (`contributions_paid`, `fiscal/inps_paid.py`, REB-1096), up to
+    the income there is. With none recorded the year's own computed contributions stand in, and
+    `assumptions` says so; an accountant's declared figure replaces either (taxes design § 2).
 
     `flat_rate` is the year's law (`TaxYearLaw.flat_rate`); `None` means the pack has no income
     estimate for the year, and then no parameter is read and every line is `None`: a regime
@@ -146,10 +148,30 @@ def estimate_income(
         )
         else None
     )
-    substitute_base = (
-        _substitute_tax_base(flat_rate.substitute_tax_base, taxable_amount, contributions)
-        if (flat_rate is not None and taxable_amount is not None and contributions is not None)
+    # What the law deducts is what was paid; a payment makes the computed rate unneeded for the
+    # deduction. The excess over the income is not deductible from it (rows LM35 and LM36).
+    to_deduct = contributions_paid if contributions_paid is not None else contributions
+    deducted = (
+        max(min(to_deduct, taxable_amount), Decimal(0))
+        if to_deduct is not None and taxable_amount is not None
         else None
+    )
+    substitute_base = (
+        _substitute_tax_base(flat_rate.substitute_tax_base, taxable_amount, deducted)
+        if (flat_rate is not None and taxable_amount is not None and deducted is not None)
+        else None
+    )
+    assumptions = (
+        []
+        if flat_rate is None
+        else [
+            "Si deducono i contributi INPS versati nell'anno secondo i pagamenti registrati "
+            "(legge 190/2014, art. 1 comma 64), fino al reddito."
+            if contributions_paid is not None
+            else "Non risultano pagamenti INPS registrati nell'anno: si deducono i contributi "
+            "calcolati per l'anno. La legge deduce quelli versati nell'anno, cioè il saldo "
+            "dell'anno prima e gli acconti di questo: registra i pagamenti per averli."
+        ]
     )
     substitute = (
         round_money(substitute_base * rate_substitute / _HUNDRED)
@@ -178,6 +200,8 @@ def estimate_income(
         profitability_coefficient=coefficient,
         taxable_amount=taxable_amount,
         substitute_tax_base=substitute_base,
+        contributions_deducted=deducted,
+        assumptions=assumptions,
         substitute_tax_rate=rate_substitute,
         substitute_tax=substitute,
         social_security_rate=social_security_rate,

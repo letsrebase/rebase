@@ -53,6 +53,7 @@ from pigrocrm.core.fiscal.ceiling import (
 )
 from pigrocrm.core.fiscal.company_estimate import estimate_company_taxes
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService, reading_for_year
+from pigrocrm.core.fiscal.inps_paid import inps_paid_in_year
 from pigrocrm.core.fiscal.law import DeclaredTax, TaxYearLaw
 from pigrocrm.core.fiscal.law_inps import InpsCategoryName, TradeGestione
 from pigrocrm.core.fiscal.ordinary_estimate import (
@@ -885,6 +886,12 @@ class AnalyticsService:
             rate_substitute=profile.substitute_tax_rate,
             social_security_rate=profile.social_security_rate,
             flat_rate=law.flat_rate if law is not None else None,
+            # A «what if» revenue has no basis, and the payments of the year say nothing of it.
+            contributions_paid=(
+                inps_paid_in_year(self.session, legal_entity.id, year)
+                if basis is not None and law is not None and law.flat_rate is not None
+                else None
+            ),
         )
         update: dict[str, object] = {
             "missing_parameters": (
@@ -990,6 +997,7 @@ class AnalyticsService:
             province=legal_entity.province,
             withholdings=withheld,
             household=profile.household,
+            inps_paid=inps_paid_in_year(self.session, legal_entity.id, basis.year),
         )
 
 

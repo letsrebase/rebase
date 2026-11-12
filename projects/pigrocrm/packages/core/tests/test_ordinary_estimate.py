@@ -26,6 +26,7 @@ from pigrocrm.core.due_items.models import DueItem, DueItemSettlement
 from pigrocrm.core.fiscal.basis_schemas import BasisCosts, YearBasis
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
 from pigrocrm.core.fiscal.household import Household, HouseholdMember
+from pigrocrm.core.fiscal.inps_paid import inps_paid_in_year
 from pigrocrm.core.fiscal.irpef_2026 import IRPEF_2026, SELF_EMPLOYMENT_DETRACTION_2026
 from pigrocrm.core.fiscal.law_inps import INPS_2026
 from pigrocrm.core.fiscal.law_irpef import RateBracket
@@ -87,6 +88,7 @@ def _estimate(
     province: str | None = "RE",
     withholdings: Decimal | None = ZERO_MONEY,
     household: Household | None = None,
+    inps_paid: Decimal | None = None,
 ) -> OrdinaryEstimate:
     law = IT_STANDARD_PACK.law_for(basis.year)
     assert law is not None
@@ -99,6 +101,7 @@ def _estimate(
         province=province,
         withholdings=withholdings,
         household=household,
+        inps_paid=inps_paid,
     )
     assert estimate is not None
     return estimate
@@ -301,6 +304,115 @@ def test_veneto_with_a_disabled_dependant_names_the_others_income_it_needs() -> 
     # 22,800 x 0.9% = 205.20, the reduced rate on the whole base
     assert _part(answered.irpef, "regional_surcharge") == D("205.20")
     assert not any("somma dei redditi" in text for text in answered.irpef.missing)
+
+
+# --- the contributions deducted are those paid (REB-1096) ----------------------------------
+
+
+def test_the_contributions_paid_in_the_year_are_deducted_not_the_computed_ones() -> None:
+    """30,000 collected: the gestione separata owes 7,200 on it, but 5,000 was paid (the balance
+    of the year before and the first advance), so the base is 25,000, not 22,800."""
+    estimate = _estimate(_basis("30000.00"), inps_paid=D("5000.00"))
+    assert estimate.inps.amount == D("7200.00")  # what is owed is still computed
+    assert estimate.income.taxable_income == D("25000.00")
+    (deducted,) = [line for line in estimate.income.lines if line.code == "inps_deducted"]
+    assert deducted.amount == D("-5000.00") and "versati" in deducted.label
+    assert any("pagamenti registrati" in text for text in estimate.income.assumptions)
+    assert _part(estimate.irpef, "gross_irpef") == D("5750.00")  # 25,000 x 23%
+
+
+def test_with_no_payment_recorded_the_computed_contributions_stand_in_and_it_says_so() -> None:
+    estimate = _estimate(_basis("30000.00"))
+    assert estimate.income.taxable_income == D("22800.00")
+    assert any("Non risultano pagamenti INPS" in text for text in estimate.income.assumptions)
+    # A payment of zero is a payment: nothing was paid, so nothing is deducted.
+    nothing = _estimate(_basis("30000.00"), inps_paid=D("0.00"))
+    assert nothing.income.taxable_income == D("30000.00")
+
+
+def test_the_deduction_never_exceeds_the_income() -> None:
+    estimate = _estimate(_basis("3000.00"), inps_paid=D("9000.00"))
+    assert estimate.income.taxable_income == D("0.00")
+    assert estimate.income.lines[-1].amount == D("-3000.00")
+
+
+def test_a_paid_contribution_gives_the_irpef_even_when_the_inps_fact_is_missing() -> None:
+    """The deduction needs the payments, not the computed figure: with the category unstated the
+    INPS has no amount and names its missing parameter, and the IRPEF is still computed."""
+    estimate = _estimate(
+        _basis("30000.00"), facts=InpsFacts(None, None, None, None), inps_paid=D("5000.00")
+    )
+    assert estimate.inps.amount is None and estimate.missing_parameters == ["inps_category"]
+    assert estimate.income.taxable_income == D("25000.00")
+    assert estimate.irpef.amount is not None and estimate.due_total is None
+
+
+def test_the_payments_are_the_live_inps_settlements_dated_in_the_year(
+    db_session: Session,
+) -> None:
+    entity = _person(db_session)
+    other = _person(db_session)
+
+    def item(owner: LegalEntity, tax: str = "inps", kind: str = "tax_advance") -> DueItem:
+        row = DueItem(
+            legal_entity_id=owner.id,
+            direction="out",
+            state="expected",
+            counterparty_type="tax_office",
+            tax=tax,
+            amount=D("4000.00"),
+            description="a payment",
+            source_kind=kind,
+            source_id=uuid4(),
+            own_date=dt.date(2026, 6, 30),
+            due_date=dt.date(2026, 6, 30),
+        )
+        db_session.add(row)
+        db_session.flush()
+        return row
+
+    def pay(row: DueItem, amount: str, day: dt.date, *, reversed_: bool = False) -> None:
+        db_session.add(
+            DueItemSettlement(
+                due_item_id=row.id,
+                legal_entity_id=row.legal_entity_id,
+                amount=D(amount),
+                settled_on=day,
+                recorded_by_type="system",
+                **(
+                    {
+                        "reversed_at": dt.datetime(2026, 7, 1, tzinfo=dt.UTC),
+                        "reversed_by_type": "system",
+                    }
+                    if reversed_
+                    else {}
+                ),
+            )
+        )
+        db_session.flush()
+
+    assert inps_paid_in_year(db_session, entity.id, 2026) is None  # nothing recorded
+    balance = item(entity, kind="tax_balance")
+    pay(balance, "1500.00", dt.date(2026, 6, 30))  # the balance of the year before
+    advance = item(entity)
+    pay(advance, "2000.00", dt.date(2026, 11, 30))
+    pay(advance, "500.50", dt.date(2027, 1, 5))  # paid the year after
+    pay(advance, "999.00", dt.date(2026, 8, 1), reversed_=True)
+    pay(item(entity, tax="irpef"), "700.00", dt.date(2026, 6, 30))  # another tax
+    pay(item(other), "800.00", dt.date(2026, 6, 30))  # another legal entity
+
+    assert inps_paid_in_year(db_session, entity.id, 2026) == D("3500.00")
+    assert inps_paid_in_year(db_session, entity.id, 2027) == D("500.50")
+    assert inps_paid_in_year(db_session, entity.id, 2025) is None
+
+    # The service estimate reads them: 30,000 collected, 3,500 paid.
+    _invoice(db_session, entity, "30000.00", dt.date(2026, 5, 20))
+    person = (
+        AnalyticsService(db_session)
+        .get_fiscal_estimate(2026, ADMIN, legal_entity_id=entity.id)
+        .person
+    )
+    assert person is not None and person.income.taxable_income == D("26500.00")
 
 
 # --- a missing fact gives no figure and names what is missing ----------------------------
@@ -861,3 +973,9 @@ def test_the_legal_entity_id_is_never_confused_between_two_people(db_session: Se
     assert first is not None and second is not None
     assert first.irpef.cadastral_code == "A162" and second.irpef.cadastral_code == "F205"
     assert first.irpef.with_surcharges == D("15070.00") and second.irpef.with_surcharges is None
+
+
+def test_a_net_credit_of_payments_deducts_nothing() -> None:
+    """Payments that net to less than zero (a refund) never add to the income."""
+    estimate = _estimate(_basis("30000.00"), inps_paid=D("-300.00"))
+    assert estimate.income.taxable_income == D("30000.00")

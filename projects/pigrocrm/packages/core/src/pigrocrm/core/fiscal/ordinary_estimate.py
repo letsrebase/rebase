@@ -19,10 +19,12 @@ The order is the law's, and it is why INPS comes first
 3. **Deduction.** The compulsory contributions are deducted from the total income (art. 10 c. 1
    lett. e) TUIR, `IrpefLaw.social_security_deduction`), so the IRPEF base is the income less
    them. The law deducts what was **paid** in the year (the balance of the year before and the
-   advances of this one); the estimate deducts the year's own computed contributions, the
-   approximation the flat-rate estimate makes (A5 row «The contributions deducted are those paid
-   in the tax period»). Without the contributions there is no IRPEF figure: a base computed as if
-   none were deducted would overstate it, which is a guess.
+   advances of this one), and so does the estimate when the legal entity's INPS payments of the
+   year are recorded (`fiscal/inps_paid.py`, REB-1096): the deduction then needs no computed
+   contribution. With no payment recorded it stands in the year's own computed contributions and
+   says so (A5 row «The contributions deducted are those paid in the tax period»). With neither
+   there is no IRPEF figure: a base computed as if none were deducted would overstate it, which
+   is a guess.
 4. **IRPEF** by brackets (`IrpefLaw.gross_tax`), less its detractions (REB-1087): art. 13 c. 5
    TUIR for self-employment income, which needs the income alone, and art. 12 TUIR for the
    spouse, the children of 21 to 29 and the disabled ones and the cohabiting ascendants, which
@@ -185,6 +187,7 @@ def estimate_ordinary_taxes(
     province: str | None,
     withholdings: Decimal | None,
     household: Household | None = None,
+    inps_paid: Decimal | None = None,
 ) -> OrdinaryEstimate | None:
     """The estimate of INPS and IRPEF for `basis`'s year, `None` when the regime owes no IRPEF
     or the basis has no costs (a year on a basis that deducts none is no ordinary person's). When
@@ -192,7 +195,9 @@ def estimate_ordinary_taxes(
     nowhere and says so in its `missing`; the INPS stands on its own.
     `withholdings` is what the customers withheld in the year, `None` when the pack states no rule
     for the year a withholding is credited against. `household` is what the profile states about
-    the taxpayer's family; `None`, or a statement of another year, applies no family detraction."""
+    the taxpayer's family; `None`, or a statement of another year, applies no family detraction.
+    `inps_paid` is the INPS contributions paid in the year (`inps_paid_in_year`), `None` when no
+    payment is recorded: the computed contributions are then deducted instead."""
     costs = basis.costs
     if costs is None or "irpef" not in law.taxes:
         return None
@@ -206,8 +211,11 @@ def estimate_ordinary_taxes(
     deduction = irpef_law.social_security_deduction if irpef_law is not None else None
     deducted: Decimal | None = None
     taxable: Decimal | None = None
-    if inps.amount is not None and deduction is not None:
-        deducted = min(inps.amount, income_for_inps)
+    # What the law deducts is what was paid; with no payment recorded the computed contributions
+    # stand in, and a payment makes the computed figure unneeded for the deduction.
+    to_deduct = inps_paid if inps_paid is not None else inps.amount
+    if to_deduct is not None and deduction is not None:
+        deducted = max(min(to_deduct, income_for_inps), _ZERO)
         taxable = round_money(income_for_inps - deducted)
 
     income_assumptions = [
@@ -215,9 +223,15 @@ def estimate_ordinary_taxes(
         "quanto pagato nell'anno. Per chi ha un reddito d'impresa la base dipende dalla "
         "contabilità (di cassa se semplificata, di competenza se ordinaria) e il profilo non "
         "la dice.",
-        "Si deducono i contributi INPS calcolati per l'anno. La legge deduce quelli versati "
-        "nell'anno, cioè il saldo dell'anno prima e gli acconti di questo: la stima li "
-        "approssima con quelli dell'anno stesso.",
+        (
+            "Si deducono i contributi INPS versati nell'anno secondo i pagamenti registrati "
+            "(art. 10 c. 1 lett. e) TUIR): il saldo dell'anno prima e gli acconti di questo, "
+            "non quelli solo dovuti."
+            if inps_paid is not None
+            else "Non risultano pagamenti INPS registrati nell'anno: si deducono i contributi "
+            "calcolati per l'anno. La legge deduce quelli versati nell'anno, cioè il saldo "
+            "dell'anno prima e gli acconti di questo: registra i pagamenti per averli."
+        ),
         "Non ci sono altri redditi, né altri oneri deducibili.",
     ]
     if loss:
@@ -229,7 +243,11 @@ def estimate_ordinary_taxes(
     income_lines.append(
         OrdinaryLine(
             code="inps_deducted",
-            label="Contributi INPS dedotti (art. 10 c. 1 lett. e) TUIR)",
+            label=(
+                "Contributi INPS versati e dedotti (art. 10 c. 1 lett. e) TUIR)"
+                if inps_paid is not None
+                else "Contributi INPS dedotti (art. 10 c. 1 lett. e) TUIR)"
+            ),
             amount=None if deducted is None else -deducted,
         )
     )

@@ -308,6 +308,11 @@ class FiscalEstimate(BaseModel):
     # tax is not the rate times the taxable amount. `None` when the taxable amount or the
     # contributions are.
     substitute_tax_base: Decimal | None = None
+    # REB-1096: the INPS contributions deducted from the taxable amount: the ones paid in the year
+    # when the INPS payments are recorded, else the year's computed ones, capped at the taxable
+    # amount. `assumptions` says which.
+    contributions_deducted: Decimal | None = None
+    assumptions: list[str] = Field(default_factory=list)
     # REB-1066: set when the profile's coefficient is not one of the annex 4 coefficients of the
     # year's law. A note, never a refusal: the figures above are still computed from it.
     coefficient_warning: str | None = None
