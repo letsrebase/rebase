@@ -52,6 +52,7 @@ from sqlalchemy.engine.default import DefaultExecutionContext
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
+from pigrocrm.core.purchases.deductibility import ASSET_GROUPS, DEDUCTIBILITY_KINDS
 
 KINDS: tuple[str, ...] = ("invoice", "credit_note", "receipt", "expense", "expense_note")
 # The kinds whose VAT is split into recap lines, and that a supplier issues.
@@ -133,6 +134,17 @@ class Purchase(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             "NOT (split_payment AND reverse_charge)",
             name="ck_purchases_split_payment_not_reverse_charge",
         ),
+        CheckConstraint(
+            f"deductibility_kind IS NULL OR {_in('deductibility_kind', DEDUCTIBILITY_KINDS)}",
+            name="ck_purchases_deductibility_kind",
+        ),
+        # An asset is a positive purchase that a supplier's invoice, a receipt or an expense
+        # records: a credit note or a refund is not one.
+        CheckConstraint(
+            f"asset_group IS NULL OR ({_in('asset_group', ASSET_GROUPS)} AND amount > 0 "
+            "AND kind IN ('invoice', 'receipt', 'expense'))",
+            name="ck_purchases_asset_group",
+        ),
         Index(
             "ix_purchases_deal_date", "deal_id", "date", postgresql_where=text("deleted_at IS NULL")
         ),
@@ -205,6 +217,11 @@ class Purchase(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     reverse_charge: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # How the law treats the cost, when a person has said (`purchases/deductibility.py`, REB-1089):
+    # the kind overrides its category's, and `asset_group` flags a depreciable asset. `NULL` states
+    # nothing: the purchase is deducted in full.
+    deductibility_kind: Mapped[str | None] = mapped_column(String(20), default=None)
+    asset_group: Mapped[str | None] = mapped_column(String(20), default=None)
     # The invoice a credit note corrects.
     corrects_purchase_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("purchases.id"), default=None, index=True

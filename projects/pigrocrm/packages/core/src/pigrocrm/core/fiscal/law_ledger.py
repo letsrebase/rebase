@@ -21,7 +21,7 @@ What a fingerprint is
 ---------------------
 The SHA-256 of the canonical JSON of the section's data for that year, read through the section's
 own lookup (`FiscalPack.law_for`, `irpef_for`, `inps_for`, `chamber_fee_for`, `calendar_for`,
-`payment_rules_for`, `ceilings_for`, `charges_for`, `loss_carry_for`), so an edit to a statutory
+`payment_rules_for`, `ceilings_for`, `charges_for`, `loss_carry_for`, `ires_variations_for`), so an edit to a statutory
 entry shows up as a change to every year it governs, not only to the year it starts in. Dataclass
 fields are included with their class names, Decimals as strings, dates as ISO text, and so are the
 sources: correcting a citation is a correction. Three yearly tables live inside a larger object
@@ -253,6 +253,12 @@ SECTIONS: tuple[Section, ...] = (
         False,
         lambda p: _starts(p.chamber_fees, "year"),
         lambda p, y: p.chamber_fee_for(y),
+    ),
+    Section(
+        "ires_variations",
+        True,
+        lambda p: _starts(p.ires_variations, "from_year"),
+        lambda p, y: p.ires_variations_for(y),
     ),
     Section("irap_rates", False, _irap_years, _irap_table),
     Section("legal_interest", False, _legal_interest_years, _legal_interest),

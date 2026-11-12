@@ -10,13 +10,25 @@ never the declared one (A6 «Not the books»): the accountant's typed figure out
 IRES
 ----
 24% (`CompanyTaxLaw.ires_rate`) of the year's accrual profit: revenue less purchases less staff
-cost less director fees, as `year_basis` states them. The simplification is the whole of the
-estimate and the payload says it (`assumptions`): the profit is **not** adjusted for the
-variations of the tax return (non-deductible costs, the deduction of IRAP on staff cost, ACE,
-depreciation differences, the limits on interest and vehicles). A loss gives a tax of zero and
-says so. The losses of earlier years reduce the profit as art. 84 TUIR lets them
-(`fiscal/loss_carry.py`, REB-1088): the base is the profit less what they take off, and the
-payload's `losses` says which years they come from, what they took and what is left.
+cost less director fees, as `year_basis` states them, then the variations of the tax return the
+data can support (REB-1089, `fiscal/ires_adjustment.py`, law in `fiscal/law_ires.py`):
+
+* the costs the law limits by kind, when a purchase or its category states it (`fiscal/
+  cost_variations.py`): vehicles (art. 164 TUIR), phones (art. 102 c. 9), hotels and restaurants
+  (art. 109 c. 5), representation within a cap on the revenue (art. 108 c. 2);
+* depreciation instead of the full cost of a purchase flagged as an asset, with the coefficient of
+  the ministerial table (art. 102 TUIR, D.M. 31/12/1988); an asset of a group the table does not
+  carry makes the figure missing, never a guessed rate;
+* the IRAP deducted: the IRAP paid in the year (due items settled; the estimate stands in when none
+  is registered) on the staff cost net of art. 11 deductions (art. 2 c. 1 D.L. 201/2011) and the
+  10% lump sum (art. 6 D.L. 185/2008), together at most the IRAP paid (`fiscal/irap_deduction.py`).
+
+What is left out is the payload's `assumptions`. A pack with no entry for the year gives the profit
+without variations. A loss gives a tax of zero and says so. The losses of earlier years reduce the
+profit as art. 84 TUIR lets them (`fiscal/loss_carry.py`, REB-1088): the base is the profit less
+what they take off, and the payload's `losses` says which years they come from, what they took and
+what is left. The TUIR articles are those in force for 2026; the D.Lgs.
+117/2026 renumbers them from 2027 (`fiscal/law_ires.py`).
 
 The withholdings the customers kept on the srl's invoices (`fiscal/withholdings_suffered.py`,
 `company_withholdings_suffered`) are credited against the IRES (art. 79 c. 1 TUIR, which sends them
@@ -55,6 +67,11 @@ case, `IrapTerritoryLaw`), `BZ` or `TN` by province for Trentino-Alto Adige. An 
 no region gives no IRAP figure and the payload says which address is missing; so does a year or a
 region the pack holds no rate for. The region is never guessed.
 
+The purchases flagged as assets leave the costs and their depreciation (item B10 b, estimated with
+the ministerial coefficient) enters them (REB-1089, `fiscal/cost_variations.py`); the limits of the
+TUIR on vehicles, phones and hospitality do not apply to IRAP, which starts from the income
+statement. An asset of a group the table does not carry makes the figure missing.
+
 A negative value of production gives a tax of zero and says so.
 """
 
@@ -66,6 +83,8 @@ from pydantic import BaseModel, ConfigDict
 
 from pigrocrm.core.fiscal.basis_schemas import BasisEmployee, YearBasis
 from pigrocrm.core.fiscal.company_seasonal import seasonal_outcome
+from pigrocrm.core.fiscal.income_variations import IncomeVariations
+from pigrocrm.core.fiscal.ires_adjustment import ires_adjustment
 from pigrocrm.core.fiscal.law import CompanyTaxLaw
 from pigrocrm.core.fiscal.law_irap import (
     IrapActivity,
@@ -155,6 +174,7 @@ def estimate_company_taxes(
     withholdings_source: str = "",
     activity: IrapActivity | None = None,
     losses: LossOffset | None = None,
+    variations: IncomeVariations | None = None,
 ) -> CompanyEstimate | None:
     """The estimate of IRES and IRAP for `basis`'s year, `None` when the law carries no IRAP
     table or the basis has no costs (a year on a basis that deducts none is no srl's).
@@ -166,9 +186,10 @@ def estimate_company_taxes(
     costs = basis.costs
     if costs is None or law.irap is None:
         return None
+    irap = _irap(basis, law, place, province, activity, variations)
     return CompanyEstimate(
-        ires=_ires(basis, law, withholdings, withholdings_source, losses),
-        irap=_irap(basis, law, place, province, activity),
+        ires=_ires(basis, law, withholdings, withholdings_source, losses, variations, irap),
+        irap=irap,
     )
 
 
@@ -178,6 +199,8 @@ def _ires(
     withholdings: Decimal | None,
     withholdings_source: str,
     losses: LossOffset | None,
+    variations: IncomeVariations | None,
+    irap: CompanyTaxEstimate,
 ) -> CompanyTaxEstimate:
     costs = basis.costs
     assert costs is not None
@@ -190,11 +213,22 @@ def _ires(
             code="director", label="Compensi degli amministratori", amount=-costs.director
         ),
     ]
+    adjustment = ires_adjustment(
+        variations,
+        irap_lines=[(step.code, step.amount) for step in irap.lines],
+        irap_base=irap.base,
+        irap_amount=irap.amount,
+        staff_cost=costs.staff + costs.director,
+    )
+    lines += [
+        CompanyTaxLine(code=step.code, label=step.label, amount=step.amount)
+        for step in adjustment.lines
+    ]
+    profit = round_money(profit + sum((step.amount for step in adjustment.lines), ZERO_MONEY))
     assumptions = [
         *(line.reason for line in basis.left_out),
-        "L'utile è ricavi meno acquisti, personale e amministratori, senza le variazioni "
-        "della dichiarazione (costi non deducibili, deduzione dell'IRAP sul costo del lavoro, "
-        "ammortamenti): è una stima, non il calcolo del commercialista.",
+        *adjustment.assumptions,
+        "Le perdite degli anni precedenti non sono riportate: ogni anno è stimato da solo.",
     ]
     loss = profit < 0
     if loss:
@@ -214,7 +248,9 @@ def _ires(
                 rate=law.ires_rate,
                 amount=None,
                 loss=loss,
-                missing=" ".join(losses.missing),
+                missing=" ".join(
+                    [*losses.missing, *([adjustment.missing] if adjustment.missing else [])]
+                ),
                 withholdings=withholdings,
                 assumptions=assumptions,
                 losses=losses,
@@ -230,7 +266,7 @@ def _ires(
             )
     taxable = round_money(profit - used)
     gross = ZERO_MONEY if loss else round_money(taxable * law.ires_rate / _HUNDRED)
-    amount = gross
+    amount: Decimal | None = gross
     credit: Decimal | None = None
     if withholdings is None:
         assumptions.append(
@@ -247,6 +283,8 @@ def _ires(
             "in cui il ricavo è di competenza, non da quello in cui è stato incassato"
             + (f" ({withholdings_source})." if withholdings_source else ".")
         )
+    if adjustment.missing is not None:
+        amount, credit = None, None
     return CompanyTaxEstimate(
         lines=lines,
         base=taxable,
@@ -255,6 +293,7 @@ def _ires(
         loss=loss,
         withholdings=withholdings,
         credit=credit,
+        missing=adjustment.missing,
         assumptions=assumptions,
         losses=losses,
     )
@@ -544,6 +583,7 @@ def _irap(
     place: Place,
     province: str | None,
     activity: IrapActivity | None,
+    variations: IncomeVariations | None = None,
 ) -> CompanyTaxEstimate:
     costs = basis.costs
     irap = law.irap
@@ -558,7 +598,8 @@ def _irap(
     assumptions = [
         *(line.reason for line in basis.left_out),
         "Il valore della produzione è ricavi meno acquisti: manca ciò che il gestionale non "
-        "registra (ammortamenti, variazioni di rimanenze, altri ricavi e proventi).",
+        "registra (ammortamenti dei beni non indicati come ammortizzabili, variazioni di "
+        "rimanenze, altri ricavi e proventi).",
         "Il costo del personale e i compensi degli amministratori restano nella base (art. 5 "
         "D.Lgs. 446/1997), salvo le deduzioni dell'art. 11 indicate qui sotto.",
     ]
@@ -569,6 +610,15 @@ def _irap(
             f"c. 4-bis.2) su {year_days} giorni, l'anno in cui chiude il periodo; nessuna "
             "fonte letta dice come contare i giorni di un anno bisestile."
         )
+    if variations is not None:
+        lines += [
+            CompanyTaxLine(code=step.code, label=step.label, amount=step.amount)
+            for step in variations.costs.irap_lines
+        ]
+        value = round_money(
+            value + sum((s.amount for s in variations.costs.irap_lines), ZERO_MONEY)
+        )
+        assumptions += variations.costs.irap_assumptions
     deducted = value
     for line, text in _staff_deductions(basis, irap, period_days, year_days):
         if line is not None:
@@ -613,6 +663,9 @@ def _irap(
     amount: Decimal | None = None
     if rate is not None:
         amount = ZERO_MONEY if loss else round_money(base * rate / _HUNDRED)
+    if variations is not None and variations.costs.missing is not None:
+        missing = " ".join(part for part in (missing, variations.costs.missing) if part)
+        amount = None
     return CompanyTaxEstimate(
         lines=lines,
         base=base,

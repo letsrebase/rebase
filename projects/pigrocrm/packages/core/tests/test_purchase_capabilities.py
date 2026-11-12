@@ -27,3 +27,12 @@ def test_a_flat_rate_buyer_is_refused_a_withholding_and_nothing_else() -> None:
         True,
         True,
     )
+
+
+def test_only_a_pack_with_income_variations_reads_the_deductibility_facts() -> None:
+    """REB-1089: the deductibility kind and the asset group are read by the company pack's law;
+    a buyer with no pack on record is not judged."""
+    assert purchase_capabilities("it-company").deductibility is True
+    assert purchase_capabilities(None).deductibility is True
+    for pack_id in ("it-flat-rate", "it-standard", "non-it"):
+        assert purchase_capabilities(pack_id).deductibility is False

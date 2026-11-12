@@ -13,7 +13,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.errors import NotFound
-from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE
+from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE, current_pack
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.purchases.schemas import PurchaseCapabilitiesRead
@@ -27,6 +27,7 @@ class PurchaseCapabilities:
     withholding: bool
     reverse_charge: bool
     split_payment: bool
+    deductibility: bool
 
 
 def purchase_capabilities(pack_id: str | None) -> PurchaseCapabilities:
@@ -44,13 +45,27 @@ def purchase_capabilities(pack_id: str | None) -> PurchaseCapabilities:
       note of any pack, and `purchase_cost` prices it for each.
     - `split_payment`: always true. `_check_vat` accepts the flag on an invoice or a credit
       note of any pack.
+    - `deductibility`: true only for a pack whose law carries income variations
+      (`FiscalPack.ires_variations`, REB-1089), which is where the deductibility kind and the
+      asset group of a purchase are read: `_check_deductibility` refuses them for any other pack,
+      and accepts them for a buyer with no pack on record.
     """
     return PurchaseCapabilities(
         vat_recap=True,
         withholding=pack_id != PACK_IT_FLAT_RATE,
         reverse_charge=True,
         split_payment=True,
+        deductibility=_has_income_variations(pack_id),
     )
+
+
+def _has_income_variations(pack_id: str | None) -> bool:
+    if pack_id is None:
+        return True
+    try:
+        return bool(current_pack(pack_id).ires_variations)
+    except KeyError:
+        return True
 
 
 def read_purchase_capabilities(
@@ -78,4 +93,5 @@ def read_purchase_capabilities(
         withholding=capabilities.withholding,
         reverse_charge=capabilities.reverse_charge,
         split_payment=capabilities.split_payment,
+        deductibility=capabilities.deductibility,
     )

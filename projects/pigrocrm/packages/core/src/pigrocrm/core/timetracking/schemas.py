@@ -17,6 +17,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from pigrocrm.core.money import FACTOR_SCALE, HOURS_SCALE
+from pigrocrm.core.purchases.deductibility import DeductibilityKind
 from pigrocrm.core.validation import SafeStr
 
 # Mirror the columns in models.py.
@@ -191,6 +192,7 @@ class TimerRead(BaseModel):
 class CostCategoryCreate(BaseModel):
     name: SafeStr = Field(max_length=CATEGORY_NAME_MAX_LENGTH)
     position: int = Field(default=0, ge=CATEGORY_POSITION_MIN, le=CATEGORY_POSITION_MAX)
+    deductibility_kind: DeductibilityKind | None = None
     # `code` is never caller-supplied: it is the stable identity of a *seeded*
     # category, and letting a user claim one would let them collide with a future seed.
     # Absent from this schema on purpose, exactly as `code` is absent from
@@ -202,6 +204,7 @@ class CostCategoryUpdate(BaseModel):
 
     name: SafeStr | None = Field(default=None, max_length=CATEGORY_NAME_MAX_LENGTH)
     position: int | None = Field(default=None, ge=CATEGORY_POSITION_MIN, le=CATEGORY_POSITION_MAX)
+    deductibility_kind: DeductibilityKind | None = None
 
 
 class CostCategoryRead(BaseModel):
@@ -212,6 +215,9 @@ class CostCategoryRead(BaseModel):
     position: int
     code: str | None
     archived: bool
+    # The sort of cost the law limits that every purchase of the category is, when a person has
+    # said (`purchases/deductibility.py`, REB-1089); a purchase's own kind overrides it.
+    deductibility_kind: DeductibilityKind | None
     created_at: datetime
     updated_at: datetime
 

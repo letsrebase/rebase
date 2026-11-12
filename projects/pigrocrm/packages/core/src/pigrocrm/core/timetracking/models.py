@@ -22,6 +22,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
+from pigrocrm.core.purchases.deductibility import DEDUCTIBILITY_KINDS
 
 
 class CostCategory(Base, PrimaryKeyMixin, TimestampMixin):
@@ -46,6 +47,7 @@ class CostCategory(Base, PrimaryKeyMixin, TimestampMixin):
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     code: Mapped[str | None] = mapped_column(String(30), default=None)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    deductibility_kind: Mapped[str | None] = mapped_column(String(20), default=None)
 
     __table_args__ = (
         Index("uq_cost_categories_code", "code", unique=True),
@@ -53,6 +55,13 @@ class CostCategory(Base, PrimaryKeyMixin, TimestampMixin):
         # plain unique=True on a text column is case-sensitive, and normalising in the
         # service protects only the paths that go through it.
         Index("uq_cost_categories_name", func.lower(name), unique=True),
+        # What the law does to the deduction of every purchase of the category, when a person
+        # has said (`purchases/deductibility.py`): `NULL` states nothing.
+        CheckConstraint(
+            "deductibility_kind IS NULL OR deductibility_kind IN "
+            f"({', '.join(repr(kind) for kind in DEDUCTIBILITY_KINDS)})",
+            name="ck_cost_categories_deductibility_kind",
+        ),
     )
 
 

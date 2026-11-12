@@ -53,6 +53,7 @@ from pigrocrm.core.fiscal.ceiling import (
 )
 from pigrocrm.core.fiscal.company_estimate import estimate_company_taxes
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService, reading_for_year
+from pigrocrm.core.fiscal.income_facts import read_income_variations
 from pigrocrm.core.fiscal.inps_paid import inps_paid_in_year
 from pigrocrm.core.fiscal.law import DeclaredTax, TaxYearLaw
 from pigrocrm.core.fiscal.law_inps import InpsCategoryName, TradeGestione
@@ -956,6 +957,7 @@ class AnalyticsService:
                 ateco_2007=profile.ateco_2007_code, ateco_2025=profile.ateco_2025_code
             ),
             losses=loss_offset_for(self.session, legal_entity, pack, "ires", basis),
+            variations=read_income_variations(self.session, legal_entity, basis, pack),
         )
         if company is None:
             return estimate

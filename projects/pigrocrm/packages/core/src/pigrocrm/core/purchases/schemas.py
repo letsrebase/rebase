@@ -14,6 +14,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from pigrocrm.core.money import MONEY_SCALE
+from pigrocrm.core.purchases.deductibility import AssetGroup, DeductibilityKind
 from pigrocrm.core.validation import SafeStr
 
 DESCRIPTION_MAX_LENGTH = 2000
@@ -106,6 +107,12 @@ class PurchaseCreate(BaseModel):
     fund_amount: Money | None = None
     split_payment: bool = False
     reverse_charge: bool = False
+    # How the law treats the cost (REB-1089): the sort of cost whose deduction the law limits, or
+    # `full`, overriding the category's; absent states nothing and the category's kind, if it has
+    # one, applies. `asset_group` flags a tangible asset to depreciate (an invoice, a receipt or
+    # an expense of a positive amount) with the row of the ministerial table it belongs to.
+    deductibility_kind: DeductibilityKind | None = None
+    asset_group: AssetGroup | None = None
     # The invoice a credit note corrects.
     corrects_purchase_id: UUID | None = None
     inbox_item_id: UUID | None = None
@@ -147,6 +154,8 @@ class PurchaseUpdate(BaseModel):
     fund_amount: Money | None = None
     split_payment: bool | None = None
     reverse_charge: bool | None = None
+    deductibility_kind: DeductibilityKind | None = None
+    asset_group: AssetGroup | None = None
     corrects_purchase_id: UUID | None = None
     inbox_item_id: UUID | None = None
     document_id: UUID | None = None
@@ -188,6 +197,11 @@ class PurchaseRead(BaseModel):
     fund_amount: Decimal | None
     split_payment: bool
     reverse_charge: bool
+    # How the law treats the cost (REB-1089), as stated by a person: the purchase's own kind, else
+    # its category's, decides which limit applies; `None` states nothing and the purchase is
+    # deducted in full. `asset_group` flags a depreciable tangible asset.
+    deductibility_kind: DeductibilityKind | None
+    asset_group: AssetGroup | None
     corrects_purchase_id: UUID | None
     inbox_item_id: UUID | None
     document_id: UUID | None
@@ -244,3 +258,6 @@ class PurchaseCapabilitiesRead(BaseModel):
     withholding: bool
     reverse_charge: bool
     split_payment: bool
+    # The deductibility kind and the asset group of a purchase (REB-1089): drawn only for a buyer
+    # whose pack reads them.
+    deductibility: bool
