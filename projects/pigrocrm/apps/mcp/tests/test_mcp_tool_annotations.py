@@ -148,7 +148,10 @@ DEFAULT_BUDGET_BYTES = 109_900
 # schema, measured at 148,527 with the staff tool descriptions kept whole.
 # REB-1093: 148.60 KB, up from 148.55 KB, for one sentence of `group_f24`'s description (a net of
 # zero or a credit is filed by a person: no tool does it), measured at 148,566.
-FULL_ACCESS_BUDGET_BYTES = 148_600
+# REB-1088: 150.2 KB, up from 148.6 KB, for `set_tax_loss` and `delete_tax_loss` (a full-access
+# administrator's: a tax, a year, an amount, a remainder with its year and the two facts of the
+# first periods), measured at 150,149.
+FULL_ACCESS_BUDGET_BYTES = 150_200
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

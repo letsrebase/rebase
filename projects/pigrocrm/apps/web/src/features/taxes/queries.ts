@@ -241,6 +241,42 @@ export function useSetDeclaredFigure(legalEntityId: string) {
   })
 }
 
+/** `PUT /fiscal/losses`: types the loss a tax year closed with, which the estimate carries to the
+ *  years after it; typing again replaces it. */
+export function useSetTaxLoss(legalEntityId: string) {
+  const refresh = useRefreshTaxes()
+  return useMutation({
+    mutationFn: (body: components['schemas']['TaxLossSet']) =>
+      unwrap(
+        api.PUT('/api/analytics/fiscal/losses', {
+          params: { query: { legal_entity_id: legalEntityId } },
+          body,
+        }),
+      ),
+    onSuccess: () => {
+      refresh()
+      toast.success('Perdita salvata')
+    },
+  })
+}
+
+/** `DELETE /fiscal/losses`: removes the loss typed for a tax and year. */
+export function useDeleteTaxLoss(legalEntityId: string) {
+  const refresh = useRefreshTaxes()
+  return useMutation({
+    mutationFn: (loss: { tax: 'ires' | 'irpef'; year: number }) =>
+      unwrap(
+        api.DELETE('/api/analytics/fiscal/losses', {
+          params: { query: { legal_entity_id: legalEntityId, ...loss } },
+        }),
+      ),
+    onSuccess: () => {
+      refresh()
+      toast.success('Perdita tolta')
+    },
+  })
+}
+
 /** `PUT /fiscal/advance-method`: how the advances of a tax year are computed. */
 export function useSetAdvanceMethod(legalEntityId: string) {
   const refresh = useRefreshTaxes()

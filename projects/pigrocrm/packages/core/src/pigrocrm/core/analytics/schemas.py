@@ -23,6 +23,7 @@ from pigrocrm.core.fiscal.advance_schemas import AdvanceMethod
 from pigrocrm.core.fiscal.basis_schemas import YearBasis
 from pigrocrm.core.fiscal.company_estimate import CompanyEstimate
 from pigrocrm.core.fiscal.law import Cadence, DateKind, TaxName
+from pigrocrm.core.fiscal.loss_schemas import TaxLossRead
 from pigrocrm.core.fiscal.ordinary_estimate import OrdinaryEstimate
 from pigrocrm.core.fiscal.pack import CeilingConsequence
 from pigrocrm.core.fiscal.schemas import DeclaredTaxFigureRead, TaxReadings
@@ -332,6 +333,10 @@ class FiscalEstimate(BaseModel):
     # caller supplied, which is about no real year.
     reading: Literal["estimate", "declared"] = "estimate"
     declared: list[DeclaredTaxFigureRead] = Field(default_factory=list)
+    # REB-1088: the tax losses an administrator typed for the legal entity, every year of origin,
+    # which the estimate carries to the years after them (`fiscal/loss_carry.py`). Empty for a
+    # «what if» with a revenue the caller supplied, as `declared` is.
+    losses: list[TaxLossRead] = Field(default_factory=list)
     # REB-1026: the year's taxes as the pack lists them, each with its estimate, declared and
     # paid readings, the one that counts and the totals of each column (`fiscal/readings.py`).
     # Empty for a «what if» with a revenue the caller supplied, as `declared` is.

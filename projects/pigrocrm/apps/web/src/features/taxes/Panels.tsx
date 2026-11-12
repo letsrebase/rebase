@@ -15,6 +15,7 @@ import { AdvanceMethodDialog } from './AdvanceMethodDialog'
 import { DeclaredFigureDialog } from './DeclaredFigureDialog'
 import { F24Section } from './F24Section'
 import { InstalmentPlanDialog } from './InstalmentPlanDialog'
+import { TaxLossSection } from './TaxLosses'
 import {
   CARRY_LABEL,
   CARRY_TONE,
@@ -304,6 +305,9 @@ export function TaxPanel({
           {figure ? 'Correggi il dichiarato' : 'Digita il dichiarato'}
         </Button>
       </div>
+      {(line.tax === 'ires' && estimate.company) || (line.tax === 'irpef' && estimate.person) ? (
+        <TaxLossSection estimate={estimate} tax={line.tax as 'ires' | 'irpef'} year={year} />
+      ) : null}
       <ComputedFrom line={line} estimate={estimate} />
       <PersonComputedFrom line={line} estimate={estimate} />
       {income ? (

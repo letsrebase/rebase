@@ -372,6 +372,50 @@ class DeclaredTaxFigure(Base, PrimaryKeyMixin, TimestampMixin):
     )
 
 
+class TaxLoss(Base, PrimaryKeyMixin, TimestampMixin):
+    """A tax loss carried to the years after it, typed by an administrator (REB-1088, taxes design
+    § 1). One row per legal entity, tax and year of origin: `amount` is the loss the period closed
+    with and `remaining`, at the end of `remaining_as_of_year`, what the returns since left of it
+    (the loss itself, at the end of its own year, when none was used). The estimate rolls the
+    remainder forward from there.
+
+    `tax` is `ires` (art. 84 TUIR) or `irpef` (a business loss, art. 8 c. 3 TUIR). The first three
+    periods of a new activity are carried against the whole income (art. 84 c. 2): that needs
+    `activity_start_year` (the year of constitution) and `new_activity`, which are the facts the
+    product does not hold anywhere else. Written only by `TaxLossService`.
+    """
+
+    __tablename__ = "tax_losses"
+
+    legal_entity_id: Mapped[UUID] = mapped_column(ForeignKey("legal_entities.id"), nullable=False)
+    tax: Mapped[str] = mapped_column(String(10), nullable=False)
+    origin_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    remaining: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    remaining_as_of_year: Mapped[int] = mapped_column(Integer, nullable=False)
+    new_activity: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    activity_start_year: Mapped[int | None] = mapped_column(Integer, default=None)
+    source: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="typed", server_default=text("'typed'")
+    )
+
+    __table_args__ = (
+        UniqueConstraint("legal_entity_id", "tax", "origin_year", name="uq_tax_losses"),
+        CheckConstraint("tax IN ('ires', 'irpef')", name="ck_tax_losses_tax"),
+        CheckConstraint(
+            "amount > 0 AND remaining >= 0 AND remaining <= amount", name="ck_tax_losses_amounts"
+        ),
+        CheckConstraint("remaining_as_of_year >= origin_year", name="ck_tax_losses_remaining_year"),
+        CheckConstraint(
+            "(activity_start_year IS NULL OR activity_start_year <= origin_year) "
+            "AND (NOT new_activity OR activity_start_year IS NOT NULL)",
+            name="ck_tax_losses_new_activity",
+        ),
+    )
+
+
 # How the advances of a tax year are computed (taxes design § 2): on the previous year's
 # declared tax (or its estimate when none is declared), or on the current year's estimate.
 ADVANCE_METHODS: tuple[str, ...] = ("historical", "forecast")

@@ -256,6 +256,7 @@ ENTITY_NOUN: dict[str, tuple[str, str]] = {
     "declared_tax_figure": ("cifra dichiarata", "a"),
     "f24_group": ("F24", "o"),
     "f24_group_receipt": ("ricevuta dell'F24", "a"),
+    "tax_loss": ("perdita fiscale", "a"),
     "tax_advance_method": ("metodo degli acconti", "o"),
     "tax_instalment_plan": ("piano di rate delle imposte", "o"),
     "tax_notice_plan": ("piano di rate di un avviso", "o"),

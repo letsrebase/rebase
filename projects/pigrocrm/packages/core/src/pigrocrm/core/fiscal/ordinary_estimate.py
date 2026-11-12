@@ -71,6 +71,7 @@ from pigrocrm.core.fiscal.law_inps import (
     TradeGestione,
 )
 from pigrocrm.core.fiscal.law_irpef import IrpefLaw, region_key
+from pigrocrm.core.fiscal.loss_schemas import LossOffset
 from pigrocrm.core.fiscal.pack import FiscalPack
 from pigrocrm.core.money import ZERO_MONEY, round_money
 from pigrocrm.core.places.locate import Place
@@ -111,6 +112,9 @@ class OrdinaryIncome(BaseModel):
     professional_income: Decimal | None
     taxable_income: Decimal | None
     loss: bool = False
+    # What the business losses of earlier years took off the income (REB-1088), `None` when none
+    # was carried.
+    losses: LossOffset | None = None
     assumptions: list[str]
     sources: list[str]
 
@@ -188,6 +192,7 @@ def estimate_ordinary_taxes(
     withholdings: Decimal | None,
     household: Household | None = None,
     inps_paid: Decimal | None = None,
+    losses: LossOffset | None = None,
 ) -> OrdinaryEstimate | None:
     """The estimate of INPS and IRPEF for `basis`'s year, `None` when the regime owes no IRPEF
     or the basis has no costs (a year on a basis that deducts none is no ordinary person's). When
@@ -197,7 +202,11 @@ def estimate_ordinary_taxes(
     for the year a withholding is credited against. `household` is what the profile states about
     the taxpayer's family; `None`, or a statement of another year, applies no family detraction.
     `inps_paid` is the INPS contributions paid in the year (`inps_paid_in_year`), `None` when no
-    payment is recorded: the computed contributions are then deducted instead."""
+    payment is recorded: the computed contributions are then deducted instead. `losses` is what
+    the business losses of earlier years take off the income (`fiscal/loss_carry.py`), `None` when
+    there is none to carry; the INPS stays on the year's income before them, while the IRPEF base
+    and the detractions' reference income are the income after them (art. 8 c. 1 and 3 TUIR: the
+    total income is the incomes less the losses, and art. 13 reads the total income)."""
     costs = basis.costs
     if costs is None or "irpef" not in law.taxes:
         return None
@@ -206,6 +215,11 @@ def estimate_ordinary_taxes(
     professional = round_money(basis.revenue - costs.total)
     loss = professional < 0
     income_for_inps = max(professional, _ZERO)
+    # The business losses of earlier years take off the IRPEF base, never off the INPS one
+    # (REB-1088); when what they used cannot be known the IRPEF has no figure.
+    loss_unknown = losses is not None and bool(losses.missing)
+    loss_used = losses.used if losses is not None and not loss_unknown else _ZERO
+    income_for_irpef = round_money(income_for_inps - loss_used)
 
     inps, inps_missing_parameters = _inps(pack, basis.year, income_for_inps, inps_facts)
     deduction = irpef_law.social_security_deduction if irpef_law is not None else None
@@ -215,8 +229,8 @@ def estimate_ordinary_taxes(
     # stand in, and a payment makes the computed figure unneeded for the deduction.
     to_deduct = inps_paid if inps_paid is not None else inps.amount
     if to_deduct is not None and deduction is not None:
-        deducted = max(min(to_deduct, income_for_inps), _ZERO)
-        taxable = round_money(income_for_inps - deducted)
+        deducted = max(min(to_deduct, income_for_irpef), _ZERO)
+        taxable = None if loss_unknown else round_money(income_for_irpef - deducted)
 
     income_assumptions = [
         "Il reddito è quello di chi esercita un'arte o una professione: quanto incassato meno "
@@ -240,6 +254,14 @@ def estimate_ordinary_taxes(
         OrdinaryLine(code="revenue", label="Incassato nell'anno", amount=basis.revenue),
         OrdinaryLine(code="costs", label="Spese pagate nell'anno", amount=-costs.total),
     ]
+    if loss_used > 0:
+        income_lines.append(
+            OrdinaryLine(
+                code="loss_carried",
+                label="Perdite d'impresa degli anni precedenti (art. 8 c. 3 TUIR)",
+                amount=-loss_used,
+            )
+        )
     income_lines.append(
         OrdinaryLine(
             code="inps_deducted",
@@ -256,8 +278,11 @@ def estimate_ordinary_taxes(
         professional_income=professional,
         taxable_income=taxable,
         loss=loss,
-        assumptions=income_assumptions,
-        sources=[basis.source] + ([deduction.source] if deduction is not None else []),
+        losses=losses,
+        assumptions=income_assumptions + (losses.assumptions if losses is not None else []),
+        sources=[basis.source]
+        + ([deduction.source] if deduction is not None else [])
+        + (losses.sources if losses is not None else []),
     )
     irpef = (
         _irpef(
@@ -269,12 +294,14 @@ def estimate_ordinary_taxes(
             province,
             withholdings,
             inps,
-            income_for_inps,
+            income_for_irpef,
             household,
         )
         if irpef_law is not None
         else _no_irpef(basis.year)
     )
+    if losses is not None and loss_unknown:
+        irpef = _no_irpef_for(losses.missing)
     due_total = (
         round_money(irpef.with_surcharges + inps.amount)
         if irpef.with_surcharges is not None and inps.amount is not None
@@ -489,6 +516,20 @@ def _no_irpef(year: int) -> OrdinaryTax:
             f"Il pacchetto fiscale non ha ancora le cifre dell'IRPEF del {year}: la legge le "
             "fissa ogni anno e non si usano quelle dell'anno prima."
         ],
+        assumptions=[],
+        sources=[],
+    )
+
+
+def _no_irpef_for(missing: list[str]) -> OrdinaryTax:
+    """The IRPEF of a year whose carried losses cannot be known: no amount, and what is missing."""
+    return OrdinaryTax(
+        lines=[],
+        base=None,
+        rate=None,
+        parts=[],
+        amount=None,
+        missing=list(missing),
         assumptions=[],
         sources=[],
     )

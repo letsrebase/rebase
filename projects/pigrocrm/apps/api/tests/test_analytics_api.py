@@ -1280,3 +1280,79 @@ def test_the_plans_need_an_admin(logged_in: TestClient, fiscal_profile: dict[str
     assert collaborator.get("/api/analytics/fiscal/plans").status_code == 403
     unordered = {**notice, "instalments": [{"due_date": "2031-02-10"}, {"due_date": "2031-01-10"}]}
     assert logged_in.post("/api/analytics/fiscal/notice-plans", json=unordered).status_code == 422
+
+
+def test_an_admin_types_a_business_loss_and_the_fiscal_route_carries_it_into_the_irpef(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    """REB-1088, over HTTP: the same person as above collects 65,789.47 in 2026; a 2025 business
+    loss of 20,000 reduces the IRPEF base (not the INPS one) to 30,000, the route lists the loss,
+    a flat-rate-only tax is refused and the loss can be removed."""
+    default = logged_in.get("/api/legal-entities").json()[0]["id"]
+    logged_in.put(
+        legal_entity_url(logged_in),
+        json={"legal_name": "Studio Rossi", "city": "Albinea", "province": "RE", "country": "IT"},
+    )
+    profile = logged_in.put(
+        legal_entity_url(logged_in, "/fiscal-profile"),
+        json={
+            "pack_id": "it-standard",
+            "regime_code": "RF01",
+            "inps_category": "gestione_separata",
+            "inps_covered_elsewhere": True,
+        },
+    )
+    assert profile.status_code == 200, profile.text
+    customer = Organization(legal_name="Cliente Albinea", country="IT")
+    customer.legal_entity_id = default  # type: ignore[assignment]
+    api_session.add(customer)
+    api_session.flush()
+    api_session.add(
+        Invoice(
+            customer_id=customer.id,
+            legal_entity_id=default,
+            type="invoice",
+            status="issued",
+            year=2026,
+            number=1,
+            payment_status="paid",
+            issue_date=date(2026, 2, 1),
+            payment_date=date(2026, 2, 10),
+            taxable_amount=Decimal("65789.47"),
+            vat_amount=Decimal("0.00"),
+            stamp_duty=Decimal("0.00"),
+            total=Decimal("65789.47"),
+            custom_fields={},
+        )
+    )
+    api_session.flush()
+
+    refused = logged_in.put(
+        "/api/analytics/fiscal/losses", json={"tax": "ires", "year": 2025, "amount": "10.00"}
+    )
+    assert refused.status_code == 422, refused.text
+    put = logged_in.put(
+        "/api/analytics/fiscal/losses", json={"tax": "irpef", "year": 2025, "amount": "20000.00"}
+    )
+    assert put.status_code == 200, put.text
+    assert (put.json()["amount"], put.json()["remaining"], put.json()["remaining_as_of_year"]) == (
+        "20000.00",
+        "20000.00",
+        2025,
+    )
+
+    body = logged_in.get("/api/analytics/fiscal", params={"year": 2026}).json()
+    assert [(loss["tax"], loss["year"]) for loss in body["losses"]] == [("irpef", 2025)]
+    assert body["person"]["income"]["taxable_income"] == "30000.00"
+    offset = body["person"]["income"]["losses"]
+    assert (offset["used"], offset["remaining"], offset["estimated"]) == (
+        "20000.00",
+        "0.00",
+        False,
+    )
+    assert body["person"]["inps"]["amount"] == "15789.47"
+
+    assert logged_in.delete("/api/analytics/fiscal/losses?tax=irpef&year=2025").status_code == 204
+    assert logged_in.delete("/api/analytics/fiscal/losses?tax=irpef&year=2025").status_code == 404
+    again = logged_in.get("/api/analytics/fiscal", params={"year": 2026}).json()
+    assert again["losses"] == [] and again["person"]["income"]["taxable_income"] == "50000.00"

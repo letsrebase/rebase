@@ -12,6 +12,7 @@ from pigrocrm.core.fiscal.models import (
     FiscalProfile,
     TaxAdvanceMethod,
     TaxInstalmentPlan,
+    TaxLoss,
     TaxNoticePlan,
 )
 
@@ -246,3 +247,71 @@ class TaxNoticePlanRepository:
     def delete(self, row: TaxNoticePlan) -> None:
         self.session.delete(row)
         self.session.flush()
+
+
+class TaxLossRepository:
+    """The carried losses of `tax_losses`. Never commits."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def for_entity(self, legal_entity_id: UUID, tax: str | None = None) -> list[TaxLoss]:
+        """Every loss typed for the legal entity (of one tax when `tax` is given), the oldest
+        year of origin first."""
+        query = select(TaxLoss).where(TaxLoss.legal_entity_id == legal_entity_id)
+        if tax is not None:
+            query = query.where(TaxLoss.tax == tax)
+        return list(
+            self.session.execute(query.order_by(TaxLoss.tax, TaxLoss.origin_year)).scalars()
+        )
+
+    def save(
+        self,
+        legal_entity_id: UUID,
+        tax: str,
+        origin_year: int,
+        *,
+        amount: Decimal,
+        remaining: Decimal,
+        remaining_as_of_year: int,
+        new_activity: bool,
+        activity_start_year: int | None,
+        source: str,
+    ) -> TaxLoss:
+        """One row per legal entity, tax and year of origin, replaced whole by the next typing. An
+        upsert, so two administrators typing the same loss at once both land and the second one
+        stands."""
+        values = {
+            "amount": amount,
+            "remaining": remaining,
+            "remaining_as_of_year": remaining_as_of_year,
+            "new_activity": new_activity,
+            "activity_start_year": activity_start_year,
+            "source": source,
+        }
+        row_id = self.session.execute(
+            pg_insert(TaxLoss)
+            .values(legal_entity_id=legal_entity_id, tax=tax, origin_year=origin_year, **values)
+            .on_conflict_do_update(
+                constraint="uq_tax_losses", set_={**values, "updated_at": func.now()}
+            )
+            .returning(TaxLoss.id)
+        ).scalar_one()
+        row = self.session.get(TaxLoss, row_id)
+        assert row is not None
+        self.session.refresh(row)
+        return row
+
+    def delete(self, legal_entity_id: UUID, tax: str, origin_year: int) -> TaxLoss | None:
+        """Removes the loss and answers it, `None` when there was none."""
+        row = self.session.execute(
+            select(TaxLoss).where(
+                TaxLoss.legal_entity_id == legal_entity_id,
+                TaxLoss.tax == tax,
+                TaxLoss.origin_year == origin_year,
+            )
+        ).scalar_one_or_none()
+        if row is not None:
+            self.session.delete(row)
+            self.session.flush()
+        return row

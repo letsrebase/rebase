@@ -218,6 +218,19 @@ ROWS: list[Row] = [
         admin_only=True,
         body={"tax": "irpef", "year": 2025, "balance": "100.00"},
     ),
+    # --- tax losses carried to later years (REB-1088): admin, before any lookup ------------
+    Row(
+        "PUT",
+        "/api/analytics/fiscal/losses",
+        admin_only=True,
+        body={"tax": "ires", "year": 2025, "amount": "100.00"},
+    ),
+    Row(
+        "DELETE",
+        "/api/analytics/fiscal/losses",
+        admin_only=True,
+        params={"tax": "ires", "year": 2025},
+    ),
     # --- tax advance method (REB-1074): admin, before any lookup ---------------------------
     Row(
         "PUT",

@@ -12,6 +12,7 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { LoadingState } from '@/components/LoadingState'
 import { TAX_LABELS, type DeclaredFigure, type Tax } from './labels'
+import { parseAmount } from './amounts'
 import { failureText, useSetDeclaredFigure } from './queries'
 
 type Field = 'tax_due' | 'balance' | 'advances'
@@ -21,16 +22,6 @@ const FIELDS: { name: Field; label: string; hint: string; signed: boolean }[] = 
   { name: 'balance', label: 'Saldo', hint: 'Un credito si scrive con il segno meno.', signed: true },
   { name: 'advances', label: 'Acconti', hint: 'Mai negativi.', signed: false },
 ]
-
-/** «1.234,56» and «1234.56» both read as 1234.56; anything else is not a figure. */
-function parseAmount(text: string, signed: boolean): { value: string | null } | { error: string } {
-  const trimmed = text.trim()
-  if (trimmed === '') return { value: null }
-  const plain = trimmed.includes(',') ? trimmed.replace(/\./g, '').replace(',', '.') : trimmed
-  if (!/^-?\d+(\.\d{1,2})?$/.test(plain)) return { error: 'Scrivi un importo in euro, con al massimo due decimali.' }
-  if (!signed && plain.startsWith('-')) return { error: 'Questa cifra non può essere negativa.' }
-  return { value: plain }
-}
 
 /**
  * «Digita il dichiarato»: the figures of the tax return as the accountant computed them, for one

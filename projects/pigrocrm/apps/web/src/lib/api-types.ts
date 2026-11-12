@@ -2439,6 +2439,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/fiscal/losses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Tax Loss
+         * @description The tax loss a year closed with, for IRES (an srl, art. 84 TUIR) or IRPEF (a business loss,
+         *     art. 8 c. 3 TUIR), which the estimate carries to the years after it; typing the same tax and
+         *     year again replaces it. `remaining` with `remaining_as_of_year` is what the returns since left
+         *     of it. `new_activity` with `activity_start_year` are the facts of art. 84 c. 2 for the first
+         *     three periods. `admin`, enforced by the service. `/fiscal` lists them in `losses` and shows
+         *     what each did in the year's `losses`.
+         */
+        put: operations["set_tax_loss_api_analytics_fiscal_losses_put"];
+        post?: never;
+        /**
+         * Delete Tax Loss
+         * @description Removes the loss of `year` for `tax`; 404 when none is typed. `admin`, enforced by the
+         *     service.
+         */
+        delete: operations["delete_tax_loss_api_analytics_fiscal_losses_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics/fiscal/advance-method": {
         parameters: {
             query?: never;
@@ -9193,6 +9223,7 @@ export interface components {
             missing?: string | null;
             /** Assumptions */
             assumptions: string[];
+            losses?: components["schemas"]["LossOffset"] | null;
         };
         /**
          * CompanyTaxLine
@@ -12996,6 +13027,8 @@ export interface components {
             reading: "estimate" | "declared";
             /** Declared */
             declared?: components["schemas"]["DeclaredTaxFigureRead"][];
+            /** Losses */
+            losses?: components["schemas"]["TaxLossRead"][];
             readings?: components["schemas"]["TaxReadings"] | null;
             basis?: components["schemas"]["YearBasis"] | null;
             /** Missing Parameters */
@@ -15555,6 +15588,59 @@ export interface components {
             /** Password */
             password: string;
         };
+        /**
+         * LossOffset
+         * @description What the losses of earlier years did to one tax's income for one year. `income` is the
+         *     year's income before them and `used` what they took off it, `remaining` what all of them still
+         *     carry afterwards. `estimated` is true when any of them is an earlier year's estimate rather
+         *     than a typed loss. When a figure the offset needs is not known `missing` says which, and the
+         *     tax has no figure: the loss is never taken as used up or as untouched on a guess.
+         */
+        LossOffset: {
+            /**
+             * Tax
+             * @enum {string}
+             */
+            tax: "ires" | "irpef";
+            /** Year */
+            year: number;
+            /** Income */
+            income: string;
+            /** Used */
+            used: string;
+            /** Remaining */
+            remaining: string;
+            /** Estimated */
+            estimated: boolean;
+            /** Origins */
+            origins: components["schemas"]["LossUse"][];
+            /** Missing */
+            missing: string[];
+            /** Assumptions */
+            assumptions: string[];
+            /** Sources */
+            sources: string[];
+        };
+        /**
+         * LossUse
+         * @description What one year's loss did in the estimated year: `available` was left to carry at its start,
+         *     `used` reduced the income (within `limit_percent` of it) and `remaining` goes on to the next
+         *     year. `estimated` is true when the loss is an earlier year's own estimate, not a typed one.
+         */
+        LossUse: {
+            /** Origin Year */
+            origin_year: number;
+            /** Estimated */
+            estimated: boolean;
+            /** Limit Percent */
+            limit_percent: string;
+            /** Available */
+            available: string;
+            /** Used */
+            used: string;
+            /** Remaining */
+            remaining: string;
+        };
         /** MailboxRead */
         MailboxRead: {
             /**
@@ -16344,6 +16430,7 @@ export interface components {
              * @default false
              */
             loss: boolean;
+            losses?: components["schemas"]["LossOffset"] | null;
             /** Assumptions */
             assumptions: string[];
             /** Sources */
@@ -20804,6 +20891,76 @@ export interface components {
             kept: number;
             /** Not Written */
             not_written?: components["schemas"]["TaxItemNotWritten"][];
+        };
+        /**
+         * TaxLossRead
+         * @description A typed loss as stored. `remaining` is what was left at the end of `remaining_as_of_year`
+         *     (the loss itself and its own year when nothing was used).
+         */
+        TaxLossRead: {
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /**
+             * Tax
+             * @enum {string}
+             */
+            tax: "ires" | "irpef";
+            /** Year */
+            year: number;
+            /** Amount */
+            amount: string;
+            /** Remaining */
+            remaining: string;
+            /** Remaining As Of Year */
+            remaining_as_of_year: number;
+            /** New Activity */
+            new_activity: boolean;
+            /** Activity Start Year */
+            activity_start_year: number | null;
+            /** Source */
+            source: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * TaxLossSet
+         * @description What an administrator types: the loss a tax period closed with, as the return states it.
+         *
+         *     `amount` is the loss of `year` (positive). `remaining`, with `remaining_as_of_year`, is the
+         *     part still to carry at the end of that later year, when the returns since have used some;
+         *     leave both out for a loss not used yet, and the estimate rolls it forward year by year.
+         *     `new_activity` and `activity_start_year` are the two facts art. 84 c. 2 TUIR needs for the
+         *     100% limit of the first three periods: the year the company (or the activity) started and
+         *     that the loss relates to a new productive activity. Typing the same tax and year again
+         *     replaces the row whole.
+         */
+        TaxLossSet: {
+            /**
+             * Tax
+             * @enum {string}
+             */
+            tax: "ires" | "irpef";
+            /** Year */
+            year: number;
+            /** Amount */
+            amount: number | string;
+            /** Remaining */
+            remaining?: number | string | null;
+            /** Remaining As Of Year */
+            remaining_as_of_year?: number | null;
+            /**
+             * New Activity
+             * @default false
+             */
+            new_activity: boolean;
+            /** Activity Start Year */
+            activity_start_year?: number | null;
         };
         /** TaxNoticePlanRead */
         TaxNoticePlanRead: {
@@ -41556,6 +41713,250 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DeclaredTaxFigureRead"];
                 };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_tax_loss_api_analytics_fiscal_losses_put: {
+        parameters: {
+            query?: {
+                /** @description The legal entity to compute for: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one and can be omitted. */
+                legal_entity_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaxLossSet"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaxLossRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_tax_loss_api_analytics_fiscal_losses_delete: {
+        parameters: {
+            query: {
+                tax: "ires" | "irpef";
+                year: number;
+                /** @description The legal entity to compute for: required when the space has more than one (a 422 response names `legal_entity_id`), otherwise it is the only one and can be omitted. */
+                legal_entity_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Permission denied: the actor does not have the required role. */
             403: {
