@@ -412,17 +412,22 @@ def test_the_part_above_the_minimum_is_not_paid_in_instalments_with_the_minimum(
 
 @pytest.mark.parametrize("pack", [IT_STANDARD_PACK, IT_FLAT_RATE_PACK], ids=lambda pack: pack.id)
 def test_the_dates_on_income_are_the_packs_income_tax_dates(pack: FiscalPack) -> None:
-    """INPS's 30 June and 30 November are the days the pack's own calendar gives the income
-    tax (or the flat-rate substitute tax)."""
-    calendar = tax_calendar(pack, 2026)
+    """INPS's 30 June and 30 November are the days the pack's calendar gives the income tax (or
+    the flat-rate substitute tax), except for the 2026 deferral of art. 1-sexies D.L. 63/2026
+    (REB-1100): the pack's income tax is due on 20 July for those it covers, while INPS's own
+    circolare n. 62 of 27 May 2026 keeps 30 June for the contributions, so the INPS dates are
+    compared with the ordinary dates of the pack's 2027 calendar, month and day."""
+    calendar = tax_calendar(pack, 2027)
     assert calendar is not None
     own = {
-        entry.kind: entry.nominal_date
+        entry.kind: (entry.nominal_date.month, entry.nominal_date.day)
         for entry in calendar
         if entry.tax in {"income_tax", "substitute_tax"}
         and entry.kind in {"balance_and_first_advance", "second_advance"}
     }
-    law_dates = {due.kind: due.due for due in INPS_2026.artisans_traders.terms.payments}
+    law_dates = {
+        due.kind: (due.due.month, due.due.day) for due in INPS_2026.artisans_traders.terms.payments
+    }
     assert law_dates == own
 
 

@@ -279,6 +279,12 @@ F24Line = Literal[
     "irap_first_advance",
     "irap_second_advance",
     "chamber_fee",
+    "iva_monthly",
+    "iva_quarterly",
+    "iva_annual",
+    "iva_advance_monthly",
+    "withholding_employees",
+    "withholding_self_employed",
     "instalment_interest_erario",
     "instalment_interest_regional",
     "instalment_interest_municipal",
@@ -295,6 +301,7 @@ F24Line = Literal[
     "inps_commercianti_excess",
     "inps_artigiani_excess_instalment",
     "inps_commercianti_excess_instalment",
+    "inps_payroll",
 ]
 
 # A tax code goes in the «Erario» or «Regioni» section's `codice tributo` column, an INPS
@@ -310,13 +317,22 @@ class F24Code:
     Redditi PF 2026 fascicolo 1, rigo RN38 col. 6: advances paid «codici tributo 4033 e 4034,
     anno di riferimento 2025» for tax year 2025). An instalment is written in the
     `rateazione` column as the instalment number and the number of instalments, two digits
-    each («NNRR», Agenzia, «Come compilare il modello F24»)."""
+    each («NNRR», Agenzia, «Come compilare il modello F24»).
+
+    A line the Agenzia gives one code per period (the periodic IVA: 6001 to 6012 for the months,
+    6031 to 6033 for the first three quarters) is one entry per period, `period` the month or the
+    quarter, `None` for a line with a single code. The `rateazione/regione/prov./mese rif.`
+    column of a withholding line holds the month the withholding was operated in, two digits
+    («indicare il numero del Mese formato da 2 caratteri numerici, nell'esempio '03' - Marzo»,
+    Agenzia, codes 1001 and 1040); it is a fact of the line and not of the code, so it is the
+    line's own slot (`fiscal/f24_codes.py`)."""
 
     line: F24Line
     code: str
     kind: F24CodeKind
     description: str
     source: str
+    period: int | None = None
 
 
 # --- return filing ----------------------------------------------------------------------
@@ -439,12 +455,14 @@ class PaymentRulesLaw:
     filings: tuple[ReturnFilingRule, ...]
     withholding_credit: WithholdingCreditLaw | None = None
 
-    def f24_code(self, line: F24Line) -> F24Code:
-        """The code of `line`; `KeyError` when the pack's regime owes no such line."""
+    def f24_code(self, line: F24Line, period: int | None = None) -> F24Code:
+        """The code of `line` for `period` (the month or quarter of a line with a code per
+        period, `None` otherwise); `KeyError` when the pack's regime owes no such line, or the
+        Agenzia gives none for that period."""
         for code in self.f24_codes:
-            if code.line == line:
+            if code.line == line and code.period == period:
                 return code
-        raise KeyError(line)
+        raise KeyError((line, period))
 
     def filing_rule(self, form: ReturnForm) -> ReturnFilingRule | None:
         for rule in self.filings:
@@ -453,9 +471,9 @@ class PaymentRulesLaw:
         return None
 
     def __post_init__(self) -> None:
-        lines = [code.line for code in self.f24_codes]
+        lines = [(code.line, code.period) for code in self.f24_codes]
         if len(lines) != len(set(lines)):
-            raise ValueError("an F24 line has one code")
+            raise ValueError("an F24 line has one code per period")
         forms = [rule.form for rule in self.filings]
         if len(forms) != len(set(forms)):
             raise ValueError("a return form has one filing rule")

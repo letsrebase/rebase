@@ -122,8 +122,11 @@ ISTAT_PROVINCES = set(
         "VE",
         "VI",
         "VR",
+        "VS",
         "VT",
         "VV",
+        "OG",
+        "OT",
     ]
 )
 SICILY = {"AG", "CL", "ME", "PA", "EN", "CT", "RG", "SR", "TP"}
@@ -135,13 +138,28 @@ def test_the_company_pack_carries_the_law() -> None:
     assert IT_COMPANY_PACK.chamber_fee_for(2026) is LAW
 
 
-def test_every_province_has_one_chamber_but_bt_and_su() -> None:
+def test_every_province_has_one_chamber_but_og_and_ot() -> None:
     covered = [p for chamber in CHAMBERS for p in chamber.provinces]
     assert len(covered) == len(set(covered))
     assert set(covered) | set(LAW.unmapped_provinces) == ISTAT_PROVINCES
-    assert LAW.unmapped_provinces == ("BT", "SU")
-    assert LAW.chamber_for("BT") is None
-    assert LAW.chamber_for("SU") is None
+    assert LAW.unmapped_provinces == ("OG", "OT")
+    assert LAW.chamber_for("OG") is None
+    assert LAW.chamber_for("OT") is None
+
+
+def test_the_provinces_of_barletta_and_the_south_of_sardinia_belong_to_the_chambers_read() -> None:
+    """REB-1100: the national portal's chamber table (read 2026-11-12) puts BT in Bari's and
+    Sud Sardegna in Cagliari-Oristano's; D.P.R. 183/2026 renames SU and adds VS, which is
+    Medio Campidano, one of the four territories Cagliari-Oristano names."""
+    for province, name in [
+        ("BT", "Bari"),
+        ("BA", "Bari"),
+        ("SU", "Cagliari-Oristano"),
+        ("VS", "Cagliari-Oristano"),
+    ]:
+        chamber = LAW.chamber_for(province)
+        assert chamber is not None and chamber.name == name, province
+        assert chamber.increase_percent == Decimal(20), province
 
 
 # The 61 names of annex A, as the decree writes them (read as the published image), and the
@@ -234,7 +252,7 @@ def test_sixty_one_chambers_raise_by_20_percent_and_napoli_does_not() -> None:
 
 
 def test_the_sicilian_chambers_add_50_points() -> None:
-    for province in ISTAT_PROVINCES - {"BT", "SU"}:
+    for province in ISTAT_PROVINCES - {"OG", "OT"}:
         expected = Decimal(70) if province in SICILY else Decimal(0 if province == "NA" else 20)
         assert LAW.increase_percent(province) == expected, province
 
@@ -243,6 +261,9 @@ def test_the_sicilian_chambers_add_50_points() -> None:
     ("turnover", "province", "fee"),
     [
         ("0", "MI", "120"),  # 200 cut to 100, plus 20%
+        ("100000", "BT", "120"),  # Bari's 20% (REB-1100)
+        ("100000", "SU", "120"),  # Cagliari-Oristano's 20% (REB-1100)
+        ("100000", "VS", "120"),
         ("100000", "FI", "120"),  # Firenze's printed 120.00
         ("100000", "TA", "120"),  # Brindisi-Taranto's printed 120
         ("100000", "NA", "100"),  # no increase
@@ -264,8 +285,8 @@ def test_fee(turnover: str, province: str, fee: str) -> None:
 def test_the_lookup_never_guesses() -> None:
     assert LAW.fee(2025, Decimal(1000), "MI") is None
     assert LAW.fee(2027, Decimal(1000), "MI") is None
-    assert LAW.fee(2026, Decimal(1000), "BT") is None
-    assert LAW.fee(2026, Decimal(1000), "SU") is None
+    assert LAW.fee(2026, Decimal(1000), "OG") is None
+    assert LAW.fee(2026, Decimal(1000), "OT") is None
     assert LAW.fee(2026, Decimal(1000), "ZZ") is None
     with pytest.raises(ValueError):
         LAW.fee(2026, Decimal(-1), "MI")
@@ -281,3 +302,27 @@ def test_five_decimals_are_kept_in_the_tier_sum_and_after_the_cut_and_the_increa
     assert LAW.national_amount(Decimal("100001.4")) == Decimal("200.00021")  # 0.00021 exactly
     # 0.00023 cut by half is 0.000115, kept as 0.00012; times 1.20 is 0.000144, kept as 0.00014.
     assert LAW.fee(2026, Decimal("100001.5"), "MI") == Decimal(120)
+
+
+@pytest.mark.parametrize(
+    ("province", "fee"),
+    [
+        ("MI", "120"),  # Molise's printed 120 for a new company, with the 20% increase
+        ("BT", "120"),
+        ("NA", "100"),  # no increase
+        ("CT", "170"),  # the Sicilian 50% points added
+    ],
+)
+def test_a_company_registered_in_the_year_pays_the_first_tier_amount(
+    province: str, fee: str
+) -> None:
+    """REB-1100: D.I. 21 April 2011 art. 4 c. 2 gives the amount of the first tier, cut and
+    increased as every fee, with no turnover and no pro-rating."""
+    assert LAW.first_year_fee(2026, province) == Decimal(fee)
+    assert LAW.first_year_fee(2026, province) == LAW.fee(2026, Decimal(0), province)
+    assert LAW.first_year_days == 30
+
+
+def test_the_first_year_fee_never_guesses() -> None:
+    assert LAW.first_year_fee(2027, "MI") is None
+    assert LAW.first_year_fee(2026, "OG") is None

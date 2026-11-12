@@ -297,15 +297,16 @@ def test_each_line_carries_the_pack_code_and_a_line_without_one_says_to_verify(
     first = _tax(db_session, entity, "substitute_tax", 2026, "first_advance", "40.00")
     second = _tax(db_session, entity, "substitute_tax", 2026, "second_advance", "40.00")
     iva = _item(db_session, entity, "50.00", kind="iva_settlement", tax="iva")
-    payroll = _item(db_session, entity, "30.00", kind="payroll", tax="payroll_inps")
+    inail = _item(db_session, entity, "30.00", kind="payroll", tax="payroll_inail")
 
-    lines = _by_item(_group(db_session, [balance, first, second, iva, payroll]))
+    lines = _by_item(_group(db_session, [balance, first, second, iva, inail]))
 
     assert [lines[i].code for i in (balance, first, second)] == ["1792", "1790", "1791"]  # type: ignore[attr-defined]
     assert {lines[i].code_kind for i in (balance, first, second)} == {"tax_code"}  # type: ignore[attr-defined]
     assert "forfetario" in lines[balance].code_label  # type: ignore[attr-defined]
-    # The pack carries no IVA period code (60xx) and no payroll code: none is invented.
-    for item in (iva, payroll):
+    # An IVA item that names no settlement, and INAIL's premium (no source read gives its F24
+    # fields), have no code: none is invented.
+    for item in (iva, inail):
         line = lines[item]
         assert (line.code, line.line, line.code_kind) == (None, None, None)  # type: ignore[attr-defined]
         assert (line.code_label, line.code_to_verify) == (CODE_TO_VERIFY, True)  # type: ignore[attr-defined]
@@ -880,3 +881,125 @@ def test_what_is_left_of_a_credit_is_paid_with_the_next_f24_by_a_movement(
     assert (settled.state, settled.settled_by, settled.credit_left) == ("settled", "movement", 0)
     assert _payments(db_session, [credit]) == {credit: D("-150.00")}
     assert db_session.get(DueItem, credit).state == "settled"  # type: ignore[union-attr]
+
+
+def _settlement(session: Session, entity: UUID, frequency: str, year: int, number: int) -> UUID:
+    from pigrocrm.core.fiscal.models import IvaSettlement
+
+    row = IvaSettlement(
+        legal_entity_id=entity,
+        frequency=frequency,
+        year=year,
+        period_number=number,
+        period_start=dt.date(year, 1, 1),
+        period_end=dt.date(year, 1, 31),
+        pack_id="it-standard",
+        pack_version="1",
+        sales_vat=D("100.00"),
+        reverse_charge_vat=D("0.00"),
+        purchase_vat=D("0.00"),
+        credit_in=D("0.00"),
+        debit_in=D("0.00"),
+        surcharge=D("0.00"),
+        result=D("100.00"),
+        outcome="due",
+        payment_due_on=DUE,
+    )
+    session.add(row)
+    session.flush()
+    return row.id
+
+
+def test_an_iva_payment_is_written_on_the_agenzias_code_of_its_period(
+    db_session: Session,
+) -> None:
+    """REB-1100: a month has its code (6001 to 6012), a quarter its own (6031 to 6033) and the
+    fourth quarter of a quarterly payer goes with the annual settlement (6099); the reference
+    year is the year of the period."""
+    entity = _entity(db_session)
+    cases = {
+        ("monthly", 2025, 12): ("6012", "iva_monthly"),
+        ("monthly", 2026, 3): ("6003", "iva_monthly"),
+        ("quarterly", 2026, 2): ("6032", "iva_quarterly"),
+        ("quarterly", 2025, 4): ("6099", "iva_annual"),
+    }
+    ids = {
+        key: _item(
+            db_session,
+            entity,
+            "10.00",
+            kind="iva_settlement",
+            tax="iva",
+            source_id=_settlement(db_session, entity, *key),
+        )
+        for key in cases
+    }
+    lines = _by_item(_group(db_session, list(ids.values())))
+    for key, (code, line) in cases.items():
+        found = lines[ids[key]]
+        assert (found.code, found.line, found.reference_year) == (  # type: ignore[attr-defined]
+            code,
+            line,
+            key[1],
+        )
+        assert found.code_to_verify is False  # type: ignore[attr-defined]
+
+
+def test_a_flat_rate_payment_has_no_iva_code(db_session: Session) -> None:
+    entity = _entity(db_session, "it-flat-rate")
+    item = _item(db_session, entity, "10.00", kind="iva_settlement", tax="iva")
+    (line,) = _group(db_session, [item]).lines
+    assert (line.code, line.code_to_verify) == (None, True)
+
+
+def test_withholding_and_payroll_lines_carry_the_month_they_pay_for(db_session: Session) -> None:
+    """REB-1100: paid on the 16th of the month after, so a payment on 16 March 2027 is for
+    February: 1001 and 1040 write `02` in the `mese rif.` column with year 2027, and DM10 writes
+    the «periodo da» `02/2027` and no reference year."""
+    entity = _entity(db_session, "it-company")
+    paid = dt.date(2027, 3, 16)
+    employees = _item(
+        db_session, entity, "40.00", kind="payroll", tax="payroll_withholding", due=paid
+    )
+    inps = _item(db_session, entity, "60.00", kind="payroll", tax="payroll_inps", due=paid)
+    fees = _item(db_session, entity, "20.00", kind="withholding", tax="withholding", due=paid)
+    lines = _by_item(_group(db_session, [employees, inps, fees]))
+    got = {
+        item: (line.code, line.reference_year, line.reference_period)  # type: ignore[attr-defined]
+        for item, line in lines.items()
+    }
+    assert got == {
+        employees: ("1001", 2027, "02"),
+        inps: ("DM10", None, "02/2027"),
+        fees: ("1040", 2027, "02"),
+    }
+    assert lines[inps].code_kind == "inps_causale"  # type: ignore[attr-defined]
+
+
+def test_a_payment_in_january_is_for_december_of_the_year_before(db_session: Session) -> None:
+    entity = _entity(db_session, "it-company")
+    item = _item(
+        db_session,
+        entity,
+        "40.00",
+        kind="payroll",
+        tax="payroll_withholding",
+        due=dt.date(2027, 1, 18),
+    )
+    (line,) = _group(db_session, [item]).lines
+    assert (line.reference_year, line.reference_period) == (2026, "12")
+
+
+def test_a_flat_rate_taxpayer_owes_the_employee_withholding_but_not_the_fee_withholding(
+    db_session: Session,
+) -> None:
+    entity = _entity(db_session, "it-flat-rate")
+    paid = dt.date(2027, 3, 16)
+    employees = _item(
+        db_session, entity, "40.00", kind="payroll", tax="payroll_withholding", due=paid
+    )
+    fees = _item(db_session, entity, "20.00", kind="withholding", tax="withholding", due=paid)
+    lines = _by_item(_group(db_session, [employees, fees]))
+    assert lines[employees].code == "1001"  # type: ignore[attr-defined]
+    assert lines[fees].code is None  # type: ignore[attr-defined]
+    assert lines[fees].reference_period == "02"  # type: ignore[attr-defined]

@@ -39,7 +39,11 @@ def _rules(pack: FiscalPack, year: int = 2026) -> PaymentRulesLaw:
 
 
 def _codes(pack: FiscalPack) -> dict[str, tuple[str, str]]:
-    return {code.line: (code.code, code.kind) for code in _rules(pack).f24_codes}
+    """The lines with one code; the periodic IVA lines (a code per month or quarter) are
+    asserted on their own."""
+    return {
+        code.line: (code.code, code.kind) for code in _rules(pack).f24_codes if code.period is None
+    }
 
 
 # --- which pack carries what, and for which year ----------------------------------------
@@ -221,6 +225,14 @@ def test_the_legal_interest_rate_is_the_one_fixed_for_each_year_and_never_guesse
 
 # --- the F24 codes ------------------------------------------------------------------------
 
+# What an employer owes (REB-1100): the withholding on pay and the payroll contributions, owed by
+# every pack, and the withholding on fees, which the flat-rate regime does not operate.
+_PAYROLL = {
+    "withholding_employees": ("1001", "tax_code"),
+    "inps_payroll": ("DM10", "inps_causale"),
+}
+_WITHHOLDING_ON_FEES = {"withholding_self_employed": ("1040", "tax_code")}
+
 _INPS = {
     "inps_gs_contribution": ("PXX", "inps_causale"),
     "inps_gs_contribution_other_cover": ("P10", "inps_causale"),
@@ -249,6 +261,10 @@ def test_the_ordinary_pack_carries_the_irpef_surcharge_interest_and_inps_codes()
         "instalment_interest_erario": ("1668", "tax_code"),
         "instalment_interest_regional": ("3805", "tax_code"),
         "instalment_interest_municipal": ("3857", "tax_code"),
+        "iva_annual": ("6099", "tax_code"),
+        "iva_advance_monthly": ("6013", "tax_code"),
+        **_PAYROLL,
+        **_WITHHOLDING_ON_FEES,
         **_INPS,
     }
     assert _codes(IT_STANDARD_PACK) == expected
@@ -260,6 +276,7 @@ def test_the_flat_rate_pack_carries_the_substitute_tax_and_inps_codes() -> None:
         "substitute_tax_first_advance": ("1790", "tax_code"),
         "substitute_tax_second_advance": ("1791", "tax_code"),
         "instalment_interest_erario": ("1668", "tax_code"),
+        **_PAYROLL,
         **_INPS,
     }
 
@@ -275,7 +292,50 @@ def test_the_company_pack_carries_ires_irap_and_chamber_fee_codes() -> None:
         "chamber_fee": ("3850", "tax_code"),
         "instalment_interest_erario": ("1668", "tax_code"),
         "instalment_interest_regional": ("3805", "tax_code"),
+        "iva_annual": ("6099", "tax_code"),
+        "iva_advance_monthly": ("6013", "tax_code"),
+        **_PAYROLL,
+        **_WITHHOLDING_ON_FEES,
     }
+
+
+def test_the_periodic_iva_has_the_agenzias_code_of_each_month_and_quarter() -> None:
+    """REB-1100: 6001 to 6012 by month, 6031 to 6033 by quarter, 6099 with the annual
+    settlement and 6013 for the advance of a monthly payer; 6034 and 6035 are left out, since the
+    Agenzia's pages do not say which payer uses them."""
+    for pack in (IT_STANDARD_PACK, IT_COMPANY_PACK):
+        rules = _rules(pack)
+        assert [rules.f24_code("iva_monthly", m).code for m in range(1, 13)] == [
+            str(6000 + m) for m in range(1, 13)
+        ]
+        assert [rules.f24_code("iva_quarterly", q).code for q in (1, 2, 3)] == [
+            "6031",
+            "6032",
+            "6033",
+        ]
+        assert rules.f24_code("iva_annual").code == "6099"
+        assert rules.f24_code("iva_advance_monthly").code == "6013"
+        assert rules.f24_code("iva_monthly", 12).description == "VERSAMENTO IVA MENSILE DICEMBRE"
+        with pytest.raises(KeyError):
+            rules.f24_code("iva_quarterly", 4)
+        with pytest.raises(KeyError):
+            rules.f24_code("iva_monthly")
+    with pytest.raises(KeyError):
+        _rules(IT_FLAT_RATE_PACK).f24_code("iva_monthly", 1)
+
+
+def test_withholding_and_payroll_codes_are_in_the_packs_that_owe_them() -> None:
+    """1001 is owed by every pack with employees (a flat-rate taxpayer is a withholding agent on
+    them), 1040 only by one that withholds on fees, DM10 by all three."""
+    for pack in (IT_STANDARD_PACK, IT_FLAT_RATE_PACK, IT_COMPANY_PACK):
+        rules = _rules(pack)
+        assert rules.f24_code("withholding_employees").code == "1001"
+        assert rules.f24_code("inps_payroll").code == "DM10"
+        assert rules.f24_code("inps_payroll").kind == "inps_causale"
+    for pack in (IT_STANDARD_PACK, IT_COMPANY_PACK):
+        assert _rules(pack).f24_code("withholding_self_employed").code == "1040"
+    with pytest.raises(KeyError):
+        _rules(IT_FLAT_RATE_PACK).f24_code("withholding_self_employed")
 
 
 def test_a_line_a_regime_does_not_owe_has_no_code() -> None:
@@ -299,7 +359,7 @@ def test_every_code_names_what_it_is_and_where_it_was_read() -> None:
 
 def test_a_pack_cannot_carry_one_line_or_one_form_twice() -> None:
     rules = _rules(IT_STANDARD_PACK)
-    with pytest.raises(ValueError, match="one code"):
+    with pytest.raises(ValueError, match="one code per period"):
         PaymentRulesLaw(
             from_year=2026,
             instalments=rules.instalments,

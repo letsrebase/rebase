@@ -93,6 +93,7 @@ class F24LineRead(BaseModel):
     code_label: str
     code_to_verify: bool
     reference_year: int | None
+    reference_period: str | None
     released: bool
     used_amount: Decimal | None
 

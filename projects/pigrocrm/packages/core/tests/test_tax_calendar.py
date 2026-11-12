@@ -51,8 +51,12 @@ def test_the_ordinary_pack_carries_the_iva_dates() -> None:
 
 def test_the_ordinary_pack_carries_the_income_tax_dates() -> None:
     pack = IT_STANDARD_PACK
+    # 2026 is the year of the deferral of art. 1-sexies D.L. 63/2026 (REB-1100): 20 July.
     assert _nominal(pack, 2026, "income_tax", "balance_and_first_advance", None) == [
-        date(2026, 6, 30)
+        date(2026, 7, 20)
+    ]
+    assert _nominal(pack, 2027, "income_tax", "balance_and_first_advance", None) == [
+        date(2027, 6, 30)
     ]
     assert _nominal(pack, 2026, "income_tax", "second_advance", None) == [date(2026, 11, 30)]
     assert _nominal(pack, 2026, "income_tax", "instalments_end", None) == [date(2026, 12, 16)]
@@ -62,7 +66,7 @@ def test_the_flat_rate_pack_carries_the_substitute_tax_dates_and_no_iva() -> Non
     dates = tax_calendar(IT_FLAT_RATE_PACK, 2026)
     assert dates is not None
     assert {entry.tax for entry in dates} == {"substitute_tax"}
-    assert [entry.nominal_date for entry in dates] == [date(2026, 6, 30), date(2026, 11, 30)]
+    assert [entry.nominal_date for entry in dates] == [date(2026, 7, 20), date(2026, 11, 30)]
 
 
 def test_every_date_names_its_source_and_what_it_covers() -> None:
@@ -155,9 +159,11 @@ def test_the_company_pack_carries_iva_ires_irap_withholding_and_the_chamber_fee(
     )
     assert _nominal(pack, 2026, "iva", "advance", None) == [date(2026, 12, 27)]
     for tax in ("ires", "irap"):
-        assert _nominal(pack, 2026, tax, "balance_and_first_advance", None) == [date(2026, 6, 30)]
+        assert _nominal(pack, 2026, tax, "balance_and_first_advance", None) == [date(2026, 7, 20)]
+        assert _nominal(pack, 2027, tax, "balance_and_first_advance", None) == [date(2027, 6, 30)]
         assert _nominal(pack, 2026, tax, "second_advance", None) == [date(2026, 11, 30)]
-    assert _nominal(pack, 2026, "chamber_fee", "annual_fee", None) == [date(2026, 6, 30)]
+    assert _nominal(pack, 2026, "chamber_fee", "annual_fee", None) == [date(2026, 7, 20)]
+    assert _nominal(pack, 2027, "chamber_fee", "annual_fee", None) == [date(2027, 6, 30)]
     withholding = _nominal(pack, 2026, "withholding", "withholding_payment", None)
     assert [(d.month, d.day) for d in withholding] == [
         (m, 20 if m == 8 else 16) for m in range(1, 13)
@@ -200,3 +206,19 @@ def test_the_service_reads_the_year_end_of_the_legal_entity(db_session: Session)
     db_session.flush()
     taxes = {e.tax for e in AnalyticsService(db_session).get_tax_calendar(2026, ADMIN).dates}
     assert taxes == {"iva", "withholding"}
+
+
+def test_the_2026_deferral_is_cited_where_it_moves_a_date_and_only_there() -> None:
+    """REB-1100: art. 1-sexies of D.L. 63/2026 moves the income taxes, IRAP and the chamber fee
+    of 2026, and no other rule of the calendar."""
+    for pack in (IT_STANDARD_PACK, IT_FLAT_RATE_PACK, IT_COMPANY_PACK):
+        law = pack.calendar_for(2026)
+        assert law is not None
+        moved = {(rule.tax, rule.kind) for rule in law.rules if "1-sexies" in rule.source}
+        assert moved == {
+            (rule.tax, rule.kind)
+            for rule in law.rules
+            if rule.kind in ("balance_and_first_advance", "annual_fee")
+        }
+        later = pack.calendar_for(2027)
+        assert later is not None and all("1-sexies" not in rule.source for rule in later.rules)

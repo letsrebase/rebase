@@ -51,6 +51,7 @@ function legal_entity(id: string, name: string, overrides: Partial<LegalEntityRe
     legal_representative: null,
     fiscal_year_end_month: 12,
     fiscal_year_end_day: 31,
+    registration_date: null,
     place: { status: 'unknown' },
     created_at: '2026-08-20T09:00:00Z',
     updated_at: '2026-08-20T09:00:00Z',

@@ -76,7 +76,8 @@ COMPANY_ACCRUAL = IncomeBasisLaw(
 )
 
 # The flat-rate regime: revenue and fees collected (L. 190/2014 art. 1 c. 64), whether the
-# income is a profession's or a business's. The Agenzia's own instructions state the principle.
+# income is a profession's or a business's. The Agenzia's own instructions state the principle,
+# and circolare 10/E of 2016 § 4.3.5 says it for the business case.
 FLAT_RATE_CASH = IncomeBasisLaw(
     basis="cash",
     wording=(
@@ -91,7 +92,11 @@ FLAT_RATE_CASH = IncomeBasisLaw(
     source=(
         "L. 23 dicembre 2014 n. 190, art. 1 c. 64, Normattiva, text in force from 12-8-2026; "
         "Agenzia delle Entrate, Redditi Persone Fisiche 2026, Fascicolo 3, Istruzioni, quadro "
-        "LM sezione III, «Determinazione del reddito» (page 45); read 2026-11-11"
+        "LM sezione III, «Determinazione del reddito» (page 45); read 2026-11-11; Agenzia delle "
+        "Entrate, circolare n. 10/E of 4 April 2016, § 4.3.5, on the business case in so many "
+        "words: «Il regime forfetario, infatti, determina il reddito, al pari di quello "
+        "professionale, secondo il criterio di cassa, a prescindere dal tipo di attività "
+        "esercitata (professionale o di impresa)»; read 2026-11-12 (REB-1100)"
     ),
 )
 

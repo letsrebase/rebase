@@ -8356,7 +8356,7 @@ export interface components {
              * Code
              * @enum {string}
              */
-            code: "not_collected" | "inps_surcharge" | "shared_purchases" | "staff_cost_not_estimated" | "purchases_by_document_date";
+            code: "not_collected" | "shared_purchases" | "staff_cost_not_estimated" | "purchases_by_document_date";
             /** Amount */
             amount?: string | null;
             /** Count */
@@ -12699,6 +12699,8 @@ export interface components {
             code_to_verify: boolean;
             /** Reference Year */
             reference_year: number | null;
+            /** Reference Period */
+            reference_period: string | null;
             /** Released */
             released: boolean;
             /** Used Amount */
@@ -15255,6 +15257,11 @@ export interface components {
             fiscal_year_end_month?: number | null;
             /** Fiscal Year End Day */
             fiscal_year_end_day?: number | null;
+            /**
+             * Registration Date
+             * @description The day the company applied for registration in the companies register (REB-1100). The chamber of commerce fee of that year is the fixed first-year amount, due within 30 days of this date. Empty when unknown: the company is then read as an older one.
+             */
+            registration_date?: string | null;
             fiscal_profile: components["schemas"]["FiscalProfileUpsert"];
         };
         /**
@@ -15316,6 +15323,8 @@ export interface components {
             fiscal_year_end_month: number;
             /** Fiscal Year End Day */
             fiscal_year_end_day: number;
+            /** Registration Date */
+            registration_date: string | null;
             /**
              * Created At
              * Format: date-time
@@ -15384,6 +15393,8 @@ export interface components {
             fiscal_year_end_month: number;
             /** Fiscal Year End Day */
             fiscal_year_end_day: number;
+            /** Registration Date */
+            registration_date: string | null;
             /**
              * Created At
              * Format: date-time
@@ -15452,6 +15463,11 @@ export interface components {
             fiscal_year_end_month?: number | null;
             /** Fiscal Year End Day */
             fiscal_year_end_day?: number | null;
+            /**
+             * Registration Date
+             * @description The day the company applied for registration in the companies register (REB-1100). The chamber of commerce fee of that year is the fixed first-year amount, due within 30 days of this date. Empty when unknown: the company is then read as an older one.
+             */
+            registration_date?: string | null;
             /**
              * Updated At
              * @description The `updated_at` read on the row this change starts from: if someone else saved in the meantime, the request is rejected with 409 `stale_row`. Omitted, no check.

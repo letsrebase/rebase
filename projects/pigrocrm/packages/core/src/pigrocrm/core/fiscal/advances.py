@@ -257,7 +257,15 @@ def balance_date(
     end. Independent of the dates of that year's own advances, which a calendar may lack."""
     if tax in ("ires", "irap"):
         dates = company_dates(law, tax_year, fiscal_year_end_month, fiscal_year_end_day)
-        return dates if isinstance(dates, Missing) else dates.balance
+        if isinstance(dates, Missing):
+            return dates
+        if (fiscal_year_end_month, fiscal_year_end_day) == (12, 31):
+            # A calendar-year company pays on the calendar's day, which a decree may move (the
+            # deferral of 2026, REB-1100); every other year end is the formula's.
+            moved = _calendar_date(pack, tax_year + 1, tax, "balance_and_first_advance")
+            if not isinstance(moved, Missing):
+                return moved
+        return dates.balance
     return _calendar_date(pack, tax_year + 1, tax, "balance_and_first_advance")
 
 
@@ -271,12 +279,17 @@ def advance_dates(
 ) -> AdvanceDates | Missing:
     """The days `tax`'s advances of `tax_year` are paid: a person's and the flat-rate regime's
     from the pack's tax calendar of the same calendar year, a company's from its fiscal year
-    end."""
+    end (a calendar-year company's first advance from the calendar, as its balance)."""
     if tax in ("ires", "irap"):
         dates = company_dates(law, tax_year, fiscal_year_end_month, fiscal_year_end_day)
         if isinstance(dates, Missing):
             return dates
-        return AdvanceDates(dates.first_advance, dates.second_advance)
+        first_advance = dates.first_advance
+        if (fiscal_year_end_month, fiscal_year_end_day) == (12, 31):
+            moved = _calendar_date(pack, tax_year, tax, "balance_and_first_advance")
+            if not isinstance(moved, Missing):
+                first_advance = moved
+        return AdvanceDates(first_advance, dates.second_advance)
     first = _calendar_date(pack, tax_year, tax, "balance_and_first_advance")
     second = _calendar_date(pack, tax_year, tax, "second_advance")
     if isinstance(first, Missing):

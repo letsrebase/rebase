@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { LegalEntityPanel } from './LegalEntityPanel'
@@ -45,6 +45,7 @@ const LEGAL_ENTITY: LegalEntityRecord = {
   legal_representative: null,
   fiscal_year_end_month: 12,
   fiscal_year_end_day: 31,
+  registration_date: null,
   place: {
     status: 'matched',
     municipality_code: '015146',
@@ -112,6 +113,26 @@ describe('LegalEntityPanel', () => {
     expect(options.params.path.legal_entity_id).toBe('a-1')
     expect(options.body.certified_email).toBe('')
     expect(options.body.name).toBe('Studio Rossi')
+  })
+
+  it('types the day of the application for registration and sends it, or null when empty (REB-1100)', async () => {
+    vi.mocked(api.PUT).mockResolvedValue(ok(LEGAL_ENTITY))
+    renderPanel()
+    const field = screen.getByLabelText('Domanda di iscrizione al registro imprese')
+    expect(field).toHaveAttribute('type', 'date')
+    expect(field).toHaveValue('')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(1))
+    expect(saveCall()[1].body.registration_date).toBeNull()
+
+    fireEvent.change(field, { target: { value: '2026-03-04' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(2))
+    const second = vi.mocked(api.PUT).mock.calls[1] as unknown as [
+      string,
+      { body: Record<string, unknown> },
+    ]
+    expect(second[1].body.registration_date).toBe('2026-03-04')
   })
 
   it('follows a newer row while untouched and keeps a draft once typing started', async () => {

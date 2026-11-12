@@ -15,7 +15,6 @@ from pigrocrm.core.fiscal.law_income_basis import IncomeBasis
 
 LineCode = Literal[
     "not_collected",
-    "inps_surcharge",
     "shared_purchases",
     "staff_cost_not_estimated",
     "purchases_by_document_date",

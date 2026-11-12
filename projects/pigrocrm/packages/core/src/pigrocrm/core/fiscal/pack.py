@@ -58,7 +58,7 @@ the nearest year's:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Final, Literal
 
@@ -155,13 +155,10 @@ class StatutoryCharge:
     a fee or a statutory charge -- `description` is the only column a per-charge
     identity can live on without touching the two that the SdI already governs.
 
-    `count_by_the_limit`/`count_by_the_coefficient` mirror mastro's own per-charge
-    `countsTowardsRevenuePerimeter` declaration (`pack.ts:209-220`,
-    `it-flat-rate.ts:283`), extended with a second boolean PigroCRM alone needs:
-    mastro never computes a coefficiente-based tax estimate, so its own charge has no
-    equivalent of "counts toward the ceiling but is not taxable income" (REB-352 §2,
-    §6's resolved decision) -- that fact has nowhere else to live but on the charge
-    itself, the same place mastro puts the first boolean.
+    `count_by_the_limit` mirrors mastro's own per-charge `countsTowardsRevenuePerimeter`
+    declaration (`pack.ts:209-220`, `it-flat-rate.ts:283`). A charge has no second flag for the
+    coefficient base: the INPS surcharge counts in it, so the revenue the ceiling reads and the
+    revenue the coefficient is applied to are one figure (REB-1100, the entry's comment).
     """
 
     id: str
@@ -171,7 +168,6 @@ class StatutoryCharge:
     description_line: str
     rate: Decimal
     count_by_the_limit: bool
-    count_by_the_coefficient: bool
 
 
 @dataclass(frozen=True)
@@ -369,13 +365,18 @@ SOCIAL_SECURITY_SURCHARGE_INPS = StatutoryCharge(
     label="Rivalsa contributiva INPS 4%",
     description_line="Rivalsa contributiva INPS 4% (art. 1, comma 212, legge 662/1996)",
     rate=Decimal("0.04"),
-    # It counts toward the ceiling in full ("l'importo concorre al limite dei ricavi
-    # e compensi del regime flat-rate regime", the circolare `it-flat-rate.ts:262` cites)
-    # while never entering the coefficiente base ("pur non costituendo reddito
-    # imponibile", the same citation's second half) -- REB-352 §2 and §6's resolved
-    # decision, the reason this charge carries two booleans and not one.
+    # It counts in the ceiling and in the revenue the coefficient is applied to, in full. The 4% is
+    # charged «in via definitiva» on top of the fee (L. 23 December 1996 n. 662, art. 1 c. 212,
+    # Normattiva, read 2026-11-12) and is part of the fee for withholding and VAT (INPS, message n.
+    # 7751 of 7 May 2012: it «concorre a formare la base imponibile dell'imposta sul valore
+    # aggiunto»); the Agenzia's guide to the LM section of the return counts it among the positive
+    # components of income of a professional in the gestione separata (Agenzia, «Dichiarazione
+    # precompilata», read 2026-11-12). So it is a collected fee: «ricavi o [...] compensi
+    # percepiti» of L. 190/2014 art. 1 c. 64. Circulars 10/E of 4 April 2016 and 9/E of 10 April
+    # 2019 are silent on it, and the earlier citation of them here was wrong (REB-1100). What is out
+    # of the revenue is a professional fund's integrative contribution, a different line (Agenzia,
+    # CU 2025 instructions: it is not part of the fee).
     count_by_the_limit=True,
-    count_by_the_coefficient=False,
 )
 
 # The tax calendar (REB-1004, taxes design § 2, suppliers design § 6). Every date is a row of
@@ -453,36 +454,84 @@ _IVA_RULES_2026 = (
     ),
 )
 
-_IT_STANDARD_CALENDAR_2026 = TaxCalendarLaw(
-    from_year=2026,
-    rules=(
-        *_IVA_RULES_2026,
-        TaxDateRule(
-            tax="income_tax",
-            kind="balance_and_first_advance",
-            cadence=None,
-            dates=(MonthDay(month=6, day=30),),
-            covers="the balance of the year before and the first advance of the year",
-            source=_SRC_INCOME_TAX,
-        ),
-        TaxDateRule(
-            tax="income_tax",
-            kind="second_advance",
-            cadence=None,
-            dates=(MonthDay(month=11, day=30),),
-            covers="the second or only advance of the year",
-            source=_SRC_INCOME_TAX,
-        ),
-        TaxDateRule(
-            tax="income_tax",
-            kind="instalments_end",
-            cadence=None,
-            dates=(MonthDay(month=12, day=16),),
-            covers="the last instalment of the June balance and first advance",
-            source=_SRC_INCOME_TAX,
-        ),
+# The one-off deferral of 2026 (REB-1100). D.L. 30 April 2026 n. 63, art. 1-sexies (the text of
+# D.L. 22 May 2026 n. 89 art. 6, which L. 25 June 2026 n. 113 art. 1 c. 2 repealed after moving it
+# into D.L. 63/2026; Normattiva, text in force on 2026-11-12), lets those who run an activity with
+# an approved ISA, those excluded from it, those in the flat-rate regime and the closed regime
+# of D.L. 98/2011, and the partners of the transparent entities that qualify, pay what they owed
+# «entro il 30 giugno 2026» from the income tax, IRAP and IVA returns «entro il 20 luglio 2026
+# senza alcuna maggiorazione, ovvero entro il trentesimo giorno successivo al 20 luglio 2026,
+# maggiorando le somme da versare dello 0,80 per cento». The annual chamber fee is paid on the
+# first advance's day (art. 17 c. 3 lett. a D.P.R. 435/2001), and the Camera di commercio del
+# Molise («Nuove iscrizioni» 2026) says the deferral applies to it «automaticamente». So for
+# 2026 the balance and first advance of every income tax, and the chamber fee, are due on 20 July;
+# the 2027 entry below restores 30 June, since the decree says «per l'anno 2026». The 0.80% and
+# the window to 20 August (instead of the 0.40% of art. 17 c. 2 D.P.R. 435/2001 and 30 July) are
+# the deferral law's (`payment_data.DEFERRAL`), which nothing in the product reads. A taxpayer
+# whose activity has no approved ISA and who is not excluded is outside the decree and still paid
+# on 30 June: the pack does not know it, so it reads every taxpayer as covered (A5, to verify with
+# the accountant).
+_SRC_DEFERRAL_2026 = (
+    "D.L. 30 aprile 2026 n. 63, art. 1-sexies (as converted by L. 25 giugno 2026 n. 113, in "
+    "force from 28 June 2026; formerly D.L. 22 maggio 2026 n. 89 art. 6), Normattiva, text in "
+    "force on 2026-11-12; for the chamber fee, Camera di commercio del Molise, «Nuove "
+    "iscrizioni» 2026 (read 2026-11-12)"
+)
+_DEFERRED_20_JULY = MonthDay(month=7, day=20)
+_DEFERRED_KINDS = frozenset(
+    {
+        ("income_tax", "balance_and_first_advance"),
+        ("ires", "balance_and_first_advance"),
+        ("irap", "balance_and_first_advance"),
+        ("substitute_tax", "balance_and_first_advance"),
+        ("chamber_fee", "annual_fee"),
+    }
+)
+
+
+def _deferred_to_20_july_2026(rules: tuple[TaxDateRule, ...]) -> tuple[TaxDateRule, ...]:
+    """The rules with the 30 June payments of income taxes, IRAP and the chamber fee moved to
+    20 July, the deferral of 2026 above."""
+    return tuple(
+        replace(rule, dates=(_DEFERRED_20_JULY,), source=f"{rule.source}; {_SRC_DEFERRAL_2026}")
+        if (rule.tax, rule.kind) in _DEFERRED_KINDS
+        else rule
+        for rule in rules
+    )
+
+
+_IT_STANDARD_RULES = (
+    *_IVA_RULES_2026,
+    TaxDateRule(
+        tax="income_tax",
+        kind="balance_and_first_advance",
+        cadence=None,
+        dates=(MonthDay(month=6, day=30),),
+        covers="the balance of the year before and the first advance of the year",
+        source=_SRC_INCOME_TAX,
+    ),
+    TaxDateRule(
+        tax="income_tax",
+        kind="second_advance",
+        cadence=None,
+        dates=(MonthDay(month=11, day=30),),
+        covers="the second or only advance of the year",
+        source=_SRC_INCOME_TAX,
+    ),
+    TaxDateRule(
+        tax="income_tax",
+        kind="instalments_end",
+        cadence=None,
+        dates=(MonthDay(month=12, day=16),),
+        covers="the last instalment of the June balance and first advance",
+        source=_SRC_INCOME_TAX,
     ),
 )
+
+_IT_STANDARD_CALENDAR_2026 = TaxCalendarLaw(
+    from_year=2026, rules=_deferred_to_20_july_2026(_IT_STANDARD_RULES)
+)
+_IT_STANDARD_CALENDAR_2027 = TaxCalendarLaw(from_year=2027, rules=_IT_STANDARD_RULES)
 
 # A company's calendar (REB-1033, taxes design § 1 and § 3). IVA is the same settlement as the
 # ordinary regime's (the Agenzia's pages address every taxpayer), so it reuses the rules above.
@@ -490,9 +539,10 @@ _IT_STANDARD_CALENDAR_2026 = TaxCalendarLaw(
 # of the sixth month after the year end, the second advance on the last day of the eleventh
 # (Agenzia, «Imposte sui redditi (Irpef, Ires)», section on companies). The dates below are for
 # a calendar-year company that approves its financial statements within 120 days, the case the
-# Agenzia's deadline calendar lists, so they are marked `calendar_year_only`; another year end,
-# a late approval and the ISA postponement to 20 July are not modelled. The annual chamber of
-# commerce fee falls on the day of the first advance (art. 17 c. 3 lett. a DPR 435/2001); its
+# Agenzia's deadline calendar lists, so they are marked `calendar_year_only`; another year end
+# and a late approval are not modelled, and the ISA postponement of 2026 is
+# `_deferred_to_20_july_2026`. The annual chamber of commerce fee falls on the day of the first
+# advance (art. 17 c. 3 lett. a DPR 435/2001); its
 # 2026 amount is the pack's `chamber_fees` (REB-1068). Withholding on pay to others (code 1040 for
 # professionals) is due by the 16th of the month after the payment, the same day as IVA's, and
 # the deadline calendar moves it to 20 August in 2026 as it does IVA (the deferral of a payment
@@ -527,90 +577,94 @@ _SRC_CHAMBER_FEE = (
 
 _WITHHOLDING_DATES = tuple(MonthDay(month=m, day=20 if m == 8 else 16) for m in range(1, 13))
 
-_IT_COMPANY_CALENDAR_2026 = TaxCalendarLaw(
-    from_year=2026,
-    rules=(
-        *_IVA_RULES_2026,
-        TaxDateRule(
-            tax="ires",
-            kind="balance_and_first_advance",
-            cadence=None,
-            dates=(MonthDay(month=6, day=30),),
-            covers="the IRES balance of the year before and the first advance of the year",
-            source=_SRC_IRES,
-            calendar_year_only=True,
-        ),
-        TaxDateRule(
-            tax="ires",
-            kind="second_advance",
-            cadence=None,
-            dates=(MonthDay(month=11, day=30),),
-            covers="the second or only IRES advance of the year",
-            source=_SRC_IRES_SECOND,
-            calendar_year_only=True,
-        ),
-        TaxDateRule(
-            tax="irap",
-            kind="balance_and_first_advance",
-            cadence=None,
-            dates=(MonthDay(month=6, day=30),),
-            covers="the IRAP balance of the year before and the first advance of the year",
-            source=_SRC_IRAP,
-            calendar_year_only=True,
-        ),
-        TaxDateRule(
-            tax="irap",
-            kind="second_advance",
-            cadence=None,
-            dates=(MonthDay(month=11, day=30),),
-            covers="the second or only IRAP advance of the year",
-            source=_SRC_IRAP_SECOND,
-            calendar_year_only=True,
-        ),
-        TaxDateRule(
-            tax="chamber_fee",
-            kind="annual_fee",
-            cadence=None,
-            dates=(MonthDay(month=6, day=30),),
-            covers="the annual fee to the chamber of commerce, with the first advance",
-            source=_SRC_CHAMBER_FEE,
-            calendar_year_only=True,
-        ),
-        TaxDateRule(
-            tax="withholding",
-            kind="withholding_payment",
-            cadence=None,
-            dates=_WITHHOLDING_DATES,
-            covers="the withholding on pay to others of the month before",
-            source=_SRC_WITHHOLDING,
-        ),
+_IT_COMPANY_RULES = (
+    *_IVA_RULES_2026,
+    TaxDateRule(
+        tax="ires",
+        kind="balance_and_first_advance",
+        cadence=None,
+        dates=(MonthDay(month=6, day=30),),
+        covers="the IRES balance of the year before and the first advance of the year",
+        source=_SRC_IRES,
+        calendar_year_only=True,
+    ),
+    TaxDateRule(
+        tax="ires",
+        kind="second_advance",
+        cadence=None,
+        dates=(MonthDay(month=11, day=30),),
+        covers="the second or only IRES advance of the year",
+        source=_SRC_IRES_SECOND,
+        calendar_year_only=True,
+    ),
+    TaxDateRule(
+        tax="irap",
+        kind="balance_and_first_advance",
+        cadence=None,
+        dates=(MonthDay(month=6, day=30),),
+        covers="the IRAP balance of the year before and the first advance of the year",
+        source=_SRC_IRAP,
+        calendar_year_only=True,
+    ),
+    TaxDateRule(
+        tax="irap",
+        kind="second_advance",
+        cadence=None,
+        dates=(MonthDay(month=11, day=30),),
+        covers="the second or only IRAP advance of the year",
+        source=_SRC_IRAP_SECOND,
+        calendar_year_only=True,
+    ),
+    TaxDateRule(
+        tax="chamber_fee",
+        kind="annual_fee",
+        cadence=None,
+        dates=(MonthDay(month=6, day=30),),
+        covers="the annual fee to the chamber of commerce, with the first advance",
+        source=_SRC_CHAMBER_FEE,
+        calendar_year_only=True,
+    ),
+    TaxDateRule(
+        tax="withholding",
+        kind="withholding_payment",
+        cadence=None,
+        dates=_WITHHOLDING_DATES,
+        covers="the withholding on pay to others of the month before",
+        source=_SRC_WITHHOLDING,
     ),
 )
+
+_IT_COMPANY_CALENDAR_2026 = TaxCalendarLaw(
+    from_year=2026, rules=_deferred_to_20_july_2026(_IT_COMPANY_RULES)
+)
+_IT_COMPANY_CALENDAR_2027 = TaxCalendarLaw(from_year=2027, rules=_IT_COMPANY_RULES)
 
 # The flat-rate regime has no periodic IVA settlement (suppliers design § 6), so no IVA date.
 # Its substitute tax falls on the same two days as the income tax; the split and the thresholds
 # of its advances, and its instalments, are TO VERIFY in A5 and not in the calendar.
-_IT_FLAT_RATE_CALENDAR_2026 = TaxCalendarLaw(
-    from_year=2026,
-    rules=(
-        TaxDateRule(
-            tax="substitute_tax",
-            kind="balance_and_first_advance",
-            cadence=None,
-            dates=(MonthDay(month=6, day=30),),
-            covers="the substitute tax balance of the year before and the first advance",
-            source=_SRC_SUBSTITUTE_TAX,
-        ),
-        TaxDateRule(
-            tax="substitute_tax",
-            kind="second_advance",
-            cadence=None,
-            dates=(MonthDay(month=11, day=30),),
-            covers="the second or only substitute tax advance of the year",
-            source=_SRC_SUBSTITUTE_TAX,
-        ),
+_IT_FLAT_RATE_RULES = (
+    TaxDateRule(
+        tax="substitute_tax",
+        kind="balance_and_first_advance",
+        cadence=None,
+        dates=(MonthDay(month=6, day=30),),
+        covers="the substitute tax balance of the year before and the first advance",
+        source=_SRC_SUBSTITUTE_TAX,
+    ),
+    TaxDateRule(
+        tax="substitute_tax",
+        kind="second_advance",
+        cadence=None,
+        dates=(MonthDay(month=11, day=30),),
+        covers="the second or only substitute tax advance of the year",
+        source=_SRC_SUBSTITUTE_TAX,
     ),
 )
+
+_IT_FLAT_RATE_CALENDAR_2026 = TaxCalendarLaw(
+    from_year=2026, rules=_deferred_to_20_july_2026(_IT_FLAT_RATE_RULES)
+)
+_IT_FLAT_RATE_CALENDAR_2027 = TaxCalendarLaw(from_year=2027, rules=_IT_FLAT_RATE_RULES)
 
 # The payroll dates every Italian employer follows (A5 rows «Payroll withholding is paid on
 # the 16th of the month after the payment», «INPS contributions are paid on the 16th of the
@@ -712,7 +766,7 @@ IT_FLAT_RATE_PACK = FiscalPack(
             taxes=("substitute_tax", "inps"),
         ),
     ),
-    calendars=(_IT_FLAT_RATE_CALENDAR_2026,),
+    calendars=(_IT_FLAT_RATE_CALENDAR_2026, _IT_FLAT_RATE_CALENDAR_2027),
     inps=(INPS_2026,),
     payment_rules=(IT_FLAT_RATE_PAYMENT_2026,),
 )
@@ -779,7 +833,7 @@ IT_STANDARD_PACK = FiscalPack(
             ),
         ),
     ),
-    calendars=(_IT_STANDARD_CALENDAR_2026,),
+    calendars=(_IT_STANDARD_CALENDAR_2026, _IT_STANDARD_CALENDAR_2027),
     inps=(INPS_2026,),
     payment_rules=(IT_STANDARD_PAYMENT_2026,),
     municipal_surcharge=MUNICIPAL_SURCHARGE,
@@ -840,7 +894,7 @@ IT_COMPANY_PACK = FiscalPack(
             ),
         ),
     ),
-    calendars=(_IT_COMPANY_CALENDAR_2026,),
+    calendars=(_IT_COMPANY_CALENDAR_2026, _IT_COMPANY_CALENDAR_2027),
     payment_rules=(IT_COMPANY_PAYMENT_2026,),
     chamber_fees=(CHAMBER_FEE_LAW,),
 )

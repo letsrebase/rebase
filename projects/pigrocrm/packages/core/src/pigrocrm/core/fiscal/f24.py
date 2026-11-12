@@ -181,7 +181,7 @@ class F24GroupService:
                 # A tax forecast is the item that is paid (module docstring).
                 item.state = "expected"
                 item.forecast_key = None
-            code = code_for(item, pack, payment_date)
+            code = code_for(item, pack, payment_date, self.session)
             self.session.add(
                 F24GroupItem(
                     group_id=group.id,
@@ -193,6 +193,7 @@ class F24GroupService:
                     code_kind=code.kind,
                     code_label=code.label,
                     reference_year=code.reference_year,
+                    reference_period=code.reference_period,
                 )
             )
         self.session.flush()
@@ -619,6 +620,7 @@ class F24GroupService:
                     code_label=line.code_label or CODE_TO_VERIFY,
                     code_to_verify=line.code is None,
                     reference_year=line.reference_year,
+                    reference_period=line.reference_period,
                     released=line.released_at is not None,
                     used_amount=line.used_amount,
                 )

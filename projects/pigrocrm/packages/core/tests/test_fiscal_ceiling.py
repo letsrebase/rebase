@@ -11,13 +11,11 @@ export, is `test_invoice_expense-recovery_line.py`.
 
 from datetime import date
 from decimal import Decimal
-from uuid import UUID
 
 from fakes.customer_fixtures import make_customer
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.fiscal.ceiling import (
-    collected_charge_lines_for_calendar_year,
     evaluate_ceiling,
     evaluate_pack,
     paid_revenue_for_calendar_year,
@@ -32,19 +30,6 @@ assert REVENUE_CEILING.id == "revenue_ceiling"
 assert EXIT_CEILING.id == "immediate_exit_ceiling"
 
 YEAR = 2024
-
-
-def _surcharge_collected(
-    session: Session, year: int, legal_entity_id: UUID | None = None
-) -> Decimal:
-    """What was collected in `year` of the lines the flat-rate pack tags as outside the
-    coefficient base: the social security surcharge."""
-    markers = [
-        charge.description_line
-        for charge in IT_FLAT_RATE_PACK.charges
-        if not charge.count_by_the_coefficient
-    ]
-    return collected_charge_lines_for_calendar_year(session, year, markers, legal_entity_id)
 
 
 def _invoice(
@@ -262,52 +247,29 @@ def test_to_zero_fee_subtotal_still_produces_to_zero_social_security_surcharge_l
     assert line.unit_price == Decimal("0.00")
 
 
-# --- the collected charge lines the coefficient base leaves out: real rows --------
+# --- the surcharge line is collected revenue, one figure for the ceiling and the coefficient ---
 
 
-def test_the_collected_charge_lines_sum_only_the_social_security_surcharge_tagged_lines(
+def test_the_surcharge_line_counts_in_the_collected_revenue_in_full(
     db_session: Session,
 ) -> None:
+    """REB-1100: the 4% is a collected fee like any other, so the one revenue figure the
+    ceiling reads and the coefficient is applied to holds fee and surcharge together."""
     charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID, 2026)
-    _invoice(
+    _paid(
         db_session,
         number=1,
         year=YEAR,
         lines=[("Consulenza", Decimal("1000.00")), (charge.description_line, Decimal("40.00"))],
-        payment_date=date(YEAR, 6, 20),
     )
-    # No expense-recovery line at all -- must not contribute anything.
-    _invoice(
-        db_session,
-        number=2,
-        year=YEAR,
-        lines=[("Consulenza", Decimal("500.00"))],
-        payment_date=date(YEAR, 7, 1),
-    )
-
-    assert _surcharge_collected(db_session, YEAR) == Decimal("40.00")
+    assert paid_revenue_for_calendar_year(db_session, YEAR) == Decimal("1040.00")
 
 
-def test_the_collected_charge_lines_ignore_what_was_collected_in_another_year(
+def test_a_part_payment_collects_the_same_share_of_the_surcharge_as_of_the_fee(
     db_session: Session,
 ) -> None:
-    charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID, 2026)
-    _invoice(
-        db_session,
-        number=1,
-        year=YEAR - 1,
-        lines=[("Consulenza", Decimal("1000.00")), (charge.description_line, Decimal("40.00"))],
-        payment_date=date(YEAR - 1, 6, 20),
-    )
-    assert _surcharge_collected(db_session, YEAR) == Decimal("0.00")
-
-
-def test_a_part_payment_collects_the_same_share_of_the_surcharge_as_of_the_revenue(
-    db_session: Session,
-) -> None:
-    """A payment counts for its share of the taxable amount and, by the same share, of the
-    charge lines on it, so the two figures are read off the same settlements: half the invoice
-    paid in the year is half the revenue and half the surcharge."""
+    """A payment counts for its share of the taxable amount, surcharge line included: half
+    the invoice paid in the year is half of fee and surcharge together."""
     from pigrocrm.core.actor import Actor
     from pigrocrm.core.due_items.sales import SALES_INVOICE
     from pigrocrm.core.due_items.schemas import SettlementCreate
@@ -331,46 +293,3 @@ def test_a_part_payment_collects_the_same_share_of_the_surcharge_as_of_the_reven
         Actor(id=None, type="system", role="admin"),
     )
     assert paid_revenue_for_calendar_year(db_session, YEAR) == Decimal("520.00")
-    assert _surcharge_collected(db_session, YEAR) == Decimal("20.00")
-
-
-def test_the_ceiling_and_the_tax_estimate_diverge_by_exactly_the_social_security_surcharge_amount(
-    db_session: Session,
-) -> None:
-    """REB-352 §2's own tension, proven end to end on one invoice: the ceiling's own
-    revenue sum and the coefficiente base must diverge by exactly the tagged amount,
-    and by nothing else."""
-    charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID, 2026)
-    _paid(
-        db_session,
-        number=1,
-        year=YEAR,
-        lines=[("Consulenza", Decimal("1000.00")), (charge.description_line, Decimal("40.00"))],
-    )
-
-    revenue_by_the_limit = paid_revenue_for_calendar_year(db_session, YEAR)
-    revenue_by_the_coefficient = revenue_by_the_limit - _surcharge_collected(db_session, YEAR)
-
-    assert revenue_by_the_limit == Decimal("1040.00")
-    assert revenue_by_the_coefficient == Decimal("1000.00")
-    assert revenue_by_the_limit - revenue_by_the_coefficient == Decimal("40.00")
-
-
-def test_a_contract_without_the_election_leaves_nothing_to_exclude(
-    db_session: Session,
-) -> None:
-    """The other half of the same Done-when: a contract that never elects the
-    expense-recovery produces no line, so there is nothing for the tagged-figure query to
-    find either -- the two functions agree by construction, not by coincidence."""
-    line = social_security_surcharge_line_for_contract(
-        IT_FLAT_RATE_PACK, applies_social_charge=False, fee_subtotal=Decimal("1000.00"), year=2026
-    )
-    assert line is None
-    _invoice(
-        db_session,
-        number=1,
-        year=YEAR,
-        lines=[("Consulenza", Decimal("1000.00"))],
-        payment_date=date(YEAR, 6, 20),
-    )
-    assert _surcharge_collected(db_session, YEAR) == Decimal("0.00")

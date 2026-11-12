@@ -40,14 +40,14 @@ def test_every_ceiling_uses_the_cash_received_calendar_year_basis() -> None:
     assert all(c.basis == "cash_received_calendar_year" for c in IT_FLAT_RATE_PACK.ceilings)
 
 
-def test_the_social_security_surcharge_charge_is_four_percent_and_tagged_ceiling_only() -> None:
-    """4% (`it-flat-rate.ts:278`'s `basisPoints: 400`): counts toward the ceiling
-    (REB-352 §2's citation) and never toward the coefficiente base (§6's resolved
-    decision) -- the two booleans must disagree, not both be true or both false."""
+def test_the_social_security_surcharge_charge_is_four_percent_and_counts_toward_the_ceiling() -> (
+    None
+):
+    """4% (`it-flat-rate.ts:278`'s `basisPoints: 400`): counts toward the ceiling, and in the
+    coefficient base too (REB-1100), which is why the charge has no second flag."""
     charge = IT_FLAT_RATE_PACK.charge(SOCIAL_SECURITY_SURCHARGE_INPS_CHARGE_ID, 2026)
     assert charge.rate == Decimal("0.04")
     assert charge.count_by_the_limit is True
-    assert charge.count_by_the_coefficient is False
 
 
 def test_the_social_security_surcharge_charge_carries_its_legal_basis_in_its_own_description() -> (

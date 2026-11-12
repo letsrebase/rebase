@@ -111,7 +111,8 @@ def register(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> 
         `tax_code`, `address`, `postal_code`, `city`, `province`, `country`, `certified_email`,
         `sdi_code` (7 characters), `phone`, `email`, `website`, `tax_regime` (footer text),
         `email_signature`, `logo_key`, `signature_key` (storage keys, not bytes),
-        `fiscal_year_end_month`/`_day` (default 12/31, kept when left out). Ask for
-        confirmation on the summary; do not invent fiscal data. Admin only.
+        `fiscal_year_end_month`/`_day` (default 12/31, kept when left out),
+        `registration_date`. Ask for confirmation on the summary; do not invent fiscal data.
+        Admin only.
         """
         return invoices.update_legal_entity(context, data, legal_entity_id)

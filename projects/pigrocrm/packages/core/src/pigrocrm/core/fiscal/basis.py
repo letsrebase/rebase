@@ -13,12 +13,12 @@ revenues.
 * **Cash.** Revenue is the taxable share of every payment settled in the year, by the date of
   the settlement (the due item's, the same reading the ceiling uses: an invoice issued in
   December and paid in January belongs to January, and one paid in instalments across 31
-  December to both years for what arrived in each), less the pack's tagged charge lines (the
-  flat-rate regime's INPS surcharge, `count_by_the_coefficient`), whose place in the base is
-  still to verify with the accountant. Costs, for a regime that deducts them, are the cost of
-  the purchases paid in the year (a purchase with due items by what its settlements paid, one
-  with none by its document date, said as an assumption, since purchases do not write due
-  items yet) and the payroll items settled in the year.
+  December to both years for what arrived in each). A statutory charge line (the 4% INPS
+  surcharge) is collected revenue like a fee and is in it (REB-1100, the charge's comment in
+  `pack.py`). Costs, for a regime that deducts them, are the cost of the purchases paid in the
+  year (a purchase with due items by what its settlements paid, one with none by its document
+  date, said as an assumption, since purchases do not write due items yet) and the payroll items
+  settled in the year.
 * **Accrual.** Revenue is the taxable amount of the invoices whose competence (the accrual
   period they declare, else the issue date) falls in the legal entity's financial year; costs
   are the purchases by document date, and the personnel cost of the months worked as the
@@ -46,13 +46,11 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.due_items.models import PAYROLL_SOURCE_KIND, DueItem, DueItemSettlement
 from pigrocrm.core.fiscal.basis_schemas import BasisCosts, BasisEmployee, BasisLine, YearBasis
 from pigrocrm.core.fiscal.ceiling import (
-    charge_line_clause,
-    collected_charge_lines_for_calendar_year,
     paid_revenue_for_calendar_year,
 )
 from pigrocrm.core.fiscal.law_income_basis import IncomeBasisLaw
 from pigrocrm.core.fiscal.pack import FiscalPack
-from pigrocrm.core.invoices.models import Invoice, InvoiceLine
+from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.money import ZERO_MONEY, round_money
 from pigrocrm.core.purchases.models import Purchase
@@ -73,8 +71,8 @@ def year_basis(
         return None
     needs_costs = law.flat_rate is None
     if law.income_basis.basis == "cash":
-        return _cash(session, legal_entity, year, pack, law.income_basis, needs_costs)
-    return _accrual(session, legal_entity, year, pack, law.income_basis, needs_costs)
+        return _cash(session, legal_entity, year, law.income_basis, needs_costs)
+    return _accrual(session, legal_entity, year, law.income_basis, needs_costs)
 
 
 # --- cash ---------------------------------------------------------------------------------
@@ -84,7 +82,6 @@ def _cash(
     session: Session,
     legal_entity: LegalEntity,
     year: int,
-    pack: FiscalPack,
     rule: IncomeBasisLaw,
     needs_costs: bool,
 ) -> YearBasis:
@@ -93,11 +90,6 @@ def _cash(
     assumptions: list[BasisLine] = []
 
     collected = paid_revenue_for_calendar_year(session, year, legal_entity.id)
-    surcharge = collected_charge_lines_for_calendar_year(
-        session, year, _untaxed_markers(pack, year), legal_entity.id
-    )
-    if surcharge != 0:
-        left_out.append(_surcharge_line(surcharge))
     # What the year's invoicing left for later: issued in the year, not collected by its end.
     not_collected = round_money(
         _sum_taxable(session, legal_entity.id, Invoice.year == year)
@@ -149,7 +141,7 @@ def _cash(
         label=f"Incassato nel {year}, secondo il principio di cassa",
         wording=rule.wording,
         source=rule.source,
-        revenue=round_money(collected - surcharge),
+        revenue=collected,
         costs=costs,
         left_out=left_out,
         assumptions=assumptions,
@@ -223,7 +215,6 @@ def _accrual(
     session: Session,
     legal_entity: LegalEntity,
     year: int,
-    pack: FiscalPack,
     rule: IncomeBasisLaw,
     needs_costs: bool,
 ) -> YearBasis:
@@ -235,24 +226,6 @@ def _accrual(
     competence = func.coalesce(Invoice.accrual_from, Invoice.issue_date)
     in_window = (competence >= first, competence <= last)
     revenue = _sum_taxable(session, legal_entity.id, *in_window)
-    markers = _untaxed_markers(pack, year)
-    surcharge = ZERO_MONEY
-    if markers:
-        surcharge = round_money(
-            Decimal(
-                session.execute(
-                    select(func.coalesce(func.sum(InvoiceLine.total_price), 0))
-                    .join(Invoice, InvoiceLine.invoice_id == Invoice.id)
-                    .where(
-                        *_revenue_invoices(legal_entity.id),
-                        *in_window,
-                        charge_line_clause(markers),
-                    )
-                ).scalar_one()
-            )
-        )
-    if surcharge != 0:
-        left_out.append(_surcharge_line(surcharge))
 
     costs: BasisCosts | None = None
     if needs_costs:
@@ -315,7 +288,7 @@ def _accrual(
         ),
         wording=rule.wording,
         source=rule.source,
-        revenue=round_money(revenue - surcharge),
+        revenue=revenue,
         costs=costs,
         left_out=left_out,
         assumptions=[],
@@ -401,27 +374,6 @@ def _shared_purchases(session: Session, first: date, last: date) -> list[BasisLi
             ),
         )
     ]
-
-
-def _untaxed_markers(pack: FiscalPack, year: int) -> tuple[str, ...]:
-    """The description of every charge line the pack tags, in `year`, as outside the coefficient
-    base."""
-    return tuple(
-        charge.description_line
-        for charge in pack.charges_for(year)
-        if not charge.count_by_the_coefficient
-    )
-
-
-def _surcharge_line(amount: Decimal) -> BasisLine:
-    return BasisLine(
-        code="inps_surcharge",
-        amount=amount,
-        reason=(
-            "La rivalsa INPS in fattura è fuori dalla base del coefficiente; che debba restarne "
-            "fuori è da verificare con il commercialista."
-        ),
-    )
 
 
 __all__ = [
