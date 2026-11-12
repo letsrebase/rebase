@@ -343,6 +343,22 @@
    "section": "payment_rules",
    "source": "Agenzia delle Entrate, \u00abRicerca codici tributo\u00bb, codes 1001, 1040, 6001 to 6013, 6031 to 6033 and 6099; \u00abCausali INPS\u00bb (DM10), read 2026-11-12",
    "year": 2026
+  },
+  {
+   "fingerprint": "7238192027da5259588dc5771d34b7dde3bd55e5e290ff6457c6b17a287d0ce3",
+   "pack": "it-company:1",
+   "reason": "REB-1091: the IRAP law carries the full deduction of apprentices, disabled workers and training-contract staff, who are outside the five-employee count; nothing recorded was wrong, the rule was missing",
+   "section": "laws",
+   "source": "D.Lgs. 446/1997 art. 11 c. 1 lett. a n. 5 and c. 4-bis.1 (Normattiva, read 2026-11-12); Agenzia delle Entrate, Istruzioni IRAP 2026, quadro IS rigo IS4 and IS5 (read 2026-11-12)",
+   "year": 2026
+  },
+  {
+   "fingerprint": "7238192027da5259588dc5771d34b7dde3bd55e5e290ff6457c6b17a287d0ce3",
+   "pack": "it-company:1",
+   "reason": "REB-1091: the IRAP law carries the full deduction of apprentices, disabled workers and training-contract staff, who are outside the five-employee count; nothing recorded was wrong, the rule was missing",
+   "section": "laws",
+   "source": "D.Lgs. 446/1997 art. 11 c. 1 lett. a n. 5 and c. 4-bis.1 (Normattiva, read 2026-11-12); Agenzia delle Entrate, Istruzioni IRAP 2026, quadro IS rigo IS4 and IS5 (read 2026-11-12)",
+   "year": 2027
   }
  ],
  "fingerprints": {

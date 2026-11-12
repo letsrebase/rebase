@@ -80,6 +80,7 @@ EMPLOYEE_ONLY = frozenset(
         "collective_agreement",
         "contract_level",
         "contract_type",
+        "disabled_worker",
         "gross_annual_pay",
         "monthly_payments",
         "part_time_percent",

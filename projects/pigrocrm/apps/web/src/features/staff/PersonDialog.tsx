@@ -30,6 +30,7 @@ interface Values {
   collective_agreement: string
   contract_level: string
   contract_type: string
+  disabled_worker: string
   gross_annual_pay: string
   monthly_payments: string
   part_time_percent: string
@@ -58,6 +59,7 @@ function from(member: StaffMember | undefined): Values {
     collective_agreement: text(member?.collective_agreement),
     contract_level: text(member?.contract_level),
     contract_type: text(member?.contract_type),
+    disabled_worker: member?.disabled_worker == null ? '' : String(member.disabled_worker),
     gross_annual_pay: text(member?.gross_annual_pay),
     monthly_payments: text(member?.monthly_payments ?? 13),
     part_time_percent: text(member?.part_time_percent ?? 100),
@@ -91,6 +93,7 @@ const EMPLOYEE_FIELDS: (keyof Values)[] = [
   'collective_agreement',
   'contract_level',
   'contract_type',
+  'disabled_worker',
   'gross_annual_pay',
   'monthly_payments',
   'part_time_percent',
@@ -114,6 +117,7 @@ const COMMON: (keyof Values)[] = ['name', 'start_date', 'end_date', 'hours_per_m
 function wire(field: keyof Values, values: Values): unknown {
   const raw = values[field]
   if (typeof raw === 'boolean') return raw
+  if (field === 'disabled_worker') return raw === 'true' ? true : raw === 'false' ? false : null
   const text = raw.trim()
   if (text === '') return null
   if (INTEGERS.has(field)) return Number(text)
@@ -305,9 +309,25 @@ export function PersonDialog({ open, onOpenChange, legalEntityId, legalEntityNam
                       <SelectItem value="permanent">{CONTRACT_TYPE_LABELS.permanent}</SelectItem>
                       <SelectItem value="fixed_term">{CONTRACT_TYPE_LABELS.fixed_term}</SelectItem>
                       <SelectItem value="seasonal">{CONTRACT_TYPE_LABELS.seasonal}</SelectItem>
+                      <SelectItem value="apprentice">{CONTRACT_TYPE_LABELS.apprentice}</SelectItem>
+                      <SelectItem value="training">{CONTRACT_TYPE_LABELS.training}</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">Serve all’IRAP: il costo dei dipendenti a tempo indeterminato si deduce.</p>
+                  <p className="text-xs text-muted-foreground">Serve all’IRAP: il costo dei dipendenti a tempo indeterminato si deduce; apprendisti e contratti di formazione lavoro si deducono per intero e non contano tra i cinque dipendenti del comma 4-bis.1.</p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="person-disabled_worker">Lavoratore disabile</Label>
+                  <Select value={values.disabled_worker === '' ? NONE : values.disabled_worker} onValueChange={(next) => set('disabled_worker', next === NONE ? '' : next)}>
+                    <SelectTrigger id="person-disabled_worker" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>Non indicato</SelectItem>
+                      <SelectItem value="true">Sì</SelectItem>
+                      <SelectItem value="false">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Ai sensi della legge 68/1999 o 482/1968. Per l’IRAP il costo si deduce per intero e la persona non conta tra i cinque.</p>
                 </div>
                 {text('gross_annual_pay', 'Retribuzione lorda annua (€)', { inputMode: 'decimal' })}
                 <div className="space-y-1.5">

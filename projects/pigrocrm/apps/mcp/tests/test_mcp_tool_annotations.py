@@ -151,7 +151,9 @@ DEFAULT_BUDGET_BYTES = 109_900
 # REB-1088: 150.2 KB, up from 148.6 KB, for `set_tax_loss` and `delete_tax_loss` (a full-access
 # administrator's: a tax, a year, an amount, a remainder with its year and the two facts of the
 # first periods), measured at 150,149.
-FULL_ACCESS_BUDGET_BYTES = 150_200
+# REB-1091: 150.25 KB, up from 150.2 KB, for the two contract types and the `disabled_worker`
+# fact in the staff create and update schemas.
+FULL_ACCESS_BUDGET_BYTES = 150_250
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

@@ -17,6 +17,8 @@ export const CONTRACT_TYPE_LABELS: Record<NonNullable<StaffMember['contract_type
   permanent: 'Tempo indeterminato',
   fixed_term: 'Tempo determinato',
   seasonal: 'Stagionale',
+  apprentice: 'Apprendistato',
+  training: 'Formazione lavoro',
 }
 
 /** Where a person's month stands: «Stimato» (nothing arrived), «Ricevuto» (the inbox read a payslip

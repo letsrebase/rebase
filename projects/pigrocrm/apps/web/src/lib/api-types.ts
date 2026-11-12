@@ -8363,7 +8363,7 @@ export interface components {
             /** Name */
             name: string;
             /** Contract Type */
-            contract_type: ("permanent" | "fixed_term" | "seasonal") | null;
+            contract_type: ("permanent" | "fixed_term" | "seasonal" | "apprentice" | "training") | null;
             /** Cost */
             cost: string;
             /** Days In Service */
@@ -8373,6 +8373,8 @@ export interface components {
              * @default 100
              */
             part_time_percent: string;
+            /** Disabled Worker */
+            disabled_worker?: boolean | null;
         };
         /**
          * BasisLine
@@ -11839,7 +11841,9 @@ export interface components {
             /** Contract Level */
             contract_level?: string | null;
             /** Contract Type */
-            contract_type?: ("permanent" | "fixed_term" | "seasonal") | null;
+            contract_type?: ("permanent" | "fixed_term" | "seasonal" | "apprentice" | "training") | null;
+            /** Disabled Worker */
+            disabled_worker?: boolean | null;
             /** Gross Annual Pay */
             gross_annual_pay: number | string;
             /**
@@ -20273,7 +20277,9 @@ export interface components {
             /** Contract Level */
             contract_level: string | null;
             /** Contract Type */
-            contract_type: ("permanent" | "fixed_term" | "seasonal") | null;
+            contract_type: ("permanent" | "fixed_term" | "seasonal" | "apprentice" | "training") | null;
+            /** Disabled Worker */
+            disabled_worker: boolean | null;
             /** Gross Annual Pay */
             gross_annual_pay: string | null;
             /** Monthly Payments */
@@ -20336,7 +20342,9 @@ export interface components {
             /** Contract Level */
             contract_level?: string | null;
             /** Contract Type */
-            contract_type?: ("permanent" | "fixed_term" | "seasonal") | null;
+            contract_type?: ("permanent" | "fixed_term" | "seasonal" | "apprentice" | "training") | null;
+            /** Disabled Worker */
+            disabled_worker?: boolean | null;
             /** Gross Annual Pay */
             gross_annual_pay?: number | string | null;
             /** Monthly Payments */

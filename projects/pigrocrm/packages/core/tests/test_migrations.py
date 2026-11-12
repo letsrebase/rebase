@@ -4886,3 +4886,19 @@ def test_0120_removes_the_open_legacy_credits_and_dissolves_the_open_groups_that
         downgrade(config, "0119")
         upgrade(config, "0120")
         engine.dispose()
+
+
+def test_0121_adds_the_disabled_worker_fact_with_no_backfill(pigrocrm_postgres: Any) -> None:
+    """REB-1091: one nullable column («not stated»), the contract types widened to the apprentice
+    and the training contract; both ways keep the rows that are there."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0120")
+        assert not _column_exists(url, "staff_members", "disabled_worker")
+        upgrade(config, "0121")
+        assert _column_exists(url, "staff_members", "disabled_worker")
+        downgrade(config, "0120")
+        assert not _column_exists(url, "staff_members", "disabled_worker")
+        upgrade(config, "0121")
+        assert _column_exists(url, "staff_members", "disabled_worker")

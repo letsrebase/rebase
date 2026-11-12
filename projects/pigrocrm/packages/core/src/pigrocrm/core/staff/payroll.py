@@ -146,6 +146,8 @@ class EmployeeCost:
     days_in_service: int
     # The share of a full-time week, in percent (100 when the member's record states none).
     part_time_percent: Decimal = Decimal(100)
+    # Disabled in the sense of L. 68/1999 or L. 482/1968; `None` is «not stated» (REB-1091).
+    disabled_worker: bool | None = None
 
 
 def _key(item: CashItem) -> str:
@@ -275,6 +277,7 @@ class PayrollService:
                 round_money(per_member[member.id]),
                 days_in_service(member, date_from, date_to),
                 member.part_time_percent or Decimal(100),
+                member.disabled_worker,
             )
             for member in self.repo.members_of(legal_entity_id)
             if member.kind == "employee" and member.id in per_member
