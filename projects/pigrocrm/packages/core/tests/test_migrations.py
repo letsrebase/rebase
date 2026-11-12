@@ -4703,3 +4703,22 @@ def test_0118_adds_the_registration_date_and_the_f24_period_with_no_backfill(
         assert not _column_exists(url, "f24_group_items", "reference_period")
         upgrade(config, "0118")
         assert _column_exists(url, "legal_entities", "registration_date")
+
+
+def test_0119_creates_the_tax_losses_table_under_the_scope_policy(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1088: a new table with the row policy of every table that reaches a legal entity,
+    forced; nothing is backfilled (no loss is known until one is typed), so both ways are a pure
+    create and drop."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0118")
+        assert _table_shape(url, "tax_losses")[0] is False
+        upgrade(config, "0119")
+        assert _table_shape(url, "tax_losses") == (True, True, {"legal_entity_scope"})
+        downgrade(config, "0118")
+        assert _table_shape(url, "tax_losses")[0] is False
+        upgrade(config, "0119")
+        assert _table_shape(url, "tax_losses")[0] is True

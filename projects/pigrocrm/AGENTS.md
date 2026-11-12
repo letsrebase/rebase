@@ -444,6 +444,20 @@ typing again replaces the row whole. `AnalyticsService.get_fiscal_estimate` answ
 another path, never touches them; a «what if» with a supplied revenue carries none. Typing one recomputes the legal
 entity's tax due items (REB-1074, below). Reading a figure from a document is its own card.
 
+**An earlier year's loss reduces the IRES and a person's IRPEF, and where it comes from is told (REB-1088).**
+`fiscal/loss_carry.py` applies the pack's `loss_carry` section (`law_loss_carry.py`: art. 84 TUIR for an srl, art. 8 c. 1 and
+c. 3 for a person, with the TUIR renumbering from 2027 by D.Lgs. 117/2026 left to a later entry). The losses are the typed ones
+(`tax_losses`, written only by `TaxLossService`: an administrator, or a `full_access` token; REST `PUT`/`DELETE
+/api/analytics/fiscal/losses`, the tools `set_tax_loss` and `delete_tax_loss`; typing one recomputes the tax due items) and,
+for an srl only, an earlier year's own estimated loss where none is typed, which the payload (`losses.estimated`, the
+origin's `estimated`) and the assumptions label. Each loss keeps a remainder at the end of a year and is rolled forward on each
+in-between year's income before any loss (`income_before_loss`); a year with no basis stops the roll and the tax has no figure
+(`missing`) until a remainder is typed. The 80% is the pack's; the 100% of the first three periods needs `activity_start_year`
+and `new_activity` typed with the loss. The estimate's payload shows `losses` (`used`, per-origin `available`, `used`,
+`remaining`), a `loss_carried` line, and the INPS stays on the income before them. A person's loss of an art or a profession is
+never carried (art. 8 c. 1): only a typed business loss is. «Tasse» types them in the tax's panel beside the declared figures
+(`TaxLosses.tsx`).
+
 **The tax calendar is pack data keyed by the calendar year a date falls in (REB-1004).** `FiscalPack.calendars`
 holds `TaxCalendarLaw` entries (`fiscal/law.py`), each a list of `TaxDateRule` with the nominal days and the primary
 source; a decree that moves a date is a new entry from that year, never a branch in a service. `fiscal/calendar.py`

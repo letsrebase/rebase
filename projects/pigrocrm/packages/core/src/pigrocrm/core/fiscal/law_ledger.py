@@ -21,12 +21,12 @@ What a fingerprint is
 ---------------------
 The SHA-256 of the canonical JSON of the section's data for that year, read through the section's
 own lookup (`FiscalPack.law_for`, `irpef_for`, `inps_for`, `chamber_fee_for`, `calendar_for`,
-`payment_rules_for`, `ceilings_for`, `charges_for`), so an edit to a statutory entry shows up as
-a change to every year it governs, not only to the year it starts in. Dataclass fields are
-included with their class names, Decimals as strings, dates as ISO text, and so are the sources:
-correcting a citation is a correction. Three yearly tables live inside a larger object and are
-split out, so that adding a year to them never changes an earlier year's fingerprint: the IRAP
-regional rates (`irap_rates`, taken out of `laws`), the legal interest rates (`legal_interest`,
+`payment_rules_for`, `ceilings_for`, `charges_for`, `loss_carry_for`), so an edit to a statutory
+entry shows up as a change to every year it governs, not only to the year it starts in. Dataclass
+fields are included with their class names, Decimals as strings, dates as ISO text, and so are the
+sources: correcting a citation is a correction. Three yearly tables live inside a larger object
+and are split out, so that adding a year to them never changes an earlier year's fingerprint: the
+IRAP regional rates (`irap_rates`, taken out of `laws`), the legal interest rates (`legal_interest`,
 taken out of `payment_rules`) and the municipal surcharge lists (`municipal_surcharge`, the
 SHA-256 of the dataset's CSV and of its `.source.json`, recorded only once the sidecar says the
 list is `final`: the Finanze rebuilds an unfinished list daily, and refreshing it is not a
@@ -238,6 +238,12 @@ SECTIONS: tuple[Section, ...] = (
         True,
         lambda p: _starts(p.charges, "from_year"),
         lambda p, y: p.charges_for(y) or None,
+    ),
+    Section(
+        "loss_carry",
+        True,
+        lambda p: _starts(p.loss_carry, "from_year"),
+        lambda p, y: p.loss_carry_for(y),
     ),
     Section("sales_withholding", True, _withholding_years, lambda p, y: p.sales_withholding),
     Section("inps", False, lambda p: _starts(p.inps, "year"), lambda p, y: p.inps_for(y)),

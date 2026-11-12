@@ -80,6 +80,7 @@ POLICIED = {
     "fiscal_estimates",
     "declared_tax_figures",
     "tax_advance_methods",
+    "tax_losses",
     "tax_instalment_plans",
     "tax_notice_plans",
     "tax_credits",

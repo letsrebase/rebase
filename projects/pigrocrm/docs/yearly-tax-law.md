@@ -11,7 +11,7 @@ REB-1085 is the card that enters 2027; open a card of the same shape for each la
 The module docstring of `pack.py` is the list; this is the summary.
 
 - **Statutory** sections hold until a later entry replaces them: `laws`, `calendars`,
-  `payment_rules`, `ceilings`, `charges` (and the pack's `sales_withholding`). The latest entry at
+  `payment_rules`, `ceilings`, `charges`, `loss_carry` (and the pack's `sales_withholding`). The latest entry at
   or before the year governs. For each year you must **confirm the rule still holds** (below) and
   add an entry only where the law changed.
 - **Yearly** sections hold for their own year alone and give no figure for a year with no entry:
@@ -62,6 +62,10 @@ goes wrong silently. For each one, open its source again and read the rule for t
   calendar of the year.
 - `payment_rules`: instalments, the forecast method, the shortfall penalties, the F24 codes and
   the filing dates. Source: the Agenzia pages and the resolutions cited in `payment_data.py`.
+- `loss_carry`: the limit on how much of a year's income an earlier loss may reduce (80%, and 100%
+  for the first three periods of a new activity) and the rule that a professional's loss is not
+  carried. Source: TUIR art. 84 and art. 8 on Normattiva; the renumbering of the TUIR from 2027
+  (D.Lgs. 117/2026) is a new entry that cites the new articles.
 - `ceilings` and `charges`: the thresholds of the flat-rate regime and the 4% INPS surcharge. A
   change is a new entry with its own `from_year`; the earlier entry stays.
 

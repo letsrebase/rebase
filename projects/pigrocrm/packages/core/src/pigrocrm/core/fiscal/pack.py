@@ -43,7 +43,9 @@ before the year governs (a carry-forward):
 - `laws` (`TaxYearLaw`: advances, income basis, flat-rate regime, IVA settlement, company taxes
   and advances, payroll, the declared lines), by `from_year`, read with `law_for`;
 - `calendars` (`calendar_for`) and `payment_rules` (`payment_rules_for`), by `from_year`;
-- `ceilings` and `charges`, by `from_year` per id (`ceilings_for`, `charges_for`, `charge`).
+- `ceilings` and `charges`, by `from_year` per id (`ceilings_for`, `charges_for`, `charge`);
+- `loss_carry` (`loss_carry_for`: how an earlier year's loss reduces a later year's income, art. 84
+  and art. 8 TUIR), by `from_year`.
 
 Yearly figures: the law re-sets them every year, so an entry holds for its own `year` alone and a
 year with no entry gets no figure, with what is missing named in the figure's `missing`, never
@@ -80,6 +82,7 @@ from pigrocrm.core.fiscal.law_income_basis import COMPANY_ACCRUAL, FLAT_RATE_CAS
 from pigrocrm.core.fiscal.law_inps import INPS_2026, InpsYearLaw
 from pigrocrm.core.fiscal.law_irap import IRAP_LAW
 from pigrocrm.core.fiscal.law_irpef import IrpefLaw
+from pigrocrm.core.fiscal.law_loss_carry import COMPANY_LOSS_CARRY, PERSON_LOSS_CARRY, LossCarryLaw
 from pigrocrm.core.fiscal.law_municipal_surcharge import MUNICIPAL_SURCHARGE, MunicipalSurchargeLaw
 from pigrocrm.core.fiscal.law_payment import PaymentRulesLaw
 from pigrocrm.core.fiscal.payment_data import (
@@ -234,6 +237,10 @@ class FiscalPack:
     # (`fiscal/law_chamber_fee.py`, REB-1068): a yearly figure, read by exact year. Empty for a
     # pack that owes none.
     chamber_fees: tuple[ChamberFeeLaw, ...] = ()
+    # How an earlier year's tax loss reduces a later year's income, one entry per change, oldest
+    # first (`fiscal/law_loss_carry.py`, REB-1088): statutory, read with `loss_carry_for`. Empty
+    # for a pack whose regime owes no tax a loss is carried against.
+    loss_carry: tuple[LossCarryLaw, ...] = ()
 
     def __post_init__(self) -> None:
         years = [law.from_year for law in self.laws]
@@ -248,6 +255,9 @@ class FiscalPack:
         irpef_years = [law.year for law in self.irpef]
         if irpef_years != sorted(set(irpef_years)):
             raise ValueError(f"pack {self.id!r}: IRPEF entries must have increasing year")
+        loss_years = [law.from_year for law in self.loss_carry]
+        if loss_years != sorted(set(loss_years)):
+            raise ValueError(f"pack {self.id!r}: loss carry entries must have increasing from_year")
         fee_years = [law.year for law in self.chamber_fees]
         if fee_years != sorted(set(fee_years)):
             raise ValueError(f"pack {self.id!r}: chamber fee entries must have increasing year")
@@ -307,6 +317,16 @@ class FiscalPack:
         """The chamber of commerce fee law of fee year `year`, `None` when the pack has none for
         exactly that year (the tiers and the chambers' increases are re-set by decree)."""
         return next((law for law in self.chamber_fees if law.year == year), None)
+
+    def loss_carry_for(self, year: int) -> LossCarryLaw | None:
+        """The loss carry-forward law that governs tax year `year`: the latest entry starting at
+        or before it, `None` when the pack carries none for that year (never a guess)."""
+        governing = None
+        for entry in self.loss_carry:
+            if entry.from_year > year:
+                break
+            governing = entry
+        return governing
 
     def payment_rules_for(self, year: int) -> PaymentRulesLaw | None:
         """The payment rules that govern calendar year `year`: the latest entry starting at or
@@ -840,6 +860,7 @@ IT_STANDARD_PACK = FiscalPack(
     # IRPEF brackets of art. 11 TUIR (L. 199/2025) and the regional surcharges of every region,
     # read on 2026-11-11 (A5, REB-1062): `fiscal/irpef_2026.py`. A year is its own entry.
     irpef=(IRPEF_2026,),
+    loss_carry=(PERSON_LOSS_CARRY,),
 )
 
 # An srl (REB-1005, taxes design § 1). It invoices exactly like `it-standard`: `RF01`, the
@@ -897,6 +918,7 @@ IT_COMPANY_PACK = FiscalPack(
     calendars=(_IT_COMPANY_CALENDAR_2026, _IT_COMPANY_CALENDAR_2027),
     payment_rules=(IT_COMPANY_PAYMENT_2026,),
     chamber_fees=(CHAMBER_FEE_LAW,),
+    loss_carry=(COMPANY_LOSS_CARRY,),
 )
 
 _PACKS: dict[tuple[str, str], FiscalPack] = {

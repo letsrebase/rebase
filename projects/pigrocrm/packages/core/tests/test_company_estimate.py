@@ -233,7 +233,7 @@ def test_a_loss_gives_no_tax_and_says_so(db_session: Session) -> None:
         True,
     )
     assert any("perdita" in text for text in company.ires.assumptions)
-    assert any("riportate" in text for text in company.ires.assumptions)
+    assert any("riportare" in text for text in company.ires.assumptions)
     assert (company.irap.base, company.irap.amount, company.irap.loss) == (
         M("-20000.00"),
         M("0.00"),

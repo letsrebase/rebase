@@ -14,8 +14,9 @@ cost less director fees, as `year_basis` states them. The simplification is the 
 estimate and the payload says it (`assumptions`): the profit is **not** adjusted for the
 variations of the tax return (non-deductible costs, the deduction of IRAP on staff cost, ACE,
 depreciation differences, the limits on interest and vehicles). A loss gives a tax of zero and
-says so; no loss carry-forward is modelled (art. 84 TUIR would let a loss of an earlier year
-reduce the profit), so a year after a loss is estimated as if there were none.
+says so. The losses of earlier years reduce the profit as art. 84 TUIR lets them
+(`fiscal/loss_carry.py`, REB-1088): the base is the profit less what they take off, and the
+payload's `losses` says which years they come from, what they took and what is left.
 
 The withholdings the customers kept on the srl's invoices (`fiscal/withholdings_suffered.py`,
 `company_withholdings_suffered`) are credited against the IRES (art. 79 c. 1 TUIR, which sends them
@@ -62,6 +63,7 @@ from pigrocrm.core.fiscal.basis_schemas import BasisEmployee, YearBasis
 from pigrocrm.core.fiscal.law import CompanyTaxLaw
 from pigrocrm.core.fiscal.law_irap import IrapActivity, IrapLaw, calendar_year_days
 from pigrocrm.core.fiscal.law_irap_ateco import IrapRateAnswer
+from pigrocrm.core.fiscal.loss_schemas import LossOffset
 from pigrocrm.core.money import ZERO_MONEY, round_money
 from pigrocrm.core.places.locate import Place
 
@@ -104,6 +106,9 @@ class CompanyTaxEstimate(BaseModel):
     region: str | None = None
     missing: str | None = None
     assumptions: list[str]
+    # IRES only: what the losses of earlier years did to the base (REB-1088), `None` when none
+    # was carried.
+    losses: LossOffset | None = None
 
 
 class CompanyEstimate(BaseModel):
@@ -138,24 +143,30 @@ def estimate_company_taxes(
     withholdings: Decimal | None = None,
     withholdings_source: str = "",
     activity: IrapActivity | None = None,
+    losses: LossOffset | None = None,
 ) -> CompanyEstimate | None:
     """The estimate of IRES and IRAP for `basis`'s year, `None` when the law carries no IRAP
     table or the basis has no costs (a year on a basis that deducts none is no srl's).
     `withholdings` is what the customers withheld on the period's invoices, `None` when the pack
     states no rule for the year they are credited against (`withholdings_source` is that rule's
     citation). `activity` is what the company states about its ATECO codes (REB-1086): the
-    regional rows that depend on them need it."""
+    regional rows that depend on them need it. `losses` is what the losses of earlier years take
+    off the IRES base (`fiscal/loss_carry.py`), `None` when there is none to carry."""
     costs = basis.costs
     if costs is None or law.irap is None:
         return None
     return CompanyEstimate(
-        ires=_ires(basis, law, withholdings, withholdings_source),
+        ires=_ires(basis, law, withholdings, withholdings_source, losses),
         irap=_irap(basis, law, place, province, activity),
     )
 
 
 def _ires(
-    basis: YearBasis, law: CompanyTaxLaw, withholdings: Decimal | None, withholdings_source: str
+    basis: YearBasis,
+    law: CompanyTaxLaw,
+    withholdings: Decimal | None,
+    withholdings_source: str,
+    losses: LossOffset | None,
 ) -> CompanyTaxEstimate:
     costs = basis.costs
     assert costs is not None
@@ -173,12 +184,41 @@ def _ires(
         "L'utile è ricavi meno acquisti, personale e amministratori, senza le variazioni "
         "della dichiarazione (costi non deducibili, deduzione dell'IRAP sul costo del lavoro, "
         "ammortamenti): è una stima, non il calcolo del commercialista.",
-        "Le perdite degli anni precedenti non sono riportate: ogni anno è stimato da solo.",
     ]
     loss = profit < 0
     if loss:
         assumptions.append("L'anno chiude in perdita: l'IRES stimata è zero.")
-    gross = ZERO_MONEY if loss else round_money(profit * law.ires_rate / _HUNDRED)
+    if losses is None:
+        assumptions.append(
+            "Non risultano perdite di anni precedenti da riportare: se ce n'è una, scrivila tra "
+            "le perdite dell'azienda."
+        )
+        used = ZERO_MONEY
+    else:
+        assumptions += losses.assumptions
+        if losses.missing:
+            return CompanyTaxEstimate(
+                lines=lines,
+                base=None,
+                rate=law.ires_rate,
+                amount=None,
+                loss=loss,
+                missing=" ".join(losses.missing),
+                withholdings=withholdings,
+                assumptions=assumptions,
+                losses=losses,
+            )
+        used = losses.used
+        if used > 0:
+            lines.append(
+                CompanyTaxLine(
+                    code="loss_carried",
+                    label="Perdite degli anni precedenti (art. 84 TUIR)",
+                    amount=-used,
+                )
+            )
+    taxable = round_money(profit - used)
+    gross = ZERO_MONEY if loss else round_money(taxable * law.ires_rate / _HUNDRED)
     amount = gross
     credit: Decimal | None = None
     if withholdings is None:
@@ -198,13 +238,14 @@ def _ires(
         )
     return CompanyTaxEstimate(
         lines=lines,
-        base=profit,
+        base=taxable,
         rate=law.ires_rate,
         amount=amount,
         loss=loss,
         withholdings=withholdings,
         credit=credit,
         assumptions=assumptions,
+        losses=losses,
     )
 
 

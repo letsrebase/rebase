@@ -60,6 +60,7 @@ from pigrocrm.core.fiscal.models import (  # noqa: F401
     IvaSettlement,
     TaxAdvanceMethod,
     TaxInstalmentPlan,
+    TaxLoss,
     TaxNoticePlan,
 )
 from pigrocrm.core.gmail.models import (  # noqa: F401

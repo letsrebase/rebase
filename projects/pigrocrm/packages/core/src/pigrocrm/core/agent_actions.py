@@ -206,6 +206,11 @@ FULL_ACCESS_ACTIONS: frozenset[str] = frozenset(
         # design § 5): the most sensitive data the product holds, so an administrator's token
         # with `full_access`, nothing less. Accepting one read from a document stays a person's.
         "set_declared_tax_figure",
+        # The losses of earlier years the estimate carries forward (REB-1088, taxes design § 1
+        # and § 5): typed from the return like a declared figure and moving the same tax due
+        # items, so the same position.
+        "set_tax_loss",
+        "delete_tax_loss",
         # The advance method of a tax year (REB-1074, taxes design § 5): reversible, but it moves
         # the tax due items, so the same position as the figures it reads.
         "set_tax_advance_method",
@@ -564,6 +569,8 @@ ACTION_LABELS: dict[str, str] = {
     "write_export_to_drive": "scrivere l'esportazione su Google Drive",
     "list_staff": "leggere l'elenco delle persone dell'azienda e i loro compensi",
     "set_declared_tax_figure": "registrare le cifre della dichiarazione dei redditi",
+    "set_tax_loss": "registrare una perdita fiscale da riportare agli anni dopo",
+    "delete_tax_loss": "togliere una perdita fiscale registrata",
     "set_tax_advance_method": "scegliere come calcolare gli acconti d'imposta di un anno",
     "confirm_tax_carry": "confermare la differenza riportata su un'imposta",
     "set_tax_instalment_plan": "rateizzare il saldo e il primo acconto delle imposte di un anno",

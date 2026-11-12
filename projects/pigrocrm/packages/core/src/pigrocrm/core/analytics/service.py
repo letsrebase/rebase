@@ -57,6 +57,8 @@ from pigrocrm.core.fiscal.inps_paid import inps_paid_in_year
 from pigrocrm.core.fiscal.law import DeclaredTax, TaxYearLaw
 from pigrocrm.core.fiscal.law_inps import InpsCategoryName, TradeGestione
 from pigrocrm.core.fiscal.law_irap import IrapActivity
+from pigrocrm.core.fiscal.loss_carry import loss_offset_for
+from pigrocrm.core.fiscal.losses import TaxLossService
 from pigrocrm.core.fiscal.ordinary_estimate import (
     ORDINARY_WARNING,
     InpsFacts,
@@ -680,6 +682,7 @@ class AnalyticsService:
             update={
                 "advance_method": "forecast" if chosen == "forecast" else "historical",
                 "declared": declared,
+                "losses": TaxLossService(self.session).losses_for_entity(legal_entity.id),
                 "reading": reading_for_year(declared),
                 "readings": self._tax_readings(year, estimate, declared),
             }
@@ -952,6 +955,7 @@ class AnalyticsService:
             activity=IrapActivity(
                 ateco_2007=profile.ateco_2007_code, ateco_2025=profile.ateco_2025_code
             ),
+            losses=loss_offset_for(self.session, legal_entity, pack, "ires", basis),
         )
         if company is None:
             return estimate
@@ -1004,6 +1008,7 @@ class AnalyticsService:
             withholdings=withheld,
             household=profile.household,
             inps_paid=inps_paid_in_year(self.session, legal_entity.id, basis.year),
+            losses=loss_offset_for(self.session, legal_entity, pack, "irpef", basis),
         )
 
 
