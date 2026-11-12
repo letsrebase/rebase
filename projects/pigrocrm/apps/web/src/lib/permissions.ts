@@ -238,6 +238,9 @@ export const MIN_ROLE = {
   get_fiscal_estimate: 'admin',
   // The tax calendar (REB-1004) is the same fiscal position as the estimate: an administrator's.
   get_tax_calendar: 'admin',
+  // The tax due items «Tasse» and the Home's tax block list (REB-1079, REB-1095): every item whose
+  // source is a tax is an administrator's read, whatever the calendar's own gate says.
+  read_fiscal_due_items: 'admin',
   // The accountant's period export (REB-1028): every fiscal figure of a company, so the page, its
   // entry in the menu and the download are an administrator's, as the core guards them.
   build_accountant_export: 'admin',

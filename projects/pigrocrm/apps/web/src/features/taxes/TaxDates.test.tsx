@@ -12,12 +12,17 @@ import { spaceModules } from '@/lib/modules.testing'
 import { queryKeys } from '@/lib/query'
 import { HomeTaxDates } from './TaxDates'
 
-const session = vi.hoisted(() => ({ role: 'admin' as 'admin' | 'collaborator' | 'readonly' }))
+const session = vi.hoisted(() => ({
+  role: 'admin' as 'admin' | 'collaborator' | 'readonly',
+  /** A role that reads the calendar and not the due items (the two gates are separate). */
+  noItems: false,
+}))
 vi.mock('@/lib/auth', async () => {
   const { can } = await import('@/lib/permissions')
   return {
     useAuth: () => ({ user: { id: 'u-1', role: session.role } }),
-    useCan: (action: Parameters<typeof can>[1]) => can(session.role, action),
+    useCan: (action: Parameters<typeof can>[1]) =>
+      !(session.noItems && action === 'read_fiscal_due_items') && can(session.role, action),
   }
 })
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -25,7 +30,9 @@ vi.mock('@/lib/api', async (importOriginal) => {
   return { ...actual, api: { GET: vi.fn() } }
 })
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ to, children }: { to: string; children: React.ReactNode }) => <a href={to}>{children}</a>,
+  Link: ({ to, children }: { to: string; children: React.ReactNode }) => (
+    <a href={to}>{children}</a>
+  ),
 }))
 
 const entry = (due: string, kind: string, tax = 'substitute_tax') => ({
@@ -46,8 +53,44 @@ const calendar = (year: number, dates: unknown[], legalEntity = 'le-1') => ({
 })
 
 function ok(data: unknown) {
-  return Promise.resolve({ data, response: new Response(null, { status: 200 }) }) as never
+  return Promise.resolve({
+    data,
+    response: new Response(null, { status: 200 }),
+  }) as never
 }
+const TAX_ITEM = {
+  id: 'i-1',
+  direction: 'out',
+  state: 'expected',
+  tax: 'substitute_tax',
+  amount: '700.00',
+  currency: 'EUR',
+  settled: '0.00',
+  description: 'Secondo acconto imposta sostitutiva 2026',
+  source_kind: 'tax_advance',
+  due_date: '2026-11-30',
+  carry_to_confirm: false,
+}
+const taxItem = (overrides: Record<string, unknown> = {}) => ({
+  ...TAX_ITEM,
+  ...overrides,
+})
+
+let dueItems: unknown[] = []
+let itemsFailure: number | null = null
+
+/** Answers the calendar through `calendarFor` and the due items with `dueItems`. */
+function serve(calendarFor: (path: string, options: never) => unknown) {
+  vi.mocked(api.GET).mockImplementation(((path: string, options: never) => {
+    if (path !== '/api/due-items') return calendarFor(path, options)
+    return itemsFailure === null ? ok({ items: dueItems, next_cursor: null }) : failed(itemsFailure)
+  }) as never)
+}
+const callsTo = (path: string) =>
+  (vi.mocked(api.GET).mock.calls as unknown as [string][]).filter(([called]) => called === path)
+const calendarCalls = () => callsTo('/api/analytics/fiscal/calendar')
+const itemCalls = () => callsTo('/api/due-items')
+
 function failed(status: number, detail = 'Non riesco a leggere le date.') {
   return Promise.resolve({
     error: { detail, status },
@@ -67,7 +110,9 @@ const ONE: LegalEntityValue = {
 }
 
 function renderBlock(off: Parameters<typeof spaceModules>[0] = [], legal: LegalEntityValue = ONE) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   client.setQueryData(queryKeys.modules, spaceModules(off, 'solo'))
   return render(
     <QueryClientProvider client={client}>
@@ -80,15 +125,18 @@ function renderBlock(off: Parameters<typeof spaceModules>[0] = [], legal: LegalE
 
 beforeEach(() => {
   session.role = 'admin'
+  session.noItems = false
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(2026, 10, 10, 9, 0, 0))
   vi.mocked(api.GET).mockReset()
+  dueItems = []
+  itemsFailure = null
 })
 afterEach(() => vi.useRealTimers())
 
 describe('HomeTaxDates', () => {
   it('shows the next two days with their distance, what falls due and «non calcolabile»', async () => {
-    vi.mocked(api.GET).mockImplementation((() =>
+    serve((() =>
       ok(
         calendar(2026, [
           entry('2026-06-30', 'balance_and_first_advance'),
@@ -107,29 +155,31 @@ describe('HomeTaxDates', () => {
     expect(screen.queryByText(/0,00/)).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Apri Tasse' })).toHaveAttribute('href', '/app/taxes')
     // The pack has dates for this year, so next year was never asked.
-    expect(vi.mocked(api.GET)).toHaveBeenCalledTimes(1)
+    expect(calendarCalls()).toHaveLength(1)
   })
 
   it('reads on into next year when fewer than two dates are left in this one', async () => {
-    vi.mocked(api.GET).mockImplementation(((_path: string, options: { params: { query: { year: number } } }) =>
+    serve(((_path: string, options: { params: { query: { year: number } } }) =>
       options.params.query.year === 2026
         ? ok(calendar(2026, [entry('2026-11-30', 'second_advance')]))
         : ok(calendar(2027, [entry('2027-06-30', 'balance_and_first_advance')]))) as never)
     renderBlock()
     expect(await screen.findByText('30/11/2026 · tra 20 giorni')).toBeInTheDocument()
-    expect(await screen.findByText('Saldo 2026 e primo acconto 2027 · Imposta sostitutiva')).toBeInTheDocument()
+    expect(
+      await screen.findByText('Saldo 2026 e primo acconto 2027 · Imposta sostitutiva'),
+    ).toBeInTheDocument()
   })
 
   it('draws nothing when the pack carries no dates, and says nothing about it', async () => {
-    vi.mocked(api.GET).mockImplementation((() => ok(calendar(2026, []))) as never)
+    serve((() => ok(calendar(2026, []))) as never)
     const { container } = renderBlock()
-    await waitFor(() => expect(vi.mocked(api.GET)).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(calendarCalls()).toHaveLength(2))
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
     expect(container).toBeEmptyDOMElement()
   })
 
   it('says «nessuna scadenza» in one line when the pack has dates and none is ahead', async () => {
-    vi.mocked(api.GET).mockImplementation(((_path: string, options: { params: { query: { year: number } } }) =>
+    serve(((_path: string, options: { params: { query: { year: number } } }) =>
       options.params.query.year === 2026
         ? ok(calendar(2026, [entry('2026-06-30', 'balance_and_first_advance')]))
         : ok(calendar(2027, []))) as never)
@@ -139,7 +189,7 @@ describe('HomeTaxDates', () => {
   })
 
   it('says a failed read, with «Riprova», and never an empty block', async () => {
-    vi.mocked(api.GET).mockImplementation((() => failed(500)) as never)
+    serve((() => failed(500)) as never)
     renderBlock()
     expect(await screen.findByRole('alert')).toHaveTextContent('Non riesco a leggere le date.')
     expect(screen.getByRole('button', { name: 'Riprova' })).toBeInTheDocument()
@@ -147,7 +197,7 @@ describe('HomeTaxDates', () => {
   })
 
   it('draws nothing for an entity with no fiscal profile', async () => {
-    vi.mocked(api.GET).mockImplementation((() => failed(404)) as never)
+    serve((() => failed(404)) as never)
     const { container } = renderBlock()
     await waitFor(() => expect(vi.mocked(api.GET)).toHaveBeenCalled())
     await waitFor(() => expect(container).toBeEmptyDOMElement())
@@ -167,7 +217,7 @@ describe('HomeTaxDates', () => {
   })
 
   it('names each legal entity in «Tutte le aziende» and merges none of them', async () => {
-    vi.mocked(api.GET).mockImplementation(((
+    serve(((
       _path: string,
       options: { params: { query: { year: number; legal_entity_id: string } } },
     ) => {
@@ -186,16 +236,109 @@ describe('HomeTaxDates', () => {
       several: true,
       legal_entities: [entity('le-1', 'Rossi Srl'), entity('le-2', 'Bianchi')],
     })
-    expect(await screen.findByRole('heading', { name: 'Prossime tasse · Rossi Srl' })).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { name: 'Prossime tasse · Bianchi' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Prossime tasse · Rossi Srl',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'Prossime tasse · Bianchi' }),
+    ).toBeInTheDocument()
     expect(await screen.findByText('30/11/2026 · tra 20 giorni')).toBeInTheDocument()
     expect(await screen.findByText('16/12/2026 · tra 36 giorni')).toBeInTheDocument()
   })
 
   it('names no entity in a one-entity space', async () => {
-    vi.mocked(api.GET).mockImplementation((() => ok(calendar(2026, [entry('2026-11-30', 'second_advance')]))) as never)
+    serve((() => ok(calendar(2026, [entry('2026-11-30', 'second_advance')]))) as never)
     renderBlock()
     expect(await screen.findByRole('heading', { name: 'Prossime tasse' })).toBeInTheDocument()
     expect(screen.queryByText(/·.*Srl/)).not.toBeInTheDocument()
+  })
+
+  describe('with the tax due items', () => {
+    const second = () =>
+      calendar(2026, [
+        entry('2026-11-30', 'second_advance'),
+        entry('2026-12-16', 'instalments_end'),
+      ])
+
+    it('shows an item with its amount and state, and drops the pack line it covers that day', async () => {
+      dueItems = [taxItem()]
+      serve(() => ok(second()))
+      renderBlock()
+      expect(
+        await screen.findByText('Secondo acconto imposta sostitutiva 2026'),
+      ).toBeInTheDocument()
+      expect(screen.getByText(/700,00/)).toBeInTheDocument()
+      expect(screen.getByText('Da pagare')).toBeInTheDocument()
+      expect(
+        screen.queryByText('Secondo acconto 2026 · Imposta sostitutiva'),
+      ).not.toBeInTheDocument()
+      // The other day has no item: the pack's line stays, with no amount.
+      expect(
+        screen.getByText('Ultima rata di saldo 2025 e primo acconto 2026 · Imposta sostitutiva'),
+      ).toBeInTheDocument()
+      expect(screen.getAllByText('non calcolabile')).toHaveLength(1)
+    })
+
+    it('keeps the pack line of a tax the day carries no item for', async () => {
+      dueItems = [taxItem({ tax: 'inps' })]
+      serve(() => ok(second()))
+      renderBlock()
+      expect(
+        await screen.findByText('Secondo acconto 2026 · Imposta sostitutiva'),
+      ).toBeInTheDocument()
+      expect(screen.getByText('Secondo acconto imposta sostitutiva 2026')).toBeInTheDocument()
+    })
+
+    it('counts a paid item as covering its pack line, and draws neither', async () => {
+      dueItems = [taxItem({ state: 'settled', settled: '700.00' })]
+      serve(() => ok(second()))
+      renderBlock()
+      expect(await screen.findByText('16/12/2026 · tra 36 giorni')).toBeInTheDocument()
+      expect(screen.queryByText(/30\/11\/2026/)).not.toBeInTheDocument()
+      expect(screen.queryByText('Pagato')).not.toBeInTheDocument()
+      expect(
+        screen.queryByText('Secondo acconto 2026 · Imposta sostitutiva'),
+      ).not.toBeInTheDocument()
+    })
+
+    it('puts an overdue item first, ahead of the next date', async () => {
+      dueItems = [
+        taxItem({
+          id: 'i-late',
+          due_date: '2026-11-02',
+          description: 'Saldo imposta sostitutiva 2025',
+        }),
+      ]
+      serve(() => ok(second()))
+      renderBlock()
+      expect(await screen.findByText('Saldo imposta sostitutiva 2025')).toBeInTheDocument()
+      expect(screen.getByText('Scaduto')).toBeInTheDocument()
+      const days = screen.getAllByText(/^\d\d\/\d\d\/2026 · /).map((node) => node.textContent)
+      expect(days).toEqual(['02/11/2026 · 8 giorni fa', '30/11/2026 · tra 20 giorni'])
+    })
+
+    it('shows the calendar alone, and asks for no item, for a role that may not read them', async () => {
+      session.noItems = true
+      dueItems = [taxItem()]
+      serve(() => ok(second()))
+      renderBlock()
+      expect(
+        await screen.findByText('Secondo acconto 2026 · Imposta sostitutiva'),
+      ).toBeInTheDocument()
+      expect(screen.getAllByText('non calcolabile')).toHaveLength(2)
+      expect(itemCalls()).toHaveLength(0)
+    })
+
+    it('still shows the dates when the items cannot be read', async () => {
+      itemsFailure = 500
+      serve(() => ok(second()))
+      renderBlock()
+      expect(
+        await screen.findByText('Secondo acconto 2026 · Imposta sostitutiva'),
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
   })
 })

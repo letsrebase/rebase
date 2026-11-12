@@ -1,6 +1,8 @@
 import { Link } from '@tanstack/react-router'
 import { LoadingState } from '@/components/LoadingState'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
+import { StatusPill } from '@/components/StatusPill'
+import { moneyIn } from '@/features/cash/money'
 import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
 import { toProblem } from '@/lib/api'
@@ -10,6 +12,7 @@ import { useLegalEntity } from '@/lib/legalEntity'
 import { useModules } from '@/lib/modules'
 import { NOT_COMPUTABLE } from '@/features/analytics/format'
 import { distanceLabel, lineText } from './dates'
+import { TAX_ITEM_STATE_LABEL, TAX_ITEM_STATE_TONE, itemTitle, taxItemState } from './items'
 import { LOADING_SENTENCE, NOTHING_DUE } from './labels'
 import { useNextTaxDates } from './queries'
 
@@ -24,11 +27,12 @@ const HEADINGS: Record<TaxDatesVariant, string> = {
 }
 
 /**
- * The next two tax dates of one legal entity, with the amount of each: «30/11/2026 · tra 20
- * giorni», what falls due under it and the amount at the right. The dates are the pack's, once
- * per calendar «salvo proroghe» on the page; the amount is a date's net as the server gives it,
- * and no tax due item carries one yet, so it reads «non calcolabile», never `0,00 €` (brief,
- * «Amount not known»).
+ * The next two tax days of one legal entity: «30/11/2026 · tra 20 giorni» and under it what falls
+ * due. A tax due item (a balance, an advance, an instalment, the chamber fee) shows its own amount
+ * and state pill, as in «Tasse», overdue ones first; a pack date with no item that day for its tax
+ * is the pack's line, «salvo proroghe» on the page, and reads «non calcolabile», never `0,00 €`
+ * (brief, «Amount not known»). A role that reads the calendar and not the items sees the lines
+ * alone.
  *
  * It draws nothing when the legal entity has no fiscal profile (404: Settings says so) and
  * nothing when its pack carries no dates (the page says why; the Home is not where a gap in the
@@ -51,10 +55,7 @@ export function TaxDatesBlock({
   if (!next.waiting && failure === null && !next.hasCalendar) return null
   const heading = name ? `${HEADINGS[variant]} · ${name}` : HEADINGS[variant]
   return (
-    <section
-      aria-label={heading}
-      className={cn('space-y-3', variant === 'band' && 'px-8 pb-6')}
-    >
+    <section aria-label={heading} className={cn('space-y-3', variant === 'band' && 'px-8 pb-6')}>
       <h2 className="text-base font-semibold">{heading}</h2>
       {failure !== null ? (
         <div className="space-y-3">
@@ -71,23 +72,40 @@ export function TaxDatesBlock({
         <div className="space-y-2">
           <ul className="divide-y border bg-card">
             {next.days.map((day) => (
-              <li key={day.date} className="flex items-baseline justify-between gap-4 px-4 py-3">
-                <div className="min-w-0 space-y-0.5">
-                  <p className="text-sm font-medium">
-                    {formatIsoDateItalian(day.date)} · {distanceLabel(next.today, day.date)}
-                  </p>
-                  {day.entries.map((entry) => (
-                    <p
-                      key={`${entry.tax}-${entry.kind}`}
-                      className="text-xs text-muted-foreground"
+              <li key={day.date} className="space-y-1.5 px-4 py-3">
+                <p className="text-sm font-medium">
+                  {formatIsoDateItalian(day.date)} · {distanceLabel(next.today, day.date)}
+                </p>
+                {day.items.map((item) => {
+                  const state = taxItemState(item, next.today)
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1"
                     >
-                      {lineText(entry)}
-                    </p>
-                  ))}
-                </div>
-                <span className="shrink-0 text-sm text-muted-foreground tabular-nums">
-                  {NOT_COMPUTABLE}
-                </span>
+                      <p className="min-w-0 text-xs text-muted-foreground">{itemTitle(item)}</p>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span className="text-sm tabular-nums">
+                          {moneyIn(item.amount, item.currency)}
+                        </span>
+                        <StatusPill tone={TAX_ITEM_STATE_TONE[state]}>
+                          {TAX_ITEM_STATE_LABEL[state]}
+                        </StatusPill>
+                      </span>
+                    </div>
+                  )
+                })}
+                {day.entries.map((entry) => (
+                  <div
+                    key={`${entry.tax}-${entry.kind}`}
+                    className="flex items-baseline justify-between gap-4"
+                  >
+                    <p className="min-w-0 text-xs text-muted-foreground">{lineText(entry)}</p>
+                    <span className="shrink-0 text-sm text-muted-foreground tabular-nums">
+                      {NOT_COMPUTABLE}
+                    </span>
+                  </div>
+                ))}
               </li>
             ))}
           </ul>

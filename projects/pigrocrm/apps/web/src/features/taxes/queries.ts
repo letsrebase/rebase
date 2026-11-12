@@ -6,7 +6,7 @@ import type { components } from '@/lib/api-types'
 import { useCan } from '@/lib/auth'
 import { queryKeys, retryUnlessMissing } from '@/lib/query'
 import { toIsoDate } from '@/lib/dates'
-import { nextDays, type DueDay } from './dates'
+import { homeDays, nextDays } from './dates'
 
 /** How many dates the Home carries (brief: at most two rows). */
 export const HOME_DATES = 2
@@ -31,13 +31,18 @@ export function useTaxCalendar(year: number, legalEntityId?: string | null, enab
 }
 
 /**
- * The next dates of one legal entity for the Home: the first `HOME_DATES` days on or after today,
- * read from this calendar year and, when fewer are left, from the next (the December advance is
- * followed by January's payments). `hasCalendar` says whether the pack carries dates at all, so
- * a pack with none is told from a quiet stretch; the Home draws nothing for the first.
+ * The next tax days of one legal entity for the Home: the pack's dates and, when the role may
+ * read the due items (`read_fiscal_due_items`, a gate of its own: a role that reads the calendar
+ * and not the items still sees the calendar), the items «Tasse» draws, through the same queries
+ * and the same merge (`homeDays`). Dates are read from this calendar year and, when fewer are
+ * left, from the next (the December advance is followed by January's payments). `hasCalendar`
+ * says whether the pack carries dates at all, so a pack with none is told from a quiet stretch;
+ * the Home draws nothing for the first. A failed read of the items is not the block's failure:
+ * the dates are still true, and the block draws them alone.
  */
 export function useNextTaxDates(legalEntityId?: string | null, enabled = true) {
   const allowed = useCan('get_tax_calendar') && enabled
+  const itemsAllowed = useCan('read_fiscal_due_items') && allowed
   const now = new Date()
   const today = toIsoDate(now)
   const year = now.getFullYear()
@@ -45,10 +50,27 @@ export function useNextTaxDates(legalEntityId?: string | null, enabled = true) {
   const ahead = current.data ? nextDays(current.data.dates, today, HOME_DATES) : []
   const needMore = current.isSuccess && ahead.length < HOME_DATES
   const following = useTaxCalendar(year + 1, legalEntityId, allowed && needMore)
-  const days: DueDay[] = needMore
-    ? [...ahead, ...nextDays(following.data?.dates ?? [], today, HOME_DATES - ahead.length)]
-    : ahead
-  const waiting = current.isPending || (needMore && following.isPending)
+  const entity = current.data?.legal_entity_id ?? null
+  const items = useTaxDueItems(year, entity, itemsAllowed && current.isSuccess)
+  const nextItems = useTaxDueItems(year + 1, entity, itemsAllowed && needMore)
+  const entries = [
+    ...(current.data?.dates ?? []),
+    ...(needMore ? (following.data?.dates ?? []) : []),
+  ]
+  const dueItems = [
+    ...new Map(
+      [...(items.data ?? []), ...(needMore ? (nextItems.data ?? []) : [])].map((item) => [
+        item.id,
+        item,
+      ]),
+    ).values(),
+  ]
+  const days = homeDays(entries, dueItems, today, HOME_DATES)
+  const waiting =
+    current.isPending ||
+    (needMore && following.isPending) ||
+    (itemsAllowed && current.isSuccess && items.isPending) ||
+    (itemsAllowed && needMore && nextItems.isPending)
   return {
     today,
     days,
@@ -58,6 +80,8 @@ export function useNextTaxDates(legalEntityId?: string | null, enabled = true) {
     refetch: () => {
       void current.refetch()
       if (needMore) void following.refetch()
+      if (items.isError) void items.refetch()
+      if (needMore && nextItems.isError) void nextItems.refetch()
     },
   }
 }
@@ -362,7 +386,11 @@ export function useTaxDocuments(enabled: boolean) {
   return useQuery({
     queryKey: ['inbox-tax-documents'],
     queryFn: () =>
-      unwrap(api.GET('/api/inbox/items', { params: { query: { kind: 'tax_document', limit: 50 } } })),
+      unwrap(
+        api.GET('/api/inbox/items', {
+          params: { query: { kind: 'tax_document', limit: 50 } },
+        }),
+      ),
     enabled,
   })
 }
@@ -385,7 +413,11 @@ export function useUngroupF24() {
   const refresh = useRefreshTaxes()
   return useMutation({
     mutationFn: (groupId: string) =>
-      unwrap(api.POST('/api/f24-groups/{group_id}/ungroup', { params: { path: { group_id: groupId } } })),
+      unwrap(
+        api.POST('/api/f24-groups/{group_id}/ungroup', {
+          params: { path: { group_id: groupId } },
+        }),
+      ),
     onSuccess: () => {
       refresh()
       toast.success('F24 sciolto')
