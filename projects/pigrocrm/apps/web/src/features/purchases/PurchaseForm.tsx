@@ -22,6 +22,13 @@ import { PHONE_BAR_HEIGHT } from '@/components/PhoneBar'
 import type { FieldDefinition } from '@/lib/schema'
 import type { NewPurchaseSearch } from './formSearch'
 import { usePurchaseCapabilities } from './capabilities'
+import {
+  ASSET_GROUP_LABELS,
+  DEDUCTIBILITY_KIND_LABELS,
+  NOT_STATED,
+  type AssetGroup,
+  type DeductibilityKind,
+} from './deductibilityLabels'
 import { FieldRows, FormGrid, FormRow, WideRow } from './PurchaseFormLayout'
 import { VatLinesEditor } from './VatLinesEditor'
 import {
@@ -216,7 +223,10 @@ export function PurchaseForm({
       carriesWithholding(supplier.data?.supplier_kind),
     reverseCharge: capabilities.data?.reverse_charge ?? true,
     splitPayment: capabilities.data?.split_payment ?? true,
+    deductibility: capabilities.data?.deductibility ?? true,
   }
+  const deductibilityKind = (values.native.deductibility_kind as DeductibilityKind | null | undefined) ?? NOT_STATED
+  const assetGroup = (values.native.asset_group as AssetGroup | null | undefined) ?? NOT_STATED
   // «Azienda» only for a purchase with no deal and from the second legal entity on (REB-626,
   // spec §1.7): a purchase on a deal is that deal's azienda's and the server would refuse
   // another, while a general purchase is shared («Condivisa», `null`) unless one legal entity
@@ -452,6 +462,72 @@ export function PurchaseForm({
             </SelectContent>
           </Select>
         </FormRow>
+
+        {shown.deductibility && (
+          <FormRow
+            label="Natura fiscale"
+            htmlFor="purchase-deductibility-kind"
+            error={errorOn('deductibility_kind')}
+            hint={
+              <p className="text-sm text-muted-foreground">
+                Se non la indichi vale quella della categoria; senza nessuna delle due il costo è
+                dedotto per intero.
+              </p>
+            }
+          >
+            <Select
+              value={deductibilityKind}
+              onValueChange={(value) =>
+                setNative({ deductibility_kind: value === NOT_STATED ? null : value })
+              }
+            >
+              <SelectTrigger id="purchase-deductibility-kind" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NOT_STATED}>Non indicata</SelectItem>
+                {(Object.keys(DEDUCTIBILITY_KIND_LABELS) as DeductibilityKind[]).map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {DEDUCTIBILITY_KIND_LABELS[item]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormRow>
+        )}
+
+        {shown.deductibility && kind !== 'credit_note' && (
+          <FormRow
+            label="Bene ammortizzabile"
+            htmlFor="purchase-asset-group"
+            error={errorOn('asset_group')}
+            hint={
+              <p className="text-sm text-muted-foreground">
+                Solo per un bene materiale da ammortizzare: scegli la voce della tabella dei
+                coefficienti.
+              </p>
+            }
+          >
+            <Select
+              value={assetGroup}
+              onValueChange={(value) =>
+                setNative({ asset_group: value === NOT_STATED ? null : value })
+              }
+            >
+              <SelectTrigger id="purchase-asset-group" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NOT_STATED}>Non è un bene ammortizzabile</SelectItem>
+                {(Object.keys(ASSET_GROUP_LABELS) as AssetGroup[]).map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {ASSET_GROUP_LABELS[item]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormRow>
+        )}
 
         {dealId === undefined && legal_entity.several ? (
           <FormRow

@@ -955,6 +955,7 @@ describe('what the buyer\'s pack lets a purchase carry', () => {
     withholding: true,
     reverse_charge: true,
     split_payment: true,
+    deductibility: true,
     ...overrides,
   })
 
@@ -1021,6 +1022,50 @@ describe('what the buyer\'s pack lets a purchase carry', () => {
       expect(body).not.toHaveProperty(key)
     }
     expect(body).toMatchObject({ kind: 'invoice', supplier_id: SUPPLIER_ID, amount: '122' })
+  })
+
+  it('hides the natura fiscale and the asset group when the pack does not read them, and sends neither', async () => {
+    await openInvoice(() => ok(caps({ deductibility: false })))
+    await waitFor(() => expect(screen.queryByText('Natura fiscale')).not.toBeInTheDocument())
+    expect(screen.queryByText('Bene ammortizzabile')).not.toBeInTheDocument()
+
+    vi.mocked(api.POST).mockImplementation((() => ok(purchase())) as never)
+    await fillCommon()
+    await userEvent.type(screen.getByLabelText(/importo \(€\)/i), '122')
+    await userEvent.click(screen.getByRole('button', { name: 'Registra' }))
+    await waitFor(() => expect(api.POST).toHaveBeenCalled())
+    const { body } = sent(api.POST)
+    expect(body).not.toHaveProperty('deductibility_kind')
+    expect(body).not.toHaveProperty('asset_group')
+  })
+
+  it('sends the natura fiscale and the asset group the person picked', async () => {
+    await openInvoice(() => ok(caps()))
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Natura fiscale' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Telefonia' }))
+    await userEvent.click(screen.getByRole('combobox', { name: 'Bene ammortizzabile' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'Autovetture' }))
+
+    vi.mocked(api.POST).mockImplementation((() => ok(purchase())) as never)
+    await fillCommon()
+    await userEvent.type(screen.getByLabelText(/importo \(€\)/i), '122')
+    await userEvent.click(screen.getByRole('button', { name: 'Registra' }))
+    await waitFor(() => expect(api.POST).toHaveBeenCalled())
+    expect(sent(api.POST).body).toMatchObject({
+      deductibility_kind: 'phone',
+      asset_group: 'cars',
+    })
+  })
+
+  it('states nothing by default, and draws no asset group for a credit note', async () => {
+    await openInvoice(() => ok(caps()))
+    await screen.findByRole('combobox', { name: 'Bene ammortizzabile' })
+
+    await pickKind('Nota di credito')
+    await waitFor(() =>
+      expect(screen.queryByRole('combobox', { name: 'Bene ammortizzabile' })).not.toBeInTheDocument(),
+    )
+    expect(screen.getByRole('combobox', { name: 'Natura fiscale' })).toBeInTheDocument()
   })
 
   it('does not hide the foreign-supplier sentence\'s checkbox from itself', async () => {

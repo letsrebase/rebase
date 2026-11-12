@@ -104,6 +104,8 @@ export interface FieldVisibility {
   withholding?: boolean
   reverseCharge?: boolean
   splitPayment?: boolean
+  /** The deductibility kind and, but for a credit note, the asset group (REB-1089). */
+  deductibility?: boolean
 }
 
 /**
@@ -172,6 +174,8 @@ export const PICKER_KEYS = [
   'legal_entity_id',
   'corrects_purchase_id',
   'vat_lines',
+  'deductibility_kind',
+  'asset_group',
 ] as const
 
 const NATIVE_FIELD_KEYS = [...ALL_FIELDS.map((field) => field.key), ...PICKER_KEYS]
@@ -314,6 +318,10 @@ export function toPurchaseRequestBody(
       case 'category_id':
       case 'legal_entity_id':
         return true
+      case 'deductibility_kind':
+        return options.shown?.deductibility !== false
+      case 'asset_group':
+        return options.shown?.deductibility !== false && kind !== 'credit_note'
       case 'supplier_id':
         return document
       case 'corrects_purchase_id':
