@@ -503,13 +503,13 @@ def test_the_irap_paid_replaces_the_estimate_in_the_deduction(
             DueItem.legal_entity_id == entity.id,
             DueItem.tax == "irap",
             DueItem.source_kind == "tax_advance",
-            DueItem.due_date == D(2026, 6, 30),
+            DueItem.due_date == D(2026, 7, 20),
             DueItem.state != "dropped",
         )
     ).one()
     assert first.amount == M("1123.20")
     DueItemService(db_session).settle(
-        first.id, SettlementCreate(amount=first.amount, settled_on=D(2026, 6, 30)), ADMIN
+        first.id, SettlementCreate(amount=first.amount, settled_on=D(2026, 7, 20)), ADMIN
     )
     db_session.expire_all()
 
