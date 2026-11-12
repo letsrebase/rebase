@@ -4666,3 +4666,20 @@ def test_0115_adds_the_inps_reduction_facts_and_widens_the_inail_rate(
         assert _numeric_shape(url, "staff_members", "employer_inail_rate") == (5, 2)
         upgrade(config, "0115")
         assert _numeric_shape(url, "staff_members", "employer_inail_rate") == (6, 3)
+
+
+def test_0117_adds_the_company_activity_codes_with_no_backfill(pigrocrm_postgres: Any) -> None:
+    """REB-1086: two nullable columns («not stated») with a CHECK on the shape of a code, so
+    both ways are a pure add and drop."""
+    columns = ("ateco_2007_code", "ateco_2025_code")
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0116")
+        assert not any(_column_exists(url, "fiscal_profile", name) for name in columns)
+        upgrade(config, "0117")
+        assert all(_column_exists(url, "fiscal_profile", name) for name in columns)
+        downgrade(config, "0116")
+        assert not any(_column_exists(url, "fiscal_profile", name) for name in columns)
+        upgrade(config, "0117")
+        assert all(_column_exists(url, "fiscal_profile", name) for name in columns)

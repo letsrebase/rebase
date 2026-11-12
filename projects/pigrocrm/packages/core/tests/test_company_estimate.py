@@ -26,10 +26,12 @@ from uuid import uuid4
 
 import pytest
 from fakes.customer_fixtures import make_customer
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.service import AnalyticsService
+from pigrocrm.core.fiscal.basis_schemas import BasisEmployee
 from pigrocrm.core.fiscal.company_estimate import irap_region_key
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
 from pigrocrm.core.fiscal.models import FiscalEstimateReading, FiscalProfile
@@ -426,7 +428,7 @@ def test_a_permanent_employees_cost_leaves_the_irap_base(db_session: Session) ->
     ]
     # 80,000 - 31,200 - 8,000 = 40,800; 3.90% = 1,591.20.
     assert (company.irap.base, company.irap.amount) == (M("40800.00"), M("1591.20"))
-    assert not any("non è indicato" in text for text in company.irap.assumptions)
+    assert not any("tipo di contratto non è indicato" in text for text in company.irap.assumptions)
     assert not any("sovrastimata" in text for text in company.irap.assumptions)
 
 
@@ -506,3 +508,168 @@ def test_a_director_has_no_contract_type(db_session: Session) -> None:
             annual_fee=M("12000.00"),
             contract_type="permanent",
         )
+
+
+# --- the activity the srl states (REB-1086) ---------------------------------------------------
+
+
+def _state_ateco(session: Session, entity: LegalEntity, ateco_2007: str, ateco_2025: str) -> None:
+    profile = session.scalars(
+        select(FiscalProfile).where(FiscalProfile.legal_entity_id == entity.id)
+    ).one()
+    profile.ateco_2007_code = ateco_2007
+    profile.ateco_2025_code = ateco_2025
+    session.flush()
+
+
+def test_a_tuscan_srl_with_no_activity_stated_gets_no_irap_figure(db_session: Session) -> None:
+    entity = _worked_example(db_session, city="Firenze", province="FI")
+    estimate = _estimate(db_session, entity)
+    company = estimate.company
+    assert company is not None
+    assert company.irap.amount is None and company.irap.rate is None
+    assert company.irap.missing is not None and "ATECO 2007" in company.irap.missing
+    assert company.ires.amount == M("8832.00")
+    assert estimate.due_total is None
+
+
+def test_the_activity_stated_picks_the_tuscan_row(db_session: Session) -> None:
+    entity = _worked_example(db_session, city="Firenze", province="FI")
+    _state_ateco(db_session, entity, "62.01.00", "62.10.00")
+    company = _estimate(db_session, entity).company
+    assert company is not None
+    # 72,000.00 x 4.82% (code 007, software) = 3,470.40
+    assert (company.irap.rate, company.irap.amount) == (M("4.82"), M("3470.40"))
+    assert any("riga 007" in text for text in company.irap.assumptions)
+
+
+def test_a_table_1_srl_pays_two_points_more_in_lombardia(db_session: Session) -> None:
+    entity = _worked_example(db_session)
+    _state_ateco(db_session, entity, "35.11.00", "35.11.00")
+    company = _estimate(db_session, entity).company
+    assert company is not None
+    # 72,000.00 x 5.90% (row 016 of Lombardia) = 4,248.00
+    assert (company.irap.rate, company.irap.amount) == (M("5.90"), M("4248.00"))
+
+
+def test_an_srl_that_states_no_code_in_a_region_with_no_list_is_told_table_1_was_not_checked(
+    db_session: Session,
+) -> None:
+    entity = _worked_example(db_session)
+    company = _estimate(db_session, entity).company
+    assert company is not None and company.irap.amount == M("2808.00")
+    assert any("ATECO 2025 non è indicato" in text for text in company.irap.assumptions)
+
+
+def test_a_profile_on_another_pack_refuses_an_activity_code(db_session: Session) -> None:
+    from pigrocrm.core.errors import ValidationFailed
+    from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
+    from pigrocrm.core.fiscal.service import FiscalProfileService
+
+    entity = _srl(db_session)
+    body = FiscalProfileUpsert.model_validate(
+        {"pack_id": "it-standard", "regime_code": "RF01", "ateco_2007_code": "62.01.00"}
+    )
+    with pytest.raises(ValidationFailed) as refused:
+        FiscalProfileService(db_session).upsert(body, ADMIN, legal_entity_id=entity.id)
+    assert "ateco_2007_code" in str(refused.value)
+
+
+def test_an_ateco_code_must_have_the_shape_of_one() -> None:
+    from pydantic import ValidationError
+
+    from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
+
+    with pytest.raises(ValidationError):
+        FiscalProfileUpsert.model_validate(
+            {"pack_id": "it-company", "regime_code": "RF01", "ateco_2025_code": "6201"}
+        )
+
+
+# --- a period that is not the calendar year (REB-1086, art. 11 c. 4-bis.2) ----------------------
+
+
+def _basis(period_from: dt.date, period_to: dt.date, revenue: str, employee: BasisEmployee | None):  # type: ignore[no-untyped-def]
+    from pigrocrm.core.fiscal.basis_schemas import BasisCosts, YearBasis
+
+    return YearBasis(
+        year=YEAR,
+        legal_entity_id=uuid4(),
+        basis="accrual",
+        period_from=period_from,
+        period_to=period_to,
+        label="",
+        wording="",
+        source="",
+        revenue=M(revenue),
+        costs=BasisCosts(
+            purchases=M("10000.00"),
+            staff=M("8000.00"),
+            director=M("0.00"),
+            total=M("18000.00"),
+            employees=[employee] if employee else [],
+        ),
+        left_out=[],
+        assumptions=[],
+    )
+
+
+def _irap_of(basis):  # type: ignore[no-untyped-def]
+    from pigrocrm.core.fiscal.company_estimate import estimate_company_taxes
+    from pigrocrm.core.fiscal.pack import IT_COMPANY_PACK
+
+    law = IT_COMPANY_PACK.law_for(YEAR)
+    assert law is not None and law.company_tax is not None
+    estimate = estimate_company_taxes(
+        basis, law.company_tax, place=locate("Milano", "MI", "IT"), province="MI"
+    )
+    assert estimate is not None
+    return estimate.irap
+
+
+def test_a_first_period_of_122_days_prorates_both_deductions_to_the_calendar_year() -> None:
+    employee = BasisEmployee(
+        staff_member_id=uuid4(),
+        name="Luca Verdi",
+        contract_type="fixed_term",
+        cost=M("8000.00"),
+        days_in_service=122,
+        part_time_percent=M("50"),
+    )
+    irap = _irap_of(_basis(D(YEAR, 9, 1), D(YEAR, 12, 31), "30000.00", employee))
+    lines = {line.code: line.amount for line in irap.lines}
+    # 1,850 x 122 / 365 x 50% = 309.18 (a person for 122 days, half time).
+    assert lines["per_employee"] == -M("309.18")
+    # 20,000 - 309.18 = 19,690.82 is 58,909 a year, the 8,000 row: 8,000 x 122 / 365 = 2,673.97.
+    assert lines["small_base"] == -M("2673.97")
+    assert irap.base == M("17016.85") and irap.amount == M("663.66")
+    assert any("122 giorni" in text and "ragguagliate" in text for text in irap.assumptions)
+
+
+def test_the_revenue_limit_of_the_per_employee_deduction_is_read_on_the_calendar_year() -> None:
+    employee = BasisEmployee(
+        staff_member_id=uuid4(),
+        name="Luca Verdi",
+        contract_type="fixed_term",
+        cost=M("8000.00"),
+        days_in_service=122,
+    )
+    # 150,000 in 122 days is 448,770 a year: above the 400,000 of c. 4-bis.1, so no deduction,
+    # although 150,000 itself is under it.
+    irap = _irap_of(_basis(D(YEAR, 9, 1), D(YEAR, 12, 31), "150000.00", employee))
+    assert "per_employee" not in [line.code for line in irap.lines]
+    assert any("ragguagliati all'anno solare" in text for text in irap.assumptions)
+
+
+def test_a_calendar_year_is_not_prorated() -> None:
+    employee = BasisEmployee(
+        staff_member_id=uuid4(),
+        name="Luca Verdi",
+        contract_type="fixed_term",
+        cost=M("8000.00"),
+        days_in_service=365,
+    )
+    irap = _irap_of(_basis(D(YEAR, 1, 1), D(YEAR, 12, 31), "30000.00", employee))
+    lines = {line.code: line.amount for line in irap.lines}
+    assert lines["per_employee"] == -M("1850.00") and lines["small_base"] == -M("8000.00")
+    assert not any("ragguagliate" in text for text in irap.assumptions)

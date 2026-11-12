@@ -144,6 +144,8 @@ class EmployeeCost:
     contract_type: str | None
     cost: Decimal
     days_in_service: int
+    # The share of a full-time week, in percent (100 when the member's record states none).
+    part_time_percent: Decimal = Decimal(100)
 
 
 def _key(item: CashItem) -> str:
@@ -272,6 +274,7 @@ class PayrollService:
                 member.contract_type,
                 round_money(per_member[member.id]),
                 days_in_service(member, date_from, date_to),
+                member.part_time_percent or Decimal(100),
             )
             for member in self.repo.members_of(legal_entity_id)
             if member.kind == "employee" and member.id in per_member

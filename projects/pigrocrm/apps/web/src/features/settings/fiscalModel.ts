@@ -22,6 +22,8 @@ export interface FiscalField {
     | 'social_security_rate'
     | 'flat_rate_start_year'
     | 'inps_first_enrolment_month'
+    | 'ateco_2007_code'
+    | 'ateco_2025_code'
   label: string
   hint?: string
   /** The regimes that read the field; every regime when absent. A field a regime does not
@@ -155,6 +157,20 @@ export const FIELDS: readonly FiscalField[] = [
     when: (values) =>
       values.inps_category === 'artigiani_commercianti' &&
       values.inps_new_enrolment_reduction === 'true',
+  },
+  // REB-1086: what an srl does, which decides the IRAP rate in the regions that tax some
+  // activities more. Text inputs, like the codes above; empty goes as «not stated».
+  {
+    name: 'ateco_2007_code',
+    label: 'Codice ATECO 2007',
+    hint: 'L’attività prevalente, come sulla visura camerale (62.01.00). Serve a scegliere l’aliquota IRAP della Regione.',
+    shownFor: ['company'],
+  },
+  {
+    name: 'ateco_2025_code',
+    label: 'Codice ATECO 2025',
+    hint: 'Lo stesso codice nella classificazione in vigore dal 2025 (62.10.00). Serve a sapere se l’attività è nella tabella 1 del D.L. 21/2026, le imprese dell’energia.',
+    shownFor: ['company'],
   },
 ]
 
@@ -426,6 +442,8 @@ export function emptyValues(): Values {
     substitute_tax_rate: '5.00',
     social_security_rate: '26.07',
     flat_rate_start_year: '',
+    ateco_2007_code: '',
+    ateco_2025_code: '',
     inps_category: '',
     inps_trade: '',
     inps_covered_elsewhere: '',
@@ -617,5 +635,11 @@ function taxpayerFacts(
         ? `${month}-01`
         : month
       : null
+  // The srl's activity codes go as typed, for the server to refuse by field name; any other
+  // regime sends none.
+  for (const code of ['ateco_2007_code', 'ateco_2025_code'] as const) {
+    const typed = pack === 'it-company' ? values[code].trim() : ''
+    facts[code] = typed === '' ? null : typed
+  }
   return facts
 }

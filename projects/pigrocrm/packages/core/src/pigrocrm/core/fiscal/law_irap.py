@@ -7,7 +7,9 @@ What the later estimate card reads from here
   the value of production of an srl and with which sign (art. 5 c. 1 D.Lgs. 446/1997).
 * `IrapLaw.permanent_staff_deduction` and the other deductions of art. 11.
 * `IrapLaw.territory`: which region's rate applies (art. 4).
-* `IrapLaw.rate_for(year, region)`: the region's ordinary rate for the year.
+* `IrapLaw.rate_for(year, region, activity)`: the rate the region applies to a company with that
+  activity (`law_irap_ateco.py`): the ordinary row, or the row its ATECO codes select, or why
+  there is none.
 
 The estimate's simplification (stated here because PigroCRM keeps no ledger, § A6)
 ----------------------------------------------------------------------------------
@@ -32,16 +34,22 @@ not see, and says so; it is an estimate, never the declared figure (A6 «Not the
 Items the law excludes that a ledger would carry (B10 c, B10 d, B12, B13) are none of these
 four, so excluding them costs the estimate nothing.
 
-What is not modelled and must not be read from here: the special rates of a subject (banks and
-financial companies, insurers, concessionaires, the activities named by art. 3 c. 1
-D.L. 20 February 2026 n. 21 and the regional incentives for new companies, young or women
-founders, small municipalities and collective agreements), the other sections of the IC form
+What is not modelled and must not be read from here: the special rates of a subject that is not
+an ordinary company (banks and financial companies, insurers, concessionaires, holdings,
+third-sector bodies, public bodies) and the regional incentives that depend on facts the pack
+does not hold (new companies, young or women founders, small or mountain municipalities,
+collective agreements, headcount, *de minimis* aid), the other sections of the IC form
 (financial companies, insurers, holding companies, the flat-rate section), the apportionment
 of a company with sites in several regions (art. 4 c. 2: the rule is in `territory`, the
 staff pay of each region is not known), and the deductions that need a record of each
 employee (`PerEmployeeDeduction` is data; the estimate applies it to the staff whose contract
 type is stated as fixed-term or seasonal, `StaffMember.contract_type`, and not to the apprentices
 and disabled workers the law leaves out of the headcount, which it cannot tell apart).
+
+What is modelled since REB-1086: the regional rows selected by the company's ATECO codes and the
+two points of art. 3 c. 1 D.L. 20 February 2026 n. 21 on the activities of its table 1
+(`law_irap_ateco.py`), and the pro-rating of art. 11 c. 4-bis.2 to the calendar year
+(`calendar_year_days`).
 
 Sources, read on 2026-11-11
 ---------------------------
@@ -55,14 +63,40 @@ Sources, read on 2026-11-11
   other deductions and applies only if that amount does not exceed 180,999.91 euro).
 * Dipartimento delle Finanze, «Fiscalità regionale e locale - IRAP - Aliquote applicabili»,
   «Elenchi generali» (file `irp2026.csv`, publications in force, the latest dated 12
-  October 2026), the region's row «Aliquota ordinaria» or the one that plays its part.
+  October 2026), the region's row «Aliquota ordinaria» or the one that plays its part, and the
+  rows selected by activity (`law_irap_ateco.py` lists them with their sources).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from calendar import isleap
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
+from datetime import date
 from decimal import Decimal
 from typing import Final, Literal
+
+from pigrocrm.core.fiscal.law_irap_ateco import (
+    ATECO_RULES_2026,
+    TABLE_1,
+    IrapRateAnswer,
+    RegionAtecoRules,
+    Table1,
+    digits,
+    select_rate,
+)
+
+
+# Art. 11 c. 4-bis.2 brings the table of c. 4-bis, its base and the positive components of
+# c. 4-bis.1 to the «anno solare», and the 1,850 euro of c. 4-bis.1 is «su base annua» (Normattiva,
+# read 2026-11-12). No source read says how the days of that fraction are counted when the year
+# has a 29 February: the pack divides by the days of the calendar year the period ends in (365 or
+# 366), so a full calendar year is never pro-rated, which is an inference, and the estimate says
+# so.
+def calendar_year_days(day: date) -> int:
+    """The days of the calendar year `day` falls in."""
+    return 366 if isleap(day.year) else 365
+
 
 # What an item of the income statement does to the value of production of a company that is
 # not a bank, a financial company or an insurer (art. 5 c. 1): it adds to it, it is deducted
@@ -204,6 +238,8 @@ class IrapRegionRate:
     publication that sets it (`ID_IRAP`, `DATA_PUBBLICAZIONE` of the dataset); `norm` is the
     provision the dataset cites for the row. `note` says, where the region's table holds
     another rate an ordinary company may qualify for, which one and why it is not the figure.
+    `ateco` holds the rows of the table that the company's ATECO codes select
+    (`law_irap_ateco.py`).
     """
 
     key: str
@@ -213,6 +249,18 @@ class IrapRegionRate:
     published: str
     norm: str
     note: str = ""
+    ateco: RegionAtecoRules = RegionAtecoRules()
+
+
+@dataclass(frozen=True)
+class IrapActivity:
+    """What a company says about its activity: the prevailing ATECO code in the 2007 and the
+    2025 classification, as typed (`35.11.00`) or `None` when not stated. The regional lists are
+    written in ATECO 2007 and table 1 of D.L. 21/2026 in ATECO 2025, so a rate that depends on
+    both needs both."""
+
+    ateco_2007: str | None = None
+    ateco_2025: str | None = None
 
 
 @dataclass(frozen=True)
@@ -239,6 +287,7 @@ class IrapLaw:
     small_base: tuple[SmallBaseDeduction, ...]
     territory: IrapTerritoryLaw
     regional_rates: tuple[IrapRegionalRates, ...]
+    table_1: Table1
 
     def item(self, code: str) -> IrapBaseItem:
         for item in self.base_items:
@@ -246,30 +295,59 @@ class IrapLaw:
                 return item
         raise KeyError(code)
 
-    def small_base_deduction(self, base: Decimal) -> Decimal:
+    def small_base_deduction(
+        self, base: Decimal, period_days: int = 365, year_days: int = 365
+    ) -> Decimal:
         """The deduction of art. 11 c. 4-bis for a base already net of the other deductions (it is
-        not due above the last row's limit, 180,999.91 in the Agenzia's instructions):
-        the amount of the first row whose limit the base does not exceed, never more than the
-        base, zero for a base above the last limit or not positive. Art. 11 c. 4-bis.2's
-        pro-rating of a period that is not twelve months is not applied."""
+        not due above the last row's limit, 180,999.91 in the Agenzia's instructions), brought to
+        the calendar year as art. 11 c. 4-bis.2 says for a period that is not twelve months:
+        the base is annualised (`base * year_days / period_days`), the row is the first whose
+        limit the annual base does not exceed, and its amount is brought back to the period
+        (`amount * period_days / year_days`), never more than the base. Zero for a base above
+        the last limit or not positive. A period as long as its calendar year is not pro-rated."""
         if base <= 0:
             return Decimal(0)
+        annual = base * year_days / period_days
         for row in self.small_base:
-            if base <= row.base_up_to:
-                return min(row.amount, base)
+            if annual <= row.base_up_to:
+                return min(row.amount * period_days / year_days, base)
         return Decimal(0)
 
-    def rate_for(self, year: int, region: str) -> Decimal | None:
-        """The ordinary IRAP rate, in percent, for a company whose registered office is in
-        `region`, for tax year `year`. `region` is the ISTAT region code (`01` to `20`), or `BZ`
-        or `TN` for the two autonomous provinces, which set their own rates; the caller takes
-        it from the place data of the legal entity's address. `None` for a year the pack holds
-        no table for or a key it does not know. Never a guess."""
+    def region_row(self, year: int, region: str) -> IrapRegionRate | None:
+        """The table's row of `region` for `year` (its name, ordinary rate and sources), `None`
+        for a year or a key the pack holds nothing for."""
+        code = region.strip().upper()
+        for table in self.regional_rates:
+            if table.year == year:
+                return table.rate(code)
+        return None
+
+    def rate_for(
+        self, year: int, region: str, activity: IrapActivity | None = None
+    ) -> IrapRateAnswer | None:
+        """The IRAP rate, in percent, for a company whose registered office is in `region`, for
+        tax year `year`, with the activity it states (none stated is a company that stated no
+        code). `region` is the ISTAT region code (`01` to `20`), or `BZ` or `TN` for the two
+        autonomous provinces, which set their own rates; the caller takes it from the place
+        data of the legal entity's address. The answer carries the rate, the row of the
+        region's table that selected it (none for the ordinary rate) and what to tell the
+        reader, or says which fact or list stops a rate (`law_irap_ateco.select_rate`). `None`
+        for a year the pack holds no table for or a key it does not know. Never a guess."""
         code = region.strip().upper()
         for table in self.regional_rates:
             if table.year == year:
                 row = table.rate(code)
-                return None if row is None else row.rate
+                if row is None:
+                    return None
+                stated = activity or IrapActivity()
+                return select_rate(
+                    year,
+                    row.rate,
+                    row.ateco,
+                    self.table_1,
+                    digits(stated.ateco_2007),
+                    digits(stated.ateco_2025),
+                )
         return None
 
 
@@ -285,6 +363,13 @@ def _rate(
     return IrapRegionRate(key, name, Decimal(rate), mef_id, published, norm, note)
 
 
+def _with_ateco(
+    rows: tuple[IrapRegionRate, ...], rules: Mapping[str, RegionAtecoRules]
+) -> tuple[IrapRegionRate, ...]:
+    """The year's rows with the rows its table selects by activity attached to each region."""
+    return tuple(replace(row, ateco=rules.get(row.key, RegionAtecoRules())) for row in rows)
+
+
 # Tax year 2026. Source for every row: Dipartimento delle Finanze, IRAP, «Aliquote applicabili»,
 # «Elenchi generali», `irp2026.csv` (publications in force, the latest dated 12 October 2026),
 # read on 2026-11-11; the row is the one the dataset calls «Aliquota ordinaria» (code 001),
@@ -293,153 +378,194 @@ def _rate(
 # Keys are ISTAT region codes; `BZ` and `TN` are the autonomous provinces.
 _RATES_2026: Final = IrapRegionalRates(
     year=2026,
-    rates=(
-        _rate("01", "Piemonte", "3.90", 2313, "2026-04-01", "art. 16 c. 1 D.Lgs. 446/1997"),
-        _rate("02", "Valle d'Aosta", "3.90", 2401, "2026-06-05", "art. 16 c. 1 D.Lgs. 446/1997"),
-        _rate("03", "Lombardia", "3.90", 2312, "2026-03-30", "art. 16 c. 1 D.Lgs. 446/1997"),
-        _rate(
-            "BZ",
-            "Provincia autonoma di Bolzano",
-            "3.90",
-            2501,
-            "2026-10-12",
-            "art. 21-bis c. 7-quater L.P. 11 August 1998 n. 9",
-            "the table also lists 2.68 for subjects that pay additional pay under territorial or "
-            "company agreements; not the ordinary rate",
+    rates=_with_ateco(
+        (
+            _rate("01", "Piemonte", "3.90", 2313, "2026-04-01", "art. 16 c. 1 D.Lgs. 446/1997"),
+            _rate(
+                "02", "Valle d'Aosta", "3.90", 2401, "2026-06-05", "art. 16 c. 1 D.Lgs. 446/1997"
+            ),
+            _rate("03", "Lombardia", "3.90", 2312, "2026-03-30", "art. 16 c. 1 D.Lgs. 446/1997"),
+            _rate(
+                "BZ",
+                "Provincia autonoma di Bolzano",
+                "3.90",
+                2501,
+                "2026-10-12",
+                "art. 21-bis c. 7-quater L.P. 11 August 1998 n. 9",
+                "the table also lists 2.68 for subjects that pay additional pay under "
+                "territorial or company agreements; not the ordinary rate",
+            ),
+            _rate(
+                "TN",
+                "Provincia autonoma di Trento",
+                "2.68",
+                2302,
+                "2026-03-20",
+                "art. 1 c. 8 L.P. 30 December 2015 n. 21",
+                "reduced rate of the province for subjects of art. 16 c. 1 that do not fall in "
+                "the provincial code 010 and do not mainly carry on an activity named by D.L. "
+                "21/2026; the table also lists 2.00 (code 002, for subjects applying collective "
+                "agreements signed in the province) and 4.82 (code 010)",
+            ),
+            _rate(
+                "05",
+                "Veneto",
+                "4.08",
+                2421,
+                "2026-06-09",
+                "art. 2 c. 1 lett. b L.R. 32/2024",
+                "the dataset has no «Aliquota ordinaria» row: code 001 is the general increase "
+                "to 4.08, which applies to every subject not listed in its other codes (codes 02 "
+                "and 03: new young or women companies of 2024 to 2026 at 2.90; 12: gaming "
+                "machines at 4.82; 15 and 17: the ATECO lists of `law_irap_ateco.py`; 19 to 24: "
+                "the D.L. 21/2026 activities; the others social cooperatives, banks, insurers, "
+                "concessionaires, public bodies and holdings), read 2026-11-12",
+            ),
+            _rate(
+                "06",
+                "Friuli-Venezia Giulia",
+                "3.90",
+                2383,
+                "2026-05-21",
+                "art. 16 c. 1 D.Lgs. 446/1997",
+                "the table also lists 2.98 for companies with one to five employees on the "
+                "last day of the period (art. 2 c. 1 lett. a L.R. 17/2008, code 010) and other "
+                "reductions under conditions; not the ordinary rate",
+            ),
+            _rate(
+                "07",
+                "Liguria",
+                "3.90",
+                2303,
+                "2026-03-20",
+                "art. 16 c. 1 D.Lgs. 446/1997",
+                "4.82 for the ATECO codes of its code 006 (art. 2 L.R. 43/2007), selected by "
+                "`law_irap_ateco.py`",
+            ),
+            _rate(
+                "08",
+                "Emilia-Romagna",
+                "3.90",
+                2320,
+                "2026-04-02",
+                "art. 16 c. 1 D.Lgs. 446/1997",
+                "4.20 (code 002) for the activities of the Allegato A of L.R. 1/2025, which are "
+                "most commercial and service activities, and 4.82 (code 004) for the ATECOFIN "
+                "2004 sectors 23, 40, 64 and 67: selected by `law_irap_ateco.py`; this is the "
+                "rate of a company whose activity is on neither",
+            ),
+            _rate(
+                "09",
+                "Toscana",
+                "3.90",
+                2318,
+                "2026-04-13",
+                "art. 16 c. 1 D.Lgs. 446/1997",
+                "4.82 (code 007) for the activities of its ATECO 2007 list, among them 45 to "
+                "47, 55, 56, 61 to 63, 68 to 74: selected by `law_irap_ateco.py`; this is the "
+                "rate of a company whose activity is not on it",
+            ),
+            _rate(
+                "10",
+                "Umbria",
+                "4.30",
+                2481,
+                "2026-07-30",
+                "art. 16 c. 1 D.Lgs. 446/1997; c. 4 L.R. 11 April 2025 n. 2",
+                "4.82 (code 002) for the ATECO 2007 codes of art. 23 L.R. 36/2007 (post, "
+                "telecommunications, building development, real estate, financial auxiliaries): "
+                "selected by `law_irap_ateco.py`",
+            ),
+            _rate(
+                "11",
+                "Marche",
+                "4.73",
+                2307,
+                "2026-03-20",
+                "art. 1 c. 3 L.R. 19 December 2001 n. 35; art. 29 L.R. 37/2008",
+                "the table also lists 4.13 (codes 010, 011) for companies of sections C to G "
+                "with a seat in the region under conditions on the INAIL premium, exports or "
+                "hiring; not the ordinary rate",
+            ),
+            _rate(
+                "12",
+                "Lazio",
+                "4.82",
+                2361,
+                "2026-04-14",
+                "art. 16 c. 1 D.Lgs. 446/1997; art. 2 c. 4 L.R. 20/2025",
+            ),
+            _rate(
+                "13",
+                "Abruzzo",
+                "4.82",
+                2309,
+                "2026-03-26",
+                "art. 1 c. 174 L. 311/2004; art. 1 c. 6 and 7 L.R. 12 December 2006 n. 44",
+            ),
+            _rate(
+                "14",
+                "Molise",
+                "4.97",
+                2441,
+                "2026-07-20",
+                "art. 16 c. 1 D.Lgs. 446/1997; art. 2 c. 86 L. 191/2009",
+                "includes the 0.92 point increase",
+            ),
+            _rate(
+                "15",
+                "Campania",
+                "4.97",
+                2325,
+                "2026-04-01",
+                "art. 16 c. 1 D.Lgs. 446/1997; L.R. 16 January 2014 n. 4",
+            ),
+            _rate(
+                "16",
+                "Puglia",
+                "4.82",
+                2461,
+                "2026-07-23",
+                "art. 4 c. 1 L.R. 29 December 2015 n. 40",
+            ),
+            _rate(
+                "17",
+                "Basilicata",
+                "3.90",
+                2317,
+                "2026-04-13",
+                "art. 16 c. 1 D.Lgs. 446/1997",
+                "the energy and oil sectors have rows 012 to 014 (4.82, 6.82, 5.90) that "
+                "`law_irap_ateco.py` does not decide",
+            ),
+            _rate(
+                "18",
+                "Calabria",
+                "4.82",
+                2306,
+                "2026-03-20",
+                "art. 16 c. 1 and 3 D.Lgs. 446/1997; art. 1 c. 174 L. 311/2004",
+            ),
+            _rate(
+                "19",
+                "Sicilia",
+                "3.90",
+                2305,
+                "2026-03-30",
+                "art. 16 c. 1 D.Lgs. 446/1997; art. 3 c. 16 lett. a L.R. 9 May 2017 n. 8",
+                "the table also lists 3.65 (code 014) for small and medium companies in crafts, "
+                "trade, tourism and services under conditions; not the ordinary rate",
+            ),
+            _rate(
+                "20",
+                "Sardegna",
+                "2.93",
+                2381,
+                "2026-05-13",
+                "art. 16 c. 1 D.Lgs. 446/1997; art. 3 c. 5 lett. a L.R. 9 March 2015 n. 5",
+            ),
         ),
-        _rate(
-            "TN",
-            "Provincia autonoma di Trento",
-            "2.68",
-            2302,
-            "2026-03-20",
-            "art. 1 c. 8 L.P. 30 December 2015 n. 21",
-            "reduced rate of the province for subjects of art. 16 c. 1 that do not fall in the "
-            "provincial code 010 and do not mainly carry on an activity named by D.L. 21/2026; the "
-            "table also lists 2.00 (code 002, for subjects applying collective agreements "
-            "signed in the province) and 4.82 (code 010)",
-        ),
-        _rate(
-            "05",
-            "Veneto",
-            "4.08",
-            2421,
-            "2026-06-09",
-            "art. 2 c. 1 lett. b L.R. 32/2024",
-            "the dataset has no «Aliquota ordinaria» row: code 001 is the general increase to "
-            "4.08, which applies to every subject not listed in its other codes",
-        ),
-        _rate(
-            "06",
-            "Friuli-Venezia Giulia",
-            "3.90",
-            2383,
-            "2026-05-21",
-            "art. 16 c. 1 D.Lgs. 446/1997",
-            "the table also lists 2.98 for companies with one to five employees and other "
-            "reductions under conditions; not the ordinary rate",
-        ),
-        _rate("07", "Liguria", "3.90", 2303, "2026-03-20", "art. 16 c. 1 D.Lgs. 446/1997"),
-        _rate(
-            "08",
-            "Emilia-Romagna",
-            "3.90",
-            2320,
-            "2026-04-02",
-            "art. 16 c. 1 D.Lgs. 446/1997",
-        ),
-        _rate("09", "Toscana", "3.90", 2318, "2026-04-13", "art. 16 c. 1 D.Lgs. 446/1997"),
-        _rate(
-            "10",
-            "Umbria",
-            "4.30",
-            2481,
-            "2026-07-30",
-            "art. 16 c. 1 D.Lgs. 446/1997; c. 4 L.R. 11 April 2025 n. 2",
-        ),
-        _rate(
-            "11",
-            "Marche",
-            "4.73",
-            2307,
-            "2026-03-20",
-            "art. 1 c. 3 L.R. 19 December 2001 n. 35; art. 29 L.R. 37/2008",
-        ),
-        _rate(
-            "12",
-            "Lazio",
-            "4.82",
-            2361,
-            "2026-04-14",
-            "art. 16 c. 1 D.Lgs. 446/1997; art. 2 c. 4 L.R. 20/2025",
-        ),
-        _rate(
-            "13",
-            "Abruzzo",
-            "4.82",
-            2309,
-            "2026-03-26",
-            "art. 1 c. 174 L. 311/2004; art. 1 c. 6 and 7 L.R. 12 December 2006 n. 44",
-        ),
-        _rate(
-            "14",
-            "Molise",
-            "4.97",
-            2441,
-            "2026-07-20",
-            "art. 16 c. 1 D.Lgs. 446/1997; art. 2 c. 86 L. 191/2009",
-            "includes the 0.92 point increase",
-        ),
-        _rate(
-            "15",
-            "Campania",
-            "4.97",
-            2325,
-            "2026-04-01",
-            "art. 16 c. 1 D.Lgs. 446/1997; L.R. 16 January 2014 n. 4",
-        ),
-        _rate(
-            "16",
-            "Puglia",
-            "4.82",
-            2461,
-            "2026-07-23",
-            "art. 4 c. 1 L.R. 29 December 2015 n. 40",
-        ),
-        _rate(
-            "17",
-            "Basilicata",
-            "3.90",
-            2317,
-            "2026-04-13",
-            "art. 16 c. 1 D.Lgs. 446/1997",
-        ),
-        _rate(
-            "18",
-            "Calabria",
-            "4.82",
-            2306,
-            "2026-03-20",
-            "art. 16 c. 1 and 3 D.Lgs. 446/1997; art. 1 c. 174 L. 311/2004",
-        ),
-        _rate(
-            "19",
-            "Sicilia",
-            "3.90",
-            2305,
-            "2026-03-30",
-            "art. 16 c. 1 D.Lgs. 446/1997; art. 3 c. 16 lett. a L.R. 9 May 2017 n. 8",
-            "the table also lists 3.65 (code 014) for small and medium companies in crafts, "
-            "trade, tourism and services under conditions; not the ordinary rate",
-        ),
-        _rate(
-            "20",
-            "Sardegna",
-            "2.93",
-            2381,
-            "2026-05-13",
-            "art. 16 c. 1 D.Lgs. 446/1997; art. 3 c. 5 lett. a L.R. 9 March 2015 n. 5",
-        ),
+        ATECO_RULES_2026,
     ),
 )
 
@@ -476,11 +602,16 @@ IRAP_LAW: Final = IrapLaw(
         fallback="domicile_region",
     ),
     regional_rates=(_RATES_2026,),
+    # D.L. 20 February 2026 n. 21 art. 3 c. 1 and Tabella 1, Gazzetta Ufficiale n. 42 of
+    # 20-2-2026, read 2026-11-12.
+    table_1=TABLE_1,
 )
 
 __all__ = [
     "IRAP_LAW",
+    "calendar_year_days",
     "IrapBaseItem",
+    "IrapActivity",
     "IrapLaw",
     "IrapRegionRate",
     "IrapRegionalRates",

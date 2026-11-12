@@ -69,8 +69,21 @@ FLAT_RATE_ONLY = ("flat_rate_inps_reduction", *FLAT_RATE_PARAMETERS)
 # the only thing that reads it.
 ORDINARY_PARAMETERS = ("household",)
 TAXPAYER_PARAMETERS = (*INPS_PARAMETERS, *FLAT_RATE_PARAMETERS, *ORDINARY_PARAMETERS)
+# REB-1086: what an srl says about its activity, which the regional IRAP rows read
+# (`law_irap_ateco.py`): the prevailing ATECO code in the 2007 classification (the regional lists
+# are written in it) and in the 2025 one (table 1 of D.L. 21/2026 is). Only the `it-company`
+# pack reads them.
+COMPANY_PARAMETERS = ("ateco_2007_code", "ateco_2025_code")
 # The profile keys a save that does not name them leaves as they are (`stored_fields`).
-KEPT_WHEN_OMITTED = ("inps_category", "isa", "income_kind", "iva_frequency", *TAXPAYER_PARAMETERS)
+KEPT_WHEN_OMITTED = (
+    "inps_category",
+    "isa",
+    "income_kind",
+    "iva_frequency",
+    *TAXPAYER_PARAMETERS,
+    *COMPANY_PARAMETERS,
+)
+ATECO_CODE_RE = re.compile(r"\d{2}\.\d{2}\.\d{2}")
 ATECO_GROUP_KEYS = tuple(group.key for group in ANNEX_4)
 FLAT_RATE_START_YEAR_MIN = 1900
 FLAT_RATE_START_YEAR_MAX = 2100
@@ -239,7 +252,9 @@ class FiscalProfileUpsert(BaseModel):
             return data
         pack_id = data.get("pack_id")
         if pack_id not in (PACK_NON_IT, PACK_IT_STANDARD, PACK_IT_COMPANY):
-            return data
+            # The flat-rate regime keeps its own defaults and reads no company fact: a save
+            # that names none leaves none behind (REB-1086).
+            return {**{key: None for key in COMPANY_PARAMETERS}, **data}
         data = dict(data)
         if pack_id in (PACK_IT_STANDARD, PACK_IT_COMPANY):
             data.setdefault("regime_code", REGIME_CODE_ORDINARY)
@@ -265,6 +280,9 @@ class FiscalProfileUpsert(BaseModel):
         elif pack_id == PACK_IT_STANDARD:
             for key in FLAT_RATE_ONLY:
                 data.setdefault(key, None)
+        if pack_id in (PACK_NON_IT, PACK_IT_STANDARD):
+            for key in COMPANY_PARAMETERS:
+                data.setdefault(key, None)
         return data
 
     @field_validator("inps_first_enrolment_month")
@@ -273,6 +291,13 @@ class FiscalProfileUpsert(BaseModel):
         """The month INPS counts the 36 months from: any day of it names it, the first day is
         what is stored."""
         return value.replace(day=1) if value is not None else None
+
+    @field_validator("ateco_2007_code", "ateco_2025_code")
+    @classmethod
+    def _ateco_code_shape(cls, value: str | None) -> str | None:
+        if value is not None and ATECO_CODE_RE.fullmatch(value) is None:
+            raise ValueError("codice ATECO non valido: sei cifre in tre coppie, come 62.01.00")
+        return value
 
     @field_validator("ateco_group")
     @classmethod
@@ -369,6 +394,11 @@ class FiscalProfileUpsert(BaseModel):
     # REB-1087: the people fiscally dependent on the taxpayer in one tax year, for the IRPEF's
     # family detractions. `None` is «not stated»; the ordinary regime's person alone has one.
     household: Household | None = None
+    # REB-1086: the srl's prevailing ATECO code, once in each classification, `NN.NN.NN` (the
+    # form a visura camerale prints). `None` is «not stated»: a rate that depends on it gives no
+    # figure, or says what was not checked. Kept when a save leaves them out.
+    ateco_2007_code: SafeStr | None = Field(default=None, max_length=8)
+    ateco_2025_code: SafeStr | None = Field(default=None, max_length=8)
     # REB-1021: how often the entity settles its IVA. Kept as it is when a save leaves it out,
     # like the two above; only a pack with a periodic IVA may say `quarterly`.
     iva_frequency: IvaFrequency = "monthly"
@@ -460,6 +490,8 @@ class FiscalProfileRead(BaseModel):
     startup_not_a_continuation: bool | None
     startup_predecessor_within_limit: bool | None
     household: Household | None
+    ateco_2007_code: str | None
+    ateco_2025_code: str | None
     iva_frequency: str
     created_at: datetime
     updated_at: datetime
