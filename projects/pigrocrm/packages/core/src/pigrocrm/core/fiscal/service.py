@@ -21,6 +21,7 @@ from pigrocrm.core.fiscal.regime import resolve_regime
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.fiscal.schemas import (
     FLAT_RATE_ONLY,
+    ORDINARY_PARAMETERS,
     TAXPAYER_PARAMETERS,
     FiscalProfileRead,
     FiscalProfileUpsert,
@@ -106,6 +107,11 @@ class FiscalProfileService:
         """
         actor.require_admin("update_fiscal_profile")
         payload = data.stored_fields()
+        if payload["pack_id"] == PACK_IT_FLAT_RATE:
+            # The flat-rate regime pays a substitute tax and has no household to state: a save
+            # that moves a profile to it and names none leaves none (REB-1087). A value is still
+            # refused by `check`.
+            payload.setdefault("household", None)
         self.check(payload)
         legal_entity = self.legal_entities.resolve(legal_entity_id)
 
@@ -288,12 +294,17 @@ class FiscalProfileService:
             refused = TAXPAYER_PARAMETERS
         elif pack_id == PACK_IT_STANDARD:
             refused = FLAT_RATE_ONLY
+        elif pack_id == PACK_IT_FLAT_RATE:
+            # The household is read by the IRPEF's detractions, which the flat-rate regime has
+            # none of (REB-1087).
+            refused = ORDINARY_PARAMETERS
         for key in refused:
             if payload.get(key) is not None:
                 whose = {
                     PACK_NON_IT: "un'azienda estera",
                     PACK_IT_COMPANY: "una srl",
                     PACK_IT_STANDARD: "il regime ordinario",
+                    PACK_IT_FLAT_RATE: "il regime forfettario",
                 }[pack_id]
                 raise ValidationFailed(
                     ENTITY, key, f"{whose} non ha questo parametro", expected="nessun valore"

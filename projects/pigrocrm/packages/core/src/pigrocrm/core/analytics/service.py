@@ -989,6 +989,7 @@ class AnalyticsService:
             place=locate(legal_entity.city, legal_entity.province, legal_entity.country),
             province=legal_entity.province,
             withholdings=withheld,
+            household=profile.household,
         )
 
 

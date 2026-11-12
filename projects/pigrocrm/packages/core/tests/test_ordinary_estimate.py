@@ -25,7 +25,8 @@ from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.due_items.models import DueItem, DueItemSettlement
 from pigrocrm.core.fiscal.basis_schemas import BasisCosts, YearBasis
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
-from pigrocrm.core.fiscal.irpef_2026 import IRPEF_2026
+from pigrocrm.core.fiscal.household import Household, HouseholdMember
+from pigrocrm.core.fiscal.irpef_2026 import IRPEF_2026, SELF_EMPLOYMENT_DETRACTION_2026
 from pigrocrm.core.fiscal.law_inps import INPS_2026
 from pigrocrm.core.fiscal.law_irpef import RateBracket
 from pigrocrm.core.fiscal.models import FiscalEstimateReading, FiscalProfile
@@ -85,6 +86,7 @@ def _estimate(
     place: Place = ALBINEA,
     province: str | None = "RE",
     withholdings: Decimal | None = ZERO_MONEY,
+    household: Household | None = None,
 ) -> OrdinaryEstimate:
     law = IT_STANDARD_PACK.law_for(basis.year)
     assert law is not None
@@ -96,6 +98,7 @@ def _estimate(
         place=place,
         province=province,
         withholdings=withholdings,
+        household=household,
     )
     assert estimate is not None
     return estimate
@@ -174,14 +177,130 @@ def test_the_withholdings_come_off_the_tax_and_the_excess_is_a_credit_never_a_ne
 def test_the_estimate_says_what_it_does_not_apply_and_where_its_law_was_read() -> None:
     irpef = _estimate(_basis("65789.47")).irpef
     text = " ".join(irpef.assumptions)
-    assert "articolo 13 del TUIR" in text and "per eccesso" in text
+    assert "oneri detraibili dell'articolo 15" in text and "limite superiore" not in text
+    assert "art. 13 c. 5 TUIR" in text and "non dice se hai familiari a carico" in text
     assert "art. 50 c. 2 D.Lgs. 446/1997" in text
     sources = " ".join(irpef.sources)
     assert "art. 11 c. 1" in sources and "Addizionale regionale" in sources
+    assert "art. 13 c. 5" in sources and "art. 12 c. 1, 2, 3 and 4" in sources
     assert "elenchi generali 2026" in sources and "art. 22 c. 1 lett. c)" in sources
     income = _estimate(_basis("65789.47")).income
     assert any("art. 10 c. 1 lett. e)" in source for source in income.sources)
     assert any("circolare n. 8" in source for source in _estimate(_basis("1000.00")).inps.sources)
+
+
+# --- the IRPEF's detractions (REB-1087) --------------------------------------------------------
+
+
+def test_the_self_employment_detraction_comes_off_the_gross_tax() -> None:
+    """30,000 collected, the gestione separata at 24%: 7,200 of contributions, a base of 22,800
+    and a gross tax of 5,244.00. The detraction of art. 13 c. 5 is computed on the income before
+    the contributions: 30,000 is in the band to 50,000, so 500 x (50,000 - 30,000) / 22,000, the
+    ratio 0.9090, 454.50."""
+    irpef = _estimate(_basis("30000.00")).irpef
+    assert _part(irpef, "gross_irpef") == D("5244.00")
+    assert _part(irpef, "detraction_self_employment") == D("-454.50")
+    assert irpef.amount == D("4789.50")
+    assert [part.code for part in irpef.parts][:3] == [
+        "gross_irpef",
+        "detraction_self_employment",
+        "withholdings",
+    ]
+
+
+def test_the_detraction_is_computed_before_the_contributions_not_on_the_base() -> None:
+    """At 20,000 the reference income is 20,000, whatever the contributions: 500 + 765 x
+    (28,000 - 20,000) / 22,500, the ratio 0.3555, is 771.96. On the base of 15,200 it would be
+    941.94 or so."""
+    irpef = _estimate(_basis("20000.00")).irpef
+    assert _part(irpef, "detraction_self_employment") == D("-771.96")
+
+
+def test_a_net_irpef_of_zero_owes_no_surcharge_and_asks_for_no_address() -> None:
+    """6,000 collected in the gestione separata (26.07%): 1,564.20 of contributions, a base of
+    4,435.80, a gross tax of 1,020.23. The detraction at 6,000 is 500 + 765 x 0.9777 = 1,247.94, so
+    the net tax is zero and so are the surcharges (art. 50 c. 2 D.Lgs. 446/1997), with no
+    address needed. The test on the gross tax would have asked for one."""
+    estimate = _estimate(_basis("6000.00"), facts=GS_FULL, place=NOWHERE, province=None)
+    irpef = estimate.irpef
+    assert _part(irpef, "gross_irpef") == D("1020.23")
+    # The detraction is 1,247.94 and the line shows what it took off: the tax, no more.
+    assert SELF_EMPLOYMENT_DETRACTION_2026.amount(D("6000")) == D("1247.94")
+    assert _part(irpef, "detraction_self_employment") == D("-1020.23")
+    assert irpef.amount == D("0.00")
+    assert _part(irpef, "regional_surcharge") == D("0.00")
+    assert _part(irpef, "municipal_surcharge") == D("0.00")
+    assert irpef.with_surcharges == D("0.00") and irpef.missing == []
+    assert any("al netto delle detrazioni, è zero" in text for text in irpef.assumptions)
+
+
+def test_a_detraction_above_the_withholdings_leaves_a_credit_only_for_what_is_owed() -> None:
+    irpef = _estimate(_basis("30000.00"), withholdings=D("5000.00")).irpef
+    assert irpef.amount == D("0.00") and irpef.credit == D("210.50")
+
+
+def test_a_stated_household_gives_the_children_detraction_and_the_regional_rule() -> None:
+    """A child of 25 at a reference income of 30,000: 950 x 0.6842 = 649.99 (art. 12 c. 1 lett.
+    c), one more line of the tax. Three children under 30 in Piemonte (100 euro each, a region the
+    test reaches through Torino) lower the surcharge too."""
+    child = HouseholdMember(kind="child", birth_date=dt.date(2001, 6, 15))
+    household = Household(year=2026, members=[child])
+    plain = _estimate(_basis("30000.00")).irpef
+    stated = _estimate(_basis("30000.00"), household=household).irpef
+    assert _part(stated, "detraction_children") == D("-649.99")
+    assert stated.amount == D("4139.51") and plain.amount == D("4789.50")
+    text = " ".join(stated.assumptions)
+    assert "figli a carico" in text and "non dice se hai familiari" not in text
+    three = Household(
+        year=2026,
+        members=[
+            HouseholdMember(kind="child", birth_date=dt.date(2016 + n, 1, 1)) for n in range(3)
+        ],
+    )
+    torino = locate("Torino", "TO", "IT")
+    without = _estimate(_basis("30000.00"), place=torino, province="TO").irpef
+    with_three = _estimate(_basis("30000.00"), place=torino, province="TO", household=three).irpef
+    gap = _part(without, "regional_surcharge") - _part(with_three, "regional_surcharge")  # type: ignore[operator]
+    assert gap == D("300.00")
+    assert "la detrazione per i figli" in " ".join(with_three.assumptions)
+
+
+def test_a_household_of_another_year_applies_nothing_and_says_so() -> None:
+    household = Household(
+        year=2025, members=[HouseholdMember(kind="child", birth_date=dt.date(2001, 6, 15))]
+    )
+    irpef = _estimate(_basis("30000.00"), household=household).irpef
+    assert all(part.code != "detraction_children" for part in irpef.parts)
+    assert any("del 2025, non quelli del 2026" in text for text in irpef.assumptions)
+
+
+def test_a_household_who_gives_no_detraction_says_who_was_asked() -> None:
+    """A child of 18 gives no art. 12 detraction (the youngest have the single allowance
+    instead), and the assumptions say that nothing was given."""
+    household = Household(
+        year=2026, members=[HouseholdMember(kind="child", birth_date=dt.date(2008, 5, 1))]
+    )
+    irpef = _estimate(_basis("30000.00"), household=household).irpef
+    assert all(not part.code.startswith("detraction_c") for part in irpef.parts)
+    assert any("nessuna: i familiari indicati" in text for text in irpef.assumptions)
+
+
+def test_veneto_with_a_disabled_dependant_names_the_others_income_it_needs() -> None:
+    """The reduced rate of Veneto for a disabled dependant who depends on several people tests
+    the sum of their incomes: not stated, no regional figure and no total, and the sentence says
+    what to add. Stated as 0, the 0.9% applies."""
+    venezia = locate("Venezia", "VE", "IT")
+    dependant = HouseholdMember(kind="ascendant", disabled=True)
+    open_answer = Household(year=2026, members=[dependant])
+    estimate = _estimate(_basis("30000.00"), place=venezia, province="VE", household=open_answer)
+    assert _part(estimate.irpef, "regional_surcharge") is None
+    assert any("somma dei redditi imponibili" in text for text in estimate.irpef.missing)
+    assert estimate.irpef.with_surcharges is None
+    alone = Household(year=2026, members=[dependant], other_supporters_income=D(0))
+    answered = _estimate(_basis("30000.00"), place=venezia, province="VE", household=alone)
+    # 22,800 x 0.9% = 205.20, the reduced rate on the whole base
+    assert _part(answered.irpef, "regional_surcharge") == D("205.20")
+    assert not any("somma dei redditi" in text for text in answered.irpef.missing)
 
 
 # --- a missing fact gives no figure and names what is missing ----------------------------

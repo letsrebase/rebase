@@ -21,6 +21,7 @@ from pydantic import (
     model_validator,
 )
 
+from pigrocrm.core.fiscal.household import Household
 from pigrocrm.core.fiscal.law import DeclaredTax
 from pigrocrm.core.fiscal.law_flat_rate import ANNEX_4
 from pigrocrm.core.fiscal.pack import (
@@ -64,7 +65,10 @@ FLAT_RATE_PARAMETERS = (
 )
 # `flat_rate_inps_reduction` is the flat-rate regime's election, so it is a flat-rate fact too.
 FLAT_RATE_ONLY = ("flat_rate_inps_reduction", *FLAT_RATE_PARAMETERS)
-TAXPAYER_PARAMETERS = (*INPS_PARAMETERS, *FLAT_RATE_PARAMETERS)
+# The household (REB-1087) is the ordinary regime's person alone: the IRPEF's detractions are
+# the only thing that reads it.
+ORDINARY_PARAMETERS = ("household",)
+TAXPAYER_PARAMETERS = (*INPS_PARAMETERS, *FLAT_RATE_PARAMETERS, *ORDINARY_PARAMETERS)
 # The profile keys a save that does not name them leaves as they are (`stored_fields`).
 KEPT_WHEN_OMITTED = ("inps_category", "isa", "income_kind", "iva_frequency", *TAXPAYER_PARAMETERS)
 ATECO_GROUP_KEYS = tuple(group.key for group in ANNEX_4)
@@ -362,6 +366,9 @@ class FiscalProfileUpsert(BaseModel):
     startup_no_prior_activity: bool | None = None
     startup_not_a_continuation: bool | None = None
     startup_predecessor_within_limit: bool | None = None
+    # REB-1087: the people fiscally dependent on the taxpayer in one tax year, for the IRPEF's
+    # family detractions. `None` is «not stated»; the ordinary regime's person alone has one.
+    household: Household | None = None
     # REB-1021: how often the entity settles its IVA. Kept as it is when a save leaves it out,
     # like the two above; only a pack with a periodic IVA may say `quarterly`.
     iva_frequency: IvaFrequency = "monthly"
@@ -386,7 +393,11 @@ class FiscalProfileUpsert(BaseModel):
         whole-row replacement, so a key left out goes back to its default; these have no
         default worth restoring, so a save that does not mention them leaves what the row
         holds."""
-        payload = self.model_dump(exclude={"updated_at"})
+        payload = self.model_dump(exclude={"updated_at", "household"})
+        # The column is JSON: dates and decimals go in as text, as the model reads them back.
+        payload["household"] = (
+            None if self.household is None else self.household.model_dump(mode="json")
+        )
         for key in KEPT_WHEN_OMITTED:
             if key not in self.model_fields_set:
                 del payload[key]
@@ -448,6 +459,7 @@ class FiscalProfileRead(BaseModel):
     startup_no_prior_activity: bool | None
     startup_not_a_continuation: bool | None
     startup_predecessor_within_limit: bool | None
+    household: Household | None
     iva_frequency: str
     created_at: datetime
     updated_at: datetime

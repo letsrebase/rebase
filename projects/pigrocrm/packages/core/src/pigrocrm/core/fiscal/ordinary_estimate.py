@@ -23,15 +23,21 @@ The order is the law's, and it is why INPS comes first
    approximation the flat-rate estimate makes (A5 row «The contributions deducted are those paid
    in the tax period»). Without the contributions there is no IRPEF figure: a base computed as if
    none were deducted would overstate it, which is a guess.
-4. **IRPEF** by brackets (`IrpefLaw.gross_tax`), then the regional surcharge of the region of the
-   legal entity's address (`BZ` or `TN` by province) and the municipal surcharge of its
-   municipality, which are due only if the IRPEF net of detractions is due (art. 50 c. 2 D.Lgs.
-   446/1997; art. 1 c. 4 D.Lgs. 360/1998). No detraction is modelled, so the gross IRPEF stands in
-   for the net one, and the payload says so: art. 13 c. 5 TUIR gives a self-employed person a
-   detraction the estimate does not apply, which makes it an upper bound.
+4. **IRPEF** by brackets (`IrpefLaw.gross_tax`), less its detractions (REB-1087): art. 13 c. 5
+   TUIR for self-employment income, which needs the income alone, and art. 12 TUIR for the
+   spouse, the children of 21 to 29 and the disabled ones and the cohabiting ascendants, which
+   need the household the profile states for the year (`fiscal/household.py`). Both are computed
+   on the **reference income**, the income before the contributions are deducted (Agenzia,
+   specifiche § 21.4), not on the IRPEF base. A household the profile does not state gives no
+   family detraction, and the assumptions say so. Then the regional surcharge of the region of
+   the legal entity's address (`BZ` or `TN` by province), with the household's regional rules,
+   and the municipal surcharge of its municipality, which are due only if the IRPEF net of
+   detractions is due (art. 50 c. 2 D.Lgs. 446/1997; art. 1 c. 4 D.Lgs. 360/1998): a net IRPEF
+   of zero gives none.
 5. **Withholdings.** What the customers withheld on the invoices collected in the year
    (`fiscal/withholdings_suffered.py`) is credited against the IRPEF alone. The IRPEF's `amount`,
-   the reading's, is the gross IRPEF net of them, which is what the advances are based on (A5
+   the reading's, is the IRPEF net of the detractions and of them, which is what the advances are
+   based on (A5
    «The advance base is the declared tax net of deductions, credits, withholdings and excesses»);
    what they exceed it by is `credit`, never a negative tax. The surcharges are added after, in
    `with_surcharges`, since the withholdings do not reduce them and they have their own advances.
@@ -54,6 +60,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from pigrocrm.core.fiscal.basis_schemas import YearBasis
+from pigrocrm.core.fiscal.household import Household
 from pigrocrm.core.fiscal.law import TaxYearLaw
 from pigrocrm.core.fiscal.law_inps import (
     InpsCategoryName,
@@ -72,9 +79,9 @@ _ZERO = Decimal("0.00")
 # labelled estimate is useful, an estimate presented as an actual is the original defect in a new
 # form. Each clause is a real reason the figure differs from the return.
 ORDINARY_WARNING = (
-    "Stima indicativa. Non tiene conto di altri redditi, di detrazioni e crediti d'imposta, "
-    "degli acconti già versati né di altre deduzioni: l'imposta è per eccesso. Per la "
-    "dichiarazione fai riferimento al tuo commercialista."
+    "Stima indicativa. Non tiene conto di altri redditi, degli oneri detraibili e dei crediti "
+    "d'imposta, degli acconti già versati né di altre deduzioni. Per la dichiarazione fai "
+    "riferimento al tuo commercialista."
 )
 
 
@@ -177,13 +184,15 @@ def estimate_ordinary_taxes(
     place: Place,
     province: str | None,
     withholdings: Decimal | None,
+    household: Household | None = None,
 ) -> OrdinaryEstimate | None:
     """The estimate of INPS and IRPEF for `basis`'s year, `None` when the regime owes no IRPEF
     or the basis has no costs (a year on a basis that deducts none is no ordinary person's). When
     the pack has no IRPEF figures for the year (`FiscalPack.irpef_for`) the IRPEF is computed
     nowhere and says so in its `missing`; the INPS stands on its own.
     `withholdings` is what the customers withheld in the year, `None` when the pack states no rule
-    for the year a withholding is credited against."""
+    for the year a withholding is credited against. `household` is what the profile states about
+    the taxpayer's family; `None`, or a statement of another year, applies no family detraction."""
     costs = basis.costs
     if costs is None or "irpef" not in law.taxes:
         return None
@@ -243,6 +252,7 @@ def estimate_ordinary_taxes(
             withholdings,
             inps,
             income_for_inps,
+            household,
         )
         if irpef_law is not None
         else _no_irpef(basis.year)
@@ -475,16 +485,14 @@ def _irpef(
     province: str | None,
     withholdings: Decimal | None,
     inps: OrdinaryTax,
-    total_income: Decimal,
+    reference_income: Decimal,
+    household: Household | None,
 ) -> OrdinaryTax:
     assumptions = [
-        "Le detrazioni dell'articolo 13 del TUIR (tra cui quella per i redditi di lavoro "
-        "autonomo, comma 5) e le altre detrazioni e crediti non sono applicate: l'imposta è "
-        "quindi per eccesso, un limite superiore. Con un'IRPEF netta che le detrazioni "
-        "azzerano, anche le addizionali non sarebbero dovute.",
-        "L'addizionale regionale e quella comunale spettano se l'IRPEF è dovuta (art. 50 c. 2 "
-        "D.Lgs. 446/1997; art. 1 c. 4 D.Lgs. 360/1998): senza detrazioni l'IRPEF lorda tiene il "
-        "posto di quella netta.",
+        "Gli oneri detraibili dell'articolo 15 del TUIR (per esempio le spese sanitarie) e i "
+        "crediti d'imposta non sono applicati.",
+        "L'addizionale regionale e quella comunale spettano se l'IRPEF, al netto delle "
+        "detrazioni, è dovuta (art. 50 c. 2 D.Lgs. 446/1997; art. 1 c. 4 D.Lgs. 360/1998).",
         "La regione e il comune sono quelli dell'indirizzo dell'azienda, preso come domicilio "
         "fiscale; la legge guarda il domicilio fiscale al 1° gennaio dell'anno.",
     ]
@@ -511,22 +519,42 @@ def _irpef(
 
     gross = irpef_law.gross_tax(taxable)
     parts = [OrdinaryLine(code="gross_irpef", label="IRPEF lorda", amount=gross)]
+    stated = household if household is not None and household.year == year else None
+    detraction_lines, detraction_notes, detraction_sources = _detractions(
+        irpef_law, year, reference_income, household, stated
+    )
+    # A detraction takes off what the tax still has: a line is capped at what the lines before it
+    # left, so the parts add up to the net tax and none shows more than was owed.
+    remaining = gross
+    for line in detraction_lines:
+        assert line.amount is not None  # noqa: S101  a detraction line always has an amount
+        taken = min(-line.amount, remaining)
+        remaining -= taken
+        if taken > 0:
+            parts.append(line.model_copy(update={"amount": -taken}))
+    assumptions += detraction_notes
+    sources += detraction_sources
+    net = round_money(remaining)
+
     key = region_key(place.region_code, province)
     regional: Decimal | None = None
     municipal: Decimal | None = None
     cadastral = place.cadastral_code
-    if gross == 0:
+    if net == 0:
         # Nothing due, so no surcharge: the place does not matter and is not asked for.
         regional = municipal = ZERO_MONEY
-        assumptions.append("L'IRPEF stimata è zero: le addizionali non sono dovute.")
+        assumptions.append(
+            "L'IRPEF stimata, al netto delle detrazioni, è zero: le addizionali non sono dovute."
+        )
         key = cadastral = None
         regional_label = "Addizionale regionale"
         municipal_label = "Addizionale comunale"
     else:
-        regional, regional_label, regional_missing, regional_source = _regional(
-            irpef_law, key, place, taxable, total_income
+        regional, regional_label, regional_missing, regional_notes, regional_source = _regional(
+            irpef_law, key, place, taxable, reference_income, stated
         )
         missing += regional_missing
+        assumptions += regional_notes
         sources += regional_source
         municipal, municipal_label, municipal_missing, municipal_notes, municipal_source = (
             _municipal(pack, year, place, taxable)
@@ -534,13 +562,6 @@ def _irpef(
         missing += municipal_missing
         assumptions += municipal_notes
         sources += municipal_source
-        rule = irpef_law.regional_law(key) if key is not None else None
-        if rule is not None and rule.unmodelled:
-            assumptions.append(
-                "Dell'addizionale regionale non sono applicate le regole che dipendono dalla "
-                "famiglia o dalla condizione del contribuente (per esempio le detrazioni per "
-                "figli a carico)."
-            )
     if withholdings is None:
         missing.append(
             f"Il pacchetto fiscale non dice a quale anno si scomputano le ritenute del {year}: "
@@ -572,9 +593,9 @@ def _irpef(
     credit: Decimal | None = None
     with_surcharges: Decimal | None = None
     if withholdings is not None:
-        net = round_money(gross - withholdings)
-        amount = max(net, ZERO_MONEY)
-        credit = max(-net, ZERO_MONEY)
+        left = round_money(net - withholdings)
+        amount = max(left, ZERO_MONEY)
+        credit = max(-left, ZERO_MONEY)
         if regional is not None and municipal is not None:
             with_surcharges = round_money(amount + regional + municipal)
     return OrdinaryTax(
@@ -593,10 +614,98 @@ def _irpef(
     )
 
 
+_FAMILY_LABELS = {
+    "spouse": ("detraction_spouse", "Detrazione per il coniuge a carico (art. 12 TUIR)"),
+    "children": ("detraction_children", "Detrazione per i figli a carico (art. 12 TUIR)"),
+    "ascendants": (
+        "detraction_ascendants",
+        "Detrazione per gli ascendenti conviventi (art. 12 TUIR)",
+    ),
+}
+
+
+def _detractions(
+    irpef_law: IrpefLaw,
+    year: int,
+    reference_income: Decimal,
+    household: Household | None,
+    stated: Household | None,
+) -> tuple[list[OrdinaryLine], list[str], list[str]]:
+    """The IRPEF's detractions at `reference_income`: the lines (negative, the ones that are not
+    zero), what the figure assumes and where the rules were read. `household` is what the
+    profile holds and `stated` the same when it is the year's own."""
+    lines: list[OrdinaryLine] = []
+    notes: list[str] = []
+    sources: list[str] = []
+    self_employment = irpef_law.self_employment_detraction
+    if self_employment is not None:
+        sources.append(self_employment.source)
+        amount = self_employment.amount(reference_income)
+        if amount > 0:
+            lines.append(
+                OrdinaryLine(
+                    code="detraction_self_employment",
+                    label="Detrazione per i redditi di lavoro autonomo (art. 13 c. 5 TUIR)",
+                    amount=-amount,
+                )
+            )
+        notes.append(
+            "La detrazione per i redditi di lavoro autonomo (art. 13 c. 5 TUIR) è calcolata sul "
+            "reddito prima dei contributi dedotti, come chiede l'Agenzia delle Entrate, e senza "
+            "i 50 euro in più per un reddito da 11.000 a 17.000 euro (art. 13 c. 5-ter), su cui "
+            "i testi dell'Agenzia non concordano. Si assume che non ci siano redditi "
+            "da lavoro dipendente o da pensione, e che l'attività sia in regime semplificato o "
+            "professionale: in contabilità ordinaria la detrazione non spetta."
+        )
+    family = irpef_law.family_detractions
+    if family is None:
+        return lines, notes, sources
+    sources.append(family.source)
+    if household is None:
+        notes.append(
+            "Il profilo non dice se hai familiari a carico: non si applicano le detrazioni "
+            "dell'articolo 12 del TUIR (coniuge, figli da 21 a 29 anni o, se disabili, da 21 "
+            "anni in su, ascendenti conviventi) né le regole regionali per la famiglia. Se ne "
+            "hai, indicali nei parametri fiscali e l'imposta scende."
+        )
+    elif stated is None:
+        notes.append(
+            f"Il profilo indica i familiari a carico del {household.year}, non quelli del "
+            f"{year}: non si applicano le detrazioni dell'articolo 12 del TUIR né le regole "
+            "regionali per la famiglia."
+        )
+    else:
+        given = family.for_household(stated, reference_income)
+        for kind, amount in given:
+            code, label = _FAMILY_LABELS[kind]
+            lines.append(OrdinaryLine(code=code, label=label, amount=-amount))
+        notes.append(
+            "Detrazioni dell'articolo 12 del TUIR dai familiari a carico indicati nel profilo "
+            "("
+            + (
+                ", ".join(_FAMILY_LABELS[kind][1].split(" (")[0].lower() for kind, _ in given)
+                if given
+                else "nessuna: i familiari indicati non danno detrazioni a questo reddito, o sono "
+                "figli sotto i 21 anni, per i quali l'articolo non prevede detrazione"
+            )
+            + "). Si assume che ogni familiare abbia un reddito entro i limiti dell'articolo 12 "
+            "c. 2 e che non siano familiari residenti all'estero di un contribuente non "
+            "dell'Unione europea (c. 2-bis); non si calcola la detrazione del coniuge per il "
+            "primo figlio di chi non ha un altro genitore (c. 1 lett. c)."
+        )
+    return lines, notes, sources
+
+
 def _regional(
-    irpef_law: IrpefLaw, key: str | None, place: Place, taxable: Decimal, total_income: Decimal
-) -> tuple[Decimal | None, str, list[str], list[str]]:
-    """The regional surcharge, its label, what is missing and where its rule was read."""
+    irpef_law: IrpefLaw,
+    key: str | None,
+    place: Place,
+    taxable: Decimal,
+    total_income: Decimal,
+    household: Household | None,
+) -> tuple[Decimal | None, str, list[str], list[str], list[str]]:
+    """The regional surcharge: `(amount, label, missing, assumptions, sources)`. `household` is
+    the profile's statement for the year, `None` when it holds none."""
     label = "Addizionale regionale"
     if key is None:
         if place.status == "not_italian":
@@ -608,6 +717,7 @@ def _regional(
                     "l'addizionale regionale."
                 ],
                 [],
+                [],
             )
         return (
             None,
@@ -617,6 +727,7 @@ def _regional(
                 "la regione non si sa quale addizionale regionale applicare."
             ],
             [],
+            [],
         )
     rule = irpef_law.regional_law(key)
     if rule is None:
@@ -625,8 +736,11 @@ def _regional(
             label,
             [f"Il pacchetto fiscale non ha l'addizionale regionale della regione ({key})."],
             [],
+            [],
         )
     name = rule.name
+    labelled = f"Addizionale regionale ({name})"
+    source = [rule.source] if rule.source else []
     # Valle d'Aosta's threshold is tested on the «reddito complessivo», before the deductible
     # charges: where the total income is above it and the base is not, the surcharge is due and
     # the base alone would say it is not, so no figure is given rather than the smaller one.
@@ -634,20 +748,53 @@ def _regional(
     if rule.exempt_tested_on == "total" and exempt is not None and taxable <= exempt < total_income:
         return (
             None,
-            f"Addizionale regionale ({name})",
+            labelled,
             [
                 f"L'esenzione dell'addizionale regionale ({name}) guarda il reddito complessivo, "
                 "prima dei contributi dedotti: con il tuo reddito non si sa se spetta, e non si "
                 "stima."
             ],
-            [rule.source] if rule.source else [],
+            [],
+            source,
         )
-    return (
-        rule.surcharge(taxable),
-        f"Addizionale regionale ({name})",
-        [],
-        [rule.source] if rule.source else [],
-    )
+    if rule.undetermined(taxable, household):
+        return (
+            None,
+            labelled,
+            [
+                f"Per l'addizionale regionale ({name}) l'aliquota ridotta dipende dalla somma "
+                "dei redditi imponibili di tutti quelli a carico dei quali è il familiare "
+                "disabile (al massimo 50.000 euro): nei parametri fiscali indica quel reddito "
+                "degli altri, o 0 se non ce ne sono."
+            ],
+            [],
+            source,
+        )
+    notes: list[str] = []
+    if rule.reads_household:
+        if household is None:
+            notes.append(
+                f"Dell'addizionale regionale ({name}) non sono applicate le regole per i figli "
+                "o per le persone disabili: il profilo non indica la famiglia dell'anno."
+            )
+        else:
+            applied = rule.household_applied(taxable, household)
+            if applied:
+                words = {
+                    "reduced_rate": "l'aliquota ridotta per disabilità",
+                    "child_detraction": "la detrazione per i figli",
+                }
+                notes.append(
+                    f"Dell'addizionale regionale ({name}) sono applicate, dalla famiglia "
+                    f"indicata nel profilo, {' e '.join(words[item] for item in applied)}."
+                )
+    if rule.unmodelled:
+        notes.append(
+            f"Per l'addizionale regionale ({name}) restano punti che la legge non chiarisce o "
+            "che dipendono da fatti che il profilo non ha: la stima non li applica, sono nelle "
+            "fonti e vanno confermati con il commercialista."
+        )
+    return rule.surcharge(taxable, household), labelled, [], notes, source
 
 
 def _municipal(
