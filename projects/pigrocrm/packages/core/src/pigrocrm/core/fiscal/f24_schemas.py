@@ -61,6 +61,8 @@ class F24ReceiptAttach(BaseModel):
     inbox_item_id: UUID
 
 
+# Both origins are retired (REB-1100): they are read only on the credit lines of an F24 settled
+# before, and no code writes a credit. Kept out of the docstring, which is the published schema.
 class TaxCreditOriginRead(BaseModel):
     """Where a credit comes from: `iva_carry_forward` names the IVA settlement that left it,
     `withholding_suffered` the income-tax year whose collected invoices carried the withholding."""

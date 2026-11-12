@@ -300,14 +300,6 @@ _OUTSIDE_FROM_SIEVE: dict[Method, str] = {
 #    no-actor rule and is listed for the same reason: it is the intermediate step of
 #    `render_pdf`, not an operation of its own.
 _INTERNE: dict[Method, str] = {
-    ("TaxCreditService", "sync_iva_credit"): (
-        "REB-1076: writes the credit item of a settled IVA period, called by the IVA settlement "
-        "(`settle_iva_period`); no actor, no tool of its own"
-    ),
-    ("TaxCreditService", "refresh_withholding_credits"): (
-        "REB-1076: writes the withholding credits, called by `refresh_tax_due_items`; no actor, no "
-        "tool of its own"
-    ),
     ("TaxDueItemService", "refresh_tax_due_items"): (
         "REB-1074: the writer of the tax due items, called by the tools that move their "
         "figures (`set_declared_tax_figure`, `set_tax_loss`, `set_tax_advance_method`) and by "

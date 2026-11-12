@@ -13,7 +13,11 @@ Per period, for a legal entity on a pack with a periodic IVA (`FiscalPack.has_pe
 A positive result is paid to the tax office on the date of the pack's calendar and becomes a
 due item (`source_kind` `iva_settlement`, tax `iva`, direction out), unless it does not
 exceed the law's limit and the period may wait: then it is carried into the next period's
-payment. A negative result is a credit carried forward. Every figure of the law is the pack's
+payment. A negative result is a credit carried forward: the next period's settlement takes it in
+(`credit_in`, D.P.R. 100/1998 art. 1 c. 1 and c. 4), so it is never a due item and never a credit
+line of an F24 (REB-1100: the Agenzia's monthly and quarterly codes say «importi a credito
+compensati: NON COMPILARE»; a credit reaches an F24 only as a compensation a person makes, with
+6099 or 6036-6038). Every figure of the law is the pack's
 (`IvaSettlementLaw`), every date its calendar's: nothing here is a number of the statute.
 
 Which period a document is in: a purchase by the `iva_period` a person chose; a sale by its
@@ -57,7 +61,6 @@ from pigrocrm.core.fiscal.models import FiscalProfile, IvaSettlement
 from pigrocrm.core.fiscal.pack import FiscalPack, resolve_pack
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.fiscal.schemas import IvaPeriod, IvaSettlementRead
-from pigrocrm.core.fiscal.tax_credits import TaxCreditService
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.money import ZERO_MONEY, round_money, sum_money
@@ -547,14 +550,6 @@ class IvaSettlementService:
         row.payment_due_on = due.due_date
         self.session.flush()
         self._write_due_item(row, label(frequency, year, number))
-        # The credit a period leaves is outstanding only until the next one takes it in
-        # (`TaxCreditService`), so the period before this one is looked at again.
-        credits = TaxCreditService(self.session)
-        credits.sync_iva_credit(row, label(frequency, year, number))
-        if previous is not None:
-            credits.sync_iva_credit(
-                previous, label(previous.frequency, previous.year, previous.period_number)
-            )
         return row
 
     def _write_due_item(self, row: IvaSettlement, words: str) -> None:

@@ -116,7 +116,6 @@ from pigrocrm.core.fiscal.repository import (
     TaxInstalmentPlanRepository,
 )
 from pigrocrm.core.fiscal.schemas import FiscalProfileRead
-from pigrocrm.core.fiscal.tax_credits import TaxCreditService
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.money import round_money
 
@@ -282,14 +281,6 @@ class TaxDueItemService:
         )
         for payment in self._payments(context):
             self._sync(context, payment, report)
-        TaxCreditService(self.session).refresh_withholding_credits(
-            legal_entity,
-            context.pack,
-            today=context.today,
-            years=range(context.today.year - YEARS_BEFORE, context.today.year + 1),
-            in_window=lambda due: self._in_window(context, due),
-            report=report,
-        )
         return report
 
     # ---- what each payment should be --------------------------------------------------------

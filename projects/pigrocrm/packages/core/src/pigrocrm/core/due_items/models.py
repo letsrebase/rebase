@@ -59,8 +59,9 @@ SOURCE_KINDS: tuple[str, ...] = (
     "tax_advance",
     "chamber_fee",
     "notice_plan",
-    # A tax credit as a negative item (`fiscal/tax_credits.py`, REB-1076): a withholding suffered
-    # on sales or an IVA credit carried forward, grouped with the day's F24.
+    # A tax credit as a negative item (`fiscal/f24_models.py`, REB-1076), grouped with the day's
+    # F24. No origin writes one since REB-1100: a withholding suffered and an IVA credit are netted
+    # in their own return and settlement. Items written before that stay in the history.
     "tax_credit",
     "payroll",
     "contract_occurrence",

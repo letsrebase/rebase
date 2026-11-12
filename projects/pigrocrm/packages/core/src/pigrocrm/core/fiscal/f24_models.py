@@ -1,9 +1,13 @@
 """The rows behind a tax credit and an F24 (REB-1076, taxes design § 2).
 
 A **tax credit** (`TaxCredit`) is what a negative due item of source kind `tax_credit` points at:
-it carries the origin of the credit, a withholding suffered on sales in a tax year or an IVA credit
-carried forward from one settlement, so the item says where it came from. Written only by
-`TaxCreditService`.
+it carries the origin of the credit, so the item says where it came from. **No code writes one
+today** (REB-1100): a withholding suffered is netted inside the income-tax return (RN33 col. 4
+into RN34) and an IVA credit is taken in by the next periodic settlement, so neither is a line of
+an F24, and the two origins below are retired. The rows stay for the F24 credit-line machinery of
+`F24GroupService`, which a future origin (a credit a return shows and a person uses in
+compensation, art. 17 D.Lgs. 241/1997) reaches through a new origin and a migration, and for the
+credit lines of an F24 already settled, which keep their history.
 
 An **F24 group** (`F24Group`) is the due items of one date, credits included, that are paid with
 one F24: its lines (`F24GroupItem`) keep the tax code each had when they were grouped, so a paid
@@ -46,10 +50,11 @@ NOTE_MAX_LENGTH = 255
 
 class TaxCredit(Base, PrimaryKeyMixin, TimestampMixin):
     """A credit the legal entity holds against the tax office, as a positive `amount` (its due
-    item carries it negative). `origin` says where it comes from: `iva_carry_forward` is the
+    item carries it negative). `origin` says where it comes from: `iva_carry_forward` was the
     credit a settled IVA period leaves to the next one (`iva_settlement_id` names that period),
-    `withholding_suffered` is what customers withheld on the invoices collected in `tax_year`, a
-    tax year of the income tax (`tax` is `irpef`). Written only by `TaxCreditService`."""
+    `withholding_suffered` what customers withheld on the invoices collected in `tax_year`, a tax
+    year of the income tax (`tax` is `irpef`). Both origins are retired (migration 0116) and
+    nothing writes a row of this table."""
 
     __tablename__ = "tax_credits"
     __table_args__ = (
