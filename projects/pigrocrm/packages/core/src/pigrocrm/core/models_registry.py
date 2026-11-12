@@ -79,7 +79,7 @@ from pigrocrm.core.invoices.models import (  # noqa: F401
     InvoiceLine,
     InvoiceRegisterGap,
 )
-from pigrocrm.core.legal_entities.models import LegalEntity  # noqa: F401
+from pigrocrm.core.legal_entities.models import LegalEntity, LegalEntitySite  # noqa: F401
 from pigrocrm.core.mailboxes.models import Mailbox, MailboxPurpose  # noqa: F401
 from pigrocrm.core.notes.models import Note, NoteRevision  # noqa: F401
 from pigrocrm.core.organizations.models import Organization  # noqa: F401

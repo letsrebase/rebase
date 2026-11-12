@@ -54,6 +54,7 @@ from pigrocrm.core.due_items.models import PAYROLL_SOURCE_KIND, DueItem
 from pigrocrm.core.due_items.schemas import DueItemCreate
 from pigrocrm.core.due_items.service import DueItemService
 from pigrocrm.core.errors import NotFound
+from pigrocrm.core.fiscal.irap_sites import SiteFacts, StaffPay
 from pigrocrm.core.fiscal.law import PayrollLaw
 from pigrocrm.core.fiscal.pack import resolve_pack
 from pigrocrm.core.legal_entities.models import LegalEntity
@@ -271,7 +272,7 @@ class PayrollService:
         the member's service in that month that the window covers. A month a person closed
         counts as it was closed. No actor: whoever calls it has decided the reader may know the
         figure (`analytics/pnl.py`), and it carries no person."""
-        totals, _, _ = self._personnel_cost(legal_entity_id, date_from, date_to)
+        totals, _, _, _ = self._personnel_cost(legal_entity_id, date_from, date_to)
         return round_money(sum(totals.values(), ZERO_MONEY))
 
     def personnel_cost_by_kind(
@@ -282,7 +283,7 @@ class PayrollService:
         in service in the window with no cost to speak of (their pay inputs are missing), since
         a total that silently leaves a person out would read as a cost of zero. Same arithmetic
         and the same rules: no actor, a closed month counts as it was closed."""
-        totals, not_estimated, per_member = self._personnel_cost(
+        totals, not_estimated, per_member, _ = self._personnel_cost(
             legal_entity_id, date_from, date_to
         )
         employees = tuple(
@@ -307,15 +308,47 @@ class PayrollService:
             employees,
         )
 
+    def staff_pay_in_range(
+        self, legal_entity_id: UUID, date_from: dt.date, date_to: dt.date
+    ) -> SiteFacts:
+        """What each person is paid in the window and where they work, for the IRAP split between
+        regions (REB-1092, `fiscal/irap_sites.py`): the gross pay the estimate accrues, employees
+        and directors alike, over the days of the window the person was in service, and the
+        people in service whose pay the estimate cannot state (`unpriced`). The legal entity's
+        sites are the caller's to add. No actor, as `personnel_cost_in_range` has none."""
+        _, not_estimated, _, gross = self._personnel_cost(legal_entity_id, date_from, date_to)
+        members = self.repo.members_of(legal_entity_id)
+        staff = tuple(
+            StaffPay(
+                staff_member_id=member.id,
+                name=member.name,
+                pay=round_money(gross[member.id]),
+                service_from=max(member.start_date, date_from),
+                service_to=min(member.end_date or date_to, date_to),
+                site_id=member.site_id,
+                at_registered_office=member.at_registered_office,
+            )
+            for member in members
+            if member.id in gross
+        )
+        return SiteFacts(
+            sites=(),
+            staff=staff,
+            unpriced=tuple(member.name for member in members if member.id in not_estimated),
+        )
+
     def _personnel_cost(
         self, legal_entity_id: UUID | None, date_from: dt.date, date_to: dt.date
-    ) -> tuple[dict[str, Decimal], set[UUID], dict[UUID, Decimal]]:
+    ) -> tuple[dict[str, Decimal], set[UUID], dict[UUID, Decimal], dict[UUID, Decimal]]:
+        """The cost by kind, the members in service with no cost estimated, each member's cost
+        and each member's gross pay (the part of the cost that is pay), over the window."""
         totals: dict[str, Decimal] = {"employee": ZERO_MONEY, "director": ZERO_MONEY}
         not_estimated: set[UUID] = set()
         per_member: dict[UUID, Decimal] = {}
+        gross_per_member: dict[UUID, Decimal] = {}
         members = self.repo.members_of(legal_entity_id)
         if not members:
-            return totals, not_estimated, per_member
+            return totals, not_estimated, per_member, gross_per_member
         context = _Context.load(self.repo, legal_entity_id, members)
         closed = self.repo.closed_months(legal_entity_id)
         month = first_of(date_from)
@@ -324,10 +357,11 @@ class PayrollService:
             for member in members:
                 closure = closed.get((member.legal_entity_id, month))
                 if closure is not None:
-                    cost = _closed_cost(closure, member.id)
+                    cost, gross = _closed_cost(closure, member.id)
                 else:
                     estimated = context.estimate(member, month, cost_only=True).cost
                     cost = None if estimated is None else estimated.total
+                    gross = None if estimated is None else estimated.gross
                 served = days_in_service(member, month, last)
                 covered = days_in_service(member, max(month, date_from), min(last, date_to))
                 if cost is None:
@@ -339,8 +373,12 @@ class PayrollService:
                 share = cost * covered / served
                 totals[member.kind] += share
                 per_member[member.id] = per_member.get(member.id, ZERO_MONEY) + share
+                if gross is not None:
+                    gross_per_member[member.id] = (
+                        gross_per_member.get(member.id, ZERO_MONEY) + gross * covered / served
+                    )
             month = add_months(month, 1)
-        return totals, not_estimated, per_member
+        return totals, not_estimated, per_member, gross_per_member
 
     # ---- the writer's half: no actor, no commit ---------------------------------------------
 
@@ -503,13 +541,18 @@ def _rule_month(rule: str) -> dt.date | None:
         return None
 
 
-def _closed_cost(closure: PayrollMonthClosure, member_id: UUID) -> Decimal | None:
-    """What a month cost one person as it was closed, `None` for a person it had no cost for."""
+def _closed_cost(
+    closure: PayrollMonthClosure, member_id: UUID
+) -> tuple[Decimal | None, Decimal | None]:
+    """What a month cost one person as it was closed and the gross pay in it, `None` for a person
+    it had no cost for."""
     for row in closure.snapshot.get("members", []):
         if row.get("staff_member_id") == str(member_id):
             cost = row.get("cost")
-            return None if cost is None else Decimal(str(cost["total"]))
-    return None
+            if cost is None:
+                return None, None
+            return Decimal(str(cost["total"])), Decimal(str(cost["gross"]))
+    return None, None
 
 
 def _received(proposal: Proposal) -> PayslipProposalRead:

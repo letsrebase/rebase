@@ -401,6 +401,59 @@ describe('«Tasse»: Imposte', () => {
     expect(within(panel).getByText('Una semplificazione dichiarata.')).toBeInTheDocument()
   })
 
+  it('draws an srl’s IRAP split between regions as a table and never a null rate (REB-1092)', async () => {
+    const part = (region: string, name: string, pay: string, share: string, base: string, rate: string, amount: string) => ({
+      region,
+      name,
+      pay,
+      share,
+      base,
+      rate,
+      amount,
+    })
+    answers['/api/analytics/fiscal'] = {
+      ...COMPANY,
+      declared: [],
+      company: {
+        ires: { lines: [], base: '0.00', rate: '24.00', amount: '0.00', loss: false, missing: null, assumptions: [] },
+        irap: {
+          lines: [],
+          base: '70000.00',
+          rate: null,
+          region: null,
+          amount: '2870.00',
+          loss: false,
+          missing: null,
+          assumptions: [],
+          regions: [
+            part('05', 'Veneto', '30000.00', '60.00', '42000.00', '3.90', '1638.00'),
+            part('03', 'Lombardia', '20000.00', '40.00', '28000.00', '4.40', '1232.00'),
+          ],
+        },
+      },
+      readings: {
+        lines: [
+          line('ires', { estimable: true, estimate: '0.00', counts: 'estimate' }),
+          line('irap', { estimable: true, estimate: '2870.00', counts: 'estimate' }),
+        ],
+        totals: { estimate: '2870.00', estimate_left_out: 0, declared: null, declared_left_out: 2, paid: null, paid_left_out: 2 },
+      },
+    } as never
+    wide()
+    renderPage()
+    await userEvent.click(await screen.findByRole('row', { name: /IRAP/ }))
+    const panel = await screen.findByRole('complementary', { name: 'Imposta aperta' })
+    expect(within(panel).getByText(/Ripartita su 2 regioni/)).toBeInTheDocument()
+    const table = within(panel).getByText('Veneto').closest('table') as HTMLElement
+    const rows = within(table).getAllByRole('row').slice(1)
+    expect(rows.map((row) => within(row).getAllByRole('cell').map((cell) => cell.textContent?.replace(/\u00a0/g, ' ')))).toEqual([
+      ['VenetoQuota 60,00 % · base 42.000,00 € · aliquota 3,90 %', '1.638,00 €'],
+      ['LombardiaQuota 40,00 % · base 28.000,00 € · aliquota 4,40 %', '1.232,00 €'],
+    ])
+    expect(within(panel).queryByText('non calcolabile')).not.toBeInTheDocument()
+    expect(within(panel).queryByText('Aliquota', { selector: 'dt' })).not.toBeInTheDocument()
+  })
+
   it('says which address an srl lacks when IRAP cannot be estimated', async () => {
     const missing = 'Manca l’indirizzo della sede dell’azienda.'
     answers['/api/analytics/fiscal'] = {

@@ -33,6 +33,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     Numeric,
@@ -173,6 +174,18 @@ class StaffMember(Base, PrimaryKeyMixin, TimestampMixin):
             "inps_company_share IS NULL OR (inps_company_share >= 0 AND inps_company_share <= 100)",
             name="ck_staff_members_inps_share",
         ),
+        # Where the person works (REB-1092): a site of the legal entity, or its registered office,
+        # never both; neither is «not stated». The pair points at the site and its legal entity, so
+        # a person cannot be assigned to another company's site.
+        CheckConstraint(
+            "NOT (at_registered_office AND site_id IS NOT NULL)",
+            name="ck_staff_members_one_workplace",
+        ),
+        ForeignKeyConstraint(
+            ["site_id", "legal_entity_id"],
+            ["legal_entity_sites.id", "legal_entity_sites.legal_entity_id"],
+            name="fk_staff_members_site_same_legal_entity",
+        ),
         Index("ix_staff_members_legal_entity_id", "legal_entity_id"),
         # One staff member per user: a labour cost counted twice is the failure this stops.
         Index(
@@ -189,6 +202,12 @@ class StaffMember(Base, PrimaryKeyMixin, TimestampMixin):
     user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
     start_date: Mapped[dt.date] = mapped_column(Date, nullable=False)
     end_date: Mapped[dt.date | None] = mapped_column(Date, default=None)
+    # The workplace, for the IRAP split between regions (REB-1092): one of the legal entity's sites,
+    # or its registered office; `NULL` and `false` is «not stated».
+    site_id: Mapped[UUID | None] = mapped_column(default=None)
+    at_registered_office: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     # Working hours a month, the divisor of an hourly cost (design § 5).
     hours_per_month: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), default=None)
     # The override of the legal entity's pay day: both or neither.

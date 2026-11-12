@@ -150,6 +150,7 @@ beforeEach(() => {
     '/api/staff/payroll/{legal_entity_id}': month([GIULIA_PAYSLIP, MARCO_ESTIMATE]),
     '/api/staff/pay-days/{legal_entity_id}': { legal_entity_id: ENTITY, pay_day: 10, pay_month_offset: 1 },
     '/api/legal-entities/{legal_entity_id}/fiscal-profile': { pack_id: 'it-standard' },
+    '/api/legal-entities/{legal_entity_id}/sites': [],
     '/api/users/directory': [],
     '/api/staff/{staff_member_id}/hourly-cost': new Error('la persona non e\' collegata a un utente'),
   }
@@ -216,6 +217,24 @@ describe('«Persone dell\'azienda»', () => {
         body: { period: '2026-10-01', gross: '2500.00', net: '1850.50', withholding: '300' },
       }),
     )
+  })
+
+  it('says where a person works once the azienda has sites, and nothing before (REB-1092)', async () => {
+    const user = userEvent.setup()
+    const { unmount } = renderPage()
+    await user.click(await screen.findByText('Marco Rossi'))
+    const without = await screen.findByLabelText('Persona aperta')
+    expect(within(without).queryByText('Sede di lavoro')).not.toBeInTheDocument()
+    unmount()
+
+    const site = { id: 'site-1', legal_entity_id: ENTITY, region: '05', region_name: 'Veneto', city: 'Padova', address: null, staff_count: 1 }
+    answers['/api/legal-entities/{legal_entity_id}/sites'] = [site]
+    answers['/api/staff'] = { items: [{ ...MARCO, site_id: 'site-1', at_registered_office: false }], next_cursor: null }
+    renderPage()
+    await user.click(await screen.findByText('Marco Rossi'))
+    const panel = await screen.findByLabelText('Persona aperta')
+    expect(await within(panel).findByText('Sede di lavoro')).toBeInTheDocument()
+    expect(within(panel).getByText('Padova')).toBeInTheDocument()
   })
 
   it('never carries figures typed for one person over to another', async () => {

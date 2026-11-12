@@ -72,6 +72,12 @@ the ministerial coefficient) enters them (REB-1089, `fiscal/cost_variations.py`)
 TUIR on vehicles, phones and hospitality do not apply to IRAP, which starts from the income
 statement. An asset of a group the table does not carry makes the figure missing.
 
+With places of business in more than one region (`LegalEntitySite`, REB-1092) the base is split
+between the regions by the pay of the staff assigned to each (art. 4 c. 2, `fiscal/irap_sites.py`),
+each part at its region's rate, and the payload's `regions` says how. A person whose place is not
+stated stops the split: no regional figure, and `missing` names them. A site in the registered
+office's region changes nothing.
+
 A negative value of production gives a tax of zero and says so.
 """
 
@@ -79,12 +85,20 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
 from pigrocrm.core.fiscal.basis_schemas import BasisEmployee, YearBasis
 from pigrocrm.core.fiscal.company_seasonal import seasonal_outcome
 from pigrocrm.core.fiscal.income_variations import IncomeVariations
+from pigrocrm.core.fiscal.irap_sites import (
+    IrapRegionPart,
+    RegionRate,
+    SiteFacts,
+    split_irap_base,
+    splits,
+)
 from pigrocrm.core.fiscal.ires_adjustment import ires_adjustment
 from pigrocrm.core.fiscal.law import CompanyTaxLaw
 from pigrocrm.core.fiscal.law_irap import (
@@ -99,6 +113,9 @@ from pigrocrm.core.money import ZERO_MONEY, round_money
 from pigrocrm.core.places.locate import Place
 
 _HUNDRED = Decimal(100)
+
+# How many places of business the rate sentences speak for (REB-1092).
+SiteScope = Literal["one_site", "same_region", "split"]
 
 # The region of the autonomous provinces of Trentino-Alto Adige, whose rate is each province's
 # own (`IrapLaw.rate_for` keys them `BZ` and `TN`).
@@ -135,6 +152,9 @@ class CompanyTaxEstimate(BaseModel):
     credit: Decimal | None = None
     # The region whose rate was applied (IRAP only): the ISTAT code, or `BZ` or `TN`.
     region: str | None = None
+    # IRAP of a company with sites in several regions: each region's part of the base and tax.
+    # Empty otherwise; then `region` and `rate` are the figure, and when it is filled they are not.
+    regions: list[IrapRegionPart] = []
     missing: str | None = None
     assumptions: list[str]
     # IRES only: what the losses of earlier years did to the base (REB-1088), `None` when none
@@ -176,6 +196,7 @@ def estimate_company_taxes(
     activity: IrapActivity | None = None,
     losses: Callable[[Decimal], LossOffset | None] | None = None,
     variations: IncomeVariations | None = None,
+    sites: SiteFacts | None = None,
 ) -> CompanyEstimate | None:
     """The estimate of IRES and IRAP for `basis`'s year, `None` when the law carries no IRAP
     table or the basis has no costs (a year on a basis that deducts none is no srl's).
@@ -184,11 +205,13 @@ def estimate_company_taxes(
     citation). `activity` is what the company states about its ATECO codes (REB-1086): the
     regional rows that depend on them need it. `losses` answers what the losses of earlier years
     take off the IRES base for the income it is given, the profit after the variations
-    (`fiscal/loss_carry.py`), `None` when there is none to carry; `None` for no function at all."""
+    (`fiscal/loss_carry.py`), `None` when there is none to carry; `None` for no function at all.
+    `sites` is the legal entity's places of business and its staff's pay, which only an srl with
+    a site outside its registered office's region needs (REB-1092)."""
     costs = basis.costs
     if costs is None or law.irap is None:
         return None
-    irap = _irap(basis, law, place, province, activity, variations)
+    irap = _irap(basis, law, place, province, activity, variations, sites)
     return CompanyEstimate(
         ires=_ires(basis, law, withholdings, withholdings_source, losses, variations, irap),
         irap=irap,
@@ -540,28 +563,43 @@ def _unanswered_reason(answer: IrapRateAnswer, region_name: str) -> str:
 
 
 def _rate_sentences(
-    answer: IrapRateAnswer, region_name: str, activity: IrapActivity | None
+    answer: IrapRateAnswer,
+    region_name: str,
+    activity: IrapActivity | None,
+    scope: SiteScope = "one_site",
 ) -> list[str]:
     """What a person reads about the rate that was applied: where it comes from, and the rows
-    that were left out."""
+    that were left out. `scope` is how many places the company has (REB-1092): one, several in
+    the registered office's region, or in several regions, where the rate is one region's among
+    the parts and «one site» would be false."""
     stated = activity is not None and (activity.ateco_2007 or activity.ateco_2025) is not None
+    sites_said = {
+        "one_site": " Si considera una sola sede.",
+        "same_region": " Le sedi indicate sono tutte in questa regione: la base non si ripartisce.",
+        "split": "",
+    }[scope]
+    region = f"della sede ({region_name})" if scope != "split" else f"({region_name})"
     out: list[str] = []
     if answer.row is not None:
         out.append(
             f"Aliquota {answer.rate}% della Regione ({region_name}), riga {answer.row.code} "
-            f"della tabella delle Finanze, scelta dal codice ATECO indicato: {answer.row.text}. "
-            "Si considera una sola sede."
+            f"della tabella delle Finanze, scelta dal codice ATECO indicato: {answer.row.text}."
+            + sites_said
         )
     elif stated:
         out.append(
-            f"Si applica l'aliquota ordinaria della regione della sede ({region_name}): nessuna "
-            "riga della sua tabella per attività si applica ai codici ATECO indicati. Si "
-            "considera una sola sede."
+            f"Si applica l'aliquota ordinaria della regione {region}: nessuna riga della sua "
+            "tabella per attività si applica ai codici ATECO indicati." + sites_said
         )
     else:
+        clause = {
+            "one_site": ", con una sola sede",
+            "same_region": ", con le sedi in questa regione",
+            "split": "",
+        }[scope]
         out.append(
-            f"Si applica l'aliquota ordinaria della regione della sede ({region_name}), con una "
-            "sola sede: il codice ATECO dell'azienda non è indicato."
+            f"Si applica l'aliquota ordinaria della regione {region}{clause}: il codice ATECO "
+            "dell'azienda non è indicato."
         )
     if "table_1_not_checked" in answer.notes:
         out.append(
@@ -579,6 +617,32 @@ def _rate_sentences(
     return out
 
 
+def _region_rate(
+    irap: IrapLaw, year: int, activity: IrapActivity | None
+) -> Callable[[str], RegionRate]:
+    """A region key's name and rate for `year` and the company's activity, for the split of
+    art. 4 c. 2: each part is rated by its own region's table, as the registered office's region
+    is, so the rows an ATECO code selects and the ones left out are told for every region."""
+
+    def rate_of(key: str) -> RegionRate:
+        row = irap.region_row(year, key)
+        answer = irap.rate_for(year, key, activity)
+        name = row.name if row is not None else key
+        if answer is None or row is None:
+            return RegionRate(
+                name,
+                None,
+                f"Il pacchetto fiscale non ha l'aliquota IRAP {year} della regione {name}.",
+            )
+        if answer.rate is None:
+            return RegionRate(name, None, _unanswered_reason(answer, name))
+        return RegionRate(
+            name, answer.rate, notes=tuple(_rate_sentences(answer, name, activity, "split"))
+        )
+
+    return rate_of
+
+
 def _irap(
     basis: YearBasis,
     law: CompanyTaxLaw,
@@ -586,6 +650,7 @@ def _irap(
     province: str | None,
     activity: IrapActivity | None,
     variations: IncomeVariations | None = None,
+    sites: SiteFacts | None = None,
 ) -> CompanyTaxEstimate:
     costs = basis.costs
     irap = law.irap
@@ -621,6 +686,8 @@ def _irap(
             value + sum((s.amount for s in variations.costs.irap_lines), ZERO_MONEY)
         )
         assumptions += variations.costs.irap_assumptions
+    key = irap_region_key(place, province)
+    several_regions = sites is not None and splits(key, sites.sites)
     deducted = value
     for line, text in _staff_deductions(basis, irap, period_days, year_days):
         if line is not None:
@@ -639,7 +706,23 @@ def _irap(
     base = round_money(deducted - small)
     loss = base < 0
 
-    key = irap_region_key(place, province)
+    if sites is not None and key is not None and several_regions:
+        if loss:
+            assumptions.append("Il valore della produzione è negativo: l'IRAP stimata è zero.")
+        split = split_irap_base(
+            base, loss, key, sites, irap.territory, _region_rate(irap, basis.year, activity)
+        )
+        assumptions.extend(split.assumptions)
+        return CompanyTaxEstimate(
+            lines=lines,
+            base=base,
+            rate=None,
+            amount=split.amount,
+            loss=loss,
+            regions=list(split.parts),
+            missing=split.missing,
+            assumptions=assumptions,
+        )
     missing: str | None = None
     rate: Decimal | None = None
     if key is None:
@@ -659,7 +742,14 @@ def _irap(
             missing = _unanswered_reason(answer, row.name)
         else:
             rate = answer.rate
-            assumptions.extend(_rate_sentences(answer, row.name, activity))
+            assumptions.extend(
+                _rate_sentences(
+                    answer,
+                    row.name,
+                    activity,
+                    "same_region" if sites and sites.sites else "one_site",
+                )
+            )
     if loss:
         assumptions.append("Il valore della produzione è negativo: l'IRAP stimata è zero.")
     amount: Decimal | None = None

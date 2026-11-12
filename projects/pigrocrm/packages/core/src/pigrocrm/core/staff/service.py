@@ -118,6 +118,8 @@ class StaffService:
         self._require_may_have(data.legal_entity_id, data.kind)
         if data.user_id is not None:
             self._require_free_user(data.user_id, None)
+        if data.site_id is not None:
+            self._require_site(data.legal_entity_id, data.site_id)
         member = self._flushed(
             lambda: self.repo.add(StaffMember(**data.model_dump())), data.user_id
         )
@@ -155,6 +157,7 @@ class StaffService:
                 )
         if changes.get("user_id") is not None:
             self._require_free_user(changes["user_id"], member.id)
+        self._normalise_workplace(member, changes)
         self._require_consistent(member, changes)
         for key, value in changes.items():
             setattr(member, key, value)
@@ -547,6 +550,26 @@ class StaffService:
                     user_id=str(user_id),
                 ) from exc
             raise
+
+    def _normalise_workplace(self, member: StaffMember, changes: dict[str, Any]) -> None:
+        """A person works at a site, at the registered office or nowhere stated: the write that
+        names one place takes the person off the other, and `null` for the flag is `false`."""
+        if "at_registered_office" in changes and changes["at_registered_office"] is None:
+            changes["at_registered_office"] = False
+        if changes.get("site_id") is not None:
+            self._require_site(member.legal_entity_id, changes["site_id"])
+            changes.setdefault("at_registered_office", False)
+        if changes.get("at_registered_office") is True:
+            changes.setdefault("site_id", None)
+
+    def _require_site(self, legal_entity_id: UUID, site_id: UUID) -> None:
+        if not self.repo.has_site(legal_entity_id, site_id):
+            raise ValidationFailed(
+                ENTITY,
+                "site_id",
+                "la sede non è di questa azienda",
+                expected="una sede dell'azienda della persona",
+            )
 
     def _require_consistent(self, member: StaffMember, changes: dict[str, Any]) -> None:
         """What the create schemas' own validators say, for the fields an update touches

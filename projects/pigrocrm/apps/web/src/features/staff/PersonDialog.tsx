@@ -7,6 +7,8 @@ import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { toast } from '@rebase/ui/sonner'
 import { useMemberDirectory } from '@/features/users/directory'
+import { useLegalEntitySites } from '@/features/settings/queries'
+import { siteLabel } from '@/features/settings/sites'
 import { fieldErrorFrom, toProblem } from '@/lib/api'
 import { CONTRACT_TYPE_LABELS, KIND_LABELS } from './labels'
 import {
@@ -49,6 +51,23 @@ interface Values {
 }
 
 const NONE = 'none'
+/** The choice «Sede legale» in the workplace select; any other value is a site's id. */
+const REGISTERED_OFFICE = 'registered-office'
+
+/** Where the person works as the select holds it: a site's id, the registered office, or nothing. */
+function workplaceOf(member: StaffMember | undefined): string {
+  if (member?.at_registered_office === true) return REGISTERED_OFFICE
+  return member?.site_id ?? NONE
+}
+
+/** The place of work in the body's two fields; `before` is what the person had, so a change
+ *  names only what the server needs: a site takes them off the registered office, the registered
+ *  office takes them off any site, and «Non indicata» empties whichever was set. */
+function workplaceBody(before: string, next: string): Record<string, unknown> {
+  if (next === REGISTERED_OFFICE) return { at_registered_office: true }
+  if (next !== NONE) return { site_id: next }
+  return before === REGISTERED_OFFICE ? { at_registered_office: false } : { site_id: null }
+}
 
 function from(member: StaffMember | undefined): Values {
   const text = (value: string | number | null | undefined) => (value === null || value === undefined ? '' : String(value))
@@ -158,6 +177,8 @@ export function PersonDialog({ open, onOpenChange, legalEntityId, legalEntityNam
   const [contracts, setContracts] = useState(() => rowsFrom(member?.seasonal_contracts))
   const [contractsError, setContractsError] = useState<string | null>(null)
   const thisYear = new Date().getFullYear()
+  const [workplace, setWorkplace] = useState(() => workplaceOf(member))
+  const sites = useLegalEntitySites(legalEntityId).data ?? []
   const members = useMemberDirectory()
   const create = useCreateStaff()
   const update = useUpdateStaff(member?.id ?? '')
@@ -217,6 +238,8 @@ export function PersonDialog({ open, onOpenChange, legalEntityId, legalEntityNam
       if (history !== undefined && JSON.stringify(history) !== JSON.stringify(wasHistory)) {
         body.seasonal_contracts = history.length === 0 ? null : history
       }
+      const placeBefore = workplaceOf(member)
+      if (workplace !== placeBefore) Object.assign(body, workplaceBody(placeBefore, workplace))
       if (Object.keys(body).length === 0) {
         onOpenChange(false)
         return
@@ -230,6 +253,7 @@ export function PersonDialog({ open, onOpenChange, legalEntityId, legalEntityNam
       if (value !== null) body[field] = value
     }
     if (history !== undefined && history.length > 0) body.seasonal_contracts = history
+    if (workplace !== NONE) Object.assign(body, workplaceBody(NONE, workplace))
     create.mutate(body as unknown as EmployeeBody | DirectorBody, { onSuccess: done('Persona aggiunta') })
   }
 
@@ -313,6 +337,26 @@ export function PersonDialog({ open, onOpenChange, legalEntityId, legalEntityNam
             {text('start_date', 'In servizio dal', { type: 'date' })}
             {text('end_date', 'Fino al', { type: 'date' })}
             {text('hours_per_month', 'Ore di lavoro al mese', { inputMode: 'decimal' })}
+            {sites.length === 0 ? null : (
+              <div className="space-y-1.5">
+                <Label htmlFor="person-workplace">Sede di lavoro</Label>
+                <Select value={workplace} onValueChange={setWorkplace}>
+                  <SelectTrigger id="person-workplace" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>Non indicata</SelectItem>
+                    <SelectItem value={REGISTERED_OFFICE}>Sede legale</SelectItem>
+                    {sites.map((site) => (
+                      <SelectItem key={site.id} value={site.id}>
+                        {siteLabel(site)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Serve all’IRAP: si ripartisce tra le regioni in base alle retribuzioni.</p>
+              </div>
+            )}
             {kind === 'employee' ? (
               <>
                 {text('collective_agreement', 'Contratto collettivo')}

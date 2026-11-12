@@ -352,7 +352,8 @@ describe('LegalEntityPanel: the place the address names (REB-1069)', () => {
   it('does not ask for a list until the province is a two-letter code', () => {
     renderPanel({ ...UNKNOWN, province: null })
     expect(screen.getByTestId('place-unknown')).toHaveTextContent('Indica la provincia')
-    expect(api.GET).not.toHaveBeenCalled()
+    // The sedi section reads the fiscal profile; the list of municipalities is what is not asked.
+    expect(api.GET).not.toHaveBeenCalledWith('/api/legal-entities/municipalities', expect.anything())
   })
 
   it('says so when the province is a code the list does not carry', async () => {

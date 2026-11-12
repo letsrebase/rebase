@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.fiscal.models import FiscalProfile
+from pigrocrm.core.legal_entities.models import LegalEntitySite
 from pigrocrm.core.proposals.models import Proposal
 from pigrocrm.core.staff.models import (
     PayrollMonthClosure,
@@ -30,6 +31,18 @@ class StaffRepository:
         self.session.add(member)
         self.session.flush()
         return member
+
+    def has_site(self, legal_entity_id: UUID, site_id: UUID) -> bool:
+        """Whether `site_id` is a site of the legal entity."""
+        return (
+            self.session.execute(
+                select(LegalEntitySite.id).where(
+                    LegalEntitySite.id == site_id,
+                    LegalEntitySite.legal_entity_id == legal_entity_id,
+                )
+            ).first()
+            is not None
+        )
 
     def pack_id(self, legal_entity_id: UUID) -> str | None:
         """The fiscal pack the legal entity is on, `None` until it has a fiscal profile."""

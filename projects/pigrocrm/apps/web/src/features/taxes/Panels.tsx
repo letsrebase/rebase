@@ -14,6 +14,7 @@ import { dateLabel, taxOfDate, type DueDay } from './dates'
 import { AdvanceMethodDialog } from './AdvanceMethodDialog'
 import { DeclaredFigureDialog } from './DeclaredFigureDialog'
 import { F24Section } from './F24Section'
+import { IrapRegions } from './IrapRegions'
 import { InstalmentPlanDialog } from './InstalmentPlanDialog'
 import { TaxLossSection } from './TaxLosses'
 import {
@@ -177,6 +178,8 @@ function PersonComputedFrom({ line, estimate }: { line: TaxReadingLine; estimate
 function ComputedFrom({ line, estimate }: { line: TaxReadingLine; estimate: FiscalEstimate }) {
   const tax = line.tax === 'ires' ? estimate.company?.ires : line.tax === 'irap' ? estimate.company?.irap : undefined
   const basis = estimate.basis
+  // The IRAP of an srl with people in several regions has no one rate: the table says each (REB-1092).
+  const split = (tax?.regions?.length ?? 0) > 0
   // An ordinary person's IRPEF and INPS are drawn by `PersonComputedFrom`, which says its own basis.
   if (estimate.person && (line.tax === 'irpef' || line.tax === 'inps')) return null
   if (!tax && !basis) return null
@@ -201,12 +204,13 @@ function ComputedFrom({ line, estimate }: { line: TaxReadingLine; estimate: Fisc
           <Fact label={tax.loss ? 'Base (in perdita)' : 'Base'} strong>
             {given(tax.base)}
           </Fact>
-          <Fact label="Aliquota">{tax.rate == null ? NOT_ONE_YET : formatPercent(tax.rate)}</Fact>
+          {split ? null : <Fact label="Aliquota">{tax.rate == null ? NOT_ONE_YET : formatPercent(tax.rate)}</Fact>}
           <Fact label="Imposta stimata" strong>
             {given(tax.amount)}
           </Fact>
         </dl>
       ) : null}
+      {split ? <IrapRegions regions={tax?.regions ?? []} /> : null}
       {tax?.missing ? <p className="text-sm">{tax.missing}</p> : null}
       {tax ? (
         <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">

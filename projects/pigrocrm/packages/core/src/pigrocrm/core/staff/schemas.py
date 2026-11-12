@@ -116,6 +116,11 @@ def _pay_day_pair(day: int | None, offset: int | None) -> None:
         raise ValueError("il giorno di paga e il mese di paga vanno indicati insieme")
 
 
+def _one_workplace(site_id: UUID | None, at_registered_office: bool | None) -> None:
+    if site_id is not None and at_registered_office:
+        raise ValueError("la persona lavora in una sede o nella sede legale, non in entrambe")
+
+
 class PayDayWrite(BaseModel):
     """The pay day of a legal entity: the day of the month (1 to 28) and whether it falls in
     the month worked (0) or the month after (1)."""
@@ -154,12 +159,23 @@ class _StaffCreate(BaseModel):
     user_id: UUID | None = None
     pay_day: _PayDay | None = None
     pay_month_offset: _MonthOffset | None = None
+    site_id: UUID | None = Field(
+        default=None,
+        description=(
+            "The site of the legal entity the person works at, for the IRAP split between "
+            "regions; omitted with `at_registered_office` false means not stated"
+        ),
+    )
+    at_registered_office: bool = Field(
+        default=False, description="The person works at the registered office, not at a site"
+    )
 
     @model_validator(mode="after")
     def _common(self) -> "_StaffCreate":
         if self.end_date is not None and self.end_date < self.start_date:
             raise ValueError("la fine non puo' precedere l'inizio")
         _pay_day_pair(self.pay_day, self.pay_month_offset)
+        _one_workplace(self.site_id, self.at_registered_office)
         return self
 
 
@@ -229,6 +245,20 @@ class StaffMemberUpdate(BaseModel):
     user_id: UUID | None = None
     pay_day: _PayDay | None = None
     pay_month_offset: _MonthOffset | None = None
+    site_id: UUID | None = Field(
+        default=None,
+        description=(
+            "The site the person works at; naming one takes the person off the registered "
+            "office, and `null` takes them off any site"
+        ),
+    )
+    at_registered_office: bool | None = Field(
+        default=None,
+        description=(
+            "The person works at the registered office; `true` takes them off any site, `false` "
+            "takes them off the registered office"
+        ),
+    )
     collective_agreement: SafeStr | None = Field(default=None, max_length=AGREEMENT_MAX_LENGTH)
     contract_level: SafeStr | None = Field(default=None, max_length=LEVEL_MAX_LENGTH)
     contract_type: ContractType | None = None
@@ -254,6 +284,11 @@ class StaffMemberUpdate(BaseModel):
     ) -> list[dict[str, Any]] | None:
         return _contracts_as_stored(value)
 
+    @model_validator(mode="after")
+    def _workplace(self) -> "StaffMemberUpdate":
+        _one_workplace(self.site_id, self.at_registered_office)
+        return self
+
 
 class StaffMemberRead(BaseModel):
     """Every field of both kinds; the ones of the other kind are `None`. `effective_pay_day`
@@ -271,6 +306,8 @@ class StaffMemberRead(BaseModel):
     hours_per_month: Decimal | None
     pay_day: int | None
     pay_month_offset: int | None
+    site_id: UUID | None
+    at_registered_office: bool
     effective_pay_day: EffectivePayDay | None = None
     collective_agreement: str | None
     contract_level: str | None

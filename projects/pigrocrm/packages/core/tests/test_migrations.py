@@ -4941,3 +4941,74 @@ def test_0124_adds_the_purchase_deductibility_columns_with_no_backfill(
         assert not any(_column_exists(url, table, name) for table, name in columns)
         upgrade(config, "0124")
         assert all(_column_exists(url, table, name) for table, name in columns)
+
+
+def test_0125_adds_the_sites_table_and_the_workplace_columns_keeping_the_staff(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1092: a policed table for the sites and two staff columns that say nothing until a
+    person states them, so a staff member that exists stays «not stated» both ways; a person
+    cannot be at a site and at the registered office, nor at another legal entity's site."""
+    entity = "00000000-0000-7000-8000-0000000000a1"
+    other = "00000000-0000-7000-8000-0000000000a2"
+    member = "00000000-0000-7000-8000-0000000000b1"
+    site = "00000000-0000-7000-8000-0000000000c1"
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0122")
+        assert not _table_shape(url, "legal_entity_sites")[0]
+        engine = create_engine(url)
+        with engine.begin() as connection:
+            for row_id, name in ((entity, "uno"), (other, "due")):
+                connection.execute(
+                    text(
+                        "INSERT INTO legal_entities (id, name, legal_name, country) "
+                        "VALUES (:id, :name, 'Esempio S.r.l.', 'IT')"
+                    ),
+                    {"id": row_id, "name": name},
+                )
+            connection.execute(
+                text(
+                    "INSERT INTO staff_members (id, legal_entity_id, kind, name, start_date, "
+                    "gross_annual_pay, monthly_payments, part_time_percent) "
+                    "VALUES (:id, :entity, 'employee', 'Giulia', '2026-01-01', 24000, 13, 100)"
+                ),
+                {"id": member, "entity": entity},
+            )
+        upgrade(config, "0125")
+        assert _table_shape(url, "legal_entity_sites") == (True, True, {"legal_entity_scope"})
+        with engine.begin() as connection:
+            row = connection.execute(
+                text("SELECT site_id, at_registered_office FROM staff_members WHERE id = :id"),
+                {"id": member},
+            ).one()
+            assert tuple(row) == (None, False)
+            connection.execute(
+                text(
+                    "INSERT INTO legal_entity_sites (id, legal_entity_id, region) "
+                    "VALUES (:id, :entity, '05')"
+                ),
+                {"id": site, "entity": entity},
+            )
+            connection.execute(
+                text("UPDATE staff_members SET site_id = :site WHERE id = :id"),
+                {"site": site, "id": member},
+            )
+        with pytest.raises(IntegrityError), engine.begin() as connection:
+            connection.execute(
+                text("UPDATE staff_members SET at_registered_office = true WHERE id = :id"),
+                {"id": member},
+            )
+        with pytest.raises(IntegrityError), engine.begin() as connection:
+            connection.execute(
+                text("UPDATE staff_members SET legal_entity_id = :other WHERE id = :id"),
+                {"other": other, "id": member},
+            )
+        downgrade(config, "0124")
+        assert not _table_shape(url, "legal_entity_sites")[0]
+        assert not _column_exists(url, "staff_members", "site_id")
+        assert not _column_exists(url, "staff_members", "at_registered_office")
+        upgrade(config, "0125")
+        assert _column_exists(url, "staff_members", "at_registered_office")
+        engine.dispose()

@@ -40,32 +40,28 @@ third-sector bodies, public bodies) and the regional incentives that depend on f
 does not hold (new companies, young or women founders, small or mountain municipalities,
 collective agreements, headcount, *de minimis* aid), the other sections of the IC form
 (financial companies, insurers, holding companies, the flat-rate section), the apportionment
-of a company with sites in several regions (art. 4 c. 2: the rule is in `territory`, the
-staff pay of each region is not known), and the deductions that need a record of each
-employee (`PerEmployeeDeduction` is data; the estimate applies it to the staff whose contract
-type is stated as fixed-term or seasonal, `StaffMember.contract_type`, and not to the apprentices,
-the workers on a training contract and the disabled workers, `ExcludedStaffDeduction`, whom the
-law leaves out of the headcount and deducts in full).
-
-What is modelled since REB-1086: the regional rows selected by the company's ATECO codes and the
-two points of art. 3 c. 1 D.L. 20 February 2026 n. 21 on the activities of its table 1
+of a company with sites in several regions (art. 4 c. 2: the rule is in `territory`, applied by
+`fiscal/irap_sites.py`, which says what it does not model), and the deductions that need a record
+of each employee (`PerEmployeeDeduction` is data; the estimate applies it to the staff whose
+contract type is stated as fixed-term or seasonal, `StaffMember.contract_type`, and not to the
+apprentices, the workers on a training contract and the disabled workers,
+`ExcludedStaffDeduction`, whom the law leaves out of the headcount and deducts in full). What is
+modelled since REB-1086: the regional rows selected by the company's ATECO codes and the two
+points of art. 3 c. 1 D.L. 20 February 2026 n. 21 on the activities of its table 1
 (`law_irap_ateco.py`), and the pro-rating of art. 11 c. 4-bis.2 to the calendar year
-(`calendar_year_days`).
-
-Sources, read on 2026-11-11
----------------------------
-* Normattiva, D.Lgs. 15 December 1997 n. 446, art. 4, art. 5 and art. 11 (text up to date at
-  the act's last update of 11 August 2026), https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:decreto.legislativo:1997-12-15;446~art5
-  (and `~art4`, `~art11`).
-* Agenzia delle Entrate, «Istruzioni IRAP 2026» (Provvedimento prot. n. 71997 of 27 February
-  2026, form for tax year 2025), «Quadro IC» section I (rows IC1 to IC14: the items of the value
-  and of the costs of production of a commercial company) and rows IC65 to IC76 (the order of
-  the deductions: the deduction of art. 11 c. 4-bis is computed on the gross value net of the
-  other deductions and applies only if that amount does not exceed 180,999.91 euro).
-* Dipartimento delle Finanze, «Fiscalità regionale e locale - IRAP - Aliquote applicabili»,
-  «Elenchi generali» (file `irp2026.csv`, publications in force, the latest dated 12
-  October 2026), the region's row «Aliquota ordinaria» or the one that plays its part, and the
-  rows selected by activity (`law_irap_ateco.py` lists them with their sources).
+(`calendar_year_days`). Sources, read on 2026-11-11 --------------------------- * Normattiva,
+D.Lgs. 15 December 1997 n. 446, art. 4, art. 5 and art. 11 (text up to date at the act's last
+update of 11 August 2026),
+https://www.normattiva.it/uri-res/N2Ls?urn:nir:stato:decreto.legislativo:1997-12-15;446~art5 (and
+`~art4`, `~art11`). * Agenzia delle Entrate, «Istruzioni IRAP 2026» (Provvedimento prot. n. 71997
+of 27 February 2026, form for tax year 2025), «Quadro IC» section I (rows IC1 to IC14: the items
+of the value and of the costs of production of a commercial company) and rows IC65 to IC76 (the
+order of the deductions: the deduction of art. 11 c. 4-bis is computed on the gross value net of
+the other deductions and applies only if that amount does not exceed 180,999.91 euro). *
+Dipartimento delle Finanze, «Fiscalità regionale e locale - IRAP - Aliquote applicabili», «Elenchi
+generali» (file `irp2026.csv`, publications in force, the latest dated 12 October 2026), the
+region's row «Aliquota ordinaria» or the one that plays its part, and the rows selected by
+activity (`law_irap_ateco.py` lists them with their sources).
 """
 
 from __future__ import annotations
@@ -232,8 +228,8 @@ class IrapTerritoryLaw:
     `minimum_months` to its establishments, yards, offices or fixed bases; the value of activity
     carried on elsewhere without staff for that long goes to the region where the company is
     domiciled. A company with one site therefore pays the rate of the region of its registered
-    office (`single_site`). The attribution key of several sites is data here, the pay of
-    each region is not known to PigroCRM and the estimate says it assumes the single-site case.
+    office (`single_site`). The attribution key of several sites is data here and
+    `fiscal/irap_sites.py` applies it to the legal entity's sites and the pay of its staff.
     """
 
     single_site: Literal["registered_office_region"]

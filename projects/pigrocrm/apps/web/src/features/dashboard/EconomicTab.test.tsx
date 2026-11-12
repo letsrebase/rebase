@@ -357,6 +357,30 @@ describe('EconomicTab', () => {
     expect(screen.queryByRole('group', { name: 'Imponibile forfettario stimato' })).toBeNull()
   })
 
+  it('says an srl’s IRAP is split over regions instead of printing a rate (REB-1092)', async () => {
+    const step = { lines: [], base: '72000.00', loss: false, region: null, missing: null, assumptions: [] }
+    const part = (region: string, name: string) => ({ region, name, pay: '1.00', share: '50.00', base: '36000.00', rate: '3.90', amount: '1404.00' })
+    const srl = {
+      ...TAX,
+      pack_id: 'it-company',
+      substitute_tax: null,
+      contributions: null,
+      taxable_amount: null,
+      due_total: '10236.00',
+      basis: { label: 'Ricavi e costi di competenza del 2026' },
+      company: {
+        ires: { ...step, rate: '24.00', amount: '8832.00' },
+        irap: { ...step, rate: null, amount: '2808.00', regions: [part('05', 'Veneto'), part('03', 'Lombardia')] },
+      },
+    }
+    vi.mocked(api.GET).mockImplementation(byPath({ ...RESPONSE, tax: srl, projected_tax: null }) as never)
+    renderTab()
+    const irap = await screen.findByRole('group', { name: 'IRAP stimata' })
+    expect(irap).toHaveTextContent('2.808,00 €')
+    expect(irap).toHaveTextContent('ripartita su 2 regioni')
+    expect(irap).not.toHaveTextContent('non calcolabile')
+  })
+
   it('shows the fiscal estimate on collected and projected revenue', async () => {
     vi.mocked(api.GET).mockImplementation(byPath(RESPONSE) as never)
     renderTab()

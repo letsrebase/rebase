@@ -89,7 +89,13 @@ export function useHourlyCost(id: string) {
 
 function useRefresh() {
   const client = useQueryClient()
-  return () => client.invalidateQueries({ queryKey: key.all })
+  return () =>
+    Promise.all([
+      client.invalidateQueries({ queryKey: key.all }),
+      // A person's place of work moves the count of each site and the IRAP split (REB-1092).
+      client.invalidateQueries({ queryKey: ['legal-entity-sites'] }),
+      client.invalidateQueries({ queryKey: ['fiscal-estimate'] }),
+    ])
 }
 
 export function useCreateStaff() {

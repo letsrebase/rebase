@@ -463,6 +463,9 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         "deactivate_legal_entity",
         "update_azienda_assets",
         "update_document",
+        # The places of business of a legal entity beside its registered office, which split the
+        # IRAP base between regions (REB-1092): a tax fact of the company, a person's to state.
+        "update_legal_entity_sites",
         # The day net pay leaves, for every staff member of a legal entity without an
         # override of their own (staff design § 4: its tools are the four of `FULL_ACCESS`).
         "set_payroll_pay_day",
@@ -594,6 +597,7 @@ ACTION_LABELS: dict[str, str] = {
     "close_iva_period": "chiudere un periodo IVA",
     "reopen_iva_period": "riaprire un periodo IVA",
     "set_payroll_pay_day": "impostare il giorno di paga dell'azienda",
+    "update_legal_entity_sites": "modificare le sedi dell'azienda",
     "record_staff_payslip": "registrare le cifre di un cedolino",
     "correct_staff_payslip": "correggere il cedolino di una persona",
     "propose_staff_hourly_cost": "proporre il costo orario di una persona",

@@ -128,6 +128,12 @@ export const queryKeys = {
   // The municipalities of one province, ISTAT's list (REB-1069): static for the life of a
   // release, so it is not under `legal_entities` and a save does not refetch it.
   municipalities: (province: string) => ['municipalities', province] as const,
+  // The places of business of one legal entity beside its registered office (REB-1092), with the
+  // staff count each carries. Its own key and not under `legal_entities`: a save of the legal
+  // entity's identity does not change it, a staff write does, and both invalidate it by name.
+  legalEntitySites: (legalEntityId: string) => ['legal-entity-sites', legalEntityId] as const,
+  // The regions a site can be in: the IRAP rate table's keys, fixed for the life of a release.
+  irapRegions: ['irap-regions'] as const,
   invoices: (params?: unknown) => ['invoices', params ?? {}] as const,
   // Distinct from `invoices` above: that key holds one `InvoicePage`, this one holds
   // an `useInfiniteQuery`'s own `{pages, pageParams}` shape (`useInvoicesPaged`,

@@ -8,6 +8,7 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
 import { LegalEntityImages } from './LegalEntityImages'
+import { LegalEntitySites } from './LegalEntitySites'
 import { MunicipalityPlace } from './MunicipalityPlace'
 import { useSaveLegalEntity, type LegalEntityRecord } from './queries'
 import { StaleRowBanner } from './StaleRowBanner'
@@ -125,6 +126,8 @@ export function LegalEntityPanel({ legal_entity }: { legal_entity: LegalEntityRe
           practice (REB-632, seen on the switch after «Nuova azienda») the previous
           azienda's form stayed mounted under the new one. */}
       <LegalEntityImages key={`images-${legal_entity.id}`} legal_entity={legal_entity} />
+      {/* Only an azienda on the company pack shows it (REB-1092); keyed like its siblings. */}
+      <LegalEntitySites key={`sites-${legal_entity.id}`} legal_entity={legal_entity} />
     </div>
   )
 }
