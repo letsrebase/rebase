@@ -106,6 +106,15 @@ def test_an_administrator_keeps_an_employee_and_a_director(
     assert logged_in.patch(
         f"/api/staff/{director.json()['id']}", json={"contract_type": "permanent"}
     ).status_code in (400, 422)
+    apprentice = logged_in.patch(
+        f"/api/staff/{body['id']}", json={"contract_type": "apprentice", "disabled_worker": True}
+    )
+    assert apprentice.status_code == 200, apprentice.text
+    assert apprentice.json()["contract_type"] == "apprentice"
+    assert apprentice.json()["disabled_worker"] is True
+    assert logged_in.patch(
+        f"/api/staff/{director.json()['id']}", json={"disabled_worker": True}
+    ).status_code in (400, 422)
     listed = logged_in.get("/api/staff", params={"legal_entity_id": standard}).json()
     assert [m["id"] for m in listed["items"]] == [body["id"]]
 

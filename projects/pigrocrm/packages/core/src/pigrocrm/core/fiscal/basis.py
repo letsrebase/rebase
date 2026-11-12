@@ -254,6 +254,7 @@ def _accrual(
                     cost=row.cost,
                     days_in_service=row.days_in_service,
                     part_time_percent=row.part_time_percent,
+                    disabled_worker=row.disabled_worker,
                 )
                 for row in personnel.employees
             ],

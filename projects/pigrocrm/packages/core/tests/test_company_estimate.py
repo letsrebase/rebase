@@ -149,7 +149,13 @@ def _staff(session: Session, entity: LegalEntity) -> None:
 
 
 def _employee(
-    session: Session, entity: LegalEntity, name: str, contract_type: str | None, start: dt.date
+    session: Session,
+    entity: LegalEntity,
+    name: str,
+    contract_type: str | None,
+    start: dt.date,
+    *,
+    disabled: bool | None = None,
 ) -> None:
     StaffService(session).create_staff_member(
         EmployeeCreate(
@@ -160,6 +166,7 @@ def _employee(
             monthly_payments=13,
             employer_inps_rate=M("30.00"),
             contract_type=contract_type,  # type: ignore[arg-type]
+            disabled_worker=disabled,
         ),
         STAFF_ADMIN,
     )
@@ -496,6 +503,74 @@ def test_an_employee_with_no_contract_type_is_named_and_not_deducted(
     named = [text for text in company.irap.assumptions if "Piero Gialli" in text]
     assert len(named) == 1 and "sovrastimata" in named[0]
     assert not any("Giulia Bianchi" in text and "non è indicato" in text for text in named)
+
+
+def _excluded_codes(company) -> list[str]:  # type: ignore[no-untyped-def]
+    return [line.code for line in company.irap.lines]
+
+
+@pytest.mark.parametrize("contract_type", ["apprentice", "training"])
+def test_an_apprentice_or_training_contract_is_deducted_in_full_and_not_counted(
+    db_session: Session, contract_type: str
+) -> None:
+    entity = _srl(db_session)
+    _revenue(db_session, entity, "100000.00")
+    for index in range(5):
+        _employee(db_session, entity, f"Tempo {index}", "fixed_term", D(YEAR, 1, 1), disabled=False)
+    _employee(db_session, entity, "Mario Apprendista", contract_type, D(YEAR, 1, 1))
+    company = _estimate(db_session, entity).company
+    assert company is not None
+
+    lines = {line.code: line.amount for line in company.irap.lines}
+    # The whole cost of the person (24,000 plus 30% charges), and a full 1,850 for each of the
+    # five others: the apprentice does not take a place among the five.
+    assert lines["excluded_staff"] == -M("31200.00")
+    assert lines["per_employee"] == -M("9250.00")
+    text = " ".join(company.irap.assumptions)
+    assert "Mario Apprendista" in text and "art. 11 c. 1 lett. a n. 5" in text
+    assert "non sono distinti" not in text
+
+
+def test_a_disabled_worker_is_deducted_in_full_and_a_missing_answer_is_named(
+    db_session: Session,
+) -> None:
+    entity = _srl(db_session)
+    _revenue(db_session, entity, "100000.00")
+    _employee(db_session, entity, "Dina Disabile", "fixed_term", D(YEAR, 1, 1), disabled=True)
+    _employee(db_session, entity, "Nino Non Disabile", "fixed_term", D(YEAR, 1, 1), disabled=False)
+    _employee(db_session, entity, "Sara Senza Dato", "seasonal", D(YEAR, 1, 1))
+    company = _estimate(db_session, entity).company
+    assert company is not None
+
+    lines = {line.code: line.amount for line in company.irap.lines}
+    assert lines["excluded_staff"] == -M("31200.00")
+    # Two people count for c. 4-bis.1: the one who says no and the one who does not say.
+    assert lines["per_employee"] == -M("3700.00")
+    named = [text for text in company.irap.assumptions if "è indicato se" in text]
+    assert len(named) == 1 and "Sara Senza Dato" in named[0]
+    assert "Dina" not in named[0] and "Nino" not in named[0]
+
+
+def test_a_permanent_disabled_worker_is_not_deducted_twice(db_session: Session) -> None:
+    entity = _srl(db_session)
+    _revenue(db_session, entity, "100000.00")
+    _employee(db_session, entity, "Paolo Permanente", "permanent", D(YEAR, 1, 1), disabled=True)
+    company = _estimate(db_session, entity).company
+    assert company is not None
+    codes = _excluded_codes(company)
+    assert "permanent_staff" in codes and "excluded_staff" not in codes
+
+
+def test_a_disabled_worker_with_no_contract_type_is_deducted_not_named_untyped(
+    db_session: Session,
+) -> None:
+    entity = _srl(db_session)
+    _revenue(db_session, entity, "100000.00")
+    _employee(db_session, entity, "Dina Disabile", None, D(YEAR, 1, 1), disabled=True)
+    company = _estimate(db_session, entity).company
+    assert company is not None
+    assert "excluded_staff" in _excluded_codes(company)
+    assert not any("tipo di contratto non è indicato" in t for t in company.irap.assumptions)
 
 
 def test_a_director_has_no_contract_type(db_session: Session) -> None:

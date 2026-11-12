@@ -146,6 +146,22 @@ describe('PersonDialog', () => {
     )
   })
 
+  it('asks whether the person is disabled and sends yes, no or not stated', async () => {
+    vi.mocked(api.PATCH).mockResolvedValue({ data: {}, response: new Response(null, { status: 200 }) } as never)
+    const user = userEvent.setup()
+    draw({ member: { ...member, contract_type: 'apprentice', disabled_worker: true } as StaffMember })
+    expect(screen.getByLabelText('Tipo di contratto')).toHaveTextContent('Apprendistato')
+    await user.click(screen.getByLabelText('Lavoratore disabile'))
+    await user.click(await screen.findByRole('option', { name: 'Non indicato' }))
+    await user.click(screen.getByRole('button', { name: 'Salva le condizioni' }))
+    await waitFor(() =>
+      expect(api.PATCH).toHaveBeenCalledWith('/api/staff/{staff_member_id}', {
+        params: { path: { staff_member_id: 'm-1' } },
+        body: { disabled_worker: null },
+      }),
+    )
+  })
+
   it('shows the server\'s refusal as it says it', async () => {
     vi.mocked(api.POST).mockResolvedValue({ error: { detail: 'l\'azienda non ha ancora un profilo fiscale' }, response: new Response(null, { status: 422 }) } as never)
     const user = userEvent.setup()

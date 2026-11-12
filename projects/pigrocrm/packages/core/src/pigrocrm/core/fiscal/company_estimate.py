@@ -61,7 +61,12 @@ from pydantic import BaseModel, ConfigDict
 
 from pigrocrm.core.fiscal.basis_schemas import BasisEmployee, YearBasis
 from pigrocrm.core.fiscal.law import CompanyTaxLaw
-from pigrocrm.core.fiscal.law_irap import IrapActivity, IrapLaw, calendar_year_days
+from pigrocrm.core.fiscal.law_irap import (
+    IrapActivity,
+    IrapLaw,
+    PerEmployeeDeduction,
+    calendar_year_days,
+)
 from pigrocrm.core.fiscal.law_irap_ateco import IrapRateAnswer
 from pigrocrm.core.fiscal.loss_schemas import LossOffset
 from pigrocrm.core.money import ZERO_MONEY, round_money
@@ -253,6 +258,35 @@ def _names(rows: list[BasisEmployee]) -> str:
     return ", ".join(row.name for row in rows)
 
 
+def _is_excluded(row: BasisEmployee) -> bool:
+    """Apprentices, workers on a training contract and disabled workers: out of the headcount of
+    c. 4-bis.1 and deducted in full (c. 1 lett. a n. 5). A permanent employee is deducted in
+    full by c. 4-octies already and is never counted twice."""
+    if row.contract_type in ("apprentice", "training"):
+        return True
+    return row.disabled_worker is True and row.contract_type != "permanent"
+
+
+def _per_employee_amount(row: BasisEmployee, rule: PerEmployeeDeduction, year_days: int) -> Decimal:
+    """What c. 4-bis.1 gives for one person: pro rata to the days of the employment on the
+    calendar year and to the part-time share (c. 4-bis.2), never above the person's cost."""
+    return min(
+        round_money(
+            rule.amount * row.days_in_service / year_days * row.part_time_percent / _HUNDRED
+        ),
+        row.cost,
+    )
+
+
+def _disabled_unsaid(rows: list[BasisEmployee]) -> str:
+    return (
+        f"Non è indicato se {_names(rows)} sia disabile (L. 68/1999, L. 482/1968): se lo fosse, "
+        "il costo sarebbe dedotto per intero (art. 11 c. 1 lett. a n. 5) e la persona non "
+        "conterebbe tra i cinque dipendenti del comma 4-bis.1, quindi la base potrebbe essere "
+        "sovrastimata."
+    )
+
+
 def _staff_deductions(
     basis: YearBasis, irap: IrapLaw, period_days: int, year_days: int
 ) -> list[tuple[CompanyTaxLine | None, str]]:
@@ -267,7 +301,8 @@ def _staff_deductions(
     employees = costs.employees
     if not employees:
         return out
-    untyped = [row for row in employees if row.contract_type is None]
+    excluded = [row for row in employees if _is_excluded(row)]
+    untyped = [row for row in employees if row.contract_type is None and not _is_excluded(row)]
     if untyped:
         out.append(
             (
@@ -276,6 +311,22 @@ def _staff_deductions(
                 f"{_names(untyped)}: il loro costo non è dedotto (a tempo indeterminato, "
                 "art. 11 c. 4-octies, o per dipendente, c. 4-bis.1), quindi la base è "
                 "sovrastimata di quel costo.",
+            )
+        )
+    if excluded:
+        cost = sum((row.cost for row in excluded), ZERO_MONEY)
+        amount = round_money(cost * irap.excluded_staff.percent / _HUNDRED)
+        out.append(
+            (
+                CompanyTaxLine(
+                    code="excluded_staff",
+                    label="Deduzione delle spese per apprendisti, disabili e contratti di "
+                    "formazione lavoro (art. 11 c. 1 lett. a n. 5)",
+                    amount=-amount,
+                ),
+                f"Dedotto per intero il costo di {_names(excluded)} (apprendisti, lavoratori "
+                "disabili o contratti di formazione lavoro, art. 11 c. 1 lett. a n. 5): non "
+                "contano tra i cinque dipendenti del comma 4-bis.1.",
             )
         )
     permanent = [row for row in employees if row.contract_type == "permanent"]
@@ -305,7 +356,11 @@ def _staff_deductions(
                 f"contratto segue un altro con lo stesso datore ({_names(seasonal)}).",
             )
         )
-    other = [row for row in employees if row.contract_type in ("fixed_term", "seasonal")]
+    other = [
+        row
+        for row in employees
+        if row.contract_type in ("fixed_term", "seasonal") and not _is_excluded(row)
+    ]
     if other:
         rule = irap.per_employee
         annual_components = basis.revenue * year_days / period_days
@@ -321,19 +376,7 @@ def _staff_deductions(
         else:
             rows = sorted(
                 (
-                    (
-                        min(
-                            round_money(
-                                rule.amount
-                                * row.days_in_service
-                                / year_days
-                                * row.part_time_percent
-                                / _HUNDRED
-                            ),
-                            row.cost,
-                        ),
-                        row,
-                    )
+                    (_per_employee_amount(row, rule, year_days), row)
                     for row in other
                     if row.days_in_service > 0
                 ),
@@ -353,10 +396,18 @@ def _staff_deductions(
                         f"Dedotti {rule.amount:,.0f} euro l'anno per dipendente non a tempo "
                         f"indeterminato, fino a {rule.max_employees}, in proporzione ai giorni "
                         "di servizio sull'anno solare e al tempo parziale, e mai oltre il suo "
-                        "costo; apprendisti e lavoratori disabili, che la legge non conta, non "
-                        "sono distinti.",
+                        "costo; apprendisti, lavoratori disabili e contratti di formazione "
+                        "lavoro non sono contati.",
                     )
                 )
+            unsaid = [
+                row
+                for row in other
+                if row.disabled_worker is None
+                and row.cost > _per_employee_amount(row, rule, year_days)
+            ]
+            if unsaid:
+                out.append((None, _disabled_unsaid(unsaid)))
     return out
 
 

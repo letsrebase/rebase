@@ -43,8 +43,9 @@ collective agreements, headcount, *de minimis* aid), the other sections of the I
 of a company with sites in several regions (art. 4 c. 2: the rule is in `territory`, the
 staff pay of each region is not known), and the deductions that need a record of each
 employee (`PerEmployeeDeduction` is data; the estimate applies it to the staff whose contract
-type is stated as fixed-term or seasonal, `StaffMember.contract_type`, and not to the apprentices
-and disabled workers the law leaves out of the headcount, which it cannot tell apart).
+type is stated as fixed-term or seasonal, `StaffMember.contract_type`, and not to the apprentices,
+the workers on a training contract and the disabled workers, `ExcludedStaffDeduction`, whom the
+law leaves out of the headcount and deducts in full).
 
 What is modelled since REB-1086: the regional rows selected by the company's ATECO codes and the
 two points of art. 3 c. 1 D.L. 20 February 2026 n. 21 on the activities of its table 1
@@ -188,6 +189,16 @@ class PermanentStaffDeduction:
 
 
 @dataclass(frozen=True)
+class ExcludedStaffDeduction:
+    """Art. 11 c. 1 lett. a n. 5: the cost of apprentices, of disabled workers (art. 1 L. 68/1999,
+    art. 5 L. 482/1968) and of staff on a training contract (the law's «formazione e lavoro»)
+    is deducted, in
+    `percent`, over and above c. 4-octies; they are not counted in the headcount of c. 4-bis.1."""
+
+    percent: Decimal
+
+
+@dataclass(frozen=True)
 class PerEmployeeDeduction:
     """Art. 11 c. 4-bis.1: for a company whose positive components of the value of production
     do not exceed `components_limit` in the tax period, a deduction of `amount` a year for each
@@ -283,6 +294,7 @@ class IrapLaw:
 
     base_items: tuple[IrapBaseItem, ...]
     permanent_staff: PermanentStaffDeduction
+    excluded_staff: ExcludedStaffDeduction
     per_employee: PerEmployeeDeduction
     small_base: tuple[SmallBaseDeduction, ...]
     territory: IrapTerritoryLaw
@@ -577,6 +589,12 @@ IRAP_LAW: Final = IrapLaw(
         seasonal_percent=Decimal("70"),
         seasonal_min_days=120,
     ),
+    # Art. 11 c. 1 lett. a n. 5 and c. 4-bis.1 (last sentence), Normattiva, read 2026-11-12:
+    # «le spese relative agli apprendisti, ai disabili e le spese per il personale assunto con
+    # contratti di formazione e lavoro» are deducted in full; «non si tiene conto degli
+    # apprendisti, dei disabili e del personale assunto con contratti di formazione lavoro» in the
+    # headcount of c. 4-bis.1. Istruzioni IRAP 2026, rigo IS4 and IS5 (read 2026-11-12).
+    excluded_staff=ExcludedStaffDeduction(percent=Decimal("100")),
     # Art. 11 c. 4-bis.1 and 4-bis.2, Normattiva, read 2026-11-11.
     per_employee=PerEmployeeDeduction(
         amount=Decimal("1850"),
@@ -617,6 +635,7 @@ __all__ = [
     "IrapRegionalRates",
     "IrapTerritoryLaw",
     "IrapTreatment",
+    "ExcludedStaffDeduction",
     "PerEmployeeDeduction",
     "PermanentStaffDeduction",
     "SmallBaseDeduction",

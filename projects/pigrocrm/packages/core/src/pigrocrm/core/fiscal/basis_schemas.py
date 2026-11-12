@@ -44,12 +44,15 @@ class BasisEmployee(BaseModel):
 
     staff_member_id: UUID
     name: str
-    contract_type: Literal["permanent", "fixed_term", "seasonal"] | None
+    contract_type: Literal["permanent", "fixed_term", "seasonal", "apprentice", "training"] | None
     cost: Decimal
     days_in_service: int
     # The share of a full-time week, in percent: the 1,850 euro of art. 11 c. 4-bis.1 is reduced
     # in proportion (c. 4-bis.2).
     part_time_percent: Decimal = Decimal(100)
+    # Disabled in the sense of L. 68/1999 or L. 482/1968 (art. 11 c. 4-bis.1); `None` is «not
+    # stated» and the estimate names the person when the answer would change the figure.
+    disabled_worker: bool | None = None
 
 
 class BasisCosts(BaseModel):
