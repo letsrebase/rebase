@@ -15,6 +15,38 @@
    "section": "inps",
    "source": "INPS, circolare n. 35 of 19 February 2016, \u00a7 1 (the flat-rate regime's 35% reduction applies to the contribution on the minimum income and on the excess, and the maternity contribution is due with the fixed instalments); Agenzia delle Entrate, Redditi PF 2026 fascicolo 2, appendix \u00abINPS - Modalit\u00e0 di calcolo degli acconti\u00bb; INPS, circolare n. 83 of 24 April 2025 and circolare n. 14 of 9 February 2026 \u00a7 1 (the 50% reductions), read 2026-11-12",
    "year": 2026
+  },
+  {
+   "fingerprint": "6d99469b938f25333af6904018dd4606825cb05d05500aa1a90494a665252fae",
+   "pack": "it-company:1",
+   "reason": "The 103 euro single-payment test is on the first instalment, not on the whole advance, and covers IRAP as well as IRES (REB-1098)",
+   "section": "laws",
+   "source": "art. 17 c. 3 D.P.R. 7 December 2001 n. 435, Normattiva text in force 2026-11-12; Agenzia delle Entrate, Redditi SC 2026 Parte generale \u00a7 4.2 and IRAP 2026 istruzioni \u00a7 5.2",
+   "year": 2026
+  },
+  {
+   "fingerprint": "ebd9b182608e9f74869d9c82c309d3f7eb182cd97065f3eda60d5429b19756e7",
+   "pack": "it-company:1",
+   "reason": "Adds the ravvedimento tiers of the shortfall law, the INPS interest causali API and CPI and the srl withholding credit rule to the 2026 payment rules; no figure already recorded is changed (REB-1098)",
+   "section": "payment_rules",
+   "source": "D.Lgs. 472/1997 art. 13 c. 1 lett. a) and a-bis), Normattiva 2026-11-12 (ravvedimento tiers up to 90 days); INPS circolare n. 62 of 27 May 2026 \u00a7\u00a7 3-4 (causali API, CPI, DPPI for instalment interest); Redditi SC 2026 quadro RN rigo RN15 and art. 79 c. 1, art. 109 TUIR (srl withholding credit by accrual)",
+   "year": 2026
+  },
+  {
+   "fingerprint": "65f210896ac0645e7063388c757cd2e297e7baf0e9f5886f899a95b2a5b907c8",
+   "pack": "it-flat-rate:1",
+   "reason": "Adds the ravvedimento tiers of the shortfall law, the INPS interest causali API and CPI and the srl withholding credit rule to the 2026 payment rules; no figure already recorded is changed (REB-1098)",
+   "section": "payment_rules",
+   "source": "D.Lgs. 472/1997 art. 13 c. 1 lett. a) and a-bis), Normattiva 2026-11-12 (ravvedimento tiers up to 90 days); INPS circolare n. 62 of 27 May 2026 \u00a7\u00a7 3-4 (causali API, CPI, DPPI for instalment interest); Redditi SC 2026 quadro RN rigo RN15 and art. 79 c. 1, art. 109 TUIR (srl withholding credit by accrual)",
+   "year": 2026
+  },
+  {
+   "fingerprint": "f5f9fed4b7eaff9fe738c4af5a556019ca4c3cf811c9618ade4ebc11b203eadb",
+   "pack": "it-standard:1",
+   "reason": "Adds the ravvedimento tiers of the shortfall law, the INPS interest causali API and CPI and the srl withholding credit rule to the 2026 payment rules; no figure already recorded is changed (REB-1098)",
+   "section": "payment_rules",
+   "source": "D.Lgs. 472/1997 art. 13 c. 1 lett. a) and a-bis), Normattiva 2026-11-12 (ravvedimento tiers up to 90 days); INPS circolare n. 62 of 27 May 2026 \u00a7\u00a7 3-4 (causali API, CPI, DPPI for instalment interest); Redditi SC 2026 quadro RN rigo RN15 and art. 79 c. 1, art. 109 TUIR (srl withholding credit by accrual)",
+   "year": 2026
   }
  ],
  "fingerprints": {
