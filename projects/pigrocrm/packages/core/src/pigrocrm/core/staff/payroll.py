@@ -41,6 +41,7 @@ administrators and everyone else sees the aggregate «Stipendi» line
 import datetime as dt
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -148,6 +149,21 @@ class EmployeeCost:
     part_time_percent: Decimal = Decimal(100)
     # Disabled in the sense of L. 68/1999 or L. 482/1968; `None` is «not stated» (REB-1091).
     disabled_worker: bool | None = None
+    # The INAIL premium inside `cost`, from the person's typed rates (zero when no INAIL rate is
+    # stated): art. 11 c. 4-octies leaves it out of the 70% of a seasonal worker (REB-1090).
+    inail: Decimal = ZERO_MONEY
+    # The contract history of a seasonal worker, as stored (`StaffMember.seasonal_contracts`).
+    seasonal_contracts: tuple[dict[str, Any], ...] | None = None
+
+
+def _inail_in(member: StaffMember, cost: Decimal) -> Decimal:
+    """The employer's INAIL inside `cost`: the cost is the gross times one plus the employer's
+    INPS and INAIL rates, so the INAIL is its rate's share of that sum. Exact on an estimated
+    month, approximate where an accepted payslip replaced the estimate."""
+    inail = member.employer_inail_rate or Decimal(0)
+    if inail == 0:
+        return ZERO_MONEY
+    return round_money(cost * inail / (Decimal(100) + (member.employer_inps_rate or 0) + inail))
 
 
 def _key(item: CashItem) -> str:
@@ -278,6 +294,8 @@ class PayrollService:
                 days_in_service(member, date_from, date_to),
                 member.part_time_percent or Decimal(100),
                 member.disabled_worker,
+                _inail_in(member, round_money(per_member[member.id])),
+                tuple(member.seasonal_contracts) if member.seasonal_contracts is not None else None,
             )
             for member in self.repo.members_of(legal_entity_id)
             if member.kind == "employee" and member.id in per_member

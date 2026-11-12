@@ -35,14 +35,19 @@ data can support:
 
 * c. 4-octies (permanent staff cost) is applied to the cost of the employees whose contract is
   `permanent` (`StaffMember.contract_type`), at the pack's percentage;
+* c. 1 lett. a n. 5 (apprentices, disabled workers, training contracts) takes the whole cost of
+  those people and leaves them out of the headcount of c. 4-bis.1 (REB-1091);
+* c. 4-octies, second sentence (70% of the cost of a seasonal worker) is applied from the
+  worker's contract history, by `company_seasonal.seasonal_outcome`, to the days of effective
+  work and without the INAIL premium (REB-1090); a worker it is applied to does not also take the
+  1,850 euro of c. 4-bis.1, which no source says may be added (the safer figure, said in the
+  payload); a worker with no history, or with a year's days not stated, is named;
 * c. 4-bis.1 (per-employee deduction) is applied to the employees who are `fixed_term` or
-  `seasonal`, pro rata to the days in service and never above the person's cost, up to the pack's
-  headcount, when the year's revenue (the positive components the estimate sees) does not
-  exceed the pack's limit;
+  `seasonal` and not in either group above, pro rata to the days in service and never above the
+  person's cost, up to the pack's headcount, when the year's revenue (the positive components
+  the estimate sees) does not exceed the pack's limit;
 * an employee whose contract type is not stated gets no deduction and the payload names them, so
-  the base is overstated by that cost. The seasonal deduction of c. 4-octies (70% from 120 days
-  in two tax periods, from the second contract) is not applied: the staff records do not say
-  which contracts follow another, and the payload says so when a seasonal employee exists;
+  the base is overstated by that cost;
 * c. 4-bis (small base) is applied from the pack's table, to the base net of the other deductions.
 
 The rate is the one of the region of the legal entity's registered office (art. 4 c. 1, single-site
@@ -60,6 +65,7 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict
 
 from pigrocrm.core.fiscal.basis_schemas import BasisEmployee, YearBasis
+from pigrocrm.core.fiscal.company_seasonal import seasonal_outcome
 from pigrocrm.core.fiscal.law import CompanyTaxLaw
 from pigrocrm.core.fiscal.law_irap import (
     IrapActivity,
@@ -344,22 +350,63 @@ def _staff_deductions(
                 f"Dedotto il costo dei dipendenti a tempo indeterminato: {_names(permanent)}.",
             )
         )
-    seasonal = [row for row in employees if row.contract_type == "seasonal"]
-    if seasonal:
+    seasonal = [
+        row for row in employees if row.contract_type == "seasonal" and not _is_excluded(row)
+    ]
+    seasonal_rule = irap.permanent_staff
+    applied: list[BasisEmployee] = []
+    seasonal_amount = ZERO_MONEY
+    for row in seasonal:
+        outcome = seasonal_outcome(
+            row.seasonal_contracts,
+            basis.year,
+            min_days=seasonal_rule.seasonal_min_days,
+            window_years=seasonal_rule.seasonal_window_years,
+        )
+        share = f"{seasonal_rule.seasonal_percent.normalize():f}%"
+        if outcome.outcome == "due":
+            applied.append(row)
+            served = max(row.days_in_service, 1)
+            worked = min(outcome.days, served)
+            seasonal_amount += round_money(
+                (row.cost - row.inail) * seasonal_rule.seasonal_percent / _HUNDRED * worked / served
+            )
+        elif outcome.outcome == "not_due":
+            out.append(
+                (None, f"Il {share} per lo stagionale {row.name} non spetta: {outcome.reason}.")
+            )
+        else:
+            out.append(
+                (
+                    None,
+                    f"Il {share} per lo stagionale {row.name} (art. 11 c. 4-octies) non è "
+                    f"applicato: {outcome.reason}.",
+                )
+            )
+    if applied:
         out.append(
             (
-                None,
-                "La deduzione del "
-                f"{irap.permanent_staff.seasonal_percent.normalize():f}% per gli stagionali "
-                f"con almeno {irap.permanent_staff.seasonal_min_days} giorni in due periodi "
-                "d'imposta (art. 11 c. 4-octies) non è applicata: i dati non dicono se il "
-                f"contratto segue un altro con lo stesso datore ({_names(seasonal)}).",
+                CompanyTaxLine(
+                    code="seasonal_staff",
+                    label=f"Deduzione del {seasonal_rule.seasonal_percent.normalize():f}% del "
+                    "costo degli stagionali (art. 11 c. 4-octies)",
+                    amount=-seasonal_amount,
+                ),
+                f"Dedotto il {seasonal_rule.seasonal_percent.normalize():f}% del costo per i "
+                f"giorni di lavoro effettivo di {_names(applied)}, senza i premi INAIL, che si "
+                "deducono per intero a parte. Per loro non si applicano anche i "
+                f"{irap.per_employee.amount:,.0f} euro del comma 4-bis.1: nessuna fonte letta "
+                "dice che le due deduzioni si sommino sullo stesso lavoratore, e si usa la "
+                "cifra più prudente.",
             )
         )
+    applied_ids = {row.staff_member_id for row in applied}
     other = [
         row
         for row in employees
-        if row.contract_type in ("fixed_term", "seasonal") and not _is_excluded(row)
+        if row.contract_type in ("fixed_term", "seasonal")
+        and not _is_excluded(row)
+        and row.staff_member_id not in applied_ids
     ]
     if other:
         rule = irap.per_employee

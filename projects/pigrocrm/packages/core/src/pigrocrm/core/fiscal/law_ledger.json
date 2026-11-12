@@ -359,6 +359,22 @@
    "section": "laws",
    "source": "D.Lgs. 446/1997 art. 11 c. 1 lett. a n. 5 and c. 4-bis.1 (Normattiva, read 2026-11-12); Agenzia delle Entrate, Istruzioni IRAP 2026, quadro IS rigo IS4 and IS5 (read 2026-11-12)",
    "year": 2027
+  },
+  {
+   "fingerprint": "460c3c4dbfa022040f6bf0aa3dbbde76635b5eca00f463bbb6c17920ddb2382e",
+   "pack": "it-company:1",
+   "reason": "REB-1090: the IRAP law carries the two-year window of the seasonal 70%, which the text states and the pack lacked; the 70% and the 120 days were already recorded and did not change",
+   "section": "laws",
+   "source": "D.Lgs. 446/1997 art. 11 c. 4-octies (Normattiva, read 2026-11-12): \u00abnell'arco temporale di due anni a partire dalla cessazione del precedente contratto\u00bb; Agenzia delle Entrate, Circolare 18 maggio 2016 n. 20/E \u00a7 2 and Istruzioni IRAP 2026 rigo IS7 (read 2026-11-12)",
+   "year": 2026
+  },
+  {
+   "fingerprint": "460c3c4dbfa022040f6bf0aa3dbbde76635b5eca00f463bbb6c17920ddb2382e",
+   "pack": "it-company:1",
+   "reason": "REB-1090: the IRAP law carries the two-year window of the seasonal 70%, which the text states and the pack lacked; the 70% and the 120 days were already recorded and did not change",
+   "section": "laws",
+   "source": "D.Lgs. 446/1997 art. 11 c. 4-octies (Normattiva, read 2026-11-12): \u00abnell'arco temporale di due anni a partire dalla cessazione del precedente contratto\u00bb; Agenzia delle Entrate, Circolare 18 maggio 2016 n. 20/E \u00a7 2 and Istruzioni IRAP 2026 rigo IS7 (read 2026-11-12)",
+   "year": 2027
   }
  ],
  "fingerprints": {

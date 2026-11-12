@@ -153,7 +153,9 @@ DEFAULT_BUDGET_BYTES = 109_900
 # first periods), measured at 150,149.
 # REB-1091: 150.25 KB, up from 150.2 KB, for the two contract types and the `disabled_worker`
 # fact in the staff create and update schemas.
-FULL_ACCESS_BUDGET_BYTES = 150_250
+# REB-1090: 150.3 KB, up from 150.25 KB, for the `seasonal_contracts` history in the staff create
+# and update schemas.
+FULL_ACCESS_BUDGET_BYTES = 150_300
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

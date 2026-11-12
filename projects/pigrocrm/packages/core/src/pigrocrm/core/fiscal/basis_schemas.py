@@ -35,6 +35,17 @@ class BasisLine(BaseModel):
     reason: str
 
 
+class BasisSeasonalContract(BaseModel):
+    """One contract of a seasonal worker: its dates (the end is `None` while it runs) and the
+    days of effective work in each tax year, a year left out being «not stated»."""
+
+    model_config = ConfigDict(frozen=True)
+
+    start_date: date
+    end_date: date | None = None
+    worked_days: dict[int, int] = {}
+
+
 class BasisEmployee(BaseModel):
     """One employee's share of the year's staff cost (REB-1081): what IRAP's deductions of
     art. 11 read. `contract_type` is `None` when the person's contract is not stated; the days
@@ -53,6 +64,11 @@ class BasisEmployee(BaseModel):
     # Disabled in the sense of L. 68/1999 or L. 482/1968 (art. 11 c. 4-bis.1); `None` is «not
     # stated» and the estimate names the person when the answer would change the figure.
     disabled_worker: bool | None = None
+    # The INAIL premium inside `cost`: art. 11 c. 4-octies leaves it out of the 70% of a seasonal
+    # worker, since it is deducted in full elsewhere (REB-1090).
+    inail: Decimal = Decimal(0)
+    # The seasonal worker's contract history with the company; `None` is «not stated».
+    seasonal_contracts: list[BasisSeasonalContract] | None = None
 
 
 class BasisCosts(BaseModel):
@@ -94,4 +110,11 @@ class YearBasis(BaseModel):
     assumptions: list[BasisLine]
 
 
-__all__ = ["BasisCosts", "BasisEmployee", "BasisLine", "LineCode", "YearBasis"]
+__all__ = [
+    "BasisCosts",
+    "BasisEmployee",
+    "BasisLine",
+    "BasisSeasonalContract",
+    "LineCode",
+    "YearBasis",
+]

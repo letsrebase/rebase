@@ -44,7 +44,13 @@ from sqlalchemy import ColumnElement, and_, exists, func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.due_items.models import PAYROLL_SOURCE_KIND, DueItem, DueItemSettlement
-from pigrocrm.core.fiscal.basis_schemas import BasisCosts, BasisEmployee, BasisLine, YearBasis
+from pigrocrm.core.fiscal.basis_schemas import (
+    BasisCosts,
+    BasisEmployee,
+    BasisLine,
+    BasisSeasonalContract,
+    YearBasis,
+)
 from pigrocrm.core.fiscal.ceiling import (
     paid_revenue_for_calendar_year,
 )
@@ -255,6 +261,14 @@ def _accrual(
                     days_in_service=row.days_in_service,
                     part_time_percent=row.part_time_percent,
                     disabled_worker=row.disabled_worker,
+                    inail=row.inail,
+                    seasonal_contracts=(
+                        None
+                        if row.seasonal_contracts is None
+                        else [
+                            BasisSeasonalContract.model_validate(c) for c in row.seasonal_contracts
+                        ]
+                    ),
                 )
                 for row in personnel.employees
             ],

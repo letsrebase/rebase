@@ -62,6 +62,7 @@ def test_permanent_staff_cost_is_deducted_in_full_and_seasonal_staff_up_to_70_pe
     assert staff.permanent_percent == Decimal(100)
     assert staff.seasonal_percent == Decimal(70)
     assert staff.seasonal_min_days == 120
+    assert staff.seasonal_window_years == 2
 
 
 def test_the_flat_deduction_per_non_permanent_employee() -> None:

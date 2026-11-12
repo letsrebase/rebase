@@ -9,10 +9,10 @@ or a month left out is «not stated», never a default: the payroll consultant v
 
 import datetime as dt
 from decimal import Decimal
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from pigrocrm.core.staff.models import (
     AGREEMENT_MAX_LENGTH,
@@ -34,6 +34,64 @@ MONEY_SCALE = 2
 PERCENT_MAX_DIGITS = 5
 PERCENT_SCALE = 2
 HOURS_MAX_PER_MONTH = 744
+WORKED_YEAR_MIN = 1900
+WORKED_YEAR_MAX = 2100
+
+
+def _days_in_year_of(start: dt.date, end: dt.date | None, year: int) -> int:
+    """The days of the contract that fall in `year` (an open contract runs to the year's end)."""
+    first = max(start, dt.date(year, 1, 1))
+    last = dt.date(year, 12, 31) if end is None else min(end, dt.date(year, 12, 31))
+    return max((last - first).days + 1, 0)
+
+
+class SeasonalContract(BaseModel):
+    """One contract of a seasonal worker with the company (art. 11 c. 4-octies D.Lgs. 446/1997,
+    REB-1090): its dates, and the days of effective work in each tax year (not the days of the
+    contract). `end_date` is empty for a contract still running; a year left out is «not
+    stated», never zero."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    start_date: dt.date
+    end_date: dt.date | None = None
+    worked_days: dict[int, Annotated[int, Field(ge=0, le=366)]] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        if self.end_date is not None and self.end_date < self.start_date:
+            raise ValueError("la fine del contratto non puo' precedere l'inizio")
+        for year, days in self.worked_days.items():
+            if not WORKED_YEAR_MIN <= year <= WORKED_YEAR_MAX:
+                raise ValueError(f"l'anno {year} dei giorni lavorati non e' valido")
+            available = _days_in_year_of(self.start_date, self.end_date, year)
+            if days > available:
+                raise ValueError(
+                    f"{days} giorni lavorati nel {year} sono piu' dei {available} giorni "
+                    "del contratto in quell'anno"
+                )
+        return self
+
+
+def _check_no_overlap(contracts: list[SeasonalContract]) -> list[SeasonalContract]:
+    """Contracts of one worker with the company follow each other: only the last may be open
+    and none starts before the previous one ended."""
+    ordered = sorted(contracts, key=lambda contract: contract.start_date)
+    for earlier, later in zip(ordered, ordered[1:], strict=False):
+        if earlier.end_date is None or later.start_date <= earlier.end_date:
+            raise ValueError("i contratti stagionali non si possono sovrapporre")
+    return ordered
+
+
+SeasonalContracts = Annotated[
+    list[SeasonalContract], Field(max_length=40), AfterValidator(_check_no_overlap)
+]
+
+
+def _contracts_as_stored(value: list[SeasonalContract] | None) -> list[dict[str, Any]] | None:
+    """The JSONB form of the history: dates as ISO text and the years as text keys."""
+    return None if value is None else [contract.model_dump(mode="json") for contract in value]
+
 
 _Money = Annotated[Decimal, Field(gt=0, max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_SCALE)]
 _Percent = Annotated[
@@ -114,6 +172,7 @@ class EmployeeCreate(_StaffCreate):
     contract_level: SafeStr | None = Field(default=None, max_length=LEVEL_MAX_LENGTH)
     contract_type: ContractType | None = None
     disabled_worker: bool | None = None
+    seasonal_contracts: SeasonalContracts | None = None
     gross_annual_pay: _Money
     monthly_payments: MonthlyPayments
     part_time_percent: _PartTime = Decimal("100")
@@ -122,6 +181,12 @@ class EmployeeCreate(_StaffCreate):
     employee_inps_rate: _Percent | None = None
     thirteenth_month: _Month | None = None
     fourteenth_month: _Month | None = None
+
+    @field_serializer("seasonal_contracts")
+    def _seasonal_contracts_as_stored(
+        self, value: list[SeasonalContract] | None
+    ) -> list[dict[str, Any]] | None:
+        return _contracts_as_stored(value)
 
     @model_validator(mode="after")
     def _payments(self) -> "EmployeeCreate":
@@ -168,6 +233,7 @@ class StaffMemberUpdate(BaseModel):
     contract_level: SafeStr | None = Field(default=None, max_length=LEVEL_MAX_LENGTH)
     contract_type: ContractType | None = None
     disabled_worker: bool | None = None
+    seasonal_contracts: SeasonalContracts | None = None
     gross_annual_pay: _Money | None = None
     monthly_payments: MonthlyPayments | None = None
     part_time_percent: _PartTime | None = None
@@ -181,6 +247,12 @@ class StaffMemberUpdate(BaseModel):
     accrues_tfm: bool | None = None
     tfm_annual_amount: _Money | None = None
     inps_company_share: _Percent | None = None
+
+    @field_serializer("seasonal_contracts")
+    def _seasonal_contracts_as_stored(
+        self, value: list[SeasonalContract] | None
+    ) -> list[dict[str, Any]] | None:
+        return _contracts_as_stored(value)
 
 
 class StaffMemberRead(BaseModel):
@@ -204,6 +276,7 @@ class StaffMemberRead(BaseModel):
     contract_level: str | None
     contract_type: ContractType | None
     disabled_worker: bool | None
+    seasonal_contracts: list[SeasonalContract] | None
     gross_annual_pay: Decimal | None
     monthly_payments: int | None
     part_time_percent: Decimal | None

@@ -115,6 +115,25 @@ def test_an_administrator_keeps_an_employee_and_a_director(
     assert logged_in.patch(
         f"/api/staff/{director.json()['id']}", json={"disabled_worker": True}
     ).status_code in (400, 422)
+    history = [
+        {"start_date": "2025-06-01", "end_date": "2025-09-30", "worked_days": {"2025": 90}},
+        {"start_date": "2026-06-01", "end_date": "2026-09-30", "worked_days": {"2026": 100}},
+    ]
+    seasonal = logged_in.patch(
+        f"/api/staff/{body['id']}",
+        json={"contract_type": "seasonal", "seasonal_contracts": history},
+    )
+    assert seasonal.status_code == 200, seasonal.text
+    assert seasonal.json()["seasonal_contracts"] == history
+    assert logged_in.patch(
+        f"/api/staff/{body['id']}",
+        json={"seasonal_contracts": [{"start_date": "2026-06-01", "worked_days": {"2026": 400}}]},
+    ).status_code in (400, 422)
+    assert logged_in.patch(
+        f"/api/staff/{director.json()['id']}", json={"seasonal_contracts": history}
+    ).status_code in (400, 422)
+    cleared = logged_in.patch(f"/api/staff/{body['id']}", json={"seasonal_contracts": None})
+    assert cleared.json()["seasonal_contracts"] is None
     listed = logged_in.get("/api/staff", params={"legal_entity_id": standard}).json()
     assert [m["id"] for m in listed["items"]] == [body["id"]]
 
