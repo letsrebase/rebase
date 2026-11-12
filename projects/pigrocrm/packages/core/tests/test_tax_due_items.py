@@ -992,7 +992,7 @@ def test_the_inps_advances_are_two_equal_halves_of_the_excess_on_last_years_inco
         Row(
             "tax_advance",
             "inps",
-            dt.date(2026, 7, 20),
+            dt.date(2026, 6, 30),
             D("1369.90"),
             "forecast",
             "Acconto INPS 2026, 1a rata",
@@ -1065,7 +1065,7 @@ def test_a_paid_first_inps_advance_is_kept_and_the_second_takes_what_the_total_l
         select(DueItem).where(
             DueItem.legal_entity_id == entity,
             DueItem.tax == "inps",
-            DueItem.due_date == dt.date(2026, 7, 20),
+            DueItem.due_date == dt.date(2026, 6, 30),
         )
     ).one()
     DueItemService(db_session).settle(
@@ -1075,7 +1075,7 @@ def test_a_paid_first_inps_advance_is_kept_and_the_second_takes_what_the_total_l
     TaxDueItemService(db_session).refresh_tax_due_items(entity, today=clock.today)
     rows = _inps_rows(db_session, entity)
     assert [(row.due, row.amount, row.state) for row in rows] == [
-        (dt.date(2026, 7, 20), D("4171.20"), "settled"),
+        (dt.date(2026, 6, 30), D("4171.20"), "settled"),
         (dt.date(2026, 11, 30), D("6256.80"), "forecast"),
     ]
 
