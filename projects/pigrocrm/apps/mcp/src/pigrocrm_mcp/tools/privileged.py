@@ -86,6 +86,8 @@ from pigrocrm.core.fiscal.instalment_plan import TaxInstalmentPlanService
 from pigrocrm.core.fiscal.iva_lock import IvaPeriodLockService
 from pigrocrm.core.fiscal.iva_register import IvaRegisterService
 from pigrocrm.core.fiscal.iva_settlement import IvaSettlementService
+from pigrocrm.core.fiscal.loss_schemas import LossTax, TaxLossSet
+from pigrocrm.core.fiscal.losses import TaxLossService
 from pigrocrm.core.fiscal.notice_plan import TaxNoticePlanService
 from pigrocrm.core.fiscal.plan_schemas import (
     IncomeTax,
@@ -799,6 +801,55 @@ def register(
             )
             .model_dump(mode="json")
         )
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def set_tax_loss(
+        tax: LossTax,
+        year: int,
+        amount: str,
+        remaining: str | None = None,
+        remaining_as_of_year: int | None = None,
+        new_activity: bool = False,
+        activity_start_year: int | None = None,
+        legal_entity_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Types the loss a tax year closed with, admin only, so the estimate carries it forward:
+        `ires` for an srl, `irpef` for a business loss. Amounts are decimal strings; typing the
+        same tax and year again replaces it. `remaining` with `remaining_as_of_year` is what the
+        returns since left of it. `new_activity` with `activity_start_year` lift the limit from
+        80% to 100% for the first three periods. Several companies: pass `legal_entity_id`.
+        """
+        data = TypeAdapter(TaxLossSet).validate_python(
+            {
+                "tax": tax,
+                "year": year,
+                "amount": amount,
+                "remaining": remaining,
+                "remaining_as_of_year": remaining_as_of_year,
+                "new_activity": new_activity,
+                "activity_start_year": activity_start_year,
+            }
+        )
+        return (
+            TaxLossService(context.session)
+            .set_tax_loss(
+                data, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
+            )
+            .model_dump(mode="json")
+        )
+
+    @mcp.tool(annotations=DESTRUCTIVE)
+    @guard
+    def delete_tax_loss(
+        tax: LossTax, year: int, legal_entity_id: str | None = None
+    ) -> dict[str, str]:
+        """Removes the typed loss of a tax and year (admin): the estimate then reads the years
+        after it with no loss from it. Several companies: pass `legal_entity_id`."""
+        TaxLossService(context.session).delete_tax_loss(
+            tax, year, context.actor, legal_entity_id=parse_legal_entity_id(legal_entity_id)
+        )
+        return {"outcome": f"{tax} loss of {year} removed"}
 
     @mcp.tool(annotations=DESTRUCTIVE)
     @guard

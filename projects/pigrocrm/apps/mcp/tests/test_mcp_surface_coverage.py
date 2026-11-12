@@ -182,6 +182,12 @@ _FORBIDDEN: dict[Method, str] = {
         "REB-1006: the accountant's declared tax figures are the most sensitive data the "
         "product holds (taxes design § 5); the tool is on a `full_access` token's surface only"
     ),
+    ("TaxLossService", "set_tax_loss"): (
+        "REB-1088: a loss typed from the return moves the estimates and the tax due items, "
+        "which are the fiscal position (taxes design § 5); the tool is on a `full_access` "
+        "token's surface only"
+    ),
+    ("TaxLossService", "delete_tax_loss"): "REB-1088: as `set_tax_loss`",
     ("TaxAdvanceMethodService", "set_tax_advance_method"): (
         "REB-1074: the advance method moves the tax due items, which are the fiscal position "
         "(taxes design § 5); the tool is on a `full_access` token's surface only"
@@ -303,9 +309,9 @@ _INTERNE: dict[Method, str] = {
         "tool of its own"
     ),
     ("TaxDueItemService", "refresh_tax_due_items"): (
-        "REB-1074: the writer of the tax due items, called by the two tools that move their "
-        "figures (`set_declared_tax_figure`, `set_tax_advance_method`) and by the daily pass; "
-        "no actor, no tool of its own"
+        "REB-1074: the writer of the tax due items, called by the tools that move their "
+        "figures (`set_declared_tax_figure`, `set_tax_loss`, `set_tax_advance_method`) and by "
+        "the daily pass; no actor, no tool of its own"
     ),
     ("TaxDueItemService", "instalments_touched"): (
         "REB-1075: whether a payment is on an instalment of a plan, read inside "
@@ -318,6 +324,10 @@ _INTERNE: dict[Method, str] = {
     ("AnalyticsService", "estimated_inps_income"): (
         "REB-1097: the income the INPS advances of the next year are computed on, read inside the "
         "tax due items' writer, which is `full_access` only; no tool of its own"
+    ),
+    ("TaxLossService", "losses_for_entity"): (
+        "REB-1088: read inside `get_fiscal_estimate`, which is `full_access` only; no tool of "
+        "its own"
     ),
     ("DeclaredTaxFigureService", "declared_for_year"): (
         "REB-1006: read inside `get_fiscal_estimate`, which is `full_access` only; no tool of "

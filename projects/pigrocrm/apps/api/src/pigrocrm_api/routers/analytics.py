@@ -37,6 +37,8 @@ from pigrocrm.core.fiscal.advance_method import TaxAdvanceMethodService
 from pigrocrm.core.fiscal.advance_schemas import TaxAdvanceMethodRead, TaxAdvanceMethodSet
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService
 from pigrocrm.core.fiscal.instalment_plan import TaxInstalmentPlanService
+from pigrocrm.core.fiscal.loss_schemas import LossTax, TaxLossRead, TaxLossSet
+from pigrocrm.core.fiscal.losses import TaxLossService
 from pigrocrm.core.fiscal.notice_plan import TaxNoticePlanService
 from pigrocrm.core.fiscal.plan_schemas import (
     TaxInstalmentPlanResult,
@@ -222,6 +224,43 @@ def set_declared_tax_figure(
     return DeclaredTaxFigureService(session).set_declared_tax_figure(
         data, actor, legal_entity_id=legal_entity_id
     )
+
+
+@router.put(
+    "/fiscal/losses",
+    response_model=TaxLossRead,
+    dependencies=[module_guard("taxes")],
+)
+def set_tax_loss(
+    data: TaxLossSet,
+    session: SessionDep,
+    actor: ActorDep,
+    legal_entity_id: LegalEntityRequired = None,
+) -> TaxLossRead:
+    """The tax loss a year closed with, for IRES (an srl, art. 84 TUIR) or IRPEF (a business loss,
+    art. 8 c. 3 TUIR), which the estimate carries to the years after it; typing the same tax and
+    year again replaces it. `remaining` with `remaining_as_of_year` is what the returns since left
+    of it. `new_activity` with `activity_start_year` are the facts of art. 84 c. 2 for the first
+    three periods. `admin`, enforced by the service. `/fiscal` lists them in `losses` and shows
+    what each did in the year's `losses`."""
+    return TaxLossService(session).set_tax_loss(data, actor, legal_entity_id=legal_entity_id)
+
+
+@router.delete(
+    "/fiscal/losses",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[module_guard("taxes")],
+)
+def delete_tax_loss(
+    tax: Annotated[LossTax, Query()],
+    year: Annotated[int, Query(ge=2000, le=2200)],
+    session: SessionDep,
+    actor: ActorDep,
+    legal_entity_id: LegalEntityRequired = None,
+) -> None:
+    """Removes the loss of `year` for `tax`; 404 when none is typed. `admin`, enforced by the
+    service."""
+    TaxLossService(session).delete_tax_loss(tax, year, actor, legal_entity_id=legal_entity_id)
 
 
 @router.put(

@@ -112,6 +112,9 @@ FORBIDDEN = (
     # The accountant's declared tax figures (REB-1006): an administrator's token with
     # `full_access` and no other.
     "set_declared_tax_figure",
+    # The losses of earlier years the estimate carries (REB-1088): the same.
+    "set_tax_loss",
+    "delete_tax_loss",
     # The advance method of a tax year (REB-1074): it moves the tax due items, so the same.
     "set_tax_advance_method",
     # The instalment plan of the June payments and the plans of a tax office notice (REB-1075),
@@ -374,6 +377,9 @@ FORBIDDEN_SERVICE_CALLS = (
     # `DeclaredTaxFigureService.set_declared_tax_figure` (REB-1006), behind the tool of the
     # same name.
     "set_declared_tax_figure",
+    # `TaxLossService` (REB-1088), behind the tools of the same names.
+    "set_tax_loss",
+    "delete_tax_loss",
     # `TaxAdvanceMethodService.set_tax_advance_method` (REB-1074), behind the tool of the same
     # name.
     "set_tax_advance_method",

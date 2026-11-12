@@ -121,6 +121,8 @@ TOOL_MODULES: Mapping[str, tuple[ModuleKey, ...]] = {
     "get_fiscal_estimate": ("taxes",),
     "get_tax_calendar": ("taxes",),
     "set_declared_tax_figure": ("taxes",),
+    "set_tax_loss": ("taxes",),
+    "delete_tax_loss": ("taxes",),
     "set_tax_advance_method": ("taxes",),
     "set_tax_instalment_plan": ("taxes",),
     "create_tax_notice_plan": ("taxes",),
