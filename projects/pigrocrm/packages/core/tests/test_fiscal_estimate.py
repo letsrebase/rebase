@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.fiscal import coefficient_warning, estimate_income
+from pigrocrm.core.analytics.schemas import FiscalEstimate
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.errors import NotFound, PermissionDenied
@@ -541,3 +542,43 @@ def test_an_explicit_revenue_override_is_never_reduced_by_the_pack(
     )
     assert estimate.revenue == Decimal("1040.00")
     assert estimate.basis is None
+
+
+# --- the contributions deducted are those paid (REB-1096) ----------------------------------
+
+
+def _flat_rate(paid: str | None) -> FiscalEstimate:
+    return estimate_income(
+        year=2026,
+        legal_entity_id=LEGAL_ENTITY,
+        revenue=Decimal("100000.00"),
+        coefficient=Decimal("67.00"),
+        rate_substitute=Decimal("5.00"),
+        social_security_rate=Decimal("26.07"),
+        flat_rate=FLAT_RATE_2026,
+        contributions_paid=None if paid is None else Decimal(paid),
+    )
+
+
+def test_the_flat_rate_deducts_the_contributions_paid_and_still_owes_the_computed_ones() -> None:
+    """L. 190/2014 art. 1 c. 64 says «versati»: with 10,000 paid in the year the substitute tax
+    base is 67,000 - 10,000, not 67,000 - 17,466.90, and the contributions owed stay 17,466.90."""
+    estimate = _flat_rate("10000.00")
+    assert estimate.contributions == Decimal("17466.90")
+    assert estimate.contributions_deducted == Decimal("10000.00")
+    assert estimate.substitute_tax_base == Decimal("57000.00")
+    assert estimate.substitute_tax == Decimal("2850.00")
+    assert any("pagamenti registrati" in text for text in estimate.assumptions)
+
+
+def test_with_no_payment_recorded_the_flat_rate_deducts_the_computed_ones_and_says_so() -> None:
+    estimate = _flat_rate(None)
+    assert estimate.contributions_deducted == Decimal("17466.90")
+    assert estimate.substitute_tax_base == Decimal("49533.10")
+    assert any("Non risultano pagamenti INPS" in text for text in estimate.assumptions)
+
+
+def test_the_flat_rate_deduction_never_exceeds_the_income() -> None:
+    estimate = _flat_rate("90000.00")
+    assert estimate.contributions_deducted == Decimal("67000.00")
+    assert estimate.substitute_tax_base == Decimal("0.00") and estimate.substitute_tax == 0

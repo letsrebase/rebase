@@ -518,7 +518,7 @@ the INPS and the IRPEF with its regional and municipal surcharge, each with `lin
 nothing), what it assumes, the sentences for what is missing and the sources of its law; `contributions` is its INPS and `due_total`
 its net IRPEF with surcharges plus INPS. The order is the law's: income (art. 54 TUIR: collected less paid, a loss gives zero), INPS on it
 (`FiscalPack.inps_for`), the contributions deducted from the total income (`IrpefLaw.social_security_deduction`, art. 10 c. 1 lett. e
-TUIR, cited, and the year's own computed contributions stand in for those paid, as in the flat-rate estimate), IRPEF by brackets,
+TUIR, cited: the INPS payments recorded in the year, `fiscal/inps_paid.py`, REB-1096, else the year's own computed contributions, said in the assumptions; the flat-rate estimate reads them the same way, art. 1 c. 64 L. 190/2014, and `FiscalEstimate.contributions_deducted` is what it deducted), IRPEF by brackets,
 the regional surcharge of the region of the legal entity's address (`law_irpef.region_key`: ISTAT code, `BZ`/`TN` by province) and
 the municipal one of its cadastral code (`MunicipalSurcharge.surcharge`: the exemption threshold first, then the brackets by slice
 on the whole income), the withholdings the customers kept on the settlements of the year (`withholdings_suffered`, credited to the
