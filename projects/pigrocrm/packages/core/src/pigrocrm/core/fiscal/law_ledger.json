@@ -71,12 +71,285 @@
    "section": "laws",
    "source": "D.Lgs. 446/1997 art. 11 c. 4-bis.2 (Normattiva, read 2026-11-12); D.L. 20 February 2026 n. 21 art. 3 c. 1 and Tabella 1 (Gazzetta Ufficiale n. 42 of 20-2-2026)",
    "year": 2026
+  },
+  {
+   "fingerprint": "c6eab8c3fb3697999c382cd10f2e3e381a7b3c5f16ca32f5287747d0de1fa5f5",
+   "pack": "it-company:1",
+   "reason": "The 30 June 2026 payments of income taxes, IRAP and the chamber fee are due on 20 July 2026 for those covered by the deferral of art. 1-sexies; 2027 restates 30 June (REB-1100)",
+   "section": "calendars",
+   "source": "D.L. 30 aprile 2026 n. 63, art. 1-sexies, as converted by L. 25 giugno 2026 n. 113, Normattiva, text in force on 2026-11-12",
+   "year": 2026
+  },
+  {
+   "fingerprint": "0f3d22bba17bdd82b7329b2c984d47c2d670dc4efe98d410b967e6ad3be8d88f",
+   "pack": "it-company:1",
+   "reason": "The F24 codes of the periodic IVA, of the withholding operated and of an employer's payroll contributions were added, and an F24 code may carry a period (REB-1100)",
+   "section": "payment_rules",
+   "source": "Agenzia delle Entrate, \u00abRicerca codici tributo\u00bb, codes 1001, 1040, 6001 to 6013, 6031 to 6033 and 6099; \u00abCausali INPS\u00bb (DM10), read 2026-11-12",
+   "year": 2026
+  },
+  {
+   "fingerprint": "c14498b7b5593a25bf9fd9413e2b0f0f195e1e079f26db7b6acb909503baa3f2",
+   "pack": "it-company:1",
+   "reason": "BT is covered by Bari, SU and VS by Cagliari-Oristano, OG and OT stay unmapped, and the first-year fee rule (30 days, first tier) was added (REB-1100)",
+   "section": "chamber_fee",
+   "source": "Camere di commercio, dirittoannuale.camcom.it chamber table and Camera di commercio Cagliari-Oristano \u00abChi siamo\u00bb (read 2026-11-12); D.P.R. 4 agosto 2026 n. 183; D.I. 21 aprile 2011 art. 4 c. 2",
+   "year": 2026
+  },
+  {
+   "fingerprint": "a7038b75153bc340c526e2f6d59878a62401c340ae4c1d6e9191dd2792907c53",
+   "pack": "it-flat-rate:1",
+   "reason": "The flat-rate cash basis kept its law and gained the circolare's explicit statement that the cash principle holds for a business as for a profession; only the citation changed (REB-1100)",
+   "section": "laws",
+   "source": "Agenzia delle Entrate, circolare n. 10/E of 4 April 2016, \u00a7 4.3.5, read 2026-11-12",
+   "year": 2015
+  },
+  {
+   "fingerprint": "d49dfb9f77b77ca165817972e6311da71dc6d3b131dbc7d6d060f52a3d6e309e",
+   "pack": "it-flat-rate:1",
+   "reason": "The flat-rate cash basis kept its law and gained the circolare's explicit statement that the cash principle holds for a business as for a profession; only the citation changed (REB-1100)",
+   "section": "laws",
+   "source": "Agenzia delle Entrate, circolare n. 10/E of 4 April 2016, \u00a7 4.3.5, read 2026-11-12",
+   "year": 2016
+  },
+  {
+   "fingerprint": "d49dfb9f77b77ca165817972e6311da71dc6d3b131dbc7d6d060f52a3d6e309e",
+   "pack": "it-flat-rate:1",
+   "reason": "The flat-rate cash basis kept its law and gained the circolare's explicit statement that the cash principle holds for a business as for a profession; only the citation changed (REB-1100)",
+   "section": "laws",
+   "source": "Agenzia delle Entrate, circolare n. 10/E of 4 April 2016, \u00a7 4.3.5, read 2026-11-12",
+   "year": 2017
+  },
+  {
+   "fingerprint": "d49dfb9f77b77ca165817972e6311da71dc6d3b131dbc7d6d060f52a3d6e309e",
+   "pack": "it-flat-rate:1",
+   "reason": "The flat-rate cash basis kept its law and gained the circolare's explicit statement that the cash principle holds for a business as for a profession; only the citation changed (REB-1100)",
+   "section": "laws",
+   "source": "Agenzia delle Entrate, circolare n. 10/E of 4 April 2016, \u00a7 4.3.5, read 2026-11-12",
+   "year": 2018
+  },
+  {
+   "fingerprint": "d49dfb9f77b77ca165817972e6311da71dc6d3b131dbc7d6d060f52a3d6e309e",
+   "pack": "it-flat-rate:1",
+   "reason": "The flat-rate cash basis kept its law and gained the circolare's explicit statement that the cash principle holds for a business as for a profession; only the citation changed (REB-1100)",
+   "section": "laws",
+   "source": "Agenzia delle Entrate, circolare n. 10/E of 4 April 2016, \u00a7 4.3.5, read 2026-11-12",
+   "year": 2019
+  },
+  {
+   "fingerprint": "d49dfb9f77b77ca165817972e6311da71dc6d3b131dbc7d6d060f52a3d6e309e",
+   "pack": "it-flat-rate:1",
+   "reason": "The flat-rate cash basis kept its law and gained the circolare's explicit statement that the cash principle holds for a business as for a profession; only the citation changed (REB-1100)",
+   "section": "laws",
+   "source": "Agenzia delle Entrate, circolare n. 10/E of 4 April 2016, \u00a7 4.3.5, read 2026-11-12",
+   "year": 2020
+  },
+  {
+   "fingerprint": "d49dfb9f77b77ca165817972e6311da71dc6d3b131dbc7d6d060f52a3d6e309e",
+   "pack": "it-flat-rate:1",
+   "reason": "The flat-rate cash basis kept its law and gained the circolare's explicit statement that the cash principle holds for a business as for a profession; only the citation changed (REB-1100)",
+   "section": "laws",
+   "source": "Agenzia delle Entrate, circolare n. 10/E of 4 April 2016, \u00a7 4.3.5, read 2026-11-12",
+   "year": 2021
+  },
+  {
+   "fingerprint": "d49dfb9f77b77ca165817972e6311da71dc6d3b131dbc7d6d060f52a3d6e309e",
+   "pack": "it-flat-rate:1",
+   "reason": "The flat-rate cash basis kept its law and gained the circolare's explicit statement that the cash principle holds for a business as for a profession; only the citation changed (REB-1100)",
+   "section": "laws",
+   "source": "Agenzia delle Entrate, circolare n. 10/E of 4 April 2016, \u00a7 4.3.5, read 2026-11-12",
+   "year": 2022
+  },
+  {
+   "fingerprint": "d49dfb9f77b77ca165817972e6311da71dc6d3b131dbc7d6d060f52a3d6e309e",
+   "pack": "it-flat-rate:1",
+   "reason": "The flat-rate cash basis kept its law and gained the circolare's explicit statement that the cash principle holds for a business as for a profession; only the citation changed (REB-1100)",
+   "section": "laws",
+   "source": "Agenzia delle Entrate, circolare n. 10/E of 4 April 2016, \u00a7 4.3.5, read 2026-11-12",
+   "year": 2023
+  },
+  {
+   "fingerprint": "d49dfb9f77b77ca165817972e6311da71dc6d3b131dbc7d6d060f52a3d6e309e",
+   "pack": "it-flat-rate:1",
+   "reason": "The flat-rate cash basis kept its law and gained the circolare's explicit statement that the cash principle holds for a business as for a profession; only the citation changed (REB-1100)",
+   "section": "laws",
+   "source": "Agenzia delle Entrate, circolare n. 10/E of 4 April 2016, \u00a7 4.3.5, read 2026-11-12",
+   "year": 2024
+  },
+  {
+   "fingerprint": "d49dfb9f77b77ca165817972e6311da71dc6d3b131dbc7d6d060f52a3d6e309e",
+   "pack": "it-flat-rate:1",
+   "reason": "The flat-rate cash basis kept its law and gained the circolare's explicit statement that the cash principle holds for a business as for a profession; only the citation changed (REB-1100)",
+   "section": "laws",
+   "source": "Agenzia delle Entrate, circolare n. 10/E of 4 April 2016, \u00a7 4.3.5, read 2026-11-12",
+   "year": 2025
+  },
+  {
+   "fingerprint": "3c5fd58d991ba3e14a1db038fc86350d074b29c121256da8a355c9835edf122a",
+   "pack": "it-flat-rate:1",
+   "reason": "The flat-rate cash basis kept its law and gained the circolare's explicit statement that the cash principle holds for a business as for a profession; only the citation changed (REB-1100)",
+   "section": "laws",
+   "source": "Agenzia delle Entrate, circolare n. 10/E of 4 April 2016, \u00a7 4.3.5, read 2026-11-12",
+   "year": 2026
+  },
+  {
+   "fingerprint": "8303ad6518efcaa21d6ea7be8d8ecdcd067ff39693a0080ffd38003f0e78c054",
+   "pack": "it-flat-rate:1",
+   "reason": "The 30 June 2026 payments of income taxes, IRAP and the chamber fee are due on 20 July 2026 for those covered by the deferral of art. 1-sexies; 2027 restates 30 June (REB-1100)",
+   "section": "calendars",
+   "source": "D.L. 30 aprile 2026 n. 63, art. 1-sexies, as converted by L. 25 giugno 2026 n. 113, Normattiva, text in force on 2026-11-12",
+   "year": 2026
+  },
+  {
+   "fingerprint": "276d131891861e19dc69ac54fff95dd7a00b433678709ada01f472f4fc1f57c8",
+   "pack": "it-flat-rate:1",
+   "reason": "The F24 codes of the periodic IVA, of the withholding operated and of an employer's payroll contributions were added, and an F24 code may carry a period (REB-1100)",
+   "section": "payment_rules",
+   "source": "Agenzia delle Entrate, \u00abRicerca codici tributo\u00bb, codes 1001, 1040, 6001 to 6013, 6031 to 6033 and 6099; \u00abCausali INPS\u00bb (DM10), read 2026-11-12",
+   "year": 2026
+  },
+  {
+   "fingerprint": "d1e069a74d6453c1e30d195c6effb6535e7791f98b2bf56022e2b372dc364e98",
+   "pack": "it-flat-rate:1",
+   "reason": "The recorded entry left the 4% INPS surcharge out of the flat-rate coefficient's base on the strength of circolare 10/E of 2016 and 9/E of 2019, which both say nothing about it (the full texts were read); the sources read say it is collected revenue like the fee, so the charge's second flag is removed and the surcharge counts in the base (REB-1100)",
+   "section": "charges",
+   "source": "L. 23 dicembre 1996 n. 662 art. 1 c. 212, Normattiva, text in force on 2026-11-12; INPS, messaggio n. 7751 of 7 May 2012; Agenzia delle Entrate, \u00abDichiarazione precompilata\u00bb, quadro LM; Agenzia, CU 2025 istruzioni, lavoro autonomo punto 4",
+   "year": 2012
+  },
+  {
+   "fingerprint": "d1e069a74d6453c1e30d195c6effb6535e7791f98b2bf56022e2b372dc364e98",
+   "pack": "it-flat-rate:1",
+   "reason": "The recorded entry left the 4% INPS surcharge out of the flat-rate coefficient's base on the strength of circolare 10/E of 2016 and 9/E of 2019, which both say nothing about it (the full texts were read); the sources read say it is collected revenue like the fee, so the charge's second flag is removed and the surcharge counts in the base (REB-1100)",
+   "section": "charges",
+   "source": "L. 23 dicembre 1996 n. 662 art. 1 c. 212, Normattiva, text in force on 2026-11-12; INPS, messaggio n. 7751 of 7 May 2012; Agenzia delle Entrate, \u00abDichiarazione precompilata\u00bb, quadro LM; Agenzia, CU 2025 istruzioni, lavoro autonomo punto 4",
+   "year": 2013
+  },
+  {
+   "fingerprint": "d1e069a74d6453c1e30d195c6effb6535e7791f98b2bf56022e2b372dc364e98",
+   "pack": "it-flat-rate:1",
+   "reason": "The recorded entry left the 4% INPS surcharge out of the flat-rate coefficient's base on the strength of circolare 10/E of 2016 and 9/E of 2019, which both say nothing about it (the full texts were read); the sources read say it is collected revenue like the fee, so the charge's second flag is removed and the surcharge counts in the base (REB-1100)",
+   "section": "charges",
+   "source": "L. 23 dicembre 1996 n. 662 art. 1 c. 212, Normattiva, text in force on 2026-11-12; INPS, messaggio n. 7751 of 7 May 2012; Agenzia delle Entrate, \u00abDichiarazione precompilata\u00bb, quadro LM; Agenzia, CU 2025 istruzioni, lavoro autonomo punto 4",
+   "year": 2014
+  },
+  {
+   "fingerprint": "d1e069a74d6453c1e30d195c6effb6535e7791f98b2bf56022e2b372dc364e98",
+   "pack": "it-flat-rate:1",
+   "reason": "The recorded entry left the 4% INPS surcharge out of the flat-rate coefficient's base on the strength of circolare 10/E of 2016 and 9/E of 2019, which both say nothing about it (the full texts were read); the sources read say it is collected revenue like the fee, so the charge's second flag is removed and the surcharge counts in the base (REB-1100)",
+   "section": "charges",
+   "source": "L. 23 dicembre 1996 n. 662 art. 1 c. 212, Normattiva, text in force on 2026-11-12; INPS, messaggio n. 7751 of 7 May 2012; Agenzia delle Entrate, \u00abDichiarazione precompilata\u00bb, quadro LM; Agenzia, CU 2025 istruzioni, lavoro autonomo punto 4",
+   "year": 2015
+  },
+  {
+   "fingerprint": "d1e069a74d6453c1e30d195c6effb6535e7791f98b2bf56022e2b372dc364e98",
+   "pack": "it-flat-rate:1",
+   "reason": "The recorded entry left the 4% INPS surcharge out of the flat-rate coefficient's base on the strength of circolare 10/E of 2016 and 9/E of 2019, which both say nothing about it (the full texts were read); the sources read say it is collected revenue like the fee, so the charge's second flag is removed and the surcharge counts in the base (REB-1100)",
+   "section": "charges",
+   "source": "L. 23 dicembre 1996 n. 662 art. 1 c. 212, Normattiva, text in force on 2026-11-12; INPS, messaggio n. 7751 of 7 May 2012; Agenzia delle Entrate, \u00abDichiarazione precompilata\u00bb, quadro LM; Agenzia, CU 2025 istruzioni, lavoro autonomo punto 4",
+   "year": 2016
+  },
+  {
+   "fingerprint": "d1e069a74d6453c1e30d195c6effb6535e7791f98b2bf56022e2b372dc364e98",
+   "pack": "it-flat-rate:1",
+   "reason": "The recorded entry left the 4% INPS surcharge out of the flat-rate coefficient's base on the strength of circolare 10/E of 2016 and 9/E of 2019, which both say nothing about it (the full texts were read); the sources read say it is collected revenue like the fee, so the charge's second flag is removed and the surcharge counts in the base (REB-1100)",
+   "section": "charges",
+   "source": "L. 23 dicembre 1996 n. 662 art. 1 c. 212, Normattiva, text in force on 2026-11-12; INPS, messaggio n. 7751 of 7 May 2012; Agenzia delle Entrate, \u00abDichiarazione precompilata\u00bb, quadro LM; Agenzia, CU 2025 istruzioni, lavoro autonomo punto 4",
+   "year": 2017
+  },
+  {
+   "fingerprint": "d1e069a74d6453c1e30d195c6effb6535e7791f98b2bf56022e2b372dc364e98",
+   "pack": "it-flat-rate:1",
+   "reason": "The recorded entry left the 4% INPS surcharge out of the flat-rate coefficient's base on the strength of circolare 10/E of 2016 and 9/E of 2019, which both say nothing about it (the full texts were read); the sources read say it is collected revenue like the fee, so the charge's second flag is removed and the surcharge counts in the base (REB-1100)",
+   "section": "charges",
+   "source": "L. 23 dicembre 1996 n. 662 art. 1 c. 212, Normattiva, text in force on 2026-11-12; INPS, messaggio n. 7751 of 7 May 2012; Agenzia delle Entrate, \u00abDichiarazione precompilata\u00bb, quadro LM; Agenzia, CU 2025 istruzioni, lavoro autonomo punto 4",
+   "year": 2018
+  },
+  {
+   "fingerprint": "d1e069a74d6453c1e30d195c6effb6535e7791f98b2bf56022e2b372dc364e98",
+   "pack": "it-flat-rate:1",
+   "reason": "The recorded entry left the 4% INPS surcharge out of the flat-rate coefficient's base on the strength of circolare 10/E of 2016 and 9/E of 2019, which both say nothing about it (the full texts were read); the sources read say it is collected revenue like the fee, so the charge's second flag is removed and the surcharge counts in the base (REB-1100)",
+   "section": "charges",
+   "source": "L. 23 dicembre 1996 n. 662 art. 1 c. 212, Normattiva, text in force on 2026-11-12; INPS, messaggio n. 7751 of 7 May 2012; Agenzia delle Entrate, \u00abDichiarazione precompilata\u00bb, quadro LM; Agenzia, CU 2025 istruzioni, lavoro autonomo punto 4",
+   "year": 2019
+  },
+  {
+   "fingerprint": "d1e069a74d6453c1e30d195c6effb6535e7791f98b2bf56022e2b372dc364e98",
+   "pack": "it-flat-rate:1",
+   "reason": "The recorded entry left the 4% INPS surcharge out of the flat-rate coefficient's base on the strength of circolare 10/E of 2016 and 9/E of 2019, which both say nothing about it (the full texts were read); the sources read say it is collected revenue like the fee, so the charge's second flag is removed and the surcharge counts in the base (REB-1100)",
+   "section": "charges",
+   "source": "L. 23 dicembre 1996 n. 662 art. 1 c. 212, Normattiva, text in force on 2026-11-12; INPS, messaggio n. 7751 of 7 May 2012; Agenzia delle Entrate, \u00abDichiarazione precompilata\u00bb, quadro LM; Agenzia, CU 2025 istruzioni, lavoro autonomo punto 4",
+   "year": 2020
+  },
+  {
+   "fingerprint": "d1e069a74d6453c1e30d195c6effb6535e7791f98b2bf56022e2b372dc364e98",
+   "pack": "it-flat-rate:1",
+   "reason": "The recorded entry left the 4% INPS surcharge out of the flat-rate coefficient's base on the strength of circolare 10/E of 2016 and 9/E of 2019, which both say nothing about it (the full texts were read); the sources read say it is collected revenue like the fee, so the charge's second flag is removed and the surcharge counts in the base (REB-1100)",
+   "section": "charges",
+   "source": "L. 23 dicembre 1996 n. 662 art. 1 c. 212, Normattiva, text in force on 2026-11-12; INPS, messaggio n. 7751 of 7 May 2012; Agenzia delle Entrate, \u00abDichiarazione precompilata\u00bb, quadro LM; Agenzia, CU 2025 istruzioni, lavoro autonomo punto 4",
+   "year": 2021
+  },
+  {
+   "fingerprint": "d1e069a74d6453c1e30d195c6effb6535e7791f98b2bf56022e2b372dc364e98",
+   "pack": "it-flat-rate:1",
+   "reason": "The recorded entry left the 4% INPS surcharge out of the flat-rate coefficient's base on the strength of circolare 10/E of 2016 and 9/E of 2019, which both say nothing about it (the full texts were read); the sources read say it is collected revenue like the fee, so the charge's second flag is removed and the surcharge counts in the base (REB-1100)",
+   "section": "charges",
+   "source": "L. 23 dicembre 1996 n. 662 art. 1 c. 212, Normattiva, text in force on 2026-11-12; INPS, messaggio n. 7751 of 7 May 2012; Agenzia delle Entrate, \u00abDichiarazione precompilata\u00bb, quadro LM; Agenzia, CU 2025 istruzioni, lavoro autonomo punto 4",
+   "year": 2022
+  },
+  {
+   "fingerprint": "d1e069a74d6453c1e30d195c6effb6535e7791f98b2bf56022e2b372dc364e98",
+   "pack": "it-flat-rate:1",
+   "reason": "The recorded entry left the 4% INPS surcharge out of the flat-rate coefficient's base on the strength of circolare 10/E of 2016 and 9/E of 2019, which both say nothing about it (the full texts were read); the sources read say it is collected revenue like the fee, so the charge's second flag is removed and the surcharge counts in the base (REB-1100)",
+   "section": "charges",
+   "source": "L. 23 dicembre 1996 n. 662 art. 1 c. 212, Normattiva, text in force on 2026-11-12; INPS, messaggio n. 7751 of 7 May 2012; Agenzia delle Entrate, \u00abDichiarazione precompilata\u00bb, quadro LM; Agenzia, CU 2025 istruzioni, lavoro autonomo punto 4",
+   "year": 2023
+  },
+  {
+   "fingerprint": "d1e069a74d6453c1e30d195c6effb6535e7791f98b2bf56022e2b372dc364e98",
+   "pack": "it-flat-rate:1",
+   "reason": "The recorded entry left the 4% INPS surcharge out of the flat-rate coefficient's base on the strength of circolare 10/E of 2016 and 9/E of 2019, which both say nothing about it (the full texts were read); the sources read say it is collected revenue like the fee, so the charge's second flag is removed and the surcharge counts in the base (REB-1100)",
+   "section": "charges",
+   "source": "L. 23 dicembre 1996 n. 662 art. 1 c. 212, Normattiva, text in force on 2026-11-12; INPS, messaggio n. 7751 of 7 May 2012; Agenzia delle Entrate, \u00abDichiarazione precompilata\u00bb, quadro LM; Agenzia, CU 2025 istruzioni, lavoro autonomo punto 4",
+   "year": 2024
+  },
+  {
+   "fingerprint": "d1e069a74d6453c1e30d195c6effb6535e7791f98b2bf56022e2b372dc364e98",
+   "pack": "it-flat-rate:1",
+   "reason": "The recorded entry left the 4% INPS surcharge out of the flat-rate coefficient's base on the strength of circolare 10/E of 2016 and 9/E of 2019, which both say nothing about it (the full texts were read); the sources read say it is collected revenue like the fee, so the charge's second flag is removed and the surcharge counts in the base (REB-1100)",
+   "section": "charges",
+   "source": "L. 23 dicembre 1996 n. 662 art. 1 c. 212, Normattiva, text in force on 2026-11-12; INPS, messaggio n. 7751 of 7 May 2012; Agenzia delle Entrate, \u00abDichiarazione precompilata\u00bb, quadro LM; Agenzia, CU 2025 istruzioni, lavoro autonomo punto 4",
+   "year": 2025
+  },
+  {
+   "fingerprint": "d1e069a74d6453c1e30d195c6effb6535e7791f98b2bf56022e2b372dc364e98",
+   "pack": "it-flat-rate:1",
+   "reason": "The recorded entry left the 4% INPS surcharge out of the flat-rate coefficient's base on the strength of circolare 10/E of 2016 and 9/E of 2019, which both say nothing about it (the full texts were read); the sources read say it is collected revenue like the fee, so the charge's second flag is removed and the surcharge counts in the base (REB-1100)",
+   "section": "charges",
+   "source": "L. 23 dicembre 1996 n. 662 art. 1 c. 212, Normattiva, text in force on 2026-11-12; INPS, messaggio n. 7751 of 7 May 2012; Agenzia delle Entrate, \u00abDichiarazione precompilata\u00bb, quadro LM; Agenzia, CU 2025 istruzioni, lavoro autonomo punto 4",
+   "year": 2026
+  },
+  {
+   "fingerprint": "4ca12278299bc34aa975d0f8d6dd0b340078dcd40a66f32f956e7825aa8c4269",
+   "pack": "it-standard:1",
+   "reason": "The 30 June 2026 payments of income taxes, IRAP and the chamber fee are due on 20 July 2026 for those covered by the deferral of art. 1-sexies; 2027 restates 30 June (REB-1100)",
+   "section": "calendars",
+   "source": "D.L. 30 aprile 2026 n. 63, art. 1-sexies, as converted by L. 25 giugno 2026 n. 113, Normattiva, text in force on 2026-11-12",
+   "year": 2026
+  },
+  {
+   "fingerprint": "1bbc6aa984084fc2986e0777c067d0537478f12c563a0529539a8ec6cff9fe21",
+   "pack": "it-standard:1",
+   "reason": "The F24 codes of the periodic IVA, of the withholding operated and of an employer's payroll contributions were added, and an F24 code may carry a period (REB-1100)",
+   "section": "payment_rules",
+   "source": "Agenzia delle Entrate, \u00abRicerca codici tributo\u00bb, codes 1001, 1040, 6001 to 6013, 6031 to 6033 and 6099; \u00abCausali INPS\u00bb (DM10), read 2026-11-12",
+   "year": 2026
   }
  ],
  "fingerprints": {
   "it-company:1": {
    "calendars": {
-    "2026": "31dd0e8a40309fa92abb326ba15084144c5744afd918d30c5b11cc5432631112"
+    "2026": "31dd0e8a40309fa92abb326ba15084144c5744afd918d30c5b11cc5432631112",
+    "2027": "232112ecb38bea22dff7e046cc66d7efd8355b088f4b0716f07741679f2a2d72"
    },
    "chamber_fee": {
     "2026": "7b5bd6853f91576f936f4447dceac9900d512d7198a973097b5acc2e5d6a6976"
@@ -85,25 +358,29 @@
     "2026": "dd923639e28333221d8bc7764a31a482958139f7d463721d84c7d48c6bc0e106"
    },
    "laws": {
-    "2026": "8c9d892b6cad6a9d6f1d6f071afc5150b4a8b0a5e8c39a860f5b807c5f700540"
+    "2026": "8c9d892b6cad6a9d6f1d6f071afc5150b4a8b0a5e8c39a860f5b807c5f700540",
+    "2027": "8be0b644084296da5646e21dc7ebcc0bca4c7670388da528333fe632627d12e7"
    },
    "legal_interest": {
     "2025": "fc59d02b1d0a18c0e6a0599f39a0fe1db2493a7354773b6d8fe9fba65ff666da",
     "2026": "d5fb711d219500c6ba8d1054bb69484126dc5c5447b421ed4cdf6645af350faf"
    },
    "payment_rules": {
-    "2026": "5a35a43790a005c792ef3ee5cc62e408f313ad10f9470d5686125df9634c4716"
+    "2026": "5a35a43790a005c792ef3ee5cc62e408f313ad10f9470d5686125df9634c4716",
+    "2027": "0f3d22bba17bdd82b7329b2c984d47c2d670dc4efe98d410b967e6ad3be8d88f"
    }
   },
   "it-flat-rate:1": {
    "calendars": {
-    "2026": "7e87af257899394df93a81d5302be304e7ffa8076cb177dd5b2118415c3c3eca"
+    "2026": "7e87af257899394df93a81d5302be304e7ffa8076cb177dd5b2118415c3c3eca",
+    "2027": "39aa9f6c17acd3a2f3abcc29f171323dc08a6833770099dae1eac63268f8d81b"
    },
    "ceilings": {
     "2023": "f54f87213cbce7e7e7795f09b72fe049a5c49153b86d2e23096249a43a6c46a7",
     "2024": "f54f87213cbce7e7e7795f09b72fe049a5c49153b86d2e23096249a43a6c46a7",
     "2025": "f54f87213cbce7e7e7795f09b72fe049a5c49153b86d2e23096249a43a6c46a7",
-    "2026": "f54f87213cbce7e7e7795f09b72fe049a5c49153b86d2e23096249a43a6c46a7"
+    "2026": "f54f87213cbce7e7e7795f09b72fe049a5c49153b86d2e23096249a43a6c46a7",
+    "2027": "f54f87213cbce7e7e7795f09b72fe049a5c49153b86d2e23096249a43a6c46a7"
    },
    "charges": {
     "2012": "de16c7dbf3e1fcea984425e45f27d52e330c4d53d20d16172b6b673e05712b95",
@@ -120,7 +397,8 @@
     "2023": "de16c7dbf3e1fcea984425e45f27d52e330c4d53d20d16172b6b673e05712b95",
     "2024": "de16c7dbf3e1fcea984425e45f27d52e330c4d53d20d16172b6b673e05712b95",
     "2025": "de16c7dbf3e1fcea984425e45f27d52e330c4d53d20d16172b6b673e05712b95",
-    "2026": "de16c7dbf3e1fcea984425e45f27d52e330c4d53d20d16172b6b673e05712b95"
+    "2026": "de16c7dbf3e1fcea984425e45f27d52e330c4d53d20d16172b6b673e05712b95",
+    "2027": "d1e069a74d6453c1e30d195c6effb6535e7791f98b2bf56022e2b372dc364e98"
    },
    "inps": {
     "2026": "ff0786f23e82d072c3e3ac64dcefe08c642653e6cb19c01f11934359dc834c84"
@@ -137,19 +415,22 @@
     "2023": "184976201585cd9175f9815d3677985b2a84130ce77773ad68a661f149dbc7a3",
     "2024": "184976201585cd9175f9815d3677985b2a84130ce77773ad68a661f149dbc7a3",
     "2025": "184976201585cd9175f9815d3677985b2a84130ce77773ad68a661f149dbc7a3",
-    "2026": "0e28fb8d852f53175d25c53f0e4b81d361154207307ba823d2be67005969718a"
+    "2026": "0e28fb8d852f53175d25c53f0e4b81d361154207307ba823d2be67005969718a",
+    "2027": "3c5fd58d991ba3e14a1db038fc86350d074b29c121256da8a355c9835edf122a"
    },
    "legal_interest": {
     "2025": "fc59d02b1d0a18c0e6a0599f39a0fe1db2493a7354773b6d8fe9fba65ff666da",
     "2026": "d5fb711d219500c6ba8d1054bb69484126dc5c5447b421ed4cdf6645af350faf"
    },
    "payment_rules": {
-    "2026": "1dcd8793c54a2e7cb73af3628f7b422cd74481c850ab56aba49a169831353694"
+    "2026": "1dcd8793c54a2e7cb73af3628f7b422cd74481c850ab56aba49a169831353694",
+    "2027": "276d131891861e19dc69ac54fff95dd7a00b433678709ada01f472f4fc1f57c8"
    }
   },
   "it-standard:1": {
    "calendars": {
-    "2026": "8af45a9c9630970f4f6b9c93ea5d68e0e616559ae18b2589a23eb27c0e9e5a5b"
+    "2026": "8af45a9c9630970f4f6b9c93ea5d68e0e616559ae18b2589a23eb27c0e9e5a5b",
+    "2027": "550ea7a27e47c99195a94c9374a2ffb42b8771cc0ea7458b378108afb02c4d28"
    },
    "inps": {
     "2026": "ff0786f23e82d072c3e3ac64dcefe08c642653e6cb19c01f11934359dc834c84"
@@ -158,7 +439,8 @@
     "2026": "351e2386dc29406f4719ada0d5ff07d152b47bd3c46c7879deb9856f242c4fe4"
    },
    "laws": {
-    "2026": "aaa990deab581d63b4ed5b3fb62425d846cd02a3903f7cd7793283661510368d"
+    "2026": "aaa990deab581d63b4ed5b3fb62425d846cd02a3903f7cd7793283661510368d",
+    "2027": "aaa990deab581d63b4ed5b3fb62425d846cd02a3903f7cd7793283661510368d"
    },
    "legal_interest": {
     "2025": "fc59d02b1d0a18c0e6a0599f39a0fe1db2493a7354773b6d8fe9fba65ff666da",
@@ -168,10 +450,12 @@
     "2025": "3431164c24233ff5c67bb576768d6479774073fe2335c0177418b02890ea7915"
    },
    "payment_rules": {
-    "2026": "68dfcc34ab8eb553183fa276bd3bf6e1a224e05152b3d9c0f31962a1fb1c8bb3"
+    "2026": "68dfcc34ab8eb553183fa276bd3bf6e1a224e05152b3d9c0f31962a1fb1c8bb3",
+    "2027": "1bbc6aa984084fc2986e0777c067d0537478f12c563a0529539a8ec6cff9fe21"
    },
    "sales_withholding": {
-    "2026": "c031f693e5bad8eb8f9e8ce9b6e78754e4b4f0546f49599abe49a0c28ad9eb26"
+    "2026": "c031f693e5bad8eb8f9e8ce9b6e78754e4b4f0546f49599abe49a0c28ad9eb26",
+    "2027": "c031f693e5bad8eb8f9e8ce9b6e78754e4b4f0546f49599abe49a0c28ad9eb26"
    }
   }
  },

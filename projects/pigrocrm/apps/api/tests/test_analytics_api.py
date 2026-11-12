@@ -1143,7 +1143,7 @@ def test_the_tax_calendar_is_the_packs_dates_and_an_admin_s(
     body = response.json()
     assert body["pack_id"] == "it-flat-rate"
     assert [(entry["nominal_date"], entry["tax"]) for entry in body["dates"]] == [
-        ("2026-06-30", "substitute_tax"),
+        ("2026-07-20", "substitute_tax"),
         ("2026-11-30", "substitute_tax"),
     ]
     # A year the pack has no entry for answers an empty list, never another year's dates.

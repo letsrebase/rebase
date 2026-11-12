@@ -4683,3 +4683,23 @@ def test_0117_adds_the_company_activity_codes_with_no_backfill(pigrocrm_postgres
         assert not any(_column_exists(url, "fiscal_profile", name) for name in columns)
         upgrade(config, "0117")
         assert all(_column_exists(url, "fiscal_profile", name) for name in columns)
+
+
+def test_0118_adds_the_registration_date_and_the_f24_period_with_no_backfill(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1100: nullable columns («not stated»), so both ways are a pure add and drop."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0117")
+        assert not _column_exists(url, "legal_entities", "registration_date")
+        assert not _column_exists(url, "f24_group_items", "reference_period")
+        upgrade(config, "0118")
+        assert _column_exists(url, "legal_entities", "registration_date")
+        assert _column_exists(url, "f24_group_items", "reference_period")
+        downgrade(config, "0117")
+        assert not _column_exists(url, "legal_entities", "registration_date")
+        assert not _column_exists(url, "f24_group_items", "reference_period")
+        upgrade(config, "0118")
+        assert _column_exists(url, "legal_entities", "registration_date")

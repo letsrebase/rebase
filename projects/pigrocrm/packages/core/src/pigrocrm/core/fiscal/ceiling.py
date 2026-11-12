@@ -1,5 +1,5 @@
-"""Ceiling evaluation, the social security surcharge invoice line, and the tagged-figure split
-between them -- REB-361, ported against REB-344 §8-9 and REB-352 §2/§6.
+"""Ceiling evaluation, the social security surcharge invoice line and its marker -- REB-361, ported
+against REB-344 §8-9 and REB-352 §2/§6.
 
 Three things live here, all reading or writing invoices through a `Session`, which
 is why none of them belong in `pack.py` (pure data, no database access at all):
@@ -26,21 +26,15 @@ the "new step" REB-344
    overwrites (see `pack.py::StatutoryCharge.description_line`'s own docstring for
    why that, and not `vat_nature`/`legal_reference`, is the tag).
 
-3. **The tagged, subtractable figure.** REB-352 §2 names a real tension: the social security
-   surcharge amount counts toward a ceiling's revenue in full but is not taxable income, and
-   `estimate_income` has exactly one `revenue` parameter. §6 resolves it: the amount is
-   carried as its own tagged figure at the point revenue is summed, not a second
-   parameter on `estimate_income` -- so its signature stays stable for every other
-   caller. `collected_charge_lines_for_calendar_year` is that tagged figure for the cash
-   basis (identified by `description_line`, the same tag construction wrote), read off the
-   same settlements as the ceiling's revenue; `fiscal/basis.py` takes it off, so the
-   coefficiente base and the ceiling's own revenue sum can diverge by exactly the social
-   security surcharge amount, as designed (REB-1071).
+3. **The line's marker.** `is_statutory_charge_line` reads the same `description` back, so a
+   reader can tell a charge line from a fee line (`invoices/charges.py`, the year register's
+   «di cui rivalsa»). The surcharge counts in the ceiling and in the revenue the flat-rate
+   coefficient is applied to, in full (REB-1100), so there is no second figure to subtract:
+   `fiscal/basis.py` reads the one `paid_revenue_for_calendar_year`.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -59,7 +53,7 @@ from pigrocrm.core.fiscal.pack import (
 )
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.schemas import InvoiceLineIn
-from pigrocrm.core.money import ZERO_MONEY, round_money
+from pigrocrm.core.money import round_money
 
 
 # The one definition of "an invoice that is revenue", duplicated rather than imported
@@ -123,35 +117,6 @@ def paid_revenue_for_calendar_year(
     if issued_in_year:
         stmt = stmt.where(Invoice.year == year)
     return round_money(Decimal(session.execute(stmt).scalar_one()))
-
-
-def collected_charge_lines_for_calendar_year(
-    session: Session, year: int, markers: Iterable[str], legal_entity_id: UUID | None = None
-) -> Decimal:
-    """The part of what was collected within `year` that is the lines carrying one of the
-    charge `markers`, each settlement counting for its share of the invoice's charge lines as
-    `paid_revenue_for_calendar_year` counts it for the taxable amount: the two figures are
-    read off the same settlements, so what a pack tags as not counting toward the coefficient
-    base is taken off exactly what was collected, and by nothing else."""
-    markers = tuple(markers)
-    if not markers:
-        return ZERO_MONEY
-    charges = (
-        select(func.coalesce(func.sum(InvoiceLine.total_price), 0))
-        .where(InvoiceLine.invoice_id == Invoice.id, charge_line_clause(markers))
-        .correlate(Invoice)
-        .scalar_subquery()
-    )
-    share = charges * DueItemSettlement.amount / DueItem.amount
-    return round_money(
-        Decimal(
-            session.execute(
-                join_sales_item(select(func.coalesce(func.sum(share), 0)))
-                .join(DueItemSettlement, DueItemSettlement.due_item_id == DueItem.id)
-                .where(*collected_in_year_filter(year, legal_entity_id))
-            ).scalar_one()
-        )
-    )
 
 
 @dataclass(frozen=True)
@@ -227,11 +192,6 @@ def social_security_surcharge_line_for_contract(
 # zero-rate fee line, with a quantity of one and no unit like any flat fee. These two
 # helpers are the only place that reads the text marker, so the day `invoice_lines`
 # gains a charge column both change together and nothing else does.
-def charge_line_clause(markers: Iterable[str]) -> ColumnElement[bool]:
-    """SQL predicate: `InvoiceLine` rows carrying one of the charge `markers`."""
-    return InvoiceLine.description.in_(tuple(markers))
-
-
 def is_statutory_charge_line(line: InvoiceLine) -> bool:
     """Whether `line` is the line of a statutory charge any shipped pack declares,
     whatever pack the legal entity is on today: an invoice keeps the lines it was issued
@@ -241,11 +201,9 @@ def is_statutory_charge_line(line: InvoiceLine) -> bool:
 
 __all__ = [
     "CeilingStatus",
-    "charge_line_clause",
     "collected_in_year_filter",
     "evaluate_ceiling",
     "evaluate_pack",
-    "collected_charge_lines_for_calendar_year",
     "is_statutory_charge_line",
     "paid_revenue_for_calendar_year",
     "social_security_surcharge_line_for_contract",

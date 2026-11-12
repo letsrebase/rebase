@@ -214,41 +214,62 @@ def test_the_second_advance_and_a_tax_with_no_rule_cannot_be_split() -> None:
 # --- a plan splits the June items --------------------------------------------------------
 
 
-def test_a_plan_splits_the_balance_with_the_interest_of_the_agenzias_table(
+def test_a_plan_splits_the_balance_with_the_interest_of_the_agenzias_rule(
     db_session: Session, clock: Clock
 ) -> None:
-    """Redditi PF 2026 fascicolo 1, «Rateazione»: a first payment on 30 June 2026 has seven
-    instalments, the second on 16 July with 0.18% and then 0.33% more each, the last on 16
-    December with 1.83%. A balance of 700.00 makes seven of 100.00."""
+    """Redditi PF 2026 fascicolo 1, «Rateazione», for the first payment of 20 July 2026 that
+    art. 1-sexies D.L. 63/2026 allows a person in the flat-rate regime (REB-1100): six
+    instalments, the second on 20 August (the 16th is a Sunday, and 1 to 20 August move to the
+    20th) with the 4% a year from 21 July to the nominal 16 August, 26 days by the commercial
+    method, 0.29%, and then 0.33% more each, the last on 16 December with 1.61%. A balance of
+    600.00 makes six of 100.00."""
     entity = _entity(db_session)
-    _declare(db_session, entity, tax_due="1000.00", balance="700.00")
-    result = _plan(db_session, entity, 7)
+    _declare(db_session, entity, tax_due="1000.00", balance="600.00")
+    result = _plan(db_session, entity, 6)
 
     assert [(p.tax, p.tax_year, p.instalments) for p in result.plans] == [
-        ("substitute_tax", 2025, 7)
+        ("substitute_tax", 2025, 6)
     ]
     balance = _balance_items(_items(db_session, entity))
     assert [(i.due_date, i.amount) for i in balance] == [
-        (dt.date(2026, 6, 30), D("100.00")),
-        (dt.date(2026, 7, 16), D("100.18")),
-        (dt.date(2026, 8, 20), D("100.51")),
-        (dt.date(2026, 9, 16), D("100.84")),
-        (dt.date(2026, 10, 16), D("101.17")),
-        (dt.date(2026, 11, 16), D("101.50")),
-        (dt.date(2026, 12, 16), D("101.83")),
+        (dt.date(2026, 7, 20), D("100.00")),
+        (dt.date(2026, 8, 20), D("100.29")),
+        (dt.date(2026, 9, 16), D("100.62")),
+        (dt.date(2026, 10, 16), D("100.95")),
+        (dt.date(2026, 11, 16), D("101.28")),
+        (dt.date(2026, 12, 16), D("101.61")),
     ]
     assert {(i.source_kind, i.state, i.direction, i.counterparty_type, i.tax) for i in balance} == {
         ("tax_instalment", "expected", "out", "tax_office", "substitute_tax")
     }
-    assert balance[0].description == "Saldo imposta sostitutiva 2025, rateizzata: rata 1 di 7"
+    assert balance[0].description == "Saldo imposta sostitutiva 2025, rateizzata: rata 1 di 6"
     assert balance[1].description == (
-        "Saldo imposta sostitutiva 2025, rateizzata: rata 2 di 7, con interessi dello 0,18%"
+        "Saldo imposta sostitutiva 2025, rateizzata: rata 2 di 6, con interessi dello 0,29%"
     )
     # The single June items are gone, dropped with their reason, never edited.
     dropped = _items(db_session, entity, dropped=True)
     assert sorted((i.source_kind, i.dropped_reason) for i in dropped) == [
         ("tax_advance", "rateizzato"),
         ("tax_balance", "rateizzato"),
+    ]
+
+
+def test_the_agenzias_own_table_for_a_first_payment_on_30_june_2026() -> None:
+    """The oracle: a first payment on 30 June 2026 has seven instalments, the second on 16 July
+    with 0.18% and then 0.33% more each, the last on 16 December with 1.83% (Redditi PF 2026
+    fascicolo 1, «Rateazione»)."""
+    schedule = plan_schedule(
+        IT_STANDARD_PACK, "irpef", 2025, (12, 31), "balance", dt.date(2026, 6, 30)
+    )
+    assert not isinstance(schedule, Missing)
+    assert [(p.due_date, p.interest_percent) for p in schedule] == [
+        (dt.date(2026, 6, 30), D("0")),
+        (dt.date(2026, 7, 16), D("0.18")),
+        (dt.date(2026, 8, 20), D("0.51")),
+        (dt.date(2026, 9, 16), D("0.84")),
+        (dt.date(2026, 10, 16), D("1.17")),
+        (dt.date(2026, 11, 16), D("1.50")),
+        (dt.date(2026, 12, 16), D("1.83")),
     ]
 
 
@@ -261,17 +282,17 @@ def test_the_first_advance_is_split_with_the_balance_and_the_november_advance_ne
 
     items = _items(db_session, entity)
     # 600.00 / 3 = 200.00 each; 500.00 / 3 = 166.67, 166.67 and 166.66. The interest is the
-    # schedule's percentage of each instalment: 0, 0.18% and 0.51%.
+    # schedule's percentage of each instalment: 0, 0.29% and 0.62%.
     assert [(i.due_date, i.amount) for i in _balance_items(items)] == [
-        (dt.date(2026, 6, 30), D("200.00")),
-        (dt.date(2026, 7, 16), D("200.36")),
-        (dt.date(2026, 8, 20), D("201.02")),
+        (dt.date(2026, 7, 20), D("200.00")),
+        (dt.date(2026, 8, 20), D("200.58")),
+        (dt.date(2026, 9, 16), D("201.24")),
     ]
     first_advance = [i for i in _advance_items(items) if i.source_kind == "tax_instalment"]
     assert [(i.due_date, i.amount) for i in first_advance] == [
-        (dt.date(2026, 6, 30), D("166.67")),
-        (dt.date(2026, 7, 16), D("166.97")),
-        (dt.date(2026, 8, 20), D("167.51")),
+        (dt.date(2026, 7, 20), D("166.67")),
+        (dt.date(2026, 8, 20), D("167.15")),
+        (dt.date(2026, 9, 16), D("167.69")),
     ]
     assert first_advance[0].description == (
         "Acconto imposta sostitutiva 2026, 1a rata, rateizzata: rata 1 di 3"
@@ -328,7 +349,7 @@ def test_the_refresh_respects_a_plan_and_follows_the_figures_until_a_payment(
     # A figure that moves is followed, as the single item was: the balance becomes 900.00.
     _declare(db_session, entity, tax_due="1000.00", balance="900.00")
     balance = _balance_items(_items(db_session, entity))
-    assert [i.amount for i in balance] == [D("300.00"), D("300.54"), D("301.53")]
+    assert [i.amount for i in balance] == [D("300.00"), D("300.87"), D("301.86")]
     assert not [i for i in _items(db_session, entity) if i.source_kind == "tax_balance"]
 
 
@@ -344,7 +365,7 @@ def test_changing_or_removing_a_plan_before_any_payment_rewrites_the_items(
     assert [(p.instalments) for p in changed.plans] == [2]
     assert [i.amount for i in _balance_items(_items(db_session, entity))] == [
         D("300.00"),
-        D("300.54"),
+        D("300.87"),
     ]
     assert changed.items.written == 4  # two instalments of the balance and of the first advance
 
@@ -355,9 +376,9 @@ def test_changing_or_removing_a_plan_before_any_payment_rewrites_the_items(
     # Back to one payment each, as before any plan: the June balance and first advance, and the
     # November advance.
     assert sorted(_rows(items)) == [
-        ("tax_advance", dt.date(2026, 6, 30), D("500.00")),
+        ("tax_advance", dt.date(2026, 7, 20), D("500.00")),
         ("tax_advance", dt.date(2026, 11, 30), D("500.00")),
-        ("tax_balance", dt.date(2026, 6, 30), D("600.00")),
+        ("tax_balance", dt.date(2026, 7, 20), D("600.00")),
     ]
     assert removed.items.written == 2
 
@@ -378,8 +399,8 @@ def test_more_instalments_than_the_law_allows_are_refused(
     entity = _entity(db_session)
     _declare(db_session, entity, tax_due="1000.00", balance="600.00")
     with pytest.raises(ValidationFailed) as refused:
-        _plan(db_session, entity, 8)
-    assert "al massimo 7" in str(refused.value)
+        _plan(db_session, entity, 7)
+    assert "al massimo 6" in str(refused.value)
     assert db_session.scalars(select(TaxInstalmentPlan)).all() == []
     # A tax this entity does not owe is refused as well.
     with pytest.raises(ValidationFailed):
@@ -398,8 +419,8 @@ def test_a_plan_over_an_estimate_writes_forecast_instalments_that_can_be_paid(
     instalments = [i for i in _items(db_session, entity) if i.source_kind == "tax_instalment"]
     assert [(i.state, i.amount) for i in instalments] == [
         ("forecast", D("166.67")),
-        ("forecast", D("166.97")),
-        ("forecast", D("167.51")),
+        ("forecast", D("167.15")),
+        ("forecast", D("167.69")),
     ]
     assert all(i.forecast_key is not None for i in instalments)
 
@@ -411,8 +432,8 @@ def test_a_plan_over_an_estimate_writes_forecast_instalments_that_can_be_paid(
     TaxDueItemService(db_session).refresh_tax_due_items(entity, today=clock.today)
     assert [i.amount for i in _items(db_session, entity) if i.source_kind == "tax_instalment"] == [
         D("166.67"),
-        D("166.97"),
-        D("167.51"),
+        D("167.15"),
+        D("167.69"),
     ]
 
 
@@ -426,19 +447,19 @@ def test_a_plan_chosen_after_the_first_instalments_day_keeps_what_was_already_la
     _declare(db_session, entity, tax_due="1000.00", balance="600.00")
     assert len(_balance_items(_items(db_session, entity))) == 1
 
-    clock.today = dt.date(2026, 7, 10)
+    clock.today = dt.date(2026, 7, 25)
     _plan(db_session, entity, 3)
     balance = _balance_items(_items(db_session, entity))
     assert [(i.due_date, i.amount) for i in balance] == [
-        (dt.date(2026, 6, 30), D("200.00")),
-        (dt.date(2026, 7, 16), D("200.36")),
-        (dt.date(2026, 8, 20), D("201.02")),
+        (dt.date(2026, 7, 20), D("200.00")),
+        (dt.date(2026, 8, 20), D("200.58")),
+        (dt.date(2026, 9, 16), D("201.24")),
     ]
 
     _plan(db_session, entity, 1)
     assert [
         (i.source_kind, i.due_date, i.amount) for i in _balance_items(_items(db_session, entity))
-    ] == [("tax_balance", dt.date(2026, 6, 30), D("600.00"))]
+    ] == [("tax_balance", dt.date(2026, 7, 20), D("600.00"))]
 
 
 def test_a_carried_difference_stays_the_last_sentence_of_an_instalment() -> None:

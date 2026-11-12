@@ -322,7 +322,7 @@ def test_a_payment_counts_in_the_year_it_arrived_for_its_share(db_session: Sessi
     assert _basis(db_session, flat, 2027, "it-flat-rate").revenue == M("600.00")  # type: ignore[union-attr]
 
 
-def test_the_flat_rate_surcharge_is_taken_off_what_was_collected_and_said(
+def test_the_flat_rate_surcharge_is_collected_revenue_and_in_the_base(
     db_session: Session,
 ) -> None:
     flat = _entity(db_session, "it-flat-rate")
@@ -337,10 +337,8 @@ def test_the_flat_rate_surcharge_is_taken_off_what_was_collected_and_said(
     )
     basis = _basis(db_session, flat, 2026, "it-flat-rate")
     assert basis is not None
-    assert basis.revenue == M("1000.00")
-    (surcharge,) = basis.left_out
-    assert (surcharge.code, surcharge.amount) == ("inps_surcharge", M("40.00"))
-    assert "commercialista" in surcharge.reason
+    assert basis.revenue == M("1040.00")
+    assert basis.left_out == []
 
 
 def test_the_basis_reads_one_legal_entitys_rows_alone(db_session: Session) -> None:

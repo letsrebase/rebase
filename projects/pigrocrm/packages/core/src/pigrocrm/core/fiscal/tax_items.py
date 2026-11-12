@@ -98,6 +98,7 @@ from pigrocrm.core.fiscal.advances import (
     balance_date,
 )
 from pigrocrm.core.fiscal.basis import year_basis
+from pigrocrm.core.fiscal.calendar import next_working_day
 from pigrocrm.core.fiscal.f24_repository import F24GroupRepository
 from pigrocrm.core.fiscal.inps_advances import inps_advance_plan
 from pigrocrm.core.fiscal.law import DeclaredTax, TaxYearLaw
@@ -635,28 +636,38 @@ class TaxDueItemService:
         16 January 2026). No return is held here, so the stand-in is the revenue `year_basis`
         gives for `year - 1`, which is what makes the item a `forecast`. The pack has no law
         for that earlier year, so the basis is read under the fee year's accrual rule, which
-        is the same one (art. 83 TUIR). A company's first year pays a fixed amount by another
-        rule and the entity stores no incorporation date: that case is not modelled. The date
-        is the first income-tax advance's, the F24 code the payment rules' (3850)."""
+        is the same one (art. 83 TUIR). The date is the first income-tax advance's, the F24 code
+        the payment rules' (3850).
+
+        A company that registered in `year` (the legal entity's `registration_date`, REB-1100)
+        owes the fixed first-year amount instead, whatever its turnover: it is known, so the
+        item is `expected` and not a forecast, and it falls due 30 days after the application
+        for registration (moved to the next working day) and not on the advance's date."""
         entity = context.legal_entity
         law = context.pack.law_for(year)
         assert law is not None
-        dates = advance_dates(
-            context.pack,
-            law,
-            "ires",
-            year,
-            entity.fiscal_year_end_month,
-            entity.fiscal_year_end_day,
-        )
-        if isinstance(dates, Missing):
-            return Payment("chamber_fee", year, "chamber_fee", None, None, dates.reason)
-        due = dates.first_advance
+        fee_law = context.pack.chamber_fee_for(year)
+        registered = entity.registration_date
+        first_year = registered is not None and registered.year == year
+        if first_year and fee_law is not None:
+            assert registered is not None
+            due = next_working_day(registered + dt.timedelta(days=fee_law.first_year_days))
+        else:
+            dates = advance_dates(
+                context.pack,
+                law,
+                "ires",
+                year,
+                entity.fiscal_year_end_month,
+                entity.fiscal_year_end_day,
+            )
+            if isinstance(dates, Missing):
+                return Payment("chamber_fee", year, "chamber_fee", None, None, dates.reason)
+            due = dates.first_advance
 
         def none(reason: str) -> Payment:
             return Payment("chamber_fee", year, "chamber_fee", due, None, reason)
 
-        fee_law = context.pack.chamber_fee_for(year)
         if fee_law is None:
             return none(f"the pack carries no chamber fee law for {year}: not entered yet")
 
@@ -669,11 +680,16 @@ class TaxDueItemService:
                 f"no chamber of commerce is mapped to the province {province.upper()}: "
                 "to verify with the accountant"
             )
-        stand_in = replace(context.pack, laws=(replace(law, from_year=year - 1),))
-        basis = year_basis(self.session, entity, year - 1, stand_in)
-        if basis is None:
-            return none(f"the revenue of {year - 1}, the turnover the fee is read on, is unknown")
-        fee = fee_law.fee(year, basis.revenue, province)
+        if first_year:
+            fee = fee_law.first_year_fee(year, province)
+        else:
+            stand_in = replace(context.pack, laws=(replace(law, from_year=year - 1),))
+            basis = year_basis(self.session, entity, year - 1, stand_in)
+            if basis is None:
+                return none(
+                    f"the revenue of {year - 1}, the turnover the fee is read on, is unknown"
+                )
+            fee = fee_law.fee(year, basis.revenue, province)
         if fee is None:
             return none(f"the chamber fee of {year} cannot be computed for the province {province}")
         rules = context.pack.payment_rules_for(year)
@@ -683,6 +699,20 @@ class TaxDueItemService:
             code = None
         if code is None:
             return none("the pack carries no F24 code for the chamber fee")
+        if first_year:
+            assert registered is not None
+            state: State = "expected"
+            text = (
+                f"Diritto camerale {year}, {chamber.name} (F24 codice tributo {code}), primo "
+                f"anno: importo fisso entro {fee_law.first_year_days} giorni dalla domanda di "
+                f"iscrizione del {registered:%d/%m/%Y}"
+            )
+        else:
+            state = "forecast"
+            text = (
+                f"Diritto camerale {year}, {chamber.name} (F24 codice tributo {code}), "
+                f"sul fatturato {year - 1} come stima"
+            )
         return Payment(
             "chamber_fee",
             year,
@@ -691,11 +721,8 @@ class TaxDueItemService:
             Wanted(
                 amount=round_money(fee),
                 due=due,
-                state="forecast",
-                description=(
-                    f"Diritto camerale {year}, {chamber.name} (F24 codice tributo {code}), "
-                    f"sul fatturato {year - 1} come stima"
-                ),
+                state=state,
+                description=text,
                 rule=f"{CHAMBER_FEE_SOURCE_KIND}:{year}",
             ),
         )

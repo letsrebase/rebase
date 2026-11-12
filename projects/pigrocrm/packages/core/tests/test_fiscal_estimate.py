@@ -453,17 +453,16 @@ def test_there_is_no_per_deal_variant_anywhere() -> None:
     ]
 
 
-# --- REB-361: the social security surcharge never reaches the coefficient base ---------------
+# --- REB-1100: the social security surcharge is collected revenue, in the coefficient base ----
 
 
-def test_the_social_security_surcharge_amount_is_excluded_from_the_coefficient_base(
+def test_the_social_security_surcharge_amount_is_in_the_coefficient_base(
     db_session: Session,
 ) -> None:
-    """REB-352 §2's tension, resolved by §6: a surcharge line counts toward the
-    ceiling in full (`AnalyticsRepository.annual_revenue` sums it, unmodified) but
-    must never reach the coefficient base -- `estimate_income`'s `revenue` here must
-    read 1000.00, the fee alone, not 1040.00, or the surcharge gets taxed at 67% like
-    ordinary income."""
+    """The 4% rivalsa is charged in via definitiva on top of the fee (L. 662/1996 art. 1 c. 212)
+    and is a collected fee like any other: `estimate_income`'s `revenue` reads 1040.00, fee
+    and surcharge, and the coefficient applies to all of it (REB-1100). Before it the surcharge
+    was left out and the estimate read 1000.00."""
     from datetime import date
 
     from pigrocrm.core.fiscal.pack import IT_FLAT_RATE_PACK
@@ -519,23 +518,20 @@ def test_the_social_security_surcharge_amount_is_excluded_from_the_coefficient_b
 
     estimate = AnalyticsService(db_session).get_fiscal_estimate(YEAR, ADMIN)
 
-    assert estimate.revenue == Decimal("1000.00")
-    # 1000.00 * 0.67 = 670.00 -- and not 1040.00 * 0.67 = 696.80.
-    assert estimate.taxable_amount == Decimal("670.00")
-    # And the estimate says what it took out and why, so the 40.00 is not a mystery.
+    assert estimate.revenue == Decimal("1040.00")
+    # 1040.00 * 0.67 = 696.80, not 1000.00 * 0.67 = 670.00.
+    assert estimate.taxable_amount == Decimal("696.80")
+    # Nothing is left out for it: the surcharge is in the figure, not beside it.
     assert estimate.basis is not None
-    (surcharge,) = estimate.basis.left_out
-    assert (surcharge.code, surcharge.amount) == ("inps_surcharge", Decimal("40.00"))
-    assert "commercialista" in surcharge.reason
+    assert estimate.basis.left_out == []
 
 
-def test_an_explicit_revenue_override_is_never_reduced_by_the_pack(
+def test_an_explicit_revenue_override_is_used_as_it_is(
     db_session: Session,
 ) -> None:
     """The "what if" override (the economic overview's projection, per
     `get_fiscal_estimate`'s own docstring) is the caller's own already-decided number -- the
-    pack's tag applies only to the default, basis-derived path, never to a figure a caller
-    hands in explicitly, and such an estimate names no basis."""
+    figure is used as it is, never read from the basis, and such an estimate names no basis."""
     _set_rates(db_session, coefficient="67.00", substitute="5.00", social_security="26.07")
     estimate = AnalyticsService(db_session).get_fiscal_estimate(
         YEAR, ADMIN, revenue=Decimal("1040.00")

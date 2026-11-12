@@ -133,8 +133,10 @@ class F24GroupItem(Base, PrimaryKeyMixin, TimestampMixin):
     (`code`, its `code_kind` and the issuing body's `code_label`) or absent, which the surfaces
     read as «codice da verificare»: a line whose code the pack does not carry is never given a
     guessed one. `reference_year` is the year of the `anno di riferimento` column when it is
-    known. `released_at` is set when the group is dissolved; a live line has none, and an item is
-    in at most one live line.
+    known; `reference_period` is the month a withholding line was operated in (`MM`, the
+    `mese rif.` column) or the month of a payroll contribution (`MM/AAAA`, the INPS section's
+    «periodo da»), when the line has one. `released_at` is set when the group is dissolved; a live
+    line has none, and an item is in at most one live line.
 
     Once the group is settled `used_amount` is what the F24 took of the line, with the line's sign:
     all of it when a movement paid the group, and for a group marked filed all of a debit and the
@@ -188,6 +190,7 @@ class F24GroupItem(Base, PrimaryKeyMixin, TimestampMixin):
     code_kind: Mapped[str | None] = mapped_column(String(15), default=None)
     code_label: Mapped[str | None] = mapped_column(String(255), default=None)
     reference_year: Mapped[int | None] = mapped_column(Integer, default=None)
+    reference_period: Mapped[str | None] = mapped_column(String(7), default=None)
     released_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     used_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), default=None)
     settlement_id: Mapped[UUID | None] = mapped_column(

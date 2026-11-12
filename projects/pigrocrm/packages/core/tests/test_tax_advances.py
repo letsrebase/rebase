@@ -139,8 +139,9 @@ def test_a_pack_that_owes_no_such_tax_has_no_rule() -> None:
 
 def test_a_calendar_year_company_has_the_calendars_dates() -> None:
     law = IT_COMPANY_PACK.law_for(2026)
-    dates = company_dates(law, 2026, 12, 31)
-    assert dates == PaymentDates(
+    # The formula of the law: the last day of the sixth month after the year end.
+    formula = company_dates(law, 2026, 12, 31)
+    assert formula == PaymentDates(
         balance=date(2027, 6, 30),
         first_advance=date(2026, 6, 30),
         second_advance=date(2026, 11, 30),
@@ -149,12 +150,20 @@ def test_a_calendar_year_company_has_the_calendars_dates() -> None:
         (entry.tax, entry.kind): entry.due_date
         for entry in tax_calendar(IT_COMPANY_PACK, 2026) or []
     }
-    assert calendar[("ires", "balance_and_first_advance")] == dates.first_advance  # type: ignore[union-attr]
-    assert calendar[("ires", "second_advance")] == dates.second_advance  # type: ignore[union-attr]
-    assert calendar[("irap", "balance_and_first_advance")] == dates.first_advance  # type: ignore[union-attr]
-    # The balance of the year before falls on the calendar's 30 June of this one.
-    before = company_dates(law, 2025, 12, 31)
-    assert isinstance(before, PaymentDates) and before.balance == date(2026, 6, 30)
+    # A calendar-year company pays on the calendar's day, which in 2026 is 20 July (the deferral
+    # of art. 1-sexies D.L. 63/2026, REB-1100) and in 2027 the formula's 30 June again.
+    for tax in ("ires", "irap"):
+        dates = advance_dates(IT_COMPANY_PACK, law, tax, 2026, 12, 31)  # type: ignore[arg-type]
+        assert dates == AdvanceDates(date(2026, 7, 20), date(2026, 11, 30))
+        assert calendar[(tax, "balance_and_first_advance")] == dates.first_advance  # type: ignore[union-attr]
+        assert calendar[(tax, "second_advance")] == dates.second_advance  # type: ignore[union-attr]
+        assert balance_date(IT_COMPANY_PACK, law, tax, 2025, 12, 31) == date(2026, 7, 20)  # type: ignore[arg-type]
+        assert balance_date(IT_COMPANY_PACK, law, tax, 2026, 12, 31) == date(2027, 6, 30)  # type: ignore[arg-type]
+    # A company whose year does not end on 31 December follows the formula alone.
+    assert advance_dates(IT_COMPANY_PACK, law, "ires", 2025, 6, 30) == AdvanceDates(
+        company_dates(law, 2025, 6, 30).first_advance,  # type: ignore[union-attr]
+        company_dates(law, 2025, 6, 30).second_advance,  # type: ignore[union-attr]
+    )
 
 
 def test_a_company_whose_year_ends_on_30_june_pays_on_31_december_and_31_may() -> None:
@@ -195,7 +204,7 @@ def test_a_company_has_no_dates_when_the_pack_has_no_company_law_for_the_year() 
 def test_a_persons_and_the_flat_rate_regimes_dates_are_the_packs_calendar() -> None:
     law = IT_STANDARD_PACK.law_for(2026)
     person = advance_dates(IT_STANDARD_PACK, law, "irpef", 2026, 12, 31)
-    assert person == AdvanceDates(date(2026, 6, 30), date(2026, 11, 30))
+    assert person == AdvanceDates(date(2026, 7, 20), date(2026, 11, 30))
     assert balance_date(IT_STANDARD_PACK, law, "irpef", 2026, 12, 31) == date(2027, 6, 30)
     flat_law = IT_FLAT_RATE_PACK.law_for(2026)
     assert advance_dates(IT_FLAT_RATE_PACK, flat_law, "substitute_tax", 2026, 12, 31) == person
@@ -208,7 +217,7 @@ def test_a_year_the_calendar_has_no_entry_for_has_no_dates_never_another_years()
     early = advance_dates(IT_STANDARD_PACK, None, "irpef", 2024, 12, 31)
     assert isinstance(early, Missing) and "no dates for 2024" in early.reason
     # The balance of 2025 is paid in 2026, which the calendar covers, whatever it says of 2025.
-    assert balance_date(IT_STANDARD_PACK, None, "irpef", 2025, 12, 31) == date(2026, 6, 30)
+    assert balance_date(IT_STANDARD_PACK, None, "irpef", 2025, 12, 31) == date(2026, 7, 20)
 
 
 @pytest.mark.parametrize("year", [2026, 2027, 2030])

@@ -405,8 +405,8 @@ def test_the_forecast_advances_of_an_srl_are_written_from_its_estimate(
         .order_by(DueItem.due_date, DueItem.tax)
     )
     assert [(r.tax, r.due_date, r.amount, r.state) for r in rows] == [
-        ("irap", D(2026, 6, 30), M("1123.20"), "forecast"),
-        ("ires", D(2026, 6, 30), M("3532.80"), "forecast"),
+        ("irap", D(2026, 7, 20), M("1123.20"), "forecast"),
+        ("ires", D(2026, 7, 20), M("3532.80"), "forecast"),
         ("irap", D(2026, 11, 30), M("1684.80"), "forecast"),
         ("ires", D(2026, 11, 30), M("5299.20"), "forecast"),
     ]

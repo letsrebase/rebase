@@ -25,24 +25,60 @@ before: 2025 for the fee of 2026), as the Ministry's note of 16 January 2026 say
    results, so that step reads «intermediate» broadly and matters only within 0.00001 of a
    cent boundary.
 
+A company in the year it registers (REB-1100)
+----------------------------------------------
+A company registered in the companies register during the fee year owes no turnover-based fee for
+it: it pays the amount of the first tier, with the same cut and the same chamber increase, so
+`ChamberFeeLaw.first_year_fee`. The amount is not pro-rated by the months left in the year, and
+it is due with the application for registration or within 30 days of it, by F24 (code 3850) or
+at the counter, not on 30 June. The year that counts is the one of the application, a fact the
+legal entity stores (`LegalEntity.registration_date`). Sources, read on 2026-11-12:
+
+* D.I. 21 April 2011, art. 4 c. 2 (GU n. 127 of 3 June 2011): «Le nuove imprese diverse da
+  quelle di cui al comma 1 iscritte nel registro delle imprese nel corso del 2011 sono tenute a
+  versare l'importo relativo alla prima fascia di fatturato pari a € 200,00, entro trenta giorni
+  dalla presentazione della domanda dell'iscrizione, tramite modello F24 o direttamente allo
+  sportello camerale». That is the 2011 text; the Ministry's note n. 9347 of 16 January 2026
+  says the D.I. of 8 January 2015 applies the articles 2 to 6 of this decree «con
+  l'aggiornamento dinamico di tutti i riferimenti e termini temporali», and that the fixed
+  amount of the first tier is also cut by 50%. The D.I. of 2015 itself was not read.
+* Camera di commercio del Molise, «Nuove iscrizioni» 2026: the row «società di persone, società
+  di capitali, cooperative, consorzi [...]» at 120 euro with the 20% increase, payable
+  «contestualmente alla presentazione della domanda di iscrizione [...] oppure entro i 30
+  giorni successivi con modello F24», and «L'importo del diritto non è frazionabile in
+  rapporto alla durata di iscrizione».
+
 Not modelled: the fee of the local units of a company (20% of the head office's amount, up to
-a ceiling), the fee of a company in the year it registers, the interest for paying within 30
-days after the deadline, and the fee of a company with its head office abroad. PigroCRM has no
-local units, and the later cards that need the others read their own figures.
+a ceiling), the interest for paying within 30 days after the deadline, and the fee of a company
+with its head office abroad. PigroCRM has no local units, and the later cards that need the
+others read their own figures. The turnover rule of the second year for a company registered
+part-way through the year before was not read: the fee of that year reads the turnover the
+basis gives.
 
 Which chamber a province belongs to
 -----------------------------------
 `CHAMBERS` lists every chamber of the Unioncamere list read on 2026-11-11 with the provinces it
 covers; `ChamberFeeLaw.chamber_for` is the join from the two-letter province a legal entity
-stores. `BT` (Barletta-Andria-Trani) and `SU` (Sud Sardegna) are not in the table: no primary
-source read says which chamber covers them. The Unioncamere list has no chamber of its own for
-either; the Bari chamber lists an office in Barletta on its «Uffici e sedi» page, and the
-Cagliari-Oristano page names its four territories without naming `SU`. So the fee of a company
-there is `None`, to verify with the accountant (A5, REB-975), never a guess.
+stores. Read on 2026-11-12 (REB-1100):
+
+* `BT` (Barletta-Andria-Trani) is Bari's: the national fee portal's chamber table (dirittoannuale.
+  camcom.it) reads «Camera di commercio di BARI (Bari, Barletta-Andria-Trani)» at a 20% increase,
+  the Unioncamere list has no chamber of Barletta-Andria-Trani and Bari runs a branch office at
+  Barletta («Uffici e sedi»).
+* `SU` and `VS` are Cagliari-Oristano's: the portal reads «Camera di commercio di CAGLIARI -
+  ORISTANO (Cagliari, Oristano, Sud Sardegna)» at 20%, and the chamber's «Chi siamo» names its
+  four territories as Cagliari, Medio Campidano, Sulcis Iglesiente and Oristano, which is the
+  whole former Sud Sardegna. D.P.R. 4 August 2026 n. 183 (GU n. 238 of 13 October 2026, in
+  force 28 October 2026) suppresses the code «Sud Sardegna SU», gives `SU` to Sulcis Iglesiente
+  and adds `VS` (Medio Campidano), `OG` (Ogliastra) and `OT` (Gallura Nord-Est Sardegna), so
+  a company's province field can hold any of the four.
+* `OG` and `OT` are not in the table: no page read says which chamber covers them (Nuoro and
+  Sassari are the likely ones). The fee of a company there is `None`, to verify with the
+  accountant (A5, REB-975), never a guess.
 
 Sources, read on 2026-11-11
 ---------------------------
-* The Ministry of Enterprises and Made in Italy, nota n. 9347 of 16 January 2026, «Misure del
+* The Ministry of Enterprises and Made in Italy, note n. 9347 of 16 January 2026, «Misure del
   diritto annuale anno 2026»: the 50% cut, the tiers, the five-decimal sequence and the
   rounding of the MISE circular n. 19230 of 2009.
 * The Ministry of Enterprises and Made in Italy, D.M. 17 March 2026 (in force from its
@@ -121,6 +157,10 @@ class ChamberFeeLaw:
     chambers: tuple[Chamber, ...]
     # Provinces no chamber is mapped to: their fee is `None`, never a guess.
     unmapped_provinces: tuple[str, ...]
+    # A company registered in `year` pays the first tier's fixed amount, cut and increased as
+    # the others, within this many days of its application for registration; see the docstring.
+    first_year_days: int
+    first_year_source: str
 
     def chamber_for(self, province: str) -> Chamber | None:
         """The chamber that covers a two-letter province, `None` when the table has none."""
@@ -135,6 +175,13 @@ class ChamberFeeLaw:
         province has no mapped chamber."""
         chamber = self.chamber_for(province)
         return None if chamber is None else chamber.increase_percent
+
+    def first_year_fee(self, year: int, province: str) -> Decimal | None:
+        """The fee, in whole euro, of a company that registered during `year` (REB-1100): the
+        amount of the first tier, whatever its turnover, cut and increased as every other
+        fee and not pro-rated. `None` for a year the law holds no figures for and for a
+        province with no mapped chamber."""
+        return self.fee(year, Decimal(0), province)
 
     def national_amount(self, turnover: Decimal) -> Decimal:
         """The amount before the cut and the increase: the fixed tier plus the slice of the
@@ -197,14 +244,14 @@ _CHAMBERS: Final = (
     _c("Alessandria-Asti", "AL", "AT"),
     _c("Valdostana", "AO"),
     _c("Arezzo-Siena", "AR", "SI"),
-    _c("Bari", "BA"),
+    _c("Bari", "BA", "BT"),
     _c("Basilicata", "PZ", "MT"),
     _c("Bergamo", "BG"),
     _c("Bologna", "BO"),
     _c("Bolzano", "BZ"),
     _c("Brescia", "BS"),
     _c("Brindisi-Taranto", "BR", "TA"),
-    _c("Cagliari-Oristano", "CA", "OR"),
+    _c("Cagliari-Oristano", "CA", "OR", "SU", "VS"),
     _c("Caltanissetta", "CL", sicily=True),
     _c("Caserta", "CE"),
     _c("Catanzaro-Crotone-Vibo Valentia", "CZ", "KR", "VV"),
@@ -264,8 +311,8 @@ _CHAMBERS: Final = (
     _c("Vicenza", "VI"),
 )
 
-# Nothing in the table above covers `BT`; see the module docstring.
-_UNMAPPED: Final = ("BT", "SU")
+# Nothing in the table above covers `OG` or `OT`; see the module docstring.
+_UNMAPPED: Final = ("OG", "OT")
 
 CHAMBERS: Final = _CHAMBERS
 
@@ -291,6 +338,12 @@ CHAMBER_FEE_LAW: Final = ChamberFeeLaw(
     cut_percent=Decimal("50"),
     chambers=_CHAMBERS,
     unmapped_provinces=_UNMAPPED,
+    first_year_days=30,
+    first_year_source=(
+        "D.I. 21 April 2011 art. 4 c. 2, restated for later years by the D.I. of 8 January 2015 "
+        "(MIMIT, nota n. 9347 of 16 January 2026); Camera di commercio del Molise, «Nuove "
+        "iscrizioni» 2026"
+    ),
 )
 
 __all__ = [

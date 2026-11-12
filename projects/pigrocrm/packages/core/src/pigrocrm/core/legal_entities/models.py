@@ -1,9 +1,11 @@
+from datetime import date
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     Index,
     SmallInteger,
     String,
@@ -123,6 +125,13 @@ class LegalEntity(Base, PrimaryKeyMixin, TimestampMixin):
     fiscal_year_end_day: Mapped[int] = mapped_column(
         SmallInteger, nullable=False, default=31, server_default=text("31")
     )
+
+    # REB-1100: the day the company applied for registration in the companies register. The chamber
+    # fee of the year it falls in is the fixed first-year amount, due within 30 days of this
+    # date and not on 30 June (`fiscal/law_chamber_fee.py`, `fiscal/tax_items.py`); every other
+    # year reads the turnover. Optional: nothing else in the product needs it, and a company
+    # whose date is unknown is read as an older one.
+    registration_date: Mapped[date | None] = mapped_column(Date, default=None)
 
     __table_args__ = (
         # The default is what every implicit read resolves to, so it is never a row that

@@ -10,7 +10,12 @@ the comment above it.
 What the law says, in the order the estimate applies it:
 
 1. The income is `revenue collected x profitability coefficient` (c. 64), the coefficient of the
-   ATECO group of the activity (annex 4, below).
+   ATECO group of the activity (annex 4, below). The revenue is «ricavi o [...] compensi
+   percepiti», on the cash principle for a profession and a business alike (circolare 10/E of 4
+   April 2016, § 4.3.5), and the 4% INPS surcharge a gestione separata professional charges on
+   the fee (art. 1 c. 212 L. 662/1996) is part of it: collected like the fee, it is in the
+   coefficient's base and in the 85,000 euro limit (REB-1100, the charge's comment in
+   `pack.py`).
 2. The compulsory social security contributions **paid** in the period are deducted from that
    income (c. 64: «si deducono dal reddito determinato ai sensi del presente comma»; the return
    deducts them in rows LM35 and LM36 before the substitute tax is computed in LM39).

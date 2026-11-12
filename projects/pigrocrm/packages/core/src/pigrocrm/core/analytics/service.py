@@ -883,7 +883,7 @@ class AnalyticsService:
             year=year,
             legal_entity_id=legal_entity.id,
             # A caller's own `revenue` is a «what if»: the economic overview's projection,
-            # which no basis was read for and no pack tag applies to.
+            # which no basis was read for.
             revenue=revenue,
             coefficient=profile.profitability_coefficient,
             rate_substitute=profile.substitute_tax_rate,

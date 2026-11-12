@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
@@ -81,6 +81,14 @@ class LegalEntityFields(BaseModel):
     # row takes 31 December). Nothing in the web app sends them yet.
     fiscal_year_end_month: int | None = Field(default=None, ge=1, le=12)
     fiscal_year_end_day: int | None = Field(default=None, ge=1, le=31)
+    registration_date: date | None = Field(
+        default=None,
+        description=(
+            "The day the company applied for registration in the companies register (REB-1100). "
+            "The chamber of commerce fee of that year is the fixed first-year amount, due within "
+            "30 days of this date. Empty when unknown: the company is then read as an older one."
+        ),
+    )
 
 
 class LegalEntityUpsert(LegalEntityFields):
@@ -143,6 +151,7 @@ class LegalEntityRead(BaseModel):
     legal_representative: str | None
     fiscal_year_end_month: int
     fiscal_year_end_day: int
+    registration_date: date | None
     created_at: datetime
     updated_at: datetime
 
@@ -176,6 +185,7 @@ TEMPLATE_EXCLUDED_FIELDS: frozenset[str] = frozenset(
         "active",
         "fiscal_year_end_month",
         "fiscal_year_end_day",
+        "registration_date",
         "created_at",
         "updated_at",
     }

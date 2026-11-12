@@ -243,6 +243,7 @@ function GroupBlock({ group, today }: { group: F24Group; today: string }) {
             <p className="text-xs text-muted-foreground">
               {line.code_to_verify ? line.code_label : `Codice ${line.code}`}
               {line.reference_year ? ` · anno ${line.reference_year}` : ''}
+              {line.reference_period ? ` · periodo ${line.reference_period}` : ''}
               {line.is_credit ? ' · credito' : ''}
               {line.is_credit && group.state === 'settled' && line.used_amount !== null
                 ? ` · usato ${money(line.used_amount)}`

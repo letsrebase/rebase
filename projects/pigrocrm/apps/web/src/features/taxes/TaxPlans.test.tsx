@@ -394,8 +394,8 @@ const GROUP = (overrides: Record<string, unknown> = {}) => ({
   debit_total: '700.00',
   credit_total: '200.00',
   lines: [
-    { due_item_id: 'i-1', source_kind: 'tax_advance', tax: 'irpef', description: 'x', amount: '700.00', is_credit: false, credit_origin: null, line: 'Secondo acconto IRPEF', code: '4034', code_kind: 'tax_code', code_label: '4034', code_to_verify: false, reference_year: 2026, released: false, used_amount: null },
-    { due_item_id: 'i-9', source_kind: 'tax_credit', tax: 'iva', description: 'x', amount: '-200.00', is_credit: true, credit_origin: null, line: null, code: null, code_kind: null, code_label: 'codice da verificare', code_to_verify: true, reference_year: null, released: false, used_amount: null },
+    { due_item_id: 'i-1', source_kind: 'tax_advance', tax: 'irpef', description: 'x', amount: '700.00', is_credit: false, credit_origin: null, line: 'Secondo acconto IRPEF', code: '4034', code_kind: 'tax_code', code_label: '4034', code_to_verify: false, reference_year: 2026, reference_period: null, released: false, used_amount: null },
+    { due_item_id: 'i-9', source_kind: 'tax_credit', tax: 'iva', description: 'x', amount: '-200.00', is_credit: true, credit_origin: null, line: null, code: null, code_kind: null, code_label: 'codice da verificare', code_to_verify: true, reference_year: null, reference_period: null, released: false, used_amount: null },
   ],
   receipts: [],
   bank_movement_id: null,

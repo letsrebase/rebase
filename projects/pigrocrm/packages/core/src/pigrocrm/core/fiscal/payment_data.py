@@ -123,7 +123,7 @@ COMPANY_WITHHOLDING_CREDIT = WithholdingCreditLaw(
 
 # --- F24 codes --------------------------------------------------------------------------
 
-_SRC_ADE = "Agenzia delle Entrate, «Ricerca codici tributo», codice {code} (read 2026-11-11)"
+_SRC_ADE = "Agenzia delle Entrate, «Ricerca codici tributo», codice {code} (read {read})"
 _SRC_PF = "Agenzia delle Entrate, Redditi PF 2026 fascicolo 1, «Principali codici tributo»"
 _SRC_INPS_GS = (
     "INPS, «F24 per professionisti iscritti alla Gestione Separata» (updated 8 July 2025, read "
@@ -139,9 +139,24 @@ _SRC_INPS_AC = (
 )
 
 
-def _tax(line: F24Line, code: str, description: str, extra: str = "") -> F24Code:
-    source = _SRC_ADE.format(code=code) + (f"; {extra}" if extra else "")
-    return F24Code(line=line, code=code, kind="tax_code", description=description, source=source)
+def _tax(
+    line: F24Line,
+    code: str,
+    description: str,
+    extra: str = "",
+    *,
+    period: int | None = None,
+    read: str = "2026-11-11",
+) -> F24Code:
+    source = _SRC_ADE.format(code=code, read=read) + (f"; {extra}" if extra else "")
+    return F24Code(
+        line=line,
+        code=code,
+        kind="tax_code",
+        description=description,
+        source=source,
+        period=period,
+    )
 
 
 def _inps(line: F24Line, code: str, description: str, source: str) -> F24Code:
@@ -251,6 +266,109 @@ _INTEREST_MUNICIPAL_CODE = _tax(
     "Interessi pagamento dilazionato - autotassazione - addizionale comunale all'IRPEF",
     "risoluzione 368/E of 12 December 2007: the code 3804 it replaces is abrogated from 1 "
     "January 2008 (read 2026-11-11)",
+)
+
+# The periodic IVA (REB-1100, A5 row «F24 tax codes for the periodic IVA payments», verified
+# 2026-11-12). The Agenzia's code pages give one code per month (6001 January to 6012 December)
+# and one per quarter for the first three (6031 to 6033, «Art. 74»), each paid «in unica
+# soluzione», with no instalment column and no credit («importi a credito compensati: NON
+# COMPILARE»); the `anno di riferimento` is the «Anno d'imposta per cui si effettua il
+# pagamento». That a payment of December made in January is written with the year of the
+# December it pays is an inference from that wording (the pages' own example is a payment in
+# the same year): to confirm on a real F24 of January. The fourth quarter of a quarterly payer is
+# paid with the annual settlement, 6099 («VERSAMENTO IVA SULLA BASE DELLA DICHIARAZIONE
+# ANNUALE», the only IVA code that «puo' essere versato in forma rateale» and «utilizzabile anche
+# per indicare un importo a credito da compensare»). 6034 («VERSAMENTO IVA QUARTO TRIMESTRE») and
+# 6035 («VERSAMENTO IVA ACCONTO») are on the Agenzia's list, and its pages do not say which
+# payer uses them: they stay out, to verify with the accountant (REB-975). The advance of a
+# monthly payer is 6013 («VERSAMENTO ACCONTO PER IVA MENSILE»).
+_MONTHS_IT = (
+    "GENNAIO",
+    "FEBBRAIO",
+    "MARZO",
+    "APRILE",
+    "MAGGIO",
+    "GIUGNO",
+    "LUGLIO",
+    "AGOSTO",
+    "SETTEMBRE",
+    "OTTOBRE",
+    "NOVEMBRE",
+    "DICEMBRE",
+)
+_IVA_CODES = (
+    *(
+        _tax(
+            "iva_monthly",
+            str(6000 + month),
+            f"VERSAMENTO IVA MENSILE {name}",
+            read="2026-11-12",
+            period=month,
+        )
+        for month, name in enumerate(_MONTHS_IT, start=1)
+    ),
+    *(
+        _tax(
+            "iva_quarterly",
+            str(6030 + quarter),
+            f"VERSAMENTO IVA TRIMESTRALE {quarter} TRIMESTRE",
+            "art. 74 D.P.R. 633/1972",
+            read="2026-11-12",
+            period=quarter,
+        )
+        for quarter in (1, 2, 3)
+    ),
+    _tax(
+        "iva_annual",
+        "6099",
+        "VERSAMENTO IVA SULLA BASE DELLA DICHIARAZIONE ANNUALE",
+        read="2026-11-12",
+    ),
+    _tax(
+        "iva_advance_monthly",
+        "6013",
+        "VERSAMENTO ACCONTO PER IVA MENSILE",
+        read="2026-11-12",
+    ),
+)
+
+# The withholding a payer operates (REB-1100, verified 2026-11-12): 1001 on employees' pay (art.
+# 23 c. 2 D.P.R. 600/1973), 1040 on self-employed fees (art. 25), both «in unica soluzione», no
+# credit, with the month the withholding was operated in the `mese rif.` column and the tax
+# year in `anno di riferimento`. A flat-rate taxpayer owes only the first: it is a withholding
+# agent on employees and not on fees (art. 1 c. 69 L. 190/2014, A5).
+_WITHHOLDING_EMPLOYEES_CODE = _tax(
+    "withholding_employees",
+    "1001",
+    "RITENUTE SU RETRIBUZIONI PENSIONI TRASFERTE MENSILITA' AGGIUNTIVE E RELATIVO CONGUAGLIO",
+    "D.P.R. 600/1973 art. 23 c. 2",
+    read="2026-11-12",
+)
+_WITHHOLDING_SELF_EMPLOYED_CODE = _tax(
+    "withholding_self_employed",
+    "1040",
+    "RITENUTE SU REDDITI DI LAVORO AUTONOMO COMPENSI PER L'ESERCIZIO DI ARTI E PROFESSIONI",
+    "D.P.R. 600/1973 art. 25",
+    read="2026-11-12",
+)
+
+# An employer's INPS contributions on payroll (REB-1100, verified 2026-11-12): the causale DM10
+# of the F24's INPS section, with the matricola INPS (format 1, ten digits), the month of the
+# payroll as «periodo da» (`MM/AAAA`) and nothing in «a». INAIL's premium is not here: no source
+# read gives the fields of the INAIL section, so it stays to verify (REB-975).
+_PAYROLL_CODES = (
+    _inps(
+        "inps_payroll",
+        "DM10",
+        "DM10 attivi, passivi, insoluti: an employer's contributions on payroll; matricola INPS "
+        "of ten digits (format 1), periodo «da» MM/AAAA, «a» empty",
+        "INPS, circolare n. 137 of 28 July 2003, allegato 1 («causale contributo: DM10»; periodo "
+        "«da»: the month and year of competence; periodo «a»: not filled in); INPS, circolare "
+        "n. 6 of 22 January 2025; Agenzia delle Entrate, «Causali INPS» (table updated "
+        "11-11-2026, row «DM10 | DM10 attivi, passivi, insoluti | Formato 1», read 2026-11-12) "
+        "and «Tabella dei valori che può assumere il campo matricola INPS» (format 1: «10 "
+        "numerici»)",
+    ),
 )
 
 _INPS_CODES = (
@@ -396,6 +514,10 @@ IT_STANDARD_PAYMENT_2026 = PaymentRulesLaw(
         _INTEREST_REGIONAL_CODE,
         _INTEREST_MUNICIPAL_CODE,
         *_INPS_CODES,
+        *_IVA_CODES,
+        _WITHHOLDING_EMPLOYEES_CODE,
+        _WITHHOLDING_SELF_EMPLOYED_CODE,
+        *_PAYROLL_CODES,
     ),
     filings=(_PF_FILING,),
     withholding_credit=WITHHOLDING_CREDIT,
@@ -407,7 +529,13 @@ IT_FLAT_RATE_PAYMENT_2026 = PaymentRulesLaw(
     deferral=DEFERRAL,
     forecast=FORECAST_PERSON,
     shortfall=SHORTFALL,
-    f24_codes=(*_SUBSTITUTE_TAX_CODES, _INTEREST_ERARIO_CODE, *_INPS_CODES),
+    f24_codes=(
+        *_SUBSTITUTE_TAX_CODES,
+        _INTEREST_ERARIO_CODE,
+        *_INPS_CODES,
+        _WITHHOLDING_EMPLOYEES_CODE,
+        *_PAYROLL_CODES,
+    ),
     filings=(_PF_FILING,),
 )
 
@@ -424,6 +552,10 @@ IT_COMPANY_PAYMENT_2026 = PaymentRulesLaw(
         _CHAMBER_FEE_CODE,
         _INTEREST_ERARIO_CODE,
         _INTEREST_REGIONAL_CODE,
+        *_IVA_CODES,
+        _WITHHOLDING_EMPLOYEES_CODE,
+        _WITHHOLDING_SELF_EMPLOYED_CODE,
+        *_PAYROLL_CODES,
     ),
     filings=(_SC_FILING, _IRAP_FILING),
 )

@@ -36,9 +36,13 @@ interface LegalEntityField {
     | 'email'
     | 'website'
     | 'tax_regime'
+    | 'registration_date'
   label: string
   required?: boolean
   hint?: string
+  /** A date is typed in a date input and sent as `null` when empty: the server reads `''` as
+   *  no date for a text field and as an invalid one for a date. */
+  type?: 'date'
 }
 
 const FIELDS: readonly LegalEntityField[] = [
@@ -57,6 +61,12 @@ const FIELDS: readonly LegalEntityField[] = [
   { name: 'email', label: 'Email' },
   { name: 'website', label: 'Sito web' },
   { name: 'tax_regime', label: 'Regime fiscale' },
+  {
+    name: 'registration_date',
+    label: 'Domanda di iscrizione al registro imprese',
+    type: 'date',
+    hint: 'Il giorno della domanda: nell’anno di iscrizione il diritto camerale è l’importo fisso, da pagare entro 30 giorni',
+  },
 ]
 
 type FieldName = LegalEntityField['name']
@@ -173,7 +183,7 @@ function LegalEntityForm({ profile }: { profile: LegalEntityRecord }) {
   function submit() {
     setProblem(null)
     save.mutate(
-      { ...values, updated_at: seeded.updated_at },
+      { ...values, registration_date: values.registration_date || null, updated_at: seeded.updated_at },
       {
         // The answer is the row as saved, normalised: seeded from it at once, so a
         // second Salva before the list refetches already carries the new version.
@@ -237,6 +247,7 @@ function LegalEntityForm({ profile }: { profile: LegalEntityRecord }) {
             </Label>
             <Input
               id={`emitter-${field.name}`}
+              type={field.type}
               value={values[field.name]}
               // Locked while a save is in flight: a keystroke landing between the PUT
               // and its refetch would be marked clean by the success and overwritten

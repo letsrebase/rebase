@@ -205,7 +205,7 @@ def test_the_historical_advance_reads_last_years_estimate_and_the_forecast_one_t
         Row(
             "tax_advance",
             "substitute_tax",
-            dt.date(2026, 6, 30),
+            dt.date(2026, 7, 20),
             D("500.00"),
             "forecast",
             "Acconto imposta sostitutiva 2026, 1a rata",
@@ -231,7 +231,7 @@ def test_the_historical_advance_reads_last_years_estimate_and_the_forecast_one_t
     assert (chosen.year, chosen.method) == (2026, "forecast")
     assert (chosen.items.written, chosen.items.dropped) == (2, 2)
     assert [(r.due, r.amount, r.state) for r in _live(db_session, entity)] == [
-        (dt.date(2026, 6, 30), D("1500.00"), "forecast"),
+        (dt.date(2026, 7, 20), D("1500.00"), "forecast"),
         (dt.date(2026, 11, 30), D("1500.00"), "forecast"),
     ]
     # The two historical items are dropped, not edited.
@@ -282,7 +282,7 @@ def test_an_administrator_confirms_the_difference_carried_onto_a_tax_item(
     estimates.set(2025, "substitute_tax", "1000.00")
     TaxDueItemService(db_session).refresh_tax_due_items(entity, today=clock.today)
     _declare(db_session, entity, "substitute_tax", 2025, tax_due="1000.00")
-    _pay(db_session, entity, dt.date(2026, 6, 30), "500.00")
+    _pay(db_session, entity, dt.date(2026, 7, 20), "500.00")
     _declare(db_session, entity, "substitute_tax", 2025, tax_due="1200.00")
     service = DueItemService(db_session)
     item = db_session.scalars(
@@ -335,7 +335,7 @@ def test_an_administrator_confirms_the_difference_carried_onto_a_tax_item(
     first = db_session.scalars(
         select(DueItem).where(
             DueItem.legal_entity_id == entity,
-            DueItem.due_date == dt.date(2026, 6, 30),
+            DueItem.due_date == dt.date(2026, 7, 20),
             DueItem.state == "settled",
         )
     ).one()
@@ -379,7 +379,7 @@ def test_a_declared_figure_replaces_the_estimate_and_the_difference_goes_to_the_
     # they replace is dropped.
     _declare(db_session, entity, "substitute_tax", 2025, tax_due="1000.00")
     assert [(r.due, r.amount, r.state) for r in _live(db_session, entity)] == [
-        (dt.date(2026, 6, 30), D("500.00"), "expected"),
+        (dt.date(2026, 7, 20), D("500.00"), "expected"),
         (dt.date(2026, 11, 30), D("500.00"), "expected"),
     ]
     assert {i.state for i in _dropped(db_session, entity)} == {"dropped"}
@@ -388,7 +388,7 @@ def test_a_declared_figure_replaces_the_estimate_and_the_difference_goes_to_the_
     # The first advance is paid at 500. The return is corrected to 1200: the advance should have
     # been 600, the 100 it was short is owed with the second one, which a person is asked to
     # confirm.
-    _pay(db_session, entity, dt.date(2026, 6, 30), "500.00")
+    _pay(db_session, entity, dt.date(2026, 7, 20), "500.00")
     _declare(db_session, entity, "substitute_tax", 2025, tax_due="1200.00")
     first, second = _live(db_session, entity)
     assert (first.amount, first.state) == (D("500.00"), "settled")
@@ -412,7 +412,7 @@ def test_what_a_paid_second_advance_leaves_goes_to_the_balance_of_the_year(
 ) -> None:
     entity = _entity(db_session)
     _declare(db_session, entity, "substitute_tax", 2025, tax_due="900.00")
-    _pay(db_session, entity, dt.date(2026, 6, 30), "450.00")
+    _pay(db_session, entity, dt.date(2026, 7, 20), "450.00")
     _pay(db_session, entity, dt.date(2026, 11, 30), "450.00")
     # The year's own return, typed later: 2000 owed. The advances were 450 and 450.
     clock.today = dt.date(2026, 7, 15)
@@ -458,7 +458,7 @@ def test_a_payment_touches_an_item_and_a_refresh_never_changes_or_drops_it(
 ) -> None:
     entity = _entity(db_session)
     _declare(db_session, entity, "substitute_tax", 2025, tax_due="1000.00")
-    _pay(db_session, entity, dt.date(2026, 6, 30), "200.00")  # partly paid
+    _pay(db_session, entity, dt.date(2026, 7, 20), "200.00")  # partly paid
     _declare(db_session, entity, "substitute_tax", 2025, tax_due="2000.00")
     first = _live(db_session, entity)[0]
     # Partly paid: it keeps its amount and its remainder, with no re-split.
@@ -466,7 +466,7 @@ def test_a_payment_touches_an_item_and_a_refresh_never_changes_or_drops_it(
     # Nothing owed any more: the unpaid item goes, the partly paid one stays.
     _declare(db_session, entity, "substitute_tax", 2025, tax_due="10.00")
     assert [(r.due, r.amount) for r in _live(db_session, entity)] == [
-        (dt.date(2026, 6, 30), D("500.00"))
+        (dt.date(2026, 7, 20), D("500.00"))
     ]
 
 
@@ -485,7 +485,7 @@ def test_a_person_pays_a_small_advance_once_and_no_advance_at_the_floor(
     assert _live(db_session, entity) == []
     _declare(db_session, entity, "irpef", 2025, tax_due="1000.00")
     assert [(r.due, r.amount) for r in _live(db_session, entity)] == [
-        (dt.date(2026, 6, 30), D("400.00")),
+        (dt.date(2026, 7, 20), D("400.00")),
         (dt.date(2026, 11, 30), D("600.00")),
     ]
 
@@ -508,7 +508,7 @@ def test_a_flat_rate_advance_up_to_206_is_paid_once(
     ]
     _declare(db_session, entity, "substitute_tax", 2025, tax_due="206.01")
     assert [(r.due, r.amount) for r in _live(db_session, entity)] == [
-        (dt.date(2026, 6, 30), D("103.01")),
+        (dt.date(2026, 7, 20), D("103.01")),
         (dt.date(2026, 11, 30), D("103.00")),
     ]
 
@@ -524,7 +524,7 @@ def test_an_srl_has_ires_and_irap_advances_with_its_own_thresholds(
     # An IRAP advance of 100 has a first instalment of 40, not above 103: one payment (art. 17
     # c. 3 D.P.R. 435/2001), the same test as IRES.
     assert [(r.tax, r.due, r.amount) for r in rows] == [
-        ("ires", dt.date(2026, 6, 30), D("4000.00")),
+        ("ires", dt.date(2026, 7, 20), D("4000.00")),
         ("irap", dt.date(2026, 11, 30), D("100.00")),
         ("ires", dt.date(2026, 11, 30), D("6000.00")),
     ]
@@ -538,7 +538,7 @@ def test_an_srl_has_ires_and_irap_advances_with_its_own_thresholds(
     # Above 257.51 the first instalment passes 103 and the advance is split again.
     _declare(db_session, entity, "ires", 2025, tax_due="257.52")
     assert [(r.tax, r.due, r.amount) for r in _live(db_session, entity)] == [
-        ("ires", dt.date(2026, 6, 30), D("103.01")),
+        ("ires", dt.date(2026, 7, 20), D("103.01")),
         ("ires", dt.date(2026, 11, 30), D("154.51")),
     ]
 
@@ -580,7 +580,7 @@ def test_a_company_with_a_year_ending_on_30_june_pays_on_its_own_dates(
     for entity in (calendar, june):
         _declare(db_session, entity, "ires", 2025, tax_due="10000.00")
     assert [(r.due, r.amount) for r in _live(db_session, calendar)] == [
-        (dt.date(2026, 6, 30), D("4000.00")),
+        (dt.date(2026, 7, 20), D("4000.00")),
         (dt.date(2026, 11, 30), D("6000.00")),
     ]
     # Tax year 2026 of a year that starts on 1 July 2026: the first advance is the balance's day of
@@ -725,7 +725,7 @@ def test_the_daily_pass_follows_an_estimate_and_a_second_pass_changes_nothing(
     assert (report.tax_items_failed, report.tax_items_failures) == (0, ())
     assert report.tax_items_refreshed >= 1
     assert [(r.due, r.amount, r.state) for r in _live(db_session, entity)] == [
-        (dt.date(2026, 6, 30), D("500.00"), "forecast"),
+        (dt.date(2026, 7, 20), D("500.00"), "forecast"),
         (dt.date(2026, 11, 30), D("500.00"), "forecast"),
     ]
     first_ids = {
@@ -869,7 +869,7 @@ def test_an_srl_in_milano_with_small_turnover_has_the_fee_on_the_first_advance_d
     (item,) = _fee_rows(db_session, entity)
     assert (item.amount, item.due_date, item.state, item.tax) == (
         D("120.00"),
-        dt.date(2026, 6, 30),
+        dt.date(2026, 7, 20),
         "forecast",
         "chamber_fee",
     )
@@ -888,7 +888,7 @@ def test_napoli_adds_no_increase(db_session: Session, clock: Clock, estimates: E
     assert item.amount == D("100.00")
 
 
-@pytest.mark.parametrize("province", [None, "", "BT", "SU"])
+@pytest.mark.parametrize("province", [None, "", "OG", "OT"])
 def test_a_missing_or_unmapped_province_gives_no_fee_and_says_why(
     db_session: Session, clock: Clock, estimates: Estimates, province: str | None
 ) -> None:
@@ -992,7 +992,7 @@ def test_the_inps_advances_are_two_equal_halves_of_the_excess_on_last_years_inco
         Row(
             "tax_advance",
             "inps",
-            dt.date(2026, 6, 30),
+            dt.date(2026, 7, 20),
             D("1369.90"),
             "forecast",
             "Acconto INPS 2026, 1a rata",
@@ -1065,7 +1065,7 @@ def test_a_paid_first_inps_advance_is_kept_and_the_second_takes_what_the_total_l
         select(DueItem).where(
             DueItem.legal_entity_id == entity,
             DueItem.tax == "inps",
-            DueItem.due_date == dt.date(2026, 6, 30),
+            DueItem.due_date == dt.date(2026, 7, 20),
         )
     ).one()
     DueItemService(db_session).settle(
@@ -1075,6 +1075,63 @@ def test_a_paid_first_inps_advance_is_kept_and_the_second_takes_what_the_total_l
     TaxDueItemService(db_session).refresh_tax_due_items(entity, today=clock.today)
     rows = _inps_rows(db_session, entity)
     assert [(row.due, row.amount, row.state) for row in rows] == [
-        (dt.date(2026, 6, 30), D("4171.20"), "settled"),
+        (dt.date(2026, 7, 20), D("4171.20"), "settled"),
         (dt.date(2026, 11, 30), D("6256.80"), "forecast"),
     ]
+
+
+def _register(session: Session, entity: UUID, applied: dt.date) -> None:
+    row = session.get(LegalEntity, entity)
+    assert row is not None
+    row.registration_date = applied
+    session.flush()
+
+
+def test_a_company_registered_this_year_owes_the_fixed_amount_within_thirty_days(
+    db_session: Session, clock: Clock, estimates: Estimates
+) -> None:
+    """REB-1100: the application of 10 May 2026 makes the fee of 2026 the first tier's 120
+    euro in a 20% chamber, due 30 days after it (9 June, a Tuesday), and not a forecast on
+    the turnover of 2025 on 30 June."""
+    entity = _entity(db_session, "it-company", isa=False)
+    _register(db_session, entity, dt.date(2026, 5, 10))
+    _refresh(db_session, entity, "MI")
+    (item,) = _fee_rows(db_session, entity)
+    assert (item.amount, item.due_date, item.state) == (
+        D("120.00"),
+        dt.date(2026, 6, 9),
+        "expected",
+    )
+    assert "3850" in (item.description or "")
+    assert "10/05/2026" in (item.description or "")
+
+
+def test_the_thirty_days_move_to_the_next_working_day(
+    db_session: Session, clock: Clock, estimates: Estimates
+) -> None:
+    """30 days after 21 May 2026 is Saturday 20 June: the deadline is Monday 22 June."""
+    entity = _entity(db_session, "it-company", isa=False)
+    _register(db_session, entity, dt.date(2026, 5, 21))
+    _refresh(db_session, entity, "MI")
+    (item,) = _fee_rows(db_session, entity)
+    assert item.due_date == dt.date(2026, 6, 22)
+
+
+def test_the_year_after_the_registration_reads_the_turnover_again(
+    db_session: Session, clock: Clock, estimates: Estimates
+) -> None:
+    entity = _entity(db_session, "it-company", isa=False)
+    _register(db_session, entity, dt.date(2025, 11, 20))
+    _refresh(db_session, entity, "MI")
+    (item,) = _fee_rows(db_session, entity)
+    assert (item.due_date, item.state) == (dt.date(2026, 7, 20), "forecast")
+
+
+def test_an_unmapped_province_gives_no_first_year_fee_and_says_why(
+    db_session: Session, clock: Clock, estimates: Estimates
+) -> None:
+    entity = _entity(db_session, "it-company", isa=False)
+    _register(db_session, entity, dt.date(2026, 5, 10))
+    report = _refresh(db_session, entity, "OG")
+    assert _fee_rows(db_session, entity) == []
+    assert len([n for n in report.not_written if n.part == "chamber_fee"]) == 1

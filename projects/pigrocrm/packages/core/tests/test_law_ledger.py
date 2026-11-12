@@ -61,7 +61,7 @@ def test_the_ledger_records_each_yearly_section_by_its_own_years() -> None:
     assert set(recorded[STANDARD]["municipal_surcharge"]) == {"2025"}
     assert set(recorded["it-company:1"]["chamber_fee"]) == {"2026"}
     assert set(recorded["it-company:1"]["irap_rates"]) == {"2026"}
-    assert set(recorded["it-flat-rate:1"]["ceilings"]) == {"2023", "2024", "2025", "2026"}
+    assert set(recorded["it-flat-rate:1"]["ceilings"]) == {"2023", "2024", "2025", "2026", "2027"}
 
 
 def test_editing_a_recorded_irpef_bracket_fails_and_names_the_year_and_the_section() -> None:
@@ -192,7 +192,7 @@ def test_editing_a_ceiling_or_a_charge_is_caught_in_each_year_it_governs() -> No
         + IT_FLAT_RATE_PACK.ceilings[1:],
     )
     violations = law_ledger.check(ledger, {"it-flat-rate:1": edited}).violations
-    assert {(v.section, v.year) for v in violations} == {("ceilings", y) for y in range(2023, 2027)}
+    assert {(v.section, v.year) for v in violations} == {("ceilings", y) for y in range(2023, 2028)}
 
 
 def test_the_fingerprint_is_stable_and_sees_a_citation() -> None:
