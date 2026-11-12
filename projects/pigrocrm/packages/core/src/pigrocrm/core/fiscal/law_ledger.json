@@ -55,6 +55,22 @@
    "section": "irpef",
    "source": "D.P.R. 917/1986 art. 13 c. 5 and c. 6 and art. 12 c. 1-4 (Normattiva, read 2026-11-12); Agenzia delle Entrate, specifiche tecniche 2026 \u00a7\u00a7 20.2, 20.3, 21.4 and Redditi PF 2026 fasc. 1 rigo RN6; regional laws: Piemonte l.r. 4/2022 art. 2 c. 1-bis, Veneto l.r. 19/2005 art. 1 c. 5, Marche l.r. 5/2022 art. 1 c. 2, Campania l.r. 7/2022 art. 1, Puglia l.r. 40/2015 art. 3, Sardegna l.r. 48/2018 art. 2, Trento l.p. 13/2019 art. 1 c. 2-sexies, Bolzano l.p. 9/1998 art. 21-sexiesdecies c. 2-bis, 3, 4-bis, 4-ter (REB-1086 research)",
    "year": 2026
+  },
+  {
+   "fingerprint": "f792911a31c36828f593cb9bebb1d3472f052c13021db430893e46d15c70aeaf",
+   "pack": "it-company:1",
+   "reason": "REB-1086: each region's row now carries the rows its ATECO codes select and the notes of the regions that publish them; the ordinary rates are unchanged and were re-read against the dataset",
+   "section": "irap_rates",
+   "source": "Dipartimento delle Finanze, IRAP aliquote 2026 (irp2026.csv, read 2026-11-12); D.L. 21/2026 Tabella 1, Gazzetta Ufficiale n. 42 of 20-2-2026; Regione Emilia-Romagna, Allegato A of L.R. 1/2025",
+   "year": 2026
+  },
+  {
+   "fingerprint": "8be0b644084296da5646e21dc7ebcc0bca4c7670388da528333fe632627d12e7",
+   "pack": "it-company:1",
+   "reason": "REB-1086: the IRAP law carries table 1 of D.L. 21/2026; the pro-rating of c. 4-bis.2 is arithmetic, not data",
+   "section": "laws",
+   "source": "D.Lgs. 446/1997 art. 11 c. 4-bis.2 (Normattiva, read 2026-11-12); D.L. 20 February 2026 n. 21 art. 3 c. 1 and Tabella 1 (Gazzetta Ufficiale n. 42 of 20-2-2026)",
+   "year": 2026
   }
  ],
  "fingerprints": {

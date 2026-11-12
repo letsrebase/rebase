@@ -107,6 +107,9 @@ const TAXPAYER_KEYS = [
   'inps_over_65_reduction',
   'inps_new_enrolment_reduction',
   'inps_first_enrolment_month',
+  // REB-1086: the srl's activity, sent on every save and empty outside the srl regime.
+  'ateco_2007_code',
+  'ateco_2025_code',
 ]
 
 function renderPanel() {
@@ -466,6 +469,21 @@ describe('FiscalPanel', () => {
       apply_stamp_duty: false,
       profitability_coefficient: null,
     })
+  })
+
+  it('asks the srl for its ATECO codes and sends them, empty ones as not stated', async () => {
+    vi.mocked(api.GET).mockImplementation(() => ok(PROFILE))
+    vi.mocked(api.PUT).mockImplementation(() => ok({ ...ORDINARY, pack_id: 'it-company' }))
+    renderPanel()
+
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
+    expect(screen.queryByLabelText('Codice ATECO 2007')).not.toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByLabelText('Regime'), 'company')
+    await userEvent.type(screen.getByLabelText('Codice ATECO 2007'), ' 62.01.00 ')
+    expect(screen.getByLabelText('Codice ATECO 2025')).toHaveValue('')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+    expect(bodyOfSave()).toMatchObject({ ateco_2007_code: '62.01.00', ateco_2025_code: null })
   })
 
   it('sends the default bollo amounts when they were blanked before leaving the forfettario', async () => {

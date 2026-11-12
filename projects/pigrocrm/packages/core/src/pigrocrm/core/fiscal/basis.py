@@ -280,6 +280,7 @@ def _accrual(
                     contract_type=row.contract_type,  # type: ignore[arg-type]
                     cost=row.cost,
                     days_in_service=row.days_in_service,
+                    part_time_percent=row.part_time_percent,
                 )
                 for row in personnel.employees
             ],

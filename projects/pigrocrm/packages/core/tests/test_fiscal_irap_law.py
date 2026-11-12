@@ -10,7 +10,7 @@ from decimal import Decimal
 
 import pytest
 
-from pigrocrm.core.fiscal.law_irap import IRAP_LAW, IrapLaw
+from pigrocrm.core.fiscal.law_irap import IRAP_LAW, IrapActivity, IrapLaw
 from pigrocrm.core.fiscal.pack import IT_COMPANY_PACK, IT_STANDARD_PACK
 
 
@@ -178,14 +178,22 @@ def test_every_row_cites_its_publication() -> None:
     assert all(row.norm and row.name for row in table.rates)
 
 
+def _ordinary(year: int, key: str) -> Decimal | None:
+    row = IRAP_LAW.region_row(year, key)
+    return None if row is None else row.rate
+
+
 def test_rate_lookup_by_region_key_and_year() -> None:
-    assert IRAP_LAW.rate_for(2026, "03") == Decimal("3.90")  # Lombardia
-    assert IRAP_LAW.rate_for(2026, "12") == Decimal("4.82")  # Lazio
-    assert IRAP_LAW.rate_for(2026, "15") == Decimal("4.97")  # Campania
-    assert IRAP_LAW.rate_for(2026, "05") == Decimal("4.08")  # Veneto
-    assert IRAP_LAW.rate_for(2026, "BZ") == Decimal("3.90")
-    assert IRAP_LAW.rate_for(2026, " tn ") == Decimal("2.68")
-    assert IRAP_LAW.rate_for(2026, "20") == Decimal("2.93")  # Sardegna
+    assert _ordinary(2026, "03") == Decimal("3.90")  # Lombardia
+    assert _ordinary(2026, "12") == Decimal("4.82")  # Lazio
+    assert _ordinary(2026, "15") == Decimal("4.97")  # Campania
+    assert _ordinary(2026, "05") == Decimal("4.08")  # Veneto
+    assert _ordinary(2026, "BZ") == Decimal("3.90")
+    assert _ordinary(2026, " tn ") == Decimal("2.68")
+    assert _ordinary(2026, "20") == Decimal("2.93")  # Sardegna
+    # With the activity stated the lookup answers the rate the row of the region selects.
+    answer = IRAP_LAW.rate_for(2026, "12", IrapActivity("62.01.00", "62.10.00"))
+    assert answer is not None and answer.rate == Decimal("4.82")
 
 
 def test_rate_lookup_never_guesses() -> None:

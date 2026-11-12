@@ -20,6 +20,7 @@ from pigrocrm.core.fiscal.pack import (
 from pigrocrm.core.fiscal.regime import resolve_regime
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.fiscal.schemas import (
+    COMPANY_PARAMETERS,
     FLAT_RATE_ONLY,
     ORDINARY_PARAMETERS,
     TAXPAYER_PARAMETERS,
@@ -31,7 +32,7 @@ from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.versioning import require_unchanged
 
 # `inps_category` is read beside the facts: the law's pairings are between it and them.
-KEPT_PARAMETERS = ("inps_category", *TAXPAYER_PARAMETERS)
+KEPT_PARAMETERS = ("inps_category", *TAXPAYER_PARAMETERS, *COMPANY_PARAMETERS)
 ENTITY = "fiscal_profile"
 ZERO = Decimal("0.00")
 # The first half of the advisory lock every save takes per legal entity (REB-622), the second
@@ -285,7 +286,8 @@ class FiscalProfileService:
     def _check_taxpayer_parameters(payload: dict[str, Any]) -> None:
         """The facts of REB-1070, against the pack that reads them and against each other.
         The INPS facts belong to a person (`it-flat-rate`, `it-standard`), the flat-rate ones
-        to the flat-rate regime alone; an srl and a company abroad have none. The refusal
+        to the flat-rate regime alone; an srl and a company abroad have none; the ATECO codes
+        of REB-1086 belong to the srl alone. The refusal
         names the field, as the other pack refusals do. Only a value is refused: `None` is
         «not stated» everywhere."""
         pack_id = payload["pack_id"]
@@ -298,6 +300,8 @@ class FiscalProfileService:
             # The household is read by the IRPEF's detractions, which the flat-rate regime has
             # none of (REB-1087).
             refused = ORDINARY_PARAMETERS
+        if pack_id != PACK_IT_COMPANY:
+            refused = (*refused, *COMPANY_PARAMETERS)
         for key in refused:
             if payload.get(key) is not None:
                 whose = {

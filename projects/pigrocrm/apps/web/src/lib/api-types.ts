@@ -8338,6 +8338,11 @@ export interface components {
             cost: string;
             /** Days In Service */
             days_in_service: number;
+            /**
+             * Part Time Percent
+             * @default 100
+             */
+            part_time_percent: string;
         };
         /**
          * BasisLine
@@ -13072,6 +13077,10 @@ export interface components {
             /** Startup Predecessor Within Limit */
             startup_predecessor_within_limit: boolean | null;
             household: components["schemas"]["Household-Output"] | null;
+            /** Ateco 2007 Code */
+            ateco_2007_code: string | null;
+            /** Ateco 2025 Code */
+            ateco_2025_code: string | null;
             /** Iva Frequency */
             iva_frequency: string;
             /**
@@ -13208,6 +13217,10 @@ export interface components {
             /** Startup Predecessor Within Limit */
             startup_predecessor_within_limit?: boolean | null;
             household?: components["schemas"]["Household-Input"] | null;
+            /** Ateco 2007 Code */
+            ateco_2007_code?: string | null;
+            /** Ateco 2025 Code */
+            ateco_2025_code?: string | null;
             /**
              * Iva Frequency
              * @default monthly

@@ -48,6 +48,9 @@ class BasisEmployee(BaseModel):
     contract_type: Literal["permanent", "fixed_term", "seasonal"] | None
     cost: Decimal
     days_in_service: int
+    # The share of a full-time week, in percent: the 1,850 euro of art. 11 c. 4-bis.1 is reduced
+    # in proportion (c. 4-bis.2).
+    part_time_percent: Decimal = Decimal(100)
 
 
 class BasisCosts(BaseModel):

@@ -60,7 +60,8 @@ from pydantic import BaseModel, ConfigDict
 
 from pigrocrm.core.fiscal.basis_schemas import BasisEmployee, YearBasis
 from pigrocrm.core.fiscal.law import CompanyTaxLaw
-from pigrocrm.core.fiscal.law_irap import IrapLaw
+from pigrocrm.core.fiscal.law_irap import IrapActivity, IrapLaw, calendar_year_days
+from pigrocrm.core.fiscal.law_irap_ateco import IrapRateAnswer
 from pigrocrm.core.money import ZERO_MONEY, round_money
 from pigrocrm.core.places.locate import Place
 
@@ -136,18 +137,20 @@ def estimate_company_taxes(
     province: str | None,
     withholdings: Decimal | None = None,
     withholdings_source: str = "",
+    activity: IrapActivity | None = None,
 ) -> CompanyEstimate | None:
     """The estimate of IRES and IRAP for `basis`'s year, `None` when the law carries no IRAP
     table or the basis has no costs (a year on a basis that deducts none is no srl's).
     `withholdings` is what the customers withheld on the period's invoices, `None` when the pack
     states no rule for the year they are credited against (`withholdings_source` is that rule's
-    citation)."""
+    citation). `activity` is what the company states about its ATECO codes (REB-1086): the
+    regional rows that depend on them need it."""
     costs = basis.costs
     if costs is None or law.irap is None:
         return None
     return CompanyEstimate(
         ires=_ires(basis, law, withholdings, withholdings_source),
-        irap=_irap(basis, law, place, province),
+        irap=_irap(basis, law, place, province, activity),
     )
 
 
@@ -209,9 +212,14 @@ def _names(rows: list[BasisEmployee]) -> str:
     return ", ".join(row.name for row in rows)
 
 
-def _staff_deductions(basis: YearBasis, irap: IrapLaw) -> list[tuple[CompanyTaxLine | None, str]]:
+def _staff_deductions(
+    basis: YearBasis, irap: IrapLaw, period_days: int, year_days: int
+) -> list[tuple[CompanyTaxLine | None, str]]:
     """The deductions of art. 11 that need the staff's contract types (REB-1081): each a line
-    (`None` where nothing is deducted) and the sentence that says what was and was not applied."""
+    (`None` where nothing is deducted) and the sentence that says what was and was not applied.
+    The 1,850 euro of c. 4-bis.1 is «su base annua», pro rata to the days of the employment and
+    to the part-time share (c. 4-bis.2), and the 400,000 euro test reads the revenue brought to
+    the calendar year (REB-1086)."""
     costs = basis.costs
     assert costs is not None
     out: list[tuple[CompanyTaxLine | None, str]] = []
@@ -259,20 +267,30 @@ def _staff_deductions(basis: YearBasis, irap: IrapLaw) -> list[tuple[CompanyTaxL
     other = [row for row in employees if row.contract_type in ("fixed_term", "seasonal")]
     if other:
         rule = irap.per_employee
-        if basis.revenue > rule.components_limit:
+        annual_components = basis.revenue * year_days / period_days
+        if annual_components > rule.components_limit:
             out.append(
                 (
                     None,
-                    "La deduzione per dipendente (art. 11 c. 4-bis.1) non spetta: i ricavi "
-                    f"superano {rule.components_limit:,.0f} euro.",
+                    "La deduzione per dipendente (art. 11 c. 4-bis.1) non spetta: i ricavi"
+                    + (" ragguagliati all'anno solare" if period_days != year_days else "")
+                    + f" superano {rule.components_limit:,.0f} euro.",
                 )
             )
         else:
-            period_days = (basis.period_to - basis.period_from).days + 1
             rows = sorted(
                 (
                     (
-                        min(round_money(rule.amount * row.days_in_service / period_days), row.cost),
+                        min(
+                            round_money(
+                                rule.amount
+                                * row.days_in_service
+                                / year_days
+                                * row.part_time_percent
+                                / _HUNDRED
+                            ),
+                            row.cost,
+                        ),
                         row,
                     )
                     for row in other
@@ -293,20 +311,107 @@ def _staff_deductions(basis: YearBasis, irap: IrapLaw) -> list[tuple[CompanyTaxL
                         ),
                         f"Dedotti {rule.amount:,.0f} euro l'anno per dipendente non a tempo "
                         f"indeterminato, fino a {rule.max_employees}, in proporzione ai giorni "
-                        "e mai oltre il suo costo; apprendisti e lavoratori disabili, che la "
-                        "legge non conta, non sono distinti.",
+                        "di servizio sull'anno solare e al tempo parziale, e mai oltre il suo "
+                        "costo; apprendisti e lavoratori disabili, che la legge non conta, non "
+                        "sono distinti.",
                     )
                 )
     return out
 
 
+def _unanswered_reason(answer: IrapRateAnswer, region_name: str) -> str:
+    """Why a region gives no rate for this company, as the sentence of `missing`."""
+    match answer.unanswered:
+        case "ateco_2007_needed":
+            return (
+                f"Manca il codice ATECO 2007 dell'azienda: la Regione ({region_name}) applica "
+                "aliquote IRAP diverse a elenchi di attività e senza il codice non si sa quale "
+                "spetti. Indicalo in Impostazioni, Aziende."
+            )
+        case "ateco_2025_needed":
+            return (
+                "Manca il codice ATECO 2025 dell'azienda: serve a sapere se l'attività è nella "
+                "tabella 1 del D.L. 21/2026 (settore energetico, aliquota IRAP più alta di due "
+                "punti) o in un elenco della Regione. Indicalo in Impostazioni, Aziende."
+            )
+        case "list_not_decidable":
+            return {
+                "emilia_romagna_atecofin_2004": (
+                    f"La Regione ({region_name}) applica un'aliquota diversa ai settori ATECOFIN "
+                    "2004 23, 40, 64 e 67 e il pacchetto non ha la corrispondenza con i codici "
+                    "ATECO 2007: per questa attività non si sa quale aliquota IRAP si applichi."
+                ),
+                "basilicata_energy_lists": (
+                    f"La Regione ({region_name}) applica aliquote diverse ai settori dell'energia "
+                    "elettrica, del gas e del petrolio con elenchi di codici che la pubblicazione "
+                    "delle Finanze non permette di leggere con certezza: per questa attività non "
+                    "si sa quale aliquota IRAP si applichi."
+                ),
+            }.get(
+                answer.blocked_reason,
+                f"Il pacchetto non sa quale riga della tabella IRAP della Regione ({region_name}) "
+                "si applichi a questa attività.",
+            )
+        case _:
+            return (
+                f"La Regione ({region_name}) non pubblica un'aliquota IRAP per le attività della "
+                "tabella 1 del D.L. 21/2026 che il pacchetto possa applicare a questo codice."
+            )
+
+
+def _rate_sentences(
+    answer: IrapRateAnswer, region_name: str, activity: IrapActivity | None
+) -> list[str]:
+    """What a person reads about the rate that was applied: where it comes from, and the rows
+    that were left out."""
+    stated = activity is not None and (activity.ateco_2007 or activity.ateco_2025) is not None
+    out: list[str] = []
+    if answer.row is not None:
+        out.append(
+            f"Aliquota {answer.rate}% della Regione ({region_name}), riga {answer.row.code} "
+            f"della tabella delle Finanze, scelta dal codice ATECO indicato: {answer.row.text}. "
+            "Si considera una sola sede."
+        )
+    elif stated:
+        out.append(
+            f"Si applica l'aliquota ordinaria della regione della sede ({region_name}): nessuna "
+            "riga della sua tabella per attività si applica ai codici ATECO indicati. Si "
+            "considera una sola sede."
+        )
+    else:
+        out.append(
+            f"Si applica l'aliquota ordinaria della regione della sede ({region_name}), con una "
+            "sola sede: il codice ATECO dell'azienda non è indicato."
+        )
+    if "table_1_not_checked" in answer.notes:
+        out.append(
+            "Il codice ATECO 2025 non è indicato: l'aumento di due punti dell'aliquota IRAP "
+            "per le imprese energetiche (tabella 1 del D.L. 21/2026, anni 2026 e 2027) non è "
+            "verificato."
+        )
+    out.extend(
+        f"La Regione prevede anche un'aliquota ridotta del {note.rate}% (riga {note.code}: "
+        f"{note.text}) con i suoi requisiti"
+        + (" e il regime «de minimis»" if note.aid else "")
+        + ": non è applicata."
+        for note in answer.reductions
+    )
+    return out
+
+
 def _irap(
-    basis: YearBasis, law: CompanyTaxLaw, place: Place, province: str | None
+    basis: YearBasis,
+    law: CompanyTaxLaw,
+    place: Place,
+    province: str | None,
+    activity: IrapActivity | None,
 ) -> CompanyTaxEstimate:
     costs = basis.costs
     irap = law.irap
     assert costs is not None and irap is not None
     value = round_money(basis.revenue - costs.purchases)
+    period_days = (basis.period_to - basis.period_from).days + 1
+    year_days = calendar_year_days(basis.period_to)
     lines = [
         CompanyTaxLine(code="revenue", label="Ricavi di competenza", amount=basis.revenue),
         CompanyTaxLine(code="purchases", label="Acquisti", amount=-costs.purchases),
@@ -317,15 +422,21 @@ def _irap(
         "registra (ammortamenti, variazioni di rimanenze, altri ricavi e proventi).",
         "Il costo del personale e i compensi degli amministratori restano nella base (art. 5 "
         "D.Lgs. 446/1997), salvo le deduzioni dell'art. 11 indicate qui sotto.",
-        "Si applica l'aliquota ordinaria della regione della sede, con una sola sede.",
     ]
+    if period_days != year_days:
+        assumptions.append(
+            f"Il periodo è di {period_days} giorni: la deduzione per basi ridotte, la soglia "
+            "dei ricavi e la deduzione per dipendente sono ragguagliate all'anno solare (art. 11 "
+            f"c. 4-bis.2) su {year_days} giorni, l'anno in cui chiude il periodo; nessuna "
+            "fonte letta dice come contare i giorni di un anno bisestile."
+        )
     deducted = value
-    for line, text in _staff_deductions(basis, irap):
+    for line, text in _staff_deductions(basis, irap, period_days, year_days):
         if line is not None:
             lines.append(line)
             deducted = round_money(deducted + line.amount)
         assumptions.append(text)
-    small = irap.small_base_deduction(deducted)
+    small = round_money(irap.small_base_deduction(deducted, period_days, year_days))
     if small != 0:
         lines.append(
             CompanyTaxLine(
@@ -346,12 +457,18 @@ def _irap(
             "senza la regione non si sa quale aliquota IRAP applicare."
         )
     else:
-        rate = irap.rate_for(basis.year, key)
-        if rate is None:
+        answer = irap.rate_for(basis.year, key, activity)
+        row = irap.region_row(basis.year, key)
+        if answer is None or row is None:
             missing = (
                 f"Il pacchetto fiscale non ha l'aliquota IRAP {basis.year} della regione "
                 f"della sede ({key})."
             )
+        elif answer.rate is None:
+            missing = _unanswered_reason(answer, row.name)
+        else:
+            rate = answer.rate
+            assumptions.extend(_rate_sentences(answer, row.name, activity))
     if loss:
         assumptions.append("Il valore della produzione è negativo: l'IRAP stimata è zero.")
     amount: Decimal | None = None

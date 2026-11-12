@@ -341,6 +341,8 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   inps_new_enrolment_reduction: 'Riduzione INPS per i nuovi iscritti',
   inps_first_enrolment_month: 'Mese della prima iscrizione',
   ateco_group: 'Gruppo ATECO',
+  ateco_2007_code: 'Codice ATECO 2007',
+  ateco_2025_code: 'Codice ATECO 2025',
   flat_rate_start_year: 'Anno di inizio attività',
   startup_no_prior_activity: 'Nessuna attività prima dell’inizio',
   startup_not_a_continuation: 'Non è la prosecuzione di un lavoro precedente',

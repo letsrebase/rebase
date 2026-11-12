@@ -56,6 +56,7 @@ from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService, reading_for_
 from pigrocrm.core.fiscal.inps_paid import inps_paid_in_year
 from pigrocrm.core.fiscal.law import DeclaredTax, TaxYearLaw
 from pigrocrm.core.fiscal.law_inps import InpsCategoryName, TradeGestione
+from pigrocrm.core.fiscal.law_irap import IrapActivity
 from pigrocrm.core.fiscal.ordinary_estimate import (
     ORDINARY_WARNING,
     InpsFacts,
@@ -69,6 +70,7 @@ from pigrocrm.core.fiscal.repository import (
     TaxAdvanceMethodRepository,
 )
 from pigrocrm.core.fiscal.schemas import (
+    COMPANY_PARAMETERS,
     TAXPAYER_PARAMETERS,
     DeclaredTaxFigureRead,
     FiscalProfileRead,
@@ -97,6 +99,7 @@ FROZEN_PARAMETERS = {
     "inps_category",
     "isa",
     *TAXPAYER_PARAMETERS,
+    *COMPANY_PARAMETERS,
 }
 MAX_DAYS_MONTHS = 120
 # The same floor the year routes have, and a lookback of three months before `da` that
@@ -946,6 +949,9 @@ class AnalyticsService:
             province=legal_entity.province,
             withholdings=withheld,
             withholdings_source=credit_rule.source if credit_rule is not None else "",
+            activity=IrapActivity(
+                ateco_2007=profile.ateco_2007_code, ateco_2025=profile.ateco_2025_code
+            ),
         )
         if company is None:
             return estimate

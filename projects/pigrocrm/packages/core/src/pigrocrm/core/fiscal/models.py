@@ -152,6 +152,10 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
     startup_no_prior_activity: Mapped[bool | None] = mapped_column(Boolean, default=None)
     startup_not_a_continuation: Mapped[bool | None] = mapped_column(Boolean, default=None)
     startup_predecessor_within_limit: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    # REB-1086: an srl's prevailing ATECO code, once per classification (`NN.NN.NN`). The
+    # regional IRAP rows read them (`law_irap_ateco.py`); `None` = not stated.
+    ateco_2007_code: Mapped[str | None] = mapped_column(String(8), default=None)
+    ateco_2025_code: Mapped[str | None] = mapped_column(String(8), default=None)
     # REB-1021, suppliers design § 6: how often the legal entity settles its IVA. Only a pack
     # with a periodic IVA reads it (`FiscalPack.law_for(year).iva`); on the others it stays
     # `monthly` and means nothing. Quarterly is an option the entity exercises in its annual
