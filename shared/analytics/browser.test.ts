@@ -28,12 +28,11 @@ let init: ReturnType<typeof vi.mocked<typeof posthogModule.init>>
 /** The SDK chunk has landed and the queued calls have been replayed. */
 const settled = () => vi.dynamicImportSettled()
 
-function stubBrowser(consent: string | null, legacy: string | null = null) {
+function stubBrowser(consent: string | null) {
   vi.stubGlobal('window', {
     location: { hostname: 'letsrebase.com' },
     localStorage: {
-      getItem: (key: string) =>
-        key === 'rebase.consent' ? consent : key === 'orbiters.consent' ? legacy : null,
+      getItem: (key: string) => (key === 'rebase.consent' ? consent : null),
     },
   })
 }
@@ -198,11 +197,8 @@ describe('on a page with public routes (requireConsent)', () => {
     expect(init).not.toHaveBeenCalled()
   })
 
-  it.each([
-    ['rebase.consent', 'granted', null],
-    ['orbiters.consent', null, 'granted'],
-  ])('measures after a yes (%s)', async (_key, current, legacy) => {
-    stubBrowser(current, legacy)
+  it('measures after a yes', async () => {
+    stubBrowser('granted')
     expect(a.initAnalytics({ hostname: 'letsrebase.com', requireConsent: true })).toBe(true)
     await settled()
     expect(init).toHaveBeenCalledTimes(1)

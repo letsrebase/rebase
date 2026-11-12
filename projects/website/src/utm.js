@@ -23,11 +23,6 @@
   var UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'utm_id']
   var UTM_STORAGE_KEY = 'rebase.utm'
   var ORIGIN_STORAGE_KEY = 'rebase.from'
-  /* What the two keys were called until REB-668. A tab opened before the rename may still
-     hold them, and the hub reads them as a fallback; writing the new key drops the old
-     one so the tab keeps a single copy. Gone with REB-697. */
-  var LEGACY_UTM_STORAGE_KEY = 'orbiters.utm'
-  var LEGACY_ORIGIN_STORAGE_KEY = 'orbiters.da'
   /* `rebase.from` was `rebase.da` until the 2026-11 English rename; the hub reads both
      for 30 days (until 2026-12-03), and a write drops the old one. */
   var PREVIOUS_ORIGIN_STORAGE_KEY = 'rebase.da'
@@ -58,10 +53,8 @@
     try {
       if (keys.length) {
         window.sessionStorage.setItem(UTM_STORAGE_KEY, utm.toString())
-        window.sessionStorage.removeItem(LEGACY_UTM_STORAGE_KEY)
       }
       window.sessionStorage.setItem(ORIGIN_STORAGE_KEY, page)
-      window.sessionStorage.removeItem(LEGACY_ORIGIN_STORAGE_KEY)
       window.sessionStorage.removeItem(PREVIOUS_ORIGIN_STORAGE_KEY)
     } catch {
       /* storage refused: the links still carry everything */

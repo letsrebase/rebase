@@ -14,7 +14,6 @@
  */
 ;(function () {
   var STORAGE_KEY = 'rebase.consent'
-  var LEGACY_STORAGE_KEY = 'orbiters.consent'
   var GRANTED = 'granted'
   var COOKIE_DOMAIN = '.letsrebase.com'
 
@@ -46,10 +45,9 @@
 
   function withdraw() {
     try {
-      var stored = window.localStorage.getItem(STORAGE_KEY) || window.localStorage.getItem(LEGACY_STORAGE_KEY)
+      var stored = window.localStorage.getItem(STORAGE_KEY)
       if (stored === GRANTED) {
         window.localStorage.removeItem(STORAGE_KEY)
-        window.localStorage.removeItem(LEGACY_STORAGE_KEY)
         clearStorage(window.localStorage)
         clearStorage(window.sessionStorage)
         clearCookies()

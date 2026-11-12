@@ -68,18 +68,11 @@ describe('carryUtm', () => {
     expect(window.sessionStorage.getItem('rebase.from')).toBe('pigrocrm')
   })
 
-  it('drops the names the keys had before REB-668 when it writes the new ones', () => {
-    // A tab opened before the rename still holds `orbiters.*`; the hub reads those as a
-    // fallback, so leaving a stale campaign beside the fresh one would be the wrong copy
-    // surviving a release skew.
-    window.sessionStorage.setItem('orbiters.utm', 'utm_source=old')
-    window.sessionStorage.setItem('orbiters.da', 'home')
+  it('drops the name `rebase.from` had before the 2026-11 rename when it writes the new one', () => {
     window.sessionStorage.setItem('rebase.da', 'home')
     load().carryUtm(fixture(['/hub/freelance']), '?utm_source=linkedin', '/pigrocrm')
     expect(window.sessionStorage.getItem('rebase.utm')).toBe('utm_source=linkedin')
     expect(window.sessionStorage.getItem('rebase.from')).toBe('pigrocrm')
-    expect(window.sessionStorage.getItem('orbiters.utm')).toBeNull()
-    expect(window.sessionStorage.getItem('orbiters.da')).toBeNull()
     expect(window.sessionStorage.getItem('rebase.da')).toBeNull()
   })
 

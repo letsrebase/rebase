@@ -56,7 +56,7 @@ from rebase_api.deps import (
     SessionOpenerDep,
     SettingsDep,
     clear_member_cookie,
-    session_tokens,
+    session_token,
     set_member_cookie,
 )
 from rebase_api.downloads import cv_response, pdf_response, perk_response
@@ -289,6 +289,7 @@ def logout(
     request: Request, response: Response, session: SessionDep, settings: SettingsDep
 ) -> None:
     users = UserService(session, settings)
-    for raw in session_tokens(request):
+    raw = session_token(request)
+    if raw:
         users.close_session(raw)
     clear_member_cookie(response, settings)
