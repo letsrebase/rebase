@@ -84,6 +84,7 @@ POLICIED = {
     "tax_instalment_plans",
     "tax_notice_plans",
     "tax_credits",
+    "legal_entity_sites",
     "f24_groups",
     "f24_group_items",
     "f24_group_receipts",

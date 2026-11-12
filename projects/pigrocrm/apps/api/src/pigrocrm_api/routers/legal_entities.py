@@ -33,6 +33,13 @@ from pigrocrm.core.legal_entities.schemas import (
     LegalEntityUpsert,
 )
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.legal_entities.site_schemas import (
+    IrapRegionOption,
+    LegalEntitySiteCreate,
+    LegalEntitySiteRead,
+    LegalEntitySiteUpdate,
+)
+from pigrocrm.core.legal_entities.site_service import LegalEntitySiteService
 from pigrocrm.core.places.locate import MunicipalityOption, municipalities_of
 from pigrocrm.core.validation import SafeStr
 from pigrocrm_api.deps import ActorDep, SessionDep, StorageDep, get_actor
@@ -105,6 +112,13 @@ def list_municipalities(
     return municipalities_of(province)
 
 
+@router.get("/regions", response_model=list[IrapRegionOption])
+def list_irap_regions(session: SessionDep) -> list[IrapRegionOption]:
+    """The regions and autonomous provinces a site can be in (REB-1092): the keys of the IRAP
+    rate table, in the order the fiscal pack lists them."""
+    return LegalEntitySiteService(session).list_irap_regions()
+
+
 @router.get("/{legal_entity_id}", response_model=LegalEntityRead)
 def get_legal_entity(
     legal_entity_id: UUID, session: SessionDep, actor: ActorDep
@@ -139,6 +153,50 @@ def deactivate_legal_entity(
     how many organizations still point at the row (`linked_organizations`): nothing new is
     born under them until they are moved to an active legal entity."""
     return LegalEntityService(session).deactivate(legal_entity_id, actor)
+
+
+@router.get("/{legal_entity_id}/sites", response_model=list[LegalEntitySiteRead])
+def list_legal_entity_sites(
+    legal_entity_id: UUID, session: SessionDep, actor: ActorDep
+) -> list[LegalEntitySiteRead]:
+    """The places of business beside the registered office, each with how many staff work
+    there (REB-1092). An srl with sites in more than one region splits its IRAP base between
+    them by the staff's pay."""
+    return LegalEntitySiteService(session).list_legal_entity_sites(legal_entity_id, actor)
+
+
+@router.post(
+    "/{legal_entity_id}/sites",
+    response_model=LegalEntitySiteRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_legal_entity_site(
+    legal_entity_id: UUID, data: LegalEntitySiteCreate, session: SessionDep, actor: ActorDep
+) -> LegalEntitySiteRead:
+    """Administrators only, and a person's act: no agent credential reaches it."""
+    return LegalEntitySiteService(session).add_legal_entity_site(legal_entity_id, data, actor)
+
+
+@router.patch("/{legal_entity_id}/sites/{site_id}", response_model=LegalEntitySiteRead)
+def update_legal_entity_site(
+    legal_entity_id: UUID,
+    site_id: UUID,
+    data: LegalEntitySiteUpdate,
+    session: SessionDep,
+    actor: ActorDep,
+) -> LegalEntitySiteRead:
+    return LegalEntitySiteService(session).update_legal_entity_site(
+        legal_entity_id, site_id, data, actor
+    )
+
+
+@router.delete("/{legal_entity_id}/sites/{site_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_legal_entity_site(
+    legal_entity_id: UUID, site_id: UUID, session: SessionDep, actor: ActorDep
+) -> Response:
+    """Refused with 409 while staff are assigned to the site: move them first."""
+    LegalEntitySiteService(session).remove_legal_entity_site(legal_entity_id, site_id, actor)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{legal_entity_id}/fiscal-profile", response_model=FiscalProfileRead)

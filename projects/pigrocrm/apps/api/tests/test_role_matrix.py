@@ -689,6 +689,20 @@ ROWS: list[Row] = [
     ),
     Row("POST", "/api/legal-entities/{legal_entity_id}/default", admin_only=True),
     Row("DELETE", "/api/legal-entities/{legal_entity_id}", admin_only=True),
+    # The places of business beside the registered office (REB-1092).
+    Row(
+        "POST",
+        "/api/legal-entities/{legal_entity_id}/sites",
+        admin_only=True,
+        body={"region": "05"},
+    ),
+    Row(
+        "PATCH",
+        "/api/legal-entities/{legal_entity_id}/sites/{site_id}",
+        admin_only=True,
+        body={"city": "Padova"},
+    ),
+    Row("DELETE", "/api/legal-entities/{legal_entity_id}/sites/{site_id}", admin_only=True),
     # The logo and the signature (REB-628): admin writes, every role reads them, since
     # the panel's preview and every PDF header need them.
     Row("PUT", "/api/legal-entities/{legal_entity_id}/logo", admin_only=True, multipart=True),

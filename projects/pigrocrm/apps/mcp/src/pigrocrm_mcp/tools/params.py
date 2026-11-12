@@ -192,11 +192,19 @@ def _compact(node: Any) -> Any:
     return node
 
 
+def _staff_schema() -> dict[str, Any]:
+    """The update model's schema without the workplace (REB-1092): the sites are a person's to
+    state in the application and no tool lists their ids, so offering the fields would only cost
+    the tool surface bytes for something an agent cannot fill in."""
+    schema = StaffMemberUpdate.model_json_schema()
+    for field in ("site_id", "at_registered_office"):
+        schema["properties"].pop(field, None)
+    return schema
+
+
 # A staff member's own fields: the update model's names and types, compacted, because the tool
 # surface has a byte budget and pay has many fields (`test_mcp_tool_annotations.py`).
-StaffFields = Annotated[
-    dict[str, Any], WithJsonSchema(_compact(StaffMemberUpdate.model_json_schema()))
-]
+StaffFields = Annotated[dict[str, Any], WithJsonSchema(_compact(_staff_schema()))]
 
 # A bank account's own fields, compacted for the same reason.
 BankAccountFields = Annotated[

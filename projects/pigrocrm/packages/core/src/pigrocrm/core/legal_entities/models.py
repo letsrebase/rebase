@@ -6,10 +6,12 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Date,
+    ForeignKey,
     Index,
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
     func,
     select,
     text,
@@ -165,3 +167,29 @@ class LegalEntity(Base, PrimaryKeyMixin, TimestampMixin):
             postgresql_where=text("tax_code IS NOT NULL"),
         ),
     )
+
+
+class LegalEntitySite(Base, PrimaryKeyMixin, TimestampMixin):
+    """A place of business of a legal entity beside its registered office (REB-1092): an
+    establishment, yard, office or fixed base in a region (art. 4 c. 2 D.Lgs. 446/1997).
+
+    `region` is the key of the IRAP rate table (an ISTAT region code, or `BZ` or `TN` for the two
+    autonomous provinces), the one fact the tax needs and the only one required; `city` and
+    `address` say where, for the person reading the list, and decide nothing. The registered
+    office is not a row here: it is the legal entity's own address, and a staff member works at it
+    by `staff_members.at_registered_office`. The row names nothing computed.
+
+    `(id, legal_entity_id)` is unique so that a staff member's assignment can point at the pair and
+    never at a site of another legal entity.
+    """
+
+    __tablename__ = "legal_entity_sites"
+    __table_args__ = (
+        UniqueConstraint("id", "legal_entity_id", name="uq_legal_entity_sites_id_legal_entity_id"),
+        Index("ix_legal_entity_sites_legal_entity_id", "legal_entity_id"),
+    )
+
+    legal_entity_id: Mapped[UUID] = mapped_column(ForeignKey("legal_entities.id"), nullable=False)
+    region: Mapped[str] = mapped_column(String(2), nullable=False)
+    city: Mapped[str | None] = mapped_column(String(120), default=None)
+    address: Mapped[str | None] = mapped_column(String(255), default=None)

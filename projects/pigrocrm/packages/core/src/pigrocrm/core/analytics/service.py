@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import cast
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -51,10 +52,11 @@ from pigrocrm.core.fiscal.ceiling import (
     evaluate_ceiling,
     evaluate_pack,
 )
-from pigrocrm.core.fiscal.company_estimate import estimate_company_taxes
+from pigrocrm.core.fiscal.company_estimate import estimate_company_taxes, irap_region_key
 from pigrocrm.core.fiscal.declared import DeclaredTaxFigureService, reading_for_year
 from pigrocrm.core.fiscal.income_facts import read_income_variations
 from pigrocrm.core.fiscal.inps_paid import inps_paid_in_year
+from pigrocrm.core.fiscal.irap_sites import SiteFacts, SitePlace, splits
 from pigrocrm.core.fiscal.law import DeclaredTax, TaxYearLaw
 from pigrocrm.core.fiscal.law_inps import InpsCategoryName, TradeGestione
 from pigrocrm.core.fiscal.law_irap import IrapActivity
@@ -85,10 +87,11 @@ from pigrocrm.core.fiscal.withholdings_suffered import (
     withholdings_suffered,
 )
 from pigrocrm.core.invoices.models import InvoiceLine
-from pigrocrm.core.legal_entities.models import LegalEntity
+from pigrocrm.core.legal_entities.models import LegalEntity, LegalEntitySite
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.money import ZERO_MONEY, round_money, share
-from pigrocrm.core.places.locate import locate
+from pigrocrm.core.places.locate import Place, locate
+from pigrocrm.core.staff.payroll import PayrollService
 
 ENTITY = "analytics"
 # What a frozen estimate keeps of the profile (REB-974): the taxpayer's parameters, the
@@ -946,10 +949,11 @@ class AnalyticsService:
             if credit_rule is not None and credit_rule.income_basis == "accrual"
             else None
         )
+        place = locate(legal_entity.city, legal_entity.province, legal_entity.country)
         company = estimate_company_taxes(
             basis,
             law.company_tax,
-            place=locate(legal_entity.city, legal_entity.province, legal_entity.country),
+            place=place,
             province=legal_entity.province,
             withholdings=withheld,
             withholdings_source=credit_rule.source if credit_rule is not None else "",
@@ -960,6 +964,7 @@ class AnalyticsService:
                 self.session, legal_entity, pack, "ires", basis, income=income
             ),
             variations=read_income_variations(self.session, legal_entity, basis, pack),
+            sites=self._irap_sites(legal_entity, basis, place),
         )
         if company is None:
             return estimate
@@ -974,6 +979,36 @@ class AnalyticsService:
                 ),
             }
         )
+
+    def _irap_sites(
+        self, legal_entity: LegalEntity, basis: YearBasis, place: Place
+    ) -> SiteFacts | None:
+        """The legal entity's places of business, and the pay of its staff when one of them is in
+        another region than the registered office's (REB-1092): the staff's pay is the costly
+        read and only the split of art. 4 c. 2 needs it. `None` for a legal entity with no site."""
+        rows = list(
+            self.session.execute(
+                select(LegalEntitySite)
+                .where(LegalEntitySite.legal_entity_id == legal_entity.id)
+                .order_by(LegalEntitySite.region, LegalEntitySite.city, LegalEntitySite.id)
+            ).scalars()
+        )
+        if not rows:
+            return None
+        sites = tuple(
+            SitePlace(
+                id=row.id,
+                region=row.region,
+                label=", ".join(part for part in (row.city, row.address) if part) or row.region,
+            )
+            for row in rows
+        )
+        if not splits(irap_region_key(place, legal_entity.province), sites):
+            return SiteFacts(sites=sites, staff=())
+        pay = PayrollService(self.session).staff_pay_in_range(
+            legal_entity.id, basis.period_from, basis.period_to
+        )
+        return SiteFacts(sites=sites, staff=pay.staff, unpriced=pay.unpriced)
 
     def _ordinary_estimate(
         self,
