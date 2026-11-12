@@ -77,6 +77,7 @@ A negative value of production gives a tax of zero and says so.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
@@ -173,7 +174,7 @@ def estimate_company_taxes(
     withholdings: Decimal | None = None,
     withholdings_source: str = "",
     activity: IrapActivity | None = None,
-    losses: LossOffset | None = None,
+    losses: Callable[[Decimal], LossOffset | None] | None = None,
     variations: IncomeVariations | None = None,
 ) -> CompanyEstimate | None:
     """The estimate of IRES and IRAP for `basis`'s year, `None` when the law carries no IRAP
@@ -181,8 +182,9 @@ def estimate_company_taxes(
     `withholdings` is what the customers withheld on the period's invoices, `None` when the pack
     states no rule for the year they are credited against (`withholdings_source` is that rule's
     citation). `activity` is what the company states about its ATECO codes (REB-1086): the
-    regional rows that depend on them need it. `losses` is what the losses of earlier years take
-    off the IRES base (`fiscal/loss_carry.py`), `None` when there is none to carry."""
+    regional rows that depend on them need it. `losses` answers what the losses of earlier years
+    take off the IRES base for the income it is given, the profit after the variations
+    (`fiscal/loss_carry.py`), `None` when there is none to carry; `None` for no function at all."""
     costs = basis.costs
     if costs is None or law.irap is None:
         return None
@@ -198,7 +200,7 @@ def _ires(
     law: CompanyTaxLaw,
     withholdings: Decimal | None,
     withholdings_source: str,
-    losses: LossOffset | None,
+    losses: Callable[[Decimal], LossOffset | None] | None,
     variations: IncomeVariations | None,
     irap: CompanyTaxEstimate,
 ) -> CompanyTaxEstimate:
@@ -228,20 +230,20 @@ def _ires(
     assumptions = [
         *(line.reason for line in basis.left_out),
         *adjustment.assumptions,
-        "Le perdite degli anni precedenti non sono riportate: ogni anno è stimato da solo.",
     ]
     loss = profit < 0
     if loss:
         assumptions.append("L'anno chiude in perdita: l'IRES stimata è zero.")
-    if losses is None:
+    offset = losses(profit) if losses is not None else None
+    if offset is None:
         assumptions.append(
             "Non risultano perdite di anni precedenti da riportare: se ce n'è una, scrivila tra "
             "le perdite dell'azienda."
         )
         used = ZERO_MONEY
     else:
-        assumptions += losses.assumptions
-        if losses.missing:
+        assumptions += offset.assumptions
+        if offset.missing:
             return CompanyTaxEstimate(
                 lines=lines,
                 base=None,
@@ -249,13 +251,13 @@ def _ires(
                 amount=None,
                 loss=loss,
                 missing=" ".join(
-                    [*losses.missing, *([adjustment.missing] if adjustment.missing else [])]
+                    [*offset.missing, *([adjustment.missing] if adjustment.missing else [])]
                 ),
                 withholdings=withholdings,
                 assumptions=assumptions,
-                losses=losses,
+                losses=offset,
             )
-        used = losses.used
+        used = offset.used
         if used > 0:
             lines.append(
                 CompanyTaxLine(
@@ -295,7 +297,7 @@ def _ires(
         credit=credit,
         missing=adjustment.missing,
         assumptions=assumptions,
-        losses=losses,
+        losses=offset,
     )
 
 

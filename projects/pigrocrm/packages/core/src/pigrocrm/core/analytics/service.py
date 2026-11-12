@@ -956,7 +956,9 @@ class AnalyticsService:
             activity=IrapActivity(
                 ateco_2007=profile.ateco_2007_code, ateco_2025=profile.ateco_2025_code
             ),
-            losses=loss_offset_for(self.session, legal_entity, pack, "ires", basis),
+            losses=lambda income: loss_offset_for(
+                self.session, legal_entity, pack, "ires", basis, income=income
+            ),
             variations=read_income_variations(self.session, legal_entity, basis, pack),
         )
         if company is None:
