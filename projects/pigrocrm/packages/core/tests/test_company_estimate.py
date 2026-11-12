@@ -22,6 +22,7 @@ The worked example, a Milan srl (Lombardia, 3.90%) in 2026:
 import datetime as dt
 from decimal import Decimal
 from itertools import count
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -156,6 +157,7 @@ def _employee(
     start: dt.date,
     *,
     disabled: bool | None = None,
+    **extra: Any,
 ) -> None:
     StaffService(session).create_staff_member(
         EmployeeCreate(
@@ -167,6 +169,7 @@ def _employee(
             employer_inps_rate=M("30.00"),
             contract_type=contract_type,  # type: ignore[arg-type]
             disabled_worker=disabled,
+            **extra,
         ),
         STAFF_ADMIN,
     )
@@ -458,8 +461,12 @@ def test_mixed_contract_types_each_get_their_own_deduction(db_session: Session) 
     ]
     # 80,000 - 31,200 - 2 x 1,850 - 8,000 = 37,100; 3.90% = 1,446.90.
     assert (company.irap.base, company.irap.amount) == (M("37100.00"), M("1446.90"))
-    # The seasonal 70% needs facts the records do not hold: said, not applied.
-    assert any("stagionali" in text and "Anna Neri" in text for text in company.irap.assumptions)
+    # The seasonal 70% needs the contract history, which the records do not hold: said, not
+    # applied.
+    assert any(
+        "70%" in text and "Anna Neri" in text and "storico" in text
+        for text in company.irap.assumptions
+    )
 
 
 def test_a_part_year_fixed_term_employee_is_deducted_pro_rata(db_session: Session) -> None:
@@ -571,6 +578,93 @@ def test_a_disabled_worker_with_no_contract_type_is_deducted_not_named_untyped(
     assert company is not None
     assert "excluded_staff" in _excluded_codes(company)
     assert not any("tipo di contratto non è indicato" in t for t in company.irap.assumptions)
+
+
+def _seasonal(first_days: int, second_days: int, **extra: Any) -> dict[str, Any]:
+    """A seasonal worker in service all year with a contract in 2025 and one in 2026."""
+    return {
+        "seasonal_contracts": [
+            {
+                "start_date": "2025-06-01",
+                "end_date": "2025-09-30",
+                "worked_days": {2025: first_days},
+            },
+            {
+                "start_date": "2026-06-01",
+                "end_date": "2026-09-30",
+                "worked_days": {2026: second_days},
+            },
+        ],
+        **extra,
+    }
+
+
+def test_a_seasonal_worker_with_a_qualifying_history_gets_70_percent_and_not_the_1850(
+    db_session: Session,
+) -> None:
+    entity = _srl(db_session)
+    _revenue(db_session, entity, "100000.00")
+    _employee(
+        db_session, entity, "Sara Stagionale", "seasonal", D(YEAR, 1, 1), **_seasonal(90, 100)
+    )
+    company = _estimate(db_session, entity).company
+    assert company is not None
+
+    lines = {line.code: line.amount for line in company.irap.lines}
+    # 31,200 of cost (24,000 plus 30%), 70%, for 100 of the 365 days in service.
+    assert lines["seasonal_staff"] == -M("5983.56")
+    assert "per_employee" not in lines
+    text = " ".join(company.irap.assumptions)
+    assert "Sara Stagionale" in text and "non si applicano anche i 1,850 euro" in text
+
+
+def test_the_inail_premium_stays_out_of_the_70_percent(db_session: Session) -> None:
+    entity = _srl(db_session)
+    _revenue(db_session, entity, "100000.00")
+    _employee(
+        db_session,
+        entity,
+        "Sara Stagionale",
+        "seasonal",
+        D(YEAR, 1, 1),
+        **_seasonal(90, 100, employer_inail_rate=M("1.000")),
+    )
+    company = _estimate(db_session, entity).company
+    assert company is not None
+    lines = {line.code: line.amount for line in company.irap.lines}
+    # Cost 24,000 x 1.31 = 31,440 with 240 of INAIL: 70% of 31,200 for 100/365 days.
+    assert lines["seasonal_staff"] == -M("5983.56")
+
+
+def test_a_seasonal_worker_below_120_days_keeps_the_1850_and_the_reason_is_said(
+    db_session: Session,
+) -> None:
+    entity = _srl(db_session)
+    _revenue(db_session, entity, "100000.00")
+    _employee(db_session, entity, "Sara Stagionale", "seasonal", D(YEAR, 1, 1), **_seasonal(60, 30))
+    company = _estimate(db_session, entity).company
+    assert company is not None
+    codes = _excluded_codes(company)
+    assert "seasonal_staff" not in codes and "per_employee" in codes
+    said = [t for t in company.irap.assumptions if "Sara Stagionale" in t and "non spetta" in t]
+    assert len(said) == 1 and "90 giorni" in said[0]
+
+
+def test_a_seasonal_worker_with_a_year_not_stated_is_named_and_not_deducted(
+    db_session: Session,
+) -> None:
+    entity = _srl(db_session)
+    _revenue(db_session, entity, "100000.00")
+    contracts = _seasonal(90, 100)
+    contracts["seasonal_contracts"][1]["worked_days"] = {}
+    _employee(db_session, entity, "Sara Stagionale", "seasonal", D(YEAR, 1, 1), **contracts)
+    company = _estimate(db_session, entity).company
+    assert company is not None
+    assert "seasonal_staff" not in _excluded_codes(company)
+    said = [
+        t for t in company.irap.assumptions if "Sara Stagionale" in t and "non è applicato" in t
+    ]
+    assert len(said) == 1 and "2026" in said[0]
 
 
 def test_a_director_has_no_contract_type(db_session: Session) -> None:

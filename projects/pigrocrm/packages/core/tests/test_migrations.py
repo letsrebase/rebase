@@ -4902,3 +4902,19 @@ def test_0121_adds_the_disabled_worker_fact_with_no_backfill(pigrocrm_postgres: 
         assert not _column_exists(url, "staff_members", "disabled_worker")
         upgrade(config, "0121")
         assert _column_exists(url, "staff_members", "disabled_worker")
+
+
+def test_0122_adds_the_seasonal_contract_history_with_no_backfill(pigrocrm_postgres: Any) -> None:
+    """REB-1090: one nullable JSONB column («not stated»), no backfill; both ways keep the rows
+    that are there."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0121")
+        assert not _column_exists(url, "staff_members", "seasonal_contracts")
+        upgrade(config, "0122")
+        assert _column_exists(url, "staff_members", "seasonal_contracts")
+        downgrade(config, "0121")
+        assert not _column_exists(url, "staff_members", "seasonal_contracts")
+        upgrade(config, "0122")
+        assert _column_exists(url, "staff_members", "seasonal_contracts")

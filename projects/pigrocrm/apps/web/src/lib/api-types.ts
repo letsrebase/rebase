@@ -8375,6 +8375,13 @@ export interface components {
             part_time_percent: string;
             /** Disabled Worker */
             disabled_worker?: boolean | null;
+            /**
+             * Inail
+             * @default 0
+             */
+            inail: string;
+            /** Seasonal Contracts */
+            seasonal_contracts?: components["schemas"]["BasisSeasonalContract"][] | null;
         };
         /**
          * BasisLine
@@ -8395,6 +8402,27 @@ export interface components {
             count?: number | null;
             /** Reason */
             reason: string;
+        };
+        /**
+         * BasisSeasonalContract
+         * @description One contract of a seasonal worker: its dates (the end is `None` while it runs) and the
+         *     days of effective work in each tax year, a year left out being «not stated».
+         */
+        BasisSeasonalContract: {
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /** End Date */
+            end_date?: string | null;
+            /**
+             * Worked Days
+             * @default {}
+             */
+            worked_days: {
+                [key: string]: number;
+            };
         };
         /**
          * BillableDays
@@ -11844,6 +11872,8 @@ export interface components {
             contract_type?: ("permanent" | "fixed_term" | "seasonal" | "apprentice" | "training") | null;
             /** Disabled Worker */
             disabled_worker?: boolean | null;
+            /** Seasonal Contracts */
+            seasonal_contracts?: components["schemas"]["SeasonalContract"][] | null;
             /** Gross Annual Pay */
             gross_annual_pay: number | string;
             /**
@@ -19469,6 +19499,26 @@ export interface components {
             groups: components["schemas"]["SearchGroup"][];
         };
         /**
+         * SeasonalContract
+         * @description One contract of a seasonal worker with the company (art. 11 c. 4-octies D.Lgs. 446/1997,
+         *     REB-1090): its dates, and the days of effective work in each tax year (not the days of the
+         *     contract). `end_date` is empty for a contract still running; a year left out is «not
+         *     stated», never zero.
+         */
+        SeasonalContract: {
+            /**
+             * Start Date
+             * Format: date
+             */
+            start_date: string;
+            /** End Date */
+            end_date?: string | null;
+            /** Worked Days */
+            worked_days?: {
+                [key: string]: number;
+            };
+        };
+        /**
          * SendReport
          * @description What «send for signature» did. `sent` is the kind of the document that left (the framework
          *     agreement first when the freelancer has none active, else the letter) and `None` when the
@@ -20280,6 +20330,8 @@ export interface components {
             contract_type: ("permanent" | "fixed_term" | "seasonal" | "apprentice" | "training") | null;
             /** Disabled Worker */
             disabled_worker: boolean | null;
+            /** Seasonal Contracts */
+            seasonal_contracts: components["schemas"]["SeasonalContract"][] | null;
             /** Gross Annual Pay */
             gross_annual_pay: string | null;
             /** Monthly Payments */
@@ -20345,6 +20397,8 @@ export interface components {
             contract_type?: ("permanent" | "fixed_term" | "seasonal" | "apprentice" | "training") | null;
             /** Disabled Worker */
             disabled_worker?: boolean | null;
+            /** Seasonal Contracts */
+            seasonal_contracts?: components["schemas"]["SeasonalContract"][] | null;
             /** Gross Annual Pay */
             gross_annual_pay?: number | string | null;
             /** Monthly Payments */

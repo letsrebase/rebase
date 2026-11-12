@@ -112,6 +112,7 @@ class StaffMember(Base, PrimaryKeyMixin, TimestampMixin):
             "AND part_time_percent IS NULL AND employer_inps_rate IS NULL "
             "AND employer_inail_rate IS NULL AND employee_inps_rate IS NULL "
             "AND contract_type IS NULL AND disabled_worker IS NULL "
+            "AND seasonal_contracts IS NULL "
             "AND thirteenth_month IS NULL AND fourteenth_month IS NULL)",
             name="ck_staff_members_director_columns",
         ),
@@ -205,6 +206,11 @@ class StaffMember(Base, PrimaryKeyMixin, TimestampMixin):
     # Whether the person is disabled in the sense of art. 1 L. 68/1999 or art. 5 L. 482/1968
     # (art. 11 c. 4-bis.1 D.Lgs. 446/1997); `NULL` is «not stated» (REB-1091).
     disabled_worker: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    # The contract history of a seasonal worker with the company, for the 70% deduction of
+    # art. 11 c. 4-octies (REB-1090): a list of `{start_date, end_date, worked_days}`, the days
+    # of effective work being by tax year. `NULL` is «not stated»; validated by
+    # `schemas.SeasonalContract`.
+    seasonal_contracts: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, default=None)
     gross_annual_pay: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), default=None)
     monthly_payments: Mapped[int | None] = mapped_column(Integer, default=None)
     # The share of a full-time contract, in percent.

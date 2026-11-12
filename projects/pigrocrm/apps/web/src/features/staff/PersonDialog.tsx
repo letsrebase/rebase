@@ -17,6 +17,8 @@ import {
   type StaffMember,
   type StaffUpdateBody,
 } from './queries'
+import { rowsFrom, wireContracts, type ContractWire } from './seasonalContracts'
+import { SeasonalContractsField } from './SeasonalContractsField'
 
 type Kind = StaffMember['kind']
 
@@ -153,6 +155,9 @@ export function PersonDialog({ open, onOpenChange, legalEntityId, legalEntityNam
   const [kind, setKind] = useState<Kind>(member?.kind ?? 'employee')
   const [values, setValues] = useState(() => from(member))
   const [missing, setMissing] = useState<string | null>(null)
+  const [contracts, setContracts] = useState(() => rowsFrom(member?.seasonal_contracts))
+  const [contractsError, setContractsError] = useState<string | null>(null)
+  const thisYear = new Date().getFullYear()
   const members = useMemberDirectory()
   const create = useCreateStaff()
   const update = useUpdateStaff(member?.id ?? '')
@@ -189,6 +194,16 @@ export function PersonDialog({ open, onOpenChange, legalEntityId, legalEntityNam
       toast.success(message)
       onOpenChange(false)
     }
+    let history: ContractWire[] | undefined
+    if (kind === 'employee' && values.contract_type === 'seasonal') {
+      const wired = wireContracts(contracts, thisYear)
+      if (!wired.ok) {
+        setContractsError(wired.error)
+        return
+      }
+      history = wired.value
+    }
+    const wasHistory = wireContracts(rowsFrom(member?.seasonal_contracts), thisYear)
     if (editing) {
       const before = from(member)
       const body: Record<string, unknown> = {}
@@ -198,6 +213,9 @@ export function PersonDialog({ open, onOpenChange, legalEntityId, legalEntityNam
         } else if (before[field] !== values[field]) {
           body[field] = wire(field, values)
         }
+      }
+      if (history !== undefined && JSON.stringify(history) !== JSON.stringify(wasHistory)) {
+        body.seasonal_contracts = history.length === 0 ? null : history
       }
       if (Object.keys(body).length === 0) {
         onOpenChange(false)
@@ -211,6 +229,7 @@ export function PersonDialog({ open, onOpenChange, legalEntityId, legalEntityNam
       const value = wire(field, values)
       if (value !== null) body[field] = value
     }
+    if (history !== undefined && history.length > 0) body.seasonal_contracts = history
     create.mutate(body as unknown as EmployeeBody | DirectorBody, { onSuccess: done('Persona aggiunta') })
   }
 
@@ -329,6 +348,17 @@ export function PersonDialog({ open, onOpenChange, legalEntityId, legalEntityNam
                   </Select>
                   <p className="text-xs text-muted-foreground">Legge 68/1999 o 482/1968: costo dedotto per intero.</p>
                 </div>
+                {values.contract_type === 'seasonal' ? (
+                  <SeasonalContractsField
+                    rows={contracts}
+                    onChange={(rows) => {
+                      setContractsError(null)
+                      setContracts(rows)
+                    }}
+                    thisYear={thisYear}
+                    error={contractsError ?? (fieldError?.field === 'seasonal_contracts' ? fieldError.message : null)}
+                  />
+                ) : null}
                 {text('gross_annual_pay', 'Retribuzione lorda annua (€)', { inputMode: 'decimal' })}
                 <div className="space-y-1.5">
                   <Label htmlFor="person-monthly_payments">Mensilità *</Label>

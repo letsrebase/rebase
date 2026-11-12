@@ -162,6 +162,37 @@ describe('PersonDialog', () => {
     )
   })
 
+  it('edits a seasonal worker\'s contract history and sends it whole, days by year', async () => {
+    vi.mocked(api.PATCH).mockResolvedValue({ data: {}, response: new Response(null, { status: 200 }) } as never)
+    const user = userEvent.setup()
+    const first = { start_date: '2025-06-01', end_date: '2025-09-30', worked_days: { '2025': 90 } }
+    draw({ member: { ...member, contract_type: 'seasonal', seasonal_contracts: [first] } as unknown as StaffMember })
+    expect(screen.getByLabelText('Giorni lavorati nel 2025')).toHaveValue('90')
+    await user.click(screen.getByRole('button', { name: 'Aggiungi un contratto' }))
+    await user.type(screen.getByLabelText('Contratto 2, dal'), '2026-06-01')
+    await user.type(screen.getByLabelText('Contratto 2, fino al'), '2026-09-30')
+    await user.type(screen.getByLabelText('Giorni lavorati nel 2026'), '100')
+    await user.click(screen.getByRole('button', { name: 'Salva le condizioni' }))
+    await waitFor(() =>
+      expect(api.PATCH).toHaveBeenCalledWith('/api/staff/{staff_member_id}', {
+        params: { path: { staff_member_id: 'm-1' } },
+        body: {
+          seasonal_contracts: [first, { start_date: '2026-06-01', end_date: '2026-09-30', worked_days: { '2026': 100 } }],
+        },
+      }),
+    )
+  })
+
+  it('refuses a contract with no start date before anything is sent', async () => {
+    const user = userEvent.setup()
+    draw({ member: { ...member, contract_type: 'seasonal', seasonal_contracts: [] } as unknown as StaffMember })
+    await user.click(screen.getByRole('button', { name: 'Aggiungi un contratto' }))
+    await user.type(screen.getByLabelText('Contratto 1, fino al'), '2026-09-30')
+    await user.click(screen.getByRole('button', { name: 'Salva le condizioni' }))
+    expect(await screen.findByText('Ogni contratto ha una data di inizio.')).toBeInTheDocument()
+    expect(api.PATCH).not.toHaveBeenCalled()
+  })
+
   it('shows the server\'s refusal as it says it', async () => {
     vi.mocked(api.POST).mockResolvedValue({ error: { detail: 'l\'azienda non ha ancora un profilo fiscale' }, response: new Response(null, { status: 422 }) } as never)
     const user = userEvent.setup()

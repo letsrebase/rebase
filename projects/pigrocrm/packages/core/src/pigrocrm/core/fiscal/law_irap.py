@@ -186,6 +186,7 @@ class PermanentStaffDeduction:
     permanent_percent: Decimal
     seasonal_percent: Decimal
     seasonal_min_days: int
+    seasonal_window_years: int
 
 
 @dataclass(frozen=True)
@@ -588,6 +589,8 @@ IRAP_LAW: Final = IrapLaw(
         permanent_percent=Decimal("100"),
         seasonal_percent=Decimal("70"),
         seasonal_min_days=120,
+        # «nell'arco temporale di due anni a partire dalla cessazione del precedente contratto».
+        seasonal_window_years=2,
     ),
     # Art. 11 c. 1 lett. a n. 5 and c. 4-bis.1 (last sentence), Normattiva, read 2026-11-12:
     # «le spese relative agli apprendisti, ai disabili e le spese per il personale assunto con
