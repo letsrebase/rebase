@@ -89,7 +89,10 @@ SURFACES: dict[str, dict[str, Any]] = {
 # REB-1046: 109.9 KB, up from 108.2 KB, for `submit_expense_note` and `list_expense_notes` (every
 # token's, 1.6 KB): a note has a kind, an amount or kilometres with a rate and a route, measured at
 # 109,844 bytes.
-DEFAULT_BUDGET_BYTES = 109_900
+# REB-1089: 110.4 KB, up from 109.9 KB, for `deductibility_kind` and `asset_group` in the purchase
+# create and update schemas (every token's, 480 bytes): how the law treats a cost is stated by name
+# and value, which is how an agent learns them, measured at 110,381.
+DEFAULT_BUDGET_BYTES = 110_400
 # REB-957: 111.9 KB, up from 111.6 KB, for `skip_space_onboarding` (a full-access
 # administrator's), measured at 111,786 bytes; `describe_space`'s `onboarding` fits the default.
 # REB-977: 116.2 KB, up from 113.4 KB, for `create_staff_member`, `update_staff_member`,
@@ -155,7 +158,10 @@ DEFAULT_BUDGET_BYTES = 109_900
 # fact in the staff create and update schemas.
 # REB-1090: 150.3 KB, up from 150.25 KB, for the `seasonal_contracts` history in the staff create
 # and update schemas.
-FULL_ACCESS_BUDGET_BYTES = 150_300
+# REB-1089: 151.7 KB, up from 150.3 KB, for the purchase fields above and the kind in
+# `create_cost_category` and `update_cost_category` (a full-access administrator's), measured at
+# 151,651.
+FULL_ACCESS_BUDGET_BYTES = 151_700
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

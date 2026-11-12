@@ -188,6 +188,8 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   received_on: 'Ricevuta il',
   reverse_charge: 'Inversione contabile',
   split_payment: 'Scissione dei pagamenti',
+  deductibility_kind: 'Natura fiscale',
+  asset_group: 'Bene ammortizzabile',
   supplier_id: 'Fornitore id',
   supplier_payment_days: 'Giorni pagamento (come fornitore)',
   supplier_payment_end_of_month: 'Pagamento fine mese (come fornitore)',
