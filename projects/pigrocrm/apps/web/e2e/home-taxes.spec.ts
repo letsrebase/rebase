@@ -1,11 +1,11 @@
 import { mkdirSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
-import { loginAsAdmin } from './helpers'
+import { ensureSpaceHasWork, loginAsAdmin } from './helpers'
 
 /**
  * The Home's tax block draws the tax due items with their amount and state, and a pack date with
- * no item for its tax as before (REB-1095), against the real API: the company Home's band and,
- * with the space's profile read as `solo`, the solo Home's block, on a desktop and on a phone.
+ * no item for its tax as before (REB-1095), against the real API: the company Home's band and the
+ * solo Home's block, with the space's profile read as each, on a desktop and on a phone.
  * Whatever the soonest open tax item is over the API is what the Home names first; with none,
  * the pack's lines say «non calcolabile». The images are taken for the pull request.
  */
@@ -47,13 +47,15 @@ async function shoot(page: Page, name: string): Promise<void> {
 for (const profile of ['company', 'solo'] as const) {
   test(`the ${profile} Home names the tax items with their amount and state`, async ({ page }) => {
     await loginAsAdmin(page)
-    if (profile === 'solo') {
-      await page.route('**/api/settings/modules', async (route) => {
-        const response = await route.fetch()
-        const body = (await response.json()) as Record<string, unknown>
-        await route.fulfill({ response, json: { ...body, profile: 'solo' } })
-      })
-    }
+    // A space with no work opens on «Primi passi», not on the Home.
+    await ensureSpaceHasWork(page)
+    // The e2e space skipped its onboarding: both Homes are reached by reading the space's
+    // profile as the one chosen, over the same real data.
+    await page.route('**/api/settings/modules', async (route) => {
+      const response = await route.fetch()
+      const body = (await response.json()) as Record<string, unknown>
+      await route.fulfill({ response, json: { ...body, profile, onboarding: 'done' } })
+    })
     const soonest = await soonestOpenTaxItem(page)
     for (const [label, size] of [
       ['1440', { width: 1440, height: 900 }],
