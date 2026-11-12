@@ -57,7 +57,14 @@ export function useNextTaxDates(legalEntityId?: string | null, enabled = true) {
     ...(current.data?.dates ?? []),
     ...(needMore ? (following.data?.dates ?? []) : []),
   ]
-  const dueItems = [...(items.data ?? []), ...(needMore ? (nextItems.data ?? []) : [])]
+  const dueItems = [
+    ...new Map(
+      [...(items.data ?? []), ...(needMore ? (nextItems.data ?? []) : [])].map((item) => [
+        item.id,
+        item,
+      ]),
+    ).values(),
+  ]
   const days = homeDays(entries, dueItems, today, HOME_DATES)
   const waiting =
     current.isPending ||
