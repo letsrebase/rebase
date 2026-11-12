@@ -13,12 +13,13 @@ The worked example, a Milan srl (Lombardia, 3.90%) in 2026:
     director: fee of 12,000 a year                12,000.00
 
     IRES: profit 100,000 - 20,000 - 31,200 - 12,000 = 36,800.00, less the IRAP deducted (REB-1089:
-          the staff share 2,808 x 35,200 / 72,000 = 1,372.80 and the 10% lump sum 280.80,
-          the estimate standing in for the IRAP paid) = 35,146.40; 24% = 8,435.14.
+          the staff share 2,808 x 35,200 / 72,000 = 1,372.80, the estimate standing in for the
+          IRAP paid; the 10% lump sum is not taken, it needs net interest expense)
+          = 35,427.20; 24% = 8,502.528, 8,502.53.
     IRAP: value of production 100,000 - 20,000 = 80,000.00 (staff and director stay in the base);
           art. 11 c. 4-bis deduction 8,000.00 (base up to 180,759.91); base 72,000.00;
           3.90% = 2,808.00.
-    Total to set aside: 8,435.14 + 2,808.00 = 11,243.14.
+    Total to set aside: 8,502.53 + 2,808.00 = 11,310.53.
 """
 
 import datetime as dt
@@ -203,12 +204,11 @@ def test_the_worked_example_of_a_milan_srl(db_session: Session) -> None:
         ("staff", M("-31200.00")),
         ("director", M("-12000.00")),
         ("irap_staff", M("-1372.80")),
-        ("irap_lump_sum", M("-280.80")),
     ]
     assert (company.ires.base, company.ires.rate, company.ires.amount) == (
-        M("35146.40"),
+        M("35427.20"),
         M("24.00"),
-        M("8435.14"),
+        M("8502.53"),
     )
     assert not company.ires.loss
 
@@ -227,8 +227,12 @@ def test_the_worked_example_of_a_milan_srl(db_session: Session) -> None:
     assert any("tempo indeterminato" in text for text in company.irap.assumptions)
     assert any("variazioni della dichiarazione" in text for text in company.ires.assumptions)
     assert any("perdite" in text for text in company.ires.assumptions)
+    assert not any(line.code == "irap_lump_sum" for line in company.ires.lines)
+    assert any(
+        "forfettario" in text and "non è dedotto" in text for text in company.ires.assumptions
+    )
 
-    assert estimate.due_total == M("11243.14")
+    assert estimate.due_total == M("11310.53")
     assert estimate.pack_id == "it-company" and estimate.law_from_year == 2026
     # The flat-rate lines are not the srl's.
     assert estimate.substitute_tax is None and estimate.contributions is None
@@ -313,7 +317,7 @@ def test_a_declared_figure_outranks_the_estimate(db_session: Session) -> None:
     ires, irap = estimate.readings.lines
     assert (ires.tax, ires.estimate, ires.declared, ires.counts) == (
         "ires",
-        M("8435.14"),
+        M("8502.53"),
         M("9000.00"),
         "declared",
     )
@@ -324,7 +328,7 @@ def test_a_declared_figure_outranks_the_estimate(db_session: Session) -> None:
         "estimate",
     )
     # The estimate itself is unchanged by the typed figure.
-    assert estimate.company is not None and estimate.company.ires.amount == M("8435.14")
+    assert estimate.company is not None and estimate.company.ires.amount == M("8502.53")
 
 
 def test_the_service_the_economic_overview_and_the_readings_answer_one_estimate(
@@ -345,10 +349,10 @@ def test_the_service_the_economic_overview_and_the_readings_answer_one_estimate(
     )
     assert estimate.readings is not None
     assert [(line.tax, line.estimate) for line in estimate.readings.lines] == [
-        ("ires", M("8435.14")),
+        ("ires", M("8502.53")),
         ("irap", M("2808.00")),
     ]
-    assert estimate.readings.totals.estimate == M("11243.14") == estimate.due_total
+    assert estimate.readings.totals.estimate == M("11310.53") == estimate.due_total
     # A «what if» on a revenue the caller supplied has no costs, so no srl figure.
     what_if = service.get_fiscal_estimate(
         YEAR, ADMIN, revenue=M("1000.00"), legal_entity_id=entity.id
@@ -364,7 +368,7 @@ def test_the_frozen_year_keeps_the_company_figures(db_session: Session) -> None:
     assert (row.pack_id, row.pack_version, row.law_from_year) == ("it-company", "1", 2026)
     assert row.parameters["irap_region"] == "03"
     assert row.figures["company"]["irap"]["amount"] == "2808.00"
-    assert row.figures["company"]["ires"]["amount"] == "8435.14"
+    assert row.figures["company"]["ires"]["amount"] == "8502.53"
 
 
 def test_what_the_basis_left_out_is_an_assumption_of_the_figure(db_session: Session) -> None:
@@ -389,7 +393,7 @@ def test_what_the_basis_left_out_is_an_assumption_of_the_figure(db_session: Sess
 def test_the_forecast_advances_of_an_srl_are_written_from_its_estimate(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """REB-1074 reads `estimated_taxes`, which reads the readings' lines: IRES 8,435.14 (the IRAP
+    """REB-1074 reads `estimated_taxes`, which reads the readings' lines: IRES 8,502.53 (the IRAP
     deducted, REB-1089) and IRAP 2,808.00 give 40% on 30 June and 60% on 30 November, with no stub
     in between."""
     from sqlalchemy import select
@@ -423,9 +427,9 @@ def test_the_forecast_advances_of_an_srl_are_written_from_its_estimate(
     )
     assert [(r.tax, r.due_date, r.amount, r.state) for r in rows] == [
         ("irap", D(2026, 7, 20), M("1123.20"), "forecast"),
-        ("ires", D(2026, 7, 20), M("3374.06"), "forecast"),
+        ("ires", D(2026, 7, 20), M("3401.01"), "forecast"),
         ("irap", D(2026, 11, 30), M("1684.80"), "forecast"),
-        ("ires", D(2026, 11, 30), M("5061.08"), "forecast"),
+        ("ires", D(2026, 11, 30), M("5101.52"), "forecast"),
     ]
 
 
