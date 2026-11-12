@@ -9,6 +9,8 @@ import { Label } from '@rebase/ui/label'
 import { toast } from '@rebase/ui/sonner'
 import { formatMoneyValue } from '@/features/time/columns'
 import { RejectProposalDialog } from '@/features/proposals/RejectProposalDialog'
+import { useLegalEntitySites, type LegalEntitySite } from '@/features/settings/queries'
+import { siteLabel } from '@/features/settings/sites'
 import { formatConfidence } from '@/features/proposals/fields'
 import { useAcceptProposal } from '@/features/proposals/queries'
 import { toProblem } from '@/lib/api'
@@ -367,7 +369,17 @@ function PayslipReceived({ month, received, monthKey }: { month: MemberMonth; re
   )
 }
 
+/** «Sede di lavoro»: the registered office or the site the person works at. Said only where the
+ *  azienda has sites, since a company with none has no place to choose (REB-1092). */
+function workplaceRow(member: StaffMember, sites: readonly LegalEntitySite[]): { label: string; value: string }[] {
+  if (sites.length === 0) return []
+  const site = sites.find((candidate) => candidate.id === member.site_id)
+  const value = member.at_registered_office ? 'Sede legale' : site === undefined ? 'Non indicata' : siteLabel(site)
+  return [{ label: 'Sede di lavoro', value }]
+}
+
 function Terms({ member }: { member: StaffMember }) {
+  const sites = useLegalEntitySites(member.legal_entity_id).data ?? []
   const day = member.effective_pay_day
   const payDay =
     day === null || day === undefined
@@ -394,6 +406,7 @@ function Terms({ member }: { member: StaffMember }) {
         { label: 'Contratto', value: termsLine(member) },
         ...rows,
         { label: 'Ore al mese', value: member.hours_per_month === null ? '—' : formatItalianQuantity(member.hours_per_month) },
+        ...workplaceRow(member, sites),
         { label: 'Giorno di paga', value: payDay },
         { label: 'In servizio', value: `dal ${formatDay(member.start_date)}${member.end_date === null ? '' : ` al ${formatDay(member.end_date)}`}` },
       ]}

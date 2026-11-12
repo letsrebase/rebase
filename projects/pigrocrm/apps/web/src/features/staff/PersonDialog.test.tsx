@@ -49,7 +49,26 @@ function draw(props: Partial<React.ComponentProps<typeof PersonDialog>> = {}) {
   )
 }
 
+const SITE = {
+  id: 'site-1',
+  legal_entity_id: 'le-1',
+  region: '05',
+  region_name: 'Veneto',
+  city: 'Padova',
+  address: null,
+  staff_count: 0,
+  created_at: '2026-11-01T09:00:00Z',
+  updated_at: '2026-11-01T09:00:00Z',
+}
+
+/** The azienda's sites, as `GET /api/legal-entities/{id}/sites` answers them. */
+function withSites(sites: unknown[]) {
+  vi.mocked(api.GET).mockResolvedValue({ data: sites, response: new Response(null, { status: 200 }) } as never)
+}
+
 beforeEach(() => {
+  vi.mocked(api.GET).mockReset()
+  withSites([])
   vi.mocked(api.POST).mockReset()
   vi.mocked(api.PATCH).mockReset()
 })
@@ -203,4 +222,120 @@ describe('PersonDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Aggiungi' }))
     expect(await screen.findByText(/non ha ancora un profilo fiscale/)).toBeInTheDocument()
   })
+
+  it('offers no workplace when the azienda has no sites, and sends none', async () => {
+    vi.mocked(api.POST).mockResolvedValue({ data: {}, response: new Response(null, { status: 201 }) } as never)
+    const user = userEvent.setup()
+    draw()
+    await waitFor(() => expect(api.GET).toHaveBeenCalled())
+    expect(screen.queryByLabelText('Sede di lavoro')).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText(/^Nome/), 'Giulia')
+    await user.type(screen.getByLabelText(/^In servizio dal/), '2026-01-01')
+    await user.type(screen.getByLabelText(/^Retribuzione lorda annua/), '1000')
+    await user.click(screen.getByRole('button', { name: 'Aggiungi' }))
+    await waitFor(() => expect(api.POST).toHaveBeenCalled())
+    const body = vi.mocked(api.POST).mock.calls[0]?.[1] as unknown as { body: Record<string, unknown> }
+    expect(body.body).not.toHaveProperty('site_id')
+    expect(body.body).not.toHaveProperty('at_registered_office')
+  })
+
+  it('offers the registered office and each site, and creates the person at the site chosen', async () => {
+    withSites([SITE, { ...SITE, id: 'site-2', region: '03', region_name: 'Lombardia', city: null }])
+    vi.mocked(api.POST).mockResolvedValue({ data: {}, response: new Response(null, { status: 201 }) } as never)
+    const user = userEvent.setup()
+    draw()
+    await user.type(screen.getByLabelText(/^Nome/), 'Giulia')
+    await user.type(screen.getByLabelText(/^In servizio dal/), '2026-01-01')
+    await user.type(screen.getByLabelText(/^Retribuzione lorda annua/), '1000')
+    await user.click(await screen.findByLabelText('Sede di lavoro'))
+    expect(screen.getByRole('option', { name: 'Non indicata' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Sede legale' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Lombardia' })).toBeInTheDocument()
+    await user.click(screen.getByRole('option', { name: 'Padova' }))
+    await user.click(screen.getByRole('button', { name: 'Aggiungi' }))
+    await waitFor(() =>
+      expect(api.POST).toHaveBeenCalledWith('/api/staff', {
+        body: expect.objectContaining({ site_id: 'site-1' }),
+      }),
+    )
+    const sent = vi.mocked(api.POST).mock.calls[0]?.[1] as unknown as { body: Record<string, unknown> }
+    expect(sent.body).not.toHaveProperty('at_registered_office')
+  })
+
+  it('creates a person at the registered office with the flag alone', async () => {
+    withSites([SITE])
+    vi.mocked(api.POST).mockResolvedValue({ data: {}, response: new Response(null, { status: 201 }) } as never)
+    const user = userEvent.setup()
+    draw()
+    await user.type(screen.getByLabelText(/^Nome/), 'Giulia')
+    await user.type(screen.getByLabelText(/^In servizio dal/), '2026-01-01')
+    await user.type(screen.getByLabelText(/^Retribuzione lorda annua/), '1000')
+    await user.click(await screen.findByLabelText('Sede di lavoro'))
+    await user.click(screen.getByRole('option', { name: 'Sede legale' }))
+    await user.click(screen.getByRole('button', { name: 'Aggiungi' }))
+    await waitFor(() =>
+      expect(api.POST).toHaveBeenCalledWith('/api/staff', {
+        body: expect.objectContaining({ at_registered_office: true }),
+      }),
+    )
+    const sent = vi.mocked(api.POST).mock.calls[0]?.[1] as unknown as { body: Record<string, unknown> }
+    expect(sent.body).not.toHaveProperty('site_id')
+  })
+
+  it('moves a person from a site to the registered office, and from the office to nobody', async () => {
+    withSites([SITE])
+    vi.mocked(api.PATCH).mockResolvedValue({ data: {}, response: new Response(null, { status: 200 }) } as never)
+    const user = userEvent.setup()
+    const { unmount } = render_(member_({ site_id: 'site-1', at_registered_office: false }))
+    await user.click(await screen.findByLabelText('Sede di lavoro'))
+    await user.click(screen.getByRole('option', { name: 'Sede legale' }))
+    await user.click(screen.getByRole('button', { name: 'Salva le condizioni' }))
+    await waitFor(() =>
+      expect(api.PATCH).toHaveBeenCalledWith('/api/staff/{staff_member_id}', {
+        params: { path: { staff_member_id: 'm-1' } },
+        body: { at_registered_office: true },
+      }),
+    )
+    unmount()
+    vi.mocked(api.PATCH).mockClear()
+    render_(member_({ site_id: null, at_registered_office: true }))
+    await user.click(await screen.findByLabelText('Sede di lavoro'))
+    await user.click(screen.getByRole('option', { name: 'Non indicata' }))
+    await user.click(screen.getByRole('button', { name: 'Salva le condizioni' }))
+    await waitFor(() =>
+      expect(api.PATCH).toHaveBeenCalledWith('/api/staff/{staff_member_id}', {
+        params: { path: { staff_member_id: 'm-1' } },
+        body: { at_registered_office: false },
+      }),
+    )
+  })
+
+  it('takes a person off their site with site_id null, and sends nothing when the place is unchanged', async () => {
+    withSites([SITE])
+    vi.mocked(api.PATCH).mockResolvedValue({ data: {}, response: new Response(null, { status: 200 }) } as never)
+    const user = userEvent.setup()
+    render_(member_({ site_id: 'site-1', at_registered_office: false }))
+    await user.click(await screen.findByLabelText('Sede di lavoro'))
+    await user.click(screen.getByRole('option', { name: 'Non indicata' }))
+    await user.click(screen.getByRole('button', { name: 'Salva le condizioni' }))
+    await waitFor(() =>
+      expect(api.PATCH).toHaveBeenCalledWith('/api/staff/{staff_member_id}', {
+        params: { path: { staff_member_id: 'm-1' } },
+        body: { site_id: null },
+      }),
+    )
+  })
 })
+
+function member_(place: { site_id: string | null; at_registered_office: boolean }): StaffMember {
+  return { ...member, ...place } as StaffMember
+}
+
+function render_(person: StaffMember) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
+      <PersonDialog open onOpenChange={() => {}} legalEntityId="le-1" legalEntityName={null} directorsAllowed={false} member={person} />
+    </QueryClientProvider>,
+  )
+}

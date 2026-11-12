@@ -530,3 +530,82 @@ export function useRemoveLegalEntityImage(legalEntityId: string, slot: LegalEnti
     },
   })
 }
+
+// -- The places of business of an azienda (REB-1092) -----------------------------------
+
+export type LegalEntitySite = components['schemas']['LegalEntitySiteRead']
+export type IrapRegionOption = components['schemas']['IrapRegionOption']
+type LegalEntitySiteCreateBody = components['schemas']['LegalEntitySiteCreate']
+type LegalEntitySiteUpdateBody = components['schemas']['LegalEntitySiteUpdate']
+
+/** The sedi of one azienda, each with how many people work there. Asked only with an azienda. */
+export function useLegalEntitySites(legalEntityId: string | undefined) {
+  return useQuery({
+    enabled: legalEntityId !== undefined && legalEntityId !== '',
+    queryKey: queryKeys.legalEntitySites(legalEntityId ?? ''),
+    queryFn: () =>
+      unwrap(
+        api.GET('/api/legal-entities/{legal_entity_id}/sites', {
+          params: { path: { legal_entity_id: legalEntityId ?? '' } },
+        }),
+      ),
+  })
+}
+
+/** The regions and autonomous provinces a site can be in, as the IRAP rate table keys them. */
+export function useIrapRegions() {
+  return useQuery({
+    queryKey: queryKeys.irapRegions,
+    queryFn: () => unwrap(api.GET('/api/legal-entities/regions')),
+    staleTime: Infinity,
+  })
+}
+
+/** What a site write moves: the list itself, the people (their place of work is shown from the
+ *  site) and the estimates, since the IRAP split reads where each person works. */
+function refreshAfterSiteWrite(queryClient: QueryClient, legalEntityId: string) {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.legalEntitySites(legalEntityId) })
+  void queryClient.invalidateQueries({ queryKey: ['staff'] })
+  void queryClient.invalidateQueries({ queryKey: ['fiscal-estimate'] })
+}
+
+export function useAddLegalEntitySite(legalEntityId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: LegalEntitySiteCreateBody) =>
+      unwrap(
+        api.POST('/api/legal-entities/{legal_entity_id}/sites', {
+          params: { path: { legal_entity_id: legalEntityId } },
+          body,
+        }),
+      ),
+    onSuccess: () => refreshAfterSiteWrite(queryClient, legalEntityId),
+  })
+}
+
+export function useUpdateLegalEntitySite(legalEntityId: string, siteId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: LegalEntitySiteUpdateBody) =>
+      unwrap(
+        api.PATCH('/api/legal-entities/{legal_entity_id}/sites/{site_id}', {
+          params: { path: { legal_entity_id: legalEntityId, site_id: siteId } },
+          body,
+        }),
+      ),
+    onSuccess: () => refreshAfterSiteWrite(queryClient, legalEntityId),
+  })
+}
+
+export function useRemoveLegalEntitySite(legalEntityId: string, siteId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      unwrap(
+        api.DELETE('/api/legal-entities/{legal_entity_id}/sites/{site_id}', {
+          params: { path: { legal_entity_id: legalEntityId, site_id: siteId } },
+        }),
+      ),
+    onSuccess: () => refreshAfterSiteWrite(queryClient, legalEntityId),
+  })
+}

@@ -2947,6 +2947,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/legal-entities/regions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Irap Regions
+         * @description The regions and autonomous provinces a site can be in (REB-1092): the keys of the IRAP
+         *     rate table, in the order the fiscal pack lists them.
+         */
+        get: operations["list_irap_regions_api_legal_entities_regions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/legal-entities/{legal_entity_id}": {
         parameters: {
             query?: never;
@@ -2993,6 +3014,53 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/legal-entities/{legal_entity_id}/sites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Legal Entity Sites
+         * @description The places of business beside the registered office, each with how many staff work
+         *     there (REB-1092). An srl with sites in more than one region splits its IRAP base between
+         *     them by the staff's pay.
+         */
+        get: operations["list_legal_entity_sites_api_legal_entities__legal_entity_id__sites_get"];
+        put?: never;
+        /**
+         * Add Legal Entity Site
+         * @description Administrators only, and a person's act: no agent credential reaches it.
+         */
+        post: operations["add_legal_entity_site_api_legal_entities__legal_entity_id__sites_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/legal-entities/{legal_entity_id}/sites/{site_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Legal Entity Site
+         * @description Refused with 409 while staff are assigned to the site: move them first.
+         */
+        delete: operations["remove_legal_entity_site_api_legal_entities__legal_entity_id__sites__site_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Legal Entity Site */
+        patch: operations["update_legal_entity_site_api_legal_entities__legal_entity_id__sites__site_id__patch"];
         trace?: never;
     };
     "/api/legal-entities/{legal_entity_id}/fiscal-profile": {
@@ -9249,6 +9317,11 @@ export interface components {
             credit?: string | null;
             /** Region */
             region?: string | null;
+            /**
+             * Regions
+             * @default []
+             */
+            regions: components["schemas"]["IrapRegionPart"][];
             /** Missing */
             missing?: string | null;
             /** Assumptions */
@@ -10929,6 +11002,17 @@ export interface components {
             /** Pay Month Offset */
             pay_month_offset?: number | null;
             /**
+             * Site Id
+             * @description The site of the legal entity the person works at, for the IRAP split between regions; omitted with `at_registered_office` false means not stated
+             */
+            site_id?: string | null;
+            /**
+             * At Registered Office
+             * @description The person works at the registered office, not at a site
+             * @default false
+             */
+            at_registered_office: boolean;
+            /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
              */
@@ -11865,6 +11949,17 @@ export interface components {
             pay_day?: number | null;
             /** Pay Month Offset */
             pay_month_offset?: number | null;
+            /**
+             * Site Id
+             * @description The site of the legal entity the person works at, for the IRAP split between regions; omitted with `at_registered_office` false means not stated
+             */
+            site_id?: string | null;
+            /**
+             * At Registered Office
+             * @description The person works at the registered office, not at a site
+             * @default false
+             */
+            at_registered_office: boolean;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -14745,6 +14840,41 @@ export interface components {
             } | null;
         };
         /**
+         * IrapRegionOption
+         * @description One region a site can be in.
+         */
+        IrapRegionOption: {
+            /**
+             * Key
+             * @description `LegalEntitySiteCreate.region` for this region
+             */
+            key: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * IrapRegionPart
+         * @description One region's part of the IRAP base: the pay that decided it (`pay`, `share` in percent of
+         *     the total), the base attributed to it, its rate and its tax. `rate` and `amount` are `None`
+         *     when the pack has no rate for the region.
+         */
+        IrapRegionPart: {
+            /** Region */
+            region: string;
+            /** Name */
+            name: string;
+            /** Pay */
+            pay: string;
+            /** Share */
+            share: string;
+            /** Base */
+            base: string;
+            /** Rate */
+            rate: string | null;
+            /** Amount */
+            amount: string | null;
+        };
+        /**
          * IvaEntityRead
          * @description A legal entity whose pack settles IVA by period, so it has registers (REB-1024).
          */
@@ -15480,6 +15610,73 @@ export interface components {
             updated_at: string;
             /** @description Where the address is, read from ISTAT's list of municipalities (REB-1069): the municipality's codes and the region, or `unknown` when the city is not a municipality of the province. Never stored and never sent back on a write. */
             readonly place: components["schemas"]["Place"];
+        };
+        /** LegalEntitySiteCreate */
+        LegalEntitySiteCreate: {
+            /**
+             * Region
+             * @description The key of the region in the IRAP rate table: ISTAT's two-digit region code, or `BZ` or `TN` for the two autonomous provinces (`GET /api/legal-entities/regions`)
+             */
+            region: string;
+            /**
+             * City
+             * @description The municipality, for the reader
+             */
+            city?: string | null;
+            /** Address */
+            address?: string | null;
+        };
+        /** LegalEntitySiteRead */
+        LegalEntitySiteRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Legal Entity Id
+             * Format: uuid
+             */
+            legal_entity_id: string;
+            /** Region */
+            region: string;
+            /**
+             * Region Name
+             * @description The region's name as the IRAP rate table writes it; `null` for an unknown key
+             */
+            region_name?: string | null;
+            /** City */
+            city: string | null;
+            /** Address */
+            address: string | null;
+            /**
+             * Staff Count
+             * @description How many staff members are assigned to this site
+             * @default 0
+             */
+            staff_count: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * LegalEntitySiteUpdate
+         * @description What changes; `null` empties the city or the address, and the region cannot be emptied.
+         */
+        LegalEntitySiteUpdate: {
+            /** Region */
+            region?: string | null;
+            /** City */
+            city?: string | null;
+            /** Address */
+            address?: string | null;
         };
         /**
          * LegalEntityUpsert
@@ -20341,6 +20538,10 @@ export interface components {
             pay_day: number | null;
             /** Pay Month Offset */
             pay_month_offset: number | null;
+            /** Site Id */
+            site_id: string | null;
+            /** At Registered Office */
+            at_registered_office: boolean;
             effective_pay_day?: components["schemas"]["EffectivePayDay"] | null;
             /** Collective Agreement */
             collective_agreement: string | null;
@@ -20409,6 +20610,16 @@ export interface components {
             pay_day?: number | null;
             /** Pay Month Offset */
             pay_month_offset?: number | null;
+            /**
+             * Site Id
+             * @description The site the person works at; naming one takes the person off the registered office, and `null` takes them off any site
+             */
+            site_id?: string | null;
+            /**
+             * At Registered Office
+             * @description The person works at the registered office; `true` takes them off any site, `false` takes them off the registered office
+             */
+            at_registered_office?: boolean | null;
             /** Collective Agreement */
             collective_agreement?: string | null;
             /** Contract Level */
@@ -44937,6 +45148,123 @@ export interface operations {
             };
         };
     };
+    list_irap_regions_api_legal_entities_regions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IrapRegionOption"][];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_legal_entity_api_legal_entities__legal_entity_id__get: {
         parameters: {
             query?: never;
@@ -45316,6 +45644,490 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LegalEntityRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_legal_entity_sites_api_legal_entities__legal_entity_id__sites_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                legal_entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegalEntitySiteRead"][];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_legal_entity_site_api_legal_entities__legal_entity_id__sites_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                legal_entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LegalEntitySiteCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegalEntitySiteRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_legal_entity_site_api_legal_entities__legal_entity_id__sites__site_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                legal_entity_id: string;
+                site_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_legal_entity_site_api_legal_entities__legal_entity_id__sites__site_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                legal_entity_id: string;
+                site_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LegalEntitySiteUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegalEntitySiteRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

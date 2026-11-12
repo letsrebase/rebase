@@ -88,3 +88,28 @@ def test_a_site_with_staff_is_not_removed(logged_in: TestClient, api_session: Se
     assert moved.status_code == 200, moved.text
     assert (moved.json()["site_id"], moved.json()["at_registered_office"]) == (None, True)
     assert logged_in.delete(f"{base}/{site['id']}").status_code == 204
+
+
+def test_a_company_with_sites_and_staff_is_estimated_and_then_deactivated(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    entity = _company(api_session)
+    base = f"/api/legal-entities/{entity}/sites"
+    site = logged_in.post(base, json={"region": "05"}).json()
+    for extra in ({"site_id": site["id"]}, {"at_registered_office": True}):
+        made = logged_in.post(
+            "/api/staff",
+            json={
+                "kind": "employee",
+                "legal_entity_id": entity,
+                "name": f"Persona {len(extra)}{next(iter(extra))}",
+                "start_date": "2026-01-01",
+                "gross_annual_pay": "24000.00",
+                "monthly_payments": 13,
+                **extra,
+            },
+        )
+        assert made.status_code == 201, made.text
+    estimate = logged_in.get(f"/api/analytics/fiscal?year=2026&legal_entity_id={entity}")
+    assert estimate.status_code == 200, estimate.text
+    assert logged_in.delete(f"/api/legal-entities/{entity}").status_code == 200

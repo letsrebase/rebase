@@ -41,6 +41,12 @@ function estimated(value: string | null): string {
   return value === null ? NOT_COMPUTABLE : money(value)
 }
 
+/** The IRAP card's hint: its rate, or how many regions it is split over (no one rate then, REB-1092). */
+function irapHint(irap: NonNullable<FiscalEstimate['company']>['irap']): string {
+  const regions = irap.regions?.length ?? 0
+  return regions > 0 ? `ripartita su ${regions} regioni` : `aliquota ${formatPercent(irap.rate)}`
+}
+
 /** What the opening sentence says the tab shows, for the modules that are on. */
 function shownFigures(purchasesOn: boolean, taxesOn: boolean): string {
   if (purchasesOn && taxesOn) return 'ricavi, costi passivi e stima fiscale'
@@ -253,7 +259,7 @@ export function EconomicTab({
             <BigNumber
               label="IRAP stimata"
               value={estimated(tax.company.irap.amount)}
-              hint={tax.company.irap.missing ?? `aliquota ${formatPercent(tax.company.irap.rate)}`}
+              hint={tax.company.irap.missing ?? irapHint(tax.company.irap)}
             />
             <BigNumber
               label="Totale da saldare"
