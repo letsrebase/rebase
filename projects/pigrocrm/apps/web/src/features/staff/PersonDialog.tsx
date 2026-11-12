@@ -313,7 +313,7 @@ export function PersonDialog({ open, onOpenChange, legalEntityId, legalEntityNam
                       <SelectItem value="training">{CONTRACT_TYPE_LABELS.training}</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">Serve all’IRAP: il costo dei dipendenti a tempo indeterminato si deduce; apprendisti e contratti di formazione lavoro si deducono per intero e non contano tra i cinque dipendenti del comma 4-bis.1.</p>
+                  <p className="text-xs text-muted-foreground">Serve all’IRAP: apprendisti e formazione lavoro si deducono per intero.</p>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="person-disabled_worker">Lavoratore disabile</Label>
@@ -327,7 +327,7 @@ export function PersonDialog({ open, onOpenChange, legalEntityId, legalEntityNam
                       <SelectItem value="false">No</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">Ai sensi della legge 68/1999 o 482/1968. Per l’IRAP il costo si deduce per intero e la persona non conta tra i cinque.</p>
+                  <p className="text-xs text-muted-foreground">Legge 68/1999 o 482/1968: costo dedotto per intero.</p>
                 </div>
                 {text('gross_annual_pay', 'Retribuzione lorda annua (€)', { inputMode: 'decimal' })}
                 <div className="space-y-1.5">
