@@ -174,9 +174,9 @@ class ShortfallLaw:
     the sources read do not say which a payment tied to an annual return follows: that is
     the accountant's (REB-975), so `regularisation_penalty_percent` answers `None` there, never
     a guess. The tiers from a seventh on (after a notice) are out of scope. From 1 January 2027
-    these are art. 38 and art. 14 of the consolidated act of D.Lgs. 5 November 2024 n. 173 (Normattiva
-    at 2027-01-02: both articles «ABROGATO DAL D.LGS. 5 NOVEMBRE 2024, N. 173»), the same
-    percentages and fractions.
+    these are art. 38 and art. 14 of the consolidated act of D.Lgs. 5 November 2024 n. 173
+    (Normattiva at 2027-01-02: both articles «ABROGATO DAL D.LGS. 5 NOVEMBRE 2024, N. 173»), the
+    same percentages and fractions.
 
     Interest: a late or short payment regularised by the taxpayer carries «interessi moratori
     calcolati al tasso legale con maturazione giorno per giorno» (art. 13 c. 2 D.Lgs. 472/1997,
