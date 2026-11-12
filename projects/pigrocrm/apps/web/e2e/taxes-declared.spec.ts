@@ -41,7 +41,7 @@ for (const [label, width, height] of [
       await open.click()
       const panel = page.getByRole(width > 600 ? 'complementary' : 'dialog', { name: /Imposta aperta/ })
       await panel.getByRole('button', { name: 'Digita il dichiarato' }).click()
-      const dialog = page.getByRole('dialog').last()
+      const dialog = page.getByRole('dialog', { name: /il dichiarato: IRES/ })
       await dialog.getByLabel('Imposta dovuta').fill('12.000,00')
       await dialog.getByLabel('Saldo').fill('-150,00')
       await page.screenshot({ path: `${SHOTS}/declared-dialog-${label}.png` })
@@ -51,9 +51,9 @@ for (const [label, width, height] of [
       await page.screenshot({ path: `${SHOTS}/declared-panel-${label}.png` })
 
       await panel.getByRole('button', { name: 'Correggi il dichiarato' }).click()
-      await expect(page.getByRole('dialog').last().getByLabel('Imposta dovuta')).toHaveValue('12000.00')
-      await page.getByRole('dialog').last().getByLabel('Imposta dovuta').fill('11500,00')
-      await page.getByRole('dialog').last().getByRole('button', { name: 'Salva il dichiarato' }).click()
+      await expect(page.getByRole('dialog', { name: /il dichiarato: IRES/ }).getByLabel('Imposta dovuta')).toHaveValue('12000.00')
+      await page.getByRole('dialog', { name: /il dichiarato: IRES/ }).getByLabel('Imposta dovuta').fill('11500,00')
+      await page.getByRole('dialog', { name: /il dichiarato: IRES/ }).getByRole('button', { name: 'Salva il dichiarato' }).click()
       const read = await page.request.get(`/api/analytics/fiscal?year=2026&legal_entity_id=${id}`)
       await expect
         .poll(async () => {
