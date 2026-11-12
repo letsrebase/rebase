@@ -12,6 +12,7 @@ import { formatIsoDateItalian, toIsoDate } from '@/lib/dates'
 import { useLegalEntity } from '@/lib/legalEntity'
 import { dateLabel, taxOfDate, type DueDay } from './dates'
 import { AdvanceMethodDialog } from './AdvanceMethodDialog'
+import { DeclaredFigureDialog } from './DeclaredFigureDialog'
 import { F24Section } from './F24Section'
 import { InstalmentPlanDialog } from './InstalmentPlanDialog'
 import {
@@ -241,8 +242,10 @@ function ComputedFrom({ line, estimate }: { line: TaxReadingLine; estimate: Fisc
 /**
  * A tax's detail, read-only: its three readings and which one counts, the figures of the typed
  * return beside them (tax due, balance, advances, who typed them as the system records it: by
- * hand, and when), the pack and its law's year, and the entity's fiscal year end. Typing a
- * declared figure and choosing the advance method are their own cards.
+ * hand, and when), the pack and its law's year, and the entity's fiscal year end. «Digita il
+ * dichiarato» (or «Correggi il dichiarato» once there is one) opens the dialog that types the
+ * three figures of the return; the panel reads the declared figure as the one that counts as
+ * soon as the server has it. Choosing the advance method is its own card.
  */
 export function TaxPanel({
   line,
@@ -258,7 +261,7 @@ export function TaxPanel({
   const entity = byId(estimate.legal_entity_id)
   const figure = (estimate.declared ?? []).find((candidate) => candidate.tax === line.tax)
   const pack = packLine(estimate)
-  const [dialog, setDialog] = useState<'method' | 'instalments' | null>(null)
+  const [dialog, setDialog] = useState<'method' | 'instalments' | 'declared' | null>(null)
   const plans = useTaxPlans(estimate.legal_entity_id)
   const income = INCOME_TAXES.includes(line.tax)
   const plan = plans.data?.instalment_plans.find(
@@ -295,6 +298,11 @@ export function TaxPanel({
           </p>
         </section>
       ) : null}
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={() => setDialog('declared')}>
+          {figure ? 'Correggi il dichiarato' : 'Digita il dichiarato'}
+        </Button>
+      </div>
       <ComputedFrom line={line} estimate={estimate} />
       <PersonComputedFrom line={line} estimate={estimate} />
       {income ? (
@@ -315,6 +323,15 @@ export function TaxPanel({
             </Button>
           </div>
         </section>
+      ) : null}
+      {dialog === 'declared' ? (
+        <DeclaredFigureDialog
+          legalEntityId={estimate.legal_entity_id}
+          year={year}
+          tax={line.tax as Tax}
+          current={figure}
+          onClose={() => setDialog(null)}
+        />
       ) : null}
       {dialog === 'method' ? (
         <AdvanceMethodDialog
