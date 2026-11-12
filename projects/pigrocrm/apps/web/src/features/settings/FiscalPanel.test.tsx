@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
@@ -320,6 +320,8 @@ describe('FiscalPanel', () => {
       'stamp_duty_threshold',
       // The taxpayer facts of REB-1070, every save, so a stated one is never dropped.
       ...TAXPAYER_KEYS,
+      // The household of REB-1087: every save, `null` when not stated or not read.
+      'household',
       // The version the form was seeded from (REB-622), beside the fifteen fields.
       'updated_at',
     ].sort())
@@ -364,8 +366,9 @@ describe('FiscalPanel', () => {
     })
     // The same keys as an Italian save, plus the version: a full replace leaves nothing to the
     // server's defaults, which are the forfettario's. The taxpayer facts go empty.
-    expect(Object.keys(body)).toHaveLength(16 + TAXPAYER_KEYS.length)
+    expect(Object.keys(body)).toHaveLength(17 + TAXPAYER_KEYS.length)
     for (const key of TAXPAYER_KEYS) expect(body[key]).toBeNull()
+    expect(body.household).toBeNull()
   })
 
   it('reads a stored foreign profile back as «Estero» with the Italian fields hidden', async () => {
@@ -1023,6 +1026,155 @@ describe('FiscalPanel', () => {
       expect(bodyOfSave()).toMatchObject({ flat_rate_start_year: '20' })
       expect(await screen.findByText('anno non valido')).toBeInTheDocument()
       expect(screen.getByLabelText('Anno di inizio attività')).toHaveAttribute('aria-invalid', 'true')
+    })
+  })
+  describe('household (REB-1087)', () => {
+    const STORED = {
+      year: 2026,
+      members: [
+        { kind: 'child', birth_date: '2020-05-17', disabled: true, share_percent: 50, months: 8 },
+      ],
+      taxpayer_disabled: false,
+      other_supporters_income: '1200.00',
+    }
+
+    async function ordinaryPanel(profile: Record<string, unknown> = ORDINARY) {
+      vi.mocked(api.GET).mockImplementation(() => ok(profile))
+      vi.mocked(api.PUT).mockImplementation(() => ok(profile))
+      renderPanel()
+      await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF01'))
+    }
+
+    async function save() {
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+      await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+      return bodyOfSave()
+    }
+
+    it('is offered for the ordinary regime only, and sent null for the other regimes', async () => {
+      vi.mocked(api.GET).mockImplementation(() => ok(PROFILE))
+      vi.mocked(api.PUT).mockImplementation(() => ok(PROFILE))
+      renderPanel()
+      await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
+      expect(screen.queryByLabelText('Familiari a carico')).not.toBeInTheDocument()
+      expect((await save()).household).toBeNull()
+
+      // A draft made under the ordinary regime never leaks into the other ones.
+      await userEvent.selectOptions(screen.getByLabelText('Regime'), 'RF01')
+      await userEvent.selectOptions(screen.getByLabelText('Familiari a carico'), 'none')
+      for (const regime of ['company', 'foreign', 'RF19']) {
+        await userEvent.selectOptions(screen.getByLabelText('Regime'), regime)
+        expect(screen.queryByLabelText('Familiari a carico')).not.toBeInTheDocument()
+        vi.mocked(api.PUT).mockClear()
+        expect((await save()).household).toBeNull()
+      }
+    })
+
+    it('sends null for «Non indicati», the default of a profile with none', async () => {
+      await ordinaryPanel()
+      expect(screen.getByLabelText('Familiari a carico')).toHaveValue('unstated')
+      expect(screen.queryByLabelText('Anno di riferimento')).not.toBeInTheDocument()
+      expect((await save()).household).toBeNull()
+    })
+
+    it('sends an empty list for «Nessuno», with the year and the taxpayer’s own disability', async () => {
+      await ordinaryPanel()
+      await userEvent.selectOptions(screen.getByLabelText('Familiari a carico'), 'none')
+      expect(screen.getByLabelText('Anno di riferimento')).toHaveValue(new Date().getFullYear())
+      await userEvent.clear(screen.getByLabelText('Anno di riferimento'))
+      await userEvent.type(screen.getByLabelText('Anno di riferimento'), '2026')
+      await userEvent.click(screen.getByLabelText(/Sono disabile/))
+      expect(screen.queryByRole('button', { name: 'Aggiungi familiare' })).not.toBeInTheDocument()
+
+      expect((await save()).household).toEqual({
+        year: 2026,
+        members: [],
+        taxpayer_disabled: true,
+        other_supporters_income: null,
+      })
+    })
+
+    it('round-trips a stored child from the profile and back into the save', async () => {
+      await ordinaryPanel({ ...ORDINARY, household: STORED })
+      expect(screen.getByLabelText('Familiari a carico')).toHaveValue('listed')
+      expect(screen.getByLabelText('Anno di riferimento')).toHaveValue(2026)
+      const row = screen.getByRole('listitem', { name: 'Figlio 1' })
+      expect(within(row).getByLabelText('Data di nascita')).toHaveValue('2020-05-17')
+      expect(within(row).getByLabelText('Disabile (legge 104/1992)')).toBeChecked()
+      expect(within(row).getByLabelText('Quota')).toHaveValue('50')
+      expect(within(row).getByLabelText('Mesi a carico')).toHaveValue(8)
+      expect(screen.getByLabelText(/Reddito imponibile degli altri/)).toHaveValue(1200)
+
+      expect((await save()).household).toEqual({
+        year: 2026,
+        members: [
+          { kind: 'child', birth_date: '2020-05-17', disabled: true, share_percent: 50, months: 8 },
+        ],
+        taxpayer_disabled: false,
+        other_supporters_income: '1200.00',
+      })
+    })
+
+    it('builds a household from the editor, a spouse with no birth date and a child with one', async () => {
+      await ordinaryPanel()
+      await userEvent.selectOptions(screen.getByLabelText('Familiari a carico'), 'listed')
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi familiare' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi familiare' }))
+      const [first, second] = screen.getAllByRole('listitem')
+      expect(within(first!).getByLabelText('Familiare')).toHaveValue('spouse')
+      // A spouse has neither a birth date nor a share to choose.
+      expect(within(first!).queryByLabelText('Data di nascita')).not.toBeInTheDocument()
+      expect(within(first!).queryByLabelText(/Quota/)).not.toBeInTheDocument()
+      await userEvent.type(within(second!).getByLabelText('Data di nascita'), '2019-01-02')
+      await userEvent.selectOptions(within(second!).getByLabelText('Quota'), '50')
+
+      expect((await save()).household).toEqual({
+        year: new Date().getFullYear(),
+        members: [
+          { kind: 'spouse', birth_date: null, disabled: false, share_percent: 100, months: 12 },
+          { kind: 'child', birth_date: '2019-01-02', disabled: false, share_percent: 50, months: 12 },
+        ],
+        taxpayer_disabled: false,
+        other_supporters_income: null,
+      })
+    })
+
+    it('allows one spouse only', async () => {
+      await ordinaryPanel()
+      await userEvent.selectOptions(screen.getByLabelText('Familiari a carico'), 'listed')
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi familiare' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi familiare' }))
+      const [first, second] = screen.getAllByRole('listitem')
+      // The second row is not a spouse and cannot become one while the first is.
+      expect(within(second!).getByLabelText('Familiare')).toHaveValue('child')
+      expect(within(second!).getByRole('option', { name: 'Coniuge' })).toBeDisabled()
+      expect(within(first!).getByRole('option', { name: 'Coniuge' })).toBeEnabled()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Rimuovi coniuge 1' }))
+      expect(screen.getAllByRole('listitem')).toHaveLength(1)
+      expect(within(screen.getByRole('listitem')).getByRole('option', { name: 'Coniuge' })).toBeEnabled()
+    })
+
+    it('asks for the supporters’ income only while a member is disabled, and sends it empty as null', async () => {
+      await ordinaryPanel()
+      // The server answers with the household it was sent, as it does.
+      vi.mocked(api.PUT).mockImplementation(((_path: string, init: { body: object }) =>
+        ok({ ...ORDINARY, ...init.body })) as never)
+      await userEvent.selectOptions(screen.getByLabelText('Familiari a carico'), 'listed')
+      await userEvent.click(screen.getByRole('button', { name: 'Aggiungi familiare' }))
+      expect(screen.queryByLabelText(/Reddito imponibile degli altri/)).not.toBeInTheDocument()
+
+      await userEvent.click(screen.getByLabelText('Disabile (legge 104/1992)'))
+      const income = screen.getByLabelText(/Reddito imponibile degli altri/)
+      expect(income).toHaveValue(null)
+      expect(((await save()).household as { other_supporters_income: unknown }).other_supporters_income).toBeNull()
+
+      await userEvent.type(income, '0')
+      vi.mocked(api.PUT).mockClear()
+      expect(((await save()).household as { other_supporters_income: unknown }).other_supporters_income).toBe('0')
+
+      await userEvent.click(screen.getByLabelText('Disabile (legge 104/1992)'))
+      expect(screen.queryByLabelText(/Reddito imponibile degli altri/)).not.toBeInTheDocument()
     })
   })
 })

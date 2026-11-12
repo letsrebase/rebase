@@ -13067,6 +13067,7 @@ export interface components {
             startup_not_a_continuation: boolean | null;
             /** Startup Predecessor Within Limit */
             startup_predecessor_within_limit: boolean | null;
+            household: components["schemas"]["Household-Output"] | null;
             /** Iva Frequency */
             iva_frequency: string;
             /**
@@ -13202,6 +13203,7 @@ export interface components {
             startup_not_a_continuation?: boolean | null;
             /** Startup Predecessor Within Limit */
             startup_predecessor_within_limit?: boolean | null;
+            household?: components["schemas"]["Household-Input"] | null;
             /**
              * Iva Frequency
              * @default monthly
@@ -13588,6 +13590,88 @@ export interface components {
             hourly_cost: string;
             /** Current Hourly Cost */
             current_hourly_cost: string | null;
+        };
+        /**
+         * Household
+         * @description The people fiscally dependent on the taxpayer in tax year `year`, which the IRPEF's family
+         *     detractions and some regions' surcharge rules read. A statement of one year says nothing
+         *     about another.
+         */
+        "Household-Input": {
+            /** Year */
+            year: number;
+            /** Members */
+            members?: components["schemas"]["HouseholdMember"][];
+            /**
+             * Taxpayer Disabled
+             * @description The taxpayer is disabled under art. 3 L. 104/1992.
+             * @default false
+             */
+            taxpayer_disabled: boolean;
+            /**
+             * Other Supporters Income
+             * @description The sum of the taxable incomes, for the regional surcharge, of everyone else a disabled dependant is also dependent on: Veneto and Marche test it with the taxpayer's own. Null is not stated, 0 is nobody else.
+             */
+            other_supporters_income?: number | string | null;
+        };
+        /**
+         * Household
+         * @description The people fiscally dependent on the taxpayer in tax year `year`, which the IRPEF's family
+         *     detractions and some regions' surcharge rules read. A statement of one year says nothing
+         *     about another.
+         */
+        "Household-Output": {
+            /** Year */
+            year: number;
+            /** Members */
+            members?: components["schemas"]["HouseholdMember"][];
+            /**
+             * Taxpayer Disabled
+             * @description The taxpayer is disabled under art. 3 L. 104/1992.
+             * @default false
+             */
+            taxpayer_disabled: boolean;
+            /**
+             * Other Supporters Income
+             * @description The sum of the taxable incomes, for the regional surcharge, of everyone else a disabled dependant is also dependent on: Veneto and Marche test it with the taxpayer's own. Null is not stated, 0 is nobody else.
+             */
+            other_supporters_income?: string | null;
+        };
+        /**
+         * HouseholdMember
+         * @description One person fiscally dependent on the taxpayer in the year: own total income, gross of
+         *     deductible charges, within 2,840.51 euro, or 4,000 euro for a child of 24 or less (art. 12
+         *     c. 2 TUIR).
+         */
+        HouseholdMember: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "spouse" | "child" | "ascendant";
+            /**
+             * Birth Date
+             * @description Required for a child.
+             */
+            birth_date?: string | null;
+            /**
+             * Disabled
+             * @description Disabled under art. 3 L. 104/1992.
+             * @default false
+             */
+            disabled: boolean;
+            /**
+             * Share Percent
+             * @description The share of the detraction the taxpayer is entitled to: 100 or 50 for a child (split between the parents, or whole to the higher income by agreement), 100 for the spouse, pro rata among those entitled for an ascendant.
+             * @default 100
+             */
+            share_percent: number;
+            /**
+             * Months
+             * @description The months of the year the person was dependent.
+             * @default 12
+             */
+            months: number;
         };
         /**
          * IdentitySpace

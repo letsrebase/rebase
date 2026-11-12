@@ -47,6 +47,14 @@
    "section": "payment_rules",
    "source": "D.Lgs. 472/1997 art. 13 c. 1 lett. a) and a-bis), Normattiva 2026-11-12 (ravvedimento tiers up to 90 days); INPS circolare n. 62 of 27 May 2026 \u00a7\u00a7 3-4 (causali API, CPI, DPPI for instalment interest); Redditi SC 2026 quadro RN rigo RN15 and art. 79 c. 1, art. 109 TUIR (srl withholding credit by accrual)",
    "year": 2026
+  },
+  {
+   "fingerprint": "d7b0b3867f1be1a4660fb2fb4e1aadd0f038475b3cf59adedf74a47ab00cb4fb",
+   "pack": "it-standard:1",
+   "reason": "REB-1087 adds data to the 2026 IRPEF section that was missing, not wrong: the art. 13 c. 5 and art. 12 detractions, the household rules of eight regions turned from unmodelled text into computed rules, Bolzano's second detraction, and each region's source text; no bracket, rate or recorded regional figure changed",
+   "section": "irpef",
+   "source": "D.P.R. 917/1986 art. 13 c. 5 and c. 6 and art. 12 c. 1-4 (Normattiva, read 2026-11-12); Agenzia delle Entrate, specifiche tecniche 2026 \u00a7\u00a7 20.2, 20.3, 21.4 and Redditi PF 2026 fasc. 1 rigo RN6; regional laws: Piemonte l.r. 4/2022 art. 2 c. 1-bis, Veneto l.r. 19/2005 art. 1 c. 5, Marche l.r. 5/2022 art. 1 c. 2, Campania l.r. 7/2022 art. 1, Puglia l.r. 40/2015 art. 3, Sardegna l.r. 48/2018 art. 2, Trento l.p. 13/2019 art. 1 c. 2-sexies, Bolzano l.p. 9/1998 art. 21-sexiesdecies c. 2-bis, 3, 4-bis, 4-ter (REB-1086 research)",
+   "year": 2026
   }
  ],
  "fingerprints": {

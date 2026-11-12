@@ -40,10 +40,13 @@ diversificate e crescenti», and the Agenzia delle Entrate's Redditi PF 2026 ins
 1, rigo RV9) say the box «Aliquote per scaglioni» is for a municipality that «ha deliberato
 l'applicazione di diverse aliquote articolate per scaglioni di reddito con gli stessi criteri
 previsti per l'Irpef». The IRPEF is computed by slice, so each rate is applied to the part of the
-income inside its bracket. Neither text writes the arithmetic out, so that last step is a reading,
-which the estimate says in its assumptions (A5 row «How a municipality's bracket rates are
-applied»). A municipality that exempts a category of taxpayer (pensioners, employees, large
-families: the Department's flags 5 and 6, and some of flag 0) has `category_exemption` set and
+income inside its bracket: art. 1 c. 11 D.L. 138/2011 says a municipality sets its rates
+«utilizzando esclusivamente gli stessi scaglioni di reddito stabiliti, ai fini dell'imposta sul
+reddito delle persone fisiche, dalla legge statale», and the Finanze's «Aliquote applicabili»
+prints each rate as «applicabile a scaglione di reddito». Verified on 2026-11-12 (REB-1086, A5 row
+«How a municipality's bracket rates are applied»). A municipality that exempts a category of
+taxpayer (pensioners, employees, large families: the Department's flags 5 and 6, and some of
+flag 0) has `category_exemption` set and
 its general figures are what is carried: the exemption is for a taxpayer this module is not asked
 about, and no figure here applies it.
 """

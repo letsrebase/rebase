@@ -324,6 +324,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   gmail_message_id: 'Messaggio Gmail',
   gmail_store_bodies: 'Conserva i testi delle email',
   gmail_thread_id: 'Conversazione Gmail',
+  household: 'Familiari a carico',
   iban: 'IBAN',
   net_receivable: 'Netto da incassare',
   fiscal_year_end_day: 'Giorno di chiusura dell’esercizio',

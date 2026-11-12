@@ -159,6 +159,11 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
     iva_frequency: Mapped[str] = mapped_column(
         String(10), nullable=False, default="monthly", server_default=text("'monthly'")
     )
+    # REB-1087: the people fiscally dependent on the taxpayer for one tax year
+    # (`fiscal/household.py::Household`, as JSON), read by the IRPEF's family detractions and the
+    # regions' household rules. `None` is «not stated»: none of them is applied, and the estimate
+    # says so. Only the ordinary regime's person reads it.
+    household: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
 
     __table_args__ = (
         CheckConstraint(
