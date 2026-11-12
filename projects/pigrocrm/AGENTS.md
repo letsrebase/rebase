@@ -468,6 +468,16 @@ the IRAP return of a person, the withholding credit of a company) is not in the 
 
 **The taxpayer's own facts are fiscal-profile fields, each nullable and kept when a save leaves them out (REB-1070).** `fiscal_profile` (migration 0107) holds, beside `inps_category` and `isa`, `inps_trade`, `inps_covered_elsewhere`, `inps_before_1996` and `flat_rate_inps_reduction` (the arguments of `InpsYearLaw.contributions`), `ateco_group` (an annex 4 key of `law_flat_rate`, validated against `ANNEX_4`), `flat_rate_start_year` and the three c. 65 answers `startup_no_prior_activity`, `startup_not_a_continuation`, `startup_predecessor_within_limit` (true = the condition is met). `None` is «not stated»: a figure that needs one gives no figure. `schemas.TAXPAYER_PARAMETERS` is the list; it is in `KEPT_WHEN_OMITTED`, in the frozen estimate's parameters and on the MCP `update_fiscal_profile`/`describe_fiscal_profile`. `FiscalProfileService._check_taxpayer_parameters` refuses a value on a pack that does not read it (INPS facts: `it-flat-rate` and `it-standard`; the flat-rate ones: `it-flat-rate`; `it-company` and `non-it` none) and the law's pairings (trade, the 1996 ceiling and the 35% reduction are artigiani e commercianti's, the lower rate is the gestione separata's); `_pack_defaults` clears them when the pack does not read them. `FiscalProfileRead.flat_rate_groups` lists annex 4 from the flat-rate pack so the form shows each group's coefficient and carries no figure of law; picking a group proposes its coefficient in the typed `profitability_coefficient`, which stays what the estimate reads. There is no professional-fund (cassa) category: the INPS law cards cover the gestione separata and artigiani e commercianti only. `FiscalEstimate.missing_parameters` names the typed rates the profile leaves empty, and «Tasse» says them.
 
+**The INPS reductions are three mutually exclusive facts, and the flat-rate 35% follows circolare 35/2016 (REB-1097).**
+`inps_over_65_reduction`, `inps_new_enrolment_reduction` (with `inps_first_enrolment_month`, migration 0115) and
+`flat_rate_inps_reduction` mean «INPS granted it», never inferred from an age or a history; `FiscalProfileService`
+refuses two at once and the pack's lookup does too. An absent one is no reduction and the estimate says so in its
+assumptions, it is not a `missing` fact. The 35% is on the whole contribution on the minimum and on the excess, so a
+flat-rate artisan or trader owes a reduced fixed part (circolare 29/2015 no longer applies to it); the two 50% reductions
+halve the IVS only (the traders' 0.48, `TradeRates.indemnity_add_on`, and the maternity stay whole). The new-enrolment rule
+is a `NewEnrolmentReduction` of the year's `law_inps` entry, so 2027 decides for itself. A change of a recorded year's INPS
+entry goes through the ledger's `--correct` command.
+
 **The flat-rate law and each regime's income basis are pack data (REB-1066).** `TaxYearLaw.flat_rate` (`fiscal/law_flat_rate.py`)
 holds annex 4 of L. 190/2014 by ATECO 2007 group (`ANNEX_4`, the nine groups and six distinct coefficients), the 15% and
 5% substitute rates with c. 65's start-up conditions, what each rate applies to and the substitute tax advances (from 2026
@@ -563,7 +573,12 @@ same name, `full_access`, table `tax_advance_methods`). An item is `forecast` on
 `set_tax_advance_method`) and by the daily pass (`AutomationPass._refresh_tax_items`): an item that is as it should be is left
 alone, one that is not is dropped and recreated, one a payment touched is never changed, and the difference a paid advance leaves
 when its base moves is carried to the next item of the tax with «da confermare» in its description. A payment is created only from
-today to `HORIZON_DAYS` ahead. INPS is another card.
+today to `HORIZON_DAYS` ahead. **INPS writes its two advances only (REB-1097):** `fiscal/inps_advances.py` asks
+`InpsYearLaw.advances` for a person's `tax_advance` items with `tax = "inps"`, on the previous year's estimated income
+(`AnalyticsService.estimated_inps_income`) and the INPS law of the year, always `forecast` (a declared INPS figure is a
+contribution, not the income the advances are computed on); a missing fact (category, gestione, the flat-rate 35% election of
+a flat-rate person) gives no item and the reason. The four fixed instalments of the minimum and the balance are not written
+yet, and an INPS item has no F24 code yet.
 
 **Instalment plans and notice plans are stored and write their own items (REB-1075).** `TaxInstalmentPlanService.set_tax_instalment_plan`
 (`fiscal/instalment_plan.py`; REST `PUT /api/analytics/fiscal/instalment-plan`, privileged MCP tool of the same name, `full_access`,

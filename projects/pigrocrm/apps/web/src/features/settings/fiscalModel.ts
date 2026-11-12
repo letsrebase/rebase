@@ -21,11 +21,16 @@ export interface FiscalField {
     | 'substitute_tax_rate'
     | 'social_security_rate'
     | 'flat_rate_start_year'
+    | 'inps_first_enrolment_month'
   label: string
   hint?: string
   /** The regimes that read the field; every regime when absent. A field a regime does not
    *  read is hidden, and sent empty where the server refuses a value (REB-621, REB-760). */
   shownFor?: readonly Regime[]
+  /** The input's type: a month picker for the month of an enrolment; text otherwise. */
+  input?: 'month'
+  /** Shown only while this holds on the draft: a fact the answer to another one makes needed. */
+  when?: (values: Values) => boolean
 }
 
 /**
@@ -141,6 +146,16 @@ export const FIELDS: readonly FiscalField[] = [
     hint: 'Con le condizioni sotto decide l’aliquota agevolata dei primi anni (legge 190/2014, art. 1 comma 65)',
     shownFor: ['RF19'],
   },
+  {
+    name: 'inps_first_enrolment_month',
+    label: 'Mese della prima iscrizione',
+    hint: 'Da qui l’INPS conta i 36 mesi della riduzione per i nuovi iscritti.',
+    shownFor: ['RF19', 'RF01'],
+    input: 'month',
+    when: (values) =>
+      values.inps_category === 'artigiani_commercianti' &&
+      values.inps_new_enrolment_reduction === 'true',
+  },
 ]
 
 /** The facts the INPS and flat-rate law read (REB-1070), each one a choice: a closed list, or
@@ -151,6 +166,8 @@ export type ChoiceName =
   | 'inps_covered_elsewhere'
   | 'inps_before_1996'
   | 'flat_rate_inps_reduction'
+  | 'inps_over_65_reduction'
+  | 'inps_new_enrolment_reduction'
   | 'isa'
   | 'income_kind'
   | 'ateco_group'
@@ -236,6 +253,24 @@ export const CHOICES: readonly ChoiceField[] = [
     options: YES_NO,
   },
   {
+    name: 'inps_over_65_reduction',
+    label: 'Riduzione INPS per i pensionati over 65',
+    hint: 'Se l’INPS ti ha concesso la riduzione del 50% dei contributi: artigiani e commercianti con più di 65 anni già pensionati INPS. Non si cumula con le altre riduzioni.',
+    shownFor: PERSON,
+    when: artisanOrTrader,
+    conflicts: separate,
+    options: YES_NO,
+  },
+  {
+    name: 'inps_new_enrolment_reduction',
+    label: 'Riduzione INPS per i nuovi iscritti',
+    hint: 'Se l’INPS ti ha concesso la riduzione del 50% dell’aliquota IVS per 36 mesi: prima iscrizione ad artigiani o commercianti nel 2025. Non si cumula con le altre riduzioni.',
+    shownFor: PERSON,
+    when: artisanOrTrader,
+    conflicts: separate,
+    options: YES_NO,
+  },
+  {
     name: 'isa',
     label: 'Soggetto agli ISA',
     hint: 'Decide come si dividono gli acconti delle imposte sui redditi.',
@@ -288,6 +323,8 @@ const BOOLEAN_CHOICES: readonly ChoiceName[] = [
   'inps_covered_elsewhere',
   'inps_before_1996',
   'flat_rate_inps_reduction',
+  'inps_over_65_reduction',
+  'inps_new_enrolment_reduction',
   'isa',
   'startup_no_prior_activity',
   'startup_not_a_continuation',
@@ -344,6 +381,9 @@ export function emptyValues(): Values {
     inps_covered_elsewhere: '',
     inps_before_1996: '',
     flat_rate_inps_reduction: '',
+    inps_over_65_reduction: '',
+    inps_new_enrolment_reduction: '',
+    inps_first_enrolment_month: '',
     isa: '',
     income_kind: '',
     ateco_group: '',
@@ -358,7 +398,9 @@ export function valuesFrom(profile: FiscalProfile): Values {
   const values = emptyValues()
   for (const field of FIELDS) {
     const stored = profile[field.name]
-    values[field.name] = stored === null || stored === undefined ? '' : String(stored)
+    // A date in the month: the month input holds `YYYY-MM`.
+    const text = stored === null || stored === undefined ? '' : String(stored)
+    values[field.name] = field.input === 'month' ? text.slice(0, 7) : text
   }
   for (const choice of CHOICES) {
     const stored = profile[choice.name]
@@ -453,5 +495,16 @@ function taxpayerFacts(
   const year = pack === 'it-flat-rate' ? values.flat_rate_start_year.trim() : ''
   // A year that is not four digits goes as typed, for the server to refuse by field name.
   facts.flat_rate_start_year = year === '' ? null : /^\d{4}$/.test(year) ? Number(year) : year
+  // The month of the first enrolment goes as the first day of it (`<input type="month">` gives
+  // `YYYY-MM`); only while the reduction it counts is answered yes.
+  const month = values.inps_first_enrolment_month.trim()
+  facts.inps_first_enrolment_month =
+    shown.has('inps_new_enrolment_reduction') &&
+    values.inps_new_enrolment_reduction === 'true' &&
+    month !== ''
+      ? /^\d{4}-\d{2}$/.test(month)
+        ? `${month}-01`
+        : month
+      : null
   return facts
 }

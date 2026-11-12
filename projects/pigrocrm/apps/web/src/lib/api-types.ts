@@ -13045,6 +13045,12 @@ export interface components {
             inps_before_1996: boolean | null;
             /** Flat Rate Inps Reduction */
             flat_rate_inps_reduction: boolean | null;
+            /** Inps Over 65 Reduction */
+            inps_over_65_reduction: boolean | null;
+            /** Inps New Enrolment Reduction */
+            inps_new_enrolment_reduction: boolean | null;
+            /** Inps First Enrolment Month */
+            inps_first_enrolment_month: string | null;
             /** Ateco Group */
             ateco_group: string | null;
             /** Flat Rate Start Year */
@@ -13174,6 +13180,12 @@ export interface components {
             inps_before_1996?: boolean | null;
             /** Flat Rate Inps Reduction */
             flat_rate_inps_reduction?: boolean | null;
+            /** Inps Over 65 Reduction */
+            inps_over_65_reduction?: boolean | null;
+            /** Inps New Enrolment Reduction */
+            inps_new_enrolment_reduction?: boolean | null;
+            /** Inps First Enrolment Month */
+            inps_first_enrolment_month?: string | null;
             /** Ateco Group */
             ateco_group?: string | null;
             /** Flat Rate Start Year */

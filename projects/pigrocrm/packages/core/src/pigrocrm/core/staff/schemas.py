@@ -39,6 +39,9 @@ _Money = Annotated[Decimal, Field(gt=0, max_digits=MONEY_MAX_DIGITS, decimal_pla
 _Percent = Annotated[
     Decimal, Field(ge=0, le=100, max_digits=PERCENT_MAX_DIGITS, decimal_places=PERCENT_SCALE)
 ]
+# The INAIL rate in percent: INAIL states it per mille with two decimals, so three decimals in
+# percent hold it exactly (REB-1097, «Autoliquidazione 2025/2026»).
+_InailRate = Annotated[Decimal, Field(ge=0, le=100, max_digits=6, decimal_places=3)]
 _PartTime = Annotated[
     Decimal, Field(gt=0, le=100, max_digits=PERCENT_MAX_DIGITS, decimal_places=PERCENT_SCALE)
 ]
@@ -114,7 +117,7 @@ class EmployeeCreate(_StaffCreate):
     monthly_payments: MonthlyPayments
     part_time_percent: _PartTime = Decimal("100")
     employer_inps_rate: _Percent | None = None
-    employer_inail_rate: _Percent | None = None
+    employer_inail_rate: _InailRate | None = None
     employee_inps_rate: _Percent | None = None
     thirteenth_month: _Month | None = None
     fourteenth_month: _Month | None = None
@@ -167,7 +170,7 @@ class StaffMemberUpdate(BaseModel):
     monthly_payments: MonthlyPayments | None = None
     part_time_percent: _PartTime | None = None
     employer_inps_rate: _Percent | None = None
-    employer_inail_rate: _Percent | None = None
+    employer_inail_rate: _InailRate | None = None
     employee_inps_rate: _Percent | None = None
     thirteenth_month: _Month | None = None
     fourteenth_month: _Month | None = None

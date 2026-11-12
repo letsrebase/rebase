@@ -1,10 +1,11 @@
-"""REB-1064: the 2026 INPS contributions of a person, in the pack.
+"""REB-1064 and REB-1097: the 2026 INPS contributions of a person, in the pack.
 
 The figures the circulars print (n. 8 of 3 February 2026 for the gestione separata, n. 14 of
 9 February 2026 for artigiani e commercianti: the contributions on the minimum and the four
 maxima) are asserted as printed, not recomputed with the code's own arithmetic. The others, marked
 «by hand» or computed in a comment, are what the printed rates give on a round income; the
-flat-rate reduction's circular prints no example at all.
+circulars of the flat-rate reduction (n. 35/2016) and of the advances (Redditi PF 2026) print no
+example of the cent rounding.
 """
 
 from datetime import date
@@ -184,31 +185,221 @@ def test_the_higher_rate_starts_above_the_first_band() -> None:
     assert plus_1000_trader == D("254.80")  # 1.000 x 25,48%
 
 
-def test_the_flat_rate_reduction_has_no_minimum_and_no_fixed_part() -> None:
-    """Circolare 29/2015 § 1: contribution on the flat-rate income «senza applicazione del
-    livello minimo imponibile», «non è obbligato a versare la c.d. quota fissa», maternity
-    7,44 in two shares of 3,72 with the advances; art. 1 c. 77 L. 190/2014: contribution
-    «ridotta del 35 per cento». The circular prints no example: 20.000 x 24% = 4.800,00,
-    x 65% = 3.120,00, by hand."""
+def test_the_flat_rate_reduction_applies_to_the_minimum_and_keeps_the_fixed_part() -> None:
+    """Circolare 35/2016 § 1: «la contribuzione dovuta, sia quella sul reddito entro il minimale,
+    sia quella sul reddito eventualmente eccedente, viene ridotta del 35%», and «Risulta in ogni
+    caso dovuto il contributo di maternità, pari ad € 7,44 annui, da corrispondere alle scadenze
+    previste per la contribuzione in misura fissa». It replaced circolare 29/2015, which had no
+    fixed part. The circulars print no example: by hand, 4.513,92 x 65% = 2.934,048 and 4.800,00
+    on 20.000 less 4.513,92 = 286,08 x 65% = 185,952, each rounded to the cent."""
     result = INPS_2026.contributions(
         "artigiani_commercianti", D("20000"), trade="artigiani", flat_rate_reduction=True
     )
-    assert result.fixed == D("0.00")
-    assert result.percentage == D("3127.44")  # 3.120,00 + 7,44
-    assert [due.kind for due in result.dues] == ["balance_and_first_advance", "second_advance"]
+    assert result.fixed == D("2941.49")  # 2.934,05 + 7,44
+    assert result.percentage == D("185.95")
+    assert [due.kind for due in result.dues] == [
+        "fixed_instalment",
+        "fixed_instalment",
+        "fixed_instalment",
+        "fixed_instalment",
+        "balance_and_first_advance",
+        "second_advance",
+    ]
     low = INPS_2026.contributions(
         "artigiani_commercianti", D("1000"), trade="artigiani", flat_rate_reduction=True
     )
-    assert low.total == D("163.44")  # 1.000 x 24% x 65% = 156,00, + 7,44
+    assert low.fixed == D("2941.49")
+    assert low.percentage == D("0.00")
+    assert {due.kind for due in low.dues} == {"fixed_instalment"}
+
+
+def test_a_flat_rate_trader_owes_the_reduced_minimum_whatever_the_income() -> None:
+    """The card's example: 4.604,20 x 65% = 2.992,73 (0,48 included: it is part of the
+    contribution due) plus 7,44, where circolare 29/2015's reading gave 1.591,20 plus 7,44."""
+    result = INPS_2026.contributions(
+        "artigiani_commercianti", D("10000"), trade="commercianti", flat_rate_reduction=True
+    )
+    assert result.fixed == D("3000.17")
+    assert result.percentage == D("0.00")
+    above = INPS_2026.contributions(
+        "artigiani_commercianti", D("30000"), trade="commercianti", flat_rate_reduction=True
+    )
+    # 30.000 x 24,48% = 7.344,00, less 4.604,20 = 2.739,80 x 65% = 1.780,87.
+    assert (above.fixed, above.percentage) == (D("3000.17"), D("1780.87"))
 
 
 def test_the_reduction_follows_the_higher_band_and_the_trader_rate() -> None:
     # 70.000 as a trader: 56.224 x 24,48% = 13.763,64 and 13.776 x 25,48% = 3.510,12
-    # (13.776,00 x 0,2548 = 3.510,1248), 17.273,76 x 65% = 11.227,94, + 7,44.
+    # (13.776,00 x 0,2548 = 3.510,1248), 17.273,76 less 4.604,20 = 12.669,56 x 65% = 8.235,21,
+    # plus 2.992,73 and 7,44.
     result = INPS_2026.contributions(
         "artigiani_commercianti", D("70000"), trade="commercianti", flat_rate_reduction=True
     )
+    assert result.percentage == D("8235.21")
     assert result.total == D("11235.38")
+
+
+def test_the_traders_indemnity_point_is_part_of_the_traders_rate() -> None:
+    law = INPS_2026.artisans_traders
+    assert law.artisans.indemnity_add_on == D("0.00")
+    assert law.traders.indemnity_add_on == D("0.48")
+    assert law.traders.up_to_first_band - law.artisans.up_to_first_band == D("0.48")
+
+
+def test_an_over_65_pensioner_pays_half_of_the_ivs_on_the_minimum_and_on_the_excess() -> None:
+    """Art. 59 c. 15 L. 449/1997 and INPS's page: «sia sul minimale di reddito che sulla quota
+    eccedente». Whether the 0,48 and the maternity are halved is not printed (A5), so only the
+    IVS is: an artisan's 4.513,92 halves to 2.256,96 and 2.686,08 to 1.343,04."""
+    artisan = INPS_2026.contributions(
+        "artigiani_commercianti", D("30000"), trade="artigiani", over_65_pensioner=True
+    )
+    assert (artisan.fixed, artisan.percentage) == (D("2264.40"), D("1343.04"))
+    # A trader keeps the 0,48 (18.808 x 0,48% = 90,28 on the minimum, 144,00 - 90,28 = 53,72
+    # on the excess) and the maternity: 4.604,20 - 90,28 = 4.513,92 halves to 2.256,96.
+    trader = INPS_2026.contributions(
+        "artigiani_commercianti", D("30000"), trade="commercianti", over_65_pensioner=True
+    )
+    assert (trader.fixed, trader.percentage) == (D("2354.68"), D("1396.76"))
+
+
+def test_a_first_enrolment_halves_the_ivs_like_the_over_65_reduction_does() -> None:
+    """Circolare 83/2025: «sola aliquota IVS»; maternity and a trader's 0,48 stay in full."""
+    enrolled = INPS_2026.contributions(
+        "artigiani_commercianti",
+        D("30000"),
+        trade="commercianti",
+        first_enrolment_month=date(2025, 3, 15),
+    )
+    assert (enrolled.fixed, enrolled.percentage) == (D("2354.68"), D("1396.76"))
+
+
+@pytest.mark.parametrize(
+    ("first_month", "year", "covered"),
+    [
+        # 36 months from January 2025 end in December 2027; from December 2025, in November 2028.
+        (date(2025, 1, 1), 2026, True),
+        (date(2025, 1, 1), 2027, True),
+        (date(2025, 1, 1), 2028, False),
+        (date(2025, 12, 1), 2027, True),
+        (date(2025, 12, 1), 2028, False),
+        # The law names enrolments of 2025 only.
+        (date(2024, 12, 1), 2026, False),
+        (date(2026, 1, 1), 2026, False),
+    ],
+)
+def test_the_first_enrolment_reduction_covers_whole_years_of_the_36_months(
+    first_month: date, year: int, covered: bool
+) -> None:
+    enrolment = INPS_2026.artisans_traders.new_enrolment
+    assert enrolment is not None
+    assert enrolment.covers(first_month, year) is covered
+
+
+def test_a_first_enrolment_the_law_does_not_cover_is_refused() -> None:
+    with pytest.raises(ValueError, match="does not cover 2026"):
+        INPS_2026.contributions(
+            "artigiani_commercianti",
+            D("30000"),
+            trade="artigiani",
+            first_enrolment_month=date(2024, 6, 1),
+        )
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"flat_rate_reduction": True, "over_65_pensioner": True},
+        {"flat_rate_reduction": True, "first_enrolment_month": date(2025, 5, 1)},
+        {"over_65_pensioner": True, "first_enrolment_month": date(2025, 5, 1)},
+    ],
+)
+def test_the_three_reductions_exclude_each_other(kwargs: dict[str, object]) -> None:
+    with pytest.raises(ValueError, match="exclude each other"):
+        INPS_2026.contributions(
+            "artigiani_commercianti",
+            D("30000"),
+            trade="artigiani",
+            **kwargs,  # type: ignore[arg-type]
+        )
+
+
+def test_the_gestione_separata_has_none_of_the_artisans_reductions() -> None:
+    with pytest.raises(ValueError, match="belong"):
+        INPS_2026.contributions("gestione_separata", D("1000"), over_65_pensioner=True)
+    with pytest.raises(ValueError, match="belong"):
+        INPS_2026.contributions(
+            "gestione_separata", D("1000"), first_enrolment_month=date(2025, 1, 1)
+        )
+
+
+# --- the advances ---------------------------------------------------------------------------
+
+
+def test_an_artisans_advances_are_the_part_above_the_minimum_in_two_equal_halves() -> None:
+    """Redditi PF 2026 fascicolo 2, appendix «INPS»: two advances of equal amount, on the days of
+    the income tax advances, from 2026's rates on the 2025 income above 2026's minimum:
+    30.000 x 24% = 7.200,00 less 4.513,92 = 2.686,08."""
+    advances = INPS_2026.advances("artigiani_commercianti", D("30000"), trade="artigiani")
+    assert (advances.total, advances.first, advances.second) == (
+        D("2686.08"),
+        D("1343.04"),
+        D("1343.04"),
+    )
+    assert (advances.first_due, advances.second_due) == (date(2026, 6, 30), date(2026, 11, 30))
+
+
+def test_an_income_at_or_below_the_minimum_has_no_advance() -> None:
+    advances = INPS_2026.advances("artigiani_commercianti", D("15000"), trade="artigiani")
+    assert (advances.total, advances.first, advances.second) == (D("0.00"),) * 3
+
+
+def test_the_advances_take_the_reductions_of_the_year() -> None:
+    """«tenendo conto di eventuali agevolazioni spettanti per lo stesso anno»: the flat-rate
+    regime's excess of 1.780,87 on 30.000 as a trader is paid 890,44 and 890,43 (the first
+    advance takes the cent the halving rounds up)."""
+    advances = INPS_2026.advances(
+        "artigiani_commercianti", D("30000"), trade="commercianti", flat_rate_reduction=True
+    )
+    assert (advances.total, advances.first, advances.second) == (
+        D("1780.87"),
+        D("890.44"),
+        D("890.43"),
+    )
+    over_65 = INPS_2026.advances(
+        "artigiani_commercianti", D("30000"), trade="artigiani", over_65_pensioner=True
+    )
+    assert over_65.total == D("1343.04")
+
+
+def test_the_gestione_separata_advances_are_the_rate_on_80_percent_of_the_income() -> None:
+    """«applicando le aliquote previste per l'anno 2026 sull'80% del reddito di lavoro autonomo
+    relativo all'anno 2025, tenendo conto del massimale»: 40.000 x 80% = 32.000 x 26,07%."""
+    advances = INPS_2026.advances("gestione_separata", D("40000"))
+    assert advances.base == D("32000")
+    assert (advances.total, advances.first, advances.second) == (
+        D("8342.40"),
+        D("4171.20"),
+        D("4171.20"),
+    )
+    covered = INPS_2026.advances("gestione_separata", D("40000"), covered_elsewhere=True)
+    assert covered.total == D("7680.00")  # 32.000 x 24%
+
+
+def test_the_gestione_separata_advances_stop_at_the_ceiling() -> None:
+    # 122.295 x 80% = 97.836 x 26,07% = 25.505,8452; the first advance takes the odd cent.
+    advances = INPS_2026.advances("gestione_separata", D("500000"))
+    assert (advances.total, advances.first, advances.second) == (
+        D("25505.85"),
+        D("12752.93"),
+        D("12752.92"),
+    )
+
+
+def test_the_advances_refuse_what_the_contributions_refuse() -> None:
+    with pytest.raises(ValueError, match="gestione"):
+        INPS_2026.advances("artigiani_commercianti", D("30000"))
+    with pytest.raises(ValueError, match="belong"):
+        INPS_2026.advances("gestione_separata", D("30000"), flat_rate_reduction=True)
 
 
 def test_the_part_above_the_minimum_is_not_paid_in_instalments_with_the_minimum() -> None:

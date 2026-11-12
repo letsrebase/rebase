@@ -4624,3 +4624,45 @@ def test_0114_adds_the_income_kind_and_refuses_split_payment_with_reverse_charge
         engine.dispose()
         downgrade(config, "0113")
         assert not _column_exists(url, "fiscal_profile", "income_kind")
+
+
+def _numeric_shape(url: str, table: str, column: str) -> tuple[int | None, int | None]:
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            row = connection.execute(
+                text(
+                    "SELECT numeric_precision, numeric_scale FROM information_schema.columns "
+                    "WHERE table_name = :table AND column_name = :column"
+                ),
+                {"table": table, "column": column},
+            ).one()
+            return row[0], row[1]
+    finally:
+        engine.dispose()
+
+
+def test_0115_adds_the_inps_reduction_facts_and_widens_the_inail_rate(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1097: three nullable profile columns (no backfill) and the INAIL rate's third decimal,
+    since 9.75 per mille is 0.975 percent; going down returns the two-decimal column."""
+    facts = (
+        "inps_over_65_reduction",
+        "inps_new_enrolment_reduction",
+        "inps_first_enrolment_month",
+    )
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0114")
+        assert not any(_column_exists(url, "fiscal_profile", column) for column in facts)
+        assert _numeric_shape(url, "staff_members", "employer_inail_rate") == (5, 2)
+        upgrade(config, "0115")
+        assert all(_column_exists(url, "fiscal_profile", column) for column in facts)
+        assert _numeric_shape(url, "staff_members", "employer_inail_rate") == (6, 3)
+        downgrade(config, "0114")
+        assert not any(_column_exists(url, "fiscal_profile", column) for column in facts)
+        assert _numeric_shape(url, "staff_members", "employer_inail_rate") == (5, 2)
+        upgrade(config, "0115")
+        assert _numeric_shape(url, "staff_members", "employer_inail_rate") == (6, 3)

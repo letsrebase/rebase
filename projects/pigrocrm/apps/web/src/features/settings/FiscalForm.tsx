@@ -199,7 +199,12 @@ export function FiscalForm({ legalEntityId, profile }: { legalEntityId: string; 
   const regime = regimeOf(values)
   const abroad = regime === 'foreign'
   const flat_rate = regime === 'RF19'
-  const visible = FIELDS.filter((field) => field.shownFor?.includes(regime) ?? true)
+  const visible = FIELDS.filter(
+    (field) => (field.shownFor?.includes(regime) ?? true) && (field.when?.(values) ?? true),
+  )
+  // The fields with an input of their own kind belong to the taxpayer's facts below.
+  const plainFields = visible.filter((field) => field.input === undefined)
+  const factFields = visible.filter((field) => field.input !== undefined)
   const choices = CHOICES.filter(
     (choice) => choice.shownFor.includes(regime) && (choice.when?.(values) ?? true),
   )
@@ -256,7 +261,7 @@ export function FiscalForm({ legalEntityId, profile }: { legalEntityId: string; 
             </p>
           )}
         </div>
-        {visible.map((field) => (
+        {plainFields.map((field) => (
           <div key={field.name} className="space-y-2">
             <Label htmlFor={`fiscal-${field.name}`}>{field.label}</Label>
             <Input
@@ -322,6 +327,24 @@ export function FiscalForm({ legalEntityId, profile }: { legalEntityId: string; 
                 ) : (
                   <p className="text-muted-foreground text-xs">{choice.hint}</p>
                 )}
+              </div>
+            ))}
+            {factFields.map((field) => (
+              <div key={field.name} className="space-y-2">
+                <Label htmlFor={`fiscal-${field.name}`}>{field.label}</Label>
+                <Input
+                  id={`fiscal-${field.name}`}
+                  type={field.input}
+                  value={values[field.name]}
+                  disabled={save.isPending}
+                  aria-invalid={fieldError?.field === field.name ? true : undefined}
+                  onChange={(event) => change({ [field.name]: event.target.value })}
+                />
+                {fieldError?.field === field.name ? (
+                  <p className="text-destructive text-sm">{fieldError.message}</p>
+                ) : field.hint ? (
+                  <p className="text-muted-foreground text-xs">{field.hint}</p>
+                ) : null}
               </div>
             ))}
           </div>

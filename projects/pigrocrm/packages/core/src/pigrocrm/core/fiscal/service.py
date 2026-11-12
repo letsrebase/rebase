@@ -299,11 +299,18 @@ class FiscalProfileService:
                     ENTITY, key, f"{whose} non ha questo parametro", expected="nessun valore"
                 )
         # The law's own pairings (`InpsYearLaw.contributions`): the gestione, the older
-        # ceiling and the 35% reduction belong to artigiani e commercianti, the lower rate to
+        # ceiling and the reductions belong to artigiani e commercianti, the lower rate to
         # the gestione separata.
         category = payload.get("inps_category")
         if category == "gestione_separata":
-            for key in ("inps_trade", "inps_before_1996", "flat_rate_inps_reduction"):
+            for key in (
+                "inps_trade",
+                "inps_before_1996",
+                "flat_rate_inps_reduction",
+                "inps_over_65_reduction",
+                "inps_new_enrolment_reduction",
+                "inps_first_enrolment_month",
+            ):
                 if payload.get(key):
                     raise ValidationFailed(
                         ENTITY,
@@ -318,6 +325,38 @@ class FiscalProfileService:
                 "l'aliquota ridotta per chi e' assicurato altrove vale solo per la gestione "
                 "separata",
                 expected="nessun valore, o la gestione separata",
+            )
+        # The three reductions of an artisan or a trader exclude each other: the over-65 one
+        # is not for the flat-rate regime (art. 1 c. 80 L. 190/2014), and INPS makes the
+        # first-enrolment one incompatible with the flat-rate regime and with the over-65 one
+        # (news of 28 April 2025).
+        granted = [
+            key
+            for key in (
+                "flat_rate_inps_reduction",
+                "inps_over_65_reduction",
+                "inps_new_enrolment_reduction",
+            )
+            if payload.get(key)
+        ]
+        if len(granted) > 1:
+            raise ValidationFailed(
+                ENTITY,
+                granted[-1],
+                "le tre riduzioni contributive non si cumulano: il forfettario esclude quella "
+                "degli ultrasessantacinquenni (legge 190/2014, art. 1, comma 80) e quella dei "
+                "nuovi iscritti e' incompatibile con entrambe",
+                expected="una sola riduzione",
+            )
+        if payload.get("inps_new_enrolment_reduction") and not payload.get(
+            "inps_first_enrolment_month"
+        ):
+            raise ValidationFailed(
+                ENTITY,
+                "inps_first_enrolment_month",
+                "la riduzione per i nuovi iscritti conta 36 mesi dalla prima iscrizione: "
+                "indica il mese",
+                expected="il mese della prima iscrizione",
             )
 
     def _require(self, legal_entity_id: UUID | None = None) -> FiscalProfile:

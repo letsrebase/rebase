@@ -51,6 +51,9 @@ INPS_PARAMETERS = (
     "inps_covered_elsewhere",
     "inps_before_1996",
     "flat_rate_inps_reduction",
+    "inps_over_65_reduction",
+    "inps_new_enrolment_reduction",
+    "inps_first_enrolment_month",
 )
 FLAT_RATE_PARAMETERS = (
     "ateco_group",
@@ -260,6 +263,13 @@ class FiscalProfileUpsert(BaseModel):
                 data.setdefault(key, None)
         return data
 
+    @field_validator("inps_first_enrolment_month")
+    @classmethod
+    def _month_of_enrolment(cls, value: date | None) -> date | None:
+        """The month INPS counts the 36 months from: any day of it names it, the first day is
+        what is stored."""
+        return value.replace(day=1) if value is not None else None
+
     @field_validator("ateco_group")
     @classmethod
     def _known_ateco_group(cls, value: str | None) -> str | None:
@@ -338,6 +348,11 @@ class FiscalProfileUpsert(BaseModel):
     inps_covered_elsewhere: bool | None = None
     inps_before_1996: bool | None = None
     flat_rate_inps_reduction: bool | None = None
+    # REB-1097: the facts of the INPS reductions, each «granted by INPS», never inferred. The
+    # month is any day of the month of the first enrolment; the first day is stored.
+    inps_over_65_reduction: bool | None = None
+    inps_new_enrolment_reduction: bool | None = None
+    inps_first_enrolment_month: date | None = None
     ateco_group: SafeStr | None = Field(default=None, max_length=60)
     flat_rate_start_year: int | None = Field(
         default=None, ge=FLAT_RATE_START_YEAR_MIN, le=FLAT_RATE_START_YEAR_MAX
@@ -425,6 +440,9 @@ class FiscalProfileRead(BaseModel):
     inps_covered_elsewhere: bool | None
     inps_before_1996: bool | None
     flat_rate_inps_reduction: bool | None
+    inps_over_65_reduction: bool | None
+    inps_new_enrolment_reduction: bool | None
+    inps_first_enrolment_month: date | None
     ateco_group: str | None
     flat_rate_start_year: int | None
     startup_no_prior_activity: bool | None

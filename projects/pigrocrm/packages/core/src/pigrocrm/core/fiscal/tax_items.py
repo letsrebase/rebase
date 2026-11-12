@@ -99,7 +99,8 @@ from pigrocrm.core.fiscal.advances import (
 )
 from pigrocrm.core.fiscal.basis import year_basis
 from pigrocrm.core.fiscal.f24_repository import F24GroupRepository
-from pigrocrm.core.fiscal.law import DeclaredTax
+from pigrocrm.core.fiscal.inps_advances import inps_advance_plan
+from pigrocrm.core.fiscal.law import DeclaredTax, TaxYearLaw
 from pigrocrm.core.fiscal.models import (
     DEFAULT_ADVANCE_METHOD,
     MAX_PLAN_INSTALMENTS,
@@ -226,6 +227,8 @@ class _Context:
     # instalment items by slot, read once: a payment's instalments are looked up by identity.
     plans: dict[tuple[str, int], int] = field(default_factory=dict)
     instalment_items: dict[UUID, DueItem] = field(default_factory=dict)
+    # The estimated income INPS computes the contributions of a year on, by year (REB-1097).
+    inps_incomes: dict[int, Decimal | None] = field(default_factory=dict)
 
 
 def _money(amount: Decimal) -> str:
@@ -309,6 +312,71 @@ class TaxDueItemService:
                 context.pack.chamber_fee_for(year) is not None or year <= context.today.year
             ):
                 payments.append(self._chamber_fee_payment(context, year))
+            # The advances of a person's INPS contributions (REB-1097): their own base (the
+            # previous year's income) and dates, so they are not a line of `INCOME_TAXES`. A
+            # later year waits for its INPS law, as the fee does.
+            if "inps" in law.taxes and (
+                context.pack.inps_for(year) is not None or year <= context.today.year
+            ):
+                payments.extend(self._inps_advance_payments(context, law, year))
+        return payments
+
+    # ---- the advances of a person's INPS contributions --------------------------------------
+
+    def _inps_income(self, context: _Context, year: int) -> Decimal | None:
+        """The estimate of the income the contributions of `year` are computed on."""
+        if year not in context.inps_incomes:
+            # Lazily, as `_estimate` is: the analytics facade imports the declared figures'
+            # service, which calls this one.
+            from pigrocrm.core.analytics.service import AnalyticsService
+
+            context.inps_incomes[year] = AnalyticsService(self.session).estimated_inps_income(
+                year, context.legal_entity, context.profile
+            )
+        return context.inps_incomes[year]
+
+    def _inps_advance_payments(
+        self, context: _Context, law: TaxYearLaw, year: int
+    ) -> list[Payment]:
+        """The two advances of `year`'s INPS contributions, on the income of the year before
+        (`inps_advances.py`). Always a forecast: no declared figure can be the base, since the
+        declared INPS figure is a contribution and the base an income. The balance and the
+        fixed instalments of the minimum are not written yet. When the first advance was paid
+        the second is what the total leaves, so the year's total stays the law's."""
+        profile = context.profile
+        ready = profile.inps_category is not None and context.pack.inps_for(year) is not None
+        plan = inps_advance_plan(
+            context.pack,
+            year,
+            profile,
+            self._inps_income(context, year - 1) if ready else None,
+            flat_rate_regime=law.flat_rate is not None,
+        )
+        parts: tuple[TaxItemPart, TaxItemPart] = ("first_advance", "second_advance")
+        if isinstance(plan, Missing):
+            return [Payment("inps", year, part, None, None, plan.reason) for part in parts]
+        first_slot = slot_id(
+            TAX_ADVANCE_SOURCE_KIND, context.legal_entity.id, "inps", year, parts[0]
+        )
+        paid = self._frozen(TAX_ADVANCE_SOURCE_KIND, first_slot)
+        amounts = (plan.first, plan.total - paid.amount if paid is not None else plan.second)
+        dues = (plan.first_due, plan.second_due)
+        payments: list[Payment] = []
+        for part, amount, due, words in zip(
+            parts, amounts, dues, ("1a rata", "2a rata"), strict=True
+        ):
+            wanted = (
+                Wanted(
+                    amount=amount,
+                    due=due,
+                    state="forecast",
+                    description=f"Acconto INPS {year}, {words}",
+                    rule=f"{TAX_ADVANCE_SOURCE_KIND}:inps:{year}:{part}",
+                )
+                if amount > 0
+                else None
+            )
+            payments.append(Payment("inps", year, part, due, wanted))
         return payments
 
     def _advance_dates(

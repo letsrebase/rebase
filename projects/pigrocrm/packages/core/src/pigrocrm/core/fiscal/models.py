@@ -139,6 +139,14 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
     inps_covered_elsewhere: Mapped[bool | None] = mapped_column(Boolean, default=None)
     inps_before_1996: Mapped[bool | None] = mapped_column(Boolean, default=None)
     flat_rate_inps_reduction: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    # REB-1097: the facts of the INPS reductions of an artisan or a trader, each `None` = not
+    # stated (no reduction assumed, never inferred from the age): that INPS granted the 50%
+    # reduction of a pensioner over 65 (art. 59 c. 15 L. 449/1997), that it granted the 50%
+    # reduction of the IVS rate to a first enrolment (art. 1 c. 186 L. 207/2024), and the month
+    # of that enrolment (the first day of the month, which counts the 36 months).
+    inps_over_65_reduction: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    inps_new_enrolment_reduction: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    inps_first_enrolment_month: Mapped[dt.date | None] = mapped_column(Date, default=None)
     ateco_group: Mapped[str | None] = mapped_column(String(60), default=None)
     flat_rate_start_year: Mapped[int | None] = mapped_column(SmallInteger, default=None)
     startup_no_prior_activity: Mapped[bool | None] = mapped_column(Boolean, default=None)

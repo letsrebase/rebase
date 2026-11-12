@@ -47,13 +47,20 @@ the list brings it, as the single place the carry-over is done (REB-1063).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
 from pigrocrm.core.fiscal.basis_schemas import YearBasis
 from pigrocrm.core.fiscal.law import TaxYearLaw
-from pigrocrm.core.fiscal.law_inps import InpsCategoryName, InpsContributions, TradeGestione
+from pigrocrm.core.fiscal.law_inps import (
+    InpsCategoryName,
+    InpsContributions,
+    InpsYearLaw,
+    TradeGestione,
+)
 from pigrocrm.core.fiscal.law_irpef import IrpefLaw, region_key
 from pigrocrm.core.fiscal.pack import FiscalPack
 from pigrocrm.core.money import ZERO_MONEY, round_money
@@ -147,12 +154,18 @@ class OrdinaryEstimate(BaseModel):
 
 @dataclass(frozen=True)
 class InpsFacts:
-    """The taxpayer's INPS facts, as the fiscal profile states them (`None`: not stated)."""
+    """The taxpayer's INPS facts, as the fiscal profile states them (`None`: not stated).
+
+    The three last ones are the reductions of an artisan or a trader that INPS granted
+    (REB-1097): none is inferred, and an absent one means no reduction is applied."""
 
     category: InpsCategoryName | None
     trade: TradeGestione | None
     covered_elsewhere: bool | None
     before_1996: bool | None
+    over_65_reduction: bool | None = None
+    new_enrolment_reduction: bool | None = None
+    first_enrolment_month: date | None = None
 
 
 def estimate_ordinary_taxes(
@@ -264,8 +277,7 @@ def _inps(
     missing_parameters: list[str] = []
     assumptions = [
         "Le contributi sono calcolate sul reddito dell'anno e non tengono conto di acconti già "
-        "versati, di riduzioni per chi ha più di 65 anni o è alla prima iscrizione né di altre "
-        "gestioni previdenziali.",
+        "versati né di altre gestioni previdenziali.",
     ]
     sources: list[str] = []
     if law is None:
@@ -305,11 +317,17 @@ def _inps(
                 "diverse."
             )
         else:
+            reductions, reduction_notes = inps_reductions(law, facts)
+            assumptions.extend(reduction_notes)
             # The older ceiling matters only above the lower one: where both answer the same,
             # the question is not needed and its absence is no missing fact.
             by_flag = {
                 flag: law.contributions(
-                    category, income, trade=facts.trade, contributions_before_1996=flag
+                    category,
+                    income,
+                    trade=facts.trade,
+                    contributions_before_1996=flag,
+                    **reductions,
                 )
                 for flag in (False, True)
             }
@@ -374,6 +392,43 @@ def _inps(
         ),
         missing_parameters,
     )
+
+
+def inps_reductions(law: InpsYearLaw, facts: InpsFacts) -> tuple[dict[str, Any], list[str]]:
+    """The reduction INPS granted an artisan or a trader, as the arguments of
+    `InpsYearLaw.contributions`, and what the figure says about it (REB-1097). A reduction is
+    applied only when the profile says INPS granted it, never from the age or the history, and
+    the first-enrolment one only where the year's law covers the enrolment's month."""
+    over_65 = bool(facts.over_65_reduction)
+    new_enrolment = bool(facts.new_enrolment_reduction)
+    if over_65 and new_enrolment:
+        return {}, [
+            "Il profilo indica sia la riduzione per i pensionati ultrasessantacinquenni sia quella "
+            "per i nuovi iscritti, che non si cumulano: nessuna è applicata."
+        ]
+    if over_65:
+        return {"over_65_pensioner": True}, [
+            "Applicata la riduzione del 50% per i pensionati con più di 65 anni (legge 449/1997, "
+            "art. 59, comma 15), sulla sola aliquota IVS: nessuna fonte dice se vale anche per "
+            "lo 0,48% dei commercianti e per il contributo di maternità, che restano interi."
+        ]
+    if new_enrolment:
+        month = facts.first_enrolment_month
+        enrolment = law.artisans_traders.new_enrolment
+        if month is None or enrolment is None or not enrolment.covers(month, law.year):
+            return {}, [
+                f"La riduzione per i nuovi iscritti indicata nel profilo non copre il {law.year}: "
+                "non è applicata."
+            ]
+        return {"first_enrolment_month": month}, [
+            f"Applicata la riduzione del 50% della sola aliquota IVS per chi si è iscritto per la "
+            f"prima volta nel {enrolment.enrolment_year} (legge 207/2024, art. 1, comma 186): "
+            "il contributo di maternità e lo 0,48% dei commercianti restano interi."
+        ]
+    return {}, [
+        "Non è applicata nessuna riduzione per i pensionati con più di 65 anni o per i nuovi "
+        "iscritti: si applicano solo se il profilo dice che l'INPS le ha concesse."
+    ]
 
 
 def _no_inps(
