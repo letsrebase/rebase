@@ -651,6 +651,18 @@ class DueItemService:
         )
         return self._record_payment(item, data, actor)
 
+    def settle_by_filing(
+        self, item_id: UUID, amount: Decimal, filed_on: dt.date, note: str, actor: Actor
+    ) -> DueItemSettlement:
+        """Settles `amount` (in the item's sign) of a line of an F24 that was filed with no
+        bank movement, dated the day it was filed: the same payment a movement's match writes,
+        without the movement. The caller (`F24GroupService.file_f24`) has asked for a person
+        first. Flushes, does not commit."""
+        item = self._locked(item_id)
+        _require_settle_permission(actor, item, undo=False)
+        data = SettlementCreate(amount=amount, settled_on=filed_on, note=note)
+        return self._record_payment(item, data, actor)
+
     def adopt_for_movement(
         self, item_id: UUID, movement: BankMovement, actor: Actor
     ) -> DueItemSettlement:
@@ -689,7 +701,8 @@ class DueItemService:
     ) -> None:
         """Takes back what a match did to one payment: a payment the match wrote is reversed
         (the row stays, stamped, with its evidence), one it adopted only loses the evidence and
-        stays as the person marked it. Flushes, does not commit."""
+        stays as the person marked it. Also how reopening a filed F24 reverses the payments the
+        filing wrote (`adopted` false). Flushes, does not commit."""
         settlement = self.repo.get_settlement(settlement_id)
         if settlement is None:
             raise NotFound(SETTLEMENT_ENTITY, settlement_id)

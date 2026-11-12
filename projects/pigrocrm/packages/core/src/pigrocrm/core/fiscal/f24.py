@@ -7,8 +7,9 @@ its lines are the fiscal position.
 
 **What may be grouped.** Items owed to the tax office (the tax items, IVA, the withholdings paid for
 others, payroll's INPS and INAIL, and the credits), in euro, out, all falling on one date, open
-with nothing paid on them and in no other live group. The net, the debits less the credits, must be
-positive: a group that nets to zero or to a credit has no movement to match.
+with nothing paid on them (a credit an earlier F24 used in part goes in with what is left of it) and
+in no other live group. The net, the debits less the credits, may be positive, zero or a credit
+(REB-1093).
 
 **Why a tax forecast is made `expected` when it is grouped.** A tax has no document that replaces
 its forecast: the F24 is the payment (`DueItemService._record_payment` already makes a paid tax
@@ -25,9 +26,28 @@ recompute touches a line (`DueItemService` refuses to drop, restate or reschedul
 paid F24 still reads what was paid. A line the pack has no code for has none and reads «codice da
 verificare»: nothing is guessed.
 
-**Paying.** One bank movement equal to the net settles the group and every line
-(`MovementMatchService`, which offers the group as a candidate and settles it as a whole); undoing
-the match reopens it. Ungrouping is allowed only before: a settled group is reopened first.
+**Paying.** One bank movement equal to the net settles a group with an amount to pay and every
+line (`MovementMatchService`, which offers the group as a candidate and settles it as a whole);
+undoing the match reopens it. Ungrouping is allowed only before: a settled group is reopened first.
+
+**Filing a group with nothing to pay (REB-1093).** An F24 that nets to zero, or to a credit, moves
+no money, so no bank movement can settle it. It must still be presented, and only through the
+telematic services of the Agenzia delle Entrate: art. 11 comma 2 of D.L. 66/2014, as the Agenzia's
+circolare 27/E of 19 September 2014 reads it, says the payments "sono eseguiti: a) esclusivamente
+mediante i servizi telematici messi a disposizione dall'Agenzia delle entrate, nel caso in cui, per
+effetto delle compensazioni effettuate, il saldo finale sia di importo pari a zero", and the
+Agenzia's page «F24: come effettuare i versamenti» adds that since 1 July 2024 an F24 with credits
+used in compensation goes through I24 "a prescindere se vi sia un saldo da versare oppure un saldo
+pari a zero" (A5 register, REB-1093). So the act that settles such a group is a person saying it
+was filed (`file_f24`: the day and, optionally, the receipt), with the permission of confirming a
+match and no agent credential. It writes what a movement's match writes, the lines' payments
+(`DueItemService._record_payment`) and the group's `settled` state (`F24GroupRepository.settle`),
+only without a movement: every debit is paid in full, and the credits are spent oldest tax year
+first until they cover the debits, so a group that nets to a credit spends only part of the last
+one it touches and releases the credits it did not need, the rest of each staying open to go in
+another F24 (`used_amount` on each line says how much was used). A group with an amount to pay is
+refused: only the money leaving the account proves it was paid. Reopening a filed group reverses
+the payments it wrote.
 
 **Receipts.** An F24's receipt is an inbox item of kind `tax_document`; the group points at it and
 the file stays in the inbox's document storage, behind the inbox's own visibility (`PAY_KINDS`).
@@ -44,6 +64,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.db import today_local
 from pigrocrm.core.due_items.models import DueItem
 from pigrocrm.core.due_items.schedule_queries import kinds_of_modules_off
 from pigrocrm.core.due_items.service import TAX_SOURCE_KINDS_PAYABLE, DueItemService
@@ -54,11 +75,13 @@ from pigrocrm.core.fiscal.f24_repository import F24GroupRepository
 from pigrocrm.core.fiscal.f24_schemas import (
     CODE_TO_VERIFY,
     F24GroupCreate,
+    F24GroupFile,
     F24GroupListQuery,
     F24GroupPage,
     F24GroupRead,
     F24LineRead,
     F24ReceiptRead,
+    F24SettledBy,
     TaxCreditOriginRead,
 )
 from pigrocrm.core.fiscal.pack import FiscalPack, resolve_pack
@@ -71,6 +94,28 @@ ENTITY = "f24_group"
 ZERO = Decimal("0.00")
 EURO = "EUR"
 RECEIPT_KIND = "tax_document"
+FILING_NOTE = "F24 presentato senza importo da pagare"
+
+
+def _settled_by(group: F24Group) -> F24SettledBy | None:
+    if group.state != "settled":
+        return None
+    return "movement" if group.bank_movement_id is not None else "filing"
+
+
+def _credit_left(group: F24Group, lines: Sequence[F24GroupItem]) -> Decimal | None:
+    """What of its credits a settled group did not use, still open (zero for one a movement
+    paid, which takes every line whole); null while the group is not settled."""
+    if group.state != "settled":
+        return None
+    return sum(
+        (
+            -line.amount + (line.amount if line.used_amount is None else line.used_amount)
+            for line in lines
+            if line.amount < 0
+        ),
+        ZERO,
+    )
 
 
 class F24GroupService:
@@ -90,7 +135,8 @@ class F24GroupService:
         modules: AbstractSet[str] | None = None,
     ) -> F24GroupRead:
         """Groups the named due items into one F24, dated on their common date. Refuses an item
-        that cannot be paid with an F24 and says which, and a group whose net is not a payment."""
+        that cannot be paid with an F24 and says which. A net that is zero or a credit is
+        allowed: that F24 is filed, not matched (`file_f24`)."""
         actor.require_admin("group_f24")
         items = self._lock(data.due_item_ids)
         entity_ids = {item.legal_entity_id for item in items}
@@ -114,14 +160,9 @@ class F24GroupService:
             )
         (payment_date,) = dates
         assert payment_date is not None  # noqa: S101 - `None in dates` was refused above
-        net = sum((item.amount for item in items), ZERO)
-        if net <= 0:
-            raise ValidationFailed(
-                ENTITY,
-                "due_item_ids",
-                "i crediti coprono tutto il dovuto: l'F24 non ha un importo da pagare",
-                expected="scadenze il cui totale netto e' positivo",
-            )
+        remaining = {
+            item.id: item.amount - self.dues.repo.totals(item.id).settled for item in items
+        }
         legal_entity_id = next(iter(entity_ids))
         pack = self._pack(legal_entity_id)
         group = F24Group(
@@ -145,7 +186,7 @@ class F24GroupService:
                     group_id=group.id,
                     due_item_id=item.id,
                     legal_entity_id=legal_entity_id,
-                    amount=item.amount,
+                    amount=remaining[item.id],
                     line=code.line,
                     code=code.code,
                     code_kind=code.kind,
@@ -161,7 +202,8 @@ class F24GroupService:
 
     def ungroup_f24(self, group_id: UUID, actor: Actor) -> F24GroupRead:
         """Releases the lines of a group that is not paid: the items are free again and the
-        group stays as `dissolved`. A group a movement paid is reopened first (undo the match)."""
+        group stays as `dissolved`. A group a movement paid is reopened first (undo the match),
+        and so is one marked filed (`reopen_f24`)."""
         actor.require_admin("ungroup_f24")
         group = self._group(group_id, lock=True)
         if group.state == "dissolved":
@@ -169,7 +211,9 @@ class F24GroupService:
         if group.state == "settled":
             raise Conflict(
                 ENTITY,
-                "l'F24 e' stato pagato: prima si annulla l'abbinamento al movimento",
+                "l'F24 e' stato pagato: prima si annulla l'abbinamento al movimento"
+                if group.bank_movement_id is not None
+                else "l'F24 e' stato presentato: prima lo si riapre",
                 id=str(group.id),
             )
         now = dt.datetime.now(dt.UTC)
@@ -183,6 +227,133 @@ class F24GroupService:
         self.session.commit()
         return self._read([group])[0]
 
+    # ---- filing a group with nothing to pay (REB-1093) --------------------------------------
+
+    def file_f24(self, group_id: UUID, data: F24GroupFile, actor: Actor) -> F24GroupRead:
+        """A person says an F24 whose net is zero or a credit was filed, on `filed_on`: the group
+        settles as a movement's match settles one (every line paid, the credits spent) with no
+        movement, and the receipt, when given, is linked. A group with an amount to pay is
+        refused: only the money leaving the account says it was paid."""
+        actor.require_person("file_f24")
+        actor.require_admin("file_f24")
+        group = self._group(group_id, lock=True)
+        if group.state != "open":
+            raise Conflict(
+                ENTITY,
+                "un F24 sciolto non si presenta"
+                if group.state == "dissolved"
+                else "l'F24 e' gia' segnato come pagato",
+                id=str(group.id),
+            )
+        lines = self.repo.live_lines(group.id)
+        if sum((line.amount for line in lines), ZERO) > 0:
+            raise ValidationFailed(
+                ENTITY,
+                "group_id",
+                "l'F24 ha un importo da pagare: lo salda il movimento in banca",
+                expected="un F24 il cui totale netto e' zero o a credito",
+            )
+        if data.filed_on > today_local():
+            raise ValidationFailed(
+                ENTITY,
+                "filed_on",
+                "un F24 non e' presentato in una data futura",
+                expected="il giorno in cui l'F24 e' stato presentato",
+            )
+        items = {item.id: item for item in self._lock([line.due_item_id for line in lines])}
+        for line in lines:
+            item = items[line.due_item_id]
+            if (
+                item.state != "expected"
+                or item.amount - self.dues.repo.totals(item.id).settled != line.amount
+            ):
+                raise Conflict(
+                    ENTITY, "una scadenza dell'F24 e' cambiata: riprova", id=str(item.id)
+                )
+        if data.receipt_inbox_item_id is not None:
+            self._link_receipt(group, data.receipt_inbox_item_id, actor)
+        used = self._credit_use(lines, items)
+        self.repo.settle(group, data.filed_on)
+        now = dt.datetime.now(dt.UTC)
+        for line in sorted(lines, key=lambda row: str(row.due_item_id)):
+            paid = line.amount if line.amount > 0 else used[line.id]
+            settlement = (
+                self.dues.settle_by_filing(
+                    line.due_item_id, paid, data.filed_on, FILING_NOTE, actor
+                )
+                if paid != 0
+                else None
+            )
+            # A credit the F24 did not use up is released: what is left of it is free to go in
+            # another F24.
+            self.repo.use_line(
+                line,
+                paid,
+                None if settlement is None else settlement.id,
+                release=line.amount < 0 and paid != line.amount,
+                at=now,
+            )
+        self.activities.record(ENTITY, group.id, "f24_filed", actor, {"lines": len(lines)})
+        self.session.commit()
+        return self._read([group])[0]
+
+    def reopen_f24(self, group_id: UUID, actor: Actor) -> F24GroupRead:
+        """A person takes back the filing of a group: the payments it wrote are reversed and the
+        group waits again. A group a movement paid is reopened by undoing the match. Refused when
+        a credit it released went into another F24 or was used since."""
+        actor.require_person("reopen_f24")
+        actor.require_admin("reopen_f24")
+        group = self._group(group_id, lock=True)
+        if group.state != "settled" or group.bank_movement_id is not None:
+            raise Conflict(
+                ENTITY, "solo un F24 segnato come presentato si riapre da qui", id=str(group.id)
+            )
+        lines = self.repo.lines_of([group.id])[group.id]
+        self._lock([line.due_item_id for line in lines])
+        for line in lines:
+            if line.released_at is None:
+                continue
+            live = {row.id for row in self.dues.repo.live_settlements(line.due_item_id)}
+            if self.repo.group_of(line.due_item_id) is not None or live - {line.settlement_id}:
+                raise Conflict(
+                    ENTITY,
+                    "il credito rimasto e' gia' in un altro F24 o e' stato usato",
+                    id=str(line.due_item_id),
+                )
+        for line in sorted(lines, key=lambda row: str(row.due_item_id)):
+            if line.settlement_id is not None:
+                self.dues.release_for_movement(
+                    line.settlement_id, adopted=False, reason="F24 riaperto", actor=actor
+                )
+        self.repo.reopen(group)
+        self.activities.record(ENTITY, group.id, "f24_reopened", actor)
+        self.session.commit()
+        return self._read([group])[0]
+
+    def _credit_use(
+        self, lines: Sequence[F24GroupItem], items: dict[UUID, DueItem]
+    ) -> dict[UUID, Decimal]:
+        """How much of each credit line (by line id, negative like the line) the F24 spends: the
+        credits are taken oldest tax year first until they cover the debits, so a net credit
+        leaves the rest of the last one it touches and the ones after it whole."""
+        source_ids = [items[line.due_item_id].source_id for line in lines if line.amount < 0]
+        credits = self.repo.credits_by_id(
+            source_id for source_id in source_ids if source_id is not None
+        )
+
+        def order(line: F24GroupItem) -> tuple[int, str]:
+            source_id = items[line.due_item_id].source_id
+            credit = credits.get(source_id) if source_id is not None else None
+            return (credit.tax_year if credit is not None else 0, str(line.due_item_id))
+
+        to_cover = sum((line.amount for line in lines if line.amount > 0), ZERO)
+        used: dict[UUID, Decimal] = {}
+        for line in sorted((row for row in lines if row.amount < 0), key=order):
+            take = min(-line.amount, to_cover)
+            to_cover -= take
+            used[line.id] = -take if take else ZERO
+        return used
+
     # ---- receipts ---------------------------------------------------------------------------
 
     def attach_f24_receipt(self, group_id: UUID, inbox_item_id: UUID, actor: Actor) -> F24GroupRead:
@@ -192,6 +363,13 @@ class F24GroupService:
         group = self._group(group_id, lock=True)
         if group.state == "dissolved":
             raise Conflict(ENTITY, "un F24 sciolto non ha ricevute", id=str(group.id))
+        self._link_receipt(group, inbox_item_id, actor)
+        self.session.commit()
+        return self._read([group])[0]
+
+    def _link_receipt(self, group: F24Group, inbox_item_id: UUID, actor: Actor) -> None:
+        """The checks and the write of a receipt link, shared by `attach_f24_receipt` and by
+        filing a group. Flushes, does not commit."""
         item = visible_item(self.session, inbox_item_id, actor)
         if item.kind != RECEIPT_KIND:
             raise ValidationFailed(
@@ -220,8 +398,6 @@ class F24GroupService:
         )
         self.session.flush()
         self.activities.record(ENTITY, group.id, "f24_receipt_attached", actor)
-        self.session.commit()
-        return self._read([group])[0]
 
     def detach_f24_receipt(self, group_id: UUID, inbox_item_id: UUID, actor: Actor) -> F24GroupRead:
         """Takes a receipt off the group; the inbox item is untouched."""
@@ -322,7 +498,11 @@ class F24GroupService:
             raise ValidationFailed(ENTITY, "due_item_ids", "la scadenza e' di un modulo spento")
         if item.state == "dropped":
             raise Conflict(ENTITY, "una scadenza scartata non va in un F24", id=item_id)
-        if item.state == "settled" or self.dues.repo.totals(item.id).settled != ZERO:
+        settled = self.dues.repo.totals(item.id).settled
+        # A credit an earlier F24 used in part is open with what is left (REB-1093); anything
+        # else paid, even in part, is not.
+        part_used_credit = item.amount < 0 and item.state == "expected"
+        if item.state == "settled" or (settled != ZERO and not part_used_credit):
             raise Conflict(
                 ENTITY, "una scadenza gia' pagata, anche in parte, non va in un F24", id=item_id
             )
@@ -412,6 +592,7 @@ class F24GroupService:
                     code_to_verify=line.code is None,
                     reference_year=line.reference_year,
                     released=line.released_at is not None,
+                    used_amount=line.used_amount,
                 )
             )
         line_reads.sort(key=lambda read: (read.is_credit, read.tax or "", str(read.due_item_id)))
@@ -438,6 +619,8 @@ class F24GroupService:
             ],
             bank_movement_id=group.bank_movement_id,
             settled_on=group.settled_on,
+            settled_by=_settled_by(group),
+            credit_left=_credit_left(group, lines),
             created_by_type=group.created_by_type,
             created_at=group.created_at,
             updated_at=group.updated_at,

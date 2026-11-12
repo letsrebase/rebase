@@ -1,10 +1,13 @@
 """REB-1076: due items grouped into an F24 and settled by one movement (taxes design § 2 and § 5).
+REB-1093: a group that nets to zero or to a credit is settled by a person filing it.
 
 What is proved here: an F24 that holds a credit is settled by the one movement equal to its net,
 and undoing the match reopens it; each line carries the code the pack gives it, and a line the pack
 has no code for reads «codice da verificare»; ungrouping frees the items and a grouped item is not
 touched by anything else; a tax forecast becomes the item that is paid when it is grouped; and who
-may group, read and ungroup.
+may group, read and ungroup. A group of nothing to pay is filed, not matched: it settles its lines
+and spends its credits as a match does, a net credit leaves the rest of its credits open for another
+F24, and who may file and reopen one.
 """
 
 import datetime as dt
@@ -41,6 +44,7 @@ from pigrocrm.core.fiscal.f24_models import F24Group, F24GroupItem, TaxCredit
 from pigrocrm.core.fiscal.f24_schemas import (
     CODE_TO_VERIFY,
     F24GroupCreate,
+    F24GroupFile,
     F24GroupListQuery,
     F24GroupRead,
 )
@@ -394,15 +398,6 @@ def test_only_what_is_owed_to_the_tax_office_goes_in_an_f24(db_session: Session)
             _group(db_session, [tax, other])
 
 
-def test_the_credits_cannot_cover_everything_owed(db_session: Session) -> None:
-    entity = _entity(db_session)
-    owed = _tax(db_session, entity, "irpef", 2026, "balance", "100.00")
-    credit = _credit(db_session, entity, "150.00")
-
-    with pytest.raises(ValidationFailed, match="crediti"):
-        _group(db_session, [owed, credit])
-
-
 def test_an_item_is_in_one_live_group_and_a_paid_one_is_in_none(db_session: Session) -> None:
     entity = _entity(db_session)
     first = _tax(db_session, entity, "irpef", 2026, "balance", "100.00")
@@ -635,3 +630,232 @@ def test_a_proposal_for_a_group_stops_being_current_when_the_group_is_ungrouped(
 
     stale = service.get_movement(movement.id, ADMIN)
     assert stale.movement.match is not None and not stale.movement.match.is_current
+
+
+# --- REB-1093: a group of nothing to pay is filed, not matched -----------------------------------
+# The credit in these tests is the fixture's `_credit`; nothing in filing reads its origin, only its
+# amount and its tax year (the order the credits are spent in), so any credit kind behaves the same.
+
+
+def _file(
+    session: Session,
+    group_id: UUID,
+    *,
+    receipt: UUID | None = None,
+    actor=ADMIN,  # noqa: ANN001
+) -> F24GroupRead:
+    return F24GroupService(session).file_f24(
+        group_id, F24GroupFile(filed_on=TODAY, receipt_inbox_item_id=receipt), actor
+    )
+
+
+def _payments(session: Session, ids: list[UUID]) -> dict[UUID, Decimal]:
+    """What is live-paid on each item, summed over its payments."""
+    paid: dict[UUID, Decimal] = {}
+    for row in session.scalars(
+        select(DueItemSettlement).where(
+            DueItemSettlement.due_item_id.in_(ids), DueItemSettlement.reversed_at.is_(None)
+        )
+    ):
+        paid[row.due_item_id] = paid.get(row.due_item_id, D("0.00")) + row.amount
+    return paid
+
+
+def test_a_group_that_nets_to_zero_is_settled_by_filing_it(db_session: Session) -> None:
+    world = CashWorld(db_session)
+    entity = _entity(db_session)
+    account = world.account("5000.00", entity=entity)
+    owed = _tax(db_session, entity, "irpef", 2026, "balance", "200.00")
+    credit = _credit(db_session, entity, "200.00")
+    receipt = _inbox(db_session, entity)
+
+    group = _group(db_session, [owed, credit])
+
+    assert (group.state, group.total, group.credit_left, group.settled_by) == (
+        "open",
+        D("0.00"),
+        None,
+        None,
+    )
+    # No movement can settle it: it is no candidate and a selection of its lines is refused.
+    movement = _movement(db_session, account, "-200.00")
+    service = MovementMatchService(db_session)
+    assert service.get_movement(movement.id, ADMIN).candidates == []
+    with pytest.raises(ValidationFailed, match="presentato"):
+        service.preview(movement.id, MatchSelection(due_item_ids=[owed, credit]), ADMIN)
+
+    filed = _file(db_session, group.id, receipt=receipt)
+
+    assert (filed.state, filed.settled_by, filed.settled_on, filed.bank_movement_id) == (
+        "settled",
+        "filing",
+        TODAY,
+        None,
+    )
+    assert filed.credit_left == D("0.00")
+    assert [line.used_amount for line in filed.lines] == [D("200.00"), D("-200.00")]
+    assert [r.inbox_item_id for r in filed.receipts] == [receipt]
+    assert _payments(db_session, [owed, credit]) == {owed: D("200.00"), credit: D("-200.00")}
+    assert {db_session.get(DueItem, i).state for i in (owed, credit)} == {"settled"}  # type: ignore[union-attr]
+    # Settled once: neither filed again nor taken apart.
+    with pytest.raises(Conflict, match="gia' segnato"):
+        _file(db_session, group.id)
+    with pytest.raises(Conflict, match="riapre"):
+        F24GroupService(db_session).ungroup_f24(group.id, ADMIN)
+
+
+def test_a_group_with_an_amount_to_pay_cannot_be_filed(db_session: Session) -> None:
+    entity = _entity(db_session)
+    group = _group(
+        db_session,
+        [
+            _tax(db_session, entity, "irpef", 2026, "balance", "200.00"),
+            _credit(db_session, entity, "50.00"),
+        ],
+    )
+
+    with pytest.raises(ValidationFailed, match="movimento in banca"):
+        _file(db_session, group.id)
+
+    assert F24GroupService(db_session).get_f24_group(group.id, ADMIN).state == "open"
+
+
+def test_a_net_credit_spends_only_what_covers_the_debits_and_leaves_the_rest(
+    db_session: Session,
+) -> None:
+    entity = _entity(db_session)
+    owed = _plain(db_session, entity, "100.00")
+    old_credit = _credit(db_session, entity, "80.00", year=2024)
+    new_credit = _credit(db_session, entity, "150.00", year=2025)
+    group = _group(db_session, [owed, old_credit, new_credit])
+    assert group.total == D("-130.00")
+
+    filed = _file(db_session, group.id)
+
+    # The older credit goes first and whole; the newer one covers the last 20 of the debits.
+    assert _payments(db_session, [owed, old_credit, new_credit]) == {
+        owed: D("100.00"),
+        old_credit: D("-80.00"),
+        new_credit: D("-20.00"),
+    }
+    lines = _by_item(filed)
+    assert lines[new_credit].used_amount == D("-20.00")  # type: ignore[attr-defined]
+    assert (lines[old_credit].released, lines[new_credit].released) == (False, True)  # type: ignore[attr-defined]
+    assert filed.credit_left == D("130.00")
+    states = {i: db_session.get(DueItem, i).state for i in (owed, old_credit, new_credit)}  # type: ignore[union-attr]
+    assert states == {owed: "settled", old_credit: "settled", new_credit: "expected"}
+
+    # What is left of the credit goes in the next F24, with what is left of it as the line.
+    next_owed = _plain(db_session, entity, "50.00")
+    second = _group(db_session, [next_owed, new_credit])
+    assert (second.debit_total, second.credit_total, second.total) == (
+        D("50.00"),
+        D("130.00"),
+        D("-80.00"),
+    )
+    again = _file(db_session, second.id)
+    assert again.credit_left == D("80.00")
+    assert _payments(db_session, [new_credit]) == {new_credit: D("-70.00")}
+    assert F24GroupService(db_session).get_f24_group(group.id, ADMIN).credit_left == D("130.00")
+
+
+def test_a_group_of_credits_alone_is_filed_and_spends_nothing(db_session: Session) -> None:
+    entity = _entity(db_session)
+    credit = _credit(db_session, entity, "90.00")
+    group = _group(db_session, [credit])
+
+    filed = _file(db_session, group.id)
+
+    assert (filed.state, filed.total, filed.credit_left) == ("settled", D("-90.00"), D("90.00"))
+    assert _payments(db_session, [credit]) == {}
+    assert db_session.get(DueItem, credit).state == "expected"  # type: ignore[union-attr]
+    assert _group(db_session, [credit]).state == "open"
+
+
+def test_filing_is_a_persons_act_dated_no_later_than_today(db_session: Session) -> None:
+    entity = _entity(db_session)
+    owed = _tax(db_session, entity, "irpef", 2026, "balance", "100.00")
+    group = _group(db_session, [owed, _credit(db_session, entity, "100.00")])
+    service = F24GroupService(db_session)
+    data = F24GroupFile(filed_on=TODAY)
+
+    for refused in (COLLABORATOR, READONLY):
+        with pytest.raises(PermissionDenied):
+            service.file_f24(group.id, data, refused)
+    for agent in (AGENT, AGENT_FULL):
+        with pytest.raises(AgentForbidden):
+            service.file_f24(group.id, data, agent)
+    with pytest.raises(ValidationFailed, match="futura"):
+        service.file_f24(group.id, F24GroupFile(filed_on=TODAY + dt.timedelta(days=1)), ADMIN)
+    with pytest.raises(ValidationFailed, match="tipo"):
+        service.file_f24(
+            group.id,
+            F24GroupFile(
+                filed_on=TODAY, receipt_inbox_item_id=_inbox(db_session, entity, "receipt")
+            ),
+            ADMIN,
+        )
+    # Nothing of the refused attempts stuck.
+    assert service.get_f24_group(group.id, ADMIN).state == "open"
+    assert _payments(db_session, [owed]) == {}
+
+
+def test_reopening_a_filed_group_reverses_what_it_paid(db_session: Session) -> None:
+    entity = _entity(db_session)
+    owed = _plain(db_session, entity, "100.00")
+    credit = _credit(db_session, entity, "150.00")
+    group = _group(db_session, [owed, credit])
+    service = F24GroupService(db_session)
+    _file(db_session, group.id)
+    # The rest of the credit goes in another F24, which keeps the first from reopening.
+    second = _group(db_session, [_plain(db_session, entity, "30.00"), credit])
+    with pytest.raises(Conflict, match="altro F24"):
+        service.reopen_f24(group.id, ADMIN)
+    service.ungroup_f24(second.id, ADMIN)
+
+    for refused in (COLLABORATOR, READONLY):
+        with pytest.raises(PermissionDenied):
+            service.reopen_f24(group.id, refused)
+    with pytest.raises(AgentForbidden):
+        service.reopen_f24(group.id, AGENT_FULL)
+    reopened = service.reopen_f24(group.id, ADMIN)
+
+    assert (reopened.state, reopened.settled_on, reopened.credit_left, reopened.total) == (
+        "open",
+        None,
+        None,
+        D("-50.00"),
+    )
+    assert all(not line.released and line.used_amount is None for line in reopened.lines)
+    assert _payments(db_session, [owed, credit]) == {}
+    assert {db_session.get(DueItem, i).state for i in (owed, credit)} == {"expected"}  # type: ignore[union-attr]
+    # It can be filed again, and a group a movement paid is not reopened from here.
+    assert _file(db_session, group.id).state == "settled"
+    with pytest.raises(Conflict, match="presentato"):
+        service.reopen_f24(_group(db_session, [_plain(db_session, entity, "10.00")]).id, ADMIN)
+
+
+def test_what_is_left_of_a_credit_is_paid_with_the_next_f24_by_a_movement(
+    db_session: Session,
+) -> None:
+    world = CashWorld(db_session)
+    entity = _entity(db_session)
+    account = world.account("5000.00", entity=entity)
+    credit = _credit(db_session, entity, "150.00")
+    _file(db_session, _group(db_session, [_plain(db_session, entity, "100.00"), credit]).id)
+    owed = _plain(db_session, entity, "300.00")
+    ids = [owed, credit]
+    group = _group(db_session, ids)
+    assert group.total == D("250.00")
+
+    movement = _movement(db_session, account, "-250.00")
+    service = MovementMatchService(db_session)
+    (candidate, *_) = service.get_movement(movement.id, ADMIN).candidates
+    assert {item.due_item_id for item in candidate.items} == set(ids)
+    service.confirm(movement.id, MatchConfirm(due_item_ids=ids), ADMIN)
+
+    db_session.expire_all()
+    settled = F24GroupService(db_session).get_f24_group(group.id, ADMIN)
+    assert (settled.state, settled.settled_by, settled.credit_left) == ("settled", "movement", 0)
+    assert _payments(db_session, [credit]) == {credit: D("-150.00")}
+    assert db_session.get(DueItem, credit).state == "settled"  # type: ignore[union-attr]

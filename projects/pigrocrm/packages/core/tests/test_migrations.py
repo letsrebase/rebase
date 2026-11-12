@@ -4556,3 +4556,20 @@ def test_0111_adds_the_staff_contract_type_with_no_backfill(pigrocrm_postgres: A
         assert not _column_exists(url, "staff_members", "contract_type")
         upgrade(config, "0111")
         assert _column_exists(url, "staff_members", "contract_type")
+
+
+def test_0113_adds_what_a_filed_f24_group_records_both_ways(pigrocrm_postgres: Any) -> None:
+    """REB-1093: two nullable line columns and a relaxed group constraint; nothing a filing wrote
+    exists before it, so both ways keep the rows that are there."""
+    columns = ("used_amount", "settlement_id")
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0112")
+        assert not any(_column_exists(url, "f24_group_items", column) for column in columns)
+        upgrade(config, "0113")
+        assert all(_column_exists(url, "f24_group_items", column) for column in columns)
+        downgrade(config, "0112")
+        assert not any(_column_exists(url, "f24_group_items", column) for column in columns)
+        upgrade(config, "0113")
+        assert all(_column_exists(url, "f24_group_items", column) for column in columns)

@@ -262,6 +262,13 @@ ROWS: list[Row] = [
     Row("POST", "/api/f24-groups/{group_id}/ungroup", admin_only=True),
     Row(
         "POST",
+        "/api/f24-groups/{group_id}/file",
+        admin_only=True,
+        body={"filed_on": "2026-11-12"},
+    ),
+    Row("POST", "/api/f24-groups/{group_id}/reopen", admin_only=True),
+    Row(
+        "POST",
         "/api/f24-groups/{group_id}/receipts",
         admin_only=True,
         body={"inbox_item_id": "00000000-0000-0000-0000-000000000002"},

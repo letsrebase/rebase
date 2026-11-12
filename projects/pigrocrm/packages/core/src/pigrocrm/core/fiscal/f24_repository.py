@@ -4,6 +4,7 @@ only which items are grouped and to flip a group between `open` and `settled`.""
 
 import datetime as dt
 from collections.abc import Iterable, Sequence
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, select
@@ -108,16 +109,45 @@ class F24GroupRepository:
 
     # ---- the plain writes ------------------------------------------------------------------
 
-    def settle(self, group: F24Group, movement_id: UUID, settled_on: dt.date) -> None:
-        """The group is paid by this movement. Flushes."""
+    def settle(
+        self, group: F24Group, settled_on: dt.date, *, movement_id: UUID | None = None
+    ) -> None:
+        """The group is paid: by the movement, or, with none, because a person marked it filed.
+        Either way every live line is taken whole (a filing narrows a credit afterwards, with
+        `use_line`). Flushes."""
         group.state = "settled"
         group.bank_movement_id = movement_id
         group.settled_on = settled_on
+        for line in self.live_lines(group.id):
+            line.used_amount = line.amount
+        self.session.flush()
+
+    def use_line(
+        self,
+        line: F24GroupItem,
+        used: Decimal,
+        settlement_id: UUID | None,
+        *,
+        release: bool,
+        at: dt.datetime,
+    ) -> None:
+        """What a filing took of a line of the settled group and the payment that wrote it. A
+        credit the F24 left unspent in part or whole is released, its rest free for another F24.
+        Flushes."""
+        line.used_amount = used
+        line.settlement_id = settlement_id
+        if release:
+            line.released_at = at
         self.session.flush()
 
     def reopen(self, group: F24Group) -> None:
-        """The movement that paid the group was taken back: it waits again. Flushes."""
+        """What paid the group was taken back (the movement's match undone, or the filing): it
+        waits again. Every line goes back to live and untaken. Flushes."""
         group.state = "open"
         group.bank_movement_id = None
         group.settled_on = None
+        for line in self.lines_of([group.id])[group.id]:
+            line.used_amount = None
+            line.settlement_id = None
+            line.released_at = None
         self.session.flush()

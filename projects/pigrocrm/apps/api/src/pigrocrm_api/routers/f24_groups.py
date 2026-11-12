@@ -4,8 +4,11 @@ The due items that fall on one date, credits included, are grouped into one F24,
 code the pack gives it («codice da verificare» where the pack has none). The group's total is the
 net, and one bank movement equal to it settles the group and every line: that is the bank
 matching's (`/api/bank-movements`, which offers an open group as a candidate and settles it as a
-whole). Every route is an administrator's, enforced by `F24GroupService`: a router with an
-authorisation `if` is one the MCP adapter cannot reuse.
+whole). A group whose net is zero or a credit moves no money, so no movement can settle it: a
+person marks it filed (`POST /{id}/file`), which settles its lines and spends its credits as a
+match does, and can take that back (`POST /{id}/reopen`). Both are a person's acts, with no MCP
+tool, like confirming a match. Every route is an administrator's, enforced by `F24GroupService`: a
+router with an authorisation `if` is one the MCP adapter cannot reuse.
 """
 
 from datetime import date
@@ -17,6 +20,7 @@ from fastapi import APIRouter, Depends, Query
 from pigrocrm.core.fiscal.f24 import F24GroupService
 from pigrocrm.core.fiscal.f24_schemas import (
     F24GroupCreate,
+    F24GroupFile,
     F24GroupListQuery,
     F24GroupPage,
     F24GroupRead,
@@ -76,9 +80,11 @@ def group_f24(
     data: F24GroupCreate, session: SessionDep, actor: ActorDep, settings: SettingsDep
 ) -> F24GroupRead:
     """Groups the named due items into one F24, dated on their common date. They must be owed to
-    the tax office, open with nothing paid on them and fall on one day, and their net (the debits
-    less the credits) must be positive. A tax forecast becomes the item that is paid. Each line
-    keeps the pack's code for it, or none (read «codice da verificare»)."""
+    the tax office, open with nothing paid on them (a credit an F24 used in part goes in with what
+    is left of it) and fall on one day. Their net, the debits less the credits, may be positive,
+    zero or a credit: a positive one is paid by a bank movement, the others are filed. A tax
+    forecast becomes the item that is paid. Each line keeps the pack's code for it, or none (read
+    «codice da verificare»)."""
     return F24GroupService(session).group_f24(data, actor, modules=enabled_modules(settings))
 
 
@@ -92,6 +98,25 @@ def ungroup_f24(group_id: UUID, session: SessionDep, actor: ActorDep) -> F24Grou
     """Releases the lines of a group nobody has paid. A group a movement paid is refused: undo
     the match first."""
     return F24GroupService(session).ungroup_f24(group_id, actor)
+
+
+@router.post("/{group_id}/file", response_model=F24GroupRead)
+def file_f24(
+    group_id: UUID, data: F24GroupFile, session: SessionDep, actor: ActorDep
+) -> F24GroupRead:
+    """A person marks an F24 whose net is zero or a credit as filed with the tax office's
+    telematic services, on `filed_on` (not in the future), with the receipt from the inbox when
+    there is one. Every line is paid on that day and the credits are spent, oldest tax year first
+    and only as far as the debits need; a credit left over stays open for another F24. A group
+    with an amount to pay is refused: a bank movement settles it."""
+    return F24GroupService(session).file_f24(group_id, data, actor)
+
+
+@router.post("/{group_id}/reopen", response_model=F24GroupRead)
+def reopen_f24(group_id: UUID, session: SessionDep, actor: ActorDep) -> F24GroupRead:
+    """Takes back the filing of a group: the payments it wrote are reversed and the group is open
+    again. Refused when a credit it left over has gone into another F24 or been used."""
+    return F24GroupService(session).reopen_f24(group_id, actor)
 
 
 @router.post("/{group_id}/receipts", response_model=F24GroupRead, status_code=201)

@@ -375,6 +375,38 @@ export function useUngroupF24() {
   })
 }
 
+/** «Segna come presentato»: a person says an F24 with nothing to pay was filed, on `filedOn`, with the
+ *  receipt of the inbox when there is one. The server settles the lines and spends the credits. */
+export function useFileF24() {
+  const refresh = useRefreshTaxes()
+  return useMutation({
+    mutationFn: (input: { groupId: string; filedOn: string; receiptInboxItemId: string | null }) =>
+      unwrap(
+        api.POST('/api/f24-groups/{group_id}/file', {
+          params: { path: { group_id: input.groupId } },
+          body: { filed_on: input.filedOn, receipt_inbox_item_id: input.receiptInboxItemId },
+        }),
+      ),
+    onSuccess: () => {
+      refresh()
+      toast.success('F24 segnato come presentato')
+    },
+  })
+}
+
+/** «Riapri l’F24»: takes back the filing; the payments it wrote are reversed. */
+export function useReopenF24() {
+  const refresh = useRefreshTaxes()
+  return useMutation({
+    mutationFn: (groupId: string) =>
+      unwrap(api.POST('/api/f24-groups/{group_id}/reopen', { params: { path: { group_id: groupId } } })),
+    onSuccess: () => {
+      refresh()
+      toast.success('F24 riaperto')
+    },
+  })
+}
+
 export function useAttachReceipt(groupId: string) {
   const refresh = useRefreshTaxes()
   return useMutation({

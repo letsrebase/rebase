@@ -359,6 +359,10 @@ PERSON_ONLY_ACTIONS: frozenset[str] = frozenset(
         # Linking an F24's receipt, a file in the inbox, to its group, and taking it off (REB-1076).
         "attach_f24_receipt",
         "detach_f24_receipt",
+        # Saying an F24 with nothing to pay was filed settles its lines as a movement's match
+        # does, and taking that back (REB-1093): the same position as confirming a match.
+        "file_f24",
+        "reopen_f24",
         # Accounts and credentials: a token that minted tokens or administrators would
         # outlive its own revocation.
         "create_user",
@@ -572,6 +576,8 @@ ACTION_LABELS: dict[str, str] = {
     "list_f24_groups": "leggere gli F24 raggruppati",
     "attach_f24_receipt": "collegare la ricevuta di un F24",
     "detach_f24_receipt": "scollegare la ricevuta di un F24",
+    "file_f24": "segnare come presentato un F24 senza importo da pagare",
+    "reopen_f24": "riaprire un F24 segnato come presentato",
     "create_recurring_expense": "registrare una spesa ricorrente",
     "stop_recurring_expense": "terminare una spesa ricorrente",
     "settle_iva_period": "liquidare l'IVA di un periodo",

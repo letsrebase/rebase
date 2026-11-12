@@ -369,12 +369,14 @@ const GROUP = (overrides: Record<string, unknown> = {}) => ({
   debit_total: '700.00',
   credit_total: '200.00',
   lines: [
-    { due_item_id: 'i-1', source_kind: 'tax_advance', tax: 'irpef', description: 'x', amount: '700.00', is_credit: false, credit_origin: null, line: 'Secondo acconto IRPEF', code: '4034', code_kind: 'tax_code', code_label: '4034', code_to_verify: false, reference_year: 2026, released: false },
-    { due_item_id: 'i-9', source_kind: 'tax_credit', tax: 'iva', description: 'x', amount: '-200.00', is_credit: true, credit_origin: null, line: null, code: null, code_kind: null, code_label: 'codice da verificare', code_to_verify: true, reference_year: null, released: false },
+    { due_item_id: 'i-1', source_kind: 'tax_advance', tax: 'irpef', description: 'x', amount: '700.00', is_credit: false, credit_origin: null, line: 'Secondo acconto IRPEF', code: '4034', code_kind: 'tax_code', code_label: '4034', code_to_verify: false, reference_year: 2026, released: false, used_amount: null },
+    { due_item_id: 'i-9', source_kind: 'tax_credit', tax: 'iva', description: 'x', amount: '-200.00', is_credit: true, credit_origin: null, line: null, code: null, code_kind: null, code_label: 'codice da verificare', code_to_verify: true, reference_year: null, released: false, used_amount: null },
   ],
   receipts: [],
   bank_movement_id: null,
   settled_on: null,
+  settled_by: null,
+  credit_left: null,
   created_by_type: 'user',
   created_at: '2026-11-01T00:00:00Z',
   updated_at: '2026-11-01T00:00:00Z',
@@ -442,6 +444,66 @@ describe('«Tasse»: F24 and credits', () => {
       '/api/inbox/items/in-1/file',
     )
     expect(within(panel).queryByRole('button', { name: 'Sciogli l’F24' })).not.toBeInTheDocument()
+  })
+})
+
+describe('«Tasse»: an F24 with nothing to pay', () => {
+  const NOTHING = (overrides: Record<string, unknown> = {}) =>
+    GROUP({ total: '-130.00', debit_total: '100.00', credit_total: '230.00', ...overrides })
+
+  beforeEach(() => {
+    answers['/api/due-items'] = { items: [item({ carry_to_confirm: false }), CREDIT], next_cursor: null }
+  })
+
+  it('offers «Segna come presentato» instead of a bank match, and files it on the day given', async () => {
+    answers['/api/f24-groups'] = { items: [NOTHING()], next_cursor: null }
+    wide()
+    renderPage('dates')
+    const row = await screen.findByRole('row', { name: /30\/11\/2026/ })
+    await userEvent.click(row)
+    const panel = await screen.findByRole('complementary', { name: 'Scadenza aperta' })
+    expect(within(panel).getByText(/nessun movimento in banca lo salda/)).toBeInTheDocument()
+    await userEvent.click(within(panel).getByRole('button', { name: 'Segna come presentato' }))
+    expect(within(panel).getByLabelText('Presentato il')).toHaveValue('2026-11-10')
+    await userEvent.click(within(panel).getByRole('button', { name: 'Conferma' }))
+    await waitFor(() =>
+      expect(api.POST).toHaveBeenCalledWith('/api/f24-groups/{group_id}/file', {
+        params: { path: { group_id: 'g-1' } },
+        body: { filed_on: '2026-11-10', receipt_inbox_item_id: null },
+      }),
+    )
+  })
+
+  it('does not offer it for a group with an amount to pay', async () => {
+    answers['/api/f24-groups'] = { items: [GROUP()], next_cursor: null }
+    wide()
+    renderPage('dates')
+    await userEvent.click(await screen.findByRole('row', { name: /30\/11\/2026/ }))
+    const panel = await screen.findByRole('complementary', { name: 'Scadenza aperta' })
+    expect(within(panel).queryByRole('button', { name: 'Segna come presentato' })).not.toBeInTheDocument()
+  })
+
+  it('shows a filed group with what is left of its credits and reopens it', async () => {
+    answers['/api/f24-groups'] = {
+      items: [NOTHING({ state: 'settled', settled_by: 'filing', settled_on: '2026-11-10', credit_left: '130.00' })],
+      next_cursor: null,
+    }
+    wide()
+    renderPage('dates')
+    const row = await screen.findByRole('row', { name: /30\/11\/2026/ })
+    expect(row).toHaveTextContent('F24 presentato')
+    await userEvent.click(row)
+    const panel = await screen.findByRole('complementary', { name: 'Scadenza aperta' })
+    expect(within(panel).getByText(/Presentato il 10\/11\/2026/)).toBeInTheDocument()
+    expect(within(panel).getByText(/Resta un credito di/)).toHaveTextContent('130,00')
+    expect(within(panel).queryByRole('button', { name: 'Segna come presentato' })).not.toBeInTheDocument()
+    await userEvent.click(within(panel).getByRole('button', { name: 'Riapri l’F24' }))
+    await userEvent.click(within(panel).getByRole('button', { name: 'Riapri il gruppo' }))
+    await waitFor(() =>
+      expect(api.POST).toHaveBeenCalledWith('/api/f24-groups/{group_id}/reopen', {
+        params: { path: { group_id: 'g-1' } },
+      }),
+    )
   })
 })
 

@@ -9,9 +9,12 @@ An **F24 group** (`F24Group`) is the due items of one date, credits included, th
 one F24: its lines (`F24GroupItem`) keep the tax code each had when they were grouped, so a paid
 F24 still reads what was paid whatever the pack says later, and its total is the net of the lines.
 One bank movement equal to the net settles the group and every item in it
-(`bank/matching.py`). A group's **receipts** (`F24GroupReceipt`) are inbox items of kind
-`tax_document`: the file lives in the inbox's document storage, the group only points at it. Written
-only by `F24GroupService`.
+(`bank/matching.py`); a group whose net is zero or a credit has no movement to match and is settled
+by a person marking it filed (`F24GroupService.file_f24`, REB-1093): `bank_movement_id` stays null,
+`settled_on` is the day it was filed, and each line says how much of it the F24 took
+(`used_amount`) and which payment wrote that (`settlement_id`). A group's **receipts**
+(`F24GroupReceipt`) are inbox items of kind `tax_document`: the file lives in the inbox's document
+storage, the group only points at it. Written only by `F24GroupService`.
 """
 
 import datetime as dt
@@ -86,9 +89,10 @@ class TaxCredit(Base, PrimaryKeyMixin, TimestampMixin):
 
 class F24Group(Base, PrimaryKeyMixin, TimestampMixin):
     """The due items of one date that are paid with one F24. `open` until the movement that pays
-    its net is confirmed (`settled`, with the movement and the day), `dissolved` once a person
-    ungroups it: its lines are released and the items are free again. Who grouped it is
-    `created_by_id` and `created_by_type`, the pair the timeline stores."""
+    its net is confirmed (`settled`, with the movement and the day) or, when its net is zero or a
+    credit, until a person marks it filed (`settled`, the day it was filed and no movement),
+    `dissolved` once a person ungroups it: its lines are released and the items are free again.
+    Who grouped it is `created_by_id` and `created_by_type`, the pair the timeline stores."""
 
     __tablename__ = "f24_groups"
     __table_args__ = (
@@ -99,8 +103,11 @@ class F24Group(Base, PrimaryKeyMixin, TimestampMixin):
             name="fk_f24_groups_movement_same_legal_entity",
         ),
         CheckConstraint(f"state IN {GROUP_STATES!r}", name="ck_f24_groups_state"),
+        # A settled group has its day; a movement only ever pays a settled one. A group settled
+        # without a movement was marked filed (its net was zero or a credit).
         CheckConstraint(
-            "(state = 'settled') = (bank_movement_id IS NOT NULL AND settled_on IS NOT NULL)",
+            "(state = 'settled') = (settled_on IS NOT NULL) "
+            "AND (bank_movement_id IS NULL OR state = 'settled')",
             name="ck_f24_groups_settled",
         ),
         Index("ix_f24_groups_schedule", "legal_entity_id", "state", "payment_date"),
@@ -127,7 +134,14 @@ class F24GroupItem(Base, PrimaryKeyMixin, TimestampMixin):
     read as «codice da verificare»: a line whose code the pack does not carry is never given a
     guessed one. `reference_year` is the year of the `anno di riferimento` column when it is
     known. `released_at` is set when the group is dissolved; a live line has none, and an item is
-    in at most one live line."""
+    in at most one live line.
+
+    Once the group is settled `used_amount` is what the F24 took of the line, with the line's sign:
+    all of it when a movement paid the group, and for a group marked filed all of a debit and the
+    part of a credit that covered the debits. A credit the F24 did not use up is released, so the
+    rest is free to go in another F24: `released_at` there says «what was left went back», not
+    that the group was taken apart. `settlement_id` is the payment a filing wrote for the line
+    (null for a movement's match and for an unused credit), which reopening reverses."""
 
     __tablename__ = "f24_group_items"
     __table_args__ = (
@@ -142,6 +156,12 @@ class F24GroupItem(Base, PrimaryKeyMixin, TimestampMixin):
             name="fk_f24_group_items_due_item_same_legal_entity",
         ),
         CheckConstraint("amount <> 0", name="ck_f24_group_items_amount_not_zero"),
+        # What the F24 took has the line's sign and is at most the line.
+        CheckConstraint(
+            "used_amount IS NULL "
+            "OR (used_amount * amount >= 0 AND abs(used_amount) <= abs(amount))",
+            name="ck_f24_group_items_used_within_amount",
+        ),
         CheckConstraint(
             f"code_kind IS NULL OR code_kind IN {CODE_KINDS!r}", name="ck_f24_group_items_code_kind"
         ),
@@ -169,6 +189,10 @@ class F24GroupItem(Base, PrimaryKeyMixin, TimestampMixin):
     code_label: Mapped[str | None] = mapped_column(String(255), default=None)
     reference_year: Mapped[int | None] = mapped_column(Integer, default=None)
     released_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    used_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), default=None)
+    settlement_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("due_item_settlements.id"), default=None
+    )
 
 
 class F24GroupReceipt(Base, PrimaryKeyMixin, TimestampMixin):
