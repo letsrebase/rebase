@@ -7522,9 +7522,11 @@ export interface paths {
         /**
          * Group F24
          * @description Groups the named due items into one F24, dated on their common date. They must be owed to
-         *     the tax office, open with nothing paid on them and fall on one day, and their net (the debits
-         *     less the credits) must be positive. A tax forecast becomes the item that is paid. Each line
-         *     keeps the pack's code for it, or none (read «codice da verificare»).
+         *     the tax office, open with nothing paid on them (a credit an F24 used in part goes in with what
+         *     is left of it) and fall on one day. Their net, the debits less the credits, may be positive,
+         *     zero or a credit: a positive one is paid by a bank movement, the others are filed. A tax
+         *     forecast becomes the item that is paid. Each line keeps the pack's code for it, or none (read
+         *     «codice da verificare»).
          */
         post: operations["group_f24_api_f24_groups_post"];
         delete?: never;
@@ -7565,6 +7567,51 @@ export interface paths {
          *     the match first.
          */
         post: operations["ungroup_f24_api_f24_groups__group_id__ungroup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/f24-groups/{group_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * File F24
+         * @description A person marks an F24 whose net is zero or a credit as filed with the tax office's
+         *     telematic services, on `filed_on` (not in the future), with the receipt from the inbox when
+         *     there is one. Every line is paid on that day and the credits are spent, oldest tax year first
+         *     and only as far as the debits need; a credit left over stays open for another F24. A group
+         *     with an amount to pay is refused: a bank movement settles it.
+         */
+        post: operations["file_f24_api_f24_groups__group_id__file_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/f24-groups/{group_id}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reopen F24
+         * @description Takes back the filing of a group: the payments it wrote are reversed and the group is open
+         *     again. Refused when a credit it left over has gone into another F24 or been used.
+         */
+        post: operations["reopen_f24_api_f24_groups__group_id__reopen_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -12518,6 +12565,21 @@ export interface components {
             /** Note */
             note?: string | null;
         };
+        /**
+         * F24GroupFile
+         * @description A person marks an F24 with no amount to pay as filed: the day it was filed with the tax
+         *     office's telematic services (not in the future) and, optionally, the receipt, an inbox item of
+         *     kind `tax_document`.
+         */
+        F24GroupFile: {
+            /**
+             * Filed On
+             * Format: date
+             */
+            filed_on: string;
+            /** Receipt Inbox Item Id */
+            receipt_inbox_item_id?: string | null;
+        };
         /** F24GroupPage */
         F24GroupPage: {
             /** Items */
@@ -12529,7 +12591,9 @@ export interface components {
          * F24GroupRead
          * @description An F24 group. `total` is the net the one movement must equal (`debit_total` less
          *     `credit_total`); `lines` are the live ones of an `open` or `settled` group and the released
-         *     ones of a `dissolved` one.
+         *     ones of a `dissolved` one. A settled group says by what (`settled_by`) and on which day
+         *     (`settled_on`); one that was filed has no movement, and `credit_left` is what of its credits
+         *     the F24 did not use, still available (null until the group is settled).
          */
         F24GroupRead: {
             /**
@@ -12568,6 +12632,10 @@ export interface components {
             bank_movement_id: string | null;
             /** Settled On */
             settled_on: string | null;
+            /** Settled By */
+            settled_by: ("movement" | "filing") | null;
+            /** Credit Left */
+            credit_left: string | null;
             /** Created By Type */
             created_by_type: string;
             /**
@@ -12586,7 +12654,10 @@ export interface components {
          * @description One line of an F24. `amount` is signed like the due item (a credit is negative). The code
          *     is the pack's, frozen when the line was grouped; without one `code` is null and `code_label`
          *     reads «codice da verificare»: the pack does not carry it and none is guessed. `line` is the
-         *     pack's name of the line when the item is one the pack codes.
+         *     pack's name of the line when the item is one the pack codes. `used_amount` is, once the group
+         *     is settled, what the F24 took of the line with its sign: all of a debit, and of a credit the
+         *     part that covered the debits (a credit it left unspent in part or whole is `released`, its rest
+         *     free for another F24).
          */
         F24LineRead: {
             /**
@@ -12619,6 +12690,8 @@ export interface components {
             reference_year: number | null;
             /** Released */
             released: boolean;
+            /** Used Amount */
+            used_amount: string | null;
         };
         /**
          * F24ReceiptAttach
@@ -76001,6 +76074,248 @@ export interface operations {
         };
     };
     ungroup_f24_api_f24_groups__group_id__ungroup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["F24GroupRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    file_f24_api_f24_groups__group_id__file_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["F24GroupFile"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["F24GroupRead"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reopen_f24_api_f24_groups__group_id__reopen_post: {
         parameters: {
             query?: never;
             header?: never;

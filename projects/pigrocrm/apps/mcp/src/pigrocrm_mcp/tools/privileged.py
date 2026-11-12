@@ -906,7 +906,8 @@ def register(
     @guard
     def group_f24(due_item_ids: list[UUID], note: str | None = None) -> dict[str, Any]:
         """Groups one date's tax-office due items, credits included, into an F24, admin only.
-        Lines carry pack codes or «codice da verificare»; `total` is the net to pay.
+        Lines carry pack codes or «codice da verificare»; `total` is the net to pay (zero or a
+        credit: a person files it).
         """
         return (
             F24GroupService(context.session)

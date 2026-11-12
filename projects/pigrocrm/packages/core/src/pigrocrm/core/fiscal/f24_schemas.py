@@ -1,7 +1,8 @@
 """The shapes of an F24 group and of a tax credit's origin (REB-1076, taxes design § 2).
 
 Every amount is the server's: the group's total is the net of its lines, the sum of what is owed
-less the credits, which is also what the one bank movement that pays it must equal.
+less the credits, which is also what the one bank movement that pays it must equal. A group whose
+total is zero or negative has no movement to match: a person files it (`F24GroupFile`).
 """
 
 import datetime as dt
@@ -15,6 +16,8 @@ from pigrocrm.core.validation import SafeStr
 
 CreditOrigin = Literal["iva_carry_forward", "withholding_suffered"]
 F24GroupState = Literal["open", "settled", "dissolved"]
+# What settled a group: the bank movement equal to its net, or a person marking it filed.
+F24SettledBy = Literal["movement", "filing"]
 F24CodeKind = Literal["tax_code", "inps_causale"]
 # What a line says when the pack carries no code for it: never a guess (product copy).
 CODE_TO_VERIFY = "codice da verificare"
@@ -39,6 +42,17 @@ class F24GroupCreate(BaseModel):
         return value
 
 
+class F24GroupFile(BaseModel):
+    """A person marks an F24 with no amount to pay as filed: the day it was filed with the tax
+    office's telematic services (not in the future) and, optionally, the receipt, an inbox item of
+    kind `tax_document`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    filed_on: dt.date
+    receipt_inbox_item_id: UUID | None = None
+
+
 class F24ReceiptAttach(BaseModel):
     """An inbox item of kind `tax_document` that is a receipt of the group."""
 
@@ -61,7 +75,10 @@ class F24LineRead(BaseModel):
     """One line of an F24. `amount` is signed like the due item (a credit is negative). The code
     is the pack's, frozen when the line was grouped; without one `code` is null and `code_label`
     reads «codice da verificare»: the pack does not carry it and none is guessed. `line` is the
-    pack's name of the line when the item is one the pack codes."""
+    pack's name of the line when the item is one the pack codes. `used_amount` is, once the group
+    is settled, what the F24 took of the line with its sign: all of a debit, and of a credit the
+    part that covered the debits (a credit it left unspent in part or whole is `released`, its rest
+    free for another F24)."""
 
     due_item_id: UUID
     source_kind: str
@@ -77,6 +94,7 @@ class F24LineRead(BaseModel):
     code_to_verify: bool
     reference_year: int | None
     released: bool
+    used_amount: Decimal | None
 
 
 class F24ReceiptRead(BaseModel):
@@ -89,7 +107,9 @@ class F24ReceiptRead(BaseModel):
 class F24GroupRead(BaseModel):
     """An F24 group. `total` is the net the one movement must equal (`debit_total` less
     `credit_total`); `lines` are the live ones of an `open` or `settled` group and the released
-    ones of a `dissolved` one."""
+    ones of a `dissolved` one. A settled group says by what (`settled_by`) and on which day
+    (`settled_on`); one that was filed has no movement, and `credit_left` is what of its credits
+    the F24 did not use, still available (null until the group is settled)."""
 
     id: UUID
     legal_entity_id: UUID
@@ -103,6 +123,8 @@ class F24GroupRead(BaseModel):
     receipts: list[F24ReceiptRead]
     bank_movement_id: UUID | None
     settled_on: dt.date | None
+    settled_by: F24SettledBy | None
+    credit_left: Decimal | None
     created_by_type: str
     created_at: dt.datetime
     updated_at: dt.datetime
@@ -129,6 +151,7 @@ __all__ = [
     "CreditOrigin",
     "F24CodeKind",
     "F24GroupCreate",
+    "F24GroupFile",
     "F24GroupListQuery",
     "F24GroupPage",
     "F24GroupRead",
@@ -136,5 +159,6 @@ __all__ = [
     "F24LineRead",
     "F24ReceiptAttach",
     "F24ReceiptRead",
+    "F24SettledBy",
     "TaxCreditOriginRead",
 ]

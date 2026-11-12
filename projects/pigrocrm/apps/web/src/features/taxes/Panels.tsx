@@ -20,6 +20,7 @@ import {
   CARRY_TONE,
   TAX_ITEM_STATE_LABEL,
   TAX_ITEM_STATE_TONE,
+  groupedItemIds,
   overdueSince,
   partlyPaid,
   taxItemState,
@@ -423,10 +424,11 @@ function ItemBlock({ item, today, grouped }: { item: TaxDueItem; today: string; 
  * forward.
  */
 export function DatePanel({ day, today }: { day: DueDay; today: string }) {
+  const grouped = groupedItemIds(day.groups)
   return (
     <div className="space-y-5 overflow-y-auto p-4">
       <h2 className="text-lg font-semibold">{formatIsoDateItalian(day.date)}</h2>
-      <F24Section day={day} />
+      <F24Section day={day} today={today} />
       {day.items.length > 0 ? (
         <ul className="space-y-4 border-b pb-4">
           {day.items.map((item) => (
@@ -434,7 +436,7 @@ export function DatePanel({ day, today }: { day: DueDay; today: string }) {
               key={item.id}
               item={item}
               today={today}
-              grouped={day.groups.some((group) => group.lines.some((line) => line.due_item_id === item.id))}
+              grouped={grouped.has(item.id)}
             />
           ))}
         </ul>

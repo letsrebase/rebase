@@ -1051,6 +1051,15 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "link to the group is a person's step; `list_f24_groups` reads the receipts attached"
     ),
     ("F24GroupService", "detach_f24_receipt"): "REB-1076: same as `attach_f24_receipt`",
+    ("F24GroupService", "file_f24"): (
+        "REB-1093: saying that an F24 with nothing to pay was filed settles its lines and spends "
+        "its credits, as confirming a bank match does, so it is a person's act with no agent "
+        "credential (`confirm_movement_match`'s position); `list_f24_groups` reads the result"
+    ),
+    (
+        "F24GroupService",
+        "reopen_f24",
+    ): "REB-1093: same as `file_f24`, the way `undo_movement_match` is",
     ("DueItemService", "confirm_tax_carry"): (
         "REB-1079: confirming a tax item's carried difference is the fiscal position (taxes "
         "design § 5); REST only, an administrator's act from «Tasse», no tool"
@@ -1122,6 +1131,10 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "authorises as a person's act; `settle_due_item` is the tool for a payment by hand"
     ),
     ("DueItemService", "adopt_for_movement"): "REB-1042: same as `settle_from_movement`",
+    ("DueItemService", "settle_by_filing"): (
+        "REB-1093: the writer's half of filing an F24 with nothing to pay, which "
+        "`F24GroupService.file_f24` authorises as a person's act, like `settle_from_movement`"
+    ),
     ("DueItemService", "release_for_movement"): (
         "REB-1042: the writer's half of undoing a match, same as `settle_from_movement`"
     ),

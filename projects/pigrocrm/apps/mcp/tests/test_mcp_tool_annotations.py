@@ -146,7 +146,9 @@ DEFAULT_BUDGET_BYTES = 109_900
 # full-access administrator's), measured at 148,448 with the tax plan tools.
 # REB-1081: 148.55 KB, up from 148.45 KB, for the `contract_type` enum in the staff update
 # schema, measured at 148,527 with the staff tool descriptions kept whole.
-FULL_ACCESS_BUDGET_BYTES = 148_550
+# REB-1093: 148.60 KB, up from 148.55 KB, for one sentence of `group_f24`'s description (a net of
+# zero or a credit is filed by a person: no tool does it), measured at 148,566.
+FULL_ACCESS_BUDGET_BYTES = 148_600
 
 # A name starting with one of these reads. The tools that read without such a name are
 # listed, so adding one is a decision somebody wrote down.

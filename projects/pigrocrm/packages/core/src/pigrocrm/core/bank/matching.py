@@ -349,7 +349,7 @@ class MovementMatchService:
         for group_id in sorted(set(self.f24.groups_of_items(rows).values()), key=str):
             group = self.f24.get(group_id, lock=True)
             if group is not None and group.state == "open":
-                self.f24.settle(group, movement.id, movement.booking_date)
+                self.f24.settle(group, movement.booking_date, movement_id=movement.id)
                 self.activities.record("f24_group", group.id, "f24_settled", actor)
         movement.state = "matched"
         self.session.flush()
@@ -461,14 +461,18 @@ class MovementMatchService:
         off = kinds_of_modules_off(modules)
         plans: list[Plan] = []
         for group in self.f24.open_groups(movement.legal_entity_id):
-            ids = [line.due_item_id for line in self.f24.live_lines(group.id)]
+            lines = self.f24.live_lines(group.id)
+            if sum((line.amount for line in lines), ZERO) <= 0:
+                continue  # nothing to pay: a person marks it filed
+            ids = [line.due_item_id for line in lines]
+            amounts = {line.due_item_id: line.amount for line in lines}
             facts = facts_for_ids(self.session, ids)
             chosen = [facts[item_id] for item_id in ids if item_id in facts]
             if len(chosen) != len(ids) or any(
                 fact.item.currency != movement.currency
                 or fact.item.source_kind in off
                 or fact.item.state != "expected"
-                or fact.remaining != fact.item.amount
+                or fact.remaining != amounts[fact.item.id]
                 for fact in chosen
             ):
                 continue
@@ -661,14 +665,23 @@ class MovementMatchService:
                 "due_item_ids",
                 "l'F24 si paga con un movimento in uscita",
             )
+        amounts = {line.due_item_id: line.amount for line in self.f24.live_lines(group.id)}
         for fact in chosen:
-            if fact.item.state != "expected" or fact.remaining != fact.item.amount:
+            # A line is the item's whole remainder when it was grouped; a credit an earlier F24
+            # used in part goes in with what was left of it.
+            if fact.item.state != "expected" or fact.remaining != amounts.get(fact.item.id):
                 raise Conflict(
                     MATCH_ENTITY,
                     "una scadenza dell'F24 e' gia' saldata, anche in parte",
                     id=str(fact.item.id),
                 )
         net = sum((fact.remaining for fact in chosen), ZERO)
+        if net <= 0:
+            raise ValidationFailed(
+                MATCH_ENTITY,
+                "due_item_ids",
+                "l'F24 non ha un importo da pagare: si segna come presentato, non si abbina",
+            )
         difference = abs(movement.amount) - net
         allocations = tuple(
             Allocation(fact, abs(fact.remaining), False, credit=fact.remaining < 0)

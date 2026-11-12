@@ -143,6 +143,7 @@ const KIND_LABELS: Record<string, string> = {
   f24_grouped: 'Scadenze raggruppate in un F24',
   f24_ungrouped: 'F24 sciolto',
   f24_settled: 'F24 pagato',
+  f24_filed: 'F24 presentato',
   f24_reopened: 'F24 riaperto',
   f24_receipt_attached: 'Ricevuta F24 collegata',
   f24_receipt_detached: 'Ricevuta F24 scollegata',
