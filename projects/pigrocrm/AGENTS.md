@@ -564,8 +564,8 @@ tax (`irpef`, `substitute_tax`, `ires`, `irap`) and tax year, the balance and th
 one is an administrator's and a `full_access` token's). `fiscal/advances.py` holds the pure lookups over the pack: the rule
 (`advance_rule`: percentage, 40/60 or 50/50, floor, single-payment limit, from `IncomeTaxAdvanceLaw`, `FlatRateAdvanceLaw` or
 `CompanyAdvanceLaw`), the amounts and the dates (a person's and the flat-rate regime's from the pack's calendar, a company's from
-its fiscal year end for a year end on the last day of a month); a rule, figure or date the pack does not state is a `Missing` with
-its reason and gives no item. The base of an advance is the **historical** method's (default: the previous year's declared tax,
+its fiscal year end for a year end on the last day of a month; a company's advance is paid once when its **first instalment** is not above 103 euro, for IRES and IRAP alike, art. 17 c. 3 D.P.R. 435/2001, REB-1098); a rule, figure or date the pack does not state is a `Missing` with
+its reason and gives no item. An srl's withholdings suffered are credited to the fiscal period of the invoice's accrual (`WithholdingCreditLaw(income_basis="accrual")`, `company_withholdings_suffered`), netted in the IRES estimate itself (`ires.withholdings`, `ires.credit`) and never a credit item of their own; the F24 read says when to tick «non coincidente con anno solare» (`fiscal_year_not_calendar_year`). The base of an advance is the **historical** method's (default: the previous year's declared tax,
 else its estimate) or the **forecast** method's (the current estimate), chosen per legal entity and tax year with
 `TaxAdvanceMethodService.set_tax_advance_method` (REST `PUT /api/analytics/fiscal/advance-method`, privileged MCP tool of the
 same name, `full_access`, table `tax_advance_methods`). An item is `forecast` on an estimate, `expected` on a declared figure,

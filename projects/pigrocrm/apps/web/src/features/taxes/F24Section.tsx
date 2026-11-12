@@ -251,6 +251,13 @@ function GroupBlock({ group, today }: { group: F24Group; today: string }) {
           </li>
         ))}
       </ul>
+      {group.fiscal_year_not_calendar_year ? (
+        <p className="text-xs text-muted-foreground">
+          L’esercizio non coincide con l’anno solare: nell’F24 spunta la casella «non coincidente
+          con anno solare» e scrivi come anno di riferimento il primo dei due anni solari
+          dell’esercizio.
+        </p>
+      ) : null}
       <dl className="space-y-1 text-sm">
         <div className="flex justify-between">
           <dt>Da pagare</dt>

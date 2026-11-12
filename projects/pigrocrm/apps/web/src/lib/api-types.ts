@@ -9178,6 +9178,10 @@ export interface components {
              * @default false
              */
             loss: boolean;
+            /** Withholdings */
+            withholdings?: string | null;
+            /** Credit */
+            credit?: string | null;
             /** Region */
             region?: string | null;
             /** Missing */
@@ -12618,6 +12622,8 @@ export interface components {
             state: "open" | "settled" | "dissolved";
             /** Note */
             note: string | null;
+            /** Fiscal Year Not Calendar Year */
+            fiscal_year_not_calendar_year: boolean;
             /** Total */
             total: string;
             /** Debit Total */

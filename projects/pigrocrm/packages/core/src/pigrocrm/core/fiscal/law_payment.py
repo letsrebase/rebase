@@ -143,6 +143,16 @@ class LegalInterestRate:
 
 
 @dataclass(frozen=True)
+class RegularisationTier:
+    """One ravvedimento reduction: a payment up to `max_days_late` days late pays one
+    `divisor`-th of the penalty it would otherwise carry (art. 13 c. 1 lett. a) and a-bis)
+    D.Lgs. 472/1997: a tenth up to 30 days, a ninth up to 90)."""
+
+    max_days_late: int
+    divisor: int
+
+
+@dataclass(frozen=True)
 class ShortfallLaw:
     """The penalty and the interest on a payment, an advance included, that is not made in full
     by its deadline.
@@ -152,14 +162,29 @@ class ShortfallLaw:
     amministrativa pari al venticinque per cento di ogni importo non versato»; «Per i versamenti
     effettuati con un ritardo non superiore a novanta giorni, la sanzione ... è ridotta alla
     metà»; for a delay of up to fifteen days it is «ulteriormente ridotta a un importo pari a un
-    quindicesimo per ciascun giorno di ritardo». The further reductions of the ravvedimento
-    (art. 13 D.Lgs. 472/1997) are not modelled: they are the accountant's (REB-975).
+    quindicesimo per ciascun giorno di ritardo».
+
+    Ravvedimento (art. 13 c. 1 D.Lgs. 472/1997, Normattiva in force 2026-11-12, for violations
+    from 1 September 2024; the Agenzia's page «Ravvedimento - Come regolarizzare»): the
+    taxpayer who pays by himself pays a fraction of the minimum penalty above, «ad un decimo del
+    minimo» within 30 days of the omission (lett. a) and «ad un nono del minimo» within 90 days
+    (lett. a-bis). Those two tiers are `regularisation_tiers`. A payment more than 90 days late
+    belongs to lett. b) and b-bis) (an eighth, then a seventh of 25%), which turn on the return
+    term of the year of the violation (the statute) or on «1 anno» (the Agenzia's table), and
+    the sources read do not say which a payment tied to an annual return follows: that is
+    the accountant's (REB-975), so `regularisation_penalty_percent` answers `None` there, never
+    a guess. The tiers from a seventh on (after a notice) are out of scope. From 1 January 2027
+    these are art. 38 and art. 14 of the consolidated act of D.Lgs. 5 November 2024 n. 173
+    (Normattiva at 2027-01-02: both articles «ABROGATO DAL D.LGS. 5 NOVEMBRE 2024, N. 173»), the
+    same percentages and fractions.
 
     Interest: a late or short payment regularised by the taxpayer carries «interessi moratori
     calcolati al tasso legale con maturazione giorno per giorno» (art. 13 c. 2 D.Lgs. 472/1997,
     Normattiva, read 2026-11-11). The legal rate of each year is fixed by decree of the Minister
-    of Economy and Finance (art. 1284 c.c.). The interest on a shortfall found by the
-    office is not given a rate here (REB-975).
+    of Economy and Finance (art. 1284 c.c.). The Agenzia's formula is «Imposta da versare x
+    tasso legale d'interesse x giorni di ritardo/36500»: the days are the actual days late, and
+    a delay that crosses 1 January is counted per calendar year with each year's rate. The
+    interest on a shortfall found by the office is not given a rate here (REB-975).
     """
 
     penalty_percent: Decimal
@@ -171,6 +196,8 @@ class ShortfallLaw:
     daily_if_late_up_to_days: int
     daily_fraction_denominator: int
     legal_interest: tuple[LegalInterestRate, ...]
+    # The ravvedimento reductions, by days late, up to the last one the pack states (90 days).
+    regularisation_tiers: tuple[RegularisationTier, ...] = ()
 
     def legal_interest_percent(self, year: int) -> Decimal | None:
         """The legal rate of calendar year `year`, `None` when the pack does not carry it
@@ -193,6 +220,25 @@ class ShortfallLaw:
         if days_late <= self.reduced_if_late_up_to_days:
             return self.penalty_percent * self.reduced_penalty_fraction
         return self.penalty_percent
+
+    def regularisation_penalty_percent(self, days_late: int) -> Decimal | None:
+        """The penalty, in percent of the amount not paid, of a taxpayer who regularises a
+        payment `days_late` days after its deadline (`days_late` of 0 is on time, no penalty): the
+        penalty of `late_penalty_percent` cut to its ravvedimento tier, four decimals half up.
+        `None` after the last tier the pack states: the law has more tiers there and the
+        sources read do not settle which one applies (see the class docstring)."""
+        if days_late <= 0:
+            return Decimal(0)
+        for tier in self.regularisation_tiers:
+            if days_late <= tier.max_days_late:
+                # The un-rounded penalty, so a daily figure is not rounded twice.
+                reduced = self.penalty_percent * self.reduced_penalty_fraction
+                if days_late <= self.daily_if_late_up_to_days:
+                    base = reduced * days_late / self.daily_fraction_denominator
+                else:
+                    base = reduced
+                return (base / tier.divisor).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        return None
 
 
 # --- deferral by 30 days ---------------------------------------------------------------
@@ -241,6 +287,8 @@ F24Line = Literal[
     "inps_gs_instalment",
     "inps_gs_instalment_other_cover",
     "inps_gs_interest",
+    "inps_artigiani_interest",
+    "inps_commercianti_interest",
     "inps_artigiani_minimum",
     "inps_commercianti_minimum",
     "inps_artigiani_excess",
@@ -334,8 +382,16 @@ class WithholdingCreditLaw:
     A professional's income is taxed by the cash principle (art. 54 c. 1 TUIR: the sums «percepiti
     nel periodo di imposta»; sums received the year after the withholding agent paid them belong
     to the year in which the agent had to withhold), so the period of the income is the year the
-    invoice is collected. This is the rule for a natural person. A company's rule is not here
-    (REB-975).
+    invoice is collected. This is the rule for a natural person (`income_basis` «cash»).
+
+    A company's rule is the same letter with a different period of the income: art. 79 c. 1 TUIR
+    (art. 88 c. 1 of the consolidated act of D.Lgs. 117/2026 from 2027) sends the withholdings a
+    company suffers to art. 22, and a company's income is by accrual, not by cash: the
+    revenue of a service belongs to the period in which the service «è ultimata» (art. 109 c. 1
+    and c. 2 lett. b) TUIR), not to the one in which it is collected. So the credit goes to the
+    tax period of the invoice's accrual (`income_basis` «accrual»), whenever the customer
+    paid, and that period is the company's fiscal period, not a calendar year (Redditi SC 2026,
+    form section RN, row RN15, col. 2: «l'ammontare delle ritenute d'acconto subite»).
     """
 
     # The withholding may go either to the income's own year or to the year it was operated
@@ -343,6 +399,9 @@ class WithholdingCreditLaw:
     alternative_in_year_after_before_filing: bool
     # Where the rule was read, for the figure that shows what it was computed from.
     source: str = ""
+    # Which period the income belongs to: the one it is collected in (a person) or the one it
+    # accrues in (a company, `withholdings_suffered.company_withholdings_suffered`).
+    income_basis: Literal["cash", "accrual"] = "cash"
 
     def credit_years(
         self, income_year: int, operated_on: date, return_filed_on: date | None
@@ -403,11 +462,17 @@ class PaymentRulesLaw:
 
 
 def commercial_days(start: date, end: date) -> int:
-    """Days from `start` to `end` by the commercial method: months of thirty days, a day 31
-    counted as 30 (the Agenzia's «metodo commerciale», Redditi PF 2026 fascicolo 1). Only a
-    start on the 30th or 31st is exercised by the Agenzia's tables; how the method counts a
-    start on the last day of February is not stated there (A5, to verify, REB-975)."""
-    start_day = min(start.day, _DAYS_IN_A_MONTH)
+    """Days from `start` to `end` by the commercial method: months of thirty days, the last day
+    of a month counted as the 30th (the Agenzia's «metodo commerciale», Redditi PF 2026
+    fascicolo 1 and Redditi SC 2026 «Parte generale» § 4.4, read 2026-11-12).
+
+    The period runs «dal giorno successivo a quello di scadenza della prima rata fino alla data
+    di scadenza della seconda», and the Agenzia's examples count both ends: from 1 to 16 July is
+    16 days (0.18%). A first payment on the last day of a month therefore starts the count on
+    the 1st of the next, the 28th or 29th of February included: 1 to 16 March is 16 days, the
+    length of February never enters. A start on the 30th or 31st is the same case."""
+    last_day_of_month = start.day == monthrange(start.year, start.month)[1]
+    start_day = _DAYS_IN_A_MONTH if last_day_of_month else min(start.day, _DAYS_IN_A_MONTH)
     end_day = min(end.day, _DAYS_IN_A_MONTH)
     return (
         (end.year - start.year) * _DAYS_IN_A_YEAR
@@ -431,6 +496,7 @@ __all__ = [
     "LegalInterestRate",
     "PaymentKind",
     "PaymentRulesLaw",
+    "RegularisationTier",
     "ReturnFilingRule",
     "ReturnForm",
     "ShortfallLaw",

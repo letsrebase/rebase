@@ -16,6 +16,7 @@ from pigrocrm.core.fiscal.law_payment import (
     ForecastAdvanceLaw,
     PaymentRulesLaw,
     ReturnFilingRule,
+    commercial_days,
 )
 from pigrocrm.core.fiscal.pack import (
     IT_COMPANY_PACK,
@@ -120,6 +121,31 @@ def test_an_instalment_on_a_non_working_day_moves_but_its_interest_does_not() ->
     assert schedule[1].interest_percent == Decimal("0.18")
 
 
+def test_a_first_payment_on_the_last_day_of_february_counts_16_days_to_the_16th_of_march() -> None:
+    """A year ending 31 August: the balance falls on 28 February (29 in 2028). The count runs from
+    the day after, both ends counted: 1 to 16 March is 16 days and 0.18%, the length of February
+    never enters (it was 18 days and 0.20% when the last day of February counted as the 28th)."""
+    law = _rules(IT_COMPANY_PACK).instalments
+    for first_due, nominal in (
+        (date(2027, 2, 28), date(2027, 3, 16)),
+        (date(2028, 2, 29), date(2028, 3, 16)),
+        (date(2026, 6, 30), date(2026, 7, 16)),  # the Agenzia's own example
+        (date(2026, 7, 31), date(2026, 8, 16)),  # the 31st counts as the 30th
+        (date(2026, 4, 30), date(2026, 5, 16)),
+    ):
+        assert law.second_instalment_interest_percent(first_due, nominal) == Decimal("0.18")
+    schedule = instalment_schedule(law, date(2027, 2, 28), 2027)
+    assert [e.interest_percent for e in schedule[:4]] == [
+        Decimal("0.00"),
+        Decimal("0.18"),
+        Decimal("0.51"),
+        Decimal("0.84"),
+    ]
+    assert commercial_days(date(2027, 2, 28), date(2027, 3, 16)) == 16
+    # A start in the middle of a month is counted by its own day.
+    assert commercial_days(date(2026, 6, 10), date(2026, 7, 16)) == 36
+
+
 def test_the_interest_of_an_instalment_is_looked_up_and_a_missing_one_is_none() -> None:
     law = _rules(IT_STANDARD_PACK).instalments
     assert instalment_interest_percent(law, date(2026, 6, 30), 1, 2026) == Decimal("0.00")
@@ -168,6 +194,23 @@ def test_the_penalty_on_a_short_payment_is_art_13_dlgs_471_1997_as_amended_in_20
     assert shortfall.late_penalty_percent(91) == Decimal("25")
 
 
+def test_a_payment_regularised_by_the_taxpayer_pays_a_tenth_then_a_ninth_up_to_90_days() -> None:
+    """Art. 13 c. 1 lett. a) and a-bis) D.Lgs. 472/1997 applied to the penalty above; beyond 90
+    days the pack states no tier (the eighth and the seventh turn on a boundary no source read
+    settles), so it answers nothing rather than a figure."""
+    shortfall = _rules(IT_STANDARD_PACK).shortfall
+    assert shortfall.regularisation_penalty_percent(0) == Decimal(0)
+    assert shortfall.regularisation_penalty_percent(1) == Decimal("0.0833")  # 1/10 of 0.8333
+    assert shortfall.regularisation_penalty_percent(10) == Decimal("0.8333")
+    assert shortfall.regularisation_penalty_percent(15) == Decimal("1.2500")
+    assert shortfall.regularisation_penalty_percent(20) == Decimal("1.2500")  # 1/10 of 12.5%
+    assert shortfall.regularisation_penalty_percent(30) == Decimal("1.2500")
+    assert shortfall.regularisation_penalty_percent(31) == Decimal("1.3889")  # 1/9 of 12.5%
+    assert shortfall.regularisation_penalty_percent(60) == Decimal("1.3889")
+    assert shortfall.regularisation_penalty_percent(90) == Decimal("1.3889")
+    assert shortfall.regularisation_penalty_percent(91) is None
+
+
 def test_the_legal_interest_rate_is_the_one_fixed_for_each_year_and_never_guessed() -> None:
     shortfall = _rules(IT_STANDARD_PACK).shortfall
     assert shortfall.legal_interest_percent(2025) == Decimal("2.00")
@@ -184,6 +227,8 @@ _INPS = {
     "inps_gs_instalment": ("PXXR", "inps_causale"),
     "inps_gs_instalment_other_cover": ("P10R", "inps_causale"),
     "inps_gs_interest": ("DPPI", "inps_causale"),
+    "inps_artigiani_interest": ("API", "inps_causale"),
+    "inps_commercianti_interest": ("CPI", "inps_causale"),
     "inps_artigiani_minimum": ("AF", "inps_causale"),
     "inps_commercianti_minimum": ("CF", "inps_causale"),
     "inps_artigiani_excess": ("AP", "inps_causale"),
@@ -341,4 +386,6 @@ def test_a_withholding_is_credited_to_the_year_of_the_income_with_art_22_excepti
 
 def test_only_a_person_carries_the_withholding_credit_rule() -> None:
     assert _rules(IT_FLAT_RATE_PACK).withholding_credit is None  # not withheld, L. 190/2014
-    assert _rules(IT_COMPANY_PACK).withholding_credit is None  # to verify, REB-975
+    company = _rules(IT_COMPANY_PACK).withholding_credit
+    assert company is not None and company.income_basis == "accrual"  # art. 79 c. 1, art. 109
+    assert _rules(IT_STANDARD_PACK).withholding_credit.income_basis == "cash"  # type: ignore[union-attr]

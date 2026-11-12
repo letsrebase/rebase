@@ -17,11 +17,15 @@ payment. A negative result is a credit carried forward. Every figure of the law 
 (`IvaSettlementLaw`), every date its calendar's: nothing here is a number of the statute.
 
 Which period a document is in: a purchase by the `iva_period` a person chose; a sale by its
-issue date. The sales register is kept by the month of the *operation* (art. 23 DPR 633/72,
-art. 86 c. 1 of the IVA testo unico from 1 January 2027, A5), and an invoice stores no
-operation date, so an invoice issued in a later month than its operation lands one period
-late. `sales_period_date` is the one place that says so; the accountant list (REB-975) has the
-point.
+issue date. The sales register is kept by the month of the *operation* (art. 23 DPR 633/72 until
+31 December 2026, art. 86 c. 1 of the IVA testo unico, D.Lgs. 10/2026, from 1 January 2027: the
+same words), and the invoice's date is the date of the operation, whatever day the file is sent
+to the SdI (Agenzia delle Entrate, circolare 14/E of 17 June 2019 § 3.1: «la data del documento
+dovrà sempre essere valorizzata con la data dell'operazione»; A5 «IVA period date for sales»).
+So `sales_conditions` places a sale by `Invoice.issue_date`, which the e-invoice's `Data` carries
+too, and no operation date is stored. The one care is the person's: an invoice that covers several
+operations on different dates is not one operation, and the invoice header's help says that the
+date is the operation's (the MCP tool text has no room for it: the tool list is at its budget).
 
 A settlement is recomputed whenever it is settled again, from the first period ever settled
 through the target, so the carry-over is never stale; a year keeps the frequency it was first

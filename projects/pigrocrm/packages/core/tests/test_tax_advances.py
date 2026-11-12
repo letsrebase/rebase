@@ -98,21 +98,28 @@ def test_a_company_owes_no_ires_or_irap_advance_when_the_tax_does_not_exceed_20_
         assert _split(rule, "20.67")[0] == "20.67", tax
 
 
-def test_the_ires_advance_is_split_in_two_only_above_103() -> None:
+def test_an_ires_advance_is_paid_once_when_its_first_instalment_is_not_above_103() -> None:
+    """Art. 17 c. 3 D.P.R. 435/2001: the 103 euro is a ceiling on the first instalment (40%),
+    not on the whole advance, so an advance of 200 (first instalment 80) is one payment."""
     rule = _rule(IT_COMPANY_PACK, 2026, "ires", False)
-    assert _split(rule, "103") == ("103.00", "0.00", "103.00", True)
-    assert _split(rule, "103.01") == ("103.01", "41.20", "61.81", False)
+    assert _split(rule, "200") == ("200.00", "0.00", "200.00", True)
+    assert _split(rule, "257.51") == ("257.51", "0.00", "257.51", True)  # first: 103.00
+    assert _split(rule, "257.52") == ("257.52", "103.01", "154.51", False)
     assert _split(rule, "10000") == ("10000.00", "4000.00", "6000.00", False)
-    isa = _rule(IT_COMPANY_PACK, 2026, "ires", True)
+    isa = _rule(IT_COMPANY_PACK, 2026, "ires", True)  # 50/50: the ceiling is an advance of 206
+    assert _split(isa, "206") == ("206.00", "0.00", "206.00", True)
+    assert _split(isa, "206.02") == ("206.02", "103.01", "103.01", False)
     assert _split(isa, "10000") == ("10000.00", "5000.00", "5000.00", False)
 
 
-def test_the_irap_advance_has_no_single_payment_limit_the_sources_state() -> None:
+def test_an_irap_advance_follows_the_same_first_instalment_test() -> None:
     law = IT_COMPANY_PACK.law_for(2026)
     assert law is not None and law.company_advances is not None
-    assert law.company_advances.irap_single_payment_at_or_below is None
+    assert law.company_advances.first_instalment_single_payment_at_or_below == Decimal("103")
     rule = _rule(IT_COMPANY_PACK, 2026, "irap", False)
-    assert _split(rule, "50") == ("50.00", "20.00", "30.00", False)
+    assert _split(rule, "50") == ("50.00", "0.00", "50.00", True)
+    assert _split(rule, "257.51") == ("257.51", "0.00", "257.51", True)
+    assert _split(rule, "300") == ("300.00", "120.00", "180.00", False)
 
 
 def test_a_person_and_a_company_with_no_isa_flag_have_no_rule_and_say_why() -> None:

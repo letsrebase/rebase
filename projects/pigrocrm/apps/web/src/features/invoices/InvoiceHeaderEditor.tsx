@@ -116,8 +116,9 @@ export function InvoiceHeaderEditor({ invoice }: { invoice: Invoice }) {
           {isProforma
             ? 'La data è quella stampata sulla proforma; la fattura che ne nasce prende la propria all’emissione.'
             : 'La data di emissione viene assegnata all’emissione.'}{' '}
-          Il periodo di competenza dice a quale mese appartiene il lavoro. La scadenza scritta
-          qui vince sui termini del cliente.
+          La data della fattura è anche la data dell’operazione: da lei dipende il mese dell’IVA, i
+          dodici giorni per l’invio allo SdI non la spostano. Il periodo di competenza dice a quale
+          mese appartiene il lavoro. La scadenza scritta qui vince sui termini del cliente.
         </p>
         <Button variant="outline" size="sm" onClick={submit} disabled={update.isPending}>
           Salva date

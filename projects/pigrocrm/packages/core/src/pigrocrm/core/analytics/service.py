@@ -74,7 +74,10 @@ from pigrocrm.core.fiscal.schemas import (
     TaxReadings,
 )
 from pigrocrm.core.fiscal.service import FiscalProfileService
-from pigrocrm.core.fiscal.withholdings_suffered import withholdings_suffered
+from pigrocrm.core.fiscal.withholdings_suffered import (
+    company_withholdings_suffered,
+    withholdings_suffered,
+)
 from pigrocrm.core.invoices.models import InvoiceLine
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.legal_entities.service import LegalEntityService
@@ -920,11 +923,22 @@ class AnalyticsService:
             return estimate
         # An srl's IRES and IRAP from the same basis (REB-1073): the region is read from the
         # legal entity's address at this moment, never stored.
+        rules = pack.payment_rules_for(basis.year)
+        credit_rule = rules.withholding_credit if rules is not None else None
+        withheld = (
+            company_withholdings_suffered(
+                self.session, legal_entity.id, basis.period_from, basis.period_to, credit_rule
+            )
+            if credit_rule is not None and credit_rule.income_basis == "accrual"
+            else None
+        )
         company = estimate_company_taxes(
             basis,
             law.company_tax,
             place=locate(legal_entity.city, legal_entity.province, legal_entity.country),
             province=legal_entity.province,
+            withholdings=withheld,
+            withholdings_source=credit_rule.source if credit_rule is not None else "",
         )
         if company is None:
             return estimate

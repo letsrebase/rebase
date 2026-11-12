@@ -160,8 +160,9 @@ class CompanyAdvanceLaw:
 
     Source of every figure unless a comment says otherwise: Agenzia delle Entrate, «Imposte sui
     redditi (Irpef, Ires)» (updated 30 September 2026, section on companies; A5 rows «Income tax
-    advance 100%, in 40%/60% (50%/50% under ISA), June and November», «IRES: the advance is split
-    in two instalments only above €103» and «Company dates»), all verified; the 50% and 50% of an
+    advance 100%, in 40%/60% (50%/50% under ISA), June and November», «IRES: the advance is paid
+    in two instalments unless the first one is not above €103», «IRAP: ...» and «Company
+    dates»), all verified; the 50% and 50% of an
     ISA subject is art. 58 D.L. 124/2019 (Normattiva), which the Agenzia's page applies to
     income taxes and IRAP alike.
 
@@ -170,10 +171,14 @@ class CompanyAdvanceLaw:
     * No advance is due when the tax does not exceed `no_advance_at_or_below`: 40,000 lire, the
       figure the pack already carries for IRES and IRAP in `ForecastAdvanceLaw` (art. 4 c. 2
       D.L. 69/1989; A5 row «Conditions of the forecast method», verified 2026-11-11, REB-1067).
-    * IRES: the advance is split in two only above `ires_single_payment_at_or_below`; up to it,
-      the whole advance is paid once, with the second instalment. No source read states a
-      single-payment limit for IRAP, so `irap_single_payment_at_or_below` is `None` and the IRAP
-      advance is always split (A5, to verify, REB-975).
+    * IRES and IRAP alike: art. 17 c. 3 D.P.R. 7 December 2001 n. 435 (Normattiva in force
+      2026-11-12) puts IRPEF, IRES and IRAP in one sentence: the advances are paid «in due rate
+      salvo che il versamento da effettuare alla scadenza della prima rata non superi euro
+      103». The €103 is a ceiling on the **first instalment** (40% of the advance, 50% under
+      ISA), not on the whole advance: when it holds, the whole advance is paid once, with the
+      second instalment. That is an advance of up to 257.51 (40/60) or 206.00 (ISA); an IRES
+      advance of 200 is one payment of 200, the first instalment being 80 (Redditi SC 2026
+      «Parte generale» § 4.2; IRAP 2026 istruzioni § 5.2).
     * The balance and the first advance fall on the last day of the `balance_months_after_year_end`
       month after the fiscal year end (or of the month after a late approval of the financial
       statements, which is not modelled); the second or only advance on the last day of the
@@ -190,8 +195,7 @@ class CompanyAdvanceLaw:
     first_advance_percent_isa: Decimal
     second_advance_percent_isa: Decimal
     no_advance_at_or_below: Decimal
-    ires_single_payment_at_or_below: Decimal
-    irap_single_payment_at_or_below: Decimal | None
+    first_instalment_single_payment_at_or_below: Decimal
     balance_months_after_year_end: int
     second_advance_month_of_year: int
 

@@ -7,7 +7,8 @@ The three regimes pay by three laws and one shape: a **base** (the tax declared 
 year, net of deductions, credits, withholdings and excesses), a **percentage** of it, a **split**
 in a first and a second instalment (40/60, or 50/50 under ISA, and 50/50 for the flat-rate
 regime), a **floor** at or below which nothing is due and a **single-payment limit** up to which
-the whole advance is paid once, with the second instalment. Where each figure comes from is in
+the whole advance is paid once, with the second instalment (for a company the test is on the
+first instalment, not on the total). Where each figure comes from is in
 the docstring of its law: `IncomeTaxAdvanceLaw` (a person), `FlatRateAdvanceLaw` (the
 substitute tax), `CompanyAdvanceLaw` (IRES and IRAP).
 """
@@ -60,6 +61,9 @@ class AdvanceRule:
     # the second instalment. `None`: the pack states no such limit and the advance is always split.
     single_limit: Decimal | None
     single_inclusive: bool
+    # A company's test (art. 17 c. 3 D.P.R. 435/2001): the whole advance is paid once when its
+    # first instalment is up to this, whatever the total. `None`: the pack states no such limit.
+    single_if_first_instalment_at_or_below: Decimal | None = None
 
     def is_single(self, total: Decimal) -> bool:
         if self.single_limit is None:
@@ -121,11 +125,6 @@ def advance_rule(
     company = law.company_advances
     if company is None:
         return Missing(f"the pack carries no advance rule of {tax.upper()} for the year")
-    single = (
-        company.ires_single_payment_at_or_below
-        if tax == "ires"
-        else company.irap_single_payment_at_or_below
-    )
     return AdvanceRule(
         percent_of_base=company.advance_percent_of_base,
         first_percent=company.first_advance_percent_isa if isa else company.first_advance_percent,
@@ -133,8 +132,9 @@ def advance_rule(
             company.second_advance_percent_isa if isa else company.second_advance_percent
         ),
         no_advance_at_or_below=company.no_advance_at_or_below,
-        single_limit=single,
+        single_limit=None,
         single_inclusive=True,
+        single_if_first_instalment_at_or_below=company.first_instalment_single_payment_at_or_below,
     )
 
 
@@ -147,6 +147,9 @@ def advance_amounts(rule: AdvanceRule, base: Decimal) -> AdvanceAmounts:
     if rule.is_single(total):
         return AdvanceAmounts(total, ZERO, total, single=True)
     first = round_money(total * rule.first_percent / HUNDRED)
+    limit = rule.single_if_first_instalment_at_or_below
+    if limit is not None and first <= limit:
+        return AdvanceAmounts(total, ZERO, total, single=True)
     return AdvanceAmounts(total, first, total - first, single=False)
 
 
@@ -187,7 +190,10 @@ def _add_months_to_month_end(year: int, month: int, months: int) -> date:
 def fiscal_year_end(tax_year: int, month: int, day: int) -> date:
     """The day the tax period `tax_year` ends on, for a legal entity whose fiscal year ends on
     `month` and `day`. A tax year is named by the calendar year its period STARTS in: the pack's
-    own convention, which no source read states (A5, to verify). The period of a year ending 30
+    own convention, which the Agenzia's «Avvertenze per la compilazione del mod. F24» state for
+    the F24: a company whose period is not the calendar year ticks the box «non coincidente con
+    anno solare» and writes in «anno di riferimento» «il primo dei due anni solari interessati»
+    (read 2026-11-12). The period of a year ending 30
     June that starts on 1 July 2025 is tax year 2025 and ends on 30 June 2026.
     A year ending 31 December is the calendar year. A year end on 29 February is the last day of
     February in a year that has no 29th."""
