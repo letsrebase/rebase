@@ -350,6 +350,16 @@ class PurchaseService:
                     "solo una fattura o una nota di credito ha un periodo IVA",
                 )
             return
+        if values["split_payment"] and values["reverse_charge"]:
+            # Split payment exists where the buyer is not the VAT debtor, and under reverse
+            # charge the buyer is: art. 17-ter c. 1 DPR 633/1972; Agenzia, Circolare 14/E of
+            # 27 March 2015, § 4 (REB-1099).
+            raise ValidationFailed(
+                ENTITY,
+                "split_payment",
+                "split payment e inversione contabile si escludono",
+                expected="uno dei due",
+            )
         if not lines:
             raise ValidationFailed(
                 ENTITY,

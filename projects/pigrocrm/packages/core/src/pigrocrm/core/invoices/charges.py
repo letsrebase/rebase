@@ -9,14 +9,27 @@ frame's A5 register (`2026-11-09-space-profiles-modules-and-the-money-picture-de
   Agenzia's «F24 Ritenute reddito lavoro autonomo» pages, «Aliquote» and «Importi su cui si
   applica la ritenuta»), and it is owed only when the customer is a withholding agent in
   Italy and the issuer is not a flat-rate taxpayer (L. 190/2014, art. 1 c. 67: only the
-  ordinary regime of the `it-standard` pack carries a `SalesWithholding`);
+  ordinary regime of the `it-standard` pack carries a `SalesWithholding`), and only on income
+  of an art or a profession: art. 25 c. 1 DPR 600/1973 withholds on «compensi ... per
+  prestazioni di lavoro autonomo», income of art. 53 TUIR, so a profile that says its income is
+  `business` is not withheld. A profile with no answer is read as a professional, as the
+  product always has (REB-1099); from 1 January 2028 art. 25 also withholds on business income
+  (L. 199/2025 art. 1 c. 115), a row of the register and not computed here;
 * a split payment applies to a sale to a public body (art. 17-ter c. 1 DPR 633/72), is
   excluded for a service whose fee is subject to withholding (c. 1-sexies, added by DL 87/2018
   art. 12), and exists only where there is VAT to split.
 
-The contribution of a pension fund and the INPS surcharge are not here: whether and how VAT
-and the withholding reach them is still «to verify» in the register, and a rule that is not
-verified is not computed.
+The contribution of a pension fund and the INPS surcharge are not computed here, because a sale
+has no field for them yet (the exporter writes no `DatiCassaPrevidenziale`), not because the rule
+is open. The base `compute_charges` takes, the lines alone, is right for a fund's contribution
+and is the line to change for the INPS surcharge: a professional fund's contribution is in the VAT
+base and not in the withholding base (art. 16 DL 41/1995; Agenzia, «F24 Ritenute reddito lavoro
+autonomo», «Importi su cui si applica la ritenuta»; the FatturaPA compilation guide v1.0,
+invoice 410), the
+4% INPS surcharge of the gestione separata is in both (INPS Msg. 7751/2012; art. 13 DPR 633/1972;
+the same guide, invoice 14). The expenses refunded at cost stay in the withholding base as the
+Agenzia's scheda says; whether art. 54 c. 2 TUIR, as D.Lgs. 192/2024 wrote it, takes them out is
+the accountant's question (A5).
 """
 
 from collections.abc import Sequence
@@ -32,6 +45,7 @@ from pigrocrm.core.money import round_money
 ZERO = Decimal("0.00")
 _HUNDRED = Decimal("100")
 PUBLIC_BODY = "public_body"
+INCOME_KIND_BUSINESS = "business"
 
 
 class SalesCustomer(Protocol):
@@ -76,7 +90,12 @@ def compute_charges(
     withholding_amount = ZERO
     withholding_rate: Decimal | None = None
     law = current_pack(tax.pack_id).sales_withholding
-    if law is not None and customer.is_withholding_agent and italian(customer.country):
+    if (
+        law is not None
+        and tax.income_kind != INCOME_KIND_BUSINESS
+        and customer.is_withholding_agent
+        and italian(customer.country)
+    ):
         base = round_money(sum((line.total_price for line in computed), start=ZERO))
         amount = round_money(base * law.rate / _HUNDRED)
         if amount > ZERO:

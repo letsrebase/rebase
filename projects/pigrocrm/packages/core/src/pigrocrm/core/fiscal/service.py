@@ -74,6 +74,7 @@ class FiscalProfileService:
             payment_method=profile.payment_method,
             due_days=profile.due_days,
             iban=profile.iban,
+            income_kind=profile.income_kind,
         )
 
     def describe(self, actor: Actor, legal_entity_id: UUID | None = None) -> dict[str, Any]:
@@ -241,6 +242,13 @@ class FiscalProfileService:
                     expected="nessun valore",
                 )
         FiscalProfileService._check_taxpayer_parameters(payload)
+        if payload.get("income_kind") is not None and pack_id != PACK_IT_STANDARD:
+            raise ValidationFailed(
+                ENTITY,
+                "income_kind",
+                "il tipo di reddito si chiede solo a una persona nel regime ordinario",
+                expected="nessun valore",
+            )
         if payload["default_vat_rate"] != ZERO and payload.get("default_vat_nature"):
             raise ValidationFailed(
                 ENTITY,

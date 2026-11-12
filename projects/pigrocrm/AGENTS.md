@@ -281,7 +281,7 @@ document prints. The exporter reads the stored figures: `DatiRitenuta` and `Rite
 `EsigibilitaIVA` `S` from the split payment, `ImportoPagamento` from the net, and `FPA12` with the 6-character IPA code from the
 customer's frozen kind (`PartySnapshot.customer_kind`). A service to a business abroad on the ordinary regime is `N2.1`
 (`_ordinary.resolve_line_vat`); a consumer abroad is refused until its own card. The pension fund and the INPS surcharge
-(`DatiCassaPrevidenziale`) are not computed or exported: their rule is «to verify» in the frame's A5 register and waits for the accountant.
+(`DatiCassaPrevidenziale`) are not computed or exported, because a sale has no field for them; their bases are settled in the A5 register (REB-1099): the fund's contribution is in the VAT base and out of the withholding base, the 4% surcharge in both. The withholding needs one more taxpayer fact: `fiscal_profile.income_kind` (`self_employment` or `business`, asked of `it-standard` only, migration 0114): art. 25 c. 1 DPR 600/73 withholds on income of arts and professions, so `business` is not withheld and an unanswered profile is read as a professional. The ordinary regime owes the 2 euro stamp duty on its untaxed groups (`N2.1`) above the threshold, as the flat-rate regime does (`regime._stamp_duty_on_untaxed`).
 follows the boot's convention (a line on stderr, exit 0).
 
 **Forecasts of money in are stored due items in the state `forecast`, replaced by their document and never

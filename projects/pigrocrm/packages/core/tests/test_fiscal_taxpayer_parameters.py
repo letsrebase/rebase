@@ -165,3 +165,29 @@ def test_a_pairing_is_read_on_the_row_a_save_leaves_alone(db_session: Session) -
         ADMIN,
     )
     assert saved.inps_trade == "artigiani" and saved.inps_covered_elsewhere is None
+
+
+def test_the_income_kind_is_asked_of_the_ordinary_person_only_and_kept(db_session: Session) -> None:
+    """REB-1099: `income_kind` belongs to `it-standard`, is kept when a save leaves it out,
+    and moving to another pack leaves no answer behind."""
+    service = FiscalProfileService(db_session)
+    saved = service.upsert(
+        FiscalProfileUpsert(pack_id="it-standard", income_kind="business"), ADMIN
+    )
+    assert saved.income_kind == "business"
+    assert service.snapshot().income_kind == "business"
+    kept = service.upsert(FiscalProfileUpsert(pack_id="it-standard"), ADMIN)
+    assert kept.income_kind == "business"
+    others = (
+        {"pack_id": "it-flat-rate", "regime_code": "RF19"},
+        {"pack_id": "it-company"},
+        {"pack_id": "non-it", "regime_code": None, "default_vat_rate": "22.00"},
+    )
+    for pack in others:
+        with pytest.raises(ValidationFailed) as refusal:
+            service.upsert(FiscalProfileUpsert(**pack, income_kind="business"), ADMIN)
+        assert refusal.value.details["field"] == "income_kind"
+    with pytest.raises(ValidationError):
+        FiscalProfileUpsert(pack_id="it-standard", income_kind="freelance")
+    moved = service.upsert(FiscalProfileUpsert(pack_id="it-company"), ADMIN)
+    assert moved.income_kind is None

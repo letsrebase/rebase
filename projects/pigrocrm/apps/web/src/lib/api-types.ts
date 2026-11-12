@@ -13035,6 +13035,8 @@ export interface components {
             inps_category: string | null;
             /** Isa */
             isa: boolean | null;
+            /** Income Kind */
+            income_kind: string | null;
             /** Inps Trade */
             inps_trade: string | null;
             /** Inps Covered Elsewhere */
@@ -13162,6 +13164,8 @@ export interface components {
             inps_category?: ("gestione_separata" | "artigiani_commercianti") | null;
             /** Isa */
             isa?: boolean | null;
+            /** Income Kind */
+            income_kind?: ("self_employment" | "business") | null;
             /** Inps Trade */
             inps_trade?: ("artigiani" | "commercianti") | null;
             /** Inps Covered Elsewhere */

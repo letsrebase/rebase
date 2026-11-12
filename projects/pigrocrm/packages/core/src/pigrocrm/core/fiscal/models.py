@@ -124,6 +124,10 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
     # decides 50/50 or 40/60 advances (A5, verified).
     inps_category: Mapped[str | None] = mapped_column(String(30), default=None)
     isa: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    # REB-1099: `self_employment` (art or profession, art. 53 TUIR) or `business`; only asked of
+    # the ordinary regime of a person (`it-standard`). `NULL` is «not stated» and keeps the
+    # product's reading, a professional, so the 20% withholding of art. 25 DPR 600/1973 stays.
+    income_kind: Mapped[str | None] = mapped_column(String(20), default=None)
     # REB-1070: the taxpayer facts the wave-1 law needs, each `None` = not stated (no figure,
     # never a guess). INPS (`InpsYearLaw.contributions`): which gestione of
     # `artigiani_commercianti`, insured elsewhere or a pensioner (gestione separata's lower
@@ -152,6 +156,9 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
         CheckConstraint(
             "inps_category IN ('gestione_separata', 'artigiani_commercianti')",
             name="ck_fiscal_profile_inps_category",
+        ),
+        CheckConstraint(
+            "income_kind IN ('self_employment', 'business')", name="ck_fiscal_profile_income_kind"
         ),
         CheckConstraint(
             "inps_trade IN ('artigiani', 'commercianti')", name="ck_fiscal_profile_inps_trade"

@@ -172,6 +172,18 @@ def test_a_withholding_agent_keeps_twenty_percent_of_the_fee() -> None:
     assert not charges.split_payment
 
 
+def test_a_business_income_issuer_is_not_withheld_and_an_unanswered_one_is_a_professional() -> None:
+    """REB-1099: art. 25 c. 1 DPR 600/1973 withholds on «prestazioni di lavoro autonomo»
+    (art. 53 TUIR). `business` is not withheld; no answer keeps the product's reading."""
+    agent = _customer(is_withholding_agent=True)
+    business = compute_charges(_computed(), tax=_tax(income_kind="business"), customer=agent)
+    assert business.withholding_amount == Decimal("0.00") and business.withholding_rate is None
+    assert business.net_receivable == business.total == Decimal("1220.00")
+    for kind in ("self_employment", None):
+        charges = compute_charges(_computed(), tax=_tax(income_kind=kind), customer=agent)
+        assert charges.withholding_amount == Decimal("200.00")
+
+
 def test_a_customer_that_is_not_a_withholding_agent_pays_the_whole_total() -> None:
     charges = compute_charges(_computed(), tax=_tax(), customer=_customer())
     assert charges.withholding_amount == Decimal("0.00")

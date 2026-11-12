@@ -92,6 +92,39 @@ class RegimeStrategy(Protocol):
         ...
 
 
+def _stamp_duty_on_untaxed(
+    recap: Sequence[RecapGroup], profile: FiscalSnapshot, *, elected: bool
+) -> Decimal:
+    """The 2 euro duty on a document whose amount not subject to VAT is above the threshold.
+
+    The stamp duty tariff, part one, art. 13 c. 1 DPR 642/1972 charges «fatture, note conti e
+    simili documenti, recanti addebitamenti» and note 2 a) spares a sum up to 77.47 euro (150,000
+    lire); the exemption of art. 6 of table B covers only documents for
+    «corrispettivi di operazioni assoggettate ad imposta sul valore aggiunto» (answer n. 491 of
+    20 July 2021 of the revenue agency). An operation outside the VAT scope, `N2.1` and
+    `N2.2`, is not one of those: the Agenzia's own selection of electronic invoices owing the
+    duty lists `N2.1` and `N2.2` beside `N3.5`, `N3.6` and `N4` («L'integrazione del bollo sulle
+    fatture elettroniche»). The base is the untaxed groups, never the total, so a taxed invoice
+    owes none. The exporter writes `BolloVirtuale` `SI` whenever this is above zero, which is
+    also what takes a document to a recipient abroad (`CodiceDestinatario` `XXXXXXX`) into the
+    Agenzia's quarterly calculation.
+
+    `elected` is the profile's `apply_stamp_duty` for the flat-rate regime, whose profile can
+    turn the duty off. The ordinary regime passes `True`: the duty is the statute's, not an
+    election, and its profile refuses the flag, so the amount and threshold the profile stores
+    (2.00 and 77.47) are the data and the flag is not read.
+    """
+    if not elected:
+        return ZERO
+    untaxed = sum(
+        (group.taxable_amount for group in recap if group.vat_rate == ZERO),
+        start=ZERO,
+    )
+    if round_money(untaxed) > profile.stamp_duty_threshold:
+        return round_money(profile.stamp_duty_amount)
+    return ZERO
+
+
 class _flat_rate:
     """`RF19`. No VAT, and on every line and every summary group a `Natura` with its
     normative declaration: `N2.2` and the profile's L. 190/2014 text for an Italian
@@ -137,25 +170,16 @@ class _flat_rate:
         return ZERO, vat_nature, reference
 
     def stamp_duty(self, recap: Sequence[RecapGroup], profile: FiscalSnapshot) -> Decimal:
-        if not profile.apply_stamp_duty:
-            return ZERO
-        untaxed = sum(
-            (group.taxable_amount for group in recap if group.vat_rate == ZERO),
-            start=ZERO,
-        )
-        if round_money(untaxed) > profile.stamp_duty_threshold:
-            return round_money(profile.stamp_duty_amount)
-        return ZERO
+        return _stamp_duty_on_untaxed(recap, profile, elected=profile.apply_stamp_duty)
 
 
 class _ordinary:
     """`RF01`, the ordinary regime, on the `it-standard` pack (REB-760) and on `it-company`
     (REB-1005), which invoice the same way. Every operation to a customer in Italy is taxed
-    at the rate entered, or the profile's default, and the invoice carries no `Natura`, no
-    `RiferimentoNormativo` and no stamp duty: there is
-    no untaxed base for the duty to be owed on. Its arithmetic is spec 6.1's, the rounding
-    of `totals.py` producing a VAT figure for every group (a 22% and a 10% line on one
-    invoice).
+    at the rate entered, or the profile's default, and the invoice carries no `Natura` and no
+    `RiferimentoNormativo`, and owes no stamp duty unless an untaxed line exists (below). Its
+    arithmetic is spec 6.1's, the rounding of `totals.py` producing a VAT figure for every group
+    (a 22% and a 10% line on one invoice).
 
     A service to a business established abroad is outside Italian VAT (REB-994): art. 7-ter
     c. 1 DPR 633/72 makes a service territorial in Italy when it is rendered to a taxable
@@ -217,12 +241,12 @@ class _ordinary:
         return rate, None, None
 
     def stamp_duty(self, recap: Sequence[RecapGroup], profile: FiscalSnapshot) -> Decimal:
-        # An ordinary regime taxes its operations to a customer in Italy, so there is no
-        # untaxed base for the duty to be owed on. The one untaxed line it writes, a service
-        # to a business abroad (`N2.1`), is not charged duty either: whether a document to a
-        # customer abroad owes it is not in the register (A5), so it is left to the
-        # accountant (REB-975) and not computed.
-        return ZERO
+        # The same computation as the flat-rate regime's, on the untaxed groups: an operation
+        # to a customer in Italy is taxed and owes none (art. 6 Tabella B DPR 642/1972), the
+        # one untaxed line this regime writes, a service to a business abroad (`N2.1`), owes
+        # it above the threshold. The duty is the statute's, so this profile's `apply_stamp_duty`,
+        # which the pack keeps false, is not asked (see `_stamp_duty_on_untaxed`).
+        return _stamp_duty_on_untaxed(recap, profile, elected=True)
 
 
 class _foreign:
