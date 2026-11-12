@@ -70,12 +70,18 @@ export function taxOfDate(entry: TaxCalendarEntry): string {
 }
 
 /** The taxes whose labels already say what they are: no suffix beside them. */
-export const NAMES_ITSELF: ReadonlySet<TaxName> = new Set<TaxName>(['iva', 'withholding', 'chamber_fee'])
+export const NAMES_ITSELF: ReadonlySet<TaxName> = new Set<TaxName>([
+  'iva',
+  'withholding',
+  'chamber_fee',
+])
 
 /** What a line says on the Home, where there is no column for the tax: the label, then the tax
  *  it belongs to unless the label already says IVA. */
 export function lineText(entry: TaxCalendarEntry): string {
-  return NAMES_ITSELF.has(entry.tax) ? dateLabel(entry) : `${dateLabel(entry)} · ${taxOfDate(entry)}`
+  return NAMES_ITSELF.has(entry.tax)
+    ? dateLabel(entry)
+    : `${dateLabel(entry)} · ${taxOfDate(entry)}`
 }
 
 /** Whether a due item is the payment a pack line announces: the same tax, the pack's «imposte sui
@@ -121,8 +127,37 @@ export function groupByDueDate(
 }
 
 /** The first `limit` days on or after `today` that carry a date. */
-export function nextDays(entries: readonly TaxCalendarEntry[], today: string, limit: number): DueDay[] {
+export function nextDays(
+  entries: readonly TaxCalendarEntry[],
+  today: string,
+  limit: number,
+): DueDay[] {
   return groupByDueDate(entries.filter((entry) => entry.due_date >= today)).slice(0, limit)
+}
+
+/** An item still to pay: forecast or expected. A paid or dropped one is not on the Home, though
+ *  it still covers its pack line (`groupByDueDate`). */
+function isOpen(item: TaxDueItem): boolean {
+  return item.state === 'forecast' || item.state === 'expected'
+}
+
+/** The Home's next days: the pack's lines from `today` on and the due items, merged as «Tasse»
+ *  merges them (a pack line stays only for a tax with no item that day, paid ones counted), then
+ *  only what is still to pay. A day before today stays when an open item is on it (overdue), so
+ *  the soonest, overdue first, are the first `limit`. */
+export function homeDays(
+  entries: readonly TaxCalendarEntry[],
+  items: readonly TaxDueItem[],
+  today: string,
+  limit: number,
+): DueDay[] {
+  return groupByDueDate(
+    entries.filter((entry) => entry.due_date >= today),
+    items,
+  )
+    .map((day) => ({ ...day, items: day.items.filter(isOpen), groups: [] }))
+    .filter((day) => day.items.length > 0 || (day.entries.length > 0 && day.date >= today))
+    .slice(0, limit)
 }
 
 /** «tra 6 giorni», «oggi», «domani», «3 giorni fa»: a difference of two dates, never an amount. */
