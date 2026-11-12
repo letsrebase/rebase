@@ -19,6 +19,7 @@ from pigrocrm.core.fiscal.law_payment import (
     InstalmentLaw,
     LegalInterestRate,
     PaymentRulesLaw,
+    RegularisationTier,
     ReturnFilingRule,
     ShortfallLaw,
     WithholdingCreditLaw,
@@ -50,6 +51,13 @@ SHORTFALL = ShortfallLaw(
     reduced_penalty_fraction=Decimal("0.5"),
     daily_if_late_up_to_days=15,
     daily_fraction_denominator=15,
+    # Art. 13 c. 1 lett. a) and a-bis) D.Lgs. 472/1997 (Normattiva in force 2026-11-12, violations
+    # from 1 September 2024): «ad un decimo del minimo ... entro il termine di trenta giorni»,
+    # «ad un nono del minimo ... entro novanta giorni». Beyond 90 days the pack states no tier.
+    regularisation_tiers=(
+        RegularisationTier(max_days_late=30, divisor=10),
+        RegularisationTier(max_days_late=90, divisor=9),
+    ),
     legal_interest=(
         LegalInterestRate(
             year=2025,
@@ -97,6 +105,22 @@ WITHHOLDING_CREDIT = WithholdingCreditLaw(
     ),
 )
 
+# A company's withholdings (art. 79 c. 1 TUIR sends them to art. 22; art. 88 c. 1 of the testo
+# unico of D.Lgs. 117/2026 from 1 January 2027), credited to the period the income accrues in.
+COMPANY_WITHHOLDING_CREDIT = WithholdingCreditLaw(
+    alternative_in_year_after_before_filing=True,
+    income_basis="accrual",
+    source=(
+        "D.P.R. 22 dicembre 1986 n. 917 (TUIR), art. 79 c. 1 («Le ritenute alla fonte a titolo di "
+        "acconto si scomputano dall'imposta a norma dell'articolo 22»), art. 22 c. 1 lett. c) and "
+        "art. 109 c. 1 and c. 2 lett. b) («i corrispettivi delle prestazioni di servizi si "
+        "considerano conseguiti ... alla data in cui le prestazioni sono ultimate»), Normattiva, "
+        "text in force on 2026-11-12 (art. 88 c. 1 and art. 24 c. 1 lett. c) of D.Lgs. 19 giugno "
+        "2026 n. 117 from 1 January 2027); Agenzia delle Entrate, Redditi SC 2026, quadro RN, "
+        "rigo RN15 (read 2026-11-12)"
+    ),
+)
+
 # --- F24 codes --------------------------------------------------------------------------
 
 _SRC_ADE = "Agenzia delle Entrate, «Ricerca codici tributo», codice {code} (read 2026-11-11)"
@@ -104,6 +128,10 @@ _SRC_PF = "Agenzia delle Entrate, Redditi PF 2026 fascicolo 1, «Principali codi
 _SRC_INPS_GS = (
     "INPS, «F24 per professionisti iscritti alla Gestione Separata» (updated 8 July 2025, read "
     "2026-11-11), «Causali di versamento»"
+)
+_SRC_INPS_CIRC62 = (
+    "INPS, circolare n. 62 of 27 May 2026 (Quadro RR del modello Redditi 2026-PF), § 3 «Termini e "
+    "modalità di versamento» and § 4 «La rateizzazione» (read 2026-11-12)"
 )
 _SRC_INPS_AC = (
     "INPS, «F24 per artigiani e commercianti» (updated 8 July 2025, read 2026-11-11), «Causali "
@@ -257,7 +285,24 @@ _INPS_CODES = (
         "DPPI",
         "Gestione separata: the 0.4% of a deferral and the interest of an instalment, a line of "
         "their own",
-        _SRC_INPS_GS,
+        f"{_SRC_INPS_GS}; {_SRC_INPS_CIRC62}: «DPPI» for the interest of the «Gestione separata»",
+    ),
+    _inps(
+        "inps_artigiani_interest",
+        "API",
+        "Artigiani: the interest of an instalment and the 0.4% of a deferral on the contributions "
+        "above the minimum income, a line of their own with the codeline of the contribution",
+        f"{_SRC_INPS_CIRC62}: «API» (artigiani) with the codeline of the contribution it belongs "
+        "to",
+    ),
+    _inps(
+        "inps_commercianti_interest",
+        "CPI",
+        "Commercianti: the interest of an instalment and the 0.4% of a deferral on the "
+        "contributions above the minimum income, a line of their own with the codeline of the "
+        "contribution",
+        f"{_SRC_INPS_CIRC62}: «CPI» (commercianti) with the codeline of the contribution it "
+        "belongs to",
     ),
     _inps(
         "inps_artigiani_minimum",
@@ -372,6 +417,7 @@ IT_COMPANY_PAYMENT_2026 = PaymentRulesLaw(
     deferral=DEFERRAL,
     forecast=FORECAST_COMPANY,
     shortfall=SHORTFALL,
+    withholding_credit=COMPANY_WITHHOLDING_CREDIT,
     f24_codes=(
         *_IRES_CODES,
         *_IRAP_CODES,

@@ -17,6 +17,14 @@ depreciation differences, the limits on interest and vehicles). A loss gives a t
 says so; no loss carry-forward is modelled (art. 84 TUIR would let a loss of an earlier year
 reduce the profit), so a year after a loss is estimated as if there were none.
 
+The withholdings the customers kept on the srl's invoices (`fiscal/withholdings_suffered.py`,
+`company_withholdings_suffered`) are credited against the IRES (art. 79 c. 1 TUIR, which sends them
+to art. 22), by the period of the invoice's accrual and not the one it was paid in (art. 109 TUIR).
+`ires.amount` is the tax net of them, which is what the advances are based on (A5 «The advance
+base is the declared tax net of deductions, credits, withholdings and excesses»); what they exceed
+the tax by is `credit`, never a negative tax. The IRAP takes no withholding off. A year whose law
+carries no rule for them, or no figure for them, is computed without and says so.
+
 IRAP
 ----
 The value of production per `IrapLaw`: the year's revenue (item A1) less the year's purchases
@@ -87,6 +95,10 @@ class CompanyTaxEstimate(BaseModel):
     rate: Decimal | None
     amount: Decimal | None
     loss: bool = False
+    # IRES only: what the customers withheld on the period's invoices (credited against the tax;
+    # `amount` is net of it) and what it exceeds the tax by. `None` when the estimate has none.
+    withholdings: Decimal | None = None
+    credit: Decimal | None = None
     # The region whose rate was applied (IRAP only): the ISTAT code, or `BZ` or `TN`.
     region: str | None = None
     missing: str | None = None
@@ -122,19 +134,26 @@ def estimate_company_taxes(
     *,
     place: Place,
     province: str | None,
+    withholdings: Decimal | None = None,
+    withholdings_source: str = "",
 ) -> CompanyEstimate | None:
     """The estimate of IRES and IRAP for `basis`'s year, `None` when the law carries no IRAP
-    table or the basis has no costs (a year on a basis that deducts none is no srl's)."""
+    table or the basis has no costs (a year on a basis that deducts none is no srl's).
+    `withholdings` is what the customers withheld on the period's invoices, `None` when the pack
+    states no rule for the year they are credited against (`withholdings_source` is that rule's
+    citation)."""
     costs = basis.costs
     if costs is None or law.irap is None:
         return None
     return CompanyEstimate(
-        ires=_ires(basis, law),
+        ires=_ires(basis, law, withholdings, withholdings_source),
         irap=_irap(basis, law, place, province),
     )
 
 
-def _ires(basis: YearBasis, law: CompanyTaxLaw) -> CompanyTaxEstimate:
+def _ires(
+    basis: YearBasis, law: CompanyTaxLaw, withholdings: Decimal | None, withholdings_source: str
+) -> CompanyTaxEstimate:
     costs = basis.costs
     assert costs is not None
     profit = round_money(basis.revenue - costs.total)
@@ -156,12 +175,32 @@ def _ires(basis: YearBasis, law: CompanyTaxLaw) -> CompanyTaxEstimate:
     loss = profit < 0
     if loss:
         assumptions.append("L'anno chiude in perdita: l'IRES stimata è zero.")
+    gross = ZERO_MONEY if loss else round_money(profit * law.ires_rate / _HUNDRED)
+    amount = gross
+    credit: Decimal | None = None
+    if withholdings is None:
+        assumptions.append(
+            "Le ritenute subite sulle fatture non sono nella stima: il pacchetto fiscale non dice "
+            "a quale anno si scomputano."
+        )
+    else:
+        net = round_money(gross - withholdings)
+        amount = max(net, ZERO_MONEY)
+        credit = max(-net, ZERO_MONEY)
+        assumptions.append(
+            "Le ritenute sono quelle trattenute dai clienti sulle fatture di competenza "
+            "dell'esercizio, quando le hanno pagate, e si scomputano dall'IRES dell'esercizio "
+            "in cui il ricavo è di competenza, non da quello in cui è stato incassato"
+            + (f" ({withholdings_source})." if withholdings_source else ".")
+        )
     return CompanyTaxEstimate(
         lines=lines,
         base=profit,
         rate=law.ires_rate,
-        amount=ZERO_MONEY if loss else round_money(profit * law.ires_rate / _HUNDRED),
+        amount=amount,
         loss=loss,
+        withholdings=withholdings,
+        credit=credit,
         assumptions=assumptions,
     )
 

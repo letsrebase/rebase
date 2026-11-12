@@ -89,6 +89,7 @@ from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.fiscal.tax_items import TaxDueItemService
 from pigrocrm.core.inbox.access import visible_item
 from pigrocrm.core.inbox.models import InboxItem
+from pigrocrm.core.legal_entities.models import LegalEntity
 
 ENTITY = "f24_group"
 ZERO = Decimal("0.00")
@@ -543,10 +544,36 @@ class F24GroupService:
                 for receipt in group_receipts
             }
         )
+        broken_year = self._broken_year_entities({group.legal_entity_id for group in groups})
         return [
-            self._group_read(group, lines[group.id], receipts[group.id], items, credits, names)
+            self._group_read(
+                group,
+                lines[group.id],
+                receipts[group.id],
+                items,
+                credits,
+                names,
+                group.legal_entity_id in broken_year,
+            )
             for group in groups
         ]
+
+    def _broken_year_entities(self, legal_entity_ids: set[UUID]) -> set[UUID]:
+        """The legal entities whose fiscal year does not end on 31 December, whose F24 has the
+        header box «non coincidente con anno solare» ticked."""
+        if not legal_entity_ids:
+            return set()
+        return set(
+            self.session.scalars(
+                select(LegalEntity.id).where(
+                    LegalEntity.id.in_(legal_entity_ids),
+                    or_(
+                        LegalEntity.fiscal_year_end_month != 12,
+                        LegalEntity.fiscal_year_end_day != 31,
+                    ),
+                )
+            )
+        )
 
     def _inbox_names(self, inbox_ids: set[UUID]) -> dict[UUID, str]:
         if not inbox_ids:
@@ -564,6 +591,7 @@ class F24GroupService:
         items: dict[UUID, DueItem],
         credits: dict[UUID, TaxCredit],
         names: dict[UUID, str],
+        fiscal_year_not_calendar_year: bool,
     ) -> F24GroupRead:
         line_reads: list[F24LineRead] = []
         for line in lines:
@@ -604,6 +632,7 @@ class F24GroupService:
             payment_date=group.payment_date,
             state=group.state,  # type: ignore[arg-type]
             note=group.note,
+            fiscal_year_not_calendar_year=fiscal_year_not_calendar_year,
             total=debit - credit_total,
             debit_total=debit,
             credit_total=credit_total,

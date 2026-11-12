@@ -323,6 +323,27 @@ def test_a_company_pays_the_chamber_fee_on_its_own_code(db_session: Session) -> 
     assert lines[ires].code == "2001"  # type: ignore[attr-defined]
 
 
+def test_an_f24_says_to_tick_the_box_when_the_fiscal_year_is_not_the_calendar_year(
+    db_session: Session,
+) -> None:
+    """The F24's header box «non coincidente con anno solare» (Agenzia, «Avvertenze per la
+    compilazione del mod. F24»): a legal entity whose year ends on 30 June has it, one whose year
+    ends on 31 December does not."""
+    broken = _entity(db_session, "it-company")
+    db_session.query(LegalEntity).filter_by(id=broken).update(
+        {"fiscal_year_end_month": 6, "fiscal_year_end_day": 30}
+    )
+    calendar = _entity(db_session, "it-company")
+    for entity, expected in ((broken, True), (calendar, False)):
+        ires = _tax(db_session, entity, "ires", 2026, "first_advance", "500.00")
+        group = _group(db_session, [ires])
+        assert group.fiscal_year_not_calendar_year is expected
+        listed = F24GroupService(db_session).list_f24_groups(
+            F24GroupListQuery(legal_entity_id=entity), ADMIN
+        )
+        assert [item.fiscal_year_not_calendar_year for item in listed.items] == [expected]
+
+
 def test_a_code_is_frozen_when_the_line_is_grouped(db_session: Session) -> None:
     entity = _entity(db_session)
     item = _tax(db_session, entity, "irpef", 2026, "second_advance", "100.00")

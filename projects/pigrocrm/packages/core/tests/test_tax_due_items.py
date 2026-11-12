@@ -521,17 +521,25 @@ def test_an_srl_has_ires_and_irap_advances_with_its_own_thresholds(
     _declare(db_session, entity, "irap", 2025, tax_due="20.66")
     _declare(db_session, entity, "irap", 2025, tax_due="100.00")
     rows = _live(db_session, entity)
+    # An IRAP advance of 100 has a first instalment of 40, not above 103: one payment (art. 17
+    # c. 3 D.P.R. 435/2001), the same test as IRES.
     assert [(r.tax, r.due, r.amount) for r in rows] == [
-        ("irap", dt.date(2026, 6, 30), D("40.00")),
         ("ires", dt.date(2026, 6, 30), D("4000.00")),
-        ("irap", dt.date(2026, 11, 30), D("60.00")),
+        ("irap", dt.date(2026, 11, 30), D("100.00")),
         ("ires", dt.date(2026, 11, 30), D("6000.00")),
     ]
-    # Up to 103 an IRES advance is one payment; 20.66 or less is none at all.
-    _declare(db_session, entity, "ires", 2025, tax_due="103.00")
+    # The 103 is a ceiling on the first instalment: an IRES advance of 200 (first 80) is one
+    # payment of 200, not 80 and 120; 20.66 or less is none at all.
+    _declare(db_session, entity, "ires", 2025, tax_due="200.00")
     _declare(db_session, entity, "irap", 2025, tax_due="20.66")
     assert [(r.tax, r.due, r.amount) for r in _live(db_session, entity)] == [
-        ("ires", dt.date(2026, 11, 30), D("103.00"))
+        ("ires", dt.date(2026, 11, 30), D("200.00"))
+    ]
+    # Above 257.51 the first instalment passes 103 and the advance is split again.
+    _declare(db_session, entity, "ires", 2025, tax_due="257.52")
+    assert [(r.tax, r.due, r.amount) for r in _live(db_session, entity)] == [
+        ("ires", dt.date(2026, 6, 30), D("103.01")),
+        ("ires", dt.date(2026, 11, 30), D("154.51")),
     ]
 
 

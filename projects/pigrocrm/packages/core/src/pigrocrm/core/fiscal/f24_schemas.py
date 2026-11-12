@@ -116,6 +116,11 @@ class F24GroupRead(BaseModel):
     payment_date: dt.date
     state: F24GroupState
     note: str | None
+    # The header box «non coincidente con anno solare»: the legal entity's fiscal year is not the
+    # calendar year, so whoever fills in the F24 ticks it and writes the first of the two
+    # calendar years the period touches in «anno di riferimento» (Agenzia delle Entrate,
+    # «Avvertenze per la compilazione del mod. F24»).
+    fiscal_year_not_calendar_year: bool
     total: Decimal
     debit_total: Decimal
     credit_total: Decimal
