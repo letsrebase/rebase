@@ -263,5 +263,6 @@ def test_the_service_estimate_nets_the_srl_withholdings_of_the_period(db_session
     )
     ires = estimate.company.ires
     assert ires.withholdings == M("4000.00")
-    # 24% of 99,641.20 (the 100,000 less the 10% lump sum of the 3,588.00 IRAP) less 4,000.
-    assert ires.amount == M("19913.89")
+    # No staff, so no staff share of the IRAP is deducted, and the 10% lump sum is not taken:
+    # 24% of 100,000 = 24,000, less 4,000.
+    assert ires.amount == M("20000.00")
