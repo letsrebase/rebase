@@ -315,6 +315,10 @@ _INTERNE: dict[Method, str] = {
         "REB-1074: the estimate the tax due items stand on, `get_fiscal_estimate`'s figures with "
         "no role check; read inside the writer, which is `full_access` only"
     ),
+    ("AnalyticsService", "estimated_inps_income"): (
+        "REB-1097: the income the INPS advances of the next year are computed on, read inside the "
+        "tax due items' writer, which is `full_access` only; no tool of its own"
+    ),
     ("DeclaredTaxFigureService", "declared_for_year"): (
         "REB-1006: read inside `get_fiscal_estimate`, which is `full_access` only; no tool of "
         "its own"
