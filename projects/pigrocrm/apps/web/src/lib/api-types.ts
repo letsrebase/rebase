@@ -12964,6 +12964,10 @@ export interface components {
             due_total?: string | null;
             /** Substitute Tax Base */
             substitute_tax_base?: string | null;
+            /** Contributions Deducted */
+            contributions_deducted?: string | null;
+            /** Assumptions */
+            assumptions?: string[];
             /** Coefficient Warning */
             coefficient_warning?: string | null;
             /** Pack Id */
