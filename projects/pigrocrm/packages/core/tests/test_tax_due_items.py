@@ -222,7 +222,7 @@ def test_the_historical_advance_reads_last_years_estimate_and_the_forecast_one_t
     assert report.written == 2
     # The balance of 2025 needs the advances of 2025, which the pack has no rule for: no item,
     # and the report says why.
-    assert [(n.tax, n.year, n.part) for n in report.not_written] == [
+    assert [(n.tax, n.year, n.part) for n in report.not_written if n.tax != "inps"] == [
         ("substitute_tax", 2025, "balance")
     ]
     assert "no advance rule" in report.not_written[0].reason
@@ -266,7 +266,7 @@ def test_the_forecast_method_without_an_estimate_writes_nothing_and_says_why(
     chosen = _method(db_session, entity, 2026, "forecast")
     assert _live(db_session, entity) == []
     assert chosen.items.dropped == 2
-    reasons = {(n.year, n.part): n.reason for n in chosen.items.not_written}
+    reasons = {(n.year, n.part): n.reason for n in chosen.items.not_written if n.tax != "inps"}
     assert (
         "forecast method needs the imposta sostitutiva estimate of 2026"
         in reasons[(2026, "first_advance")]
@@ -546,7 +546,9 @@ def test_a_profile_that_does_not_say_isa_gets_no_person_or_company_advance(
         ("irpef", "first_advance"),
         ("irpef", "second_advance"),
     }
-    assert all("ISA" in n.reason for n in report.not_written if n.part != "balance")
+    assert all(
+        "ISA" in n.reason for n in report.not_written if n.part != "balance" and n.tax != "inps"
+    )
 
 
 def test_a_tax_with_no_estimate_and_no_declared_figure_has_no_item_and_says_so(
@@ -555,7 +557,7 @@ def test_a_tax_with_no_estimate_and_no_declared_figure_has_no_item_and_says_so(
     entity = _entity(db_session, "it-standard", isa=False)
     report = TaxDueItemService(db_session).refresh_tax_due_items(entity, today=clock.today)
     assert _live(db_session, entity) == []
-    reasons = {(n.year, n.part): n.reason for n in report.not_written}
+    reasons = {(n.year, n.part): n.reason for n in report.not_written if n.tax != "inps"}
     assert "no declared IRPEF and no estimate for 2025" in reasons[(2026, "first_advance")]
 
 
@@ -924,3 +926,147 @@ def test_an_srl_in_a_year_without_a_chamber_fee_law_has_no_item_and_says_so(
     assert _fee_rows(db_session, entity) == []
     reasons = [n.reason for n in report.not_written if n.part == "chamber_fee" and n.year == 2027]
     assert len(reasons) == 1 and "2027" in reasons[0]
+
+
+# --- the advances of a person's INPS contributions (REB-1097) -----------------------------------
+
+
+class InpsIncomes:
+    """The estimated income of each year the stub answers; a year not set has none."""
+
+    def __init__(self) -> None:
+        self.by_year: dict[int, Decimal | None] = {}
+
+
+@pytest.fixture
+def inps_incomes(monkeypatch: pytest.MonkeyPatch) -> InpsIncomes:
+    stub = InpsIncomes()
+
+    def estimated_inps_income(
+        self: AnalyticsService, year: int, legal_entity: LegalEntity, profile: object
+    ) -> Decimal | None:
+        return stub.by_year.get(year)
+
+    monkeypatch.setattr(AnalyticsService, "estimated_inps_income", estimated_inps_income)
+    return stub
+
+
+def _inps_entity(session: Session, pack_id: str, **facts: object) -> UUID:
+    entity = _entity(session, pack_id, isa=False)
+    profile = session.scalars(
+        select(FiscalProfile).where(FiscalProfile.legal_entity_id == entity)
+    ).one()
+    for key, value in facts.items():
+        setattr(profile, key, value)
+    session.flush()
+    return entity
+
+
+def _inps_rows(session: Session, entity: UUID) -> list[Row]:
+    return [row for row in _live(session, entity) if row.tax == "inps"]
+
+
+def test_the_inps_advances_are_two_equal_halves_of_the_excess_on_last_years_income(
+    db_session: Session, clock: Clock, estimates: Estimates, inps_incomes: InpsIncomes
+) -> None:
+    """Redditi PF 2026 appendix «INPS»: a trader's 2025 income of 30.000 is 7.344,00 at 24,48%,
+    less 4.604,20 on the 2026 minimum = 2.739,80, on the days of the income tax advances."""
+    entity = _inps_entity(
+        db_session,
+        "it-flat-rate",
+        inps_category="artigiani_commercianti",
+        inps_trade="commercianti",
+        flat_rate_inps_reduction=False,
+    )
+    inps_incomes.by_year[2025] = D("30000")
+    report = TaxDueItemService(db_session).refresh_tax_due_items(entity, today=clock.today)
+    assert _inps_rows(db_session, entity) == [
+        Row(
+            "tax_advance",
+            "inps",
+            dt.date(2026, 6, 30),
+            D("1369.90"),
+            "forecast",
+            "Acconto INPS 2026, 1a rata",
+        ),
+        Row(
+            "tax_advance",
+            "inps",
+            dt.date(2026, 11, 30),
+            D("1369.90"),
+            "forecast",
+            "Acconto INPS 2026, 2a rata",
+        ),
+    ]
+    # 2027 has no INPS law yet, so the pack gives it no item and the report does not ask for one.
+    assert not any(n.tax == "inps" and n.year == 2027 for n in report.not_written)
+
+
+def test_the_flat_rate_reduction_is_in_the_inps_advances_and_unanswered_it_gives_none(
+    db_session: Session, clock: Clock, estimates: Estimates, inps_incomes: InpsIncomes
+) -> None:
+    entity = _inps_entity(
+        db_session,
+        "it-flat-rate",
+        inps_category="artigiani_commercianti",
+        inps_trade="commercianti",
+    )
+    inps_incomes.by_year[2025] = D("30000")
+    report = TaxDueItemService(db_session).refresh_tax_due_items(entity, today=clock.today)
+    assert _inps_rows(db_session, entity) == []
+    reasons = {n.reason for n in report.not_written if n.tax == "inps" and n.year == 2026}
+    assert any("35%" in reason for reason in reasons)
+
+    profile = db_session.scalars(
+        select(FiscalProfile).where(FiscalProfile.legal_entity_id == entity)
+    ).one()
+    profile.flat_rate_inps_reduction = True
+    db_session.flush()
+    TaxDueItemService(db_session).refresh_tax_due_items(entity, today=clock.today)
+    # 2.739,80 x 65% = 1.780,87, the first advance rounded up.
+    assert [row.amount for row in _inps_rows(db_session, entity)] == [D("890.44"), D("890.43")]
+
+
+def test_inps_advances_without_last_years_income_or_a_category_give_none_and_say_why(
+    db_session: Session, clock: Clock, estimates: Estimates, inps_incomes: InpsIncomes
+) -> None:
+    entity = _inps_entity(
+        db_session, "it-standard", inps_category="gestione_separata", inps_covered_elsewhere=False
+    )
+    report = TaxDueItemService(db_session).refresh_tax_due_items(entity, today=clock.today)
+    assert _inps_rows(db_session, entity) == []
+    assert any(
+        n.tax == "inps" and n.year == 2026 and "income of 2025" in n.reason
+        for n in report.not_written
+    )
+    inps_incomes.by_year[2025] = D("40000")
+    TaxDueItemService(db_session).refresh_tax_due_items(entity, today=clock.today)
+    # 40.000 x 80% x 26,07% = 8.342,40, two advances.
+    assert [row.amount for row in _inps_rows(db_session, entity)] == [D("4171.20")] * 2
+
+
+def test_a_paid_first_inps_advance_is_kept_and_the_second_takes_what_the_total_leaves(
+    db_session: Session, clock: Clock, estimates: Estimates, inps_incomes: InpsIncomes
+) -> None:
+    entity = _inps_entity(
+        db_session, "it-standard", inps_category="gestione_separata", inps_covered_elsewhere=False
+    )
+    inps_incomes.by_year[2025] = D("40000")
+    TaxDueItemService(db_session).refresh_tax_due_items(entity, today=clock.today)
+    first = db_session.scalars(
+        select(DueItem).where(
+            DueItem.legal_entity_id == entity,
+            DueItem.tax == "inps",
+            DueItem.due_date == dt.date(2026, 6, 30),
+        )
+    ).one()
+    DueItemService(db_session).settle(
+        first.id, SettlementCreate(amount=D("4171.20"), settled_on=dt.date(2026, 5, 1)), ADMIN
+    )
+    inps_incomes.by_year[2025] = D("50000")  # 50.000 x 80% x 26,07% = 10.428,00
+    TaxDueItemService(db_session).refresh_tax_due_items(entity, today=clock.today)
+    rows = _inps_rows(db_session, entity)
+    assert [(row.due, row.amount, row.state) for row in rows] == [
+        (dt.date(2026, 6, 30), D("4171.20"), "settled"),
+        (dt.date(2026, 11, 30), D("6256.80"), "forecast"),
+    ]

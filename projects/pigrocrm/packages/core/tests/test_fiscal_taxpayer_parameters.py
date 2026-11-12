@@ -191,3 +191,93 @@ def test_the_income_kind_is_asked_of_the_ordinary_person_only_and_kept(db_sessio
         FiscalProfileUpsert(pack_id="it-standard", income_kind="freelance")
     moved = service.upsert(FiscalProfileUpsert(pack_id="it-company"), ADMIN)
     assert moved.income_kind is None
+
+
+def test_the_reduction_facts_are_stored_with_the_month_as_its_first_day(
+    db_session: Session,
+) -> None:
+    """REB-1097: any day of the month of the first enrolment names it, the first is stored."""
+    service = FiscalProfileService(db_session)
+    saved = service.upsert(
+        FiscalProfileUpsert(
+            pack_id="it-standard",
+            inps_category="artigiani_commercianti",
+            inps_trade="artigiani",
+            inps_new_enrolment_reduction=True,
+            inps_first_enrolment_month="2025-03-17",
+        ),
+        ADMIN,
+    )
+    assert saved.inps_new_enrolment_reduction is True
+    assert str(saved.inps_first_enrolment_month) == "2025-03-01"
+    again = service.upsert(FiscalProfileUpsert(pack_id="it-standard", due_days=45), ADMIN)
+    assert str(again.inps_first_enrolment_month) == "2025-03-01"
+
+
+@pytest.mark.parametrize(
+    ("body", "field"),
+    [
+        # The over-65 reduction is not for the flat-rate regime's 35% (art. 1 c. 80 L. 190/2014).
+        (
+            {"flat_rate_inps_reduction": True, "inps_over_65_reduction": True},
+            "inps_over_65_reduction",
+        ),
+        (
+            {
+                "flat_rate_inps_reduction": True,
+                "inps_new_enrolment_reduction": True,
+                "inps_first_enrolment_month": "2025-05-01",
+            },
+            "inps_new_enrolment_reduction",
+        ),
+        (
+            {
+                "inps_over_65_reduction": True,
+                "inps_new_enrolment_reduction": True,
+                "inps_first_enrolment_month": "2025-05-01",
+            },
+            "inps_new_enrolment_reduction",
+        ),
+        # The month counts the 36 months, so the reduction needs it.
+        ({"inps_new_enrolment_reduction": True}, "inps_first_enrolment_month"),
+    ],
+)
+def test_the_three_reductions_exclude_each_other_and_the_enrolment_needs_its_month(
+    db_session: Session, body: dict[str, object], field: str
+) -> None:
+    with pytest.raises(ValidationFailed) as refusal:
+        FiscalProfileService(db_session).upsert(
+            FiscalProfileUpsert(
+                regime_code="RF19",
+                inps_category="artigiani_commercianti",
+                **body,  # type: ignore[arg-type]
+            ),
+            ADMIN,
+        )
+    assert refusal.value.details["field"] == field
+
+
+@pytest.mark.parametrize(
+    "key", ["inps_over_65_reduction", "inps_new_enrolment_reduction", "inps_first_enrolment_month"]
+)
+def test_the_reductions_are_for_artisans_and_traders_and_for_the_packs_that_read_them(
+    db_session: Session, key: str
+) -> None:
+    service = FiscalProfileService(db_session)
+    value: object = "2025-05-01" if key == "inps_first_enrolment_month" else True
+    with pytest.raises(ValidationFailed) as refusal:
+        service.upsert(
+            FiscalProfileUpsert(
+                regime_code="RF19",
+                inps_category="gestione_separata",
+                **{key: value},  # type: ignore[arg-type]
+            ),
+            ADMIN,
+        )
+    assert refusal.value.details["field"] == key
+    with pytest.raises(ValidationFailed) as refusal:
+        service.upsert(
+            FiscalProfileUpsert(pack_id="it-company", **{key: value}),  # type: ignore[arg-type]
+            ADMIN,
+        )
+    assert refusal.value.details["field"] == key

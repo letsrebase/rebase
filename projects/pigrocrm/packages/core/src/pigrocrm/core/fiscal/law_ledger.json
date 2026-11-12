@@ -1,5 +1,22 @@
 {
- "corrections": [],
+ "corrections": [
+  {
+   "fingerprint": "3d53c66f90baf88b185aba0cc9ccf03b3dd932694c57fb700e21a3e7a2495dc9",
+   "pack": "it-standard:1",
+   "reason": "The recorded 2026 entry followed circolare 29/2015 (no minimum, no fixed part for the flat-rate reduction), which circolare 35/2016 replaced; the entry now also carries the advances rule of the gestione separata, the traders' indemnity add-on as its own figure and the two 50% reductions",
+   "section": "inps",
+   "source": "INPS, circolare n. 35 of 19 February 2016, \u00a7 1 (the flat-rate regime's 35% reduction applies to the contribution on the minimum income and on the excess, and the maternity contribution is due with the fixed instalments); Agenzia delle Entrate, Redditi PF 2026 fascicolo 2, appendix \u00abINPS - Modalit\u00e0 di calcolo degli acconti\u00bb; INPS, circolare n. 83 of 24 April 2025 and circolare n. 14 of 9 February 2026 \u00a7 1 (the 50% reductions), read 2026-11-12",
+   "year": 2026
+  },
+  {
+   "fingerprint": "3d53c66f90baf88b185aba0cc9ccf03b3dd932694c57fb700e21a3e7a2495dc9",
+   "pack": "it-flat-rate:1",
+   "reason": "The recorded 2026 entry followed circolare 29/2015 (no minimum, no fixed part for the flat-rate reduction), which circolare 35/2016 replaced; the entry now also carries the advances rule of the gestione separata, the traders' indemnity add-on as its own figure and the two 50% reductions",
+   "section": "inps",
+   "source": "INPS, circolare n. 35 of 19 February 2016, \u00a7 1 (the flat-rate regime's 35% reduction applies to the contribution on the minimum income and on the excess, and the maternity contribution is due with the fixed instalments); Agenzia delle Entrate, Redditi PF 2026 fascicolo 2, appendix \u00abINPS - Modalit\u00e0 di calcolo degli acconti\u00bb; INPS, circolare n. 83 of 24 April 2025 and circolare n. 14 of 9 February 2026 \u00a7 1 (the 50% reductions), read 2026-11-12",
+   "year": 2026
+  }
+ ],
  "fingerprints": {
   "it-company:1": {
    "calendars": {

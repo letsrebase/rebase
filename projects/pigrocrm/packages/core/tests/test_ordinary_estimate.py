@@ -224,6 +224,50 @@ def test_the_contributions_before_1996_are_asked_only_where_the_ceiling_decides(
     assert stated.inps.amount is not None and stated.irpef.amount is not None
 
 
+def test_a_reduction_is_applied_only_when_the_profile_says_inps_granted_it() -> None:
+    """REB-1097: nothing is inferred from an age or a history. 30.000 as an artisan is 7.200,00
+    plus the maternity 7,44; with the over-65 reduction the IVS is halved: 3.600,00 + 7,44."""
+    plain = _estimate(_basis("30000.00"), facts=replace(TRADER, trade="artigiani"))
+    assert plain.inps.amount == D("7207.44")
+    assert any("Non è applicata nessuna riduzione" in text for text in plain.inps.assumptions)
+
+    over_65 = _estimate(
+        _basis("30000.00"), facts=replace(TRADER, trade="artigiani", over_65_reduction=True)
+    )
+    assert over_65.inps.amount == D("3607.44")
+    assert any("più di 65 anni" in text and "IVS" in text for text in over_65.inps.assumptions)
+    # The contributions deducted are the reduced ones, so the IRPEF base is 30.000 - 3.607,44.
+    assert over_65.income.taxable_income == D("26392.56")
+
+
+def test_a_first_enrolment_halves_the_ivs_and_keeps_the_traders_point() -> None:
+    # A trader: 30.000 x 24,48% = 7.344,00 of which 144,00 is the 0,48 point, which stays: the
+    # IVS 7.200,00 is halved and the maternity is added in full.
+    facts = replace(TRADER, new_enrolment_reduction=True, first_enrolment_month=dt.date(2025, 3, 1))
+    enrolled = _estimate(_basis("30000.00"), facts=facts)
+    assert enrolled.inps.amount == D("3751.44")
+    assert any("2025" in text and "0,48%" in text for text in enrolled.inps.assumptions)
+
+
+def test_a_first_enrolment_the_year_does_not_cover_is_not_applied_and_says_so() -> None:
+    facts = replace(TRADER, new_enrolment_reduction=True, first_enrolment_month=dt.date(2024, 3, 1))
+    estimate = _estimate(_basis("30000.00"), facts=facts)
+    assert estimate.inps.amount == D("7351.44")  # 7.344,00 + 7,44, no reduction
+    assert any("non copre il 2026" in text for text in estimate.inps.assumptions)
+
+
+def test_two_reductions_stated_together_apply_none() -> None:
+    facts = replace(
+        TRADER,
+        over_65_reduction=True,
+        new_enrolment_reduction=True,
+        first_enrolment_month=dt.date(2025, 3, 1),
+    )
+    estimate = _estimate(_basis("30000.00"), facts=facts)
+    assert estimate.inps.amount == D("7351.44")
+    assert any("non si cumulano" in text for text in estimate.inps.assumptions)
+
+
 def test_an_artisan_owes_the_fixed_part_on_the_minimum_even_with_no_income() -> None:
     """The contribution on the minimum income and the maternity one are owed whatever the income
     (INPS circolare 14/2026), and are deducted only up to the income there is."""

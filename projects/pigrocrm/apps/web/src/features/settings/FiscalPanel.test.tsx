@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
@@ -104,6 +104,9 @@ const TAXPAYER_KEYS = [
   'startup_no_prior_activity',
   'startup_not_a_continuation',
   'startup_predecessor_within_limit',
+  'inps_over_65_reduction',
+  'inps_new_enrolment_reduction',
+  'inps_first_enrolment_month',
 ]
 
 function renderPanel() {
@@ -885,6 +888,57 @@ describe('FiscalPanel', () => {
 
       await waitFor(() => expect(api.PUT).toHaveBeenCalled())
       expect(bodyOfSave()).toMatchObject({ inps_trade: 'artigiani', inps_before_1996: true })
+    })
+
+    it('asks the first-enrolment month only while that reduction is answered yes, and sends the first day', async () => {
+      vi.mocked(api.GET).mockImplementation(() =>
+        ok({ ...ORDINARY, inps_category: 'artigiani_commercianti', inps_trade: 'artigiani' }),
+      )
+      vi.mocked(api.PUT).mockImplementation(() => ok(ORDINARY))
+      renderPanel()
+
+      await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF01'))
+      expect(screen.getByLabelText(/Riduzione INPS per i pensionati over 65/)).toBeInTheDocument()
+      expect(screen.queryByLabelText('Mese della prima iscrizione')).not.toBeInTheDocument()
+      await userEvent.selectOptions(screen.getByLabelText(/Riduzione INPS per i nuovi iscritti/), 'true')
+      fireEvent.change(screen.getByLabelText('Mese della prima iscrizione'), {
+        target: { value: '2025-03' },
+      })
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+      expect(bodyOfSave()).toMatchObject({
+        inps_new_enrolment_reduction: true,
+        inps_first_enrolment_month: '2025-03-01',
+        inps_over_65_reduction: null,
+      })
+    })
+
+    it('sends the reduction facts empty for the gestione separata', async () => {
+      vi.mocked(api.GET).mockImplementation(() =>
+        ok({
+          ...ORDINARY,
+          inps_category: 'artigiani_commercianti',
+          inps_trade: 'artigiani',
+          inps_over_65_reduction: true,
+        }),
+      )
+      vi.mocked(api.PUT).mockImplementation(() => ok(ORDINARY))
+      renderPanel()
+
+      await waitFor(() =>
+        expect(screen.getByLabelText(/Riduzione INPS per i pensionati over 65/)).toHaveValue('true'),
+      )
+      await userEvent.selectOptions(screen.getByLabelText('Cassa INPS'), 'gestione_separata')
+      expect(screen.queryByLabelText(/Riduzione INPS per i pensionati over 65/)).not.toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+      expect(bodyOfSave()).toMatchObject({
+        inps_over_65_reduction: null,
+        inps_new_enrolment_reduction: null,
+        inps_first_enrolment_month: null,
+      })
     })
 
     it('shows the INPS facts and the ISA to the ordinary regime, and none of the forfettario ones', async () => {

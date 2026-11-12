@@ -173,6 +173,28 @@ def test_a_rate_left_out_is_not_stated_and_never_a_default(db_session: Session) 
     assert read.employer_inps_rate is None and read.employer_inail_rate is None
 
 
+def test_the_inail_rate_keeps_the_third_decimal_of_a_per_mille_tariff(
+    db_session: Session,
+) -> None:
+    """REB-1097: INAIL states the «tasso applicato» per mille with two decimals («Autoliquidazione
+    2025/2026»), 9.75 per mille is 0.975 percent: the column and the schema hold it, and refuse
+    a fourth decimal, which no per-mille figure with two decimals has."""
+    entity = _entity(db_session, "it-standard")
+    service = StaffService(db_session)
+    read = service.create_staff_member(
+        _employee(entity, employer_inail_rate=Decimal("0.975")), ADMIN
+    )
+    assert read.employer_inail_rate == Decimal("0.975")
+    db_session.expire_all()
+    stored = db_session.get(StaffMember, read.id)
+    assert stored is not None and stored.employer_inail_rate == Decimal("0.975")
+    with pytest.raises(ValueError):
+        _employee(entity, employer_inail_rate=Decimal("0.9755"))
+    # The other rates stay in whole hundredths.
+    with pytest.raises(ValueError):
+        _employee(entity, employer_inps_rate=Decimal("30.005"))
+
+
 def test_the_table_holds_the_kinds_own_columns_only(db_session: Session) -> None:
     """The database says it too, whatever the service does."""
     entity = _entity(db_session, "it-company")

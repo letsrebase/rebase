@@ -208,7 +208,9 @@ class StaffMember(Base, PrimaryKeyMixin, TimestampMixin):
     # The employer's rates in percent, typed per staff member: the sector and the risk class
     # are taxpayer facts the payroll consultant verifies. `NULL` is «not stated».
     employer_inps_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=None)
-    employer_inail_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=None)
+    # INAIL's «tasso applicato» is stated per mille with two decimals (9.75 per mille), which is
+    # a percent with three (0.975): the column keeps the third decimal (REB-1097).
+    employer_inail_rate: Mapped[Decimal | None] = mapped_column(Numeric(6, 3), default=None)
     # The employee's own INPS share, in percent: the employer pays it with its own to the INPS
     # by F24, so the F24 line needs both. Typed, never a default: no primary source states
     # one rate for every employer (A5, REB-975).

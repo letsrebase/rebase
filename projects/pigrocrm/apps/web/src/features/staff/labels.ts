@@ -75,7 +75,7 @@ export const NOT_ESTIMATED_REASONS: Record<string, string> = {
   payroll_law: 'Le date dei versamenti di questa azienda non sono ancora verificate',
   employer_inps_rate: 'Manca l’aliquota INPS a carico dell’azienda',
   employee_inps_rate: 'Manca la quota INPS a carico della persona',
-  employer_inail_rate: 'Manca l’aliquota INAIL',
+  employer_inail_rate: 'Manca il tasso applicato INAIL',
   thirteenth_month: 'Manca il mese della tredicesima',
   fourteenth_month: 'Manca il mese della quattordicesima',
   fee_schedule: 'Il compenso non è mensile: manca quando viene pagato',

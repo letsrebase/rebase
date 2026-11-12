@@ -324,7 +324,7 @@ export function PersonDialog({ open, onOpenChange, legalEntityId, legalEntityNam
                 </div>
                 {text('part_time_percent', 'Part-time (%)', { inputMode: 'decimal' })}
                 {text('employer_inps_rate', 'INPS a carico azienda (%)', { inputMode: 'decimal', hint: 'La digiti tu: non esiste un’aliquota uguale per tutti.' })}
-                {text('employer_inail_rate', 'INAIL (%)', { inputMode: 'decimal' })}
+                {text('employer_inail_rate', 'INAIL, tasso applicato (%)', { inputMode: 'decimal', hint: 'INAIL lo scrive per mille nelle Basi di calcolo premi: 9,75‰ si scrive 0,975.' })}
                 {text('employee_inps_rate', 'INPS a carico della persona (%)', { inputMode: 'decimal' })}
                 {text('thirteenth_month', 'Mese della tredicesima', { inputMode: 'numeric', hint: 'Da 1 a 12.' })}
                 {values.monthly_payments === '14'

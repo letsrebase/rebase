@@ -723,6 +723,20 @@ class AnalyticsService:
         lines = self._tax_readings(year, estimate, []).lines
         return {line.tax: line.estimate for line in lines if line.estimable}
 
+    def estimated_inps_income(
+        self, year: int, legal_entity: LegalEntity, profile: FiscalProfileRead
+    ) -> Decimal | None:
+        """The income of `year` the INPS contributions are computed on, as the estimate has it
+        (REB-1097): an ordinary person's income of art. 54 TUIR (a loss counting as zero), the
+        flat-rate regime's income of the Quadro LM. The INPS advances of the next year are
+        computed on it. `None` when the estimate cannot be computed or the regime has none. Same
+        caller and role rule as `estimated_taxes`."""
+        estimate = self._estimate_year(year, legal_entity, profile, None)
+        if estimate.person is not None:
+            income = estimate.person.income.professional_income
+            return None if income is None else max(income, Decimal(0))
+        return estimate.taxable_amount
+
     def get_tax_calendar(
         self, year: int, actor: Actor, *, legal_entity_id: UUID | None = None
     ) -> TaxCalendar:
@@ -954,6 +968,9 @@ class AnalyticsService:
                 trade=cast(TradeGestione | None, profile.inps_trade),
                 covered_elsewhere=profile.inps_covered_elsewhere,
                 before_1996=profile.inps_before_1996,
+                over_65_reduction=profile.inps_over_65_reduction,
+                new_enrolment_reduction=profile.inps_new_enrolment_reduction,
+                first_enrolment_month=profile.inps_first_enrolment_month,
             ),
             place=locate(legal_entity.city, legal_entity.province, legal_entity.country),
             province=legal_entity.province,
