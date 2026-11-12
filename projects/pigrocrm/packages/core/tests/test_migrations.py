@@ -4918,3 +4918,26 @@ def test_0122_adds_the_seasonal_contract_history_with_no_backfill(pigrocrm_postg
         assert not _column_exists(url, "staff_members", "seasonal_contracts")
         upgrade(config, "0122")
         assert _column_exists(url, "staff_members", "seasonal_contracts")
+
+
+def test_0124_adds_the_purchase_deductibility_columns_with_no_backfill(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1089: three nullable columns («not stated») with their CHECKs, so both ways are a pure
+    add and drop."""
+    columns = (
+        ("cost_categories", "deductibility_kind"),
+        ("purchases", "deductibility_kind"),
+        ("purchases", "asset_group"),
+    )
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0122")
+        assert not any(_column_exists(url, table, name) for table, name in columns)
+        upgrade(config, "0124")
+        assert all(_column_exists(url, table, name) for table, name in columns)
+        downgrade(config, "0122")
+        assert not any(_column_exists(url, table, name) for table, name in columns)
+        upgrade(config, "0124")
+        assert all(_column_exists(url, table, name) for table, name in columns)

@@ -1,7 +1,7 @@
 """how the law treats a purchase: its deductibility kind and its asset group
 
 Revision ID: 0124
-Revises: 0117
+Revises: 0122
 
 REB-1089. `cost_categories.deductibility_kind` and `purchases.deductibility_kind` hold the sort of
 cost whose deduction the law limits (a vehicle, a phone, a hotel or restaurant, a representation
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0124"
-down_revision: str | Sequence[str] | None = "0117"
+down_revision: str | Sequence[str] | None = "0122"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
