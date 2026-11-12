@@ -229,6 +229,7 @@ export const PAYLOAD_KEY_LABELS: Record<string, string> = {
   recipients: 'Destinatari',
   reference: 'Riferimento',
   regime_code: 'Codice regime',
+  region: 'Regione',
   reimbursable: 'Rimborsabile',
   renew: 'Rinnova',
   renewal_notice_days: 'Preavviso rinnovo giorni',
