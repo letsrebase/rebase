@@ -9,7 +9,10 @@ Two deductions, which coexist and whose sum is capped at the IRAP paid in the ye
   the staff cost on the IRAP base, both net of the deductions of art. 11 D.Lgs. 446/1997, between 0
   and 100%. The staff cost is that of the employees and of the assimilated workers of art. 50 c. 1
   lett. c-bis TUIR, the fees of the directors included.
-* **The 10% lump sum** (art. 6 c. 1 D.L. 185/2008) of the IRAP paid.
+* **The 10% lump sum** (art. 6 c. 1 D.L. 185/2008) of the IRAP paid, which is due only when net
+  interest expense enters the IRAP base. The base this estimate computes holds no interest (revenue
+  against purchases), and PigroCRM records none, so the lump sum is never taken and the
+  assumptions say so: deducting it anyway would understate the IRES of every srl with no interest.
 
 The IRAP is deducted in the year it is **paid** (art. 99 c. 1 TUIR): the balance of the year before
 and the advances of the year, these within the tax actually due for the year. The payments are read
@@ -93,8 +96,8 @@ def irap_deduction(
     if irap_base is not None and irap_base > 0:
         incidence = min(staff_net / irap_base, Decimal(1))
     analytic = round_money(deductible * incidence)
-    lump = round_money(deductible * law.lump_sum_percent / _HUNDRED)
-    lump = max(min(lump, deductible - analytic), ZERO_MONEY)
+    # The lump sum needs net interest expense in the IRAP base (circolare 8/E/2013 § 1.1); the
+    # base computed here has none, so nothing is taken.
 
     lines: list[VariationLine] = []
     if analytic != 0:
@@ -105,26 +108,17 @@ def irap_deduction(
                 -analytic,
             )
         )
-    if lump != 0:
-        lines.append(
-            VariationLine(
-                "irap_lump_sum",
-                f"IRAP, {law.lump_sum_percent.normalize():f}% forfettario ({law.lump_sum_norm})",
-                -lump,
-            )
-        )
     assumptions = [source]
     if analytic != 0:
         assumptions.append(
             "La quota sul costo del lavoro usa l'incidenza del personale sulla base IRAP "
             "dell'anno, al netto delle deduzioni dell'art. 11, anche per il saldo dell'anno prima."
         )
-    if lump != 0:
-        assumptions.append(
-            "Il 10% forfettario spetta se nella base IRAP concorrono interessi passivi netti "
-            "(circolare 8/E/2013): il gestionale non li registra e la deduzione è applicata "
-            "comunque."
-        )
+    assumptions.append(
+        f"Il {law.lump_sum_percent.normalize():f}% forfettario ({law.lump_sum_norm}) non è "
+        "dedotto: spetta solo se nella base IRAP concorrono interessi passivi netti "
+        "(circolare 8/E/2013), e il gestionale non registra interessi."
+    )
     return IrapDeduction(lines=tuple(lines), assumptions=tuple(assumptions))
 
 

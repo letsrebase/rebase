@@ -523,7 +523,7 @@ def _type(session: Session, entity: LegalEntity, **fields: object) -> TaxLossRea
 def test_a_typed_loss_takes_eighty_percent_off_the_ires_base(db_session: Session) -> None:
     entity = _worked_example(db_session)
     before = _estimate(db_session, entity).company
-    assert before is not None and before.ires.amount == M("8435.14")
+    assert before is not None and before.ires.amount == M("8502.53")
     assert before.ires.losses is None
     assert any("Non risultano perdite" in text for text in before.ires.assumptions)
 
@@ -539,24 +539,23 @@ def test_a_typed_loss_takes_eighty_percent_off_the_ires_base(db_session: Session
         ("staff", M("-31200.00")),
         ("director", M("-12000.00")),
         ("irap_staff", M("-1372.80")),
-        ("irap_lump_sum", M("-280.80")),
-        ("loss_carried", M("-28117.12")),
+        ("loss_carried", M("-28341.76")),
     ]
-    # 36,800.00 - 1,653.60 of IRAP deducted = 35,146.40, and the loss takes 80% of that,
-    # 28,117.12: 35,146.40 - 28,117.12 = 7,029.28; 24% = 1,687.03.
-    assert (ires.base, ires.amount, ires.loss) == (M("7029.28"), M("1687.03"), False)
+    # 36,800.00 - 1,372.80 of IRAP deducted = 35,427.20, and the loss takes 80% of that,
+    # 28,341.76: 35,427.20 - 28,341.76 = 7,085.44; 24% = 1,700.5056.
+    assert (ires.base, ires.amount, ires.loss) == (M("7085.44"), M("1700.51"), False)
     assert ires.losses is not None
     assert (ires.losses.used, ires.losses.remaining, ires.losses.estimated) == (
-        M("28117.12"),
-        M("21882.88"),
+        M("28341.76"),
+        M("21658.24"),
         False,
     )
     assert [use.origin_year for use in ires.losses.origins] == [2025]
     # IRAP is not reduced by a loss, and the total follows IRES.
     assert company.irap.amount == M("2808.00")
-    assert estimate.due_total == M("4495.03")
+    assert estimate.due_total == M("4508.51")
     assert estimate.readings is not None
-    assert {line.tax: line.estimate for line in estimate.readings.lines}["ires"] == M("1687.03")
+    assert {line.tax: line.estimate for line in estimate.readings.lines}["ires"] == M("1700.51")
     # The typed losses are listed for the screen.
     assert [(loss.tax, loss.year, loss.amount) for loss in estimate.losses] == [
         ("ires", 2025, M("50000.00"))
@@ -575,8 +574,8 @@ def test_the_first_three_periods_of_a_new_activity_are_carried_against_the_whole
         activity_start_year=2025,
     )
     ires = _estimate(db_session, entity).company.ires  # type: ignore[union-attr]
-    # 36,800.00 - 1,653.60 of IRAP deducted - 35,000.00 = 146.40; 24% = 35.14.
-    assert (ires.base, ires.amount) == (M("146.40"), M("35.14"))
+    # 36,800.00 - 1,372.80 of IRAP deducted - 35,000.00 = 427.20; 24% = 102.528.
+    assert (ires.base, ires.amount) == (M("427.20"), M("102.53"))
     assert ires.losses is not None and ires.losses.origins[0].limit_percent == M("100")
 
 
@@ -593,7 +592,7 @@ def test_a_remainder_typed_for_a_later_year_is_what_is_carried(db_session: Sessi
     ires = _estimate(db_session, entity).company.ires  # type: ignore[union-attr]
     assert ires.losses is not None
     assert ires.losses.origins[0].available == M("30000.00")
-    assert (ires.losses.used, ires.losses.remaining) == (M("28117.12"), M("1882.88"))
+    assert (ires.losses.used, ires.losses.remaining) == (M("28341.76"), M("1658.24"))
 
 
 def test_a_loss_of_a_year_with_no_law_between_has_no_figure_until_the_remainder_is_typed(
@@ -618,7 +617,7 @@ def test_a_loss_of_a_year_with_no_law_between_has_no_figure_until_the_remainder_
         remaining_as_of_year=2025,
     )
     ires = _estimate(db_session, entity).company.ires  # type: ignore[union-attr]
-    assert ires.missing is None and ires.amount == M("1687.03")
+    assert ires.missing is None and ires.amount == M("1700.51")
 
 
 def test_an_earlier_years_own_loss_is_carried_as_an_estimate_and_labelled(
@@ -724,7 +723,7 @@ def test_typing_a_loss_again_replaces_it_and_it_can_be_removed(db_session: Sessi
             "ires", 2025, STAFF_ADMIN, legal_entity_id=entity.id
         )
     ires = _estimate(db_session, entity).company.ires  # type: ignore[union-attr]
-    assert ires.losses is None and ires.amount == M("8435.14")
+    assert ires.losses is None and ires.amount == M("8502.53")
 
 
 def test_a_company_that_owes_no_ires_cannot_carry_a_loss_against_it(db_session: Session) -> None:

@@ -281,30 +281,26 @@ def _deduction(**overrides):  # type: ignore[no-untyped-def]
 
 def test_with_no_payment_registered_the_estimated_irap_stands_in() -> None:
     result = _deduction()
-    # 2,808 x 35,200 / 72,000 = 1,372.80 on the staff, and 10% = 280.80.
-    assert _amounts(result.lines) == [
-        ("irap_staff", M("-1372.80")),
-        ("irap_lump_sum", M("-280.80")),
-    ]
+    # 2,808 x 35,200 / 72,000 = 1,372.80 on the staff; the 10% lump sum is not taken.
+    assert _amounts(result.lines) == [("irap_staff", M("-1372.80"))]
     assert "stimata" in result.assumptions[0]
-    assert any("interessi passivi" in text for text in result.assumptions)
+    assert any(
+        "non è dedotto" in text and "interessi passivi" in text for text in result.assumptions
+    )
 
 
 def test_the_irap_paid_in_the_year_is_deducted_when_it_was_registered() -> None:
     result = _deduction(paid=IrapPaid(total=M("4000"), advances=M("1500")))
-    # 4,000 x 35,200 / 72,000 = 1,955.56; 10% of 4,000.
-    assert _amounts(result.lines) == [
-        ("irap_staff", M("-1955.56")),
-        ("irap_lump_sum", M("-400.00")),
-    ]
+    # 4,000 x 35,200 / 72,000 = 1,955.56; no lump sum.
+    assert _amounts(result.lines) == [("irap_staff", M("-1955.56"))]
     assert "versata" in result.assumptions[0]
 
 
 def test_advances_count_only_up_to_the_irap_due_for_the_year() -> None:
     result = _deduction(paid=IrapPaid(total=M("5000"), advances=M("4000")))
     # The balance of the year before (1,000) in full, the advances up to the 2,808 due: 3,808 in
-    # all, whose 10% is 380.80.
-    assert _amounts(result.lines)[1] == ("irap_lump_sum", M("-380.80"))
+    # all, of which 3,808 x 35,200 / 72,000 = 1,861.69 on the staff.
+    assert _amounts(result.lines) == [("irap_staff", M("-1861.69"))]
 
 
 def test_the_two_deductions_never_exceed_the_irap_paid() -> None:
@@ -472,12 +468,11 @@ def test_the_irap_is_deducted_from_the_ires_of_the_worked_example(db_session: Se
         ("staff", M("-31200.00")),
         ("director", M("-12000.00")),
         ("irap_staff", M("-1372.80")),
-        ("irap_lump_sum", M("-280.80")),
     ]
-    # 36,800 - 1,653.60 = 35,146.40; 24% = 8,435.136.
-    assert (company.ires.base, company.ires.amount) == (M("35146.40"), M("8435.14"))
+    # 36,800 - 1,372.80 = 35,427.20; 24% = 8,502.528.
+    assert (company.ires.base, company.ires.amount) == (M("35427.20"), M("8502.53"))
     assert company.irap.amount == M("2808.00")
-    assert estimate.due_total == M("11243.14")
+    assert estimate.due_total == M("11310.53")
     assert any("stimata" in text for text in company.ires.assumptions)
     # What stays out is the part the data cannot support, said once.
     assert any("art. 96" in text for text in company.ires.assumptions)
@@ -514,13 +509,12 @@ def test_the_irap_paid_replaces_the_estimate_in_the_deduction(
     db_session.expire_all()
 
     _, company = _company(db_session, entity)
-    # The IRAP paid is the first advance, 1,123.20: 35,200/72,000 of it on the staff (549.12) and
-    # 10% (112.32). 36,800 - 661.44 = 36,138.56; 24% = 8,673.2544.
-    assert [(line.code, line.amount) for line in company.ires.lines][-2:] == [
+    # The IRAP paid is the first advance, 1,123.20: 35,200/72,000 of it on the staff (549.12).
+    # 36,800 - 549.12 = 36,250.88; 24% = 8,700.2112.
+    assert [(line.code, line.amount) for line in company.ires.lines][-1:] == [
         ("irap_staff", M("-549.12")),
-        ("irap_lump_sum", M("-112.32")),
     ]
-    assert company.ires.amount == M("8673.25")
+    assert company.ires.amount == M("8700.21")
     assert any("versata nell'esercizio" in text for text in company.ires.assumptions)
     assert not any("al posto dell'IRAP versata" in text for text in company.ires.assumptions)
 
@@ -538,8 +532,8 @@ def test_a_category_that_states_a_limited_kind_limits_every_purchase_of_it(
     # The IRAP is the same as when the 1,000 was an ordinary cost.
     assert company.irap.amount == M("2808.00")
     assert not any(line.code.startswith("limit_") for line in company.irap.lines)
-    # 100,000 - 20,000 - 43,200 + 800 = 37,600, less the IRAP deducted (1,653.60).
-    assert company.ires.base == M("35946.40")
+    # 100,000 - 20,000 - 43,200 + 800 = 37,600, less the IRAP deducted (1,372.80).
+    assert company.ires.base == M("36227.20")
 
 
 def test_a_purchase_overrides_the_kind_of_its_category(db_session: Session) -> None:

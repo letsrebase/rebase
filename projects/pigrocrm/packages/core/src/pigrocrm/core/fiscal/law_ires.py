@@ -31,7 +31,7 @@ once the Agenzia's instructions for the 2027 form cite it.
 What is not modelled
 --------------------
 * The 10% lump sum of art. 6 c. 1 D.L. 185/2008 is due only when net interest expense is in the
-  IRAP base (circolare 8/E/2013 § 1.2). PigroCRM records no interest, so it is applied and the
+  IRAP base (circolare 8/E/2013 § 1.2). PigroCRM records no interest, so it is not taken: the
   estimate says so.
 * IRAP paid is read from the tax due items settled in the year; the share of the IRAP on staff cost
   is computed on the year's own IRAP base for every payment, the balance of the year before
@@ -81,7 +81,8 @@ class IrapDeductionLaw:
     incidence is the staff cost net of those deductions over the IRAP base net of them
     (circolare 8/E/2013 § 1.2), between 0 and 100%. Art. 6 c. 1 D.L. 185/2008 makes a lump sum of
     `lump_sum_percent`% of the IRAP deductible, for the IRAP on net interest expense
-    (`lump_sum_condition`). Both coexist and their sum may not exceed the IRAP paid in the year.
+    (`lump_sum_condition`). Both coexist and their sum may not exceed the IRAP paid in the year; the
+    estimate takes the first only, as the base it computes holds no interest.
     """
 
     lump_sum_percent: Decimal
