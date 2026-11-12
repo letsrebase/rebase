@@ -4722,3 +4722,167 @@ def test_0119_creates_the_tax_losses_table_under_the_scope_policy(
         assert _table_shape(url, "tax_losses")[0] is False
         upgrade(config, "0119")
         assert _table_shape(url, "tax_losses")[0] is True
+
+
+def test_0120_removes_the_open_legacy_credits_and_dissolves_the_open_groups_that_held_them(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-1100: an open credit item of the two retired origins is dropped with its row, and the
+    open F24 group that held it is dissolved with its lines released; a credit that is a line of a
+    settled group, or has a payment on it, is left as it is. Going down changes nothing."""
+    entity = "00000000-0000-7000-8000-0000000000a1"
+    settlement = "00000000-0000-7000-8000-0000000000a2"
+
+    def credit(number: int) -> str:
+        return f"00000000-0000-7000-8000-0000000001{number:02d}"
+
+    def item(number: int) -> str:
+        return f"00000000-0000-7000-8000-0000000002{number:02d}"
+
+    def group(number: int) -> str:
+        return f"00000000-0000-7000-8000-0000000003{number:02d}"
+
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0119")
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO legal_entities (id, name, legal_name, country) "
+                    f"VALUES ('{entity}', 'E', 'E srl', 'IT')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO iva_settlements (id, legal_entity_id, frequency, year, "
+                    "period_number, period_start, period_end, pack_id, pack_version, sales_vat, "
+                    "reverse_charge_vat, purchase_vat, credit_in, debit_in, surcharge, result, "
+                    "outcome, payment_due_on) VALUES "
+                    f"('{settlement}', '{entity}', 'quarterly', 2026, 1, '2026-01-01', "
+                    "'2026-03-31', 'it-standard', '1', 100, 0, 400, 0, 0, 0, -300, 'credit', "
+                    "'2026-05-18')"
+                )
+            )
+            # 1: a withholding credit in an open group with a balance; 2: an IVA credit no group
+            # holds; 3: a credit in a settled group, its line released; 4: a credit with a payment.
+            for number, origin, year, settlement_id in (
+                (1, "withholding_suffered", 2024, None),
+                (2, "iva_carry_forward", 2026, settlement),
+                (3, "withholding_suffered", 2025, None),
+                (4, "withholding_suffered", 2026, None),
+            ):
+                connection.execute(
+                    text(
+                        "INSERT INTO tax_credits (id, legal_entity_id, origin, tax, tax_year, "
+                        "iva_settlement_id, amount) VALUES (:id, :entity, :origin, :tax, :year, "
+                        ":settlement, 200)"
+                    ),
+                    {
+                        "id": credit(number),
+                        "entity": entity,
+                        "origin": origin,
+                        "tax": "iva" if origin == "iva_carry_forward" else "irpef",
+                        "year": year,
+                        "settlement": settlement_id,
+                    },
+                )
+                connection.execute(
+                    text(
+                        "INSERT INTO due_items (id, legal_entity_id, direction, state, "
+                        "counterparty_type, tax, amount, source_kind, source_id, own_date, "
+                        "due_date) VALUES (:id, :entity, 'out', 'expected', 'tax_office', :tax, "
+                        "-200, 'tax_credit', :source, '2026-12-01', '2026-12-01')"
+                    ),
+                    {
+                        "id": item(number),
+                        "entity": entity,
+                        "tax": "iva" if origin == "iva_carry_forward" else "irpef",
+                        "source": credit(number),
+                    },
+                )
+            connection.execute(
+                text(
+                    "INSERT INTO due_items (id, legal_entity_id, direction, state, "
+                    "counterparty_type, tax, amount, source_kind, source_id, own_date, due_date) "
+                    f"VALUES ('{item(9)}', '{entity}', 'out', 'expected', 'tax_office', 'irpef', "
+                    f"900, 'tax_balance', '{credit(9)}', '2026-12-01', '2026-12-01')"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO due_item_settlements (id, due_item_id, legal_entity_id, amount, "
+                    "settled_on, recorded_by_type) VALUES "
+                    f"('{credit(90)}', '{item(4)}', '{entity}', -200, '2026-12-01', 'system')"
+                )
+            )
+            for number, state in ((1, "open"), (2, "settled")):
+                connection.execute(
+                    text(
+                        "INSERT INTO f24_groups (id, legal_entity_id, payment_date, state, "
+                        "settled_on, created_by_type) VALUES (:id, :entity, '2026-12-01', :state, "
+                        ":settled_on, 'user')"
+                    ),
+                    {
+                        "id": group(number),
+                        "entity": entity,
+                        "state": state,
+                        "settled_on": "2026-12-01" if state == "settled" else None,
+                    },
+                )
+            for number, item_number, group_number, released in (
+                (1, 1, 1, False),
+                (2, 9, 1, False),
+                (3, 3, 2, True),
+            ):
+                connection.execute(
+                    text(
+                        "INSERT INTO f24_group_items (id, group_id, due_item_id, legal_entity_id, "
+                        "amount, released_at) VALUES (:id, :group, :item, :entity, -200, :released)"
+                    ),
+                    {
+                        "id": f"00000000-0000-7000-8000-0000000004{number:02d}",
+                        "group": group(group_number),
+                        "item": item(item_number),
+                        "entity": entity,
+                        "released": "2026-12-02T00:00:00+00" if released else None,
+                    },
+                )
+
+        upgrade(config, "0120")
+
+        with engine.connect() as connection:
+            credits = {
+                str(row[0]) for row in connection.execute(text("SELECT id FROM tax_credits"))
+            }
+            states = {
+                str(row[0]): (row[1], row[2])
+                for row in connection.execute(
+                    text("SELECT id, state, dropped_reason FROM due_items")
+                )
+            }
+            groups = {
+                str(row[0]): row[1]
+                for row in connection.execute(text("SELECT id, state FROM f24_groups"))
+            }
+            live_lines = {
+                str(row[0])
+                for row in connection.execute(
+                    text("SELECT due_item_id FROM f24_group_items WHERE released_at IS NULL")
+                )
+            }
+        # The credits of an open group and of no group are gone; the used one and the one in a
+        # settled group stay.
+        assert credits == {credit(3), credit(4)}
+        assert states[item(1)][0] == "dropped" and states[item(1)][1] is not None
+        assert states[item(2)][0] == "dropped"
+        assert states[item(3)][0] == "expected" and states[item(4)][0] == "expected"
+        # The balance that shared the open group is untouched and free again.
+        assert states[item(9)][0] == "expected"
+        assert groups == {group(1): "dissolved", group(2): "settled"}
+        assert live_lines == set()
+
+        downgrade(config, "0119")
+        upgrade(config, "0120")
+        engine.dispose()
