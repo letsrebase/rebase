@@ -327,6 +327,31 @@ describe('«Tasse»: Imposte, the method and the instalments', () => {
     )
   })
 
+  it('types the declared figures of a tax, an empty one staying not given', async () => {
+    wide()
+    renderPage('taxes')
+    await userEvent.click(await screen.findByRole('row', { name: /IRPEF/ }))
+    const panel = await screen.findByRole('complementary', { name: 'Imposta aperta' })
+    await userEvent.click(within(panel).getByRole('button', { name: 'Digita il dichiarato' }))
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Salva il dichiarato' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Indica almeno una cifra')
+    expect(api.PUT).not.toHaveBeenCalled()
+    await userEvent.type(within(dialog).getByLabelText('Imposta dovuta'), '1.234,50')
+    await userEvent.type(within(dialog).getByLabelText('Saldo'), '-80')
+    await userEvent.type(within(dialog).getByLabelText('Acconti'), '-1')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Salva il dichiarato' }))
+    expect(await within(dialog).findByText('Questa cifra non può essere negativa.')).toBeInTheDocument()
+    await userEvent.clear(within(dialog).getByLabelText('Acconti'))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Salva il dichiarato' }))
+    await waitFor(() =>
+      expect(api.PUT).toHaveBeenCalledWith('/api/analytics/fiscal/declared', {
+        params: { query: { legal_entity_id: 'le-1' } },
+        body: { tax: 'irpef', year: 2026, tax_due: '1234.50', balance: '-80', advances: null },
+      }),
+    )
+  })
+
   it('offers neither for INPS, which has no advances to split', async () => {
     wide()
     renderPage('taxes')

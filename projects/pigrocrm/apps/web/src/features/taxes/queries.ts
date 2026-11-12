@@ -199,6 +199,24 @@ export function failureText(error: unknown): string {
   return toProblem(error).detail
 }
 
+/** `PUT /fiscal/declared`: types the figures of a tax return; typing again replaces the three. */
+export function useSetDeclaredFigure(legalEntityId: string) {
+  const refresh = useRefreshTaxes()
+  return useMutation({
+    mutationFn: (body: components['schemas']['DeclaredTaxFigureSet']) =>
+      unwrap(
+        api.PUT('/api/analytics/fiscal/declared', {
+          params: { query: { legal_entity_id: legalEntityId } },
+          body,
+        }),
+      ),
+    onSuccess: () => {
+      refresh()
+      toast.success('Dichiarato salvato')
+    },
+  })
+}
+
 /** `PUT /fiscal/advance-method`: how the advances of a tax year are computed. */
 export function useSetAdvanceMethod(legalEntityId: string) {
   const refresh = useRefreshTaxes()
