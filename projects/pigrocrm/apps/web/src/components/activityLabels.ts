@@ -134,6 +134,8 @@ const KIND_LABELS: Record<string, string> = {
   expense_note_reimbursed: 'Nota spese rimborsata',
   payroll_month_closed: 'Mese di paga chiuso',
   declared_tax_figure_set: 'Cifre della dichiarazione registrate',
+  tax_loss_set: 'Perdita fiscale registrata',
+  tax_loss_deleted: 'Perdita fiscale tolta',
   tax_advance_method_set: 'Metodo degli acconti scelto',
   tax_carry_confirmed: 'Differenza sull’acconto confermata',
   tax_instalment_plan_set: 'Rateazione delle imposte scelta',
