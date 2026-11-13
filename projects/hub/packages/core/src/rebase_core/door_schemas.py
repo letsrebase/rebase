@@ -71,8 +71,12 @@ class CrmFiscalIdentifiers(_Answer):
 
 class CrmMergeCheck(_Answer):
     """`framework_regimes` are the CRM's letter types both cards hold a live framework agreement
-    of, `shared_clients` how many clients both have a live engagement with."""
+    of, `shared_clients` how many clients both have a live engagement with. `organization` and
+    `other_organization` say whether the CRM holds an organization for the first and the other
+    card: a hub merge does not re-key it."""
 
     framework_regimes: list[str]
     shared_clients: int
     tax_code_conflict: bool
+    organization: bool
+    other_organization: bool

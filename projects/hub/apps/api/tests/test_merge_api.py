@@ -140,7 +140,13 @@ def test_a_conflicting_merge_is_a_409_with_the_sentence(
     _apply(client, "due@studio.it")
     ids = _card_ids(api_session)
     first, second = UUID(str(ids["uno@studio.it"])), UUID(str(ids["due@studio.it"]))
-    conflict = {"framework_regimes": ["ordinary"], "shared_clients": 0, "tax_code_conflict": False}
+    conflict = {
+        "framework_regimes": ["ordinary"],
+        "shared_clients": 0,
+        "tax_code_conflict": False,
+        "organization": False,
+        "other_organization": False,
+    }
     client.app.dependency_overrides[get_freelancer_door] = FakeCrmDoor(  # type: ignore[attr-defined]
         merge={(first, second): conflict, (second, first): conflict}
     ).door

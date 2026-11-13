@@ -532,7 +532,14 @@ def test_a_talent_already_on_the_same_team_request_is_not_moved_twice(clean: Ses
 
 def _conflicts(a: Freelancer, b: Freelancer, **answer: object) -> FakeCrmDoor:
     """A CRM that says `answer` about the pair (the keys of its merge check), both ways."""
-    said = {"framework_regimes": [], "shared_clients": 0, "tax_code_conflict": False, **answer}
+    said = {
+        "framework_regimes": [],
+        "shared_clients": 0,
+        "tax_code_conflict": False,
+        "organization": False,
+        "other_organization": False,
+        **answer,
+    }
     return FakeCrmDoor(merge={(a.id, b.id): said, (b.id, a.id): said})
 
 
@@ -581,6 +588,27 @@ def test_refused_when_the_crm_says_the_tax_codes_differ(clean: Session) -> None:
     a, b, _, _, admin = _pair(clean)
     with pytest.raises(InvalidState, match="codici fiscali diversi"):
         _merges(clean, _conflicts(a, b, tax_code_conflict=True)).merge(a.id, b.id, admin.id)
+
+
+def test_refused_when_the_crm_holds_an_organization_for_the_absorbed_card(
+    clean: Session,
+) -> None:
+    """A hub merge does not re-key the CRM's organization: it would stay on the hidden card
+    and the survivor would lose its contracts. Both cases say what to do first."""
+    a, b, _, _, admin = _pair(clean)
+    with pytest.raises(InvalidState, match="unisci prima il freelance nel CRM"):
+        _merges(clean, _conflicts(a, b, organization=True, other_organization=True)).merge(
+            a.id, b.id, admin.id
+        )
+    only_absorbed = _conflicts(a, b, other_organization=True)
+    with pytest.raises(InvalidState, match="unisci nell'altro verso"):
+        _merges(clean, only_absorbed).merge(a.id, b.id, admin.id)
+    with pytest.raises(InvalidState, match="unisci nell'altro verso"):
+        _merges(clean, only_absorbed).plan(a.id, b.id)
+    assert clean.get(Freelancer, b.id).deleted_at is None  # type: ignore[union-attr]
+    # Only the survivor has one: the merge keeps it, nothing is lost.
+    done = _merges(clean, _conflicts(a, b, organization=True)).merge(a.id, b.id, admin.id)
+    assert done.survivor_freelancer_id == a.id
 
 
 def test_a_merge_the_crm_finds_clean_goes_through(clean: Session) -> None:

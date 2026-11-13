@@ -100,7 +100,13 @@ async def test_merge_freelancers_moves_the_card_and_answers_counts_and_the_actio
 
 async def test_a_refused_merge_says_why(factory: sessionmaker[Session]) -> None:
     keep, other = _seed(factory, "uno@studio.it", "due@studio.it")
-    conflict = {"framework_regimes": ["ordinary"], "shared_clients": 0, "tax_code_conflict": False}
+    conflict = {
+        "framework_regimes": ["ordinary"],
+        "shared_clients": 0,
+        "tax_code_conflict": False,
+        "organization": False,
+        "other_organization": False,
+    }
     crm = FakeCrmDoor(merge={(keep, other): conflict, (other, keep): conflict})
     async with Client(
         build_server(factory, lambda: IVAN, settings=CRM_SETTINGS, http=crm)

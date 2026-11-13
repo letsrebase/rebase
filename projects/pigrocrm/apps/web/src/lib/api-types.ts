@@ -11504,7 +11504,9 @@ export interface components {
          *     `framework_regimes` are the letter types both hold a live framework agreement of (out for
          *     signature, or signed with no notice), `shared_clients` how many clients both have an
          *     engagement with that is out for signature or active, and `tax_code_conflict` that both
-         *     organizations carry a tax code and the codes differ.
+         *     organizations carry a tax code and the codes differ. `organization` and `other_organization`
+         *     say whether the CRM holds an organization for the first and for the other hub id: a hub
+         *     merge does not re-key it, so the card that is absorbed must have none.
          */
         DoorMergeCheck: {
             /** Framework Regimes */
@@ -11513,6 +11515,10 @@ export interface components {
             shared_clients: number;
             /** Tax Code Conflict */
             tax_code_conflict: boolean;
+            /** Organization */
+            organization: boolean;
+            /** Other Organization */
+            other_organization: boolean;
         };
         /** DriveDeliveryStatus */
         DriveDeliveryStatus: {
