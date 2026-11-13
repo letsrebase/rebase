@@ -1,200 +1,150 @@
-"""REB-392, spec § 4 over HTTP: `/me/contracts` answers the caller's own documents from
-the session, and someone else's document is a 404, never a 403."""
+"""REB-392, spec § 4; REB-1107 over HTTP: `/me/contracts` answers the caller's own documents,
+read from the CRM through its door by the caller's freelancer id, and someone else's document is
+a 404, never a 403. An unreachable CRM is a 502 and an environment without the token a 503, which
+the page shows as its error line, never as an empty list."""
 
-import json
 from collections.abc import Iterator
-from contextlib import nullcontext
-from datetime import UTC, datetime
+from uuid import UUID
 
 import pytest
-from contract_flow import (
-    ADMIN_EMAIL,
-    CUSTOMER,
-    FREELANCER_EMAIL,
-    LETTER,
-    PDF,
-    SIGNER,
-    TABLES,
-    draft_match,
-    enter,
-)
-from fakes_contracts import FakeRenderer
-from fakes_documenso import SIGNING_HOST, FakeDocumenso
+from contract_flow import enter
+from fakes_cards import text_pdf
+from fakes_crm_door import FakeCrmDoor, crm_document
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_documenso, get_renderer, get_session_opener
-from rebase_core.config import Settings, get_settings
+from rebase_api.deps import get_freelancer_door
 from rebase_core.mail import RecordingSender
-from rebase_core.models import ContractDocument, User
+from rebase_core.models import Freelancer
+from rebase_core.pigro_door import FreelancerDoor
 
-SECRET = "segreto-del-webhook-di-prova"
-SIGNED_AT = datetime(2026, 9, 30, 23, 30, tzinfo=UTC)
+PDF = text_pdf("Ada Lovelace Backend developer")
+SIGNED_PDF = b"%PDF-1.4 sealed by the signing site"
+FRAMEWORK = UUID("0192e0a0-0000-7000-8000-0000000000f1")
+LETTER = UUID("0192e0a0-0000-7000-8000-0000000000a1")
+SIGNED = {
+    "state": "signed",
+    "signed_at": "2026-09-30T23:30:00Z",
+    "signing_url": None,
+    "has_signed_copy": True,
+    "filename": "contratto-quadro-v1.0.pdf",
+    "active": True,
+    "renewal": "2027-10-01",
+    "last_notice_day": "2027-09-01",
+}
 
 
 @pytest.fixture
-def documenso(client: TestClient, api_session: Session) -> Iterator[FakeDocumenso]:
-    fake = FakeDocumenso()
-    renderer = FakeRenderer(draft=False)
-    overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
-    overrides[get_documenso] = fake.client
-    overrides[get_renderer] = lambda: renderer
-    overrides[get_session_opener] = lambda: lambda: nullcontext(api_session)
-    yield fake
+def crm(client: TestClient) -> FakeCrmDoor:
+    fake = FakeCrmDoor()
+    client.app.dependency_overrides[get_freelancer_door] = fake.door  # type: ignore[attr-defined]
+    return fake
 
 
-@pytest.fixture
-def admin(client: TestClient, api_session: Session) -> Iterator[None]:
-    settings = Settings(  # type: ignore[call-arg]
-        _env_file=None, signer_json=json.dumps(SIGNER), documenso_webhook_secret=SECRET
-    )
-    client.app.dependency_overrides[get_settings] = lambda: settings  # type: ignore[attr-defined]
-    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
-    api_session.commit()
+@pytest.fixture(autouse=True)
+def _clean(api_session: Session) -> Iterator[None]:
     yield
     api_session.rollback()
-    for table in TABLES:
+    for table in ("admin_actions", "notes", "freelancer_cards", "freelancers", "users", "signups"):
         api_session.execute(text(f"DELETE FROM {table}"))
     api_session.commit()
 
 
-def _framework(session: Session) -> ContractDocument:
-    session.expire_all()
-    return session.scalars(
-        select(ContractDocument).where(ContractDocument.kind == "framework")
-    ).one()
-
-
-def test_without_the_cookie_the_contracts_are_a_401(client: TestClient, admin: None) -> None:
-    assert client.get("/api/hub/me/contracts").status_code == 401
-    missing = "00000000-0000-7000-8000-000000000000"
-    assert client.get(f"/api/hub/me/contracts/{missing}/pdf").status_code == 401
-
-
-def test_a_freelancer_reads_their_contracts_and_downloads_the_signed_copy(
-    client: TestClient,
-    admin: None,
-    sender: RecordingSender,
-    documenso: FakeDocumenso,
-    api_session: Session,
-) -> None:
-    match = draft_match(client, sender)
-    assert client.post(f"/api/hub/matches/{match['id']}/send").status_code == 200
-    enter(client, sender, FREELANCER_EMAIL)
-
-    mine = client.get("/api/hub/me/contracts")
-
-    assert mine.status_code == 200, mine.text
-    body = mine.json()
-    assert body["framework"]["status"] == "sent"
-    assert body["framework"]["signing_url"].startswith(f"{SIGNING_HOST}/sign/")
-    assert [letter["status"] for letter in body["letters"]] == ["pending"]
-    assert "777.77" not in mine.text
-
-    envelope = _framework(api_session).documenso_id
-    assert envelope is not None
-    documenso.sign(envelope, SIGNED_AT)
-    delivered = client.post(
-        "/api/hub/documenso/webhook",
-        json=documenso.webhook(envelope, "DOCUMENT_COMPLETED"),
-        headers={"X-Documenso-Secret": SECRET},
-    )
-    assert delivered.status_code == 200
-    framework_id = body["framework"]["id"]
-    copy = client.get(f"/api/hub/me/contracts/{framework_id}/pdf")
-    assert copy.status_code == 200
-    assert copy.content == documenso.signed_pdf(envelope)
-    assert copy.headers["content-type"].startswith("application/pdf")
-    assert client.get("/api/hub/me/contracts").json()["framework"]["signing_url"] is None
-
-
-def test_a_previous_signed_framework_stays_visible_under_a_new_one(
-    client: TestClient,
-    admin: None,
-    sender: RecordingSender,
-    documenso: FakeDocumenso,
-    api_session: Session,
-) -> None:
-    """REB-392: a notice on the first framework agreement, then a second one signed for
-    a new match. The person's «Contratti» still offers the first's signed copy, moved
-    under the current one in `previous_frameworks`, rather than losing it."""
-    first_match = draft_match(client, sender)
-    freelancer_id, company_id = first_match["freelancer_id"], first_match["company_id"]
-    assert client.post(f"/api/hub/matches/{first_match['id']}/send").status_code == 200
-    [first_envelope] = documenso.envelopes.values()
-    documenso.sign(first_envelope.id, SIGNED_AT)
-    delivered = client.post(
-        "/api/hub/documenso/webhook",
-        json=documenso.webhook(first_envelope.id, "DOCUMENT_COMPLETED"),
-        headers={"X-Documenso-Secret": SECRET},
-    )
-    assert delivered.status_code == 200
-    first_framework_id = _framework(api_session).id
-    noticed = client.post(f"/api/hub/contract-documents/{first_framework_id}/notice")
-    assert noticed.status_code == 200, noticed.text
-    # The webhook's own background `finish` already released the first match's letter,
-    # dispatching it too: the second framework's envelope is whichever one is new from
-    # here, not simply "not the first's".
-    envelopes_so_far = set(documenso.envelopes)
-
-    second_match = client.post(
-        f"/api/hub/freelancers/{freelancer_id}/matches",
-        json={"company_id": company_id, "customer": CUSTOMER, "letter": LETTER},
-    ).json()
-    assert client.post(f"/api/hub/matches/{second_match['id']}/send").status_code == 200
-    [second_envelope_id] = set(documenso.envelopes) - envelopes_so_far
-    documenso.sign(second_envelope_id, datetime(2026, 11, 1, 9, 0, tzinfo=UTC))
-    delivered_again = client.post(
-        "/api/hub/documenso/webhook",
-        json=documenso.webhook(second_envelope_id, "DOCUMENT_COMPLETED"),
-        headers={"X-Documenso-Secret": SECRET},
-    )
-    assert delivered_again.status_code == 200
-
-    enter(client, sender, FREELANCER_EMAIL)
-    mine = client.get("/api/hub/me/contracts")
-
-    assert mine.status_code == 200, mine.text
-    body = mine.json()
-    assert body["framework"]["id"] != str(first_framework_id)
-    assert [q["id"] for q in body["previous_frameworks"]] == [str(first_framework_id)]
-    assert body["previous_frameworks"][0]["status"] == "notice_served"
-    assert body["previous_frameworks"][0]["has_pdf_signed"] is True
-    copy = client.get(f"/api/hub/me/contracts/{first_framework_id}/pdf")
-    assert copy.status_code == 200
-    assert copy.content == documenso.signed_pdf(first_envelope.id)
-
-
-def test_someone_elses_document_is_a_404_never_a_403(
-    client: TestClient,
-    admin: None,
-    sender: RecordingSender,
-    documenso: FakeDocumenso,
-    api_session: Session,
-) -> None:
-    match = draft_match(client, sender)
-    assert client.post(f"/api/hub/matches/{match['id']}/send").status_code == 200
-    ada_framework = _framework(api_session)
+def _member(client: TestClient, sender: RecordingSender, api_session: Session, email: str) -> UUID:
+    """A freelancer card for `email`, signed in; its id, which the CRM is asked by."""
     applied = client.post(
         "/api/hub/freelancers",
         data={
-            "first_name": "Grace",
-            "last_name": "Hopper",
-            "email": "grace@studio.it",
-            "daily_rate": "500",
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "email": email,
+            "daily_rate": "450",
             "job_title": "Backend developer",
             "remote": "remote",
         },
-        files={"cv": ("Grace CV.pdf", PDF, "application/pdf")},
+        files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
     )
     assert applied.status_code == 201, applied.text
-    enter(client, sender, "grace@studio.it")
+    enter(client, sender, email)
+    api_session.expire_all()
+    return api_session.scalars(select(Freelancer.id).order_by(Freelancer.created_at.desc())).first()  # type: ignore[return-value]
 
-    assert client.get(f"/api/hub/me/contracts/{ada_framework.id}/pdf").status_code == 404
+
+def test_without_the_cookie_the_contracts_are_a_401(client: TestClient, crm: FakeCrmDoor) -> None:
+    assert client.get("/api/hub/me/contracts").status_code == 401
+    missing = "00000000-0000-7000-8000-000000000000"
+    assert client.get(f"/api/hub/me/contracts/{missing}/pdf").status_code == 401
+    assert crm.calls == []
+
+
+def test_a_freelancer_reads_their_contracts_and_downloads_the_signed_copy(
+    client: TestClient, crm: FakeCrmDoor, sender: RecordingSender, api_session: Session
+) -> None:
+    ada = _member(client, sender, api_session, "ada@studio.it")
+    crm.documents[ada] = [
+        crm_document(
+            id=str(LETTER),
+            kind="engagement_letter",
+            number="2026-001",
+            state="pending",
+            customer="ACME S.r.l.",
+            start="1° ottobre 2026",
+            signing_url=None,
+        ),
+        crm_document(id=str(FRAMEWORK), **SIGNED),
+    ]
+    crm.pdfs[FRAMEWORK] = SIGNED_PDF
+
+    mine = client.get("/api/hub/me/contracts")
+
+    assert mine.status_code == 200, mine.text
+    body = mine.json()
+    assert (body["framework"]["id"], body["framework"]["status"]) == (str(FRAMEWORK), "signed")
+    assert body["framework"]["regime"] == "vat_registered"
+    assert [(letter["number"], letter["status"]) for letter in body["letters"]] == [
+        ("2026-001", "pending")
+    ]
+    copy = client.get(f"/api/hub/me/contracts/{FRAMEWORK}/pdf")
+    assert copy.status_code == 200
+    assert copy.content == SIGNED_PDF
+    assert copy.headers["content-type"].startswith("application/pdf")
+    assert "contratto-quadro-v1.0.pdf" in copy.headers["content-disposition"]
+
+
+def test_someone_elses_document_is_a_404_never_a_403(
+    client: TestClient, crm: FakeCrmDoor, sender: RecordingSender, api_session: Session
+) -> None:
+    ada = UUID("0192e0a0-0000-7000-8000-0000000000aa")
+    crm.documents[ada] = [crm_document(id=str(FRAMEWORK), **SIGNED)]
+    crm.pdfs[FRAMEWORK] = SIGNED_PDF
+    _member(client, sender, api_session, "grace@studio.it")
+
+    assert client.get(f"/api/hub/me/contracts/{FRAMEWORK}/pdf").status_code == 404
     assert client.get("/api/hub/me/contracts").json() == {
         "framework": None,
         "occasional_framework": None,
         "previous_frameworks": [],
         "letters": [],
     }
+
+
+def test_an_unreachable_crm_is_a_502_and_an_unconfigured_one_a_503(
+    client: TestClient, crm: FakeCrmDoor, sender: RecordingSender, api_session: Session
+) -> None:
+    _member(client, sender, api_session, "ada@studio.it")
+
+    crm.down(ConnectionRefusedError(), ConnectionRefusedError())
+    down = client.get("/api/hub/me/contracts")
+    assert down.status_code == 502, down.text
+    assert down.json() == {"detail": "Pigro non risponde."}
+    crm.down((500, b""))
+    assert client.get(f"/api/hub/me/contracts/{FRAMEWORK}/pdf").status_code == 502
+
+    def no_token() -> FreelancerDoor:
+        return crm.door(token="")
+
+    client.app.dependency_overrides[get_freelancer_door] = no_token  # type: ignore[attr-defined]
+    unconfigured = client.get("/api/hub/me/contracts")
+    assert unconfigured.status_code == 503, unconfigured.text
+    assert "non è configurato" in unconfigured.json()["detail"]

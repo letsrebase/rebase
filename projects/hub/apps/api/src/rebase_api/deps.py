@@ -36,6 +36,7 @@ from rebase_core.llm_batch import batch_for_task
 from rebase_core.mail import EmailSender, sender_from_settings
 from rebase_core.member_schemas import MeRead
 from rebase_core.members import MemberService
+from rebase_core.pigro_door import FreelancerDoor, freelancer_door
 from rebase_core.signing import SigningFactory, signing_from_settings
 from rebase_core.team_builder import TeamBuilder
 from rebase_core.team_slots import ProposalSlots, proposal_slots
@@ -198,6 +199,16 @@ def get_engagements(
 
 
 EngagementsDep = Annotated[EngagementService, Depends(get_engagements)]
+
+
+def get_freelancer_door(settings: SettingsDep, http: HttpCallDep) -> FreelancerDoor:
+    """The CRM's reads of a freelancer (REB-1107): the member's contracts, the anonymous CV's
+    redaction list, the merge check and availability. The request's own `HttpCallDep`, so a
+    test's override of `get_http_call` reaches it too."""
+    return freelancer_door(settings, http)
+
+
+FreelancerDoorDep = Annotated[FreelancerDoor, Depends(get_freelancer_door)]
 
 
 def get_tracker(settings: SettingsDep) -> Tracker | None:

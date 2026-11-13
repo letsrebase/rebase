@@ -20,6 +20,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fakes_cards import text_pdf
+from fakes_crm_door import FakeCrmDoor
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -29,6 +30,7 @@ from rebase_core.anonymous_cv.writer import (
     CV_PROMPT_VERSION,
     AnonymousCvWriter,
     Written,
+    delete_anonymous_cv,
 )
 from rebase_core.card_person import PERSON_CV
 from rebase_core.card_types import NO_TEXT
@@ -41,6 +43,7 @@ from rebase_core.freelancers import FreelancerService
 from rebase_core.llm import LlmRequest, LlmResponse, RecordingCall
 from rebase_core.members import MemberService
 from rebase_core.models import AnonymousCvRow, FreelancerCard, User
+from rebase_core.pigro_door import PigroMisconfigured, PigroUnavailable
 
 NOW = datetime(2026, 10, 30, 10, 0, tzinfo=UTC)
 MODEL = "claude-opus-5"
@@ -212,8 +215,11 @@ def _stored(session: Session, freelancer_id: UUID) -> AnonymousCvRow | None:
     return session.get(AnonymousCvRow, freelancer_id, populate_existing=True)
 
 
-def _writer(session: Session, llm: RecordingCall | None) -> AnonymousCvWriter:
-    return AnonymousCvWriter(session, llm, now=lambda: NOW)
+def _writer(
+    session: Session, llm: RecordingCall | None, crm: FakeCrmDoor | None = None
+) -> AnonymousCvWriter:
+    """The writer over a fake CRM door that knows nothing about the person unless `crm` does."""
+    return AnonymousCvWriter(session, llm, (crm or FakeCrmDoor()).door(), now=lambda: NOW)
 
 
 @pytest.fixture
@@ -764,7 +770,140 @@ def test_delete_is_left_to_the_callers_commit(clean: Session) -> None:
     freelancer_id = _apply(clean)
     _writer(clean, RecordingCall([cv_response()])).get_or_write(freelancer_id)
 
-    _writer(clean, None).delete(freelancer_id)
+    delete_anonymous_cv(clean, freelancer_id)
     clean.rollback()
 
     assert _stored(clean, freelancer_id) is not None
+
+
+# ---- the CRM's half of the redaction list (REB-1107) --------------------------------------
+
+
+def _crm_knowing(freelancer_id: UUID) -> FakeCrmDoor:
+    """A CRM whose organization for the person holds a tax code, a VAT number and a PEC that
+    the hub's own `freelancer_fiscal` does not."""
+    return FakeCrmDoor(
+        fiscal={
+            freelancer_id: {
+                "tax_code": "MSSMRA85M01F158K",
+                "vat_number": "01234567890",
+                "certified_email": "studio.fatture@pec.it",
+            }
+        }
+    )
+
+
+def test_the_crms_identifiers_are_checked_with_none_of_them_in_the_hub(
+    clean: Session, logs: pytest.LogCaptureFixture
+) -> None:
+    """The tax data that moved to the CRM is still the person: a VAT number written with no
+    label, which only the CRM's copy can catch, is asked again, the CRM was asked by the
+    card's id, and none of the numbers reaches a log."""
+    freelancer_id = _apply(clean)
+    crm = _crm_knowing(freelancer_id)
+    llm = RecordingCall([cv_response(_with_bullet("Fatture n. 0123 456 7890.")), cv_response()])
+
+    written = _writer(clean, llm, crm).get_or_write(freelancer_id)
+
+    _rewritten_for(llm, "experience[0].points[0].text")
+    assert written.cv == AnonymousCv.model_validate(BODY)
+    assert crm.calls == [("GET", f"/api/rebase/freelancers/{freelancer_id}/fiscal-identifiers")]
+    for secret in ("01234567890", "0123 456 7890", "MSSMRA85M01F158K", "studio.fatture"):
+        assert secret not in logs.text
+
+
+def test_the_crms_certified_email_and_tax_code_are_checked_too(clean: Session) -> None:
+    freelancer_id = _apply(clean)
+    crm = _crm_knowing(freelancer_id)
+    handle = RecordingCall(
+        [cv_response(_with_bullet("Firma le fatture come studio.fatture.")), cv_response()]
+    )
+    code = RecordingCall(
+        [cv_response(_with_bullet("Codice MSSMRA85M01F158K nei fogli.")), cv_response()]
+    )
+
+    _writer(clean, handle, crm).get_or_write(freelancer_id)
+    clean.execute(text("DELETE FROM anonymous_cvs"))
+    clean.commit()
+    _writer(clean, code, crm).get_or_write(freelancer_id)
+
+    _rewritten_for(handle, "experience[0].points[0].text")
+    _rewritten_for(code, "experience[0].points[0].text")
+
+
+def test_the_hubs_own_tax_data_still_counts_while_the_crm_knows_nothing(clean: Session) -> None:
+    """Until the hub's match side goes the local `freelancer_fiscal` is an additional source:
+    a CRM that holds nothing for the person (a null answer) does not shrink the list."""
+    freelancer_id = _apply(clean)
+    FiscalService(clean).save(
+        freelancer_id,
+        FiscalData(
+            tax_code="MSSMRA85M01F158K", vat_number="01234567890", domicile="Via Roma 1, Messina"
+        ),
+        _admin(clean),
+    )
+    llm = RecordingCall([cv_response(_with_bullet("Fatture n. 0123 456 7890.")), cv_response()])
+
+    _writer(clean, llm, FakeCrmDoor()).get_or_write(freelancer_id)
+
+    _rewritten_for(llm, "experience[0].points[0].text")
+
+
+def test_a_crm_that_cannot_answer_ends_the_call_before_the_model_is_asked(
+    clean: Session,
+) -> None:
+    """Fails closed: no model call, nothing stored, and no CV, whatever the failure."""
+    freelancer_id = _apply(clean)
+    for failure in (
+        [ConnectionRefusedError(), ConnectionRefusedError()],
+        [(500, b"")],
+        [(200, b"not json")],
+    ):
+        crm = FakeCrmDoor()
+        crm.down(*failure)
+        llm = RecordingCall([cv_response()])
+
+        with pytest.raises(PigroUnavailable):
+            _writer(clean, llm, crm).get_or_write(freelancer_id)
+
+        assert llm.requests == []
+        assert _stored(clean, freelancer_id) is None
+
+
+def test_a_kept_body_is_not_served_while_the_crm_cannot_answer(clean: Session) -> None:
+    """A kept body is read again against who the person is, and without the CRM's half that
+    reading is short of a tax code: it is not served, and served again once the CRM is back."""
+    freelancer_id = _apply(clean)
+    first = _writer(clean, RecordingCall([cv_response()])).get_or_write(freelancer_id)
+    crm = FakeCrmDoor()
+    crm.down((503, b""), (503, b""))
+
+    with pytest.raises(PigroUnavailable):
+        _writer(clean, None, crm).get_or_write(freelancer_id)
+
+    again = _writer(clean, None, crm).get_or_write(freelancer_id)
+    assert again == Written(first.cv, reused=True, cv_sha256=_sha(CV))
+
+
+def test_a_kept_body_the_crms_tax_code_now_catches_is_written_again(clean: Session) -> None:
+    """The CRM's identifiers cover a body kept before the CRM knew them."""
+    freelancer_id = _apply(clean)
+    _keep(clean, freelancer_id, _with_bullet("Fatture n. 0123 456 7890."))
+    llm = RecordingCall([cv_response()])
+
+    written = _writer(clean, llm, _crm_knowing(freelancer_id)).get_or_write(freelancer_id)
+
+    assert len(llm.requests) == 1
+    assert written == Written(AnonymousCv.model_validate(BODY), reused=False, cv_sha256=_sha(CV))
+
+
+def test_an_environment_with_no_token_cannot_write_a_cv(clean: Session) -> None:
+    freelancer_id = _apply(clean)
+    crm = FakeCrmDoor()
+    llm = RecordingCall([cv_response()])
+    writer_without_token = AnonymousCvWriter(clean, llm, crm.door(token=""), now=lambda: NOW)
+
+    with pytest.raises(PigroMisconfigured):
+        writer_without_token.get_or_write(freelancer_id)
+
+    assert llm.requests == [] and crm.calls == []

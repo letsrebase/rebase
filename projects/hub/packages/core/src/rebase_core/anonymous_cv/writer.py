@@ -18,6 +18,15 @@ written by itself and must not pay twice for a broken CV, while this one is only
 by a press, so a retry is the admin's choice. A failure is one sentence of ours, never the
 model's words; nothing here logs more than the freelancer's id and the kind of failure: not the
 CV's text, not the answer, not the fields the guard named.
+
+**It fails closed on the CRM** (REB-1107). Part of who the person is lives there: the tax code,
+VAT number and certified email of the freelancer's organization, read through
+`FreelancerDoor.fiscal_identifiers`, which the guard reads beside the hub's own
+`freelancer_fiscal` (kept as an additional source until the hub's match side goes, so nothing
+shrinks meanwhile). The list is asked before a body is written *or served*, since a kept body
+is read again against it, and a CRM that cannot answer ends the call with `PigroUnavailable`: a
+CV is never written, and a kept one never served, against a redaction list that may be missing
+a tax code.
 """
 
 import hashlib
@@ -38,10 +47,12 @@ from rebase_core.anonymous_cv.schema import AnonymousCv, AnonymousCvDraft, Ident
 from rebase_core.audit import utcnow
 from rebase_core.cards import NO_TEXT, _block, stored_person
 from rebase_core.cv_text import CvText
+from rebase_core.door_schemas import CrmFiscalIdentifiers
 from rebase_core.errors import AnonymousCvFailed, LlmNotConfigured, NoCv, NotFound
 from rebase_core.freelancers import ENTITY, FreelancerService, cv_of
 from rebase_core.llm import LlmCall, LlmMessage, LlmRequest, LlmResponse
 from rebase_core.models import AnonymousCvRow, Freelancer, FreelancerFiscal, User
+from rebase_core.pigro_door import FreelancerDoor
 
 logger = logging.getLogger(__name__)
 
@@ -242,34 +253,49 @@ class _Spent:
         )
 
 
+def delete_anonymous_cv(session: Session, freelancer_id: UUID) -> None:
+    """The anonymous CV goes with the CV. Not committed here: `clear_cv` commits it with
+    the CV's own removal. A statement rather than a loaded object, so it reads the table
+    when it runs, after the caller's own lock."""
+    session.execute(delete(AnonymousCvRow).where(AnonymousCvRow.freelancer_id == freelancer_id))
+
+
 class AnonymousCvWriter:
     """`llm` is `None` when no model is configured for the `anonymous_cv` task
     (`call_for_task`): a body already written for the CV on file is still served, and only a
     write is refused. The seam records each call's usage against the talent the request
-    names (`LlmRequest.freelancer_id`)."""
+    names (`LlmRequest.freelancer_id`). `door` is the CRM's reads of a freelancer: the
+    redaction list's other half, without which nothing is written or served."""
 
     def __init__(
-        self, session: Session, llm: LlmCall | None, *, now: Callable[[], datetime] = utcnow
+        self,
+        session: Session,
+        llm: LlmCall | None,
+        door: FreelancerDoor,
+        *,
+        now: Callable[[], datetime] = utcnow,
     ) -> None:
         self.session = session
         self.llm = llm
+        self.door = door
         self.now = now
 
     def get_or_write(self, freelancer_id: UUID) -> Written:
         """The anonymous CV of the talent's CV on file: the stored one when it was written
         from these very bytes by this prompt version and the guard still passes it, with no
         call; otherwise written now, checked and stored. Raises `NotFound` for no talent (or
-        a deleted one) and `NoCv` for no CV; `AnonymousCvFailed` when it cannot be written
-        (`_FAILURES`), with nothing stored; `LlmNotConfigured` with no model when a call is
-        needed; and whatever `LlmUnavailable` the seam raises, untouched, as the first call
-        and the rewrite alike."""
+        a deleted one) and `NoCv` for no CV; `PigroUnavailable` when the CRM cannot give the
+        redaction list (nothing is written, nothing served); `AnonymousCvFailed` when it
+        cannot be written (`_FAILURES`), with nothing stored; `LlmNotConfigured` with no model
+        when a call is needed; and whatever `LlmUnavailable` the seam raises, untouched, as the
+        first call and the rewrite alike."""
         row = self._freelancer(freelancer_id)
         try:
             content = cv_of(row).content
         except NotFound:
             raise NoCv(freelancer_id) from None
         digest = hashlib.sha256(content).hexdigest()
-        known = self._known(row)
+        known = self._known(row, self._crm_identifiers(freelancer_id))
         kept = self._kept(freelancer_id, digest, known)
         if kept is not None:
             return Written(kept, reused=True, cv_sha256=digest)
@@ -288,14 +314,6 @@ class AnonymousCvWriter:
         written, spent = self._compose(freelancer_id, self.llm, request, known)
         self._store(freelancer_id, digest, written, spent)
         return Written(written, reused=False, cv_sha256=digest)
-
-    def delete(self, freelancer_id: UUID) -> None:
-        """The anonymous CV goes with the CV. Not committed here: `clear_cv` commits it with
-        the CV's own removal. A statement rather than a loaded object, so it reads the table
-        when it runs, after the caller's own lock."""
-        self.session.execute(
-            delete(AnonymousCvRow).where(AnonymousCvRow.freelancer_id == freelancer_id)
-        )
 
     # ---- helpers ---------------------------------------------------------------------
 
@@ -328,13 +346,20 @@ class AnonymousCvWriter:
             return None
         return kept
 
-    def _known(self, row: Freelancer) -> Who:
-        """Who the person is, by the two readings the hub has without a call: the profile
-        (`users`' name, email, phone and LinkedIn, `freelancers.links`, and the tax data an
-        admin saved for the contracts: tax code, VAT number, the certified email as an email) and
-        the anonymous card's stored persona when there is one for this CV
-        (`cards.stored_person`). The answer's own `identity` is the third, added when it
-        arrives."""
+    def _crm_identifiers(self, freelancer_id: UUID) -> CrmFiscalIdentifiers:
+        """The CRM's half of the redaction list, asked with the transaction let go (a read
+        holds no row lock, but a pooled connection should not wait on a network call). Raises
+        `PigroUnavailable`: the caller does not catch it."""
+        self.session.commit()
+        return self.door.fiscal_identifiers(freelancer_id)
+
+    def _known(self, row: Freelancer, crm: CrmFiscalIdentifiers) -> Who:
+        """Who the person is, by the readings the hub has: the profile (`users`' name, email,
+        phone and LinkedIn, `freelancers.links`, and the tax data an admin saved for the
+        contracts: tax code, VAT number, the certified email as an email), the same three from
+        the CRM's organization (`crm`), and the anonymous card's stored persona when there is
+        one for this CV (`cards.stored_person`). The answer's own `identity` is the last,
+        added when it arrives."""
         user = self.session.get(User, row.user_id)
         assert user is not None
         fiscal = self.session.scalar(
@@ -345,10 +370,15 @@ class AnonymousCvWriter:
         known = who_of(
             first_name=user.first_name,
             last_name=user.last_name,
-            emails=[user.email, fiscal.certified_email if fiscal else None],
+            emails=[user.email, fiscal.certified_email if fiscal else None, crm.certified_email],
             phones=[user.phone],
             links=[*row.links, user.linkedin_url],
-            tax_ids=[fiscal.tax_code, fiscal.vat_number] if fiscal else [],
+            tax_ids=[
+                fiscal.tax_code if fiscal else None,
+                fiscal.vat_number if fiscal else None,
+                crm.tax_code,
+                crm.vat_number,
+            ],
         )
         person = stored_person(self.session, row.id)
         if person is None:

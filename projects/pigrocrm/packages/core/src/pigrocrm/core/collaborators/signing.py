@@ -344,7 +344,9 @@ class SigningService:
         envelope_id = documenso.create(
             title=title[0].upper() + title[1:],
             external_id=external_id(self.tenant_id, document.id),
-            filename=self._filename(document, copy.rendered.version, number),
+            filename=letters.document_filename(
+                document.type, document.letter_type, copy.rendered.version, number
+            ),
             pdf=copy.rendered.pdf,
             signer_email=contact.email,
             signer_name=freelancer.legal_name,
@@ -845,12 +847,3 @@ class SigningService:
             return None
         engagement = self.engagements.get(document.engagement_id)
         return engagement.letter_number if engagement is not None else None
-
-    @staticmethod
-    def _filename(document: Document, version: str, number: str | None) -> str:
-        """The name Documenso keeps and seals as `<name>_signed.pdf` (probe § 4): the document's
-        own kind, regime and text version, so the two families never share one."""
-        occasional = "-occasionale" if document.letter_type == "occasional" else ""
-        if document.type == FRAMEWORK_AGREEMENT:
-            return f"contratto-quadro{occasional}-v{version}.pdf"
-        return f"lettera-di-incarico{occasional}-{number or 'senza-numero'}-v{version}.pdf"

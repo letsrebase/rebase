@@ -5,6 +5,7 @@ from uuid import UUID
 
 import pytest
 from fakes_cards import card_response
+from fakes_crm_door import FakeCrmDoor
 from fastapi.testclient import TestClient
 from hub_tables import wipe_hub
 from sqlalchemy import Engine
@@ -16,6 +17,7 @@ from rebase_api.deps import (
     get_crm_filing,
     get_crm_llm,
     get_cv_llm,
+    get_freelancer_door,
     get_sender,
     get_session,
     get_session_opener,
@@ -91,6 +93,9 @@ def client(api_session: Session) -> Iterator[TestClient]:
     # test asks to see it (`crm_filings`).
     app.dependency_overrides[get_crm_filing] = lambda: lambda company_id: None
     app.dependency_overrides[get_crm_llm] = lambda: lambda: None
+    # The CRM's reads of a freelancer (REB-1107): a CRM that holds nothing and finds no conflict,
+    # unless a test hands its own fake (`get_freelancer_door`).
+    app.dependency_overrides[get_freelancer_door] = FakeCrmDoor().door
     with TestClient(app, base_url="https://testserver") as test_client:
         yield test_client
 
