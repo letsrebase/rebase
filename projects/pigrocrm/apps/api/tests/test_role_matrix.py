@@ -1090,18 +1090,25 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
         "client; it reaches the hub over the network and answers even when the hub is "
         "down (ORB-173)."
     ),
+    ("PUT", "/api/rebase/engagements/{match_id}"): (
+        "Gated by `PIGROCRM_ENGAGEMENTS_TOKEN` (spec 2026-09-25 § 2.3), not a role: the "
+        "caller is the hub itself, with no session and no actor to check. None of the "
+        "three role clients holds that bearer, so the sweep would only ever see the "
+        "door's own 404/401, never a role refusal to assert on."
+    ),
     ("PUT", "/api/rebase/leads/{request_id}"): (
-        "Gated by `PIGROCRM_ENGAGEMENTS_TOKEN` (spec 2026-10-30 "
+        "Gated by `PIGROCRM_ENGAGEMENTS_TOKEN` like the engagements route (spec 2026-10-30 "
         "§ 2, REB-866), not a role: the caller is the hub itself, with no session and no "
         "actor to check, and the space it writes to is the installation's own setting. "
         "None of the three role clients holds that bearer, so the sweep would only ever see "
         "the door's own 404/401."
     ),
     ("PUT", "/api/rebase/freelancers/{hub_freelancer_id}/organization"): (
-        "The hub's root door (REB-1105): gated by `PIGROCRM_ENGAGEMENTS_TOKEN`, not a role. The "
-        "caller is the hub itself, with no session and no actor, and the organization it writes "
-        "is in the installation's own leads space. None of the three role clients holds that "
-        "bearer, so the sweep would only ever see the door's own 401/404."
+        "Gated by `PIGROCRM_ENGAGEMENTS_TOKEN` like the leads route (REB-1105), not a role: "
+        "the caller is the hub's «Crea match» with no session and no actor, and the space it "
+        "writes to is the installation's leads space. None of the three role clients holds "
+        "that bearer, so the sweep would only ever see the door's own 404/401. "
+        "`test_freelancer_door_api.py` walks it."
     ),
     ("POST", "/api/documenso/webhook"): (
         "Documenso's own delivery (REB-1019), authenticated by the `X-Documenso-Secret` header "
