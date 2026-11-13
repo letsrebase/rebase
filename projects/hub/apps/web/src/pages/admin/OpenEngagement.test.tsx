@@ -43,13 +43,13 @@ function mount() {
     path: '/admin/freelance/$id/match/new',
     component: AdminOpenEngagement,
   })
-  const contracts = createRoute({
+  const detail = createRoute({
     getParentRoute: () => signedIn,
-    path: '/admin/freelance/$id/contracts',
-    component: () => <p>pagina contratti</p>,
+    path: '/admin/freelance/$id',
+    component: () => <p>scheda</p>,
   })
   const router = createRouter({
-    routeTree: root.addChildren([signedIn.addChildren([page, contracts])]),
+    routeTree: root.addChildren([signedIn.addChildren([page, detail])]),
     history: createMemoryHistory({ initialEntries: ['/admin/freelance/f1/match/new'] }),
   })
   render(
@@ -86,8 +86,6 @@ describe('«Crea match»', () => {
 
     await waitFor(() => expect(assign).toHaveBeenCalledWith(FORM))
     expect(calls.filter((call) => call.includes('engagement-handoff'))).toHaveLength(1)
-    // The old wizard's own reads are not made any more.
-    expect(calls.some((call) => call.includes('/matches/prefill'))).toBe(false)
   })
 
   it('says a request with no deal is not in the CRM and offers «Riprova» instead of a blank form', async () => {

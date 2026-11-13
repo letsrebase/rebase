@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from rebase_core.config import Settings
+from rebase_core.crm_words import ERROR, HTTPS_ONLY, LINKED, REJECTED
 from rebase_core.http import (
     MAX_BODY_BYTES,
     MAX_DOWNLOAD_BYTES,
@@ -22,7 +23,6 @@ from rebase_core.http import (
     urllib_call,
     urllib_download_call,
 )
-from rebase_core.match_words import ERROR, HTTPS_ONLY, LINKED, REJECTED
 from rebase_core.pigro_door import (
     ANSWERED_STATUS,
     CAUSE_NOT_THE_SHAPE,

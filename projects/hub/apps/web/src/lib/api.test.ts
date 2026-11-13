@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, admin, applyAsFreelancer, matches, member, requestPeople } from './api'
+import { ApiError, admin, applyAsFreelancer, member, requestPeople } from './api'
 
 function answer(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -173,33 +173,6 @@ describe('the api client', () => {
     expect(spaces.items[0]!.slug).toBe('studio-ada')
   })
 
-  it('links a match to Pigro now and reads its hours report, both through the hub (REB-502)', async () => {
-    const spy = vi.spyOn(globalThis, 'fetch')
-    spy.mockResolvedValueOnce(answer(200, { id: 'm1', pigro_status: 'linked' }))
-    const linked = await matches.linkPigro('m1')
-    const [url, init] = spy.mock.calls[0]!
-    expect(url).toBe('/api/hub/matches/m1/pigro/link')
-    expect(init?.method).toBe('POST')
-    // The CRM may take the 90 seconds a new space needs: nothing here gives up sooner.
-    expect(init?.signal).toBeUndefined()
-    expect(linked.pigro_status).toBe('linked')
-
-    spy.mockResolvedValueOnce(answer(200, { match_id: 'm1', hours_total: '96.00', progress: '30.00' }))
-    const report = await matches.report('m1')
-    expect(spy.mock.calls[1]![0]).toBe('/api/hub/matches/m1/report')
-    expect(spy.mock.calls[1]![1]?.method ?? 'GET').toBe('GET')
-    // Hours are the API's decimal strings, never floats.
-    expect(report.hours_total).toBe('96.00')
-  })
-
-  it('reads one match by id, for «Consuntivo»’s title (REB-503)', async () => {
-    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { id: 'm1', company_name: 'ACME Srl' }))
-    const match = await matches.get('m1')
-    expect(spy.mock.calls[0]![0]).toBe('/api/hub/matches/m1')
-    expect(spy.mock.calls[0]![1]?.method ?? 'GET').toBe('GET')
-    expect(match.company_name).toBe('ACME Srl')
-  })
-
   it('names the anonymous CV after the UTF-8 filename first, and never with a path or a control character', async () => {
     const pdf = (disposition: string) =>
       new Response('%PDF-1.7', {
@@ -225,7 +198,6 @@ describe('the api client', () => {
     await admin.freelancer('a/b?x')
     expect(spy.mock.calls[0]![0]).toBe('/api/hub/freelancers/a%2Fb%3Fx')
     expect(admin.cvUrl('a/b')).toBe('/api/hub/freelancers/a%2Fb/cv')
-    expect(admin.contractPdfUrl('a b', true)).toBe('/api/hub/contract-documents/a%20b/pdf?signed=true')
   })
 
   it('sends only the filters that were set, and resolves a 204 with nothing', async () => {

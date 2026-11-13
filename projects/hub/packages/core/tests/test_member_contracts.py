@@ -6,21 +6,26 @@ signed PDF, and what an unreachable CRM does to the page (an error, never an emp
 
 from collections.abc import Iterator
 from datetime import date
+from decimal import Decimal
 from uuid import UUID
 
 import pytest
+from admins import an_admin
 from fakes_crm_door import FakeCrmDoor, crm_document
 from fakes_pigro import TOKEN
-from match_fixtures import TABLES, _admin, _card, _second_card
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from rebase_core.contract_schemas import MemberContracts
 from rebase_core.errors import NotFound
+from rebase_core.freelancer_schemas import FreelancerCreate
+from rebase_core.freelancers import FreelancerService
 from rebase_core.member_contracts import MemberContractService
+from rebase_core.member_schemas import MemberContracts
 from rebase_core.models import Freelancer
 from rebase_core.pigro_door import PigroMisconfigured, PigroUnavailable
 
+PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
+TABLES = ("admin_actions", "notes", "freelancers", "companies", "users", "signups")
 FRAMEWORK = UUID("0192e0a0-0000-7000-8000-0000000000f1")
 OCCASIONAL = UUID("0192e0a0-0000-7000-8000-0000000000f2")
 PREVIOUS = UUID("0192e0a0-0000-7000-8000-0000000000f3")
@@ -42,6 +47,40 @@ def clean(hub_session: Session) -> Iterator[Session]:
     for table in TABLES:
         hub_session.execute(text(f"DELETE FROM {table}"))
     hub_session.commit()
+
+
+def _admin(session: Session) -> UUID:
+    return an_admin(session, "ivan@rebase.it", "Ivan")
+
+
+def _card(session: Session, **change: object) -> UUID:
+    payload: dict[str, object] = {
+        "first_name": "Ada",
+        "last_name": "Lovelace",
+        "email": "ada@studio.it",
+        "daily_rate": Decimal("450"),
+        "job_title": "Backend developer",
+        "remote": "remote",
+    }
+    payload.update(change)
+    row, _ = FreelancerService(session).apply(
+        FreelancerCreate(**payload),  # type: ignore[arg-type]
+        PDF,
+        "cv.pdf",
+        "application/pdf",
+    )
+    return row.id
+
+
+def _second_card(session: Session) -> UUID:
+    return _card(
+        session,
+        first_name="Grace",
+        last_name="Hopper",
+        email="grace@studio.it",
+        daily_rate=Decimal("500"),
+        job_title="Frontend developer",
+    )
 
 
 def _user_of(session: Session, freelancer_id: UUID) -> UUID:

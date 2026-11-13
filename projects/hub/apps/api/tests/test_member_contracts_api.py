@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from uuid import UUID
 
 import pytest
-from contract_flow import enter
+from contract_api_helpers import login_as as enter
 from fakes_cards import text_pdf
 from fakes_crm_door import FakeCrmDoor, crm_document
 from fastapi.testclient import TestClient

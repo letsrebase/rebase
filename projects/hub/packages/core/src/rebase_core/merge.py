@@ -9,11 +9,11 @@ back. The survivor's own trail gets an `absorbed` entry with the counts.
 
 **What moves** is `merge_relations.RELATIONS`, each by id: the logins, sessions and magic links,
 the company requests, the team asks and talent-cloud grants, the campaign rows, the
-referrals the person made or came through, the matches, the contract documents, the
-notes, the audit entries, the talent's asks on team requests, the tax data. A
+referrals the person made or came through, the hub's engagements, the
+notes, the audit entries, the talent's asks on team requests. A
 row that would collide with one the survivor already has (a referral for the same card,
-a talent already on the same request, a live cloud grant for the same company, a second
-tax record) stays where it was and is counted as `left_behind`.
+a talent already on the same request, a live cloud grant for the same company) stays where
+it was and is counted as `left_behind`.
 
 **The CV is the newest of the two.** `freelancers.cv_uploaded_at` says which; the CV and
 its anonymous card travel together, so if the absorbed card holds the newer one the two
@@ -27,13 +27,12 @@ attribution (the UTM set and the page) stays, the older card's; the
 further `status` wins over `new`. Every changed value is kept in the entry, as it was.
 
 **What stops it**, each with a sentence: the same card, an admin as the absorbed side, two
-different tax codes (the hub's own, or the CRM's), a live framework agreement of the same type
+different tax codes (the CRM's), a live framework agreement of the same type
 on both sides, an engagement in progress with the same client on both, or a CRM that cannot be
 asked. The contracts and engagements are the CRM's since the relationship with a freelancer
 moved there (collaborators design § 5, REB-1107): the merge asks it through the door
 (`FreelancerDoor.merge_check`), before it takes any lock, and **refuses when it cannot be
-asked**, since a merge it did not check could join two live agreements. The hub's own match
-tables are no longer read by the check; the removal card drops them with the rest of that side.
+asked**, since a merge it did not check could join two live agreements.
 """
 
 import hashlib
@@ -69,7 +68,6 @@ from rebase_core.models import (
     AdminAction,
     CampaignOptout,
     Freelancer,
-    FreelancerFiscal,
     Note,
     TeamProposal,
     User,
@@ -386,15 +384,7 @@ class PersonMergeService:
             raise MergeRefused(
                 "La scheda da assorbire è di un amministratore: unisci l'altra nella sua.",
             )
-        s_tax = self.session.scalar(
-            select(FreelancerFiscal.tax_code).where(FreelancerFiscal.freelancer_id == survivor.id)
-        )
-        a_tax = self.session.scalar(
-            select(FreelancerFiscal.tax_code).where(FreelancerFiscal.freelancer_id == absorbed.id)
-        )
-        if (s_tax and a_tax and s_tax.strip().upper() != a_tax.strip().upper()) or (
-            crm.tax_code_conflict
-        ):
+        if crm.tax_code_conflict:
             raise MergeRefused(
                 "Le due schede hanno codici fiscali diversi: non sono la stessa persona.",
             )

@@ -191,7 +191,7 @@ describe('the sidebar, gated on role', () => {
       .map((node) => (node.getAttribute('role') === 'separator' ? '|' : node.textContent))
     expect(admin).toEqual([
       '|',
-      ...['Talenti', 'Aziende', 'Richieste team', 'Match', 'Referral'],
+      ...['Talenti', 'Aziende', 'Richieste team', 'Referral'],
       '|',
       'Campagne',
       '|',
@@ -201,11 +201,11 @@ describe('the sidebar, gated on role', () => {
     ])
   })
 
-  it('links Match and Richieste team to their pages (REB-413, REB-514)', async () => {
+  it('links Richieste team and Referral to their pages (REB-514)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, IVAN))
     mount()
     await screen.findByRole('heading', { name: 'Dentro' })
-    expect(screen.getByRole('link', { name: 'Match' }).getAttribute('href')).toMatch(/\/admin\/matches$/)
+    expect(screen.queryByRole('link', { name: 'Match' })).toBeNull()
     expect(screen.getByRole('link', { name: 'Richieste team' }).getAttribute('href')).toMatch(/\/admin\/team$/)
     expect(screen.getByRole('link', { name: 'Referral' }).getAttribute('href')).toMatch(/\/admin\/referrals$/)
   })

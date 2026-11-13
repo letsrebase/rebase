@@ -103,7 +103,7 @@ def test_migration_0033_backfills_the_regime_frees_the_vat_number_and_guards_the
             framework = _framework(connection, freelancer, user)
             _fiscal(connection, freelancer, user)
         for _ in range(2):  # a retried deploy runs the same revision again
-            command.upgrade(config, "head")
+            command.upgrade(config, "0052")
             with engine.begin() as connection:
                 assert _columns(connection) == AFTER
                 assert (

@@ -5,7 +5,7 @@ import { useRef, useState } from 'react'
 import { Button } from '@rebase/ui/button'
 import { admin, ApiError, type Company } from '@/lib/api'
 import { keys } from '@/lib/query-keys'
-import { CompanyList } from './create-match/ChiStep'
+import { CompanyPicker } from './CompanyPicker'
 import { Header } from './list-kit'
 
 /** «Crea match» (REB-1105): the engagement is the CRM's, so this page only pairs the card with a
@@ -48,18 +48,18 @@ export function AdminOpenEngagement() {
       <Header title={name ? `Crea match · ${name}` : 'Crea match'} />
       <div className="max-w-3xl space-y-4 p-6">
         <Link
-          to="/admin/freelance/$id/contracts"
+          to="/admin/freelance/$id"
           params={{ id }}
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" aria-hidden="true" />
-          Match e contratti
+          Scheda del freelance
         </Link>
         <p className="text-sm text-muted-foreground">
           L’incarico si scrive nel CRM: scegli la richiesta dell’azienda e ti porto al modulo, già compilato con il suo
           deal e questo freelance.
         </p>
-        <CompanyList
+        <CompanyPicker
           selected={company}
           onSelect={(next) => {
             setCompany(next)

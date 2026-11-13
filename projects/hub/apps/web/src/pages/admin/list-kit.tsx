@@ -77,7 +77,7 @@ export function StateFilter({
   value: string | undefined
   onChange: (value: string | undefined) => void
   /** The talent and company lists share `STATE_LABELS`; a list over a different vocabulary
-   *  (REB-413's own Match states) passes its own. */
+   *  («Richieste team», the referral ledger) passes its own. */
   labels?: Record<string, string>
 }) {
   return (

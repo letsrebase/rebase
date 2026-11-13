@@ -128,22 +128,8 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "login_stats",
             "list_campaigns",
             "get_campaign",
-            "list_matches",
-            "get_match",
-            "preview_match",
-            "create_match",
-            "send_match_for_signature",
-            "resend_signing_mail",
-            "refresh_contract",
-            "cancel_contract",
-            "record_notice",
-            "cancel_match",
-            "close_match",
-            "link_match_to_pigro",
             "create_company",
             "link_company_to_pigro",
-            "get_match_report",
-            "set_freelancer_tax_data",
         }
     _wipe(factory)
 

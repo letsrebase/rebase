@@ -45,7 +45,6 @@ NOT_ADMIN: dict[Route, tuple[str, str]] = {
     ("POST", "/api/community/signups"): (PUBLIC, "the landing's signup form, behind spend_one"),
     ("POST", "/api/hub/freelancers"): (PUBLIC, "the freelancer wizard, behind spend_one"),
     ("POST", "/api/hub/companies"): (PUBLIC, "the company wizard, behind spend_one"),
-    ("POST", "/api/hub/documenso/webhook"): (PUBLIC, "Documenso's webhook: the shared secret"),
     ("POST", "/api/hub/webhooks/resend"): (PUBLIC, "Resend's webhook: the Svix signature"),
     ("GET", "/api/hub/referral-rates"): (PUBLIC, "the rates the landing and the guide show"),
     ("GET", "/api/hub/campaigns/unsubscribe"): (PUBLIC, "the unsubscribe page's token read"),

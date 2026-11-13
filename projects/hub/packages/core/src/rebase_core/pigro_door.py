@@ -1,10 +1,10 @@
 """The one door to PigroCRM's API: the call, what its answer means, the sweep and the write
 (REB-892, HCORE-08).
 
-Four clients reach the CRM: the registry of spaces (`rebase_core.pigro`, a `GET`), the
-engagements door (`rebase_core.engagements`, a `PUT` and a `GET`), the leads door
-(`rebase_core.crm_link`, a `PUT`) and the reads of a freelancer (`FreelancerDoor` below, `GET`s
-by the hub's own freelancer id). They differ in a path, a token and the row they write,
+Three clients reach the CRM: the registry of spaces (`rebase_core.pigro`, a `GET`), the leads
+door (`rebase_core.crm_link`, a `PUT`) and the reads of a freelancer (`FreelancerDoor` below,
+`GET`s by the hub's own freelancer id). The match side's own engagements door went with
+REB-1108. They differ in a path, a token and the row they write,
 and in nothing else, so this module holds what they share and takes those as
 parameters.
 
@@ -50,6 +50,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from rebase_core.config import Settings
+from rebase_core.crm_words import ERROR, HTTPS_ONLY, LINKED, REJECTED
 from rebase_core.door_schemas import (
     CrmAvailability,
     CrmContracts,
@@ -64,7 +65,6 @@ from rebase_core.http import (
     urllib_call,
     urllib_download_call,
 )
-from rebase_core.match_words import ERROR, HTTPS_ONLY, LINKED, REJECTED
 
 _log = logging.getLogger(__name__)
 

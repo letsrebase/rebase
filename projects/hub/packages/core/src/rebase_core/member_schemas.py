@@ -8,9 +8,10 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
 
 from rebase_core.contact_points import CONTACT_POINTS_MAX, ContactPointInput, ContactPointRead
+from rebase_core.regimes import Regime
 from rebase_core.schema_common import ResponseModel, is_complete
 from rebase_core.signup_schemas import SignupUtm
-from rebase_core.vocabulary import RemoteOption, UserRole
+from rebase_core.vocabulary import ContractKind, ContractState, RemoteOption, UserRole
 
 
 class MemberProfile(BaseModel):
@@ -166,3 +167,51 @@ class EnterRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     token: str = Field(min_length=20, max_length=200, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+class ContractPdf(BaseModel):
+    """A document's bytes and the name a browser saves them under."""
+
+    filename: str
+    content: bytes
+
+
+class MemberContract(ResponseModel):
+    """A contract as its freelancer reads it in «Contratti» (REB-392): never the PDF's
+    bytes and never `data`. `customer` and the two dates are a letter's, as the letter
+    prints them; `signing_url` is there only while the document waits for the
+    signature, since its path is the signer's token. `pigro_url` is the engagement's own in
+    the CRM, set only once it is `linked`: «Le tue ore su Pigro» has somewhere to point."""
+
+    id: UUID
+    kind: ContractKind
+    # Which family it belongs to and its type as the page names it (REB-687).
+    regime: Regime
+    label: str
+    number: str | None
+    status: ContractState
+    customer: str | None
+    start: str | None
+    end: str | None
+    sent_at: datetime | None
+    signed_at: datetime | None
+    signing_url: str | None
+    has_pdf_signed: bool
+    active: bool
+    renewal: date | None
+    last_notice_day: date | None
+    pigro_url: str | None
+
+
+class MemberContracts(ResponseModel):
+    """«Contratti»: the framework agreements on top, one per regime (REB-687): `framework`
+    the ordinary one and `occasional_framework` the occasional one, each the active one,
+    else the newest that reached the person; the letters newest first; and
+    `previous_frameworks` (REB-392): the freelancer's other framework agreements that were
+    signed, newest first, excluding the two on top -- a notice, or a newer one replacing
+    it, must not make an earlier signed copy disappear from the page."""
+
+    framework: MemberContract | None
+    occasional_framework: MemberContract | None = None
+    previous_frameworks: list[MemberContract] = Field(default_factory=list)
+    letters: list[MemberContract]

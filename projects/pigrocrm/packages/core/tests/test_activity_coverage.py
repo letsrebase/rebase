@@ -200,10 +200,6 @@ _DELEGATION: dict[Method, str] = {
         "`append_note` records `note_added` on the parent, the one function the creating "
         "services write a first note with as well"
     ),
-    ("EngagementService", "ensure"): (
-        "creates the customer and the deal through their services as `Actor.rebase()`; "
-        "`test_engagements.py` asserts the two `rebase` rows"
-    ),
     ("HubDoorService", "ensure_freelancer"): (
         "REB-1105: writes the freelancer's organization through `OrganizationService._insert` "
         "(records `created`) or `OrganizationService.update` (records `updated`) as "

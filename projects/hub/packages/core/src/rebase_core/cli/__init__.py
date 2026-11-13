@@ -1,7 +1,7 @@
 """`rebase`: the operator's commands (`rebase_core.cli:main`, the `rebase` script).
 
 One module per group of commands: `members` (tokens, roles, the welcome mail, duplicate
-talents), `cards`, `campaigns`, `signing` (contracts and Documenso), `ai` (the model
+talents), `cards`, `campaigns`, `crm` (the sweep that files company requests), `ai` (the model
 providers).
 `main` knows only the names and the help of the commands, and imports a group's module when
 one of its commands is chosen, which then imports what its own work needs inside its
@@ -22,17 +22,9 @@ REGISTRY: dict[str, tuple[str, str]] = {
         "campaigns",
         "Check the Conversions API key without recording a conversion",
     ),
-    "contracts-check": (
-        "signing",
-        "Render the contracts with pandoc and Typst: can this machine generate them?",
-    ),
-    "documenso-check": (
-        "signing",
-        "Does Documenso answer, and does this environment's token open it?",
-    ),
-    "contracts-sweep": (
-        "signing",
-        "Redo what a restart or a rejected mail left behind",
+    "crm-sweep": (
+        "crm",
+        "File the company requests the CRM does not have yet",
     ),
     "campaigns-tick": (
         "campaigns",

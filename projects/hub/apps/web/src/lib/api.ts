@@ -441,38 +441,13 @@ export interface CompaniesFilters {
   created_to?: string
 }
 
-/** REB-387: a match's state, and a contract document's. */
-export type MatchStatus = 'draft' | 'awaiting_signature' | 'active' | 'concluded' | 'cancelled'
+/** A contract's state, as the member's «Contratti» page reads it. */
 export type DocumentStatus = 'generated' | 'pending' | 'sent' | 'signed' | 'cancelled' | 'notice_served'
-/** Where an active match's link to its deal on Pigro stands (REB-497): `null` until the
- *  match turns `active`. */
+/** Where a company request's link to the CRM stands: `null` for a request from before the link. */
 export type PigroStatus = 'to_link' | 'linked' | 'error' | 'rejected'
-/** REB-687: a contract document's family, the letter type a match is made with. */
-export type Regime = Schemas['MatchCheck']['regime']
-/** What an admin can do next on a document or a match (REB-477): the page maps each to
- *  its button and its API call. */
-export type Action = NonNullable<Schemas['ContractDocumentRead']['next_action']>
-
-export type FiscalData = Narrow<Schemas['FiscalData'], { vat_number: string | null; certified_email: string | null }>
-export type Fiscal = Schemas['FiscalRead']
-export type ContractDocument = Schemas['ContractDocumentRead']
-export type Match = Schemas['MatchRead']
+/** REB-687: a contract's family, the letter type it was made with. */
+export type Regime = Schemas['MemberContract']['regime']
 export type EngagementHandoff = Schemas['HandoffRead']
-/** `previsto` while the first letter is not signed (a projection), the reward's own
- *  state after, `already_accrued` when the referral already paid on another match, and
- *  `to_verify` for a company whose referente has not logged in yet (REB-658). */
-export type MatchReferralStatus = 'expected' | 'already_accrued' | 'to_verify' | RewardStatus
-export type MatchReferral = Schemas['MatchReferral']
-export type MatchListItem = Schemas['MatchListItem']
-
-/** What `GET /api/hub/matches` takes beside `limit`/`offset` (REB-413): `status` one of
- *  `MatchStatus`, `q` matching the freelancer's name, surname or email and the
- *  company's name. */
-export interface MatchesFilters {
-  status?: string
-  q?: string
-}
-
 // ---- campaigns (P-REB-41) -------------------------------------------------------------
 
 export type CampaignStatus = 'draft' | 'scheduled' | 'sending' | 'sent' | 'cancelled'
@@ -491,99 +466,9 @@ export type CampaignTemplate = Schemas['TemplateRead']
  *  reading is the looser one, narrowed back to the schema's where a body is sent. */
 export type CampaignDraft = Narrow<Schemas['CampaignDraft'], { filters?: Record<string, unknown> | null }>
 
-export type MatchReport = Schemas['MatchReport']
-export type ReportDayInvoice = Schemas['ReportDayInvoice']
-export type ReportDay = Schemas['ReportDay']
-export type ReportWeek = Schemas['ReportWeek']
-export type ReportMonth = Schemas['ReportMonth']
-export type ReportInvoice = Schemas['ReportInvoice']
-export type SendReport = Schemas['SendReport']
 export type MemberContract = Schemas['MemberContract']
 export type MemberContracts = Schemas['MemberContracts']
-export type FreelancerContracts = Schemas['FreelancerContracts']
-export type MatchPrefill = Narrow<
-  Schemas['MatchPrefill'],
-  {
-    tax: Fiscal | null
-    customer: CustomerDraft
-    letter: LetterDraft
-    active_framework: ContractDocument | null
-  }
->
-
-/** The letter's text fields, in the order `engagement-letter.md` asks for them and the
- *  server's `LETTER_TEXT_FIELDS` lists them. */
-export const LETTER_TEXT_KEYS = [
-  'role',
-  'activities',
-  'results',
-  'acceptance',
-  'commitment',
-  'review_period',
-  'location',
-  'coordination',
-  'customer_contact',
-  'rebase_contact',
-  'mode',
-  'unit',
-  'extra_work',
-  'expenses',
-  'billing_deadlines',
-  'personal_data',
-  'purpose_data',
-  'category_data',
-  'data_subjects',
-  'authorization_data',
-  'exclusivity',
-  'portfolio',
-  'insurance',
-  'other_terms',
-  'previous_reports',
-] as const
-export type LetterTextKey = (typeof LETTER_TEXT_KEYS)[number]
-
-/** What `LetterFields` takes, as the wizard sends it: an empty text field is `null` and
- *  prints a blank line, and a missing required one is the API's 422 naming the field, so
- *  this is wider than the schema's own type (see `matchBody`). */
-export type Letter = Record<LetterTextKey, string | null> & {
-  start_date: string
-  end_date: string | null
-  fee: string
-  payment_days: number
-  month_end: boolean
-  collection_days: number | null
-  notice_days: number | null
-}
-export type LetterDraft = Narrow<
-  { [K in keyof Letter]: Letter[K] | null },
-  { mode: 'to_work_unit' | 'lump_sum' | null }
->
-export type Customer = Schemas['CustomerDate']
-export type CustomerDraft = { [K in keyof Customer]: string | null }
-
-/** `id` is optional and client-generated (REB-406): one per wizard run, sent with both
- *  «Salva senza inviare» and «Invia per la firma», so a retry after the response is lost
- *  writes nothing new -- the server returns the match already written under it. */
-export interface MatchCreate {
-  id?: string
-  company_id: string
-  /** REB-687: the letter type, `vat_number` or `occasional`. */
-  regime: Regime
-  customer: Customer
-  letter: Letter
-  /** «Giorni previsti» (REB-497): beside the letter, never inside it, since `LetterFields`
-   *  refuses a key it does not know and the letter's text does not change with it. */
-  expected_days: number | null
-}
-
-/** The wizard's body for the schema's: the same fields, the letter's nulls left for the
- *  API to refuse by field name. */
-const matchBody = (body: MatchCreate) => body as Schemas['MatchCreate']
-
-export type MatchCheck = Schemas['MatchCheck']
-
 export type CompanyList = Schemas['CompanyList']
-export type MatchList = Schemas['MatchList']
 export type TeamRequestList = Schemas['TeamRequestList']
 export type TeamProposalList = Schemas['TeamProposalList']
 export type CampaignList = Schemas['CampaignList']
@@ -995,106 +880,6 @@ export const admin = {
       )
     }
   },
-  /** «Match» (REB-413): every match in the admin area, newest first. */
-  matches: (filters: MatchesFilters & { limit?: number; offset?: number } = {}) =>
-    unwrap(client.GET('/api/hub/matches', { params: { query: filled(filters) } }), reading<MatchList>()),
-  /** A freelancer's matches and contracts (REB-387). */
-  contracts: (freelancerId: string) =>
-    unwrap(
-      client.GET('/api/hub/freelancers/{freelancer_id}/matches', {
-        params: { path: { freelancer_id: freelancerId } },
-      }),
-      reading<FreelancerContracts>(),
-    ),
-  fiscal: (freelancerId: string) =>
-    unwrap(
-      client.GET('/api/hub/freelancers/{freelancer_id}/fiscal', {
-        params: { path: { freelancer_id: freelancerId } },
-      }),
-    ),
-  saveFiscal: (freelancerId: string, body: FiscalData) =>
-    unwrap(
-      client.PUT('/api/hub/freelancers/{freelancer_id}/fiscal', {
-        params: { path: { freelancer_id: freelancerId } },
-        body,
-      }),
-    ),
-  matchPrefill: (freelancerId: string, companyId: string) =>
-    unwrap(
-      client.GET('/api/hub/freelancers/{freelancer_id}/matches/prefill', {
-        params: { path: { freelancer_id: freelancerId }, query: { company_id: companyId } },
-      }),
-      reading<MatchPrefill>(),
-    ),
-  /** «Controlla e invia»'s sentences (REB-476): a 422 names the field as `createMatch`
-   *  would, and nothing is written. */
-  matchCheck: (freelancerId: string, body: MatchCreate) =>
-    unwrap(
-      client.POST('/api/hub/freelancers/{freelancer_id}/matches/check', {
-        params: { path: { freelancer_id: freelancerId } },
-        body: matchBody(body),
-      }),
-    ),
-  /** «Controlla e invia»'s previews: a PDF typeset now and saved nowhere. */
-  matchPreview: (freelancerId: string, body: MatchCreate, document: 'letter' | 'framework') =>
-    unwrap(
-      client.POST('/api/hub/freelancers/{freelancer_id}/matches/preview', {
-        params: { path: { freelancer_id: freelancerId }, query: { document } },
-        body: matchBody(body),
-        parseAs: 'blob',
-      }),
-    ),
-  /** «Salva senza inviare»: the draft match with its numbered letter. */
-  createMatch: (freelancerId: string, body: MatchCreate) =>
-    unwrap(
-      client.POST('/api/hub/freelancers/{freelancer_id}/matches', {
-        params: { path: { freelancer_id: freelancerId } },
-        body: matchBody(body),
-      }),
-      reading<Match>(),
-    ),
-  cancelMatch: (matchId: string) =>
-    unwrap(client.POST('/api/hub/matches/{match_id}/cancel', { params: { path: { match_id: matchId } } }), reading<Match>()),
-  closeMatch: (matchId: string) =>
-    unwrap(client.POST('/api/hub/matches/{match_id}/close', { params: { path: { match_id: matchId } } }), reading<Match>()),
-  /** «Invia per la firma» (REB-390): the document that can leave now goes to Documenso. */
-  sendMatch: (matchId: string) =>
-    unwrap(client.POST('/api/hub/matches/{match_id}/send', { params: { path: { match_id: matchId } } }), reading<SendReport>()),
-  /** «Aggiorna stato» (REB-407): what Documenso says, applied as the webhook would. */
-  refreshDocument: (documentId: string) =>
-    unwrap(
-      client.POST('/api/hub/contract-documents/{document_id}/refresh', {
-        params: { path: { document_id: documentId } },
-      }),
-      reading<ContractDocument>(),
-    ),
-  /** «Reinvia email»: the signing mail again, for a document still waiting. */
-  resendDocument: (documentId: string) =>
-    unwrap(
-      client.POST('/api/hub/contract-documents/{document_id}/resend', {
-        params: { path: { document_id: documentId } },
-      }),
-      reading<ContractDocument>(),
-    ),
-  /** «Annulla» on a framework agreement not signed yet. */
-  cancelDocument: (documentId: string) =>
-    unwrap(
-      client.POST('/api/hub/contract-documents/{document_id}/cancel', {
-        params: { path: { document_id: documentId } },
-      }),
-      reading<ContractDocument>(),
-    ),
-  /** «Registra disdetta» on an active framework agreement. */
-  recordNotice: (documentId: string) =>
-    unwrap(
-      client.POST('/api/hub/contract-documents/{document_id}/notice', {
-        params: { path: { document_id: documentId } },
-      }),
-      reading<ContractDocument>(),
-    ),
-  /** A plain href, like `cvUrl`: the route answers an attachment behind the cookie. */
-  contractPdfUrl: (documentId: string, signed = false) =>
-    `/api/hub/contract-documents/${encodeURIComponent(documentId)}/pdf${signed ? '?signed=true' : ''}`,
   /** The referral ledger (P-REB-44): every reward, newest first. */
   referrals: (params: ReferralLedgerParams = {}) =>
     unwrap(client.GET('/api/hub/referrals', { params: { query: filled(params) } }), reading<ReferralLedgerList>()),
@@ -1176,25 +961,6 @@ export type AiTest = Schemas['TestRead']
 export type AiAuditKind = AdminActionKind
 
 export type AiAuditAction = Schemas['AdminActionRead']
-
-/** One match's link to its deal on Pigro and the hours read from there (REB-498), the
- *  admin's: the browser never talks to the CRM, the hub's API does with its own token. */
-export const matches = {
-  /** One match as «Match e contratti» reads it: «Consuntivo» names it by its company,
-   *  its role and its letter's number (REB-503). */
-  get: (matchId: string) =>
-    unwrap(client.GET('/api/hub/matches/{match_id}', { params: { path: { match_id: matchId } } }), reading<Match>()),
-  /** «Riprova su Pigro»: the link runs now and the match comes back as it stands,
-   *  `linked` or with the CRM's sentence. The first link of a freelancer opens their
-   *  space and can take the CRM up to 90 seconds: no timeout here cuts it short. A 503
-   *  says this environment has no link to the CRM, a 502 that the CRM did not answer. */
-  linkPigro: (matchId: string) =>
-    unwrap(client.POST('/api/hub/matches/{match_id}/pigro/link', { params: { path: { match_id: matchId } } }), reading<Match>()),
-  /** «Consuntivo»: the hours on the match's deal over the whole engagement. A 409 says,
-   *  in the state's sentence, that the match is not linked yet. */
-  report: (matchId: string) =>
-    unwrap(client.GET('/api/hub/matches/{match_id}/report', { params: { path: { match_id: matchId } } }), reading<MatchReport>()),
-}
 
 // ---- whoever is signed in --------------------------------------------------------------
 

@@ -168,25 +168,6 @@ describe('«Richieste team» in the admin area', () => {
   })
 })
 
-describe('«Consuntivo»’s address (REB-503)', () => {
-  it.each([
-    ['2026-10', '2026-10'],
-    ['all', 'all'],
-    ['2026-13', undefined],
-    ['ottobre', undefined],
-  ])('opens the match’s report and keeps ?mese=%s as %s', async (month, kept) => {
-    const router = createRouter({
-      routeTree,
-      history: createMemoryHistory({ initialEntries: [`/admin/matches/m1/report?month=${month}`] }),
-    })
-    await router.load()
-    const page = router.state.matches.at(-1)!
-    expect(page.routeId).toBe('/signedIn/admin/matches/$id/report')
-    expect(page.params).toMatchObject({ id: 'm1' })
-    expect(page.search).toEqual({ month: kept })
-  })
-})
-
 describe('«Valutazione» is gone (REB-842)', () => {
   it('has no route, and its addresses match no page', async () => {
     // The evaluation is a command now (`rebase cards-eval`): nobody corrects or rates in the app.

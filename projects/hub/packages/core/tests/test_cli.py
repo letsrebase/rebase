@@ -1,11 +1,8 @@
-"""`rebase contracts-sweep` (REB-391), `rebase documenso-check` (REB-393) and `rebase
-cards-refresh` (REB-510): the CLI wiring alone. `SigningService.sweep`'s own behaviour
-is `test_signing.py`'s (`test_sweep_*`), `documenso_check`'s own behaviour, against a
-fake Documenso, is `test_documenso.py`'s, and `CardWriter.refresh_stale`'s is
-`test_cards.py`'s. No real database, Documenso or Claude is reached here:
-`get_settings`, `SigningService`, `CardWriter` and the settings `documenso_check` reads
-are all swapped out, so the tests prove `main` dispatches to each command and reports
-what it returns, nothing more."""
+"""`rebase crm-sweep` (REB-868, the old `contracts-sweep`'s CRM half after REB-1108) and `rebase
+cards-refresh` (REB-510): the CLI wiring alone. `CrmLeadService.link_pending`'s own behaviour is
+`test_crm_link.py`'s, and `CardWriter.refresh_stale`'s is `test_cards.py`'s. No real database or
+Claude is reached here: `get_settings`, `CrmLeadService` and `CardWriter` are swapped out, so the
+tests prove `main` dispatches to each command and reports what it returns, nothing more."""
 
 import base64
 import json
@@ -42,9 +39,6 @@ from rebase_core import (
     llm_batch as llm_batch_module,
 )
 from rebase_core import (
-    signing,
-)
-from rebase_core import (
     sources as sources_module,
 )
 from rebase_core.ai_config import AiConfigService
@@ -57,12 +51,11 @@ from rebase_core.cli import ai as cli_ai
 from rebase_core.cli import campaigns as cli_campaigns
 from rebase_core.cli import cards as cli_cards
 from rebase_core.cli import common as cli_common
+from rebase_core.cli import crm as cli_crm
 from rebase_core.cli import main
 from rebase_core.cli import members as cli_members
-from rebase_core.cli import signing as cli_signing
 from rebase_core.config import Settings
 from rebase_core.db import session_factory
-from rebase_core.engagements import EngagementService
 from rebase_core.errors import LlmCapReached
 from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
@@ -71,31 +64,11 @@ from rebase_core.llm import LlmResponse, RecordingCall, TaskOverride
 from rebase_core.llm_batch import RecordingBatch
 from rebase_core.models import AdminToken, CardEvalProfile, CardEvalRun, FreelancerCard, User
 from rebase_core.pigro_door import SweepCount
-from rebase_core.signing_recovery import SweepResult
 from rebase_core.team_schemas import Card, CardsRefreshed
 
 
-class _FakeRecovery:
-    def sweep(self) -> SweepResult:
-        return _FakeSigningService.result
-
-
-class _FakeSigningService:
-    """Records the session and the collaborators `contracts_sweep` built it with, and
-    answers `recovery.sweep()` with a canned result."""
-
-    instances: list["_FakeSigningService"] = []
-    result = SweepResult(touched=3, unconfirmed=0)
-
-    def __init__(self, session: object, **kwargs: Any) -> None:
-        self.session = session
-        self.kwargs = kwargs
-        self.recovery = _FakeRecovery()
-        _FakeSigningService.instances.append(self)
-
-
 class _FakeCrmLeadService:
-    """What `contracts_sweep`'s CRM round (REB-868) is built with, and a canned count."""
+    """What `crm_sweep` (REB-868) is built with, and a canned count."""
 
     instances: list["_FakeCrmLeadService"] = []
     count = SweepCount(linked=0, failed=0)
@@ -111,108 +84,38 @@ class _FakeCrmLeadService:
 
 @pytest.fixture(autouse=True)
 def _reset(monkeypatch: pytest.MonkeyPatch) -> None:
-    _FakeSigningService.instances = []
-    _FakeSigningService.result = SweepResult(touched=3, unconfirmed=0)
     _FakeCrmLeadService.instances = []
     _FakeCrmLeadService.count = SweepCount(linked=0, failed=0)
     monkeypatch.setattr(crm_link_module, "CrmLeadService", _FakeCrmLeadService)
 
 
-def test_the_contracts_sweep_command_builds_the_signing_service_and_prints_the_count(
+def test_the_crm_sweep_command_files_the_requests_and_prints_the_count(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(cli_signing, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
-    monkeypatch.setattr(signing, "SigningService", _FakeSigningService)
+    """REB-868: it reads over the seam that waits for a slow CRM, and prints the count it
+    filed, and the ones it left only when there are any."""
+    monkeypatch.setattr(cli_crm, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
 
-    assert main(["contracts-sweep"]) == 0
+    assert main(["crm-sweep"]) == 0
 
-    assert len(_FakeSigningService.instances) == 1
-    # Built by `signing_from_settings`: without a Documenso or a mail key, both are off.
-    kwargs = _FakeSigningService.instances[0].kwargs
-    assert (kwargs["documenso"], kwargs["sender"]) == (None, None)
-    # And with the link to Pigro, over the seam that waits for a new space (REB-499).
-    assert isinstance(kwargs["engagements"], EngagementService)
-    assert kwargs["engagements"].door.http is urllib_engagements_call
-    out = capsys.readouterr().out
-    assert out.strip().splitlines() == [
-        "3 documents resumed, 0 matches linked to Pigro",
-        "0 requests linked to the CRM",
-    ]
-
-
-def test_the_contracts_sweep_command_also_prints_the_unconfirmed_count_when_it_is_not_zero(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """REB-431: a refusal or an unreachable Documenso during the confirmation step
-    leaves a document `sent` -- not silently, any more. Left off the line entirely
-    when it is zero, so the ordinary run reads exactly as it always has."""
-    monkeypatch.setattr(cli_signing, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
-    monkeypatch.setattr(signing, "SigningService", _FakeSigningService)
-    _FakeSigningService.result = SweepResult(touched=1, unconfirmed=2)
-
-    assert main(["contracts-sweep"]) == 0
-
-    out = capsys.readouterr().out
-    assert out.strip().splitlines()[0] == (
-        "1 documents resumed, 2 unconfirmed, 0 matches linked to Pigro"
-    )
-
-
-def test_contracts_sweep_prints_the_pigro_counts(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """REB-499: the round after the documents says how many active matches it linked to
-    their deal on Pigro, always, and how many it tried and left unlinked when there are
-    any, so a CRM that stopped answering shows on the same line."""
-    monkeypatch.setattr(cli_signing, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
-    monkeypatch.setattr(signing, "SigningService", _FakeSigningService)
-    _FakeSigningService.result = SweepResult(touched=2, unconfirmed=0, linked=3, link_failed=1)
-
-    assert main(["contracts-sweep"]) == 0
-
-    out = capsys.readouterr().out
-    assert out.strip().splitlines()[0] == (
-        "2 documents resumed, 3 matches linked to Pigro, 1 not linked"
-    )
-
-    _FakeSigningService.result = SweepResult(touched=0, unconfirmed=1, linked=1, link_failed=0)
-
-    assert main(["contracts-sweep"]) == 0
-
-    out = capsys.readouterr().out
-    assert out.strip().splitlines()[0] == (
-        "0 documents resumed, 1 unconfirmed, 1 matches linked to Pigro"
-    )
-
-
-def test_contracts_sweep_files_the_requests_in_a_round_of_its_own(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """REB-868: the CRM round does not depend on the signing service (which has no
-    engagement service here), reads over the seam that waits for a slow CRM, and prints
-    its own line: the count it filed, and the ones it left only when there are any."""
-    monkeypatch.setattr(cli_signing, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
-    monkeypatch.setattr(signing, "SigningService", _FakeSigningService)
-    _FakeCrmLeadService.count = SweepCount(linked=4, failed=2)
-
-    assert main(["contracts-sweep"]) == 0
-
-    assert capsys.readouterr().out.strip().splitlines()[1] == (
-        "4 requests linked to the CRM, 2 not linked"
-    )
+    assert capsys.readouterr().out.strip() == "0 requests linked to the CRM"
     assert _FakeCrmLeadService.instances[0].http is urllib_engagements_call
 
+    _FakeCrmLeadService.count = SweepCount(linked=4, failed=2)
 
-def test_the_documenso_check_command_dispatches_to_documenso_check(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    assert main(["crm-sweep"]) == 0
+
+    assert capsys.readouterr().out.strip() == "4 requests linked to the CRM, 2 not linked"
+
+
+def test_the_commands_the_hub_gave_to_the_crm_are_gone(
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """No Documenso configured: `main` reaches `documenso_check` with this process's
-    settings and reports its refusal, rather than doing nothing on an unknown command."""
-    monkeypatch.setattr(cli_signing, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
-
-    assert main(["documenso-check"]) == 1
-
-    assert "signing is off" in capsys.readouterr().err
+    """REB-1108: signatures, the contracts' typesetting and Documenso are PigroCRM's."""
+    for name in ("contracts-sweep", "contracts-check", "documenso-check"):
+        with pytest.raises(SystemExit):
+            main([name])
+    capsys.readouterr()
 
 
 def test_the_campaigns_tick_command_runs_one_pass_and_prints_what_it_did(

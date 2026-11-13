@@ -33,7 +33,6 @@ from rebase_core.models import (
     CONTRACT_STATES,
     FILLED_BY,
     FREELANCER_STATES,
-    MATCH_STATES,
     NOTE_SOURCES,
     PIGRO_STATES,
     RECIPIENT_KINDS,
@@ -72,7 +71,6 @@ ReferredStatus = Annotated[
 ]
 # The CRM link of a match and of a company request share one set (`models.profiles`).
 PigroState = Annotated[str, Field(json_schema_extra=enum_of(PIGRO_STATES))]
-MatchState = Annotated[str, Field(json_schema_extra=enum_of(MATCH_STATES))]
 ContractKind = Annotated[str, Field(json_schema_extra=enum_of(CONTRACT_KINDS))]
 ContractState = Annotated[str, Field(json_schema_extra=enum_of(CONTRACT_STATES))]
 ReferralKind = Annotated[str, Field(json_schema_extra=enum_of(REFERRAL_KINDS))]

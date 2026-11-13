@@ -13,8 +13,8 @@ in `apps/web/src/lib/amount_cases.json`:
 - ASCII digits only, no sign, no exponent, no spaces or other separators inside.
 
 Precision is not the parser's business: the schemas refuse more than two decimals where a
-value is stored. The multipart wizard (`rebase_api.routers.freelancers`), the MCP tools and
-`MatchDrafts.proposal` read an amount through it, so «1.500» is 1500 whichever door it
+value is stored. The multipart wizard (`rebase_api.routers.freelancers`), and the MCP tools
+read an amount through it, so «1.500» is 1500 whichever door it
 came in by.
 """
 
@@ -33,7 +33,7 @@ _MACHINE = re.compile(r"[0-9]+(?:\.(?:[0-9]{1,2}|[0-9]{4,}))?")
 class NotAnAmount(ValueError):
     """What was typed is not an amount. Each caller turns it into its own refusal: a 422
     naming the field in the API, a `ToolError` in the MCP server, `non valido` in a
-    match's proposal."""
+    validated body."""
 
 
 def italian_amount(text: str) -> Decimal:

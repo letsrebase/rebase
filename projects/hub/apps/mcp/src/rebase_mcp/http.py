@@ -33,7 +33,6 @@ from rebase_core.config import Settings, get_settings
 from rebase_core.crm_link import CrmLeadService
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.dependencies import Dependencies, build_dependencies
-from rebase_core.engagements import EngagementService
 from rebase_core.errors import DomainError
 from rebase_core.http import HttpCall, urllib_call
 from rebase_core.ratelimit import UNKNOWN_CLIENT, RateLimiter, client_key
@@ -85,17 +84,9 @@ class McpHttpApp:
             self._dependencies = build_dependencies(self._settings, self._open, http=self._http)
         return self._dependencies
 
-    def engagements(self, session: Session) -> EngagementService:
-        """The service behind `link_match_to_pigro` and `get_match_report` (REB-501): the
-        injected client, so a test's fake reaches them too, except that production's
-        ten-second `urllib_call` becomes `urllib_engagements_call`, whose 90 seconds
-        leave room for a link that opens a new space."""
-        return self._deps().engagements(session)
-
     def crm_leads(self, session: Session) -> CrmLeadService:
-        """The service behind `link_company_to_pigro` (REB-869), over the same seam as
-        `engagements`, asking «Modelli AI» for the `crm_lead` draft only when one is
-        needed."""
+        """The service behind `link_company_to_pigro` (REB-869), asking «Modelli AI»
+        for the `crm_lead` draft only when one is needed."""
         return self._deps().crm_leads(session)
 
     def _open(self) -> AbstractContextManager[Session]:
@@ -111,11 +102,8 @@ class McpHttpApp:
                 settings=self._settings,
                 http=self._http,
                 middleware=[AdminFromRequest()],
-                renderer=deps.renderer,
-                signing=deps.signing,
                 card_llm=deps.card_llm,
                 sender=deps.sender,
-                engagements=deps.engagements,
                 crm_leads=deps.crm_leads,
             )
             self._starlette = server.streamable_http_app(

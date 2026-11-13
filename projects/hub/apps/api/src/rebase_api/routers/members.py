@@ -65,7 +65,6 @@ from rebase_api.downloads import cv_response, pdf_response, perk_response
 from rebase_api.ratelimit import spend_one
 from rebase_core.card_writer import write_after_response
 from rebase_core.company_schemas import CompanyFields, CompanyUpdate
-from rebase_core.contract_schemas import MemberContracts
 from rebase_core.freelancer_schemas import MemberUpdate
 from rebase_core.mail import send_after_response
 from rebase_core.member_contracts import MemberContractService
@@ -73,6 +72,7 @@ from rebase_core.member_schemas import (
     ContactPointsUpdate,
     EnterRequest,
     LinkRequest,
+    MemberContracts,
     MemberLookup,
     MemberLookupRequest,
     MeRead,

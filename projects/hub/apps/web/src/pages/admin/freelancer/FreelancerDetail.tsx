@@ -142,8 +142,8 @@ export function AdminFreelancerDetail() {
           )}
           {f.deleted_at === null && (
             <Button asChild variant="outline" size="sm">
-              <Link to="/admin/freelance/$id/contracts" params={{ id: f.id }}>
-                Match e contratti
+              <Link to="/admin/freelance/$id/match/new" params={{ id: f.id }}>
+                Crea match
               </Link>
             </Button>
           )}

@@ -49,11 +49,8 @@ def main() -> int:
         admin,
         settings=settings,
         http=urllib_call,
-        renderer=deps.renderer,
-        signing=deps.signing,
         card_llm=deps.card_llm,
         sender=deps.sender,
-        engagements=deps.engagements,
         crm_leads=deps.crm_leads,
     ).run("stdio")
     return 0

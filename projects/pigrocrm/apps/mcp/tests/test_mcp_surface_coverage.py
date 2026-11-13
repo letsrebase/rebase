@@ -1346,13 +1346,6 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "REB-1019: refuses with `signing_unavailable` when the installation has no mail provider: "
         "a precondition of the tools that mail the freelancer, not an operation"
     ),
-    ("EngagementService", "ensure"): (
-        "the engagements door another product, the hub, calls under its own "
-        "PIGROCRM_ENGAGEMENTS_TOKEN (spec 2026-09-25 §2.3): setting up a match's space, "
-        "customer and deal is the hub's own act on a signed letter, never something an "
-        "agent inside a space decides on the titolare's behalf, and no per-space schema "
-        "changed for it (§2.6)"
-    ),
     ("LeadService", "file"): (
         "the leads route of the same hub door (spec 2026-10-30 § 2, REB-866), under the "
         "same PIGROCRM_ENGAGEMENTS_TOKEN: filing a company's request in rebase's space is "
@@ -1385,10 +1378,11 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "agent in the freelancer's space has no reason to hold it"
     ),
     ("EngagementService", "report"): (
-        "reads a match's hours back for the same hub door (spec 2026-09-25 §2.4), never "
-        "for an agent in the space: the deal's own hours are already `list_time_entries`, "
-        "and this route reads nothing else of the space -- not its organizations, not its "
-        "other deals, not an invoice these hours do not sit on"
+        "reads a hub-era match's deal hours with the invoices they sit on, for the "
+        "collaborators' days report only (`get_engagement_report` is the agent's read of it): "
+        "the deal's own hours are already `list_time_entries`, and this reads nothing else of "
+        "the space -- not its organizations, not its other deals, not an invoice these hours "
+        "do not sit on"
     ),
     ("HubDoorService", "availability"): (
         "REB-1107: the hub's read of a freelancer's committed days by hub id, through the root "

@@ -27,30 +27,22 @@ from rebase_core.admin_tokens import AdminRead
 from rebase_core.amounts import NotAnAmount, italian_amount
 from rebase_core.audit import AdminActionService
 from rebase_core.config import Settings
-from rebase_core.contracts.render import Renderer
 from rebase_core.crm_link import CrmLeadService
-from rebase_core.engagements import EngagementService
 from rebase_core.errors import DomainError
 from rebase_core.http import HttpCall, urllib_call
 from rebase_core.llm import LlmCall
 from rebase_core.mail import EmailSender
-from rebase_core.match_drafts import NOT_VALID, field_reason
-from rebase_core.match_reads import MatchReads
 from rebase_core.pigro_door import FreelancerDoor, freelancer_door
 from rebase_core.ratelimit import RateLimiter
 from rebase_core.schema_common import Remote
 from rebase_core.search import SEARCH_MAX_LENGTH
-from rebase_core.signing import SigningFactory, SigningService
+from rebase_core.validation import NOT_VALID, field_reason
 
 _REMOTE_WORDS: tuple[Remote, ...] = get_args(Remote)
 SessionFactory = sessionmaker[Session]
 # Who is calling: resolved by the transport, read by the tools that sign something.
 AdminProvider = Callable[[], AdminRead]
-# What builds the `EngagementService` `get_match_report` and `link_match_to_pigro` call,
-# the way `SigningFactory` builds the signing one: real from settings in production, a
-# recorded `HttpCall` in a test.
-EngagementsFactory = Callable[[Session], EngagementService]
-# The same for `link_company_to_pigro` (REB-869): the service that files a request in the CRM.
+# What builds the service behind `link_company_to_pigro` (REB-869): it files a request in the CRM.
 CrmLeadsFactory = Callable[[Session], CrmLeadService]
 # A model seam asked on each tool call, `None` when no model is configured for the task.
 LlmSource = Callable[[], LlmCall | None]
@@ -97,13 +89,12 @@ _REASON_WORDS = {"manca": "missing", NOT_VALID: "not valid"}
 
 
 def field_refusal(exc: PydanticValidationError) -> ToolError:
-    """A tool's input refused as «field: reason»: `field_reason`'s
-    words (those `MatchDrafts.proposal` uses), never Pydantic's own text, which repeats
-    the value typed -- a tax identifier does not come back in an answer this way -- and
-    for a text past its limit the limit itself, the way the note tools say it («at
-    most 4000 characters»). An optional text's limit is Pydantic's `too_long`, a plain
-    one's `string_too_long`: both carry `max_length`. `set_freelancer_tax_data`,
-    `create_match`'s `expected_days` and the team tools refuse through this."""
+    """A tool's input refused as «field: reason»: `field_reason`'s words, never Pydantic's
+    own text, which repeats the value typed -- a tax identifier does not come back in an answer
+    this way -- and for a text past its limit the limit itself, the way the note tools say it
+    («at most 4000 characters»). An optional text's limit is Pydantic's `too_long`, a plain
+    one's `string_too_long`: both carry `max_length`. The company and team tools refuse
+    through this."""
     error = exc.errors()[0]
     field = ".".join(str(part) for part in error["loc"])
     if error["type"] in {"string_too_long", "too_long"}:
@@ -236,11 +227,8 @@ class Deps:
     admin: AdminProvider
     settings: Settings | None
     http: HttpCall | None
-    renderer: Renderer | None
-    signing: SigningFactory | None
     card_llm: LlmSource | None
     sender: EmailSender | None
-    engagements: EngagementsFactory | None
     crm_leads: CrmLeadsFactory | None
     # The per-admin cap on what spends the model (`spend_model_call`).
     model_calls: RateLimiter
@@ -268,13 +256,6 @@ class Deps:
         return self.call(lambda session: [item.model_dump(mode="json") for item in call(session)])
 
     @property
-    def pigro_configured(self) -> bool:
-        """Whether the CRM's engagements door has a token here: without one an active
-        match's `situation` says the report is not configured and offers no
-        `retry_pigro`, as the admin API's own match reads do (spec § 3.2)."""
-        return self.settings is not None and bool(self.settings.pigro_engagements_token)
-
-    @property
     def freelancer_door(self) -> FreelancerDoor:
         """The CRM's reads of a freelancer (REB-1107), for the tools that decide on what the
         CRM holds (the merge). With no settings handed in the token is empty, so every read
@@ -283,23 +264,11 @@ class Deps:
         return freelancer_door(settings, self.http if self.http is not None else urllib_call)
 
     @property
-    def signer_json(self) -> str:
-        return self.settings.signer_json if self.settings is not None else ""
-
-    @property
     def campaign_settings(self) -> Settings:
         """The campaign tools only read; with no settings handed in the defaults do."""
         if self.settings is not None:
             return self.settings
         return Settings(_env_file=None)  # type: ignore[call-arg]
-
-    def reading(self, session: Session) -> MatchReads:
-        return MatchReads(session, pigro_configured=self.pigro_configured)
-
-    def contracts(self, session: Session) -> SigningService:
-        if self.signing is not None:
-            return self.signing(session)
-        return SigningService(session, renderer=self.renderer)
 
     def team_settings(self) -> Settings:
         """The team requests, the AI configuration and the cloud all need real settings

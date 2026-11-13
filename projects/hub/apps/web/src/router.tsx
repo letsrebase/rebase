@@ -8,13 +8,11 @@ import {
 } from '@tanstack/react-router'
 import type {
   CompaniesFilters,
-  MatchesFilters,
   Remote,
   TalentsFilters,
   TeamProposalsFilters,
   TeamRequestsFilters,
 } from '@/lib/api'
-import { periodParam } from '@/lib/report'
 import { parseSearch } from '@/lib/search'
 import { Shell } from '@/components/Shell'
 import { Chooser } from '@/pages/Chooser'
@@ -35,15 +33,12 @@ const AdminAiModels = lazyRouteComponent(() => import('@/pages/admin/AiModels'),
 const AdminGuard = lazyRouteComponent(() => import('@/pages/admin/AdminGuard'), 'AdminGuard')
 const AdminGuide = lazyRouteComponent(() => import('@/pages/admin/Guide'), 'AdminGuide')
 const AdminPigro = lazyRouteComponent(() => import('@/pages/admin/Pigro'), 'AdminPigro')
-const AdminMatchReport = lazyRouteComponent(() => import('@/pages/admin/MatchReport'), 'AdminMatchReport')
-const AdminContracts = lazyRouteComponent(() => import('@/pages/admin/Contracts'), 'AdminContracts')
 const AdminCampaign = lazyRouteComponent(() => import('@/pages/admin/Campaign'), 'AdminCampaign')
 const AdminCampaigns = lazyRouteComponent(() => import('@/pages/admin/Campaigns'), 'AdminCampaigns')
 const AdminCreateCampaign = lazyRouteComponent(() => import('@/pages/admin/CreateCampaign'), 'AdminCreateCampaign')
 const AdminCreateCompany = lazyRouteComponent(() => import('@/pages/admin/CreateCompany'), 'AdminCreateCompany')
 const AdminOpenEngagement = lazyRouteComponent(() => import('@/pages/admin/OpenEngagement'), 'AdminOpenEngagement')
 const AdminDuplicates = lazyRouteComponent(() => import('@/pages/admin/Duplicates'), 'AdminDuplicates')
-const AdminMatches = lazyRouteComponent(() => import('@/pages/admin/Matches'), 'AdminMatches')
 const AdminReferrals = lazyRouteComponent(() => import('@/pages/admin/Referrals'), 'AdminReferrals')
 const AdminTeamProposals = lazyRouteComponent(() => import('@/pages/admin/TeamProposals'), 'AdminTeamProposals')
 const AdminTeamRequest = lazyRouteComponent(() => import('@/pages/admin/TeamRequest'), 'AdminTeamRequest')
@@ -430,13 +425,7 @@ const adminFreelanceDetail = createRoute({
   path: '/freelance/$id',
   component: AdminFreelancerDetail,
 })
-// REB-387: a card's matches and contracts, from the talent row's menu and the card's header.
-const adminFreelanceContracts = createRoute({
-  getParentRoute: () => adminArea,
-  path: '/freelance/$id/contracts',
-  component: AdminContracts,
-})
-// REB-1105: «Crea match», from the talent row's menu and the contracts page, hands the pair over to the CRM's engagement form.
+// REB-1105: «Crea match», from the talent row's menu, hands the pair over to the CRM's engagement form.
 const adminFreelanceMatchNew = createRoute({
   getParentRoute: () => adminArea,
   path: '/freelance/$id/match/new',
@@ -454,19 +443,8 @@ const adminFreelanceRedirect = createRoute({
     throw redirect({ to: '/admin/talent' })
   },
 })
-// REB-413: the last addition to the milestone, listing every match the other admin
-// pages create rather than any one card's or request's own.
-const adminMatches = createRoute({
-  getParentRoute: () => adminArea,
-  path: '/matches',
-  component: AdminMatches,
-  validateSearch: (search: Record<string, unknown>): MatchesFilters => ({
-    status: strParam(search.status),
-    q: strParam(search.q),
-  }),
-})
 // REB-514: «Richieste team», the requests the team builder files, and one request's
-// page. The state pill lives in the URL, as «Match»'s does.
+// page. The state pill lives in the URL.
 const adminTeamRequests = createRoute({
   getParentRoute: () => adminArea,
   path: '/team',
@@ -489,15 +467,6 @@ const adminTeamProposals = createRoute({
   validateSearch: (search: Record<string, unknown>): TeamProposalsFilters => ({
     outcome: strParam(search.outcome),
   }),
-})
-// REB-503: «Consuntivo», a match's hours on its deal on Pigro, from the match card and
-// the «Pigro» column of «Match». `month` is the period shown, a month as `YYYY-MM` or
-// `all` for the whole engagement; absent, or anything else, is the current month.
-const adminMatchReport = createRoute({
-  getParentRoute: () => adminArea,
-  path: '/matches/$id/report',
-  component: AdminMatchReport,
-  validateSearch: (search: Record<string, unknown>): { month?: string } => ({ month: periodParam(modernSearch(search).month) }),
 })
 // P-REB-41: the list, a stub for the new/edit form (Task 20) and a stub for the
 // detail (Task 21). `adminCampaignNew` sits before `adminCampaign` in the tree below --
@@ -650,11 +619,8 @@ export const routeTree = root.addChildren([
       adminTalentLead,
       adminTalentLeadRedirect,
       adminFreelanceDetail,
-      adminFreelanceContracts,
       adminFreelanceMatchNew,
       adminFreelanceRedirect,
-      adminMatches,
-      adminMatchReport,
       adminTeamRequests,
       adminTeamRequest,
       adminTeamProposals,
@@ -690,10 +656,5 @@ export const router = createRouter({ routeTree, basepath: '/hub', parseSearch })
 declare module '@tanstack/react-router' {
   interface Register {
     router: typeof router
-  }
-  interface HistoryState {
-    /** A sentence the page navigated to shows on arrival: «Crea match» leaves the send
-     *  report's, or that the draft is saved, for «Match e contratti» (REB-476). */
-    notice?: string
   }
 }

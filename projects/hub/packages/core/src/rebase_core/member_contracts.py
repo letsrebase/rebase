@@ -28,9 +28,9 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from rebase_core.contract_schemas import ContractPdf, MemberContract, MemberContracts
 from rebase_core.door_schemas import CrmDocument
 from rebase_core.errors import NotFound
+from rebase_core.member_schemas import ContractPdf, MemberContract, MemberContracts
 from rebase_core.members import MemberService
 from rebase_core.pigro_door import NOT_THE_SHAPE, FreelancerDoor, Gone, PigroUnavailable
 from rebase_core.regimes import OCCASIONAL, VAT_REGISTERED, as_regime, document_label

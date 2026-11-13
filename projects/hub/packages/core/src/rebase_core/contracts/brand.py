@@ -3,8 +3,8 @@ weights the site uses, and the echo logo in the title block.
 
 The same reading `tools/build_guide_pdf.py` does, written again here rather than
 imported: a package cannot import a script, and that script's own bytes are part of the
-guide's lock (`test_guide_pdf.py`), so it is not the one to move. `test_contract_pdf.py`
-compares the two readings, so two documents of one brand cannot drift apart. The files
+guide's lock (`test_guide_pdf.py`), so it is not the one to move. `test_brand.py` compares
+the two readings, so two documents of one brand cannot drift apart. The files
 are read at the repository's own paths, which the API image mirrors (`Dockerfile.api`
 copies all three), so the woff2 in `shared/brand/fonts` stays the single source of the
 typeface and `shared/brand/echo` the single source of the logo. The echo is the

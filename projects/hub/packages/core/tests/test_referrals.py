@@ -1,7 +1,6 @@
 """P-REB-44: a member's own code, and who it brings in through a sign-up or a freelancer's
 card: the referral each rif makes and the login that verifies it. The path from a signed
-letter to the reward reuses `signing_fixtures.py` and `match_fixtures.py`: nothing here runs
-pandoc or reaches a real Documenso.
+notice to the reward is in `test_referral_rewards.py`.
 """
 
 from datetime import UTC, datetime, timedelta

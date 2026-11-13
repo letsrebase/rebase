@@ -21,7 +21,6 @@ ADA = "https://www.linkedin.com/in/ada-lovelace"
 TABLES = (
     "admin_actions",
     "notes",
-    "contract_documents",
     "freelancer_cards",
     "freelancers",
     "logins",

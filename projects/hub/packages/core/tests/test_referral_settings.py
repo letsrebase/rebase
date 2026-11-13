@@ -7,33 +7,22 @@ from decimal import Decimal
 
 import pytest
 from admins import an_admin
-from fakes_contracts import FakeRenderer
-from fakes_documenso import FakeDocumenso
-from match_fixtures import SIGNER, TODAY, _fiscal
 from referral_fixtures import (
     _card,
-    _match_body,
+    _engagement_sent,
     _member,
     _request,
-    _sent_with_body,
-    _sign_the_letter,
+    _sign,
     _signed_reward,
     clean_referrals,  # noqa: F401  (fixture)
-)
-from signing_fixtures import (
-    _active_framework,
-    _signing,
 )
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from rebase_core.db import session_factory
 from rebase_core.errors import ValidationFailed
-from rebase_core.mail import RecordingSender
-from rebase_core.matches import MatchService
 from rebase_core.models import (
     Company,
-    Match,
     ReferralReward,
     User,
 )
@@ -70,11 +59,7 @@ def test_set_state_moves_one_step_at_a_time(clean_referrals: Session) -> None:
     admin_id = an_admin(clean_referrals)
     freelancer_id = _card(clean_referrals, ref=code)
     company_id = _request(clean_referrals)
-    _fiscal(clean_referrals, freelancer_id, admin_id)
-    _active_framework(clean_referrals, freelancer_id, admin_id)
-    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
-    match = _sent_with_body(clean_referrals, renderer, fake, freelancer_id, company_id, admin_id)
-    _sign_the_letter(clean_referrals, renderer, fake, match)
+    _sign(clean_referrals, _engagement_sent(clean_referrals, freelancer_id, company_id))
     reward = clean_referrals.scalar(select(ReferralReward))
     assert reward is not None
     service = ReferralLedgerService(clean_referrals)
@@ -98,11 +83,7 @@ def test_set_price_only_before_confirmation(clean_referrals: Session) -> None:
     admin_id = an_admin(clean_referrals)
     freelancer_id = _card(clean_referrals, ref=code)
     company_id = _request(clean_referrals)
-    _fiscal(clean_referrals, freelancer_id, admin_id)
-    _active_framework(clean_referrals, freelancer_id, admin_id)
-    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
-    match = _sent_with_body(clean_referrals, renderer, fake, freelancer_id, company_id, admin_id)
-    _sign_the_letter(clean_referrals, renderer, fake, match)
+    _sign(clean_referrals, _engagement_sent(clean_referrals, freelancer_id, company_id))
     reward = clean_referrals.scalar(select(ReferralReward))
     assert reward is not None
     service = ReferralLedgerService(clean_referrals)
@@ -274,18 +255,10 @@ def test_set_state_refuses_to_confirm_an_unpriced_reward(clean_referrals: Sessio
     admin_id = an_admin(clean_referrals)
     freelancer_id = _card(clean_referrals, ref=code)
     company_id = _request(clean_referrals)
-    _fiscal(clean_referrals, freelancer_id, admin_id)
-    _active_framework(clean_referrals, freelancer_id, admin_id)
-    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
-    body = _match_body(company_id, expected_days=None)
-    body.letter.mode, body.letter.unit = "lump_sum", "a corpo"
-    match = MatchService(clean_referrals, renderer, SIGNER, today=lambda: TODAY).create(
-        freelancer_id, body, admin_id
+    key = _engagement_sent(
+        clean_referrals, freelancer_id, company_id, mode="flat", expected_days=None
     )
-    _signing(clean_referrals, renderer, fake, RecordingSender()).send_match(match.id, admin_id)
-    match = clean_referrals.get(Match, match.id)
-    assert match is not None
-    _sign_the_letter(clean_referrals, renderer, fake, match)
+    _sign(clean_referrals, key)
     reward = clean_referrals.scalar(select(ReferralReward))
     assert reward is not None and reward.reward_amount is None
     service = ReferralLedgerService(clean_referrals)
@@ -294,40 +267,27 @@ def test_set_state_refuses_to_confirm_an_unpriced_reward(clean_referrals: Sessio
         service.set_state(reward.id, "confirmed", admin_id)
 
 
-def test_reward_reads_the_matchs_own_budget_snapshot_not_a_later_company_edit(
+def test_reward_reads_the_engagements_own_budget_snapshot_not_a_later_company_edit(
     clean_referrals: Session,
 ) -> None:
     """Regression: this used to re-read `Company.daily_budget` live, at signing
-    time; an admin editing the company's request between the match and the signature
-    would silently change a reward the match had already promised (Greptile,
-    P-REB-44). `matches.company_daily_budget` snapshots it at match creation,
-    the same way `letter_fee` already does."""
-    referrer_id = _member(clean_referrals)
-    code = ReferralService(clean_referrals).code_for(referrer_id)
-    admin_id = an_admin(clean_referrals)
+    time; an admin editing the company's request between the engagement and the signature
+    would silently change a reward the engagement had already promised (Greptile,
+    P-REB-44). `hub_engagements.company_daily_budget` snapshots it when the hub opens the
+    engagement, the same way the fee is the letter's own."""
+    code = ReferralService(clean_referrals).code_for(_member(clean_referrals))
     freelancer_id = _card(clean_referrals, ref=code)
     company_id = _request(clean_referrals)
-    _fiscal(clean_referrals, freelancer_id, admin_id)
-    _active_framework(clean_referrals, freelancer_id, admin_id)
-    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
-    match = MatchService(clean_referrals, renderer, SIGNER, today=lambda: TODAY).create(
-        freelancer_id, _match_body(company_id), admin_id
-    )
-    match_row = clean_referrals.get(Match, match.id)
-    assert match_row is not None
-    assert match_row.company_daily_budget == Decimal("800.00")
+    key = _engagement_sent(clean_referrals, freelancer_id, company_id)
 
     company = clean_referrals.get(Company, company_id)
     assert company is not None
     company.daily_budget = Decimal("2000")
     clean_referrals.commit()
 
-    _signing(clean_referrals, renderer, fake, RecordingSender()).send_match(match.id, admin_id)
-    match = clean_referrals.get(Match, match.id)
-    assert match is not None
-    _sign_the_letter(clean_referrals, renderer, fake, match)
+    _sign(clean_referrals, key)
 
     reward = clean_referrals.scalar(select(ReferralReward))
     assert reward is not None
-    # (800 - 450) * 20, the budget at match creation, never the 2000 it became after.
+    # (800 - 450) * 20, the budget when the engagement was opened, never the 2000 it became.
     assert reward.base_amount == Decimal("7000.00")

@@ -1,11 +1,11 @@
 """A completed company request filed in rebase's own CRM (REB-868, spec 2026-10-30 § 4).
 
-`CrmLeadService` is `EngagementService`'s twin for a request: the same states as a match's
-Pigro link (`to_link`, `linked`, `error`, `rejected`), the same house rule (**no
+`CrmLeadService` files a request through the CRM's leads door: the states of its link
+(`to_link`, `linked`, `error`, `rejected`, `crm_words`), the house rule (**no
 database lock is held across the AI call or the HTTP call**: the row is locked to read what
 is sent and to stamp the attempt, released with that commit, and locked again to write what
-the CRM answered), the same seam (`HttpCall`, `urllib_engagements_call` in production) and
-the same token (`REBASE_PIGRO_ENGAGEMENTS_TOKEN`). The door is
+the CRM answered), the seam (`HttpCall`, `urllib_engagements_call` in production) and
+the token (`REBASE_PIGRO_ENGAGEMENTS_TOKEN`). The door is
 `PUT {pigro_api_url}/api/rebase/leads/{request_id}`, idempotent on the request's id.
 
 The deal is built in code. The AI (`rebase_core.crm_lead`) gives a bounded draft, made once
@@ -20,7 +20,7 @@ so `pigrocrm-v*` ships before `hub-v*`.
 
 Who runs it: a `BackgroundTasks` job right after the response (`link_after_response`), on
 every path that writes a request; `link_pending`, the recovery round of `rebase
-contracts-sweep`, which picks up only the rows in `to_link` or `error` that are not
+crm-sweep`, which picks up only the rows in `to_link` or `error` that are not
 being attempted right now (a row written before this shipped has a `NULL` state and is
 never picked up); and an admin's «Riprova», or «Collega a un altro deal» with a `deal_id`,
 which makes the door link that deal and create nothing. A request changed after it was
@@ -34,6 +34,7 @@ from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, NamedTuple
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import or_, select
@@ -42,13 +43,18 @@ from sqlalchemy.orm import Session
 from rebase_core.audit import AdminActionService, utcnow
 from rebase_core.config import Settings
 from rebase_core.crm_lead import LeadDraft, draft_lead
-from rebase_core.crm_words import CONTACT_PERSON_WITHOUT_NAME, crm_state_sentence
+from rebase_core.crm_words import (
+    CONTACT_PERSON_WITHOUT_NAME,
+    ERROR,
+    HTTPS_ONLY,
+    LINKED,
+    TO_LINK,
+    crm_state_sentence,
+)
 from rebase_core.db import SessionOpener
 from rebase_core.errors import InvalidState, NotFound
-from rebase_core.framework import rome_today
 from rebase_core.http import HttpCall
 from rebase_core.llm import LlmCall
-from rebase_core.match_words import ERROR, HTTPS_ONLY, LINKED, TO_LINK
 from rebase_core.models import (
     CONTACT_NOTE_MAX_LENGTH,
     CONTACT_VALUE_MAX_LENGTH,
@@ -69,6 +75,9 @@ from rebase_core.pigro_door import (
 _log = logging.getLogger(__name__)
 
 ENTITY = "company"
+# Dates are Rome's, where rebase works: a request filed at 23:30 UTC on 30 September is dated
+# 1 October.
+ROME = ZoneInfo("Europe/Rome")
 LEADS_PATH = "/api/rebase/leads"
 # The states the sweep picks up; `rejected` waits for a person.
 PENDING = (TO_LINK, ERROR)
@@ -195,6 +204,10 @@ class CrmLinkResult:
     # False when nothing was asked of the CRM: a request deleted, waiting for a token, or one
     # the sweep found already taken care of.
     asked: bool = True
+
+
+def rome_today() -> date:
+    return datetime.now(ROME).date()
 
 
 class CrmLeadService:

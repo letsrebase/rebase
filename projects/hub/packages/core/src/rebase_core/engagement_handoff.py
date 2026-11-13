@@ -29,9 +29,9 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from rebase_core.crm_link import contact_point_payload
+from rebase_core.crm_words import LINKED, REJECTED
 from rebase_core.errors import NotFound
-from rebase_core.match_words import LINKED, REJECTED
-from rebase_core.models import Company, Freelancer, FreelancerFiscal, HubEngagement, User
+from rebase_core.models import Company, Freelancer, HubEngagement, User
 from rebase_core.pigro_door import FreelancerDoor, speaks_https
 
 NOT_LINKED = (
@@ -147,22 +147,16 @@ class EngagementHandoff:
         )
 
     def _organization(self, freelancer: Freelancer) -> UUID:
-        """The freelancer's organization in the CRM, from the card as the hub holds it now.
+        """The freelancer's organization in the CRM, from the card as the hub holds it now (name,
+        login address and contact points: the tax data are the CRM's own since REB-1108).
         The session's read transaction is let go before the call: no lock is held while the CRM
         answers."""
         user = self.session.scalars(select(User).where(User.id == freelancer.user_id)).one()
-        fiscal = self.session.scalars(
-            select(FreelancerFiscal).where(FreelancerFiscal.freelancer_id == freelancer.id)
-        ).first()
         card: dict[str, Any] = {
             "legal_name": f"{user.first_name} {user.last_name}".strip(),
             "email": user.email,
             "contact_points": contact_point_payload(user.contact_points),
         }
-        if fiscal is not None:
-            card["tax_code"] = fiscal.tax_code
-            if fiscal.vat_number:
-                card["vat_number"] = fiscal.vat_number
         freelancer_id = freelancer.id
         self.session.rollback()
         outcome = self.door.ensure_organization(freelancer_id, card)

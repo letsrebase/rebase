@@ -286,15 +286,15 @@
               ];
               core = ./projects/pigrocrm/packages/core;
             };
-            # `rebase_core.contracts.render` shells out to bare `pandoc` and `typst`,
-            # and `.brand` reads the palette, the typeface and the echo logo at the
-            # repository's own paths (`REPO = parents[7]`), which a store venv does not
-            # have. Both binaries and a copy of the three files go into this
-            # derivation, the files at `share/hub-api/brand`; `postBuild` then rewraps
-            # `bin/rebase` (the CLI: `contracts-check`, `contracts-sweep`) and
+            # The anonymous CV's print (`rebase_core.anonymous_cv.render`) shells out to bare
+            # `typst`, and `rebase_core.contracts.brand` reads the palette, the typeface and
+            # the echo logo at the repository's own paths (`REPO = parents[7]`), which a
+            # store venv does not have. The binary and a copy of the three files go into
+            # this derivation, the files at `share/hub-api/brand`; `postBuild` then rewraps
+            # `bin/rebase` (the CLI: `crm-sweep`, `cards-refresh`, ...) and
             # `bin/uvicorn` (both `rebase_api.main:app` and `rebase_mcp.http:app` run
             # from it, one venv for both) with `makeWrapper`, so every entry point that
-            # can render a contract finds `pandoc`, `typst` and the brand on its own,
+            # can print a PDF finds `typst` and the brand on its own,
             # with nothing set by a caller (REB-403, the echo since REB-479).
             hub-api = pkgs.symlinkJoin {
               name = "hub-api";
@@ -307,7 +307,6 @@
                   ];
                   core = ./projects/hub/packages/core;
                 })
-                pandoc
                 typst
                 (pkgs.runCommand "hub-api-brand" { } ''
                   install -Dm444 ${./shared/brand/palette.css} \
@@ -453,31 +452,7 @@
             # layout: two modules adding locations to the same virtual host.
             hub =
               let
-                # A minimal document the sweep has work on (REB-403, Greptile's review
-                # of the first cut): one user, one freelancer, one framework agreement
-                # `sent` with an envelope, every NOT NULL column filled, every check
-                # constraint satisfied (`ck_contract_documents_envelope_item` wants
-                # `documenso_item_id` set alongside `documenso_id`; `kind = 'framework'`
-                # wants `match_id`/`number` both null). Verified by hand first against a
-                # throwaway Postgres with the same migrations (see the report).
-                sweepFixtureSql = pkgs.writeText "rebase-hub-sweep-fixture.sql" ''
-                  WITH u AS (
-                    INSERT INTO users (id, email, first_name, last_name, role, active)
-                    VALUES (gen_random_uuid(), 'sweep-test@example.com', 'Test', 'Sweep', 'member', true)
-                    RETURNING id
-                  ), f AS (
-                    INSERT INTO freelancers (id, user_id, links, status, filled_by)
-                    SELECT gen_random_uuid(), u.id, '[]'::jsonb, 'new', 'person' FROM u
-                    RETURNING id
-                  )
-                  INSERT INTO contract_documents
-                    (id, kind, freelancer_id, text_version, draft_text, data, pdf, status,
-                     documenso_id, documenso_item_id, created_by)
-                  SELECT gen_random_uuid(), 'framework', f.id, '1.0', false, '{}'::jsonb,
-                         '\x255044462d312e34'::bytea, 'sent',
-                         'env_test_sweep', 'item_test_sweep', u.id
-                  FROM f, u;
-                '';
+                hubApi = self.packages.${pkgs.stdenv.hostPlatform.system}.hub-api;
               in
               pkgs.testers.runNixOSTest {
                 name = "hub";
@@ -489,14 +464,6 @@
                   services.rebase-hub = {
                     enable = true;
                     domain = "hub.test";
-                    # An address the VM's own loopback refuses outright, so a document
-                    # awaiting confirmation fails fast with `DocumensoFailed` rather than
-                    # timing out: enough to make the sweep's `unconfirmed` count move,
-                    # never a real Documenso.
-                    settings = {
-                      documenso_url = "http://127.0.0.1:1";
-                      documenso_api_token = "unreachable-on-purpose";
-                    };
                   };
                   services.rebase-website = {
                     enable = true;
@@ -532,24 +499,16 @@
                   # The admin's MCP server behind /api/hub/mcp (REB-213): the process
                   # itself refuses a call with no token.
                   machine.succeed("curl -sS -o /dev/null -D - -X POST http://localhost/api/hub/mcp | grep -i '^www-authenticate: Bearer'")
-                  # The contracts sweep (REB-403) needs a document to find: one user,
-                  # one freelancer, one framework agreement `inviato` with an envelope
-                  # (`sweepFixtureSql`), as the superuser the same way the CRM's test
-                  # reaches its own database.
-                  machine.succeed(
-                      "su postgres -s /bin/sh -c 'psql -d rebase -v ON_ERROR_STOP=1 -f ${sweepFixtureSql}'"
-                  )
-                  # A oneshot a timer fires every ten minutes; starting it once here is
-                  # what the timer does. `settings.documenso_url` above answers nothing
-                  # on this machine, so confirming the envelope fails fast, and the
-                  # printed line proves the unit found the row and worked on it with its
-                  # own environment and permissions, not that an empty database left it
-                  # nothing to do.
-                  machine.succeed("systemctl start rebase-hub-contracts-sweep.service")
+                  # The CRM sweep (REB-868, the old contracts sweep's other half) is a
+                  # oneshot a timer fires every ten minutes; starting it once here is
+                  # what the timer does. With no company request in the database it
+                  # files none, and the printed line proves the unit ran with its own
+                  # environment and permissions against the migrated database.
+                  machine.succeed("systemctl start rebase-hub-crm-sweep.service")
                   out = machine.succeed(
-                      "journalctl -u rebase-hub-contracts-sweep --no-pager -o cat"
+                      "journalctl -u rebase-hub-crm-sweep --no-pager -o cat"
                   )
-                  assert "0 documenti ripresi, 1 non confermati" in out, out
+                  assert "0 requests linked to the CRM" in out, out
                   # The campaigns tick (REB-523): its timer is active and fires its
                   # oneshot, and the timer does it alone, a minute after boot, with no
                   # `systemctl start` from here. The line is a full pass against the
@@ -565,18 +524,18 @@
                       "journalctl -u rebase-hub-campaigns-tick --no-pager -o cat"
                       " | grep -Fx '0 campagne, 0 inviate, 0 saltate, 0 fallite, 0 esiti registrati'"
                   )
-                  # The renderer itself: pandoc, Typst and the brand are wrapped onto
-                  # `bin/rebase` inside the package (REB-403), so this runs under the
-                  # unit's own sandbox with nothing set by the caller, the way the CRM's
-                  # test runs its own renderer pair as the service user.
-                  out = machine.succeed(
+                  # The anonymous CV's toolchain, under the unit's own sandbox: Typst is
+                  # on the package's PATH and the brand directory is the one the wrappers
+                  # set, the way the `hub-image` preflight checks the Docker image.
+                  machine.succeed(
                       "systemd-run --wait --pipe --uid=rebase -p ProtectSystem=strict "
                       "-p PrivateDevices=true -p PrivateTmp=true "
-                      "${self.packages.${pkgs.stdenv.hostPlatform.system}.hub-api}/bin/rebase contracts-check"
+                      "--setenv=PATH=${hubApi}/bin "
+                      "--setenv=REBASE_CONTRACTS_BRAND_DIR=${hubApi}/share/hub-api/brand "
+                      "${hubApi}/bin/python -c "
+                      "'import shutil; from rebase_core.contracts import brand; "
+                      "assert shutil.which(\"typst\"); brand.fonts_dir(); assert brand.ECHO.is_file()'"
                   )
-                  lines = {line.split(": ", 1)[0]: line for line in out.splitlines()}
-                  for document in ("contratto-quadro", "lettera-di-incarico"):
-                      assert "versione 1.0" in lines.get(document, ""), f"{document}: {out!r}"
                   # The magic link's token travels in the SPA's URL and in no Referer,
                   # and the header is set once although two modules share the name.
                   machine.succeed("curl -sSI http://localhost/hub/ | grep -ic '^referrer-policy: strict-origin' | grep -Fx 1")
@@ -1283,22 +1242,22 @@
                       };
                     };
                     # The compose stack's `sweep` service (docker-compose.yml):
-                    # `rebase contracts-sweep` redoes what a lost background task or a
-                    # restart left unfinished. Compose runs it as a loop that sleeps
+                    # `rebase crm-sweep` files the company requests the CRM does not have
+                    # yet. Compose runs it as a loop that sleeps
                     # ten minutes between calls; here it is a oneshot a timer fires on
                     # the same cadence (REB-403).
-                    systemd.services.rebase-hub-contracts-sweep = {
-                      description = "rebase hub contracts sweep";
+                    systemd.services.rebase-hub-crm-sweep = {
+                      description = "rebase hub CRM sweep";
                       inherit unitConfig;
                       after = [ "rebase-hub-api.service" ];
                       wants = [ "rebase-hub-api.service" ];
                       inherit environment;
                       serviceConfig = sweepServiceConfig // {
-                        ExecStart = "${cfg.package}/bin/rebase contracts-sweep";
+                        ExecStart = "${cfg.package}/bin/rebase crm-sweep";
                       };
                     };
-                    systemd.timers.rebase-hub-contracts-sweep = {
-                      description = "rebase hub contracts sweep, every ten minutes";
+                    systemd.timers.rebase-hub-crm-sweep = {
+                      description = "rebase hub CRM sweep, every ten minutes";
                       wantedBy = [ "timers.target" ];
                       timerConfig = {
                         OnBootSec = "10min";

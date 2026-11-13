@@ -19,12 +19,6 @@ from rebase_core.mail import (
     ResendSender,
     sender_from_settings,
 )
-from rebase_core.mail_contracts import (
-    document_name,
-    signed_copy_mail,
-    signing_cancelled_mail,
-    signing_request_mail,
-)
 from rebase_core.mail_member import CardSummary, magic_link_mail, welcome_mail
 from rebase_core.mail_team import talent_cloud_opened_mail
 
@@ -310,101 +304,6 @@ def test_resend_sends_each_attachment_as_base64_with_its_name() -> None:
     assert "attachments" not in json.loads(http.calls[1][3])
 
 
-def test_the_signing_mail_names_the_document_and_carries_the_one_link() -> None:
-    """Spec § 6: one mail per document, the subject naming it, one button. Documenso
-    sends nothing itself, so this mail is the only way the link reaches the person."""
-    url = "https://firma.letsrebase.com/sign/abc123"
-    framework = signing_request_mail("ada@studio.it", "Ada", "framework", None, url)
-    letter = signing_request_mail("ada@studio.it", "Ada", "letter", "2026-001", url)
-    assert framework.subject == "Da firmare: contratto quadro rebase"
-    assert letter.subject == "Da firmare: lettera di incarico n. 2026-001"
-    for mail in (framework, letter):
-        assert mail.to == "ada@studio.it"
-        assert mail.text.startswith("Ciao Ada,")
-        assert url in mail.text
-        assert mail.html is not None
-        # The button's href, and the bare URL as href and as text for blocked buttons.
-        assert mail.html.count(url) == 3
-        assert "Firma il documento" in mail.html
-        assert mail.attachments == ()
-    assert "dodici mesi" in framework.text
-    assert "lettera di incarico n. 2026-001" in letter.text
-    hostile = signing_request_mail(
-        "ada@studio.it", "<b>Ada</b>", "framework", None, 'https://x.it/?t="><script>'
-    )
-    assert hostile.html is not None
-    assert "<script>" not in hostile.html and "<b>Ada" not in hostile.html
-
-
-def test_the_cancellation_mail_names_the_document_and_carries_no_button() -> None:
-    """REB-407: the freelancer's own notice that a document already sent will not be
-    signed. Unlike `signing_request_mail`, there is no link left to give them."""
-    framework = signing_cancelled_mail("ada@studio.it", "Ada", "framework", None)
-    letter = signing_cancelled_mail("ada@studio.it", "Ada", "letter", "2026-001")
-    assert framework.subject == "Contratto quadro rebase annullato"
-    assert letter.subject == "Lettera di incarico n. 2026-001 annullata"
-    for mail in (framework, letter):
-        assert mail.to == "ada@studio.it"
-        assert mail.text.startswith("Ciao Ada,")
-        assert "annullato noi di rebase" in mail.text
-        assert mail.html is not None
-        assert "Firma il documento" not in mail.html
-        assert mail.attachments == ()
-    hostile = signing_cancelled_mail("ada@studio.it", "<b>Ada</b>", "framework", None)
-    assert hostile.html is not None and "<b>Ada" not in hostile.html
-
-
-def test_the_signed_copy_travels_as_an_attachment_to_both_parties() -> None:
-    """Spec § 6: the sealed PDF to the freelancer and to rebase's contracts address. Its
-    last page is Documenso's certificate, in English (probe § 7): the mail says so."""
-    attachment = Attachment("lettera-di-incarico-2026-001-firmato.pdf", b"%PDF-1.7 firmato")
-    mine = signed_copy_mail(
-        "ada@studio.it",
-        kind="letter",
-        number="2026-001",
-        attachment=attachment,
-        first_name="Ada",
-        last_name="Lovelace",
-    )
-    ours = signed_copy_mail(
-        "ciao@letsrebase.com",
-        kind="letter",
-        number="2026-001",
-        attachment=attachment,
-        first_name="Ada",
-        last_name="Lovelace",
-        for_rebase=True,
-    )
-    assert mine.subject == "Firmata: lettera di incarico n. 2026-001"
-    assert ours.subject == "Firmata da Ada Lovelace: lettera di incarico n. 2026-001"
-    assert mine.attachments == ours.attachments == (attachment,)
-    assert mine.text.startswith("Ciao Ada,") and ours.text.startswith("Ciao,")
-    assert "Ada Lovelace ha firmato la lettera di incarico n. 2026-001" in ours.text
-    for mail in (mine, ours):
-        assert "certificato della firma elettronica" in mail.text
-        assert mail.html is not None
-    framework = signed_copy_mail(
-        "ada@studio.it",
-        kind="framework",
-        number=None,
-        attachment=attachment,
-        first_name="Ada",
-        last_name="Lovelace",
-    )
-    assert framework.subject == "Firmato: contratto quadro rebase"
-    assert "hai firmato il contratto quadro rebase" in framework.text
-    hostile = signed_copy_mail(
-        "ciao@letsrebase.com",
-        kind="framework",
-        number=None,
-        attachment=attachment,
-        first_name="Ada",
-        last_name="<script>",
-        for_rebase=True,
-    )
-    assert hostile.html is not None and "<script>" not in hostile.html
-
-
 def test_the_talent_cloud_mail_names_the_company_and_links_to_the_cloud() -> None:
     """REB-518, spec § 4.1: the referente learns the cloud is open for their company,
     and the one link is the cloud's page in the member area, where the magic link they
@@ -436,50 +335,3 @@ def test_the_talent_cloud_mail_names_the_company_and_links_to_the_cloud() -> Non
     assert hostile.html is not None
     for raw in ("<script>", "<b>Wile", "<i>Acme"):
         assert raw not in hostile.html
-
-
-def test_an_occasional_document_is_named_as_its_own_text_in_every_mail() -> None:
-    """REB-687: the signing mail, the cancellation, the signed copy and the Documenso
-    title (`document_name`) name the occasional documents as such."""
-    url = "https://firma.letsrebase.com/sign/abc123"
-    assert document_name("framework", None, "occasional") == (
-        "contratto quadro rebase per prestazioni occasionali"
-    )
-    assert document_name("letter", "2026-001", "occasional") == (
-        "lettera di incarico occasionale n. 2026-001"
-    )
-    assert document_name("letter", "2026-001") == "lettera di incarico n. 2026-001"
-    framework = signing_request_mail(
-        "ada@studio.it", "Ada", "framework", None, url, regime="occasional"
-    )
-    assert framework.subject == "Da firmare: contratto quadro rebase per prestazioni occasionali"
-    assert "ogni prestazione occasionale che fai tramite noi" in framework.text
-    letter = signing_request_mail(
-        "ada@studio.it", "Ada", "letter", "2026-001", url, regime="occasional"
-    )
-    assert letter.subject == "Da firmare: lettera di incarico occasionale n. 2026-001"
-    cancelled = signing_cancelled_mail(
-        "ada@studio.it", "Ada", "framework", None, regime="occasional"
-    )
-    assert cancelled.subject == "Contratto quadro rebase per prestazioni occasionali annullato"
-    assert "Se serve un nuovo contratto quadro per prestazioni occasionali, ti scriviamo." in (
-        cancelled.text
-    )
-    cancelled_letter = signing_cancelled_mail(
-        "ada@studio.it", "Ada", "letter", "2026-001", regime="occasional"
-    )
-    assert "Se serve una nuova lettera di incarico occasionale, ti scriviamo." in (
-        cancelled_letter.text
-    )
-    ordinary = signing_cancelled_mail("ada@studio.it", "Ada", "framework", None)
-    assert "Se serve un nuovo contratto quadro, ti scriviamo." in ordinary.text
-    signed = signed_copy_mail(
-        "ada@studio.it",
-        kind="letter",
-        number="2026-001",
-        attachment=Attachment("lettera.pdf", b"%PDF-1.7 firmato"),
-        first_name="Ada",
-        last_name="Lovelace",
-        regime="occasional",
-    )
-    assert signed.subject == "Firmata: lettera di incarico occasionale n. 2026-001"

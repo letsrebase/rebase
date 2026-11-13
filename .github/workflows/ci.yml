@@ -713,8 +713,8 @@ jobs:
       # migrations, and `loadfile` keeps a file's tests on one worker. Serial, this was
       # 123s of Test on run 36457557147 and the longest job of every hub run.
       pytest-args: '-n auto --dist loadfile'
-      # The contracts are typeset at request time since REB-387 (rebase_core.contracts),
-      # and test_contract_render.py runs the real pandoc and Typst over both texts.
+      # The anonymous CV is typeset at request time (REB-862) and test_anonymous_cv_pdf.py runs
+      # the real Typst over it.
       renderer: true
 
   # The hub's SPA (projects/hub/apps/web, pnpm package `hub`): the same node gate as the
@@ -914,10 +914,12 @@ jobs:
           set -euo pipefail
           "$GITHUB_WORKSPACE/scripts/ci-build-cache-override.sh" hub -p rebase > "$RUNNER_TEMP/cache.yml"
           docker compose -p rebase -f docker-compose.yml -f "$RUNNER_TEMP/cache.yml" build
-      - name: Typeset both contracts inside the image
-        # REB-387: the API renders contracts at request time, so an image that builds
-        # but lacks pandoc, Typst, fontTools or the brand files is a broken deploy.
-        run: docker run --rm rebase-api uv run --no-sync rebase contracts-check
+      - name: Check the anonymous CV's toolchain inside the image
+        # REB-862: the API prints the anonymous CV at request time, so an image that builds
+        # but lacks Typst, fontTools or the brand files is a broken deploy.
+        run: >-
+          docker run --rm rebase-api sh -c 'typst --version && uv run --no-sync python -c
+          "from rebase_core.contracts import brand; brand.fonts_dir(); assert brand.ECHO.is_file()"'
 
   # REB-422: dependency-free on purpose, same as the scripts it tests, so this runs
   # node --test directly rather than through _node-gate.yml (which installs a pnpm

@@ -32,12 +32,14 @@ from typing import Literal, Protocol
 from rebase_core.anonymous_cv.schema import AnonymousCv
 from rebase_core.contracts.brand import ECHO, fonts_dir, palette
 from rebase_core.contracts.fields import ContractFailed
-from rebase_core.contracts.render import TOOL_TIMEOUT_SECONDS
 from rebase_core.errors import CvPrintFailed
 
 logger = logging.getLogger(__name__)
 
 TEMPLATE = Path(__file__).resolve().parent / "cv.typ"
+
+# How long a Typst run may take before it is given up.
+TOOL_TIMEOUT_SECONDS = 60
 
 # How much of Typst's diagnostic a failed print logs.
 _DIAGNOSTIC_MAX_LENGTH = 2000

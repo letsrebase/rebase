@@ -125,97 +125,6 @@ def test_the_production_table_is_adopted_with_its_rows(hub_postgres: Any) -> Non
         engine.dispose()
 
 
-def test_the_contract_constraints_are_installed(hub_engine: Engine) -> None:
-    """REB-387: a framework agreement never hangs on a match and never takes a letter
-    number, a letter always does both, a number is taken once, and a notice is a
-    framework agreement's state alone. Real constraints, proven with raw inserts inside
-    one transaction rolled back at the end."""
-    with hub_engine.connect() as connection:
-        outer = connection.begin()
-        user_id = connection.execute(
-            text(
-                "INSERT INTO users (id, email, first_name, last_name, role, active) VALUES "
-                "(gen_random_uuid(), 'ck-contracts@studio.it', 'A', 'B', 'admin', true) "
-                "RETURNING id"
-            )
-        ).scalar()
-        freelancer_id = connection.execute(
-            text(
-                "INSERT INTO freelancers (id, user_id, links, status, filled_by) VALUES "
-                "(gen_random_uuid(), :user_id, '[]', 'new', 'person') RETURNING id"
-            ),
-            {"user_id": user_id},
-        ).scalar()
-        company_id = connection.execute(
-            text(
-                "INSERT INTO companies (id, user_id, company_name, requested_role, project, "
-                "period_from, duration, daily_budget, remote, headcount, status) VALUES "
-                "(gen_random_uuid(), :user_id, 'ACME', 'Dev', 'Un progetto', '2026-10-01', "
-                "'3 mesi', 500, 'remote', 1, 'new') RETURNING id"
-            ),
-            {"user_id": user_id},
-        ).scalar()
-        match_id = connection.execute(
-            text(
-                "INSERT INTO matches (id, freelancer_id, company_id, customer_legal_name, "
-                "customer_vat_number, customer_registered_office, status, created_by) "
-                "VALUES (gen_random_uuid(), "
-                ":freelancer_id, :company_id, 'ACME S.r.l.', '01234567890', 'Milano', 'draft', "
-                ":user_id) RETURNING id"
-            ),
-            {"freelancer_id": freelancer_id, "company_id": company_id, "user_id": user_id},
-        ).scalar()
-
-        def _document(kind: str, match: object, number: str | None, status: str) -> None:
-            connection.execute(
-                text(
-                    "INSERT INTO contract_documents (id, kind, freelancer_id, match_id, number, "
-                    "text_version, draft_text, data, pdf, status, created_by) VALUES "
-                    "(gen_random_uuid(), :kind, :freelancer_id, :match_id, :number, '0.1', true, "
-                    "'{}', :pdf, :status, :user_id)"
-                ),
-                {
-                    "kind": kind,
-                    "freelancer_id": freelancer_id,
-                    "match_id": match,
-                    "number": number,
-                    "pdf": b"%PDF-",
-                    "status": status,
-                    "user_id": user_id,
-                },
-            )
-
-        refused = (
-            ("framework", match_id, None, "generated"),  # a framework hangs on no match
-            ("framework", None, "2026-001", "generated"),  # and takes no number
-            ("letter", match_id, None, "generated"),  # a letter always has a number
-            ("letter", None, "2026-001", "generated"),  # and a match
-            ("letter", match_id, "2026-001", "notice_served"),  # a notice is a framework's
-            ("framework", None, None, "forse"),  # an unknown state
-            ("fattura", None, None, "generated"),  # an unknown kind
-        )
-        for kind, match, number, status in refused:
-            with pytest.raises(IntegrityError), connection.begin_nested():
-                _document(kind, match, number, status)
-
-        with connection.begin_nested():  # the valid shapes are accepted
-            _document("framework", None, None, "generated")
-            _document("letter", match_id, "2026-001", "pending")
-        with pytest.raises(IntegrityError), connection.begin_nested():  # a number, once
-            _document("letter", match_id, "2026-001", "generated")
-        with pytest.raises(IntegrityError), connection.begin_nested():  # one tax row per card
-            for _ in range(2):
-                connection.execute(
-                    text(
-                        "INSERT INTO freelancer_fiscal (id, freelancer_id, tax_code, "
-                        "vat_number, domicile, updated_by) VALUES (gen_random_uuid(), "
-                        ":freelancer_id, 'LVLDAA85T50H501Z', '01234567890', 'Milano', :user_id)"
-                    ),
-                    {"freelancer_id": freelancer_id, "user_id": user_id},
-                )
-        outer.rollback()
-
-
 def test_migration_0017_can_run_again_and_roll_back(hub_postgres: Any) -> None:
     """A retried deploy runs 0017's statements over tables that already exist, and the
     downgrade leaves 0016's schema: both must work, and the result must still be the
@@ -250,73 +159,62 @@ def test_migration_0017_can_run_again_and_roll_back(hub_postgres: Any) -> None:
         with engine.connect() as connection:
             assert _existing_tables(connection) == set()
 
-        command.upgrade(config, "head")
+        command.upgrade(config, "0052")
         with engine.connect() as connection:
             assert _existing_tables(connection) == new_tables
 
         command.downgrade(config, "0017")
         with engine.begin() as connection:
             connection.execute(text("UPDATE alembic_version SET version_num = '0016'"))
-        command.upgrade(config, "head")
+        command.upgrade(config, "0052")
         with engine.connect() as connection:
             assert _existing_tables(connection) == new_tables
             assert (
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-                == head_revision()
+                == "0052"
             )
-            diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
-            assert diff == [], diff
         engine.dispose()
 
 
-def test_an_envelope_belongs_to_one_document_and_keeps_its_item(hub_engine: Engine) -> None:
-    """REB-387 phase 3: the webhook finds its document by the envelope's id, so an
-    envelope is one document's; and the item the sealed copy is downloaded by is stored
-    with it or not at all."""
-    with hub_engine.connect() as connection:
-        outer = connection.begin()
-        user_id = connection.execute(
-            text(
-                "INSERT INTO users (id, email, first_name, last_name, role, active) VALUES "
-                "(gen_random_uuid(), 'ck-envelopes@studio.it', 'A', 'B', 'admin', true) "
-                "RETURNING id"
-            )
-        ).scalar()
-        freelancer_id = connection.execute(
-            text(
-                "INSERT INTO freelancers (id, user_id, links, status, filled_by) VALUES "
-                "(gen_random_uuid(), :user_id, '[]', 'new', 'person') RETURNING id"
-            ),
-            {"user_id": user_id},
-        ).scalar()
+def test_migration_0053_drops_the_match_side_and_its_downgrade_recreates_it_empty(
+    hub_postgres: Any,
+) -> None:
+    """REB-1108: at head the four tables are gone; the downgrade puts them back, empty and
+    with their constraints, and the upgrade drops them again."""
+    with hub_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        upgrade_to_head(url)
+        config = Config(str(INI_PATH))
+        config.set_main_option("sqlalchemy.url", url)
+        engine = create_engine(url, future=True)
+        names = [
+            "freelancer_fiscal",
+            "matches",
+            "contract_documents",
+            "contract_letter_counters",
+        ]
 
-        def _document(envelope: str | None, item: str | None) -> None:
-            connection.execute(
-                text(
-                    "INSERT INTO contract_documents (id, kind, freelancer_id, text_version, "
-                    "draft_text, data, pdf, status, documenso_id, documenso_item_id, "
-                    "created_by) VALUES (gen_random_uuid(), 'framework', :freelancer_id, '0.1', "
-                    "false, '{}', :pdf, 'sent', :envelope, :item, :user_id)"
-                ),
-                {
-                    "freelancer_id": freelancer_id,
-                    "pdf": b"%PDF-",
-                    "envelope": envelope,
-                    "item": item,
-                    "user_id": user_id,
-                },
-            )
+        def held() -> set[str]:
+            with engine.connect() as connection:
+                return set(
+                    connection.execute(
+                        text(
+                            "SELECT table_name FROM information_schema.tables "
+                            "WHERE table_schema = 'public' AND table_name = ANY(:n)"
+                        ),
+                        {"n": names},
+                    ).scalars()
+                )
 
-        for envelope, item in (("envelope_1", None), (None, "envelope_item_1")):
-            with pytest.raises(IntegrityError), connection.begin_nested():
-                _document(envelope, item)
-        with connection.begin_nested():
-            _document("envelope_1", "envelope_item_1")
-            _document(None, None)
-            _document(None, None)
-        with pytest.raises(IntegrityError), connection.begin_nested():
-            _document("envelope_1", "envelope_item_2")
-        outer.rollback()
+        assert held() == set()
+        command.downgrade(config, "0052")
+        assert held() == set(names)
+        with engine.connect() as connection:
+            for name in names:
+                assert connection.execute(text(f"SELECT count(*) FROM {name}")).scalar() == 0
+        command.upgrade(config, "head")
+        assert held() == set()
+        engine.dispose()
 
 
 def test_migration_0019_can_run_again_and_roll_back(hub_postgres: Any) -> None:
@@ -421,7 +319,7 @@ def test_migration_0021_backfills_every_active_match_as_to_link(hub_postgres: An
                     },
                 )
 
-        command.upgrade(config, "head")
+        command.upgrade(config, "0052")
 
         with engine.connect() as connection:
             states = dict(

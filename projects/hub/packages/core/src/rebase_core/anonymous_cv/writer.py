@@ -21,9 +21,8 @@ CV's text, not the answer, not the fields the guard named.
 
 **It fails closed on the CRM** (REB-1107). Part of who the person is lives there: the tax code,
 VAT number and certified email of the freelancer's organization, read through
-`FreelancerDoor.fiscal_identifiers`, which the guard reads beside the hub's own
-`freelancer_fiscal` (kept as an additional source until the hub's match side goes, so nothing
-shrinks meanwhile). The list is asked before a body is written *or served*, since a kept body
+`FreelancerDoor.fiscal_identifiers`, the only source of tax data now that the hub keeps none
+of its own (REB-1108). The list is asked before a body is written *or served*, since a kept body
 is read again against it, and a CRM that cannot answer ends the call with `PigroUnavailable`: a
 CV is never written, and a kept one never served, against a redaction list that may be missing
 a tax code.
@@ -51,7 +50,7 @@ from rebase_core.door_schemas import CrmFiscalIdentifiers
 from rebase_core.errors import AnonymousCvFailed, LlmNotConfigured, NoCv, NotFound
 from rebase_core.freelancers import ENTITY, FreelancerService, cv_of
 from rebase_core.llm import LlmCall, LlmMessage, LlmRequest, LlmResponse
-from rebase_core.models import AnonymousCvRow, Freelancer, FreelancerFiscal, User
+from rebase_core.models import AnonymousCvRow, Freelancer, User
 from rebase_core.pigro_door import FreelancerDoor
 
 logger = logging.getLogger(__name__)
@@ -355,30 +354,19 @@ class AnonymousCvWriter:
 
     def _known(self, row: Freelancer, crm: CrmFiscalIdentifiers) -> Who:
         """Who the person is, by the readings the hub has: the profile (`users`' name, email,
-        phone and LinkedIn, `freelancers.links`, and the tax data an admin saved for the
-        contracts: tax code, VAT number, the certified email as an email), the same three from
+        phone and LinkedIn, `freelancers.links`), the tax code, VAT number and certified email from
         the CRM's organization (`crm`), and the anonymous card's stored persona when there is
         one for this CV (`cards.stored_person`). The answer's own `identity` is the last,
         added when it arrives."""
         user = self.session.get(User, row.user_id)
         assert user is not None
-        fiscal = self.session.scalar(
-            select(FreelancerFiscal)
-            .where(FreelancerFiscal.freelancer_id == row.id)
-            .execution_options(populate_existing=True)
-        )
         known = who_of(
             first_name=user.first_name,
             last_name=user.last_name,
-            emails=[user.email, fiscal.certified_email if fiscal else None, crm.certified_email],
+            emails=[user.email, crm.certified_email],
             phones=[user.phone],
             links=[*row.links, user.linkedin_url],
-            tax_ids=[
-                fiscal.tax_code if fiscal else None,
-                fiscal.vat_number if fiscal else None,
-                crm.tax_code,
-                crm.vat_number,
-            ],
+            tax_ids=[crm.tax_code, crm.vat_number],
         )
         person = stored_person(self.session, row.id)
         if person is None:

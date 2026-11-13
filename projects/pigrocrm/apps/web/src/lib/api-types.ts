@@ -4012,50 +4012,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/rebase/engagements/{match_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Upsert Engagement
-         * @description Creates or finds the freelancer's space, the «rebase» client, the letter's deal
-         *     and its contract with a rate card (`fee_unit` day, hour or flat) for this hub match,
-         *     under the bearer of `PIGROCRM_ENGAGEMENTS_TOKEN` that only the hub holds.
-         */
-        put: operations["upsert_engagement_api_rebase_engagements__match_id__put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/rebase/engagements/{match_id}/report": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Engagement Report
-         * @description Reads the hours of this match's deal in the given period, with the invoices they
-         *     sit on, under the same bearer of `PIGROCRM_ENGAGEMENTS_TOKEN` that only the hub
-         *     holds.
-         */
-        get: operations["engagement_report_api_rebase_engagements__match_id__report_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/rebase/freelancers/{hub_freelancer_id}/availability": {
         parameters: {
             query?: never;
@@ -12428,48 +12384,10 @@ export interface components {
             /** Payable Amount */
             payable_amount: string | null;
         };
-        /** EngagementFreelancer */
-        EngagementFreelancer: {
-            /**
-             * Email
-             * Format: email
-             */
-            email: string;
-            /** First Name */
-            first_name: string;
-            /** Last Name */
-            last_name: string;
-        };
-        /** EngagementLetter */
-        EngagementLetter: {
-            /** Number */
-            number: string;
-            /** Role */
-            role: string;
-            /** Company Name */
-            company_name: string;
-            /**
-             * Start Date
-             * Format: date
-             */
-            start_date: string;
-            /** End Date */
-            end_date?: string | null;
-            /** Fee */
-            fee: number | string;
-            /**
-             * Fee Unit
-             * @default day
-             * @enum {string}
-             */
-            fee_unit: "day" | "hour" | "flat";
-            /** Expected Days */
-            expected_days?: number | null;
-        };
         /** EngagementPage */
         EngagementPage: {
             /** Items */
-            items: components["schemas"]["pigrocrm__core__collaborators__schemas__EngagementRead"][];
+            items: components["schemas"]["EngagementRead"][];
             /** Next Cursor */
             next_cursor: string | null;
         };
@@ -12521,52 +12439,86 @@ export interface components {
             /** Description */
             description: string | null;
         };
-        /**
-         * EngagementRebase
-         * @description rebase's own fiscal data, as the customer «rebase» in the freelancer's space.
-         */
-        EngagementRebase: {
-            /** Legal Name */
-            legal_name: string;
-            /** Vat Number */
-            vat_number?: string | null;
-            /** Tax Code */
-            tax_code?: string | null;
-            /** Address */
-            address?: string | null;
-            /** Certified Email */
-            certified_email?: string | null;
-            /** Sdi Code */
-            sdi_code?: string | null;
-        };
-        /**
-         * EngagementReport
-         * @description The answer of `GET /api/rebase/engagements/{match_id}/report`. `billed_hours` is
-         *     the CRM's own billed (`billed_entry_ids`: on a line of an issued `invoice`), so it
-         *     agrees with the deal's summary; `unbilled_hours` is every other hour of the
-         *     period; `invoices` has one row per invoice among the entries, newest first.
-         */
-        EngagementReport: {
-            /** Slug */
-            slug: string;
-            /** Deal Url */
-            deal_url: string;
-            deal: components["schemas"]["ReportDeal"];
-            /** Days */
-            days: components["schemas"]["ReportEntry"][];
-            /** Total Hours */
-            total_hours: string;
-            /** Billed Hours */
-            billed_hours: string;
-            /** Unbilled Hours */
-            unbilled_hours: string;
-            /** Invoices */
-            invoices: components["schemas"]["ReportInvoice"][];
+        /** EngagementRead */
+        EngagementRead: {
             /**
-             * Work Units
-             * @default []
+             * Id
+             * Format: uuid
              */
-            work_units: components["schemas"]["ReportWorkUnit"][];
+            id: string;
+            /** Hub Match Id */
+            hub_match_id: string | null;
+            /**
+             * Freelancer Id
+             * Format: uuid
+             */
+            freelancer_id: string;
+            /** Client Organization Id */
+            client_organization_id: string | null;
+            /** Deal Id */
+            deal_id: string | null;
+            /** Contract Id */
+            contract_id: string | null;
+            /**
+             * Redacted
+             * @default false
+             */
+            redacted: boolean;
+            /** Role */
+            role: string | null;
+            /**
+             * Starts On
+             * Format: date
+             */
+            starts_on: string;
+            /** Ends On */
+            ends_on: string | null;
+            /** Days Per Week */
+            days_per_week: string | null;
+            /** Fee */
+            fee: string | null;
+            /** Fee Unit */
+            fee_unit: string;
+            /** Expected Days */
+            expected_days: string | null;
+            /** Letter Type */
+            letter_type: string;
+            /** Payment Rule */
+            payment_rule: string;
+            /** Payment Days */
+            payment_days: number | null;
+            /** Payment End Of Month */
+            payment_end_of_month: boolean;
+            /** Collection Days */
+            collection_days: number | null;
+            /** State */
+            state: string;
+            /** Letter Number */
+            letter_number: string | null;
+            /** Missing */
+            missing: string[];
+            /** Warnings */
+            warnings?: components["schemas"]["EngagementWarning"][];
+            /** Waiting */
+            waiting?: components["schemas"]["EngagementWaiting"][];
+            /** Freelancer Name */
+            freelancer_name?: string | null;
+            /** Client Name */
+            client_name?: string | null;
+            /** Letter Document Id */
+            letter_document_id?: string | null;
+            /** Today */
+            today?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** EngagementStateChange */
         EngagementStateChange: {
@@ -12612,15 +12564,6 @@ export interface components {
             payment_end_of_month?: boolean | null;
             /** Collection Days */
             collection_days?: number | null;
-        };
-        /**
-         * EngagementUpsert
-         * @description The body of `PUT /api/rebase/engagements/{match_id}`.
-         */
-        EngagementUpsert: {
-            freelancer: components["schemas"]["EngagementFreelancer"];
-            letter: components["schemas"]["EngagementLetter"];
-            rebase: components["schemas"]["EngagementRebase"];
         };
         /**
          * EngagementWaiting
@@ -19742,71 +19685,6 @@ export interface components {
             /** Payable */
             payable: boolean;
         };
-        /**
-         * ReportDeal
-         * @description The letter's deal as it stands, `status` as the deal's own page reads it
-         *     (`DealTimeSummary.status`).
-         */
-        ReportDeal: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Name */
-            name: string;
-            /** Hourly Rate */
-            hourly_rate: string | null;
-            /** Budgeted Hours */
-            budgeted_hours: string | null;
-            /** Status */
-            status: string;
-        };
-        /**
-         * ReportEntry
-         * @description One time entry of the deal: a day with two entries is two rows, and the hub sums.
-         */
-        ReportEntry: {
-            /**
-             * Date
-             * Format: date
-             */
-            date: string;
-            /** Hours */
-            hours: string;
-            /** Description */
-            description: string;
-            /** Billable */
-            billable: boolean;
-            invoice: components["schemas"]["ReportInvoice"] | null;
-        };
-        /**
-         * ReportInvoice
-         * @description An invoice some of the report's hours sit on. `data` is its `issue_date`;
-         *     `hours` only on the report's `invoices` list, the hours of this report on it, and
-         *     `None` on an entry's own `invoice`.
-         */
-        ReportInvoice: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Type */
-            type: string;
-            /** Year */
-            year: number | null;
-            /** Number */
-            number: number | null;
-            /** Status */
-            status: string;
-            /** Payment Status */
-            payment_status: string;
-            /** Date */
-            date: string | null;
-            /** Hours */
-            hours?: string | null;
-        };
         /** ReportMonth */
         ReportMonth: {
             /**
@@ -19831,27 +19709,6 @@ export interface components {
              * @description `payable_quantity` times the fee; none for a flat fee
              */
             payable_amount: string | null;
-        };
-        /**
-         * ReportWorkUnit
-         * @description One day of the letter's contract in the freelancer's space (`quantity` is days or
-         *     hours as the rate card's unit says), with the state the freelancer's ledger holds it in.
-         *     `billed` is whether it sits on an invoice line.
-         */
-        ReportWorkUnit: {
-            /**
-             * Date
-             * Format: date
-             */
-            date: string;
-            /** Quantity */
-            quantity: string;
-            /** Status */
-            status: string;
-            /** Description */
-            description: string;
-            /** Billed */
-            billed: boolean;
         };
         /**
          * RevenueByCustomer
@@ -20048,7 +19905,7 @@ export interface components {
          *     provider: `False` leaves the document `sent` for «resend the mail».
          */
         SendReport: {
-            engagement: components["schemas"]["pigrocrm__core__collaborators__schemas__EngagementRead"];
+            engagement: components["schemas"]["EngagementRead"];
             /** Sent */
             sent: string | null;
             /** Mail Sent */
@@ -22974,119 +22831,6 @@ export interface components {
             lines: number;
             /** Revenue */
             revenue: string;
-        };
-        /** EngagementRead */
-        pigrocrm__core__collaborators__schemas__EngagementRead: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /** Hub Match Id */
-            hub_match_id: string | null;
-            /**
-             * Freelancer Id
-             * Format: uuid
-             */
-            freelancer_id: string;
-            /** Client Organization Id */
-            client_organization_id: string | null;
-            /** Deal Id */
-            deal_id: string | null;
-            /** Contract Id */
-            contract_id: string | null;
-            /**
-             * Redacted
-             * @default false
-             */
-            redacted: boolean;
-            /** Role */
-            role: string | null;
-            /**
-             * Starts On
-             * Format: date
-             */
-            starts_on: string;
-            /** Ends On */
-            ends_on: string | null;
-            /** Days Per Week */
-            days_per_week: string | null;
-            /** Fee */
-            fee: string | null;
-            /** Fee Unit */
-            fee_unit: string;
-            /** Expected Days */
-            expected_days: string | null;
-            /** Letter Type */
-            letter_type: string;
-            /** Payment Rule */
-            payment_rule: string;
-            /** Payment Days */
-            payment_days: number | null;
-            /** Payment End Of Month */
-            payment_end_of_month: boolean;
-            /** Collection Days */
-            collection_days: number | null;
-            /** State */
-            state: string;
-            /** Letter Number */
-            letter_number: string | null;
-            /** Missing */
-            missing: string[];
-            /** Warnings */
-            warnings?: components["schemas"]["EngagementWarning"][];
-            /** Waiting */
-            waiting?: components["schemas"]["EngagementWaiting"][];
-            /** Freelancer Name */
-            freelancer_name?: string | null;
-            /** Client Name */
-            client_name?: string | null;
-            /** Letter Document Id */
-            letter_document_id?: string | null;
-            /** Today */
-            today?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
-        /**
-         * EngagementRead
-         * @description What the door set up for a match: the space, the customer, the deal and the contract,
-         *     with the two links the hub shows. `created` says whether this call wrote the deal's row (201)
-         *     or found it already there (200); `space_created` whether the space was opened for
-         *     this match, said by the call that writes the row (a retry of a call that stopped on
-         *     the way included) and false on the calls after it.
-         */
-        pigrocrm__core__engagements__schemas__EngagementRead: {
-            /** Slug */
-            slug: string;
-            /** Url */
-            url: string;
-            /**
-             * Customer Id
-             * Format: uuid
-             */
-            customer_id: string;
-            /**
-             * Deal Id
-             * Format: uuid
-             */
-            deal_id: string;
-            /** Deal Url */
-            deal_url: string;
-            /** Contract Id */
-            contract_id?: string | null;
-            /** Space Created */
-            space_created: boolean;
-            /** Created */
-            created: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -53272,286 +53016,6 @@ export interface operations {
             };
         };
     };
-    upsert_engagement_api_rebase_engagements__match_id__put: {
-        parameters: {
-            query?: never;
-            header?: {
-                authorization?: string | null;
-            };
-            path: {
-                match_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EngagementUpsert"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["pigrocrm__core__engagements__schemas__EngagementRead"];
-                };
-            };
-            /** @description The space, the «rebase» customer, the letter's deal and its contract with a rate card were created now, for the first time with this match. */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["pigrocrm__core__engagements__schemas__EngagementRead"];
-                };
-            };
-            /** @description Permission denied: the actor does not have the required role. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Detail */
-                        detail: string;
-                        /** Code */
-                        code: string;
-                        /** Instance */
-                        instance: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description The requested resource does not exist or was removed. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Detail */
-                        detail: string;
-                        /** Code */
-                        code: string;
-                        /** Instance */
-                        instance: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description The request conflicts with the current state of the resource. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Detail */
-                        detail: string;
-                        /** Code */
-                        code: string;
-                        /** Instance */
-                        instance: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Detail */
-                        detail: string;
-                        /** Code */
-                        code: string;
-                        /** Instance */
-                        instance: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description PIGROCRM_PUBLIC_URL is not configured, the freelancer's space cannot be reached right now, or another call is preparing the space of the same address: retry later. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        detail: string;
-                    };
-                };
-            };
-        };
-    };
-    engagement_report_api_rebase_engagements__match_id__report_get: {
-        parameters: {
-            query?: {
-                from?: string | null;
-                to?: string | null;
-            };
-            header?: {
-                authorization?: string | null;
-            };
-            path: {
-                match_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EngagementReport"];
-                };
-            };
-            /** @description Permission denied: the actor does not have the required role. */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Detail */
-                        detail: string;
-                        /** Code */
-                        code: string;
-                        /** Instance */
-                        instance: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description The requested resource does not exist or was removed. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Detail */
-                        detail: string;
-                        /** Code */
-                        code: string;
-                        /** Instance */
-                        instance: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description The request conflicts with the current state of the resource. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Detail */
-                        detail: string;
-                        /** Code */
-                        code: string;
-                        /** Instance */
-                        instance: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": {
-                        /** Type */
-                        type: string;
-                        /** Title */
-                        title: string;
-                        /** Status */
-                        status: number;
-                        /** Detail */
-                        detail: string;
-                        /** Code */
-                        code: string;
-                        /** Instance */
-                        instance: string;
-                    } & {
-                        [key: string]: unknown;
-                    };
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description PIGROCRM_PUBLIC_URL is not configured, the freelancer's space cannot be reached right now, or another call is preparing the space of the same address: retry later. */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        detail: string;
-                    };
-                };
-            };
-        };
-    };
     freelancer_availability_api_rebase_freelancers__hub_freelancer_id__availability_get: {
         parameters: {
             query?: {
@@ -64471,7 +63935,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["pigrocrm__core__collaborators__schemas__EngagementRead"];
+                    "application/json": components["schemas"]["EngagementRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -64707,7 +64171,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["pigrocrm__core__collaborators__schemas__EngagementRead"];
+                    "application/json": components["schemas"]["EngagementRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -64830,7 +64294,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["pigrocrm__core__collaborators__schemas__EngagementRead"];
+                    "application/json": components["schemas"]["EngagementRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */
@@ -65072,7 +64536,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["pigrocrm__core__collaborators__schemas__EngagementRead"];
+                    "application/json": components["schemas"]["EngagementRead"];
                 };
             };
             /** @description Permission denied: the actor does not have the required role. */

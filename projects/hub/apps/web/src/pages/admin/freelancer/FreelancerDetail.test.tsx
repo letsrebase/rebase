@@ -210,16 +210,16 @@ describe('a state change that is refused', () => {
   })
 })
 
-describe('the talent row menu and the card link to its contracts (REB-387)', () => {
-  it('links a card to its matches and contracts from its header', async () => {
+describe('the card no longer links to a matches page (REB-1108)', () => {
+  it('has no «Match e contratti» link in its header', async () => {
     routeFetch({
       'GET /api/hub/freelancers/f2': COMPLETE,
       'GET /api/hub/freelancers/f2/audit': [],
       'GET /api/hub/freelancers/f2/card': noCard('f2'),
     })
     mount('/admin/freelance/f2')
-    const link = await screen.findByRole('link', { name: 'Match e contratti' })
-    expect(link.getAttribute('href')).toMatch(/\/admin\/freelance\/f2\/contracts$/)
+    await screen.findByRole('banner')
+    expect(screen.queryByRole('link', { name: 'Match e contratti' })).toBeNull()
   })
 })
 

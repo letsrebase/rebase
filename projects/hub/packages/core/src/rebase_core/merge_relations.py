@@ -18,13 +18,10 @@ from rebase_core.models import (
     AdminAction,
     CampaignRecipient,
     Company,
-    ContractDocument,
-    FreelancerFiscal,
     GuideDownload,
     HubEngagement,
     Login,
     MagicLinkToken,
-    Match,
     Note,
     Referral,
     TalentCloudGrant,
@@ -155,14 +152,6 @@ def _no_second_live_grant(session: Session, ids: list[UUID], ctx: Context) -> li
     ]
 
 
-def _no_second_tax_record(session: Session, ids: list[UUID], ctx: Context) -> list[UUID]:
-    if session.scalar(
-        select(FreelancerFiscal.id).where(FreelancerFiscal.freelancer_id == ctx.survivor_card)
-    ):
-        return []
-    return ids
-
-
 RELATIONS: tuple[Relation, ...] = (
     Relation("companies", Company.user_id, USER),
     Relation("magic_links", MagicLinkToken.user_id, USER),
@@ -174,8 +163,6 @@ RELATIONS: tuple[Relation, ...] = (
     Relation("team_requests", TeamRequest.user_id, USER),
     Relation("cloud_grants", TalentCloudGrant.user_id, USER, movable=_no_second_live_grant),
     Relation("referrals_made", Referral.referrer_user_id, USER, movable=_no_self_referral),
-    Relation("matches", Match.freelancer_id, FREELANCER),
-    Relation("contract_documents", ContractDocument.freelancer_id, FREELANCER),
     Relation("hub_engagements", HubEngagement.freelancer_id, FREELANCER),
     Relation("campaign_recipients_card", CampaignRecipient.freelancer_id, FREELANCER),
     Relation(
@@ -184,7 +171,6 @@ RELATIONS: tuple[Relation, ...] = (
         FREELANCER,
         movable=_not_on_the_same_request,
     ),
-    Relation("fiscal", FreelancerFiscal.freelancer_id, FREELANCER, movable=_no_second_tax_record),
     Relation(
         "referral_received",
         Referral.entity_id,
@@ -222,10 +208,6 @@ LEFT_IN_PLACE: dict[str, str] = {
     ),
     "freelancers.vetted_by": "an admin's name on a verification, never a talent's",
     "freelancer_cards.freelancer_id": "the CV's card, swapped with the CV, not moved",
-    "freelancer_fiscal.updated_by": "the admin who saved it",
-    "matches.created_by": "the admin who made it",
-    "contract_documents.created_by": "the admin who made it",
-    "contract_documents.sent_by": "the admin who sent it",
     "admin_actions.admin_id": "the admin who acted",
     "notes.author_id": "who wrote the note, as written; the note itself moves with the card",
     "notes.edited_by_id": "the admin who edited the note",

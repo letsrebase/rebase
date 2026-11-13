@@ -27,7 +27,7 @@ function RequestRow({ item }: { item: TeamRequestListItem }) {
 
 /** «Richieste team» (REB-514, spec § 3.5): every request the team builder filed, from
  *  the public page and from the cloud, newest first, with how many of the talents asked
- *  said yes. The state pills are «Talenti»'s and «Match»'s, carried in the URL
+ *  said yes. The state pills are «Talenti»'s, carried in the URL
  *  (`router.tsx`); the list walks the API's cursor a page at a time, as «Talenti» does. */
 export function AdminTeamRequests() {
   const search = useSearch({ from: '/signedIn/admin/team' })
