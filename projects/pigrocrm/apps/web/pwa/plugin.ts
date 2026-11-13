@@ -23,11 +23,13 @@ import { buildId, shellUrls } from './shell'
 
 const BRAND_ICONS = path.resolve(import.meta.dirname, '../../../../../shared/brand/pwa')
 
+/** Each picture is listed for both purposes: the four tiles fill the square edge to edge, so
+ *  the same file works as it is and cut by a launcher's mask (build-pwa-icons.mjs, REB-1109). */
 const MANIFEST_ICONS: readonly (Omit<ManifestIcon, 'src'> & { file: string })[] = [
   { file: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
   { file: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-  { file: 'icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
-  { file: 'icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+  { file: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+  { file: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
 ]
 const TOUCH_ICON = 'apple-touch-icon.png'
 
@@ -57,7 +59,7 @@ export function pwa(): Plugin {
     },
 
     buildStart() {
-      for (const file of [...MANIFEST_ICONS.map((icon) => icon.file), TOUCH_ICON]) {
+      for (const file of new Set([...MANIFEST_ICONS.map((icon) => icon.file), TOUCH_ICON])) {
         this.emitFile({
           type: 'asset',
           fileName: `${ICON_DIR}/${file}`,

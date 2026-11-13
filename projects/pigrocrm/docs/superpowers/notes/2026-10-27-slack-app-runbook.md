@@ -46,6 +46,13 @@ settings:
   token_rotation_enabled: false
 ```
 
+**The icon is uploaded, not declared**: a Slack manifest has no field for it, so an app created
+from the one above shows Slack's grey placeholder in every workspace until somebody adds it.
+**Basic Information** → **Display Information** → **App icon** → upload
+`shared/brand/pwa/icon-512.png` (Slack wants a square of 512 to 2000 px and rounds the corners
+itself), then **Save Changes**. It is the same four tiles edge to edge the installed CRM wears
+(REB-1109).
+
 **The redirect URL is `{PIGROCRM_PUBLIC_URL}/api/slack/oauth/callback`, one per host**, the
 root's own, and it is the only one a host ever needs: a space does not register an address of
 its own. A space starts the consent with its name in front of the `state` (`<slug>.<jti>`),
