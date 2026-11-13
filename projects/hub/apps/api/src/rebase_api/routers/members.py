@@ -50,6 +50,7 @@ from fastapi import (
 from rebase_api.deps import (
     CardLlmDep,
     CrmFilingDep,
+    FreelancerDoorDep,
     MeDep,
     SenderDep,
     SessionDep,
@@ -59,6 +60,7 @@ from rebase_api.deps import (
     session_token,
     set_member_cookie,
 )
+from rebase_api.door_errors import door_unavailable
 from rebase_api.downloads import cv_response, pdf_response, perk_response
 from rebase_api.ratelimit import spend_one
 from rebase_core.card_writer import write_after_response
@@ -78,6 +80,7 @@ from rebase_core.member_schemas import (
 from rebase_core.members import MemberService
 from rebase_core.models import CV_MAX_BYTES
 from rebase_core.perks import GUIDE_FILENAME, PerkService, guide_bytes
+from rebase_core.pigro_door import PigroUnavailable
 from rebase_core.referral_schemas import MemberReferral
 from rebase_core.referrals import ReferralService
 from rebase_core.schema_common import Ack
@@ -229,19 +232,29 @@ def my_guide(me: MeDep, session: SessionDep) -> Response:
 
 
 @router.get("/me/contracts", response_model=MemberContracts)
-def my_contracts(me: MeDep, session: SessionDep) -> MemberContracts:
+def my_contracts(me: MeDep, session: SessionDep, door: FreelancerDoorDep) -> MemberContracts:
     """«Contratti» (REB-392): the caller's own framework agreement and letters, read from
     the session and never from the URL. A person with no card is a 404 named «scheda»,
-    as `/me/cv` is."""
-    return MemberContractService(session).for_user(me.id)
+    as `/me/cv` is. The documents are the CRM's (REB-1107), read through its door by the
+    caller's freelancer id: 502 when the CRM does not answer and 503 when this environment
+    cannot reach it, and the page shows its error line rather than an empty list."""
+    try:
+        return MemberContractService(session, door).for_user(me.id)
+    except PigroUnavailable as exc:
+        raise door_unavailable(exc) from exc
 
 
 @router.get("/me/contracts/{document_id}/pdf")
-def my_signed_contract(me: MeDep, session: SessionDep, document_id: UUID) -> Response:
-    """The signed copy of one of the caller's own documents. Someone else's document, and
-    one not signed yet, are the same 404 as a document that does not exist: a 403 would
-    say it exists."""
-    pdf = MemberContractService(session).signed_pdf(me.id, document_id)
+def my_signed_contract(
+    me: MeDep, session: SessionDep, door: FreelancerDoorDep, document_id: UUID
+) -> Response:
+    """The signed copy of one of the caller's own documents, served by the CRM through its
+    door. Someone else's document, and one not signed yet, are the same 404 as a document
+    that does not exist: a 403 would say it exists. 502 and 503 as `/me/contracts`."""
+    try:
+        pdf = MemberContractService(session, door).signed_pdf(me.id, document_id)
+    except PigroUnavailable as exc:
+        raise door_unavailable(exc) from exc
     return pdf_response(pdf.filename, pdf.content)
 
 

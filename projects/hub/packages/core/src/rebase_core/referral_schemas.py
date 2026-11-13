@@ -132,13 +132,14 @@ class ReferralLedgerItem(ResponseModel):
 
     REB-609: `referred_id` is the freelancer card's or the company's id (by `kind`) and
     `referrer_freelancer_id` the referrer's own card when he has one, both for links.
-    The `match_*` fields name the match that earned the reward or, for a referral with
-    none yet, the referred side's newest match that is not cancelled -- `None` when
-    there is neither. `projected_rate` and `projected_amount` are that match's
+    The `engagement_*` fields name the engagement that earned the reward or, for a referral
+    with none yet, the referred side's newest engagement that is not signed or cancelled
+    yet -- `None` when there is neither (REB-1106: the hub's read model of the CRM's
+    engagements). `projected_rate` and `projected_amount` are that engagement's
     projection for a referral without a reward: an estimate, never replacing a real
     figure, and `None` when there is nothing to project. `referrer_name` is the
     referrer's whole name, first and last. `referred_deleted` and
-    `match_freelancer_deleted` say the referred card or request, or the match's
+    `engagement_freelancer_deleted` say the referred card or request, or the engagement's
     freelancer, was deleted by an admin: its page answers not found, so a page must not
     link to it.
 
@@ -146,7 +147,7 @@ class ReferralLedgerItem(ResponseModel):
     (`to_verify`, `verified`), `verified_at` and `verified_via` (`accesso`,
     `letter`, `storico`) when and by what; they are `None` while it is pending. A
     pending referral has no reward and nothing to confirm (`reward_id` and `status` are
-    `None`), and a pending company has no `match_*` and no projection either, since
+    `None`), and a pending company has no `engagement_*` and no projection either, since
     nothing it could sign would earn anything until its contact logs in."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -160,12 +161,12 @@ class ReferralLedgerItem(ResponseModel):
     referrer_freelancer_id: UUID | None
     referred_name: str
     referred_deleted: bool
-    match_id: UUID | None
-    match_freelancer_id: UUID | None
-    match_freelancer_name: str | None
-    match_freelancer_deleted: bool
-    match_company_name: str | None
-    match_requested_role: str | None
+    engagement_id: UUID | None
+    engagement_freelancer_id: UUID | None
+    engagement_freelancer_name: str | None
+    engagement_freelancer_deleted: bool
+    engagement_company_name: str | None
+    engagement_role: str | None
     projected_rate: Decimal | None
     projected_amount: Decimal | None
     rate: Decimal | None

@@ -10,17 +10,20 @@ are later cards; this table stores what they will read.
 
 import datetime as dt
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
     CheckConstraint,
     Date,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
     Numeric,
     String,
     Text,
+    func,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -240,3 +243,71 @@ class MonthlyReport(Base, PrimaryKeyMixin, TimestampMixin):
     held_dates: Mapped[list[str]] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
     )
+
+
+# What an engagement's notice to the hub reports (design § 5): the moments the hub's read model
+# is upserted on. `updated` is a draft's fields changing before it is sent, which the hub's row
+# would otherwise show stale until the first `sent`.
+NOTICE_KINDS: tuple[str, ...] = (
+    "created",
+    "updated",
+    "sent",
+    "signed",
+    "cancelled",
+    "closed",
+    "notice_served",
+)
+# `pending` waits to be delivered (and is retried), `delivered` is a 2xx, `rejected` is an answer
+# the hub will give again however often it is asked (a 4xx that is not a wrong token or a limit).
+NOTICE_STATES: tuple[str, ...] = ("pending", "delivered", "rejected")
+
+
+class EngagementNotice(Base, PrimaryKeyMixin, TimestampMixin):
+    """The outbox of the notices the CRM sends the hub about an engagement (collaborators design
+    § 5, REB-1106): a row is written in the transaction that changes the engagement, so a change
+    and its notice land together or not at all, and `HubNoticeSweep` delivers it from the leads
+    space's frequent pass, retrying with a backoff until the hub answers 2xx.
+
+    `sequence` counts the engagement's notices from 1: the hub ignores a notice older than the one
+    it holds, so a retry or a late delivery cannot move its read model back. `payload` is the whole
+    read model as it was when the change happened, never recomputed at delivery.
+
+    The table has no foreign key on purpose: the notice is about a freelancer's engagement but is
+    the CRM's own bookkeeping, read by no person and no API, so it carries no legal-entity policy
+    (nothing joins it to `organizations`), and an engagement is never deleted, so the id never
+    dangles. Only the space `PIGROCRM_LEADS_SPACE` names writes rows and sweeps them.
+    """
+
+    __tablename__ = "engagement_notices"
+    __table_args__ = (
+        Index("uq_engagement_notices_sequence", "engagement_id", "sequence", unique=True),
+        Index(
+            "ix_engagement_notices_due",
+            "next_attempt_at",
+            postgresql_where=text("state = 'pending'"),
+        ),
+        CheckConstraint(_in("kind", NOTICE_KINDS), name="ck_engagement_notices_kind"),
+        CheckConstraint(_in("state", NOTICE_STATES), name="ck_engagement_notices_state"),
+        CheckConstraint("sequence >= 1", name="ck_engagement_notices_sequence"),
+        CheckConstraint("attempts >= 0", name="ck_engagement_notices_attempts"),
+    )
+
+    engagement_id: Mapped[UUID] = mapped_column(nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    state: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="pending", server_default=text("'pending'")
+    )
+    attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    next_attempt_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_attempt_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    delivered_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # The cause of the last failed try, bounded: a status or a word, never a body or a header.
+    last_error: Mapped[str | None] = mapped_column(String(200), default=None)

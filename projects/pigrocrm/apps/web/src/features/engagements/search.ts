@@ -13,6 +13,12 @@ export interface EngagementsSearch {
   /** A client's organization id. */
   client?: string
   state?: EngagementState
+  /** The hub's «Crea match» (REB-1105): the engagement id the hub minted. Its presence opens the form. */
+  hub_match_id?: string
+  /** A freelancer's organization, deal and client for the form «Crea match» opens; not filters. */
+  freelancer_id?: string
+  deal_id?: string
+  client_id?: string
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -29,6 +35,10 @@ export function parseEngagementsSearch(search: Record<string, unknown>): Engagem
     freelancer: uuid(search.freelancer),
     client: uuid(search.client),
     state: STATES.find((state) => state === search.state),
+    hub_match_id: uuid(search.hub_match_id),
+    freelancer_id: uuid(search.freelancer_id),
+    deal_id: uuid(search.deal_id),
+    client_id: uuid(search.client_id),
   }
 }
 

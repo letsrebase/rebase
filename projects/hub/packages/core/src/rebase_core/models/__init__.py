@@ -49,6 +49,12 @@ from rebase_core.models.card_eval import (
     CardEvalResult,
     CardEvalRun,
 )
+from rebase_core.models.engagements import (
+    ENGAGEMENT_MODES,
+    ENGAGEMENT_ROLE_MAX_LENGTH,
+    ENGAGEMENT_STATES,
+    HubEngagement,
+)
 from rebase_core.models.identity import (
     CONTACT_KINDS,
     CONTACT_LABELS,
@@ -223,7 +229,11 @@ __all__ = [
     "TALENT_STATES",
     "Freelancer",
     "FreelancerCard",
+    "ENGAGEMENT_MODES",
+    "ENGAGEMENT_ROLE_MAX_LENGTH",
+    "ENGAGEMENT_STATES",
     "FreelancerFiscal",
+    "HubEngagement",
     "FreelancerSource",
     "ONSITE_DAYS_MAX",
     "ONSITE_DAYS_MIN",

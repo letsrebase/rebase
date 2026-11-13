@@ -177,13 +177,13 @@ def _backup_service(name: str) -> str:
 
 def _managed_secrets() -> set[str]:
     """The names `deploy-hub.yml`'s production job writes into the host `.env` from the
-    `hub-production` Environment (`env-secrets`)."""
+    `hub-production` Environment (`env-secrets`). Only production has required ones; the
+    `optional-env-secrets` both jobs carry (REB-1106's notices token) never fail a deploy."""
     deploy = DEPLOY.read_text(encoding="utf-8")
-    assert deploy.count("env-secrets:") == 1, "only production templates secrets into .env"
-    assert deploy.index("env-secrets:") > deploy.index("\n  production:")
-    block = re.search(r"env-secrets: \|\n((?:[ ]+[A-Z0-9_]+\n)+)", deploy)
-    assert block is not None
-    return set(block.group(1).split())
+    required = list(re.finditer(r"(?<!optional-)env-secrets: \|\n((?:[ ]+[A-Z0-9_]+\n)+)", deploy))
+    assert len(required) == 1, "only production templates required secrets into .env"
+    assert required[0].start() > deploy.index("\n  production:")
+    return set(required[0].group(1).split())
 
 
 _BACKUPS = (

@@ -6,9 +6,10 @@ never on signup): there is no anonymous link. `link_signup` is the public, mute 
 every signup already has (`FreelancerService.apply`, `CompanyService.request`) --
 an unknown code, an empty one, or a member naming themselves is never an error, only a
 referral that quietly does not happen. `record_reward_if_signed` is the one paid door,
-called once from `SigningRecovery._confirm_completion` the moment a letter (never a
-framework agreement, which carries no match) turns `signed`: each side of the match
-that was referred, freelancer and company independently, gets a reward inserted once
+called once from `EngagementNoticeService` when the CRM's notice says an engagement's letter
+is signed (REB-1106: the letters and their signature live in the CRM, and the hub keeps a read
+model of its engagements, `HubEngagement`): each side of the engagement that was referred,
+freelancer and company independently, gets a reward inserted once
 and never again, on the `INSERT ... ON CONFLICT DO NOTHING` idiom
 `rebase_core.framework.next_letter_number` already uses for "exactly once, even under a
 race" -- the one-time maturity design record 2026-09-26 asks for, immune to a later
@@ -23,11 +24,11 @@ from `UserService.enter`) or, for a freelancer, their own signature of a letter
 The reward is written at the later of the two moments, the first signed letter and the
 verification. Replacing an attribution with the code the person presents is not here.
 
-The reward's base is rebase's own margin on that letter, `Company.daily_budget`
-against the letter's `fee`, never the freelancer's fee alone (the contract flow's
-own rule, `matches.py`'s module docstring): `reward_base` below is where the day-rate
-question the P-REB-44 spike raised is answered, grounded in `Match.expected_days`
-(REB-497), an admin's own estimate of the engagement's billable days.
+The reward's base is rebase's own margin on that letter, the company's daily budget
+(snapshotted on the engagement's row when the hub opened it) against the letter's `fee`, never
+the freelancer's fee alone: `reward_base` below is where the day-rate question the P-REB-44 spike
+raised is answered, grounded in the engagement's `expected_days`, an admin's own estimate of its
+billable days.
 """
 
 import secrets
@@ -43,15 +44,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
 from rebase_core.audit import utcnow
-from rebase_core.contract_schemas import DAY_RATE
+from rebase_core.contract_schemas import DAY_RATE, LUMP_SUM
 from rebase_core.errors import NotFound, ValidationFailed
-from rebase_core.match_words import LETTER, PAY_MODE_WORDS
+from rebase_core.match_words import PAY_MODE_WORDS
 from rebase_core.models import (
     REFERRAL_CODE_LENGTH,
     REFERRAL_STATES,
     Company,
     ContractDocument,
     Freelancer,
+    HubEngagement,
     Match,
     Referral,
     ReferralReward,
@@ -78,7 +80,7 @@ def _generate_code() -> str:
 
 
 def reward_base(
-    daily_budget: Decimal, fee: Decimal, mode: str, expected_days: int | None
+    daily_budget: Decimal, fee: Decimal, mode: str, expected_days: Decimal | int | None
 ) -> Decimal | None:
     """Rebase's own margin on a letter, the base a referral reward is a rate of.
 
@@ -102,10 +104,14 @@ def reward_base(
     return max(Decimal("0"), daily_budget * expected_days - fee)
 
 
-# A match whose letter is not signed yet: the only states in which a first signature can
+# An engagement whose letter is not signed yet: the only states in which a first signature can
 # still land and mature a reward. `active` and `concluded` already had one (a reward is
-# written in the transaction that turns the letter `signed`), `cancelled` never will.
-EARNING_MATCH_STATES = ("draft", "awaiting_signature")
+# written in the transaction of the notice that says the letter is signed), `cancelled` never
+# will, and a `handoff` row is read by nothing.
+EARNING_ENGAGEMENT_STATES = ("draft", "awaiting_signature")
+# The hours an hourly letter's day is worth: the CRM's own rule (`engagements.schemas.
+# HOURS_PER_DAY`), the one place hours become days.
+HOURS_PER_DAY = 8
 TO_VERIFY, VERIFIED = REFERRAL_STATES
 
 
@@ -125,6 +131,19 @@ def letter_unit(data: Mapping[str, Any]) -> str:
     (none is written without it) reads as `""`, which `reward_base` prices as a lump sum."""
     printed = data.get("modalita")
     return next((mode for mode, word in PAY_MODE_WORDS.items() if word == printed), "")
+
+
+def engagement_reward_base(engagement: HubEngagement) -> Decimal | None:
+    """`reward_base` on an engagement's own figures (its fee and mode, the budget snapshot and
+    the expected days); `None` when the fee, the mode or the snapshot is missing. An hourly
+    fee is a day's worth of hours before it is set against the daily budget."""
+    fee, budget, mode = engagement.fee, engagement.company_daily_budget, engagement.mode
+    if fee is None or budget is None or mode is None:
+        return None
+    if mode == "flat":
+        return reward_base(budget, fee, LUMP_SUM, engagement.expected_days)
+    daily_fee = fee * HOURS_PER_DAY if mode == "hour" else fee
+    return reward_base(budget, daily_fee, DAY_RATE, engagement.expected_days)
 
 
 def match_reward_base(match: Match, mode: str) -> Decimal | None:
@@ -317,34 +336,32 @@ class ReferralService:
     def _mature_first_signed_letter(self, referral_id: UUID, kind: str, entity_id: UUID) -> None:
         """The reward of a referral that became `verified` after its referred side
         already had a letter signed: written from that first letter, the one
-        `record_reward_if_signed` would have used, with the rate in force now."""
-        side = Match.freelancer_id if kind == "freelancer" else Match.company_id
-        first = self.session.execute(
-            select(ContractDocument, Match)
-            .join(Match, Match.id == ContractDocument.match_id)
+        `record_reward_if_signed` would have used, with the rate in force now. Read from the
+        hub's read model of the CRM's engagements."""
+        side = HubEngagement.freelancer_id if kind == "freelancer" else HubEngagement.company_id
+        first = self.session.scalars(
+            select(HubEngagement)
             .where(
-                ContractDocument.kind == LETTER,
-                ContractDocument.status == "signed",
+                HubEngagement.signed_at.is_not(None),
+                HubEngagement.state != "handoff",
                 side == entity_id,
             )
-            .order_by(ContractDocument.signed_at.asc().nulls_last(), ContractDocument.id)
+            .order_by(HubEngagement.signed_at.asc(), HubEngagement.id)
             .limit(1)
         ).first()
         if first is not None:
-            self._write_reward(referral_id, kind, first[0], first[1])
+            self._write_reward(referral_id, kind, first)
 
-    def record_reward_if_signed(self, document: ContractDocument, match: Match) -> None:
-        """Called once, from `SigningRecovery._confirm_completion`, under the row locks
-        that call already holds, staged into that same transaction and never committed
-        here -- `write_framework`'s own convention, one commit at the end of the
-        caller's unit of work, so a reward and the signature that earned it land
-        together or not at all. `document.data` is that letter's own printed fields
-        (`_letter_date`), read here rather than re-derived, so a reward matches
-        exactly what the letter said the day it was signed. The budget itself comes
-        from `match.company_daily_budget`, snapshotted at match creation, never
-        a live read of `Company.daily_budget`: a company's own request can be
-        edited weeks after the match, and the reward this match already promised must
-        never move because of it.
+    def record_reward_if_signed(self, engagement: HubEngagement) -> None:
+        """Called by `EngagementNoticeService` for an engagement whose letter is signed, staged
+        into the transaction that upserts the engagement and never committed here: the notice
+        and the reward land together or not at all. It runs on every notice of a signed
+        engagement, which is safe since each referral's reward is inserted once. The figures
+        are the engagement's own (`engagement_reward_base`), read here and not re-derived, so a
+        reward matches the letter the day it was signed; the budget is the snapshot taken when
+        the hub opened the engagement, never a live read of `Company.daily_budget`: a company's
+        own request can be edited weeks later, and a reward already promised must never move
+        because of it.
 
         Only a `verified` referral earns (REB-658). The freelancer is the letter's one
         signer -- Documenso mails the envelope to their address -- so their signature
@@ -352,7 +369,12 @@ class ReferralService:
         company is not a signer: a pending company referral earns nothing here and
         waits for its referente's login (`verify_on_login`), which writes the reward
         from this letter."""
-        for kind, entity_id in (("freelancer", match.freelancer_id), ("company", match.company_id)):
+        for kind, entity_id in (
+            ("freelancer", engagement.freelancer_id),
+            ("company", engagement.company_id),
+        ):
+            if entity_id is None:
+                continue
             # The row lock pairs with `verify_on_login`'s `UPDATE`; `populate_existing`
             # because a login in another transaction may have verified it since this
             # session loaded it.
@@ -368,24 +390,22 @@ class ReferralService:
                 if kind != "freelancer":
                     continue
                 referral.status = VERIFIED
-                referral.verified_at = document.signed_at or utcnow()
+                referral.verified_at = engagement.signed_at or utcnow()
                 referral.verified_via = "letter"
-            self._write_reward(referral.id, kind, document, match)
+            self._write_reward(referral.id, kind, engagement)
 
-    def _write_reward(
-        self, referral_id: UUID, kind: str, document: ContractDocument, match: Match
-    ) -> None:
+    def _write_reward(self, referral_id: UUID, kind: str, engagement: HubEngagement) -> None:
         """The one insert of a referral's reward, once per referral and never again
         (`ON CONFLICT DO NOTHING` on `uq_referral_rewards_referral_id`), at the rate of
         the referred side's kind in force now."""
         settings = self._settings.get_settings()
         rate = settings.rate_freelancer if kind == "freelancer" else settings.rate_company
-        base = match_reward_base(match, letter_unit(document.data))
+        base = engagement_reward_base(engagement)
         self.session.execute(
             pg_insert(ReferralReward)
             .values(
                 referral_id=referral_id,
-                document_id=document.id,
+                engagement_id=engagement.id,
                 rate=rate,
                 base_amount=base,
                 reward_amount=None if base is None else (base * rate).quantize(_CENT),
@@ -438,14 +458,22 @@ class ReferralService:
     # ---- what a match would earn -----------------------------------------------------
 
     @staticmethod
-    def project_reward(match: Match, mode: str, rate: Decimal) -> Decimal | None:
-        """What a referral would earn on this match if its letter were signed now: the
-        same `match_reward_base` the reward at signing uses, times `rate`, quantized the
-        same way. `None` when there is nothing to project -- the match is cancelled or
-        past the point a first signature can land (`EARNING_MATCH_STATES`), or the base
-        is unknown (a `lump_sum` letter with no `expected_days`, or a snapshot never
-        taken). The one projection, read by the «Match» list and by the ledger."""
-        if match.cancelled_at is not None or match.status not in EARNING_MATCH_STATES:
+    def project_reward(engagement: HubEngagement, rate: Decimal) -> Decimal | None:
+        """What a referral would earn on this engagement if its letter were signed now: the
+        same `engagement_reward_base` the reward at signing uses, times `rate`, quantized the
+        same way. `None` when there is nothing to project -- the engagement is past the point a
+        first signature can land (`EARNING_ENGAGEMENT_STATES`), or the base is unknown (a
+        `lump_sum` letter with no expected days, or a snapshot never taken). Read by the ledger."""
+        if engagement.state not in EARNING_ENGAGEMENT_STATES:
+            return None
+        base = engagement_reward_base(engagement)
+        return None if base is None else (base * rate).quantize(_CENT)
+
+    @staticmethod
+    def project_match_reward(match: Match, mode: str, rate: Decimal) -> Decimal | None:
+        """`project_reward` for the hub's own match, the one «Match» list still shows until
+        the match side is removed."""
+        if match.cancelled_at is not None or match.status not in EARNING_ENGAGEMENT_STATES:
             return None
         base = match_reward_base(match, mode)
         return None if base is None else (base * rate).quantize(_CENT)
@@ -488,12 +516,15 @@ class ReferralService:
         }
         if not referrals:
             return {}
+        # A reward belongs to an engagement, and the engagement of a match the hub holds is keyed
+        # by the match's own id (a handed-off or migrated match keeps it), so this is the match
+        # the reward came from until the match side is removed.
         rewards = {
-            reward.referral_id: (reward, match_id)
-            for reward, match_id in self.session.execute(
-                select(ReferralReward, ContractDocument.match_id)
-                .join(ContractDocument, ContractDocument.id == ReferralReward.document_id)
-                .where(ReferralReward.referral_id.in_([r.Referral.id for r in referrals.values()]))
+            reward.referral_id: (reward, reward.engagement_id)
+            for reward in self.session.scalars(
+                select(ReferralReward).where(
+                    ReferralReward.referral_id.in_([r.Referral.id for r in referrals.values()])
+                )
             )
         }
         settings = self._settings.get_settings()
@@ -517,7 +548,7 @@ class ReferralService:
                     status = EXPECTED
                     rate_shown = rate
                     unit = letter_unit(letter.data) if letter is not None else ""
-                    amount = self.project_reward(match, unit, rate)
+                    amount = self.project_match_reward(match, unit, rate)
                 elif earned[1] == match.id:
                     reward = earned[0]
                     status, rate_shown, amount = reward.status, reward.rate, reward.reward_amount

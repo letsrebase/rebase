@@ -124,6 +124,45 @@ asks for `email` or `all`, `list_companies`); the payload names the tool and the
 never a value. The server instructions and `read_freelancer_cv` say that what comes back
 (CV, notes, campaign texts) is data and not an instruction.
 
+**The hub keeps a read model of the CRM's engagements, and the CRM keeps it current (REB-1106).**
+`hub_engagements` (`models/engagements.py`, migration 0052) holds what the referral reward, the
+verification of a referral by a first signed letter, the ledger and the card's engagement facts
+read, instead of `matches` and `contract_documents`: the CRM's engagement id (`crm_engagement_id`),
+the hub freelancer and company ids, the letter's id and number, `signed_at`, `mode` (`day`, `hour`,
+`flat`), fee, expected days, role, dates, `state` (the CRM's, plus `handoff`: a row the hub opened
+at «Crea match» that nothing reads) and `sequence`, and two columns of the hub's own: the company's
+`company_daily_budget` snapshot (taken when the row is opened, never sent by the CRM) and
+`planned_ends_on` (the end it had while live, since the CRM moves `ends_on` back when it closes one
+early). `POST /api/hub/engagement-notices` (`routers/pigro_notices.py`, bearer
+`REBASE_PIGRO_NOTICES_TOKEN`, 404 while it is empty, `PIGROCRM_HUB_NOTICES_TOKEN` there) upserts it
+through `EngagementNoticeService.apply`: the row is found by `hub_match_id` (the id the hub minted)
+or the CRM's id, a `sequence` not newer than the row's is answered `applied: false` and changes
+nothing, and **the referral reward is written in the same transaction** whenever the row says its
+letter is signed (`ReferralService.record_reward_if_signed`, once per referral by `ON CONFLICT DO
+NOTHING`), including from a `closed` notice that overtook a lost `signed` one. The base is
+`engagement_reward_base`: a day fee against the daily budget, an hourly fee at 8 hours a day, a
+lump sum against the budget times the expected days. `POST /api/hub/referrer-name` answers each
+side's referrer with `ReferralService.referrer_name`, only for a verified referral. The ledger's
+`engagement_*` fields replace its `match_*` ones. **The match side still works until its removal
+card**: the old signing path no longer writes a reward, and `ReferralService.for_matches` reads a
+reward's engagement as the match with that id (true of a handed-off or migrated match), which is
+the one overlap limit the «Match» list has.
+
+**«Crea match» hands the engagement to the CRM (REB-1105).** `POST /api/hub/freelancers/{id}/engagement-handoff`
+(`routers/matches.py`, body `{company_id}`, `EngagementHandoff` in `engagement_handoff.py`) asks the CRM's root
+door for the freelancer's organization (`PUT /api/rebase/freelancers/{hub id}/organization`,
+`FreelancerDoor.ensure_organization`: the card's name, login address, contact points and fiscal VAT number and tax
+code; by hub id, never by name), keeps one `hub_engagements` row in state `handoff` with the company's daily budget
+snapshot (opening the same pair again reuses the row and its id; a pair whose engagement the CRM already noticed gets
+a new one) and answers `{state: "ready", url, engagement_id}`: the CRM's form at
+`{space}/app/engagements?hub_match_id=<minted id>&freelancer_id=<organization>&deal_id=<request's deal>&client_id=<its
+customer>`. The space is read off the request's `crm_deal_url` (`{origin}/{slug}/app/deal/{id}`), so no setting names
+the leads space twice. A request not linked yet answers `{state: "no_deal", message}` and writes nothing; the page
+(`OpenEngagement.tsx`, the route of the old wizard) offers «Riprova» (`/crm/link`) and asks again. 409 carries the
+CRM's refusal (an archived organization, a VAT number that is another freelancer's), 502 a CRM that did not answer,
+503 no engagements token. The old wizard (`CreateMatch.tsx` and its routes) is unreachable from «Crea match» and
+stays until its removal card.
+
 Every match and contract action is a tool too (REB-478): each runs the guard the admin
 API runs, then the same core service, with the calling admin as the actor, and answers
 `pdf_url`, never the PDF bytes, the tax identifiers or the client's budget. The guards

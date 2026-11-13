@@ -66,7 +66,6 @@ from rebase_core.match_rows import (
 )
 from rebase_core.match_words import TO_LINK
 from rebase_core.models import ContractDocument, Match
-from rebase_core.referrals import ReferralService
 from rebase_core.regimes import text_name
 from rebase_core.signing_words import DRAFT_REFUSED, cancel_reason
 
@@ -254,17 +253,13 @@ class SigningRecovery:
         # The signer's own date; the moment the hub heard of it only if Documenso said
         # nothing, which a completed envelope never does.
         document.signed_at = outcome.signed_at or self.service.now()
-        if match is not None:
-            if match.status == "awaiting_signature":
-                match.status = "active"
-                # Its link to Pigro is due from this commit on (REB-499): `finish` asks
-                # for it next, and the sweep keeps asking until it holds.
-                match.pigro_status = TO_LINK
-            # A letter is the only document with a match (`document.kind == LETTERA`,
-            # the same fact `document.match_id is not None` already established): the
-            # first signed letter of a referred freelancer's or a referred company's
-            # engagement earns a reward, once, ever (P-REB-44).
-            ReferralService(self.session).record_reward_if_signed(document, match)
+        # The reward of a referral no longer matures here (REB-1106): the first signed letter of
+        # an engagement is told to the hub by the CRM's notice, which writes it.
+        if match is not None and match.status == "awaiting_signature":
+            match.status = "active"
+            # Its link to Pigro is due from this commit on (REB-499): `finish` asks
+            # for it next, and the sweep keeps asking until it holds.
+            match.pigro_status = TO_LINK
         self.session.commit()
         return True
 

@@ -17,6 +17,7 @@ from campaign_fixtures import (  # noqa: F401  (fixture)
     draft,
     person,
 )
+from fakes_crm_door import FakeCrmDoor
 from freelancer_fixtures import apply_freelancer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -295,7 +296,7 @@ def test_a_merge_carries_the_points_and_the_login_address_and_the_undo_puts_them
         _point("phone", "+39 333 111 1111", "other"),
     )
 
-    done = PersonMergeService(clean).merge(ada, old, admin_id)
+    done = PersonMergeService(clean, FakeCrmDoor().door()).merge(ada, old, admin_id)
 
     survivor, absorbed = _user(clean, ada), _user(clean, old)
     clean.refresh(survivor)
@@ -313,7 +314,7 @@ def test_a_merge_carries_the_points_and_the_login_address_and_the_undo_puts_them
     assert users.person("ADA.casa@gmail.com") is None  # an extra address is not who anyone is
     assert ContactPointService(clean).present(survivor)[0].value == "ada@studio.it"
 
-    back = PersonMergeService(clean).undo(done.action_id, admin_id)
+    back = PersonMergeService(clean, FakeCrmDoor().door()).undo(done.action_id, admin_id)
 
     assert back.left_behind == {}
     clean.expire_all()
@@ -400,7 +401,7 @@ def test_an_undone_merge_leaves_the_survivor_a_primary_phone(
     ada = apply_freelancer(clean, "ada@studio.it")
     old = apply_freelancer(clean, "ada.vecchia@studio.it", first_name="Ada")
     _override(clean, old, _point("phone", "+39 333 222 2222"))
-    done = PersonMergeService(clean).merge(ada, old, admin_id)
+    done = PersonMergeService(clean, FakeCrmDoor().door()).merge(ada, old, admin_id)
     # The phone that came is the survivor's primary; they add another one after the merge.
     survivor = _user(clean, ada)
     _override(
@@ -414,7 +415,7 @@ def test_an_undone_merge_leaves_the_survivor_a_primary_phone(
         _point("phone", "+39 333 444 4444"),
     )
 
-    PersonMergeService(clean).undo(done.action_id, admin_id)
+    PersonMergeService(clean, FakeCrmDoor().door()).undo(done.action_id, admin_id)
 
     clean.expire_all()
     assert _user(clean, ada).phone == "+39 333 444 4444"

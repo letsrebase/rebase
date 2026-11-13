@@ -42,6 +42,9 @@ function mockGets() {
       return Promise.resolve(ok(id === 'f1' ? FREELANCER : CLIENT))
     }
     if (path === '/api/freelancers/availability') return Promise.resolve(ok({ weeks: WEEKS }))
+    if (path === '/api/deals/{deal_id}') {
+      return Promise.resolve(ok({ id: 'd1', name: 'Migrazione WMS', customer_id: 'c1' }))
+    }
     if (path === '/api/deals') {
       return Promise.resolve(ok({ items: [{ id: 'd1', name: 'Migrazione WMS' }], next_cursor: null }))
     }
@@ -153,6 +156,61 @@ describe('«Nuovo incarico»', () => {
     )
     expect(toast.warning).toHaveBeenCalledWith('Si sovrappone a un altro incarico.')
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('opens filled in from the hub’s «Crea match» and creates the draft under the hub’s id', async () => {
+    vi.mocked(api.POST).mockResolvedValue(ok(engagement({ id: 'e9' })) as never)
+    render({
+      freelancerId: 'f1',
+      prefill: { clientId: 'c1', dealId: 'd1', hubMatchId: '0197f0b2-7a3c-7b1e-9c53-2f0a6a1d4e55' },
+    })
+    // The freelancer is the one the hub named, fixed; the client and the deal are the request's.
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Deal' })).toHaveValue('Migrazione WMS'))
+    expect(screen.getByRole('textbox', { name: 'Deal' })).toBeDisabled()
+    expect(await screen.findByRole('button', { name: 'Rimuovi il cliente' })).toBeDisabled()
+    expect(await screen.findByText('Alfa Logistica S.r.l.')).toBeInTheDocument()
+    expect(await screen.findByText('Giulia Martini')).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Ruolo'), 'Backend developer')
+    fireEvent.change(screen.getByLabelText('Inizio'), { target: { value: '2026-11-02' } })
+    await choose('Giorni a settimana', '4')
+    await userEvent.type(screen.getByLabelText('Compenso in euro'), '450')
+    await userEvent.type(screen.getByLabelText('Giorni dalla fattura'), '30')
+    await userEvent.click(screen.getByRole('button', { name: 'Crea la bozza' }))
+
+    await waitFor(() => expect(api.POST).toHaveBeenCalled())
+    expect(body('POST')).toMatchObject({
+      freelancer_id: 'f1',
+      client_organization_id: 'c1',
+      deal_id: 'd1',
+      hub_match_id: '0197f0b2-7a3c-7b1e-9c53-2f0a6a1d4e55',
+    })
+  })
+
+  it('takes the client from the deal when the link carried none, and fixes both', async () => {
+    vi.mocked(api.POST).mockResolvedValue(ok(engagement({ id: 'e9' })) as never)
+    render({ freelancerId: 'f1', prefill: { dealId: 'd1', hubMatchId: '0197f0b2-7a3c-7b1e-9c53-2f0a6a1d4e55' } })
+    await waitFor(() => expect(screen.getByText('Alfa Logistica S.r.l.')).toBeInTheDocument())
+    await userEvent.type(screen.getByLabelText('Ruolo'), 'Backend developer')
+    fireEvent.change(screen.getByLabelText('Inizio'), { target: { value: '2026-11-02' } })
+    await choose('Giorni a settimana', '4')
+    await userEvent.type(screen.getByLabelText('Compenso in euro'), '450')
+    await userEvent.type(screen.getByLabelText('Giorni dalla fattura'), '30')
+    await userEvent.click(screen.getByRole('button', { name: 'Crea la bozza' }))
+    await waitFor(() => expect(api.POST).toHaveBeenCalled())
+    expect(body('POST')).toMatchObject({ client_organization_id: 'c1', deal_id: 'd1' })
+  })
+
+  it('sends no hub id for an engagement nobody handed over', async () => {
+    vi.mocked(api.POST).mockResolvedValue(ok(engagement({ id: 'e9' })) as never)
+    render({ freelancerId: 'f1' })
+    await userEvent.type(await screen.findByLabelText('Ruolo'), 'Backend developer')
+    fireEvent.change(screen.getByLabelText('Inizio'), { target: { value: '2026-11-02' } })
+    await choose('Giorni a settimana', '4')
+    await userEvent.type(screen.getByLabelText('Compenso in euro'), '450')
+    await userEvent.type(screen.getByLabelText('Giorni dalla fattura'), '30')
+    await userEvent.click(screen.getByRole('button', { name: 'Crea la bozza' }))
+    await waitFor(() => expect(api.POST).toHaveBeenCalled())
+    expect(body('POST')).not.toHaveProperty('hub_match_id')
   })
 
   it('asks for the days after the client’s payment on an «a incasso» rule, and sends only that', async () => {

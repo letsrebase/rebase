@@ -43,6 +43,7 @@ from pigrocrm_api.routers import (
     expense_notes,
     f24_groups,
     fields,
+    freelancer_door,
     gmail,
     identity,
     inbox,
@@ -151,6 +152,9 @@ def create_app() -> FastAPI:
         # rebase's engagements door (spec 2026-09-25 § 2.3/§ 2.4), on the registry
         # database, under its own token: routers/engagements.py.
         engagements,
+        # The hub's reads of a freelancer through the same door, by the hub's freelancer id:
+        # availability, the member's contracts, the CV's fiscal identifiers, the merge check.
+        freelancer_door,
         # Cross-space identity (2026-09-23, REB-376): also root-scoped, on the registry.
         identity,
         # Settings → Space: the settings a database decides for itself.

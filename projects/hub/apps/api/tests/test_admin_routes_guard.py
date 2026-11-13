@@ -58,6 +58,14 @@ NOT_ADMIN: dict[Route, tuple[str, str]] = {
     ("POST", "/api/hub/auth/link"): (PUBLIC, "asks a magic link, behind spend_one"),
     ("POST", "/api/hub/auth/enter"): (PUBLIC, "spends a magic link, behind spend_one"),
     ("POST", "/api/hub/members/lookup"): (PUBLIC, "the wizards' «sei già dei nostri?» check"),
+    ("POST", "/api/hub/engagement-notices"): (
+        PUBLIC,
+        "PigroCRM's notices about its engagements: the shared bearer, 404 without it set",
+    ),
+    ("POST", "/api/hub/referrer-name"): (
+        PUBLIC,
+        "PigroCRM's question about who referred somebody: the same bearer",
+    ),
     ("POST", "/api/hub/me/logout"): (PUBLIC, "ends whatever session the cookie holds, if any"),
     # --- the team builder's public page
     ("POST", "/api/hub/team/proposals"): (PUBLIC, "«Proponi il team», behind spend_one and caps"),

@@ -309,7 +309,10 @@ export interface paths {
          *     seniority the card marks uncertain is left out until an admin says one. One
          *     `anon_cv_downloaded` entry on success, naming whether the body was kept. A plain
          *     `def`: writing and printing wait minutes at worst, in the threadpool rather than on the
-         *     event loop.
+         *     event loop. **Fails closed on the CRM** (REB-1107): the redaction list is the hub's tax
+         *     data and the CRM's (`FreelancerDoor.fiscal_identifiers`), and without the CRM's half nothing
+         *     is written and a kept body is not served either: 502 with the seam's sentence when the CRM
+         *     does not answer, 503 when this environment cannot reach it.
          */
         post: operations["download_anonymous_cv_api_hub_freelancers__freelancer_id__anonymous_cv_post"];
         delete?: never;
@@ -395,9 +398,10 @@ export interface paths {
          * @description Merges the card `da` into this one (REB-800): its notes, logins, matches,
          *     contracts, campaign rows, referrals and audit entries move here, the newer of the two
          *     CVs stays here with its card flagged for regeneration, and the other card is
-         *     soft-deleted and points at this one. Refused with a sentence when both have a live
-         *     framework agreement or an active match with the same company, or two different tax
-         *     codes. Undone from the shell with `rebase talent-duplicates --undo`.
+         *     soft-deleted and points at this one. Refused with a sentence when the CRM says both have
+         *     a live framework agreement of the same type or an engagement in progress with the same
+         *     client, when the two have different tax codes, or when the CRM cannot be asked
+         *     (REB-1107). Undone from the shell with `rebase talent-duplicates --undo`.
          */
         post: operations["merge_freelancer_api_hub_freelancers__freelancer_id__merge_post"];
         delete?: never;
@@ -1115,6 +1119,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub/freelancers/{freelancer_id}/engagement-handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hand Off Engagement
+         * @description «Crea match» (REB-1105): the CRM finds or writes the freelancer's organization, the hub
+         *     keeps a `handoff` row under a freshly minted engagement id with the company's budget
+         *     snapshot, and the answer carries the CRM's engagement form to open, filled in. A request not
+         *     in the CRM yet answers `no_deal` with its sentence and writes nothing. 503 without the CRM's
+         *     token, 409 with the CRM's sentence when it refuses the card, 502 when it does not answer.
+         */
+        post: operations["hand_off_engagement_api_hub_freelancers__freelancer_id__engagement_handoff_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub/freelancers/{freelancer_id}/matches": {
         parameters: {
             query?: never;
@@ -1644,7 +1672,9 @@ export interface paths {
          * My Contracts
          * @description «Contratti» (REB-392): the caller's own framework agreement and letters, read from
          *     the session and never from the URL. A person with no card is a 404 named «scheda»,
-         *     as `/me/cv` is.
+         *     as `/me/cv` is. The documents are the CRM's (REB-1107), read through its door by the
+         *     caller's freelancer id: 502 when the CRM does not answer and 503 when this environment
+         *     cannot reach it, and the page shows its error line rather than an empty list.
          */
         get: operations["my_contracts_api_hub_me_contracts_get"];
         put?: never;
@@ -1664,9 +1694,9 @@ export interface paths {
         };
         /**
          * My Signed Contract
-         * @description The signed copy of one of the caller's own documents. Someone else's document, and
-         *     one not signed yet, are the same 404 as a document that does not exist: a 403 would
-         *     say it exists.
+         * @description The signed copy of one of the caller's own documents, served by the CRM through its
+         *     door. Someone else's document, and one not signed yet, are the same 404 as a document
+         *     that does not exist: a 403 would say it exists. 502 and 503 as `/me/contracts`.
          */
         get: operations["my_signed_contract_api_hub_me_contracts__document_id__pdf_get"];
         put?: never;
@@ -2028,6 +2058,48 @@ export interface paths {
         get: operations["list_spaces_api_hub_pigro_instances_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/engagement-notices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Engagement Notice
+         * @description Upserts the hub's read model of one engagement from the CRM's notice, and writes the
+         *     referral reward its signature earns in the same transaction.
+         */
+        post: operations["engagement_notice_api_hub_engagement_notices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/referrer-name": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Referrer Name
+         * @description Who referred the freelancer and the company a letter is about, each `null` unless the
+         *     referral is verified.
+         */
+        post: operations["referrer_name_api_hub_referrer_name_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3833,6 +3905,70 @@ export interface components {
             enabled: boolean;
         };
         /**
+         * EngagementNotice
+         * @description One notice, the whole read model as it was at the change: the CRM's engagement id, the
+         *     match id the hub minted for it when it did (`hub_match_id`), the hub's freelancer and company
+         *     ids, the letter, `signed_at`, the fee and the dates. `sequence` is the engagement's own count
+         *     from 1; a notice not newer than the one the hub holds is ignored. Extra keys are ignored so
+         *     the CRM may grow its notice without breaking the hub.
+         */
+        EngagementNotice: {
+            /** Sequence */
+            sequence: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "created" | "updated" | "sent" | "signed" | "cancelled" | "closed" | "notice_served";
+            /** Occurred At */
+            occurred_at?: string | null;
+            /**
+             * Engagement Id
+             * Format: uuid
+             */
+            engagement_id: string;
+            /** Hub Match Id */
+            hub_match_id?: string | null;
+            /**
+             * Hub Freelancer Id
+             * Format: uuid
+             */
+            hub_freelancer_id: string;
+            /** Hub Company Id */
+            hub_company_id?: string | null;
+            /** Client Name */
+            client_name?: string | null;
+            /** Letter Id */
+            letter_id?: string | null;
+            /** Letter Number */
+            letter_number?: string | null;
+            /** Signed At */
+            signed_at?: string | null;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "day" | "hour" | "flat";
+            /** Fee */
+            fee: number | string;
+            /** Expected Days */
+            expected_days?: number | string | null;
+            /** Role */
+            role: string;
+            /**
+             * Starts On
+             * Format: date
+             */
+            starts_on: string;
+            /** Ends On */
+            ends_on?: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "draft" | "awaiting_signature" | "active" | "concluded" | "cancelled";
+        };
+        /**
          * EnterRequest
          * @description The raw token from the link. `token_urlsafe(32)` is 43 characters; the bounds
          *     leave room without accepting a paragraph.
@@ -4293,6 +4429,32 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HandoffBody */
+        HandoffBody: {
+            /**
+             * Company Id
+             * Format: uuid
+             */
+            company_id: string;
+        };
+        /**
+         * HandoffRead
+         * @description `ready`: open `url`, the CRM's form, under `engagement_id`. `no_deal`: the request has no
+         *     deal in the CRM yet, `message` says so and nothing was written.
+         */
+        HandoffRead: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "ready" | "no_deal";
+            /** Url */
+            url: string | null;
+            /** Engagement Id */
+            engagement_id: string | null;
+            /** Message */
+            message: string | null;
         };
         /** KeyBody */
         KeyBody: {
@@ -5253,6 +5415,15 @@ export interface components {
             text: string;
         };
         /**
+         * NoticeAck
+         * @description `applied` is false for a notice the hub already held (the same sequence or a newer one):
+         *     a retry, which the CRM counts as delivered.
+         */
+        NoticeAck: {
+            /** Applied */
+            applied: boolean;
+        };
+        /**
          * PersonDifference
          * @description A field where the CV and the profile both say something and disagree
          *     (`card_draft.differences`): `field` is `nome`, `last_name`, `email`, `phone` or
@@ -5504,13 +5675,14 @@ export interface components {
          *
          *     REB-609: `referred_id` is the freelancer card's or the company's id (by `kind`) and
          *     `referrer_freelancer_id` the referrer's own card when he has one, both for links.
-         *     The `match_*` fields name the match that earned the reward or, for a referral with
-         *     none yet, the referred side's newest match that is not cancelled -- `None` when
-         *     there is neither. `projected_rate` and `projected_amount` are that match's
+         *     The `engagement_*` fields name the engagement that earned the reward or, for a referral
+         *     with none yet, the referred side's newest engagement that is not signed or cancelled
+         *     yet -- `None` when there is neither (REB-1106: the hub's read model of the CRM's
+         *     engagements). `projected_rate` and `projected_amount` are that engagement's
          *     projection for a referral without a reward: an estimate, never replacing a real
          *     figure, and `None` when there is nothing to project. `referrer_name` is the
          *     referrer's whole name, first and last. `referred_deleted` and
-         *     `match_freelancer_deleted` say the referred card or request, or the match's
+         *     `engagement_freelancer_deleted` say the referred card or request, or the engagement's
          *     freelancer, was deleted by an admin: its page answers not found, so a page must not
          *     link to it.
          *
@@ -5518,7 +5690,7 @@ export interface components {
          *     (`to_verify`, `verified`), `verified_at` and `verified_via` (`accesso`,
          *     `letter`, `storico`) when and by what; they are `None` while it is pending. A
          *     pending referral has no reward and nothing to confirm (`reward_id` and `status` are
-         *     `None`), and a pending company has no `match_*` and no projection either, since
+         *     `None`), and a pending company has no `engagement_*` and no projection either, since
          *     nothing it could sign would earn anything until its contact logs in.
          */
         ReferralLedgerItem: {
@@ -5549,18 +5721,18 @@ export interface components {
             referred_name: string;
             /** Referred Deleted */
             referred_deleted: boolean;
-            /** Match Id */
-            match_id: string | null;
-            /** Match Freelancer Id */
-            match_freelancer_id: string | null;
-            /** Match Freelancer Name */
-            match_freelancer_name: string | null;
-            /** Match Freelancer Deleted */
-            match_freelancer_deleted: boolean;
-            /** Match Company Name */
-            match_company_name: string | null;
-            /** Match Requested Role */
-            match_requested_role: string | null;
+            /** Engagement Id */
+            engagement_id: string | null;
+            /** Engagement Freelancer Id */
+            engagement_freelancer_id: string | null;
+            /** Engagement Freelancer Name */
+            engagement_freelancer_name: string | null;
+            /** Engagement Freelancer Deleted */
+            engagement_freelancer_deleted: boolean;
+            /** Engagement Company Name */
+            engagement_company_name: string | null;
+            /** Engagement Role */
+            engagement_role: string | null;
             /** Projected Rate */
             projected_rate: string | null;
             /** Projected Amount */
@@ -5648,6 +5820,27 @@ export interface components {
             rate_freelancer: number | string;
             /** Rate Company */
             rate_company: number | string;
+        };
+        /**
+         * ReferrerAnswer
+         * @description The name of each side's referrer, `None` for a side with no referrer and for one whose
+         *     referral is not verified (`ReferralService.referrer_name`).
+         */
+        ReferrerAnswer: {
+            /** Freelancer */
+            freelancer: string | null;
+            /** Company */
+            company: string | null;
+        };
+        /**
+         * ReferrerQuestion
+         * @description Who referred this freelancer and this company: either id may be absent.
+         */
+        ReferrerQuestion: {
+            /** Hub Freelancer Id */
+            hub_freelancer_id?: string | null;
+            /** Hub Company Id */
+            hub_company_id?: string | null;
         };
         /** RegenerateBody */
         RegenerateBody: {
@@ -8868,6 +9061,41 @@ export interface operations {
             };
         };
     };
+    hand_off_engagement_api_hub_freelancers__freelancer_id__engagement_handoff_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                freelancer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HandoffBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandoffRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_freelancer_matches_api_hub_freelancers__freelancer_id__matches_get: {
         parameters: {
             query?: never;
@@ -10435,6 +10663,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PigroSpaceList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    engagement_notice_api_hub_engagement_notices_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EngagementNotice"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoticeAck"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    referrer_name_api_hub_referrer_name_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReferrerQuestion"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferrerAnswer"];
                 };
             };
             /** @description Validation Error */

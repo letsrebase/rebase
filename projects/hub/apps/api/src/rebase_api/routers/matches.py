@@ -19,11 +19,13 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import (
     AdminDep,
     EngagementsDep,
+    FreelancerDoorDep,
     RendererDep,
     SessionDep,
     SettingsDep,
@@ -47,6 +49,7 @@ from rebase_core.contract_schemas import (
 )
 from rebase_core.contracts.fields import signer_data
 from rebase_core.contracts.render import Renderer
+from rebase_core.engagement_handoff import EngagementHandoff, HandoffFailed, HandoffRead
 from rebase_core.errors import NotFound
 from rebase_core.fiscal import FiscalService
 from rebase_core.match_reads import MatchReads
@@ -99,6 +102,35 @@ def save_fiscal(
     """«Chi e per chi», step 1 of «Crea match», and the form on «Match e contratti»:
     saved for next time."""
     return FiscalService(session).save(freelancer_id, payload, admin.id)
+
+
+class HandoffBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    company_id: UUID
+
+
+@router.post("/freelancers/{freelancer_id}/engagement-handoff", response_model=HandoffRead)
+def hand_off_engagement(
+    _: AdminDep,
+    session: SessionDep,
+    settings: SettingsDep,
+    door: FreelancerDoorDep,
+    freelancer_id: UUID,
+    body: HandoffBody,
+) -> HandoffRead:
+    """«Crea match» (REB-1105): the CRM finds or writes the freelancer's organization, the hub
+    keeps a `handoff` row under a freshly minted engagement id with the company's budget
+    snapshot, and the answer carries the CRM's engagement form to open, filled in. A request not
+    in the CRM yet answers `no_deal` with its sentence and writes nothing. 503 without the CRM's
+    token, 409 with the CRM's sentence when it refuses the card, 502 when it does not answer."""
+    if not settings.pigro_engagements_token:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, PIGRO_NOT_CONFIGURED)
+    try:
+        return EngagementHandoff(session, door).open(freelancer_id, body.company_id)
+    except HandoffFailed as exc:
+        code = status.HTTP_409_CONFLICT if exc.rejected else status.HTTP_502_BAD_GATEWAY
+        raise HTTPException(code, exc.sentence) from exc
 
 
 @router.get("/freelancers/{freelancer_id}/matches", response_model=FreelancerContracts)

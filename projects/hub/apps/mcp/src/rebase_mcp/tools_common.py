@@ -31,11 +31,12 @@ from rebase_core.contracts.render import Renderer
 from rebase_core.crm_link import CrmLeadService
 from rebase_core.engagements import EngagementService
 from rebase_core.errors import DomainError
-from rebase_core.http import HttpCall
+from rebase_core.http import HttpCall, urllib_call
 from rebase_core.llm import LlmCall
 from rebase_core.mail import EmailSender
 from rebase_core.match_drafts import NOT_VALID, field_reason
 from rebase_core.match_reads import MatchReads
+from rebase_core.pigro_door import FreelancerDoor, freelancer_door
 from rebase_core.ratelimit import RateLimiter
 from rebase_core.schema_common import Remote
 from rebase_core.search import SEARCH_MAX_LENGTH
@@ -272,6 +273,14 @@ class Deps:
         match's `situation` says the report is not configured and offers no
         `retry_pigro`, as the admin API's own match reads do (spec § 3.2)."""
         return self.settings is not None and bool(self.settings.pigro_engagements_token)
+
+    @property
+    def freelancer_door(self) -> FreelancerDoor:
+        """The CRM's reads of a freelancer (REB-1107), for the tools that decide on what the
+        CRM holds (the merge). With no settings handed in the token is empty, so every read
+        answers that this environment is not configured, and the tool refuses."""
+        settings = self.settings if self.settings is not None else Settings(_env_file=None)  # type: ignore[call-arg]
+        return freelancer_door(settings, self.http if self.http is not None else urllib_call)
 
     @property
     def signer_json(self) -> str:

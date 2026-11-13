@@ -16,6 +16,9 @@ from rebase_core.db import Base
 from rebase_core.migrate import INI_PATH, head_revision, upgrade_to_head
 
 _NUMBER = count(1)
+# The last revision whose `referral_rewards` still points at a letter (0052 moves it to
+# `hub_engagements` and refuses to roll back over a reward).
+BEFORE_ENGAGEMENTS = "0051"
 
 
 def _user(connection: Connection, email: str) -> str:
@@ -196,7 +199,9 @@ def test_migration_0030_keeps_what_counts_counting_and_runs_again() -> None:
             orphan: ("to_verify", False, None),
         }
         for _ in range(2):  # a retried deploy runs the same revision again
-            command.upgrade(config, "head")
+            # Up to the revision before 0052, whose downgrade refuses while a reward exists:
+            # the loop rewinds to 0030 below, and the reward it wrote is part of the setup.
+            command.upgrade(config, BEFORE_ENGAGEMENTS)
             with engine.begin() as connection:
                 assert _rows(connection) == expected
                 # `verified_at` is the evidence's own moment, not the migration's.
@@ -223,7 +228,7 @@ def test_migration_0030_keeps_what_counts_counting_and_runs_again() -> None:
                     {"i": plain},
                 )
                 connection.execute(text("UPDATE alembic_version SET version_num = '0029'"))
-            command.upgrade(config, "head")
+            command.upgrade(config, BEFORE_ENGAGEMENTS)
             with engine.begin() as connection:
                 assert _rows(connection) == {**expected, plain: ("verified", True, "login")}
                 connection.execute(

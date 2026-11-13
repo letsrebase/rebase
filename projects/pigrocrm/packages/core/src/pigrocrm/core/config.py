@@ -105,6 +105,15 @@ class Settings(BaseSettings):
     # token, unreachable hub, anything but a 200: the answer is «not a member» and the
     # signup goes on. The community is the fast lane, never a gate.
     hub_url: str = "https://letsrebase.com"
+    # The bearer the CRM presents to the hub for what it tells it about engagements: the notice
+    # outbox's deliveries (`POST {hub_url}/api/hub/engagement-notices`) and the referrer's name
+    # a letter prints (`POST {hub_url}/api/hub/referrer-name`, REB-1106, collaborators design
+    # § 5). Its own value, never `engagements_token` (which opens the CRM to the hub) and never
+    # `registry_token`: set identically as `REBASE_PIGRO_NOTICES_TOKEN` in the hub's `.env`. It
+    # travels only over HTTPS, plain HTTP only to this machine. Empty, the default, means the
+    # CRM tells the hub nothing: the outbox keeps its rows for the day the token exists, and a
+    # letter prints «nessuno» for the referrer. Environment only, `repr=False` like the others.
+    hub_notices_token: str = Field(default="", repr=False)
     # --- Signing: Documenso (REB-1019, collaborators design § 2). One Documenso serves the
     # whole installation, configured here and never from a screen: the URL as this process
     # reaches it, the API token of the Documenso user and team the installation signs through
@@ -454,7 +463,9 @@ class Settings(BaseSettings):
             )
         return value
 
-    @field_validator("registry_token", "engagements_token", "documenso_webhook_secret")
+    @field_validator(
+        "registry_token", "engagements_token", "documenso_webhook_secret", "hub_notices_token"
+    )
     @classmethod
     def _service_token_must_be_long_enough(cls, value: str, info: ValidationInfo) -> str:
         # Empty is legal and means the door does not exist; a token that is set is a shared

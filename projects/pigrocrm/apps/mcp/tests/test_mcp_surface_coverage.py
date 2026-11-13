@@ -1390,6 +1390,41 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "and this route reads nothing else of the space -- not its organizations, not its "
         "other deals, not an invoice these hours do not sit on"
     ),
+    ("HubDoorService", "availability"): (
+        "REB-1107: the hub's read of a freelancer's committed days by hub id, through the root "
+        "door under the engagements token and for the hub's service alone; an agent reads the "
+        "same weeks with `get_freelancer_availability`"
+    ),
+    ("HubDoorService", "contracts"): (
+        "REB-1107: the hub's read of a member's contracts for its member area, through the root "
+        "door under the engagements token and for the hub's service alone, authorised by the "
+        "hub's own session identity: no agent holds that identity, and an agent reads documents "
+        "with the document tools"
+    ),
+    ("HubDoorService", "signed_pdf"): (
+        "REB-1107: the signed PDF the hub serves to the member it belongs to, through the root "
+        "door under the engagements token and for the hub's service alone: bytes for a member's "
+        "download, never an agent's"
+    ),
+    ("HubDoorService", "fiscal_identifiers"): (
+        "REB-1107: the tax code, VAT number and PEC the hub redacts from an anonymous CV, through "
+        "the root door under the engagements token and for the hub's service alone: personal "
+        "identifiers that no agent needs to read in bulk by hub id"
+    ),
+    ("HubDoorService", "merge_check"): (
+        "REB-1107: the hub's question before it merges two freelancer cards, through the root "
+        "door under the engagements token and for the hub's service alone"
+    ),
+    ("HubDoorService", "ensure_freelancer"): (
+        "REB-1105: the hub's «Crea match» finds or creates the freelancer organization by hub id, "
+        "through the root door under the engagements token and for the hub's service alone; an "
+        "agent does it with `create_organization` and `update_organization`"
+    ),
+    ("FreelancerService", "weeks_of"): (
+        "REB-1107: the computation behind `get_freelancer_availability` and the hub's door, with "
+        "no permission check of its own: the caller's own (an administrator's, or the door's "
+        "token), so it is not a surface"
+    ),
     ("TenantService", "get_by_id"): (
         "REB-1019: the registry's lookup of a space by id, which the Documenso webhook runs on the "
         "envelope's `externalId` to find the space it belongs to, before any actor exists: "

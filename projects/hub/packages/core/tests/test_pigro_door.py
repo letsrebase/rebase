@@ -5,6 +5,7 @@ database: the session is a stand-in that counts its commits and rollbacks."""
 import json
 import logging
 import urllib.error
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import create_autospec
 from uuid import UUID, uuid4
@@ -13,7 +14,14 @@ import pytest
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from rebase_core.http import MAX_BODY_BYTES, HttpCall
+from rebase_core.config import Settings
+from rebase_core.http import (
+    MAX_BODY_BYTES,
+    MAX_DOWNLOAD_BYTES,
+    HttpCall,
+    urllib_call,
+    urllib_download_call,
+)
 from rebase_core.match_words import ERROR, HTTPS_ONLY, LINKED, REJECTED
 from rebase_core.pigro_door import (
     ANSWERED_STATUS,
@@ -25,12 +33,15 @@ from rebase_core.pigro_door import (
     NOT_ANSWERING,
     NOT_THE_SHAPE,
     TOO_LONG,
+    FreelancerDoor,
     Gone,
     Outcome,
     PigroDoor,
+    PigroMisconfigured,
     PigroUnavailable,
     SweepCount,
     committed,
+    freelancer_door,
     speaks_https,
     sweep_round,
     write,
@@ -222,3 +233,163 @@ def test_a_sweep_round_lets_go_first_counts_each_row_and_survives_a_failure() ->
     assert count == SweepCount(linked=2, failed=3)
     assert seen == ids
     assert sweep_round(session, [], link, what="match") == SweepCount(0, 0)
+
+
+# ---- the reads of a freelancer (REB-1107) -------------------------------------------------
+
+
+class _Script:
+    """A seam that answers from a list, one answer per call, and records the calls."""
+
+    def __init__(self, *answers: tuple[int, bytes] | Exception) -> None:
+        self.answers = list(answers)
+        self.calls: list[tuple[str, str, dict[str, str]]] = []
+
+    def __call__(
+        self, method: str, target: str, headers: dict[str, str], payload: bytes
+    ) -> tuple[int, bytes]:
+        self.calls.append((method, target, headers))
+        answer = self.answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+
+def test_a_get_is_asked_again_on_a_failed_connection_and_on_a_not_ready_crm_only() -> None:
+    def parse(raw: bytes) -> str:
+        return raw.decode()
+
+    for failed in (ConnectionRefusedError(), (502, b""), (503, b""), (504, b"")):
+        seam = _Script(failed, (200, b"ok"))  # type: ignore[arg-type]
+        assert PigroDoor(URL, TOKEN, seam).get("/x", parse, attempts=2) == "ok"
+        assert len(seam.calls) == 2
+    # Asked again once, not for ever: the second failure is the answer.
+    seam = _Script(ConnectionRefusedError(), ConnectionRefusedError())
+    with pytest.raises(PigroUnavailable, match="non risponde"):
+        PigroDoor(URL, TOKEN, seam).get("/x", parse, attempts=2)
+    assert len(seam.calls) == 2
+    # What is not a CRM that is not ready is not asked again: a refusal, a missing page, a
+    # server error, and the default is one call.
+    for status in (400, 404, 500):
+        seam = _Script((status, b""), (200, b"ok"))
+        with pytest.raises(PigroUnavailable):
+            PigroDoor(URL, TOKEN, seam).get("/x", parse, attempts=2)
+        assert len(seam.calls) == 1
+    seam = _Script((503, b""), (200, b"ok"))
+    with pytest.raises(PigroUnavailable):
+        PigroDoor(URL, TOKEN, seam).get("/x", parse)
+    assert len(seam.calls) == 1
+
+
+def test_a_get_reads_a_file_up_to_its_own_limit_not_the_json_seams() -> None:
+    big = b"x" * (MAX_BODY_BYTES + 1)
+    with pytest.raises(PigroUnavailable, match="troppo lungo"):
+        PigroDoor(URL, TOKEN, _Script((200, big))).get("/x", lambda raw: raw)
+    assert (
+        PigroDoor(URL, TOKEN, _Script((200, big))).get(
+            "/x", lambda raw: raw, limit=MAX_DOWNLOAD_BYTES
+        )
+        == big
+    )
+    with pytest.raises(PigroUnavailable, match="troppo lungo"):
+        PigroDoor(URL, TOKEN, _Script((200, big + b"x" * MAX_DOWNLOAD_BYTES))).get(
+            "/x", lambda raw: raw, limit=MAX_DOWNLOAD_BYTES
+        )
+
+
+def _reads(*answers: tuple[int, bytes] | Exception) -> tuple[FreelancerDoor, _Script, _Script]:
+    json_seam, download_seam = _Script(*answers), _Script(*answers)
+    return FreelancerDoor(URL, TOKEN, json_seam, download_seam), json_seam, download_seam
+
+
+def test_each_read_is_a_get_on_the_freelancers_own_path_with_the_bearer() -> None:
+    freelancer, other = uuid4(), uuid4()
+    week = {
+        "freelancer_id": None,
+        "hub_freelancer_id": str(freelancer),
+        "date_from": "2026-11-02",
+        "date_to": "2026-11-08",
+        "weeks": [],
+    }
+    door, seam, _ = _reads(
+        (200, json.dumps(week).encode()),
+        (200, b'{"documents": []}'),
+        (200, b'{"tax_code": "X", "vat_number": null, "certified_email": null}'),
+        (
+            200,
+            b'{"framework_regimes": ["ordinary"], "shared_clients": 1, '
+            b'"tax_code_conflict": false, "organization": true, "other_organization": false}',
+        ),
+    )
+
+    availability = door.availability(freelancer, date(2026, 11, 2), date(2026, 11, 8))
+    contracts = door.contracts(freelancer)
+    fiscal = door.fiscal_identifiers(freelancer)
+    merge = door.merge_check(freelancer, other)
+
+    assert availability.freelancer_id is None and availability.weeks == []
+    assert contracts.documents == []
+    assert fiscal.tax_code == "X"
+    assert (merge.framework_regimes, merge.shared_clients) == (["ordinary"], 1)
+    assert [(method, target) for method, target, _ in seam.calls] == [
+        (
+            "GET",
+            f"{URL}/api/rebase/freelancers/{freelancer}/availability?from=2026-11-02&to=2026-11-08",
+        ),
+        ("GET", f"{URL}/api/rebase/freelancers/{freelancer}/contracts"),
+        ("GET", f"{URL}/api/rebase/freelancers/{freelancer}/fiscal-identifiers"),
+        ("GET", f"{URL}/api/rebase/freelancers/{freelancer}/merge-check?with={other}"),
+    ]
+    assert {headers["Authorization"] for _, _, headers in seam.calls} == {f"Bearer {TOKEN}"}
+    # With no dates the window is the CRM's default: nothing is sent.
+    door_open, seam_open, _ = _reads((200, json.dumps(week).encode()))
+    door_open.availability(freelancer)
+    assert seam_open.calls[0][1].endswith("/availability")
+
+
+def test_a_signed_pdf_goes_through_the_download_seam_and_a_404_is_gone() -> None:
+    freelancer, document = uuid4(), uuid4()
+    big_pdf = b"%PDF" + b"0" * (MAX_BODY_BYTES * 2)
+    door, json_seam, download_seam = _reads((200, big_pdf))
+
+    assert door.signed_pdf(freelancer, document) == big_pdf
+
+    assert json_seam.calls == []
+    assert download_seam.calls[0][1] == (
+        f"{URL}/api/rebase/freelancers/{freelancer}/contracts/{document}/pdf"
+    )
+    refused, _, _ = _reads((404, b'{"detail": "Not Found"}'))
+    with pytest.raises(Gone):
+        refused.signed_pdf(freelancer, document)
+
+
+def test_the_reads_refuse_to_leave_without_a_token_or_over_plain_http() -> None:
+    seam = _Script((200, b"{}"))
+    for door in (
+        FreelancerDoor(URL, "", seam, seam),
+        FreelancerDoor("http://crm.test", TOKEN, seam, seam),
+    ):
+        with pytest.raises(PigroMisconfigured):
+            door.contracts(uuid4())
+        with pytest.raises(PigroMisconfigured):
+            door.signed_pdf(uuid4(), uuid4())
+    # This machine is the one plain HTTP the bearer may travel to.
+    assert seam.calls == []
+    local = FreelancerDoor(
+        "http://127.0.0.1:8000", TOKEN, _Script((200, b'{"documents": []}')), seam
+    )
+    assert local.contracts(uuid4()).documents == []
+
+
+def test_the_builder_pairs_production_s_json_seam_with_the_download_one() -> None:
+    settings = Settings(
+        _env_file=None,  # type: ignore[call-arg]
+        pigro_api_url=URL,
+        pigro_engagements_token=TOKEN,
+    )
+
+    production = freelancer_door(settings)
+    assert (production.api_url, production.token) == (URL, TOKEN)
+    assert production.http is urllib_call and production.download is urllib_download_call
+    seam = _Script()
+    assert freelancer_door(settings, seam).download is seam

@@ -19,6 +19,7 @@ from rebase_core.models import USER_ROLES, Freelancer
 if TYPE_CHECKING:
     from rebase_core.mail import EmailSender
     from rebase_core.merge import MergeRead
+    from rebase_core.pigro_door import FreelancerDoor
 
 
 def _ask(value: str | None, label: str) -> str | None:
@@ -148,6 +149,7 @@ def setrole(
 
 def talent_duplicates(
     session: Session,
+    door: "FreelancerDoor",
     *,
     apply: bool = False,
     admin_email: str | None = None,
@@ -165,7 +167,9 @@ def talent_duplicates(
     pair, the card with the newest CV surviving (`--survivor ID --absorbed ID` merges that
     one pair instead, whichever signals it has: an admin who read both cards chose), then
     creates the LinkedIn unique indexes if nothing shares a profile any more. `--undo
-    ACTION_ID --admin EMAIL` puts one merge back. Answers the exit code and the lines."""
+    ACTION_ID --admin EMAIL` puts one merge back. A merge, and the dry run, ask the CRM through
+    `door` for the contracts and engagements of both cards (REB-1107), and a pair it cannot
+    ask about is reported blocked, never merged. Answers the exit code and the lines."""
     from rebase_core.duplicates import UNIQUE_INDEXES, ensure_unique_indexes, find_duplicates
     from rebase_core.merge import PersonMergeService
     from rebase_core.users import UserService
@@ -179,7 +183,7 @@ def talent_duplicates(
         if admin is None or admin.role != "admin":
             return 1, [f"No administrator with email {admin_email.strip().lower()}"]
         admin_id = admin.id
-    merges = PersonMergeService(session)
+    merges = PersonMergeService(session, door)
     if undo is not None:
         if admin_id is None:
             return 2, ["--undo needs --admin with an administrator's address."]
@@ -305,11 +309,14 @@ def talent_duplicates_command(
     absorbed: UUID | None,
     undo: UUID | None,
 ) -> int:
+    from rebase_core.pigro_door import freelancer_door
+
     settings = get_settings()
     session = open_session(settings)()
     try:
         code, lines = talent_duplicates(
             session,
+            freelancer_door(settings),
             apply=apply,
             admin_email=admin_email,
             survivor=survivor,

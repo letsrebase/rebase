@@ -1,8 +1,10 @@
-"""The hub's own facts about a freelancer, as a source of their card (REB-838)."""
+"""The hub's own facts about a freelancer, as a source of their card (REB-838), read from the
+hub's read model of the CRM's engagements (REB-1106)."""
 
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from types import EllipsisType
 from typing import Any
 from uuid import UUID
 
@@ -13,7 +15,7 @@ from sqlalchemy.orm import Session
 from rebase_core.card_provenance import sha
 from rebase_core.errors import NotFound
 from rebase_core.hub_facts import HubFacts, MatchFact, hub_facts
-from rebase_core.models import AdminAction, Company, Freelancer, Match, Note, User
+from rebase_core.models import Company, Freelancer, HubEngagement, Note, User
 
 TODAY = date(2026, 10, 27)
 CLIENT = "Initech Italia srl"
@@ -23,7 +25,7 @@ CLIENT = "Initech Italia srl"
 def clean(hub_session: Session) -> Iterator[Session]:
     yield hub_session
     hub_session.rollback()
-    for table in ("admin_actions", "notes", "matches", "companies", "freelancers", "users"):
+    for table in ("notes", "hub_engagements", "companies", "freelancers", "users"):
         hub_session.execute(text(f"DELETE FROM {table}"))
     hub_session.commit()
 
@@ -49,18 +51,22 @@ def _match(
     status: str = "concluded",
     start: date | None = date(2025, 1, 1),
     fine: date | None = date(2025, 6, 30),
+    planned: date | None | EllipsisType = ...,
     closed: datetime | None = None,
     profile: str = "Backend developer",
     budget: str = "777",
     company_name: str = CLIENT,
-) -> Match:
+) -> HubEngagement:
+    """An engagement as the CRM's notices leave it: `fine` is its end (a closed one's actual
+    day), `planned` the end it had while it was live (the end it was planned to have, `fine`
+    unless said)."""
     admin = session.query(User).filter(User.email == "admin@rebase.it").first() or _user(
         session, "admin@rebase.it", role="admin"
     )
     company = Company(
         user_id=admin.id,
         company_name=company_name,
-        requested_role=profile,
+        requested_role="Il ruolo scritto dal cliente",
         project="Il progetto segreto del cliente",
         period_from=date(2025, 1, 1),
         duration="6 mesi",
@@ -70,22 +76,23 @@ def _match(
     )
     session.add(company)
     session.flush()
-    match = Match(
+    engagement = HubEngagement(
         freelancer_id=person.id,
         company_id=company.id,
-        customer_legal_name=CLIENT,
-        customer_vat_number="01234567890",
-        customer_registered_office="Via Segreta 1, Milano",
-        status=status,
-        created_by=admin.id,
-        letter_start_date=start,
-        letter_end_date=fine,
-        letter_fee=Decimal("777"),
+        client_name=CLIENT,
+        role=profile,
+        mode="day",
+        fee=Decimal("777"),
+        state=status,
+        sequence=1,
+        starts_on=start,
+        ends_on=fine,
+        planned_ends_on=fine if planned is ... else planned,
         updated_at=closed or datetime(2025, 7, 1, tzinfo=UTC),
     )
-    session.add(match)
+    session.add(engagement)
     session.flush()
-    return match
+    return engagement
 
 
 def _facts(session: Session, person: Freelancer) -> HubFacts:
@@ -154,9 +161,9 @@ def test_outcomes(clean: Session) -> None:
         clean,
         person,
         start=date(2025, 1, 1),
-        fine=date(2025, 12, 31),
-        closed=datetime(2025, 4, 1, tzinfo=UTC),
-    )  # closed early: 3 months, not completed
+        fine=date(2025, 4, 1),
+        planned=date(2025, 12, 31),
+    )  # closed early, on 1 April: 3 months, not completed
     _match(clean, person, status="active", start=date(2026, 8, 1), fine=date(2027, 1, 31))
 
     facts = _facts(clean, person)
@@ -228,24 +235,19 @@ def test_client_names_are_kept_for_the_guard_and_in_no_text(clean: Session) -> N
     assert CLIENT not in facts.text() and CLIENT not in facts.hash_material()
 
 
-def test_the_close_date_is_the_trails_not_the_last_edit(clean: Session) -> None:
-    """`updated_at` moves with any later edit of the match: the months, the outcome and the
-    completed months would move with it, and the cards with them."""
+def test_the_close_date_is_the_rows_end_not_the_last_edit(clean: Session) -> None:
+    """`updated_at` moves with any later notice of the engagement: the months, the outcome and
+    the completed months would move with it, and the cards with them. A closed engagement ends
+    on the day the CRM closed it, which is the row's `ends_on`."""
     person = _person(clean)
-    match = _match(
-        clean, person, start=date(2025, 1, 1), fine=None, closed=datetime(2026, 3, 10, tzinfo=UTC)
+    _match(
+        clean,
+        person,
+        start=date(2025, 1, 1),
+        fine=date(2025, 7, 1),
+        planned=None,
+        closed=datetime(2026, 3, 10, tzinfo=UTC),
     )
-    clean.add(
-        AdminAction(
-            entity_type="match",
-            entity_id=match.id,
-            kind="match_closed",
-            admin_id=_user(clean, "boss@rebase.it", role="admin").id,
-            payload={},
-            created_at=datetime(2025, 7, 1, tzinfo=UTC),
-        )
-    )
-    clean.flush()
 
     facts = _facts(clean, person)
 

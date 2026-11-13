@@ -9,6 +9,8 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from fakes_crm_door import FakeCrmDoor
+from fakes_pigro import PIGRO, TOKEN
 from sqlalchemy import Engine, delete, select, text
 from sqlalchemy.orm import Session
 
@@ -31,6 +33,7 @@ from rebase_core.models import (
     FreelancerFiscal,
     FreelancerSource,
     GuideDownload,
+    HubEngagement,
     Login,
     MagicLinkToken,
     Match,
@@ -44,6 +47,7 @@ from rebase_core.models import (
     UserContactPoint,
     UserSession,
 )
+from rebase_core.pigro_door import FreelancerDoor
 from rebase_core.users import UserService
 
 NOW = datetime(2026, 10, 27, 12, 0, tzinfo=UTC)
@@ -62,6 +66,7 @@ TABLES = (
     "team_proposals",
     "talent_cloud_grants",
     "contract_documents",
+    "hub_engagements",
     "matches",
     "freelancer_fiscal",
     "freelancer_cards",
@@ -201,6 +206,11 @@ def _pair(session: Session) -> tuple[Freelancer, Freelancer, User, User, User]:
     return a, b, a_user, b_user, admin
 
 
+def _merges(session: Session, crm: FakeCrmDoor | None = None) -> PersonMergeService:
+    """The service over a fake CRM door that finds no conflict unless `crm` says one."""
+    return PersonMergeService(session, (crm or FakeCrmDoor()).door())
+
+
 def _everything_of(session: Session, b: Freelancer, b_user: User, admin: User) -> dict[str, UUID]:
     """One row of every relation, hung on B and on B's person."""
     other_user = _user(session, "altro@studio.it", first_name="Altro")
@@ -271,6 +281,12 @@ def _everything_of(session: Session, b: Freelancer, b_user: User, admin: User) -
         session.flush()
         ids[key] = row.id
     ids["matches"] = _match(session, b, company, admin, "draft").id
+    engagement = HubEngagement(
+        freelancer_id=b.id, company_id=company.id, state="active", sequence=1
+    )
+    session.add(engagement)
+    session.flush()
+    ids["hub_engagements"] = engagement.id
     session.add(
         ContractDocument(
             kind="framework",
@@ -337,7 +353,7 @@ def test_every_relation_of_the_absorbed_person_moves_to_the_survivor(clean: Sess
         "a relation has no row in this test"
     )
 
-    done = PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    done = _merges(clean).merge(a.id, b.id, admin.id)
 
     assert done.moved == dict.fromkeys(ids, 1) and done.left_behind == {}
     for relation in RELATIONS:
@@ -355,7 +371,7 @@ def test_every_relation_of_the_absorbed_person_moves_to_the_survivor(clean: Sess
 
 def test_the_absorbed_card_is_soft_deleted_and_points_at_the_survivor(clean: Session) -> None:
     a, b, a_user, b_user, admin = _pair(clean)
-    done = PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    done = _merges(clean).merge(a.id, b.id, admin.id)
     clean.expire_all()
     assert clean.get(Freelancer, b.id).deleted_at is not None  # type: ignore[union-attr]
     assert clean.get(User, b_user.id).merged_into_id == a_user.id  # type: ignore[union-attr]
@@ -375,7 +391,7 @@ def test_the_absorbed_card_is_soft_deleted_and_points_at_the_survivor(clean: Ses
 
 def test_the_older_card_cannot_be_restored_by_itself_once_merged(clean: Session) -> None:
     a, b, _, _, admin = _pair(clean)
-    PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    _merges(clean).merge(a.id, b.id, admin.id)
     with pytest.raises(InvalidState, match="unita a un'altra"):
         FreelancerService(clean).restore(b.id, admin.id)
 
@@ -384,7 +400,7 @@ def test_the_newest_cv_stays_and_the_older_file_stays_reachable_on_the_absorbed_
     clean: Session,
 ) -> None:
     a, b, _, _, admin = _pair(clean)
-    done = PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    done = _merges(clean).merge(a.id, b.id, admin.id)
     clean.expire_all()
     assert done.cv == "kept"
     assert clean.get(Freelancer, a.id).cv_bytes == PDF  # type: ignore[union-attr]
@@ -399,7 +415,7 @@ def test_when_the_absorbed_cv_is_newer_the_cv_and_its_card_swap(clean: Session) 
     clean.add(FreelancerCard(freelancer_id=a.id, cv_sha256="a" * 64, card={"role": "Old"}))
     clean.commit()
 
-    done = PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    done = _merges(clean).merge(a.id, b.id, admin.id)
     clean.expire_all()
 
     assert done.cv == "absorbed"
@@ -422,7 +438,7 @@ def test_a_survivor_with_a_cv_and_no_card_is_flagged_and_a_failure_is_cleared(
         )
     )
     clean.commit()
-    done = PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    done = _merges(clean).merge(a.id, b.id, admin.id)
     clean.expire_all()
     card = clean.get(FreelancerCard, a.id)
     assert done.card_to_regenerate is True
@@ -449,7 +465,7 @@ def test_the_profile_the_survivor_leaves_empty_is_filled_and_the_first_attributi
         status="contacted",
     )
     clean.commit()
-    PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    _merges(clean).merge(a.id, b.id, admin.id)
     clean.expire_all()
     survivor = clean.get(Freelancer, a.id)
     assert survivor is not None
@@ -466,7 +482,7 @@ def test_the_absorbed_address_still_logs_in_as_the_survivor_and_the_wizard_finds
     clean: Session, settings: Settings
 ) -> None:
     a, b, a_user, b_user, admin = _pair(clean)
-    PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    _merges(clean).merge(a.id, b.id, admin.id)
     users = UserService(clean, settings)
     mail = users.request_link("vecchia@studio.it")
     assert mail is not None and mail.to == "vecchia@studio.it"
@@ -492,7 +508,7 @@ def test_a_referral_the_survivor_already_has_stays_with_the_absorbed_card(clean:
     theirs = Referral(referrer_user_id=referrer.id, kind="freelancer", entity_id=b.id, code="BBB")
     clean.add_all([own, theirs])
     clean.commit()
-    done = PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    done = _merges(clean).merge(a.id, b.id, admin.id)
     clean.expire_all()
     assert done.left_behind == {"referral_received": 1} and done.moved == {}
     assert clean.get(Referral, theirs.id).entity_id == b.id  # type: ignore[union-attr]
@@ -510,39 +526,146 @@ def test_a_talent_already_on_the_same_team_request_is_not_moved_twice(clean: Ses
         ]
     )
     clean.commit()
-    done = PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    done = _merges(clean).merge(a.id, b.id, admin.id)
     assert done.left_behind == {"team_request_talents": 1}
 
 
-def test_refused_when_both_have_a_live_framework_agreement_of_the_same_regime(
+def _conflicts(a: Freelancer, b: Freelancer, **answer: object) -> FakeCrmDoor:
+    """A CRM that says `answer` about the pair (the keys of its merge check), both ways."""
+    said = {
+        "framework_regimes": [],
+        "shared_clients": 0,
+        "tax_code_conflict": False,
+        "organization": False,
+        "other_organization": False,
+        **answer,
+    }
+    return FakeCrmDoor(merge={(a.id, b.id): said, (b.id, a.id): said})
+
+
+def test_refused_when_the_crm_says_both_have_a_live_framework_agreement_of_the_same_type(
     clean: Session,
 ) -> None:
     a, b, _, _, admin = _pair(clean)
+    crm = _conflicts(a, b, framework_regimes=["ordinary"])
+    with pytest.raises(
+        InvalidState, match=r"contratto quadro in corso o firmato \(vat_registered\)"
+    ):
+        _merges(clean, crm).merge(a.id, b.id, admin.id)
+    assert clean.get(Freelancer, b.id).deleted_at is None  # type: ignore[union-attr]
+    assert crm.calls == [("GET", f"/api/rebase/freelancers/{a.id}/merge-check?with={b.id}")]
+
+
+def test_the_hubs_own_contract_tables_are_no_longer_the_merges_check(clean: Session) -> None:
+    """The contracts and engagements are the CRM's: two live local framework agreements and
+    an active local match with the same company, which the check used to refuse, are now
+    for the removal card to drop, and a CRM that finds nothing lets the merge through and
+    moves them with the card."""
+    a, b, a_user, _, admin = _pair(clean)
     _framework(clean, a, admin, "signed")
     _framework(clean, b, admin, "sent")
-    clean.commit()
-    with pytest.raises(InvalidState, match="contratto quadro in corso o firmato"):
-        PersonMergeService(clean).merge(a.id, b.id, admin.id)
-    assert clean.get(Freelancer, b.id).deleted_at is None  # type: ignore[union-attr]
-
-
-def test_a_cancelled_framework_agreement_on_one_side_is_no_conflict(clean: Session) -> None:
-    a, b, _, _, admin = _pair(clean)
-    _framework(clean, a, admin, "signed")
-    _framework(clean, b, admin, "cancelled")
-    clean.commit()
-    done = PersonMergeService(clean).merge(a.id, b.id, admin.id)
-    assert done.moved["contract_documents"] == 1
-
-
-def test_refused_when_both_have_an_active_match_with_the_same_company(clean: Session) -> None:
-    a, b, a_user, _, admin = _pair(clean)
     company = _company(clean, a_user)
     _match(clean, a, company, admin, "active")
     _match(clean, b, company, admin, "awaiting_signature")
     clean.commit()
+
+    done = _merges(clean).merge(a.id, b.id, admin.id)
+
+    # The absorbed card's own rows, one of each, move with it.
+    assert done.moved["contract_documents"] == 1
+    assert done.moved["matches"] == 1
+
+
+def test_refused_when_the_crm_says_both_have_an_engagement_with_the_same_client(
+    clean: Session,
+) -> None:
+    a, b, _, _, admin = _pair(clean)
     with pytest.raises(InvalidState, match="incarico in corso con la stessa azienda"):
-        PersonMergeService(clean).merge(a.id, b.id, admin.id)
+        _merges(clean, _conflicts(a, b, shared_clients=1)).merge(a.id, b.id, admin.id)
+
+
+def test_refused_when_the_crm_says_the_tax_codes_differ(clean: Session) -> None:
+    a, b, _, _, admin = _pair(clean)
+    with pytest.raises(InvalidState, match="codici fiscali diversi"):
+        _merges(clean, _conflicts(a, b, tax_code_conflict=True)).merge(a.id, b.id, admin.id)
+
+
+def test_refused_when_the_crm_holds_an_organization_for_the_absorbed_card(
+    clean: Session,
+) -> None:
+    """A hub merge does not re-key the CRM's organization: it would stay on the hidden card
+    and the survivor would lose its contracts. Both cases say what to do first."""
+    a, b, _, _, admin = _pair(clean)
+    with pytest.raises(InvalidState, match="unisci prima il freelance nel CRM"):
+        _merges(clean, _conflicts(a, b, organization=True, other_organization=True)).merge(
+            a.id, b.id, admin.id
+        )
+    only_absorbed = _conflicts(a, b, other_organization=True)
+    with pytest.raises(InvalidState, match="unisci nell'altro verso"):
+        _merges(clean, only_absorbed).merge(a.id, b.id, admin.id)
+    with pytest.raises(InvalidState, match="unisci nell'altro verso"):
+        _merges(clean, only_absorbed).plan(a.id, b.id)
+    assert clean.get(Freelancer, b.id).deleted_at is None  # type: ignore[union-attr]
+    # Only the survivor has one: the merge keeps it, nothing is lost.
+    done = _merges(clean, _conflicts(a, b, organization=True)).merge(a.id, b.id, admin.id)
+    assert done.survivor_freelancer_id == a.id
+
+
+def test_a_merge_the_crm_finds_clean_goes_through(clean: Session) -> None:
+    a, b, _, _, admin = _pair(clean)
+    done = _merges(clean, _conflicts(a, b)).merge(a.id, b.id, admin.id)
+    assert done.survivor_freelancer_id == a.id
+
+
+def test_a_crm_that_cannot_be_asked_refuses_the_merge_and_writes_nothing(
+    clean: Session,
+) -> None:
+    """Fails closed: a merge the CRM did not check could join two live agreements."""
+    a, b, _, _, admin = _pair(clean)
+    for failure in (
+        [ConnectionRefusedError(), ConnectionRefusedError()],
+        [(500, b"")],
+        [(200, b"not json")],
+    ):
+        for ask in (
+            lambda service: service.merge(a.id, b.id, admin.id),
+            lambda service: service.plan(a.id, b.id),
+        ):
+            crm = FakeCrmDoor()
+            crm.down(*failure)
+            with pytest.raises(InvalidState, match="senza il suo controllo non unisco"):
+                ask(_merges(clean, crm))
+    assert clean.get(Freelancer, b.id).deleted_at is None  # type: ignore[union-attr]
+    assert clean.scalar(select(AdminAction).where(AdminAction.kind == "merged")) is None
+    # No token on this environment: refused the same way, and nothing left the process.
+    silent = FakeCrmDoor()
+    unconfigured = PersonMergeService(clean, silent.door(token=""))
+    with pytest.raises(InvalidState, match="non è configurato"):
+        unconfigured.merge(a.id, b.id, admin.id)
+    assert silent.calls == []
+
+
+def test_the_crm_is_asked_before_any_row_is_locked(clean: Session) -> None:
+    """No row lock is held across the call to the CRM: when it is made the survivor's and the
+    absorbed card's rows are not locked by this transaction yet."""
+    a, b, _, _, admin = _pair(clean)
+    crm = _conflicts(a, b)
+    during: list[bool] = []
+    original = crm.__call__
+
+    def asking(*call: Any) -> tuple[int, bytes]:
+        locked = clean.execute(
+            text(
+                "SELECT count(*) FROM pg_locks "
+                "WHERE locktype = 'transactionid' AND granted AND pid = pg_backend_pid()"
+            )
+        ).scalar_one()
+        during.append(locked == 0)
+        return original(*call)
+
+    door = FreelancerDoor(PIGRO, TOKEN, asking, asking)
+    PersonMergeService(clean, door).merge(a.id, b.id, admin.id)
+    assert during == [True]
 
 
 def test_refused_when_the_two_cards_have_different_tax_codes(clean: Session) -> None:
@@ -555,7 +678,7 @@ def test_refused_when_the_two_cards_have_different_tax_codes(clean: Session) -> 
         )
     clean.commit()
     with pytest.raises(InvalidState, match="codici fiscali diversi"):
-        PersonMergeService(clean).merge(a.id, b.id, admin.id)
+        _merges(clean).merge(a.id, b.id, admin.id)
 
 
 def test_refused_when_the_absorbed_card_is_an_admins_and_for_the_same_card_twice(
@@ -565,9 +688,9 @@ def test_refused_when_the_absorbed_card_is_an_admins_and_for_the_same_card_twice
     b_user.role = "admin"
     clean.commit()
     with pytest.raises(InvalidState, match="amministratore"):
-        PersonMergeService(clean).merge(a.id, b.id, admin.id)
+        _merges(clean).merge(a.id, b.id, admin.id)
     with pytest.raises(ValidationFailed, match="due schede diverse"):
-        PersonMergeService(clean).merge(a.id, a.id, admin.id)
+        _merges(clean).merge(a.id, a.id, admin.id)
 
 
 def test_a_deleted_card_cannot_be_merged(clean: Session) -> None:
@@ -575,13 +698,13 @@ def test_a_deleted_card_cannot_be_merged(clean: Session) -> None:
     b.deleted_at = NOW
     clean.commit()
     with pytest.raises(NotFound):
-        PersonMergeService(clean).merge(a.id, b.id, admin.id)
+        _merges(clean).merge(a.id, b.id, admin.id)
 
 
 def test_the_plan_counts_what_a_merge_would_move_and_writes_nothing(clean: Session) -> None:
     a, b, _, b_user, admin = _pair(clean)
     _everything_of(clean, b, b_user, admin)
-    plan = PersonMergeService(clean).plan(a.id, b.id)
+    plan = _merges(clean).plan(a.id, b.id)
     assert plan == dict.fromkeys((relation.key for relation in RELATIONS), 1)
     assert clean.get(Freelancer, b.id).deleted_at is None  # type: ignore[union-attr]
     assert clean.scalar(select(AdminAction).where(AdminAction.kind == "merged")) is None
@@ -593,7 +716,7 @@ def test_undo_gives_every_row_back_and_makes_the_card_live_again(clean: Session)
     a_user.linkedin_url = None
     clean.commit()
     ids = _everything_of(clean, b, b_user, admin)
-    service = PersonMergeService(clean)
+    service = _merges(clean)
     done = service.merge(a.id, b.id, admin.id)
     back = service.undo(done.action_id, admin.id)
 
@@ -623,7 +746,7 @@ def test_undo_restores_a_swapped_cv_and_the_survivors_filled_fields(clean: Sessi
     b.job_title, a.job_title = "Backend", None
     clean.add(FreelancerCard(freelancer_id=b.id, cv_sha256="b" * 64, card={"role": "Dev"}))
     clean.commit()
-    service = PersonMergeService(clean)
+    service = _merges(clean)
     done = service.merge(a.id, b.id, admin.id)
     service.undo(done.action_id, admin.id)
     clean.expire_all()
@@ -653,7 +776,7 @@ def test_the_absorbed_cards_source_text_is_deleted_and_the_survivors_kept(clean:
         )
     clean.commit()
 
-    PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    _merges(clean).merge(a.id, b.id, admin.id)
 
     owners = clean.scalars(select(FreelancerSource.freelancer_id)).all()
     assert owners == [a.id]
@@ -678,7 +801,7 @@ def test_a_swapped_card_keeps_its_provenance(clean: Session) -> None:
     )
     clean.commit()
 
-    PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    _merges(clean).merge(a.id, b.id, admin.id)
 
     clean.expire_all()
     card = clean.get(FreelancerCard, a.id)
@@ -701,7 +824,7 @@ def test_to_swapped_card_keeps_its_person_with_its_cv_and_undo_gives_it_back(
         FreelancerCard(freelancer_id=b.id, cv_sha256="b" * 64, card={"role": "Dev"}, person=person)
     )
     clean.commit()
-    service = PersonMergeService(clean)
+    service = _merges(clean)
 
     done = service.merge(a.id, b.id, admin.id)
 
@@ -720,7 +843,7 @@ def test_undo_leaves_what_the_survivor_got_after_the_merge(clean: Session) -> No
     a, b, a_user, b_user, admin = _pair(clean)
     clean.add(Login(user_id=b_user.id))
     clean.commit()
-    service = PersonMergeService(clean)
+    service = _merges(clean)
     done = service.merge(a.id, b.id, admin.id)
     clean.add(Login(user_id=a_user.id))
     clean.commit()
@@ -755,7 +878,7 @@ def test_the_notes_of_the_absorbed_card_move_to_the_survivor_by_id_and_stay_whol
     theirs = Note(entity_type="freelancer", entity_id=b.id, text=long_text, author="Ivan")
     clean.add_all([mine, theirs])
     clean.commit()
-    PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    _merges(clean).merge(a.id, b.id, admin.id)
     clean.expire_all()
     thread = {n.text: n for n in clean.scalars(select(Note).where(Note.entity_id == a.id))}
     assert {"nota di A", long_text} <= set(thread)
@@ -769,7 +892,7 @@ def test_a_discarded_absorbed_card_does_not_discard_the_survivor(clean: Session)
     a, b, _, _, admin = _pair(clean)
     b.status = "discarded"
     clean.commit()
-    PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    _merges(clean).merge(a.id, b.id, admin.id)
     assert clean.get(Freelancer, a.id).status == "new"  # type: ignore[union-attr]
 
 
@@ -779,7 +902,7 @@ def test_a_refusal_to_be_mailed_follows_the_person_and_the_undo_takes_it_back(
     a, b, _, _, admin = _pair(clean)
     clean.add(CampaignOptout(email="vecchia@studio.it", source="link"))
     clean.commit()
-    service = PersonMergeService(clean)
+    service = _merges(clean)
     done = service.merge(a.id, b.id, admin.id)
     assert clean.get(CampaignOptout, "nuova@studio.it") is not None
     service.undo(done.action_id, admin.id)
@@ -794,7 +917,7 @@ def test_a_code_of_the_absorbed_person_credits_the_survivor(clean: Session) -> N
     a, b, a_user, b_user, admin = _pair(clean)
     b_user.referral_code = "ABCDEFGHJK"
     clean.commit()
-    PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    _merges(clean).merge(a.id, b.id, admin.id)
     owner = ReferralService(clean).resolve_referrer("abcdefghjk")
     assert owner is not None and owner.id == a_user.id
 
@@ -804,7 +927,7 @@ def test_undo_keeps_what_the_survivor_changed_since_the_merge(clean: Session) ->
     _phone(clean, b_user, "333")
     b.job_title, a.job_title = "Backend", None
     clean.commit()
-    service = PersonMergeService(clean)
+    service = _merges(clean)
     done = service.merge(a.id, b.id, admin.id)
     # After the merge the survivor's own edits: the phone that arrived is replaced by a new
     # one, and a new position.
@@ -825,7 +948,7 @@ def test_undo_is_refused_once_the_survivor_was_itself_merged_away(clean: Session
     c_user = _user(clean, "terza@studio.it", first_name="Terza")
     c = _card(clean, c_user, uploaded=NOW + timedelta(days=1), created=NOW + timedelta(days=1))
     clean.commit()
-    service = PersonMergeService(clean)
+    service = _merges(clean)
     first = service.merge(a.id, b.id, admin.id)
     service.merge(c.id, a.id, admin.id)
     with pytest.raises(InvalidState, match="a sua volta unita"):
@@ -836,7 +959,7 @@ def test_a_role_is_not_given_to_an_address_merged_into_somebody(
     clean: Session, settings: Settings
 ) -> None:
     a, b, _, _, admin = _pair(clean)
-    PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    _merges(clean).merge(a.id, b.id, admin.id)
     with pytest.raises(ValidationFailed, match="unito a un'altra scheda"):
         UserService(clean, settings).set_role("vecchia@studio.it", "admin")
 
@@ -862,7 +985,7 @@ def test_a_saved_team_proposal_names_the_survivor_after_a_merge_and_the_absorbed
     )
     clean.add(proposal)
     clean.commit()
-    service = PersonMergeService(clean)
+    service = _merges(clean)
     done = service.merge(a.id, b.id, admin.id)
     clean.refresh(proposal)
     assert [m["freelancer_id"] for m in proposal.team] == [str(a.id), str(UUID(int=7))]
@@ -875,7 +998,7 @@ def test_undo_is_refused_when_the_survivor_has_a_new_cv_after_a_swap(clean: Sess
     a, b, _, _, admin = _pair(clean)
     a.cv_uploaded_at, b.cv_uploaded_at = NOW - timedelta(days=90), NOW
     clean.commit()
-    service = PersonMergeService(clean)
+    service = _merges(clean)
     done = service.merge(a.id, b.id, admin.id)
     clean.get(Freelancer, a.id).cv_bytes = PDF + b"%new"  # type: ignore[union-attr]
     clean.commit()
@@ -894,6 +1017,6 @@ def test_a_cv_upload_on_a_card_a_merge_hid_is_refused(clean: Session) -> None:
     from rebase_core.members import MemberService
 
     a, b, _, _, admin = _pair(clean)
-    PersonMergeService(clean).merge(a.id, b.id, admin.id)
+    _merges(clean).merge(a.id, b.id, admin.id)
     with pytest.raises(NotFound):
         MemberService(clean).replace_cv(b.id, PDF, "cv.pdf", "application/pdf")

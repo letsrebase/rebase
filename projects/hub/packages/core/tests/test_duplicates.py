@@ -11,6 +11,7 @@ from uuid import UUID
 
 import pytest
 from admins import an_admin
+from fakes_crm_door import FakeCrmDoor
 from sqlalchemy import event, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -349,7 +350,7 @@ def test_a_merged_card_is_no_longer_a_pair(twice: Session) -> None:
     new_card = _card(twice, newer, NOW)
     admin = _user(twice, "admin@rebase.it", role="admin", first_name="Root", last_name="Admin")
     twice.commit()
-    PersonMergeService(twice).merge(new_card.id, old_card.id, admin.id)
+    PersonMergeService(twice, FakeCrmDoor().door()).merge(new_card.id, old_card.id, admin.id)
     report = find_duplicates(twice)
     assert report.mergeable == [] and report.to_review == []
 
@@ -381,7 +382,7 @@ def test_the_unique_indexes_wait_for_the_merge_and_are_then_created(twice: Sessi
     waiting = ensure_unique_indexes(twice)
     assert waiting.blocked == {"uq_users_linkedin_lower": 1}
     assert waiting.created == ["uq_signups_linkedin_lower"]
-    PersonMergeService(twice).merge(new_card.id, old_card.id, admin.id)
+    PersonMergeService(twice, FakeCrmDoor().door()).merge(new_card.id, old_card.id, admin.id)
     done = ensure_unique_indexes(twice)
     assert done.created == ["uq_users_linkedin_lower"] and done.blocked == {}
     assert ensure_unique_indexes(twice) == IndexesEnsured()
@@ -435,7 +436,7 @@ def test_the_dry_run_prints_counts_and_ids_never_a_name_an_address_or_a_profile(
     twice: Session,
 ) -> None:
     survivor, absorbed, _ = _production_like(twice)
-    code, lines = talent_duplicates(twice)
+    code, lines = talent_duplicates(twice, FakeCrmDoor().door())
     text_ = "\n".join(lines)
     assert code == 0
     assert lines[0].startswith("1 mergeable pairs (same LinkedIn), 0 to review")
@@ -452,21 +453,25 @@ def test_apply_merges_the_pair_with_the_newest_cv_and_then_creates_the_indexes(
     twice: Session,
 ) -> None:
     survivor, absorbed, _ = _production_like(twice)
-    code, lines = talent_duplicates(twice, apply=True, admin_email="ADMIN@rebase.it")
+    code, lines = talent_duplicates(
+        twice, FakeCrmDoor().door(), apply=True, admin_email="ADMIN@rebase.it"
+    )
     assert code == 0, lines
     twice.expire_all()
     assert twice.get(Freelancer, absorbed.id).deleted_at is not None  # type: ignore[union-attr]
     assert twice.get(Freelancer, survivor.id).deleted_at is None  # type: ignore[union-attr]
     assert any("merged (action " in line for line in lines)
     assert lines[-1].startswith("unique indexes created: uq_users_linkedin_lower")
-    code, again = talent_duplicates(twice)
+    code, again = talent_duplicates(twice, FakeCrmDoor().door())
     assert again[0].startswith("0 mergeable pairs") and again[-1] == "unique indexes missing: none"
 
 
 def test_apply_and_undo_need_an_admin_and_say_so(twice: Session) -> None:
     _production_like(twice)
-    assert talent_duplicates(twice, apply=True)[0] == 2
-    code, lines = talent_duplicates(twice, apply=True, admin_email="vecchia@studio.it")
+    assert talent_duplicates(twice, FakeCrmDoor().door(), apply=True)[0] == 2
+    code, lines = talent_duplicates(
+        twice, FakeCrmDoor().door(), apply=True, admin_email="vecchia@studio.it"
+    )
     assert code == 1 and "No administrator" in lines[0]
 
 
@@ -482,9 +487,11 @@ def test_a_pair_a_merge_refuses_is_reported_and_the_rest_goes_on(twice: Session)
             {"f": card.id, "c": code_, "a": admin.id},
         )
     twice.commit()
-    _, dry = talent_duplicates(twice)
+    _, dry = talent_duplicates(twice, FakeCrmDoor().door())
     assert any("blocked: " in line and "codici fiscali diversi" in line for line in dry)
-    code, lines = talent_duplicates(twice, apply=True, admin_email="admin@rebase.it")
+    code, lines = talent_duplicates(
+        twice, FakeCrmDoor().door(), apply=True, admin_email="admin@rebase.it"
+    )
     assert code == 1
     assert any("blocked: " in line for line in lines)
     assert lines[-1].startswith("index uq_users_linkedin_lower not created: 1 profiles")
@@ -500,7 +507,12 @@ def test_an_admin_can_choose_the_survivor_and_merge_a_pair_that_only_looks_alike
     keep, other = _card(twice, one, NOW), _card(twice, two, NOW + timedelta(days=1))
     twice.commit()
     code, lines = talent_duplicates(
-        twice, apply=True, admin_email="admin@rebase.it", survivor=keep.id, absorbed=other.id
+        twice,
+        FakeCrmDoor().door(),
+        apply=True,
+        admin_email="admin@rebase.it",
+        survivor=keep.id,
+        absorbed=other.id,
     )
     assert code == 0, lines
     twice.expire_all()
@@ -510,18 +522,22 @@ def test_an_admin_can_choose_the_survivor_and_merge_a_pair_that_only_looks_alike
 
 def test_undo_by_action_id_puts_the_merge_back(twice: Session) -> None:
     survivor, absorbed, _ = _production_like(twice)
-    _, lines = talent_duplicates(twice, apply=True, admin_email="admin@rebase.it")
+    _, lines = talent_duplicates(
+        twice, FakeCrmDoor().door(), apply=True, admin_email="admin@rebase.it"
+    )
     action = (
         next(line for line in lines if "merged (action " in line).split("action ")[1].split(")")[0]
     )
-    code, undone = talent_duplicates(twice, undo=UUID(action), admin_email="admin@rebase.it")
+    code, undone = talent_duplicates(
+        twice, FakeCrmDoor().door(), undo=UUID(action), admin_email="admin@rebase.it"
+    )
     assert code == 0 and "undone" in undone[0]
     twice.expire_all()
     assert twice.get(Freelancer, absorbed.id).deleted_at is None  # type: ignore[union-attr]
     # Both cards held one profile: the survivor keeps it (the unique index wants one holder),
     # so the card that came back is only a «to review» pair, by name.
     assert "unique index" in undone[0]
-    assert talent_duplicates(twice)[1][0].startswith(
+    assert talent_duplicates(twice, FakeCrmDoor().door())[1][0].startswith(
         "0 mergeable pairs (same LinkedIn), 1 to review"
     )
 

@@ -103,6 +103,8 @@ class EngagementRepository:
             stmt = stmt.where(bucket_of(today) == query.bucket)
         if query.freelancer_id is not None:
             stmt = stmt.where(Engagement.freelancer_id == query.freelancer_id)
+        if query.hub_match_id is not None:
+            stmt = stmt.where(Engagement.hub_match_id == query.hub_match_id)
         if query.state is not None:
             stmt = stmt.where(Engagement.state == query.state)
         if query.client_organization_id is not None:

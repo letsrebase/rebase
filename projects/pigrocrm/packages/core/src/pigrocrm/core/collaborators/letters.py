@@ -105,6 +105,16 @@ FEE_UNIT_PHRASE = {"day": "al giorno", "hour": "all'ora", "flat": "a corpo"}
 FEE_MODE_PHRASE = {"day": "a giornata", "hour": "a ore", "flat": "a corpo"}
 
 
+def document_filename(kind: str, letter_type: str | None, version: str, number: str | None) -> str:
+    """The name a document is sent and downloaded under (and Documenso seals as
+    `<name>_signed.pdf`, probe § 4): its own kind, regime and text version, so the two families
+    never share one."""
+    occasional = "-occasionale" if letter_type == "occasional" else ""
+    if kind == FRAMEWORK_AGREEMENT:
+        return f"contratto-quadro{occasional}-v{version}.pdf"
+    return f"lettera-di-incarico{occasional}-{number or 'senza-numero'}-v{version}.pdf"
+
+
 # ---- the text's front matter and drafts ----------------------------------------------------
 
 _FRONT_MATTER = re.compile(r"---\n(.*?)\n---\n", re.S)

@@ -24,6 +24,7 @@ from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.legal_entities.models import LegalEntity
 from pigrocrm.core.organizations.models import Organization
 from pigrocrm.core.pipeline.models import PipelineStage
+from pigrocrm.core.reminders import state as reminder_state
 from pigrocrm.core.reminders.catalogue import REMINDER_TYPES, reminder_key
 from pigrocrm.core.reminders.detect import DetectorContext
 from pigrocrm.core.reminders.detectors import DETECTORS
@@ -651,7 +652,13 @@ def test_a_reminder_a_person_acknowledged_is_not_delivered_to_them_again(world: 
     assert told == {world.carol.id}
 
 
-def test_a_snoozed_reminder_comes_back_when_the_snooze_ends(world: World) -> None:
+def test_a_snoozed_reminder_comes_back_when_the_snooze_ends(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A person's snooze counts from the installation's real today, which the engine's passes do
+    # not own: pin it to the fixture's day, or the snooze would end on a day the fixture has no
+    # reminders for once the real date passes it.
+    monkeypatch.setattr(reminder_state, "today_local", lambda: TODAY)
     row = world.task(TODAY - timedelta(days=2), assigned_to=world.alice.id)
     key = reminder_key("task_overdue", row.id)
     ReminderStateService(world.session).snooze(_actor(world.alice), key, "serious", "tomorrow")

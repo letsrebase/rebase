@@ -101,6 +101,11 @@ jobs:
       # gets a 502 from /api/hub/mcp.
       extra-health-url: http://127.0.0.1:8089/health
       url: https://preview.letsrebase.com/hub/
+      # The CRM's notices about engagements and its question about referrers (REB-1106),
+      # equal to PIGROCRM_HUB_NOTICES_TOKEN. Optional: before the secret exists the two
+      # routes simply do not exist.
+      optional-env-secrets: |
+        REBASE_PIGRO_NOTICES_TOKEN
     secrets: inherit
 
   production:
@@ -131,4 +136,6 @@ jobs:
         HUB_BACKUP_SECRET_ACCESS_KEY
         HUB_BACKUP_PING_URL
         DOCUMENSO_BACKUP_PING_URL
+      optional-env-secrets: |
+        REBASE_PIGRO_NOTICES_TOKEN
     secrets: inherit

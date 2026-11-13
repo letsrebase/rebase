@@ -112,6 +112,11 @@ jobs:
       # backup service is production's alone, so its secrets are not listed here.
       env-secrets: |
         PIGROCRM_APP_PASSWORD
+      # What the CRM presents to the hub for its engagement notices and the referrer's name
+      # (REB-1106), equal to the hub's REBASE_PIGRO_NOTICES_TOKEN. Optional: a deploy before the
+      # secret exists leaves the feature inert instead of failing.
+      optional-env-secrets: |
+        PIGROCRM_HUB_NOTICES_TOKEN
       # The api migrates every space's database before it answers.
       health-timeout-seconds: 300
     secrets: inherit
@@ -144,6 +149,7 @@ jobs:
         PIGROCRM_BACKUP_ACCESS_KEY_ID
         PIGROCRM_BACKUP_SECRET_ACCESS_KEY
         PIGROCRM_BACKUP_PING_URL
+        PIGROCRM_HUB_NOTICES_TOKEN
       # The api migrates every space's database before it answers.
       health-timeout-seconds: 300
     secrets: inherit

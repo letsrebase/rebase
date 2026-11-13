@@ -2,7 +2,6 @@
 the referrer named, a cancelled match, and the handful of queries a page costs.
 """
 
-from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -21,6 +20,7 @@ from referral_fixtures import (
     _sent_with_body,
     _sign_the_letter,
     _statements,
+    _tell_the_hub,
     clean_referrals,  # noqa: F401  (fixture)
 )
 from signing_fixtures import (
@@ -34,6 +34,7 @@ from rebase_core.freelancers import FreelancerService
 from rebase_core.matches import MatchService
 from rebase_core.models import (
     Freelancer,
+    HubEngagement,
     Match,
     Referral,
     ReferralReward,
@@ -44,30 +45,31 @@ from rebase_core.referrals import ReferralService
 
 
 @pytest.mark.parametrize(
-    ("status", "cancelled", "mode", "days", "expected"),
+    ("state", "mode", "days", "expected"),
     [
-        ("draft", False, "to_work_unit", 20, Decimal("700.00")),
-        ("awaiting_signature", False, "to_work_unit", None, Decimal("35.00")),
-        ("draft", False, "lump_sum", 20, Decimal("1555.00")),
-        ("draft", False, "lump_sum", None, None),
-        ("cancelled", False, "to_work_unit", 20, None),
-        ("draft", True, "to_work_unit", 20, None),
-        ("active", False, "to_work_unit", 20, None),
-        ("concluded", False, "to_work_unit", 20, None),
+        ("draft", "day", 20, Decimal("700.00")),
+        ("awaiting_signature", "day", None, Decimal("35.00")),
+        ("draft", "flat", 20, Decimal("1555.00")),
+        ("draft", "flat", None, None),
+        # An hourly fee is eight hours a day: 450 * 8 is above the day's budget, so nothing.
+        ("draft", "hour", 20, Decimal("0.00")),
+        ("cancelled", "day", 20, None),
+        ("handoff", "day", 20, None),
+        ("active", "day", 20, None),
+        ("concluded", "day", 20, None),
     ],
 )
 def test_project_reward_follows_reward_base_and_only_while_a_signature_can_still_land(
-    status: str, cancelled: bool, mode: str, days: int | None, expected: Decimal | None
+    state: str, mode: str, days: int | None, expected: Decimal | None
 ) -> None:
-    match = Match(
-        status=status,
-        cancelled_at=datetime(2026, 9, 1, tzinfo=UTC) if cancelled else None,
-        letter_fee=Decimal("450"),
+    engagement = HubEngagement(
+        state=state,
+        mode=mode,
+        fee=Decimal("450") if mode != "flat" else Decimal("450"),
         company_daily_budget=Decimal("800"),
-        expected_days=days,
+        expected_days=Decimal(days) if days is not None else None,
     )
-    projected = ReferralService.project_reward(match, mode, Decimal("0.10"))
-    assert projected == expected
+    assert ReferralService.project_reward(engagement, Decimal("0.10")) == expected
 
 
 def test_the_match_list_shows_a_referral_projected_then_real_then_by_state(
@@ -239,14 +241,20 @@ def test_the_ledger_projects_a_pending_referral_from_its_live_match_and_keeps_re
     referrer_id, admin_id, freelancer_id, company_id = _referred_pair(clean_referrals)
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
     service = MatchService(clean_referrals, renderer, SIGNER, today=lambda: TODAY)
-    service.create(freelancer_id, _match_body(company_id, expected_days=5), admin_id)
+    older = service.create(freelancer_id, _match_body(company_id, expected_days=5), admin_id)
+    _tell_the_hub(clean_referrals, clean_referrals.get(Match, older.id), "draft", sequence=1)  # type: ignore[arg-type]
     cancelled = service.create(freelancer_id, _match_body(company_id), admin_id)
     service.cancel(cancelled.id, admin_id)
+    _tell_the_hub(
+        clean_referrals, clean_referrals.get(Match, cancelled.id), "cancelled", sequence=1
+    )  # type: ignore[arg-type]
     live = service.create(freelancer_id, _match_body(company_id, expected_days=10), admin_id)
-    # A newer match whose letter is already out of the running cannot mature the reward.
+    _tell_the_hub(clean_referrals, clean_referrals.get(Match, live.id), "draft", sequence=1)  # type: ignore[arg-type]
+    # A newer engagement whose letter is already out of the running cannot mature the reward.
     past = service.create(freelancer_id, _match_body(company_id, expected_days=1), admin_id)
     clean_referrals.get(Match, past.id).status = "active"  # type: ignore[union-attr]
     clean_referrals.commit()
+    _tell_the_hub(clean_referrals, clean_referrals.get(Match, past.id), "active", sequence=1)  # type: ignore[arg-type]
 
     pending = {
         item.kind: item for item in ReferralLedgerService(clean_referrals).list_rewards().items
@@ -257,17 +265,17 @@ def test_the_ledger_projects_a_pending_referral_from_its_live_match_and_keeps_re
     assert freelancer.reward_id is None and freelancer.reward_amount is None
     # The newest match that can still earn (not the older one, not the cancelled one in
     # between, not the newer one already active), projected on its own days: 350 * 10.
-    assert (freelancer.match_id, company.match_id) == (live.id, live.id)
+    assert (freelancer.engagement_id, company.engagement_id) == (live.id, live.id)
     assert (freelancer.projected_rate, freelancer.projected_amount) == (
         Decimal("0.1000"),
         Decimal("350.00"),
     )
     assert company.projected_amount == Decimal("1050.00")
-    assert (freelancer.match_company_name, freelancer.match_freelancer_name) == (
+    assert (freelancer.engagement_company_name, freelancer.engagement_freelancer_name) == (
         "ACME Srl",
         "Ada Lovelace",
     )
-    assert freelancer.match_freelancer_id == freelancer_id
+    assert freelancer.engagement_freelancer_id == freelancer_id
 
     # Once signed the real figures stand, the projection is gone, even at another rate.
     signed = _sent_with_body(clean_referrals, renderer, fake, freelancer_id, company_id, admin_id)
@@ -275,7 +283,7 @@ def test_the_ledger_projects_a_pending_referral_from_its_live_match_and_keeps_re
     ReferralSettingsService(clean_referrals).save_settings(Decimal("0.5"), Decimal("0.5"), admin_id)
     real = {item.kind: item for item in ReferralLedgerService(clean_referrals).list_rewards().items}
     assert real["freelancer"].reward_amount == Decimal("700.00")
-    assert real["freelancer"].match_id == signed.id
+    assert real["freelancer"].engagement_id == signed.id
     assert (real["freelancer"].projected_rate, real["freelancer"].projected_amount) == (None, None)
 
 
@@ -292,7 +300,8 @@ def test_the_ledger_reads_a_page_in_a_row_independent_number_of_queries(
         _log_in(clean_referrals, f"c{index}@acme.it")
         _fiscal(clean_referrals, freelancer_id, admin_id)
         _active_framework(clean_referrals, freelancer_id, admin_id)
-        service.create(freelancer_id, _match_body(company_id), admin_id)
+        match = service.create(freelancer_id, _match_body(company_id), admin_id)
+        _tell_the_hub(clean_referrals, clean_referrals.get(Match, match.id), "draft", sequence=1)  # type: ignore[arg-type]
 
     ReferralLedgerService(clean_referrals).list_rewards(limit=2)  # warm the session's own caches
     seen, stop = _statements(clean_referrals)
@@ -325,7 +334,8 @@ def test_a_deleted_request_or_card_is_flagged_so_no_page_links_to_it(
         ref=ReferralService(clean_referrals).code_for(_member(clean_referrals, "lia@community.it")),
     )
     service = MatchService(clean_referrals, FakeRenderer(draft=False), SIGNER, today=lambda: TODAY)
-    service.create(freelancer_id, _match_body(company_id), admin_id)
+    match = service.create(freelancer_id, _match_body(company_id), admin_id)
+    _tell_the_hub(clean_referrals, clean_referrals.get(Match, match.id), "draft", sequence=1)  # type: ignore[arg-type]
     CompanyService(clean_referrals).soft_delete(company_id, admin_id)
     FreelancerService(clean_referrals).soft_delete(other, admin_id)
 
@@ -339,7 +349,7 @@ def test_a_deleted_request_or_card_is_flagged_so_no_page_links_to_it(
     assert ledger[company_id].referred_deleted is True
     assert ledger[other].referred_deleted is True
     assert ledger[freelancer_id].referred_deleted is False
-    assert ledger[freelancer_id].match_freelancer_deleted is False
+    assert ledger[freelancer_id].engagement_freelancer_deleted is False
 
     FreelancerService(clean_referrals).soft_delete(freelancer_id, admin_id)
     after = {
@@ -347,4 +357,4 @@ def test_a_deleted_request_or_card_is_flagged_so_no_page_links_to_it(
         for item in ReferralLedgerService(clean_referrals).list_rewards().items
     }
     assert after[freelancer_id].referred_deleted is True
-    assert after[company_id].match_freelancer_deleted is True
+    assert after[company_id].engagement_freelancer_deleted is True

@@ -554,16 +554,15 @@ class FreelancerService:
         is deleted with the rest, and one still waiting finds the CV gone
         (`CardWriter._save`, `AnonymousCvWriter._store`)."""
         # Imported here, not at the top: both writers read the CV through this module.
-        from rebase_core.anonymous_cv.writer import AnonymousCvWriter
+        from rebase_core.anonymous_cv.writer import delete_anonymous_cv
         from rebase_core.card_writer import CardWriter
 
         row = self._require(freelancer_id)
         user = self._owner(row)
         cards = CardWriter(self.session, None)
-        anonymous = AnonymousCvWriter(self.session, None)
         if row.cv_bytes is None:
             cards.delete(row.id)
-            anonymous.delete(row.id)
+            delete_anonymous_cv(self.session, row.id)
             self.session.commit()
             return freelancer_read(row, user)
         before = {"cv_filename": row.cv_filename, "cv_mime": row.cv_mime, "cv_size": row.cv_size}
@@ -571,7 +570,7 @@ class FreelancerService:
         row.cv_uploaded_at = None
         self.session.flush()
         cards.delete(row.id)
-        anonymous.delete(row.id)
+        delete_anonymous_cv(self.session, row.id)
         self.session.commit()
         AdminActionService(self.session).record(
             ENTITY,
