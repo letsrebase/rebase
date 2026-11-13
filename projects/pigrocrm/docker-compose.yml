@@ -137,6 +137,10 @@ x-api-environment: &api-environment
   PIGROCRM_VAPID_SUBJECT: ${PIGROCRM_VAPID_SUBJECT:-mailto:ciao@letsrebase.com}
   # Where the signup asks the rebase hub who is a member (ORB-173).
   PIGROCRM_HUB_URL: ${PIGROCRM_HUB_URL:-https://letsrebase.com}
+  # What the CRM tells the hub about engagements (REB-1106): the bearer of the notice outbox and
+  # of the referrer's name, equal to REBASE_PIGRO_NOTICES_TOKEN in the hub's `.env`. Empty: the
+  # outbox waits and a letter prints «nessuno».
+  PIGROCRM_HUB_NOTICES_TOKEN: ${PIGROCRM_HUB_NOTICES_TOKEN:-}
   # Browser origins allowed to call the API cross-origin, comma-separated. Empty: none,
   # the SPA is served from the API's own origin.
   PIGROCRM_CORS_ORIGINS: ${PIGROCRM_CORS_ORIGINS:-}

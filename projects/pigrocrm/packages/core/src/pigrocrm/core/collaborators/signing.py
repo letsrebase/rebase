@@ -50,7 +50,8 @@ from pigrocrm.core.collaborators import frameworks, letters
 from pigrocrm.core.collaborators.forecast import EngagementForecastService
 from pigrocrm.core.collaborators.letter_service import LetterService
 from pigrocrm.core.collaborators.letters import ENGAGEMENT_LETTER, FRAMEWORK_AGREEMENT
-from pigrocrm.core.collaborators.models import Engagement
+from pigrocrm.core.collaborators.models import LIVE_STATES, Engagement
+from pigrocrm.core.collaborators.outbox import NoticeOutbox
 from pigrocrm.core.collaborators.repository import EngagementRepository
 from pigrocrm.core.collaborators.schemas import SendReport, SignatureRead
 from pigrocrm.core.collaborators.service import EngagementService
@@ -256,6 +257,9 @@ class SigningService:
                     actor,
                     {"kind": leaving.type, "engagement_id": str(engagement.id)},
                 )
+            if previous == "draft" or (leaving is not None and leaving.type == ENGAGEMENT_LETTER):
+                # The hub hears of the move to «awaiting signature» and of the letter leaving.
+                NoticeOutbox(self.session).emit(engagement, "sent")
             self.session.commit()
         except Exception:
             self.session.rollback()
@@ -635,8 +639,14 @@ class SigningService:
         """A notice or a withdrawal on an active framework agreement. From now the freelancer has
         none active, and their next engagement writes a new one."""
         actor.require_admin("record_framework_notice")
-        self.document(document_id)
+        found = self.document(document_id)
         try:
+            # The engagements the notice tells the hub about are locked before the document, the
+            # order every other writer keeps (engagement, then document).
+            bound = [
+                self.lock_engagement(engagement_id)
+                for engagement_id in self._bound_engagements(found)
+            ]
             document = self.lock_document(document_id)
             if not frameworks.is_active(document):
                 raise Conflict(
@@ -647,11 +657,31 @@ class SigningService:
             document.notice_at = self.now()
             document.signature_state = "notice_served"
             self.activities.record(ENTITY, document.id, "notice_recorded", actor, None)
+            outbox = NoticeOutbox(self.session)
+            for engagement in bound:
+                outbox.emit(engagement, "notice_served")
             self.session.commit()
         except Exception:
             self.session.rollback()
             raise
         return self.read(document_id)
+
+    def _bound_engagements(self, framework: Document) -> list[UUID]:
+        """The ids, in order, of the live engagements of the framework agreement's freelancer
+        whose letter is of its regime: the ones a notice on the agreement concerns."""
+        if framework.customer_id is None:
+            return []
+        return list(
+            self.session.scalars(
+                select(Engagement.id)
+                .where(
+                    Engagement.freelancer_id == framework.customer_id,
+                    Engagement.state.in_(LIVE_STATES),
+                    Engagement.letter_type == framework.letter_type,
+                )
+                .order_by(Engagement.id)
+            )
+        )
 
     def cancel_letters_of(self, engagement: Engagement, actor: Actor) -> Callable[[], None]:
         """The hook of `EngagementService`'s cancellation: the engagement's letter cancelled with
@@ -763,6 +793,7 @@ class SigningService:
                 actor,
                 {"from": previous, "to": target},
             )
+        NoticeOutbox(self.session).emit(engagement, "signed")
         EngagementForecastService(self.session).sync(engagement)
 
     def _cancel_envelope(self, envelope_id: str, reason: str) -> None:
