@@ -39,6 +39,11 @@ from pigrocrm.core.organizations.models import Organization
 # the request's deal knows the hub company behind it.
 REQUEST_REF_PREFIX = "rebase:request="
 
+# The longest client name the hub's read model keeps (its column and its schema): a longer legal
+# name is cut here, since the hub would refuse the whole notice for good (a 422) and the engagement
+# would never reach it.
+CLIENT_NAME_MAX = 200
+
 # The engagement's columns the hub's read model shows: a draft that changes one of them tells the
 # hub again (`updated`), since the read model would otherwise show the old value until the first
 # send. `days_per_week` and the payment terms are not in it.
@@ -164,7 +169,7 @@ class NoticeOutbox:
             "hub_match_id": _text(engagement.hub_match_id),
             "hub_freelancer_id": str(hub_freelancer_id),
             "hub_company_id": _text(hub_company_of(refs or [])),
-            "client_name": client_name,
+            "client_name": client_name[:CLIENT_NAME_MAX] if client_name else client_name,
             "letter_id": _text(letter.id) if letter is not None else None,
             "letter_number": engagement.letter_number,
             "signed_at": _text(letter.signed_at) if signed and letter is not None else None,

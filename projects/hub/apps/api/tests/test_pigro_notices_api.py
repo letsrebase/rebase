@@ -159,7 +159,7 @@ def test_a_signed_notice_writes_the_reward_once_and_verifies_the_referral(
     assert _post(client, NOTICES, signed, **_bearer()).status_code == 200
 
     api_session.expire_all()
-    # No budget snapshot was taken, so the reward waits for an admin to price it by hand.
+    # The engagement names no company, so no budget was snapshotted: an admin prices it by hand.
     (reward,) = api_session.scalars(select(ReferralReward)).all()
     assert reward.base_amount is None
 

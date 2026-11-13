@@ -1,10 +1,12 @@
 """0052 (REB-1106): `referral_rewards.document_id` becomes `engagement_id`, a foreign key to the
 hub's read model of the CRM's engagements. Production has no reward row; a preview with test rows
 keeps each one linked: the migration writes the engagement of the match its letter belonged to,
-keyed by the match's id, before it drops the old column. It can run again, and it rolls back."""
+keyed by the match's id, before it drops the old column. It can run again, and it rolls back only
+when no reward would be lost."""
 
 from typing import Any
 
+import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
@@ -12,7 +14,7 @@ from alembic.migration import MigrationContext
 from sqlalchemy import Connection, create_engine, text
 
 from rebase_core.db import Base
-from rebase_core.migrate import INI_PATH, upgrade_to_head
+from rebase_core.migrate import INI_PATH, head_revision, upgrade_to_head
 
 
 def _scalar(connection: Connection, sql: str, **params: object) -> str:
@@ -143,10 +145,28 @@ def test_migration_0052_keeps_a_test_reward_linked_to_the_engagement_of_its_matc
                 assert engagement.crm_engagement_id is None
                 diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
                 assert diff == [], diff
+        # A rollback never deletes a reward: it refuses while one exists, and changes nothing.
+        with pytest.raises(RuntimeError, match="referral_rewards holds 1 row"):
             command.downgrade(config, "0051")
-            with engine.begin() as connection:
-                restored = connection.execute(
-                    text("SELECT document_id FROM referral_rewards")
+        with engine.begin() as connection:
+            assert (
+                connection.execute(text("SELECT count(*) FROM referral_rewards")).scalar_one() == 1
+            )
+            assert _scalar(connection, "SELECT version_num FROM alembic_version") == head_revision()
+            connection.execute(text("DELETE FROM referral_rewards"))
+        command.downgrade(config, "0051")
+        with engine.begin() as connection:
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT count(*) FROM information_schema.columns WHERE "
+                        "table_name = 'referral_rewards' AND column_name = 'document_id'"
+                    )
                 ).scalar_one()
-                assert str(restored) == letter
+                == 1
+            )
+        command.upgrade(config, "head")
+        with engine.begin() as connection:
+            diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
+            assert diff == [], diff
         engine.dispose()

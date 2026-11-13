@@ -247,9 +247,10 @@ def _sweep_hub_notices(settings: Settings, engine: Engine, label: str, *, dry_ru
     """The engagement notices the outbox owes the hub (`HubNoticeSweep`, REB-1106), delivered from
     the quarter-hourly pass of the leads space. A line only when there is something to say. Rows
     left to try again are counted on `stdout` (the backoff does the retrying, and an outage of the
-    hub should not stop the dead-man's-switch ping); rows the hub refused for good, and a sweep that
-    could not run at all, go to `stderr` and stop it, since a person has to look. Whether it
-    printed to `stderr`."""
+    hub should not stop the dead-man's-switch ping); rows the hub refused for good, rows it has
+    answered 401, 403 or 404 three times (a wrong token or URL, which retrying will not mend), and
+    a sweep that could not run at all, go to `stderr` and stop it, since a person has to look.
+    Whether it printed to `stderr`."""
     try:
         with session_factory(engine)() as space:
             report = HubNoticeSweep(space, settings).run(dry_run=dry_run)
@@ -270,7 +271,13 @@ def _print_notice_sweep(label: str, report: NoticeSweepReport, *, dry_run: bool)
         print(f"{label}: hub notices waiting for PIGROCRM_HUB_NOTICES_TOKEN {report.waiting}")
     if report.rejected:
         print(f"{label}: hub notices refused {report.rejected}", file=sys.stderr)
-    return report.rejected > 0
+    if report.stuck:
+        print(
+            f"{label}: hub notices answered 401, 403 or 404 again and again {report.stuck}: "
+            "check PIGROCRM_HUB_NOTICES_TOKEN and PIGROCRM_HUB_URL",
+            file=sys.stderr,
+        )
+    return report.rejected > 0 or report.stuck > 0
 
 
 def _print_reminder_outcome(outcome: ReminderOutcome, *, dry_run: bool) -> None:

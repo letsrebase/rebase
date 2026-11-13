@@ -55,6 +55,10 @@ RETRY_STATUSES = frozenset({401, 403, 404, 408, 409, 423, 425, 429})
 # The first retry waits five minutes and each next one twice as long, up to six hours.
 RETRY_BASE = dt.timedelta(minutes=5)
 RETRY_CAP = dt.timedelta(hours=6)
+# Answers that say the setting, not the data, is wrong: a wrong token (401, 403) or a route the hub
+# does not have (404). Asked again like the rest, but reported once they keep coming.
+MISCONFIGURED_STATUSES = frozenset({401, 403, 404})
+STUCK_AFTER = 3
 # Rows delivered in one pass: a backlog after a long outage is worked off over several.
 SWEEP_LIMIT = 100
 
@@ -167,12 +171,15 @@ class HubLink:
 @dataclass(frozen=True)
 class NoticeSweepReport:
     """One pass: rows delivered, rows left to try again, rows the hub refused for good, and, when
-    the feature is inert, how many rows are waiting for the setting."""
+    the feature is inert, how many rows are waiting for the setting. `stuck` counts the rows of
+    `retrying` that have been answered 401, 403 or 404 at least `STUCK_AFTER` times: a token or a
+    route that is wrong, which retrying will not mend, so a person has to look."""
 
     delivered: int = 0
     retrying: int = 0
     rejected: int = 0
     waiting: int = 0
+    stuck: int = 0
 
 
 class HubNoticeSweep:
@@ -234,7 +241,7 @@ class HubNoticeSweep:
         rows = self.due()
         # Nothing is held while the hub is called.
         self.session.rollback()
-        delivered = retrying = rejected = 0
+        delivered = retrying = rejected = stuck = 0
         held_back: set[UUID] = set()
         for notice_id, engagement_id, sequence, kind, payload, created_at in rows:
             if engagement_id in held_back:
@@ -255,8 +262,9 @@ class HubNoticeSweep:
                 rejected += 1
             else:
                 retrying += 1
+                stuck += outcome == "stuck"
                 held_back.add(engagement_id)
-        return NoticeSweepReport(delivered, retrying, rejected)
+        return NoticeSweepReport(delivered, retrying, rejected, stuck=stuck)
 
     def _record(self, notice_id: UUID, answer: Answer) -> str:
         """Writes one answer on its row, in a transaction of its own."""
@@ -282,6 +290,7 @@ class HubNoticeSweep:
         else:
             row.last_error = answer.error
             row.next_attempt_at = now + retry_delay(row.attempts)
-            outcome = "retry"
+            misconfigured = answer.status in MISCONFIGURED_STATUSES
+            outcome = "stuck" if misconfigured and row.attempts >= STUCK_AFTER else "retry"
         self.session.commit()
         return outcome

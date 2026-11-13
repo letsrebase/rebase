@@ -7,7 +7,9 @@ one. `EngagementNoticeService.apply` makes that harmless: the row is found by th
 hub minted for it (`hub_match_id`, a handed-off row's key) or else by the CRM's engagement id, and
 a notice whose `sequence` is not newer than the one the row holds changes nothing. A newer one
 overwrites every field the CRM owns and leaves what is the hub's alone: the company's daily budget
-snapshot, and the company a row was opened for when the notice names none.
+snapshot, and the company a row was opened for when the notice names none. A row the hub did not
+open first (no handoff) is created from the notice, and takes its budget snapshot from the
+company's own `daily_budget` of that moment; a snapshot already on a row is never overwritten.
 
 **The referral reward is written in the same transaction as the upsert**, when the row says its
 letter is signed (`ReferralService.record_reward_if_signed`, which inserts each referral's reward
@@ -41,14 +43,17 @@ class EngagementNoticeService:
         commits. Whether the notice changed anything: `False` for one the row already held."""
         if self.session.get(Freelancer, notice.hub_freelancer_id) is None:
             raise ValidationFailed(ENTITY, "hub_freelancer_id", "scheda freelance sconosciuta")
-        row = self._locked(notice)
+        company = (
+            self.session.get(Company, notice.hub_company_id)
+            if notice.hub_company_id is not None
+            else None
+        )
+        # A request the hub no longer knows is not a reason to refuse the engagement.
+        company_id = company.id if company is not None else None
+        row = self._locked(notice, company)
         if notice.sequence <= row.sequence:
             self.session.rollback()
             return False
-        company_id = notice.hub_company_id
-        if company_id is not None and self.session.get(Company, company_id) is None:
-            # A request the hub no longer knows is not a reason to refuse the engagement.
-            company_id = None
         row.crm_engagement_id = notice.engagement_id
         row.freelancer_id = notice.hub_freelancer_id
         row.company_id = company_id if company_id is not None else row.company_id
@@ -72,10 +77,11 @@ class EngagementNoticeService:
         self.session.commit()
         return True
 
-    def _locked(self, notice: EngagementNotice) -> HubEngagement:
+    def _locked(self, notice: EngagementNotice, company: Company | None) -> HubEngagement:
         """The engagement's row, locked until the commit, created empty (`handoff`, sequence 0)
-        when the hub has none: `INSERT ... ON CONFLICT DO NOTHING` then a locking read, so two
-        first notices of one engagement cannot both insert."""
+        when the hub has none, with the company's budget as the snapshot: `INSERT ... ON CONFLICT
+        DO NOTHING` then a locking read, so two first notices of one engagement cannot both
+        insert."""
         key = notice.hub_match_id or notice.engagement_id
         found = self._find(key, notice.engagement_id)
         if found is None:
@@ -84,6 +90,8 @@ class EngagementNoticeService:
                 .values(
                     id=key,
                     freelancer_id=notice.hub_freelancer_id,
+                    company_id=company.id if company is not None else None,
+                    company_daily_budget=company.daily_budget if company is not None else None,
                     state="handoff",
                     sequence=0,
                 )
