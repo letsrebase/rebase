@@ -597,3 +597,28 @@ def test_an_archived_organization_is_a_conflict_not_a_second_row(furnished: Furn
 
     assert answer.status_code == 409, answer.text
     assert len(_organizations_of(furnished, furnished.dan.hub_id)) == 1
+
+
+def test_two_cards_with_one_vat_number_cannot_both_claim_the_organization(
+    furnished: Furnished,
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    with _space(furnished.settings) as session:
+        OrganizationService(session)._insert(
+            OrganizationCreate(legal_name="Delta S.r.l.", vat_number="02345678903"), ADMIN
+        )
+        session.commit()
+    first, second = uuid4(), uuid4()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        answers = list(
+            pool.map(
+                lambda hub_id: _put_organization(furnished, hub_id, vat_number="02345678903"),
+                (first, second),
+            )
+        )
+
+    assert sorted(answer.status_code for answer in answers) == [200, 409], [a.text for a in answers]
+    claimed = len(_organizations_of(furnished, first)) + len(_organizations_of(furnished, second))
+    assert claimed == 1
