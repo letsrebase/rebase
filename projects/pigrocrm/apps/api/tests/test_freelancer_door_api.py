@@ -457,6 +457,8 @@ def test_the_merge_check_names_a_shared_framework_a_shared_client_and_two_tax_co
         "framework_regimes": ["ordinary"],
         "shared_clients": 1,
         "tax_code_conflict": True,
+        "organization": True,
+        "other_organization": True,
     }
     # The check is symmetric.
     again = furnished.get(furnished.bea, "merge-check", **{"with": str(furnished.ada.hub_id)})
@@ -472,11 +474,24 @@ def test_the_merge_check_is_clean_for_a_card_with_nothing_live_and_for_an_unknow
         "framework_regimes": [],
         "shared_clients": 0,
         "tax_code_conflict": False,
+        "organization": True,
+        "other_organization": True,
     }
 
-    unknown = furnished.get(furnished.ada, "merge-check", **{"with": str(uuid4())})
+    stranger = uuid4()
+    unknown = furnished.get(furnished.ada, "merge-check", **{"with": str(stranger)})
     assert unknown.status_code == 200, unknown.text
-    assert unknown.json() == clean.json()
+    assert {k: v for k, v in unknown.json().items() if k != "other_organization"} == {
+        k: v for k, v in clean.json().items() if k != "other_organization"
+    }
+    # Which of the two hub ids the CRM holds an organization for is answered, either way round:
+    # a hub merge does not re-key it, so the card absorbed must have none. An archived
+    # organization is not one the other reads answer for.
+    assert (unknown.json()["organization"], unknown.json()["other_organization"]) == (True, False)
+    reverse = furnished.get(stranger, "merge-check", **{"with": str(furnished.ada.hub_id)})
+    assert (reverse.json()["organization"], reverse.json()["other_organization"]) == (False, True)
+    archived = furnished.get(furnished.ada, "merge-check", **{"with": str(furnished.dan.hub_id)})
+    assert archived.json()["other_organization"] is False
 
     missing = furnished.client.get(f"{ROOT}/{furnished.ada.hub_id}/merge-check", headers=_bearer())
     assert missing.status_code == 422, missing.text

@@ -179,11 +179,18 @@ class HubDoorService:
     def merge_check(self, hub_freelancer_id: UUID, other_hub_freelancer_id: UUID) -> DoorMergeCheck:
         """What the CRM holds that stops these two cards becoming one: a live framework
         agreement of the same type on both sides, an engagement with the same client on both
-        sides, or two different tax codes."""
+        sides, or two different tax codes. It also says which of the two hub ids the CRM holds an
+        organization for."""
         first = self._freelancer(hub_freelancer_id)
         second = self._freelancer(other_hub_freelancer_id)
         if first is None or second is None:
-            return DoorMergeCheck(framework_regimes=[], shared_clients=0, tax_code_conflict=False)
+            return DoorMergeCheck(
+                framework_regimes=[],
+                shared_clients=0,
+                tax_code_conflict=False,
+                organization=first is not None,
+                other_organization=second is not None,
+            )
         regimes = self._framework_types(first.id) & self._framework_types(second.id)
         shared = self._live_clients(first.id) & self._live_clients(second.id)
         codes = [code.strip().upper() for code in (first.tax_code, second.tax_code) if code]
@@ -191,6 +198,8 @@ class HubDoorService:
             framework_regimes=sorted(regimes),
             shared_clients=len(shared),
             tax_code_conflict=len(codes) == 2 and codes[0] != codes[1],
+            organization=True,
+            other_organization=True,
         )
 
     def _framework_types(self, freelancer_id: UUID) -> set[str]:

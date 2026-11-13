@@ -317,7 +317,8 @@ def test_each_read_is_a_get_on_the_freelancers_own_path_with_the_bearer() -> Non
         (200, b'{"tax_code": "X", "vat_number": null, "certified_email": null}'),
         (
             200,
-            b'{"framework_regimes": ["ordinary"], "shared_clients": 1, "tax_code_conflict": false}',
+            b'{"framework_regimes": ["ordinary"], "shared_clients": 1, '
+            b'"tax_code_conflict": false, "organization": true, "other_organization": false}',
         ),
     )
 

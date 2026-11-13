@@ -398,6 +398,17 @@ class PersonMergeService:
             raise MergeRefused(
                 "Le due schede hanno codici fiscali diversi: non sono la stessa persona.",
             )
+        if crm.other_organization:
+            # A hub merge does not re-key the CRM's organization: it would stay on the hidden
+            # card, and the survivor would lose its contracts and fiscal identifiers.
+            raise MergeRefused(
+                "Entrambe le schede hanno un'anagrafica nel CRM: unisci prima il freelance "
+                "nel CRM, poi le due schede."
+                if crm.organization
+                else "Nel CRM c'è l'anagrafica della scheda da assorbire e non quella della "
+                "scheda che resta: unisci nell'altro verso (tieni la scheda che ha "
+                "l'anagrafica) oppure sposta l'id dell'hub sull'anagrafica nel CRM."
+            )
         if crm.framework_regimes:
             regimes = {_REGIME_NAMES.get(regime, regime) for regime in crm.framework_regimes}
             raise MergeRefused(

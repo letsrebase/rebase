@@ -25,6 +25,8 @@ NO_MERGE_CONFLICT: dict[str, Any] = {
     "framework_regimes": [],
     "shared_clients": 0,
     "tax_code_conflict": False,
+    "organization": False,
+    "other_organization": False,
 }
 
 
