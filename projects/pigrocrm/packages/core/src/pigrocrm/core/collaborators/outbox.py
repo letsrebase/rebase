@@ -9,8 +9,11 @@ engagement's own sequence number and **the whole read model as it was** (`payloa
 upsert needs nothing else and a late delivery of an old row cannot overwrite a newer one: the hub
 ignores a sequence older than the one it holds.
 
-An engagement whose freelancer carries no hub id (one written in the CRM for somebody the hub
-never saw) has nothing to tell the hub and writes no row. The row is never edited afterwards
+Only the space `PIGROCRM_LEADS_SPACE` names writes rows (a session says which space it serves in
+`session.info`, set by the registry's factories and the cron walk; one that says nothing, a test's,
+does not hold a notice back), since the hub reads no other space's engagements. An engagement whose
+freelancer carries no hub id (one written in the CRM for somebody the hub never saw) has nothing to
+tell the hub and writes no row. The row is never edited afterwards
 except by the sweep that delivers it (`hub_notices.py`).
 """
 
@@ -24,6 +27,9 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.collaborators import letters
 from pigrocrm.core.collaborators.models import NOTICE_KINDS, Engagement, EngagementNotice
+from pigrocrm.core.collaborators.rules import is_leads_space
+from pigrocrm.core.config import get_settings
+from pigrocrm.core.db.scope import SPACE_SLUG_KEY
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.organizations.models import Organization
@@ -82,9 +88,15 @@ class NoticeOutbox:
 
     def emit(self, engagement: Engagement, kind: str) -> EngagementNotice | None:
         """Writes the engagement's next notice into the caller's transaction, flushed and never
-        committed. `None` when the freelancer has no hub id: there is nobody to tell."""
+        committed. `None` when the space is not the leads space (the only one whose engagements
+        the hub reads, so no other space accumulates rows nobody delivers) and when the freelancer
+        has no hub id: there is nobody to tell."""
         if kind not in NOTICE_KINDS:
             raise ValueError(f"unknown notice kind {kind!r}")
+        if SPACE_SLUG_KEY in self.session.info and not is_leads_space(
+            get_settings(), self.session.info[SPACE_SLUG_KEY]
+        ):
+            return None
         hub_freelancer_id = self.session.scalar(
             select(Organization.hub_freelancer_id).where(
                 Organization.id == engagement.freelancer_id

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from test_signing import SIGNED_AT, Desk
 
 from pigrocrm.core.cli import cron
-from pigrocrm.core.collaborators import letter_service
+from pigrocrm.core.collaborators import letter_service, outbox
 from pigrocrm.core.collaborators.hub_notices import (
     NOTICES_PATH,
     REFERRER_PATH,
@@ -35,6 +35,7 @@ from pigrocrm.core.collaborators.outbox import (
 )
 from pigrocrm.core.collaborators.schemas import EngagementUpdate
 from pigrocrm.core.config import Settings
+from pigrocrm.core.db.scope import SPACE_SLUG_KEY
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.engagements.leads import lead_marker
@@ -201,6 +202,43 @@ def test_the_notice_leaves_with_the_transaction_that_rolls_back(desk: Desk) -> N
     desk.session.rollback()
 
     assert [notice.sequence for notice in notices(desk.session)] == [1]
+
+
+@pytest.mark.parametrize(
+    ("serves", "writes"),
+    [
+        ("studio", True),  # the leads space
+        ("altro", False),  # another space: the hub reads none of its engagements
+        (None, False),  # the root installation, when it is not the leads space
+    ],
+)
+def test_only_the_leads_space_writes_notices(
+    desk: Desk, monkeypatch: pytest.MonkeyPatch, serves: str | None, writes: bool
+) -> None:
+    monkeypatch.setattr(outbox, "get_settings", lambda: settings(leads_space="studio"))
+    desk.session.info[SPACE_SLUG_KEY] = serves
+
+    other = desk.world.engagement(desk.world.freelancer(legal_name="Grace Hopper"))
+    desk.world.engagements.update(other.id, EngagementUpdate(role="Tech lead"), ADMIN)
+    desk.world.engagements.cancel(other.id, ADMIN)
+
+    mine = [row for row in notices(desk.session) if row.engagement_id == other.id]
+    assert [row.kind for row in mine] == (["created", "updated", "cancelled"] if writes else [])
+
+
+def test_the_root_installation_writes_when_it_is_the_leads_space(
+    desk: Desk, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        outbox, "get_settings", lambda: settings(leads_space="studio", root_slug="studio")
+    )
+    desk.session.info[SPACE_SLUG_KEY] = None
+
+    other = desk.world.engagement(desk.world.freelancer(legal_name="Grace Hopper"))
+
+    assert [row.kind for row in notices(desk.session) if row.engagement_id == other.id] == [
+        "created"
+    ]
 
 
 def test_the_hub_company_is_the_one_on_the_deals_request_reference(desk: Desk) -> None:

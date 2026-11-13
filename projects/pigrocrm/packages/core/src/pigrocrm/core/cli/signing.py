@@ -21,7 +21,7 @@ from pigrocrm.core.collaborators.letters import LETTER_TEMPLATE_TYPES
 from pigrocrm.core.collaborators.signing import SigningService
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory
-from pigrocrm.core.db.scope import bind_scope
+from pigrocrm.core.db.scope import SPACE_SLUG_KEY, bind_scope
 from pigrocrm.core.documenso.client import client_from_settings
 from pigrocrm.core.errors import DocumensoFailed, DomainError
 from pigrocrm.core.http import HttpCall
@@ -119,6 +119,7 @@ def sweep_space(
     Without a Documenso on this installation it still looks, stores no copy and moves nothing that
     needs one. A rehearsal only counts what it would visit and calls nothing."""
     with session_factory(engine)() as session:
+        session.info[SPACE_SLUG_KEY] = slug
         bind_scope(session, Actor.system())
         base = space_base_settings(settings, slug)
         effective = SpaceSettingsService(session, base).effective()

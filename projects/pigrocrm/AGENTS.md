@@ -778,8 +778,10 @@ change the hub must hear of (created; a draft's role, dates, fee or client chang
 signed; cancelled; closed; a framework notice served, once for each live engagement of that
 freelancer): the engagement's own `sequence` from 1, and the whole read model as it was (`payload`,
 never recomputed at delivery). A freelancer with no `hub_freelancer_id` writes nothing. The row has
-no foreign key and no legal-entity policy on purpose (it is bookkeeping read by no person), every
-space writes rows and **only the space `PIGROCRM_LEADS_SPACE` names sweeps them**: `pigrocrm
+no foreign key and no legal-entity policy on purpose (it is bookkeeping read by no person), and
+**only the space `PIGROCRM_LEADS_SPACE` names writes or sweeps them** (a session carries its space
+in `session.info[SPACE_SLUG_KEY]`, set by the registry's factories and the cron walk; one that
+carries none, a test's, does not hold a notice back): `pigrocrm
 reminders`, the quarter-hourly pass, calls `HubNoticeSweep` (`collaborators/hub_notices.py`) ahead
 of the reminders, so an hour's hub outage is retried by itself, with a backoff of 5 minutes doubling
 to 6 hours. It posts to `{PIGROCRM_HUB_URL}/api/hub/engagement-notices` under
