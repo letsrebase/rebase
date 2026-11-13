@@ -145,6 +145,14 @@ class HubDoorService:
         if card.vat_number and card.vat_number.strip():
             same = OrganizationRepository(self.session).find_by_vat(country, card.vat_number)
             if same is not None:
+                # Locked and read again before the check: two cards with one VAT number cannot
+                # both see it unclaimed, the second finds the first's hub id and is refused.
+                same = self.session.execute(
+                    select(Organization)
+                    .where(Organization.id == same.id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                ).scalar_one()
                 if same.hub_freelancer_id is not None:
                     raise Conflict(
                         "organization",

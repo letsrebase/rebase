@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from '@rebase/ui/select'
 import { toast } from '@rebase/ui/sonner'
-import { useDeals } from '@/features/deals/queries'
+import { useDeal, useDeals } from '@/features/deals/queries'
 import { useOrganizationContracts } from '@/features/contracts/queries'
 import { OrganizationPicker } from '@/features/organizations/OrganizationPicker'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
@@ -400,6 +400,12 @@ function EngagementForm({
   const create = useCreateEngagement()
   const update = useUpdateEngagement(engagement?.id ?? '')
   const [values, setValues] = useState(() => initialValues(engagement, freelancerId, prefill))
+  // Handed over from the hub, the engagement serves the request's deal: client and deal are
+  // read-only, and the client is the deal's own when the link did not carry one.
+  const fixedDealId = engagement === undefined ? prefill?.dealId : undefined
+  const fixedDeal = useDeal(fixedDealId ?? '', { enabled: fixedDealId !== undefined })
+  const dealCustomerId = fixedDeal.data?.customer_id
+  const clientId = fixedDealId !== undefined ? (dealCustomerId ?? values.clientId) : values.clientId
   const [errors, setErrors] = useState<Errors>({})
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
 
@@ -428,7 +434,7 @@ function EngagementForm({
     setProblem(null)
     if (Object.keys(found).length > 0) return
     if (engagement === undefined) {
-      create.mutate(createBody(values, prefill?.hubMatchId), {
+      create.mutate(createBody({ ...values, clientId }, prefill?.hubMatchId), {
         onSuccess: (saved) => done(saved, 'Bozza creata'),
         onError: (error) => setProblem(toProblem(error)),
       })
@@ -474,7 +480,8 @@ function EngagementForm({
             <Field id="engagement-client" label="Cliente" error={errorOn('client_organization_id')}>
               <OrganizationPicker
                 id="engagement-client"
-                value={values.clientId}
+                value={clientId}
+                disabled={fixedDealId !== undefined}
                 onChange={(client) =>
                   setValues((previous) => ({
                     ...previous,
@@ -486,7 +493,17 @@ function EngagementForm({
                 }
               />
             </Field>
-            {values.clientId !== null && modules.on('deals') ? (
+            {fixedDealId !== undefined ? (
+              <Field id="engagement-deal" label="Deal" error={errorOn('deal_id')}>
+                <Input
+                  id="engagement-deal"
+                  value={fixedDeal.data?.name ?? 'Caricamento…'}
+                  readOnly
+                  disabled
+                  aria-label="Deal"
+                />
+              </Field>
+            ) : values.clientId !== null && modules.on('deals') ? (
               <Field id="engagement-deal" label="Deal" error={errorOn('deal_id')}>
                 <DealSelect
                   customerId={values.clientId}
@@ -496,10 +513,10 @@ function EngagementForm({
                 />
               </Field>
             ) : null}
-            {values.clientId !== null && modules.on('contracts') ? (
+            {clientId !== null && modules.on('contracts') ? (
               <Field id="engagement-contract" label="Contratto" error={errorOn('contract_id')}>
                 <ContractSelect
-                  customerId={values.clientId}
+                  customerId={clientId}
                   value={values.contractId}
                   onChange={(id) => set('contractId', id)}
                   disabled={false}

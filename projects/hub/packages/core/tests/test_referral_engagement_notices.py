@@ -264,7 +264,7 @@ def test_the_handoff_rows_budget_and_company_survive_the_notices(clean_referrals
 
     _apply(
         clean_referrals,
-        _notice(key, freelancer_id, None, sequence=1, engagement_id=crm_id),
+        _notice(key, freelancer_id, company_id, sequence=1, engagement_id=crm_id),
     )
     # The next notice carries no `hub_match_id`: the CRM's own id finds the row.
     _apply(
@@ -272,7 +272,7 @@ def test_the_handoff_rows_budget_and_company_survive_the_notices(clean_referrals
         _notice(
             key,
             freelancer_id,
-            None,
+            company_id,
             sequence=2,
             engagement_id=crm_id,
             hub_match_id=None,
@@ -359,3 +359,38 @@ def test_a_notice_for_a_freelancer_the_hub_does_not_know_is_refused(
     with pytest.raises(ValidationFailed):
         _apply(clean_referrals, _notice(uuid4(), uuid4(), None, sequence=1))
     assert clean_referrals.scalar(select(HubEngagement)) is None
+
+
+def test_the_snapshot_survives_a_notice_for_the_same_company(clean_referrals: Session) -> None:
+    freelancer_id, company_id = _referred(clean_referrals)
+    key = _handoff(clean_referrals, freelancer_id, company_id, Decimal("650"))
+
+    _apply(clean_referrals, _notice(key, freelancer_id, company_id, sequence=1))
+
+    row = _row(clean_referrals, key)
+    assert (row.company_id, row.company_daily_budget) == (company_id, Decimal("650.00"))
+
+
+def test_a_notice_for_another_company_takes_the_snapshot_again(clean_referrals: Session) -> None:
+    freelancer_id, company_id = _referred(clean_referrals)
+    other = _request(
+        clean_referrals, email="road@acme.it", company_name="Beep Srl", daily_budget=Decimal("500")
+    )
+    key = _handoff(clean_referrals, freelancer_id, company_id, Decimal("650"))
+
+    _apply(clean_referrals, _notice(key, freelancer_id, other, sequence=1))
+
+    row = _row(clean_referrals, key)
+    assert (row.company_id, row.company_daily_budget) == (other, Decimal("500.00"))
+
+
+def test_a_notice_naming_no_company_clears_the_company_and_its_snapshot(
+    clean_referrals: Session,
+) -> None:
+    freelancer_id, company_id = _referred(clean_referrals)
+    key = _handoff(clean_referrals, freelancer_id, company_id, Decimal("650"))
+
+    _apply(clean_referrals, _notice(key, freelancer_id, None, sequence=1))
+
+    row = _row(clean_referrals, key)
+    assert (row.company_id, row.company_daily_budget) == (None, None)
