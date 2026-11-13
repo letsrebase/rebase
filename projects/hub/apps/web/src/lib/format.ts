@@ -1,4 +1,3 @@
-import type { Action, PigroStatus } from './api'
 
 const day = new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })
 const moment = new Intl.DateTimeFormat('it-IT', {
@@ -28,7 +27,6 @@ const calendarWeekday = new Intl.DateTimeFormat('it-IT', {
   year: 'numeric',
   timeZone: 'UTC',
 })
-const calendarMonth = new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric', timeZone: 'UTC' })
 const quantity = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2 })
 
 /** A rate as the API sends it, `"0.1000"`, as `10%`: what a referral reward is a share of. */
@@ -39,18 +37,6 @@ export function formatRate(value: string): string {
 /** `"2026-10-01"` as `1 ott 2026`, or `gio 1 ott 2026` with its weekday: a row of hours. */
 export function formatDay(value: string, weekday = false): string {
   return (weekday ? calendarWeekday : calendarDay).format(new Date(`${value}T00:00:00Z`))
-}
-
-/** `"2026-10"` as `Ottobre 2026`, a label on its own. */
-export function formatMonth(value: string): string {
-  const label = calendarMonth.format(new Date(`${value}-01T00:00:00Z`))
-  return label.charAt(0).toUpperCase() + label.slice(1)
-}
-
-/** `"7.50"` from the API as `7,5`, `"96.00"` as `96`: hours, days or a percentage, for
- *  display only. Nothing here is summed (`lib/report.ts` sums the strings). */
-export function formatDecimal(value: string): string {
-  return quantity.format(Number(value))
 }
 
 export function formatBytes(size: number): string {
@@ -77,40 +63,10 @@ export const STATE_LABELS: Record<string, string> = {
   closed: 'Chiuso',
 }
 
-/** REB-413: the state chips on the «Match» list, in the order the brief gives them. */
-export const MATCH_STATES = ['draft', 'awaiting_signature', 'active', 'concluded', 'cancelled'] as const
-/** What a match and a contract document are, in the admin's words: the same as the
- *  core's `MATCH_STATE_LABELS` and `DOCUMENT_STATE_LABELS` (`match_words.py`), which the
- *  MCP tools answer, so keep the two identical (REB-477): the core's
- *  `tests/test_web_labels.py` names any label that drifts. */
-export const MATCH_STATE_LABELS: Record<string, string> = {
-  draft: 'Da inviare',
-  awaiting_signature: 'In attesa di firma',
-  active: 'Attivo',
-  concluded: 'Concluso',
-  cancelled: 'Annullato',
-}
-export const DOCUMENT_STATE_LABELS: Record<string, string> = {
-  generated: 'Pronto, non inviato',
-  pending: 'Parte dopo il contratto quadro',
-  sent: 'Da firmare',
-  signed: 'Firmato',
-  cancelled: 'Annullato',
-  notice_served: 'Disdetto',
-}
-
-/** What a letter prints after its fee for each way of pricing it, and what the admin reads
- *  wherever a letter's pay mode is shown: the core's `PAY_MODE_WORDS` (`match_words.py`),
- *  held equal by `tests/test_web_labels.py`. The API carries the mode, never the words. */
-export const PAY_MODE_WORDS: Record<string, string> = {
-  to_work_unit: 'a giornata',
-  lump_sum: 'a corpo',
-}
-
 /** P-REB-43: a team request's states, in the order the admin moves it («Richieste
  *  team»), and its words, where it came from, and a talent's answer to the availability
  *  mail: copies of the core's `team_words.py`, held equal by the core's
- *  `tests/test_web_labels.py` as the match labels above are. */
+ *  `tests/test_web_labels.py` as the other labels here are. */
 export const TEAM_REQUEST_STATES = ['new', 'contacted', 'closed'] as const
 export const TEAM_REQUEST_STATE_LABELS: Record<string, string> = {
   new: 'Nuova',
@@ -180,19 +136,9 @@ export const CLOUD_VETTED_LABEL = 'Verificato da rebase'
 export const TEAM_BUILDER_ORIGIN = 'team-builder'
 export const TEAM_BUILDER_ORIGIN_LABEL = 'da team builder'
 
-/** Where a match's link to its deal on Pigro stands (REB-497), as the «Pigro» column on
- *  the «Match» list reads it. The web's own words: the core writes the sentence, not a
- *  label. */
-export const PIGRO_STATE_LABELS: Record<PigroStatus, string> = {
-  linked: 'Collegato',
-  to_link: 'Da collegare',
-  error: 'Errore',
-  rejected: 'Rifiutato',
-}
-
-/** A referral's state on the «Match» list and on the ledger: the reward's own three (the
+/** A referral's state on the ledger: the reward's own three (the
  *  ledger's `STATE_LABELS` read the same), `previsto` while its first letter is not signed
- *  (an estimate), `already_accrued` when it already paid on another match (REB-609) and
+ *  (an estimate), `already_accrued` when it already paid on another engagement (REB-609) and
  *  `to_verify` while the referred person has not proved they hold the address (REB-658). */
 export const REFERRAL_STATE_LABELS: Record<string, string> = {
   expected: 'Previsto',
@@ -208,45 +154,6 @@ export const REFERRAL_VERIFIED_VIA_LABELS: Record<string, string> = {
   letter: 'Verificato con la lettera firmata',
   history: 'Già contava prima della verifica',
 }
-/** Which side of a match a referral brought in. */
-export const REFERRAL_KIND_LABELS: Record<string, string> = { freelancer: 'freelance', company: 'azienda' }
-
-/** An invoice the hours of «Consuntivo» sit on (REB-503), in the words PigroCRM's own
- *  invoice list uses for its state and its payment: the CRM's vocabulary, copied, since
- *  the hub imports nothing of it. */
-export const INVOICE_STATE_LABELS: Record<string, string> = {
-  draft: 'Bozza',
-  issued: 'Emessa',
-  cancelled: 'Annullata',
-  confirmed: 'Confermata',
-  consumed: 'Consumata',
-}
-export const PAYMENT_STATE_LABELS: Record<string, string> = {
-  unpaid: 'Da incassare',
-  paid: 'Incassato',
-}
-
-/** The words on the button for each step the core names (REB-477). */
-export const ACTION_LABELS: Record<Action, string> = {
-  send: 'Invia per la firma',
-  resend_email: 'Reinvia email',
-  status_refresh: 'Aggiorna stato',
-  cancel: 'Annulla',
-  close: 'Chiudi match',
-  record_notice: 'Registra disdetta',
-  retry_pigro: 'Riprova su Pigro',
-}
-/** The same button while its request runs. */
-export const ACTION_PENDING_LABELS: Record<Action, string> = {
-  send: 'Invio…',
-  resend_email: 'Reinvio…',
-  status_refresh: 'Aggiorno…',
-  cancel: 'Annullo…',
-  close: 'Chiudo…',
-  record_notice: 'Registro…',
-  retry_pigro: 'Collego a Pigro…',
-}
-
 /** REB-392: a contract's state in the freelancer's own words, gendered to the document:
  *  the framework agreement (`il contratto quadro`) is masculine, a letter (`la lettera`)
  *  feminine. `sent` keeps «Da firmare» for both: gender-neutral, and it tells the

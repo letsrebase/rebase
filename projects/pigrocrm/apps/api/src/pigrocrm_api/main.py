@@ -149,9 +149,6 @@ def create_app() -> FastAPI:
         automations,
         # Spaces (2026-09-08). Public signup, on the registry database: routers/tenants.py.
         tenants,
-        # rebase's engagements door (spec 2026-09-25 § 2.3/§ 2.4), on the registry
-        # database, under its own token: routers/engagements.py.
-        engagements,
         # The hub's reads of a freelancer through the same door, by the hub's freelancer id:
         # availability, the member's contracts, the CV's fiscal identifiers, the merge check.
         freelancer_door,
@@ -228,8 +225,8 @@ def create_app() -> FastAPI:
     ):
         app.include_router(module.router)
 
-    # The leads route of rebase's engagements door (spec 2026-10-30 § 2): its own prefix,
-    # beside the engagements router above, never inside it.
+    # The leads route of rebase's engagements door (spec 2026-10-30 § 2): its own prefix, on
+    # the root installation, under the same service token as the freelancer door.
     app.include_router(engagements.leads_router)
 
     # Every router declares a 422 that `$ref`s HTTPValidationError, which FastAPI then no

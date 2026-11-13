@@ -32,9 +32,9 @@ NETWORK_ERROR_STATUS = 599
 # bytes this process allocates.
 MAX_BODY_BYTES = 1_048_576
 
-# The sealed contracts the Documenso client downloads (REB-387) run to a few hundred
-# kilobytes, and a long framework agreement with Documenso's certificate page must never
-# meet the cap above: that client reads through `urllib_download_call`, capped here.
+# The signed contracts a member downloads through the CRM's door run to a few hundred
+# kilobytes, and a long framework agreement with the signing certificate page must never
+# meet the cap above: that door reads through `urllib_download_call`, capped here.
 MAX_DOWNLOAD_BYTES = 16 * 1_048_576
 
 # (method, url, headers, body) -> (status, body). Narrower than the Gmail seam on
@@ -122,7 +122,7 @@ def _lowered(headers: Message) -> dict[str, str]:
 def urllib_download_call(
     method: str, url: str, headers: dict[str, str], body: bytes
 ) -> tuple[int, bytes]:
-    """`urllib_call` with room for a file: the Documenso client's seam (REB-387), whose
+    """`urllib_call` with room for a file: the freelancer door's seam, whose
     downloads are sealed PDFs rather than a few fields of JSON."""
     return _open(method, url, headers, body, MAX_DOWNLOAD_BYTES, HTTP_TIMEOUT_SECONDS)
 

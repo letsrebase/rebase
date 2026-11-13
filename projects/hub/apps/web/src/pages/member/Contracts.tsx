@@ -3,10 +3,22 @@ import { Clock, Download, PenLine } from 'lucide-react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { member, type MemberContract } from '@/lib/api'
-import { objectOf, whatOf } from '@/lib/contracts'
 import { formatDate, formatDateTime, memberDocumentStateLabel } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
 import { isHttpUrl } from '@/lib/url'
+
+type Named = Pick<MemberContract, 'kind' | 'regime' | 'number'>
+
+/** «della lettera n. 2026-001», «del contratto quadro»: a contract as a sentence names it. */
+function whatOf(document: Named): string {
+  if (document.kind === 'letter') return `della lettera n. ${document.number}`
+  return document.regime === 'occasional' ? 'del contratto quadro per prestazioni occasionali' : 'del contratto quadro'
+}
+/** The same with an article in front: «la lettera n. 2026-001», «il contratto quadro». */
+function objectOf(document: Named): string {
+  if (document.kind === 'letter') return `la lettera n. ${document.number}`
+  return document.regime === 'occasional' ? 'il contratto quadro per prestazioni occasionali' : 'il contratto quadro'
+}
 
 function Actions({ document }: { document: MemberContract }) {
   // «Firma» wants «il contratto quadro» / «la lettera n. X», the direct object `objectOf`

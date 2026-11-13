@@ -2,7 +2,7 @@
 a loopback port and an unpublished database; nobody can open an account; the webhook may
 reach the API by its compose name; and a compose file of its own, so the preview's deploy
 and CI's image build never need Documenso's secrets. The `sweep` service (also REB-393)
-runs `rebase contracts-sweep` on both stacks, from the hub's own compose file, since the
+runs `rebase crm-sweep` on both stacks, from the hub's own compose file, since the
 preview never loads docker-compose.documenso.yml. That file also holds the two nightly
 database backups (REB-715, REB-717), whose drill is `db-backup/tests/backup-restore.sh`.
 The files are read as text, since what matters is what they say; compose itself runs in
@@ -102,12 +102,12 @@ def test_every_variable_documenso_requires_is_in_the_env_example_and_commented()
 
 
 def test_the_hub_compose_file_runs_the_sweep_on_a_loop_with_no_port() -> None:
-    """`rebase contracts-sweep` (REB-391) scheduled by this repository, on both stacks
+    """`rebase crm-sweep` (REB-391) scheduled by this repository, on both stacks
     (REB-393): a loop, since `_deploy-compose.yml` fails a deploy on any container not
     `running`, and no port, since nothing ever calls the sweep directly."""
     services = _compose().split("\nservices:", 1)[1]
     sweep = services.split("\n  sweep:", 1)[1].split("\n  cards:", 1)[0]
-    assert "while :; do sleep 600; rebase contracts-sweep; done" in sweep
+    assert "while :; do sleep 600; rebase crm-sweep; done" in sweep
     assert "<<: *hardening" in sweep
     assert "ports:" not in sweep
 
@@ -164,8 +164,7 @@ def test_the_loops_hold_only_the_secrets_of_their_own_job() -> None:
         assert "*hub-api-only" not in block, name
     assert "*hub-github" in blocks["cards"]
     assert "*hub-github" not in blocks["sweep"] + blocks["campaigns"]
-    assert "*hub-documenso" in blocks["sweep"]
-    assert "*hub-documenso" not in blocks["cards"] + blocks["campaigns"]
+    assert "*hub-documenso" not in "".join(blocks.values())
 
 
 def _backup_service(name: str) -> str:

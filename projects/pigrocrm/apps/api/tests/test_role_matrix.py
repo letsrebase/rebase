@@ -1090,14 +1090,8 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
         "client; it reaches the hub over the network and answers even when the hub is "
         "down (ORB-173)."
     ),
-    ("PUT", "/api/rebase/engagements/{match_id}"): (
-        "Gated by `PIGROCRM_ENGAGEMENTS_TOKEN` (spec 2026-09-25 § 2.3), not a role: the "
-        "caller is the hub itself, with no session and no actor to check. None of the "
-        "three role clients holds that bearer, so the sweep would only ever see the "
-        "door's own 404/401, never a role refusal to assert on."
-    ),
     ("PUT", "/api/rebase/leads/{request_id}"): (
-        "Gated by `PIGROCRM_ENGAGEMENTS_TOKEN` like the engagements route (spec 2026-10-30 "
+        "Gated by `PIGROCRM_ENGAGEMENTS_TOKEN` (spec 2026-10-30 "
         "§ 2, REB-866), not a role: the caller is the hub itself, with no session and no "
         "actor to check, and the space it writes to is the installation's own setting. "
         "None of the three role clients holds that bearer, so the sweep would only ever see "

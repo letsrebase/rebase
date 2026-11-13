@@ -222,13 +222,12 @@ async def test_the_asgi_lifespan_protocol_starts_the_session_manager(
     assert sent[-1]["type"] == "lifespan.shutdown.complete"
 
 
-def test_the_engagement_tools_read_through_the_injected_client(
+def test_the_crm_link_tool_reads_through_the_injected_client(
     mcp_engine: Engine, factory: sessionmaker[Session]
 ) -> None:
-    """`link_match_to_pigro` and `get_match_report` reach the CRM through the client the
-    app was given, so a test's fake stands in for the CRM there too; only production's
-    ten-second `urllib_call` becomes `urllib_engagements_call`, for a link that opens a
-    new space."""
+    """`link_company_to_pigro` reaches the CRM through the client the app was given, so a
+    test's fake stands in for the CRM there too; only production's ten-second `urllib_call`
+    becomes `urllib_engagements_call`, for a link that opens a new space."""
 
     def fake(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
         return 503, b""
@@ -236,7 +235,7 @@ def test_the_engagement_tools_read_through_the_injected_client(
     with factory() as session:
         for http, expected in ((fake, fake), (urllib_call, urllib_engagements_call)):
             app = McpHttpApp(lambda: factory, _settings(mcp_engine), http)
-            assert app.engagements(session).door.http is expected
+            assert app.crm_leads(session).door.http is expected
 
 
 @pytest.mark.asyncio

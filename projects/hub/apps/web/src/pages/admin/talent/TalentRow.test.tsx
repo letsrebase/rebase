@@ -5,8 +5,8 @@ import { CARD_TALENT, COMPLETE, LEAD_TALENT, VETTED_TALENT, answer, cellUnder, m
 
 afterEach(resetMocks)
 
-describe('the talent row menu and the card link to its contracts (REB-387)', () => {
-  it('offers «Match e contratti» on a card row and no menu on a lead', async () => {
+describe('the talent row menu (REB-387)', () => {
+  it('offers its actions on a card row and no menu on a lead', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(200, { total: 2, items: [CARD_TALENT, LEAD_TALENT], by_status: {} }),
     )
@@ -14,8 +14,7 @@ describe('the talent row menu and the card link to its contracts (REB-387)', () 
     const bob = (await screen.findByText('bob@example.org')).closest('tr')!
     expect(within(bob).queryByRole('button', { name: /Azioni per/ })).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: 'Azioni per Ada Lovelace' }))
-    const item = await screen.findByRole('menuitem', { name: 'Match e contratti' })
-    expect(item.getAttribute('href')).toMatch(/\/admin\/freelance\/f1\/contracts$/)
+    expect(await screen.findByRole('menuitem', { name: 'Crea match' })).toBeInTheDocument()
   })
 
   it('offers «Crea match» first in a card row menu', async () => {
@@ -25,7 +24,6 @@ describe('the talent row menu and the card link to its contracts (REB-387)', () 
     const items = await screen.findAllByRole('menuitem')
     expect(items.map((item) => item.textContent)).toEqual([
       'Crea match',
-      'Match e contratti',
       'Segna come verificato',
     ])
     expect(items[0]!.getAttribute('href')).toMatch(/\/admin\/freelance\/f1\/match\/new$/)

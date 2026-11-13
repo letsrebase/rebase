@@ -240,11 +240,6 @@ export function mount(path: string, duplicates: Record<string, unknown> | (() =>
     path: '/admin/freelance/$id',
     component: AdminFreelancerDetail,
   })
-  const contracts = createRoute({
-    getParentRoute: () => signedIn,
-    path: '/admin/freelance/$id/contracts',
-    component: () => <p>contratti</p>,
-  })
   const newMatch = createRoute({
     getParentRoute: () => signedIn,
     path: '/admin/freelance/$id/match/new',
@@ -268,7 +263,7 @@ export function mount(path: string, duplicates: Record<string, unknown> | (() =>
   })
   const router = createRouter({
     routeTree: root.addChildren([
-      signedIn.addChildren([talent, talentLead, freelanceDetail, contracts, newMatch, companies, companiesDetail, duplicatesRoute]),
+      signedIn.addChildren([talent, talentLead, freelanceDetail, newMatch, companies, companiesDetail, duplicatesRoute]),
     ]),
     history: createMemoryHistory({ initialEntries: [path] }),
     parseSearch,

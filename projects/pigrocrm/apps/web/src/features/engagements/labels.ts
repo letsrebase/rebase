@@ -11,7 +11,7 @@ import type { components } from '@/lib/api-types'
  * the server sent.
  */
 
-export type Engagement = components['schemas']['pigrocrm__core__collaborators__schemas__EngagementRead']
+export type Engagement = components['schemas']['EngagementRead']
 export type EngagementWaiting = components['schemas']['EngagementWaiting']
 export type EngagementWarning = components['schemas']['EngagementWarning']
 export type EngagementBucket = 'todo' | 'ongoing' | 'closed'

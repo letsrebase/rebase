@@ -477,21 +477,17 @@ def test_apply_and_undo_need_an_admin_and_say_so(twice: Session) -> None:
 
 def test_a_pair_a_merge_refuses_is_reported_and_the_rest_goes_on(twice: Session) -> None:
     survivor, absorbed, admin = _production_like(twice)
-    for card, code_ in ((survivor, "RSSMRA80A01H501U"), (absorbed, "VRDLGU85M01F205X")):
-        twice.execute(
-            text(
-                "INSERT INTO freelancer_fiscal (id, freelancer_id, tax_code, domicile, "
-                "updated_by, created_at, updated_at) VALUES (gen_random_uuid(), :f, :c, 'Via 1', "
-                ":a, now(), now())"
-            ),
-            {"f": card.id, "c": code_, "a": admin.id},
-        )
-    twice.commit()
-    _, dry = talent_duplicates(twice, FakeCrmDoor().door())
+    said = {
+        "framework_regimes": [],
+        "shared_clients": 0,
+        "tax_code_conflict": True,
+        "organization": False,
+        "other_organization": False,
+    }
+    crm = FakeCrmDoor(merge={(survivor.id, absorbed.id): said, (absorbed.id, survivor.id): said})
+    _, dry = talent_duplicates(twice, crm.door())
     assert any("blocked: " in line and "codici fiscali diversi" in line for line in dry)
-    code, lines = talent_duplicates(
-        twice, FakeCrmDoor().door(), apply=True, admin_email="admin@rebase.it"
-    )
+    code, lines = talent_duplicates(twice, crm.door(), apply=True, admin_email="admin@rebase.it")
     assert code == 1
     assert any("blocked: " in line for line in lines)
     assert lines[-1].startswith("index uq_users_linkedin_lower not created: 1 profiles")

@@ -7,45 +7,25 @@ The tests are in `test_referrals.py` (codes and links), `test_referral_company_l
 
 import re
 from collections.abc import Callable, Iterator
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
 from admins import an_admin
-from fakes_contracts import FakeRenderer
-from fakes_documenso import FakeDocumenso
-from match_fixtures import PDF, SIGNER, TODAY, _fiscal
-from signing_fixtures import (
-    SIGNED_AT,
-    _active_framework,
-    _envelope_of,
-    _letter_of,
-    _signing,
-    _webhook,
-)
 from sqlalchemy import event, select, text
 from sqlalchemy.orm import Session
 
 from rebase_core.companies import CompanyService
 from rebase_core.company_schemas import CompanyCreate
 from rebase_core.config import Settings
-from rebase_core.contract_schemas import (
-    CustomerDate,
-    LetterFields,
-    MatchCreate,
-    MatchListItem,
-)
 from rebase_core.engagement_notices import EngagementNoticeService
 from rebase_core.engagement_schemas import EngagementNotice
 from rebase_core.freelancer_schemas import FreelancerCreate, FreelancerDraft
 from rebase_core.freelancers import FreelancerService
-from rebase_core.mail import RecordingSender
-from rebase_core.match_words import PAY_MODE_WORDS
-from rebase_core.matches import MatchService
 from rebase_core.models import (
+    Company,
     HubEngagement,
-    Match,
     Referral,
     ReferralReward,
     TeamRequest,
@@ -55,6 +35,9 @@ from rebase_core.referral_ledger import ReferralLedgerService
 from rebase_core.referrals import ReferralService
 from rebase_core.signup_schemas import SignupCreate, SignupUtm
 from rebase_core.users import UserService
+
+PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
+SIGNED_AT = datetime(2026, 9, 30, 23, 30, tzinfo=UTC)
 
 
 def _member(session: Session, email: str = "mario@community.it") -> UUID:
@@ -122,52 +105,6 @@ def _log_in(session: Session, email: str) -> None:
     token = re.search(r"/verify\?t=([A-Za-z0-9_-]+)", mail.text)
     assert token is not None
     assert users.enter(token.group(1)) is not None
-
-
-def _match_body(
-    company_id: UUID, *, expected_days: int | None = 20, mode: str = "to_work_unit"
-) -> MatchCreate:
-    return MatchCreate(
-        company_id=company_id,
-        customer=CustomerDate(
-            customer_legal_name="ACME S.r.l.",
-            customer_vat_number="01234567890",
-            customer_registered_office="Milano",
-        ),
-        letter=LetterFields(
-            role="Backend developer",
-            activities="Le API del prodotto.",
-            start_date=date(2026, 10, 1),
-            fee=Decimal("450"),
-            mode=mode,
-            unit=PAY_MODE_WORDS[mode],
-            payment_days=30,
-            month_end=True,
-        ),
-        expected_days=expected_days,
-    )
-
-
-def _sent_with_body(
-    session: Session,
-    renderer: FakeRenderer,
-    fake: FakeDocumenso,
-    freelancer_id: UUID,
-    company_id: UUID,
-    admin_id: UUID,
-    mode: str = "to_work_unit",
-) -> Match:
-    """`test_signing._sent`'s own recipe (`_matches`/`_draft`/`send_match`), with
-    `_match_body`'s explicit day rate and estimate instead of `match_fixtures._body`'s
-    default, so the reward this earns is deterministic."""
-    match = MatchService(session, renderer, SIGNER, today=lambda: TODAY).create(
-        freelancer_id, _match_body(company_id, mode=mode), admin_id
-    )
-    _signing(session, renderer, fake, RecordingSender()).send_match(match.id, admin_id)
-    row = session.get(Match, match.id)
-    assert row is not None
-    _tell_the_hub(session, row, "awaiting_signature", sequence=1)
-    return row
 
 
 def _signup_with(session: Session, **extra: object) -> UUID:
@@ -267,58 +204,71 @@ def _handoff(
     return row.id
 
 
-def _tell_the_hub(session: Session, match: Match, state: str, *, sequence: int) -> bool:
-    """What the CRM would have said about the hub's own match at this point: the match's own
-    letter figures, keyed by the match's id, on a row opened with the match's budget snapshot.
-    A match's letter is the only thing these tests have to stand in for the CRM's engagement."""
-    session.refresh(match)
-    if session.get(HubEngagement, match.id) is None:
-        session.add(
-            HubEngagement(
-                id=match.id,
-                freelancer_id=match.freelancer_id,
-                company_id=match.company_id,
-                company_daily_budget=match.company_daily_budget,
-                state="handoff",
-                sequence=0,
-            )
-        )
-        session.commit()
-    letter = _letter_of(session, match.id)
-    signed = state == "active"
+def _engagement_sent(
+    session: Session,
+    freelancer_id: UUID,
+    company_id: UUID | None,
+    *,
+    state: str = "awaiting_signature",
+    mode: str = "day",
+    fee: int | Decimal = 450,
+    expected_days: int | None = 20,
+    sequence: int = 1,
+    ends_on: date | None = None,
+) -> UUID:
+    """An engagement as the CRM tells it before the signature: the row «Crea match» opens with
+    the company's budget snapshot (`_handoff`), then a `created` (draft) or `sent` notice. The
+    engagement's key is returned."""
+    company = session.get(Company, company_id) if company_id is not None else None
+    key = _handoff(
+        session, freelancer_id, company_id, None if company is None else company.daily_budget
+    )
     notice = _notice(
-        match.id,
-        match.freelancer_id,
-        match.company_id,
+        key,
+        freelancer_id,
+        company_id,
         sequence=sequence,
-        kind="signed" if signed else "sent",
-        mode="flat" if letter.data.get("modalita") == PAY_MODE_WORDS["lump_sum"] else "day",
-        fee=match.letter_fee,
-        expected_days=match.expected_days,
-        starts_on=match.letter_start_date,
-        ends_on=match.letter_end_date,
-        letter_id=letter.id,
-        letter_number=letter.number,
-        signed_at=letter.signed_at if signed else None,
+        kind="created" if state == "draft" else "sent",
+        mode=mode,
+        fee=Decimal(fee),
+        expected_days=None if expected_days is None else Decimal(expected_days),
+        ends_on=ends_on,
         state=state,
     )
-    return EngagementNoticeService(session).apply(notice)
+    assert EngagementNoticeService(session).apply(notice) is True
+    return key
 
 
 # ---- the reward, at the first signed letter ----------------------------------------
 
 
-def _sign_the_letter(
-    session: Session, renderer: FakeRenderer, fake: FakeDocumenso, match: Match
-) -> None:
-    envelope = _envelope_of(_letter_of(session, match.id))
-    fake.sign(envelope, SIGNED_AT)
-    signing = _signing(session, renderer, fake, RecordingSender())
-    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
-    assert signed is not None
-    signing.recovery.finish(signed)
+def _sign(
+    session: Session, key: UUID, *, sequence: int = 2, signed_at: datetime = SIGNED_AT
+) -> bool:
+    """The `signed` notice of an engagement `_engagement_sent` opened: its own figures again,
+    now with the letter, its number and the signature. Whether the hub applied it."""
+    row = session.get(HubEngagement, key)
+    assert row is not None and row.mode is not None and row.fee is not None
+    assert row.starts_on is not None and row.role is not None
+    notice = _notice(
+        key,
+        row.freelancer_id,
+        row.company_id,
+        sequence=sequence,
+        kind="signed",
+        mode=row.mode,
+        fee=row.fee,
+        expected_days=row.expected_days,
+        starts_on=row.starts_on,
+        ends_on=row.ends_on,
+        letter_id=uuid4(),
+        letter_number="2026/001",
+        signed_at=signed_at,
+        state="active",
+    )
+    applied = EngagementNoticeService(session).apply(notice)
     session.expire_all()
-    _tell_the_hub(session, match, "active", sequence=2)
+    return applied
 
 
 # ---- a referral counts once the referred person is verified (REB-658) --------------
@@ -336,17 +286,14 @@ def _signed_reward(clean_referrals: Session, admin_id: UUID) -> UUID:
     code = ReferralService(clean_referrals).code_for(referrer_id)
     freelancer_id = _card(clean_referrals, ref=code)
     company_id = _request(clean_referrals)
-    _fiscal(clean_referrals, freelancer_id, admin_id)
-    _active_framework(clean_referrals, freelancer_id, admin_id)
-    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
-    match = _sent_with_body(clean_referrals, renderer, fake, freelancer_id, company_id, admin_id)
-    _sign_the_letter(clean_referrals, renderer, fake, match)
+    key = _engagement_sent(clean_referrals, freelancer_id, company_id)
+    _sign(clean_referrals, key)
     reward = clean_referrals.scalar(select(ReferralReward))
     assert reward is not None
     return reward.id
 
 
-# ---- what a match would earn, and where the lists show it (REB-609) ---------------------
+# ---- what a referral would earn, and where the ledger shows it (REB-609) ----------------
 
 
 def _statements(session: Session) -> tuple[list[str], Callable[[], None]]:
@@ -363,8 +310,7 @@ def _statements(session: Session) -> tuple[list[str], Callable[[], None]]:
 
 def _referred_pair(clean_referrals: Session) -> tuple[UUID, UUID, UUID, UUID]:
     """A referrer, and a freelancer card and a company request both brought in by his
-    code, with tax data and an active framework agreement so a match can be written. The
-    company's referente has logged in since, so both referrals are verified on the
+    code. The company's referente has logged in since, so both referrals are verified on the
     company side too (the freelancer's is by its own signature)."""
     referrer_id = _member(clean_referrals)
     code = ReferralService(clean_referrals).code_for(referrer_id)
@@ -372,14 +318,7 @@ def _referred_pair(clean_referrals: Session) -> tuple[UUID, UUID, UUID, UUID]:
     freelancer_id = _card(clean_referrals, ref=code)
     company_id = _request(clean_referrals, ref=code)
     _log_in(clean_referrals, "wile@acme.it")
-    _fiscal(clean_referrals, freelancer_id, admin_id)
-    _active_framework(clean_referrals, freelancer_id, admin_id)
     return referrer_id, admin_id, freelancer_id, company_id
-
-
-def _match_list(session: Session) -> list[MatchListItem]:
-    service = MatchService(session, FakeRenderer(draft=False), SIGNER, today=lambda: TODAY)
-    return service.reads.list_all(status=None, q=None, limit=100, offset=0).items
 
 
 def _evidence(session: Session, entity_id: UUID):  # type: ignore[no-untyped-def]

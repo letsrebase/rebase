@@ -6,7 +6,6 @@ import {
   Briefcase,
   Cloud,
   Cpu,
-  Handshake,
   Home,
   LogIn,
   LogOut,
@@ -25,8 +24,8 @@ import { useLogout } from '@/lib/me'
 
 /** The admin pages, in the order an admin reaches for them (REB-609), in four groups a
  *  hairline apart: what is worked every day, in the order a piece of work travels
- *  (a person, the company that asks, the team it asks for, the match that joins them, the
- *  referral that match may earn); the mails sent to the community; what is set up or
+ *  (a person, the company that asks, the team it asks for, the referral an
+ *  engagement may earn); the mails sent to the community; what is set up or
  *  watched now and then (the Pigro instances, the guide); and who may get in (accesses,
  *  administrators, agents). «Talenti» is the merge of the old «Developer e CTO» and
  *  «Iscrizioni» (REB-283); a page renamed or moved keeps its route through a redirect in
@@ -36,7 +35,6 @@ const ADMIN_NAV = [
     { to: '/admin/talent', label: 'Talenti', icon: UserRound },
     { to: '/admin/companies', label: 'Aziende', icon: Briefcase },
     { to: '/admin/team', label: 'Richieste team', icon: Users },
-    { to: '/admin/matches', label: 'Match', icon: Handshake },
     { to: '/admin/referrals', label: 'Referral', icon: Share2 },
   ],
   [{ to: '/admin/campaigns', label: 'Campagne', icon: Send }],

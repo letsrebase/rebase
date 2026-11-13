@@ -9,8 +9,8 @@ import {
 } from '@rebase/ui/dropdown-menu'
 import { VETTED_MARK_LABEL, VETTED_UNMARK_LABEL } from '@/lib/format'
 
-/** The row's own actions (REB-387), on a card only: a bare sign-up has no card to match
- *  and no contract to read. The name keeps linking to the card. REB-518 adds the vetted
+/** The row's own actions (REB-387), on a card only: a bare sign-up has no card to pair
+ *  with a company. The name keeps linking to the card. REB-518 adds the vetted
  *  flag, on or off, last. */
 export function TalentMenu({
   id,
@@ -36,11 +36,6 @@ export function TalentMenu({
         <DropdownMenuItem asChild>
           <Link to="/admin/freelance/$id/match/new" params={{ id }}>
             Crea match
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link to="/admin/freelance/$id/contracts" params={{ id }}>
-            Match e contratti
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem disabled={vetting} onSelect={() => onVet(!vetted)}>

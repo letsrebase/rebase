@@ -27,16 +27,13 @@ from rebase_core.models import (
     CampaignOptout,
     CampaignRecipient,
     Company,
-    ContractDocument,
     Freelancer,
     FreelancerCard,
-    FreelancerFiscal,
     FreelancerSource,
     GuideDownload,
     HubEngagement,
     Login,
     MagicLinkToken,
-    Match,
     Note,
     Referral,
     TalentCloudGrant,
@@ -65,10 +62,7 @@ TABLES = (
     "team_requests",
     "team_proposals",
     "talent_cloud_grants",
-    "contract_documents",
     "hub_engagements",
-    "matches",
-    "freelancer_fiscal",
     "freelancer_cards",
     "companies",
     "logins",
@@ -160,35 +154,6 @@ def _company(session: Session, user: User) -> Company:
     return row
 
 
-def _match(session: Session, card: Freelancer, company: Company, admin: User, status: str) -> Match:
-    row = Match(
-        freelancer_id=card.id,
-        company_id=company.id,
-        customer_legal_name="Acme srl",
-        customer_vat_number="01234567890",
-        customer_registered_office="Milano",
-        status=status,
-        created_by=admin.id,
-    )
-    session.add(row)
-    session.flush()
-    return row
-
-
-def _framework(session: Session, card: Freelancer, admin: User, status: str = "signed") -> None:
-    session.add(
-        ContractDocument(
-            kind="framework",
-            freelancer_id=card.id,
-            text_version="1",
-            pdf=PDF,
-            status=status,
-            created_by=admin.id,
-        )
-    )
-    session.flush()
-
-
 def _pair(session: Session) -> tuple[Freelancer, Freelancer, User, User, User]:
     """A, the survivor (the newer CV, no card), B (older CV), and an admin."""
     admin = _admin(session)
@@ -267,36 +232,16 @@ def _everything_of(session: Session, b: Freelancer, b_user: User, admin: User) -
             "audit",
             AdminAction(entity_type="freelancer", entity_id=b.id, kind="vetted", admin_id=admin.id),
         ),
-        (
-            "fiscal",
-            FreelancerFiscal(
-                freelancer_id=b.id,
-                tax_code="RSSMRA80A01H501U",
-                domicile="Via Roma 1",
-                updated_by=admin.id,
-            ),
-        ),
     ):
         session.add(row)
         session.flush()
         ids[key] = row.id
-    ids["matches"] = _match(session, b, company, admin, "draft").id
     engagement = HubEngagement(
         freelancer_id=b.id, company_id=company.id, state="active", sequence=1
     )
     session.add(engagement)
     session.flush()
     ids["hub_engagements"] = engagement.id
-    session.add(
-        ContractDocument(
-            kind="framework",
-            freelancer_id=b.id,
-            text_version="1",
-            pdf=PDF,
-            status="cancelled",
-            created_by=admin.id,
-        )
-    )
     session.add(
         Campaign(
             created_by=admin.id,
@@ -336,12 +281,8 @@ def _everything_of(session: Session, b: Freelancer, b_user: User, admin: User) -
     request = session.scalars(select(TeamRequest)).one()
     talent = TeamRequestTalent(request_id=request.id, freelancer_id=b.id, role="Backend")
     session.add(talent)
-    document = session.scalars(
-        select(ContractDocument).where(ContractDocument.freelancer_id == b.id)
-    ).one()
     session.flush()
     ids["team_request_talents"] = talent.id
-    ids["contract_documents"] = document.id
     session.commit()
     return ids
 
@@ -556,26 +497,6 @@ def test_refused_when_the_crm_says_both_have_a_live_framework_agreement_of_the_s
     assert crm.calls == [("GET", f"/api/rebase/freelancers/{a.id}/merge-check?with={b.id}")]
 
 
-def test_the_hubs_own_contract_tables_are_no_longer_the_merges_check(clean: Session) -> None:
-    """The contracts and engagements are the CRM's: two live local framework agreements and
-    an active local match with the same company, which the check used to refuse, are now
-    for the removal card to drop, and a CRM that finds nothing lets the merge through and
-    moves them with the card."""
-    a, b, a_user, _, admin = _pair(clean)
-    _framework(clean, a, admin, "signed")
-    _framework(clean, b, admin, "sent")
-    company = _company(clean, a_user)
-    _match(clean, a, company, admin, "active")
-    _match(clean, b, company, admin, "awaiting_signature")
-    clean.commit()
-
-    done = _merges(clean).merge(a.id, b.id, admin.id)
-
-    # The absorbed card's own rows, one of each, move with it.
-    assert done.moved["contract_documents"] == 1
-    assert done.moved["matches"] == 1
-
-
 def test_refused_when_the_crm_says_both_have_an_engagement_with_the_same_client(
     clean: Session,
 ) -> None:
@@ -666,19 +587,6 @@ def test_the_crm_is_asked_before_any_row_is_locked(clean: Session) -> None:
     door = FreelancerDoor(PIGRO, TOKEN, asking, asking)
     PersonMergeService(clean, door).merge(a.id, b.id, admin.id)
     assert during == [True]
-
-
-def test_refused_when_the_two_cards_have_different_tax_codes(clean: Session) -> None:
-    a, b, _, _, admin = _pair(clean)
-    for card, code in ((a, "RSSMRA80A01H501U"), (b, "VRDLGU85M01F205X")):
-        clean.add(
-            FreelancerFiscal(
-                freelancer_id=card.id, tax_code=code, domicile="Via 1", updated_by=admin.id
-            )
-        )
-    clean.commit()
-    with pytest.raises(InvalidState, match="codici fiscali diversi"):
-        _merges(clean).merge(a.id, b.id, admin.id)
 
 
 def test_refused_when_the_absorbed_card_is_an_admins_and_for_the_same_card_twice(

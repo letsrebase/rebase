@@ -1,8 +1,7 @@
 """What the member area and the admin ledger read and write about referrals (P-REB-44).
 
-Kept beside `contract_schemas.py`'s own split from the family schema modules: a domain
-with more than a couple of shapes gets its own file rather than growing the general one
-further.
+Kept out of the family schema modules: a domain with more than a couple of shapes gets its
+own file rather than growing the general one further.
 """
 
 from datetime import datetime
@@ -16,28 +15,15 @@ from rebase_core.models import (
     RATE_DIGITS,
     RATE_PLACES,
     REFERRAL_CODE_LENGTH,
-    REFERRAL_STATES,
-    REWARD_STATES,
 )
 from rebase_core.schema_common import ResponseModel
 from rebase_core.vocabulary import ReferralKind, ReferralState, ReferredStatus, RewardState, enum_of
 
 RATE_MAX = Decimal("1")
 
-# What a match's referred side shows: the referral still unproved, what it would earn
-# (`expected`), what an earlier match already earned (`already_accrued`), or the reward's own
-# state. Written only by `ReferralService.for_matches`.
-EXPECTED = "expected"
-ALREADY_ACCRUED = "already_accrued"
 # `verified_via` of a referral: the proof that made it `verified` (`models.referrals`).
 VERIFIED_VIA = ("login", "letter", "history")
 VerifiedVia = Annotated[str, Field(json_schema_extra=enum_of(VERIFIED_VIA))]
-MatchReferralState = Annotated[
-    str,
-    Field(
-        json_schema_extra=enum_of((REFERRAL_STATES[0], EXPECTED, ALREADY_ACCRUED, *REWARD_STATES))
-    ),
-]
 
 
 class MemberReferralItem(ResponseModel):
@@ -77,29 +63,6 @@ class PublicReferralRates(ResponseModel):
 
     rate_freelancer: Decimal
     rate_company: Decimal
-
-
-class MatchReferral(ResponseModel):
-    """One referred side of a match, as the admin's «Match» list reads it (REB-609).
-    `status` is a reward's own state once one exists for this referral and its letter
-    belongs to this match (`to_confirm`, `confirmed`, `paid`, with the real `rate`
-    and `amount`); `expected` while no reward exists yet, with the projection the current
-    rate and the match's own numbers give (`amount` is `None` when there is nothing to
-    project: no base, a cancelled match, one whose letter is already out of the
-    running); `already_accrued` when the referral already paid on another match, since a
-    referral pays once -- no figure then; `to_verify` when the referral is a
-    company's and its contact has not logged in yet (REB-658): nothing it could sign
-    earns anything until then, so no figure either. `referrer_name` is the referrer's
-    whole name, and `referrer_freelancer_id` his own card, when he has one, so a page
-    can link to it."""
-
-    kind: ReferralKind
-    referrer_name: str
-    referrer_freelancer_id: UUID | None
-    rate: Decimal | None
-    amount: Decimal | None
-    status: MatchReferralState
-    reward_id: UUID | None
 
 
 class ReferralEvidence(ResponseModel):
@@ -235,7 +198,6 @@ class ReferralSettingsUpdate(BaseModel):
 # Re-exported so a caller of this module never also needs `rebase_core.models` just for
 # the one constant a `ref` field's own validation already bounds itself to.
 __all__ = [
-    "MatchReferral",
     "MemberReferral",
     "MemberReferralItem",
     "PublicReferralRates",

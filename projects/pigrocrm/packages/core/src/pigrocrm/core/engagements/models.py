@@ -15,11 +15,10 @@ from pigrocrm.core.tenants.models import TenantsBase
 
 class RebaseEngagement(TenantsBase, PrimaryKeyMixin):
     """One row per hub match (spec 2026-09-25 § 2.2): which space, which customer and
-    which deal and contract the door set up for it. `match_id` is the hub's id and the idempotency
-    key; `deal_id` stays NULL between step 3 and step 6 of `EngagementService.ensure`.
-    `space_created` says the space was opened for this match (or its missing admin
-    created for it): the call that completes the row sends the welcome and answers
-    `space_created` from it, so a call that stopped on the way loses neither."""
+    which deal and contract the hub's old door set up for it (REB-1108 removed the door;
+    the rows stay, read by the report and by `OwnEngagementService`). `match_id` is the
+    hub's id and the idempotency key. `space_created` says the space was opened for this
+    match (or its missing admin created for it)."""
 
     __tablename__ = "rebase_engagements"
 

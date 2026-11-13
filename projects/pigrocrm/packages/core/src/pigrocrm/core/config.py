@@ -86,9 +86,9 @@ class Settings(BaseSettings):
     # nothing new. Read from the environment only, never from `space_settings`. A secret
     # the same way `google_client_secret` is, so `repr=False` keeps it out of logs.
     registry_token: str = Field(default="", repr=False)
-    # The bearer the engagements door checks (`/api/rebase/engagements/...`, milestone A,
-    # REB-490): the hub presents it to set up a freelancer's space, customer and deal for
-    # a signed engagement, and to read its hours back. Empty, the default, means the
+    # The bearer the hub's doors check (`/api/rebase/leads/...` and
+    # `/api/rebase/freelancers/...`, milestone A, REB-490): the hub presents it to file a
+    # company's request and to read and update a freelancer. Empty, the default, means the
     # routes do not exist -- the same shape as `registry_token` above. Read from the
     # environment only, never from `space_settings`, and `repr=False` for the same reason.
     engagements_token: str = Field(default="", repr=False)

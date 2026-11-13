@@ -34,10 +34,8 @@ from rebase_core.anonymous_cv.writer import (
 )
 from rebase_core.card_person import PERSON_CV
 from rebase_core.card_types import NO_TEXT
-from rebase_core.contract_schemas import FiscalData
 from rebase_core.db import session_factory
 from rebase_core.errors import AnonymousCvFailed, LlmNotConfigured, LlmUnavailable, NotFound
-from rebase_core.fiscal import FiscalService
 from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
 from rebase_core.llm import LlmRequest, LlmResponse, RecordingCall
@@ -556,53 +554,6 @@ def _rewritten_for(llm: RecordingCall, path: str) -> None:
     assert path in llm.requests[1].messages[-1].text
 
 
-def test_the_tax_data_is_checked(clean: Session, logs: pytest.LogCaptureFixture) -> None:
-    """The VAT number and tax code an admin saved for the contracts (REB-387) are
-    the person: the VAT number written with no label, which only the saved one can catch,
-    is asked again, and neither number reaches a log."""
-    freelancer_id = _apply(clean)
-    FiscalService(clean).save(
-        freelancer_id,
-        FiscalData(
-            tax_code="MSSMRA85M01F158K",
-            vat_number="01234567890",
-            domicile="Via Roma 1, Messina",
-            certified_email="studio.fatture@pec.it",
-        ),
-        _admin(clean),
-    )
-    llm = RecordingCall([cv_response(_with_bullet("Fatture n. 0123 456 7890.")), cv_response()])
-
-    written = _writer(clean, llm).get_or_write(freelancer_id)
-
-    _rewritten_for(llm, "experience[0].points[0].text")
-    assert written.cv == AnonymousCv.model_validate(BODY)
-    for secret in ("01234567890", "0123 456 7890", "MSSMRA85M01F158K", "studio.fatture"):
-        assert secret not in logs.text
-
-
-def test_the_certified_email_is_checked_as_an_email(clean: Session) -> None:
-    """The PEC's handle, written without its domain, is the person as an email's is."""
-    freelancer_id = _apply(clean)
-    FiscalService(clean).save(
-        freelancer_id,
-        FiscalData(
-            tax_code="MSSMRA85M01F158K",
-            vat_number=None,
-            domicile="Via Roma 1, Messina",
-            certified_email="studio.fatture@pec.it",
-        ),
-        _admin(clean),
-    )
-    llm = RecordingCall(
-        [cv_response(_with_bullet("Firma le fatture come studio.fatture.")), cv_response()]
-    )
-
-    _writer(clean, llm).get_or_write(freelancer_id)
-
-    _rewritten_for(llm, "experience[0].points[0].text")
-
-
 def test_the_profiles_link_is_checked(clean: Session) -> None:
     """The handle of a link on the profile (`freelancers.links`) is found in a bullet that
     writes it bare, with no host around it."""
@@ -780,8 +731,8 @@ def test_delete_is_left_to_the_callers_commit(clean: Session) -> None:
 
 
 def _crm_knowing(freelancer_id: UUID) -> FakeCrmDoor:
-    """A CRM whose organization for the person holds a tax code, a VAT number and a PEC that
-    the hub's own `freelancer_fiscal` does not."""
+    """A CRM whose organization for the person holds a tax code, a VAT number and a PEC
+    the hub no longer holds anywhere."""
     return FakeCrmDoor(
         fiscal={
             freelancer_id: {
@@ -829,24 +780,6 @@ def test_the_crms_certified_email_and_tax_code_are_checked_too(clean: Session) -
 
     _rewritten_for(handle, "experience[0].points[0].text")
     _rewritten_for(code, "experience[0].points[0].text")
-
-
-def test_the_hubs_own_tax_data_still_counts_while_the_crm_knows_nothing(clean: Session) -> None:
-    """Until the hub's match side goes the local `freelancer_fiscal` is an additional source:
-    a CRM that holds nothing for the person (a null answer) does not shrink the list."""
-    freelancer_id = _apply(clean)
-    FiscalService(clean).save(
-        freelancer_id,
-        FiscalData(
-            tax_code="MSSMRA85M01F158K", vat_number="01234567890", domicile="Via Roma 1, Messina"
-        ),
-        _admin(clean),
-    )
-    llm = RecordingCall([cv_response(_with_bullet("Fatture n. 0123 456 7890.")), cv_response()])
-
-    _writer(clean, llm, FakeCrmDoor()).get_or_write(freelancer_id)
-
-    _rewritten_for(llm, "experience[0].points[0].text")
 
 
 def test_a_crm_that_cannot_answer_ends_the_call_before_the_model_is_asked(

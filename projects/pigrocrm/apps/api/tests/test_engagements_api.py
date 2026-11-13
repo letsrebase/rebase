@@ -1,86 +1,41 @@
-"""rebase's engagements door over HTTP (spec 2026-09-25 § 2.3, § 2.4): the two routes,
-`PUT /api/rebase/engagements/{match_id}` and its `.../report`, answer under
-`PIGROCRM_ENGAGEMENTS_TOKEN`, the way `GET /api/tenants/` answers under
-`PIGROCRM_REGISTRY_TOKEN` (`test_tenants_api.py`). The service behind them is A4/A5's
-own, exercised at length in `packages/core/tests/test_engagements.py`: this file is
-only the two routes and the token that guards them.
+"""The registry row of a hub-era engagement over HTTP: the merge route of a freelancer's own
+space points `rebase_engagements` at the survivor when the customer «rebase» is folded into
+another row of the same company (REB-1031). The hub's old door routes that created these rows
+are gone (REB-1108): the row is written here through the services, as a space the door set up
+before.
 
-The registry and every space this file creates live in the container `api_engine`
-starts. Unlike `test_tenants_api.py`'s fixed `SLUG`, the slug here is whatever
-`slugify` makes of the freelancer's name, so `_serving`'s teardown drops every space
-the registry lists rather than one name it assumes.
+The registry and every space this file creates live in the container `api_engine` starts, so
+`_serving`'s teardown drops every space the registry lists.
 """
 
-import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import date, timedelta
-from decimal import Decimal
-from typing import Any
 from uuid import UUID, uuid4
 
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session
 
-import pigrocrm.core.engagements.service as engagements_service
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.tokens import issue_access_token
 from pigrocrm.core.config import Settings, get_settings
-from pigrocrm.core.db import session_factory, today_local
+from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import drop_database
+from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.deals.service import DealService
-from pigrocrm.core.engagements.service import BUSY, GONE, REVERSED
-from pigrocrm.core.tenants import ensure_tenants_database
+from pigrocrm.core.engagements.models import RebaseEngagement
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
+from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
-from pigrocrm.core.timetracking.schemas import TimeEntryCreate
-from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm_api.deps import ACCESS_COOKIE, reset_session_factories
 from pigrocrm_api.main import create_app
 from pigrocrm_api.ratelimit import reset_rate_limit
 
-ENGAGEMENTS_TOKEN = "un-token-per-la-porta-lungo-abbastanza"
-REGISTRY_TOKEN = "un-token-lungo-solo-per-questa-suite"
 FREELANCER_EMAIL = "ada@studio.it"
-# How `Conflict` renders its message (`errors.py`): the problem's `detail` carries the
-# entity before the sentence, and `reason` the sentence alone, which is what the hub
-# shows.
-GONE_DETAIL = f"engagement: {GONE}"
-
-
-def _upsert(**parts: dict[str, Any]) -> dict[str, Any]:
-    """The body of spec § 2.3, with any part's fields overridden by name -- the same
-    shape as `test_engagements.py`'s own `_upsert`, as JSON rather than a model."""
-    body: dict[str, dict[str, Any]] = {
-        "freelancer": {"email": FREELANCER_EMAIL, "first_name": "Ada", "last_name": "Lovelace"},
-        "letter": {
-            "number": "3/2026",
-            "role": "Backend developer",
-            "company_name": "Acme S.r.l.",
-            "start_date": "2026-10-01",
-            "end_date": "2026-12-31",
-            "fee": "400.00",
-            "expected_days": 40,
-        },
-        "rebase": {
-            "legal_name": "rebase S.r.l.",
-            "vat_number": "01234567890",
-            "tax_code": "01234567890",
-            "address": "Via Roma 1, 20121 Milano",
-            "certified_email": "rebase@pec.it",
-            "sdi_code": "M5UXCR1",
-        },
-    }
-    for part, overrides in parts.items():
-        body[part] = {**body[part], **overrides}
-    return body
-
-
-def _bearer(token: str = ENGAGEMENTS_TOKEN) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+SLUG = "ada-lovelace"
 
 
 @pytest.fixture
@@ -91,17 +46,15 @@ def container_settings(api_engine: Engine) -> Settings:
         cookie_secure=True,
         public_url="https://pigro.test",
         hub_url="http://127.0.0.1:9",
-        engagements_token=ENGAGEMENTS_TOKEN,
         _env_file=None,  # type: ignore[call-arg]
     )
 
 
 @contextmanager
 def _serving(settings: Settings) -> Iterator[TestClient]:
-    """Like `test_tenants_api.py`'s own `_serving`, except the teardown drops every
-    space the registry lists instead of one fixed slug (the door names its own slug
-    from the freelancer's name), and empties `rebase_engagements` before `tenants`:
-    its `tenant_id` is a foreign key into it."""
+    """Like `test_tenants_api.py`'s own `_serving`, except the teardown drops every space the
+    registry lists, and empties `rebase_engagements` before `tenants`: its `tenant_id` is a
+    foreign key into it."""
     reset_session_factories()
     get_settings.cache_clear()
     reset_rate_limit()
@@ -139,385 +92,85 @@ def _space(settings: Settings, slug: str) -> Iterator[Session]:
         engine.dispose()
 
 
-def _log_hours(settings: Settings, slug: str, deal_id: UUID, day: date, description: str) -> None:
-    """Eight hours on the deal, logged for the space's admin through the service: the
-    admin has no password, so the service is the way in (A5's own test does the same
-    at the core level, `test_engagements.py::_log`)."""
-    with _space(settings, slug) as space:
-        admin = UserRepository(space).get_by_email(FREELANCER_EMAIL)
-        assert admin is not None
-        TimeEntryService(space).create(
-            TimeEntryCreate(
-                deal_id=deal_id,
-                user_id=admin.id,
-                date=day,
-                hours=Decimal("8.00"),
-                description=description,
-            ),
-            Actor.system(),
-        )
+def _seed(settings: Settings, match_id: UUID) -> tuple[UUID, UUID]:
+    """The freelancer's space with the customer «rebase», the letter's deal and the registry
+    row naming them; returns the customer's and the deal's ids."""
+    registry = ensure_tenants_database(settings)
+    try:
+        with session_factory(registry)() as session:
+            tenant = TenantService(session, settings).provision(
+                TenantSignup(
+                    first_name="Ada", slug=SLUG, name="Ada Lovelace", email=FREELANCER_EMAIL
+                )
+            )
+            tenant_id = tenant.id
+        with _space(settings, SLUG) as space:
+            customer = OrganizationService(space).create(
+                OrganizationCreate(legal_name="rebase S.r.l.", vat_number="01234567890"),
+                Actor.rebase(),
+            )
+            deal = DealService(space).create(
+                DealCreate(name="Lettera n. 3/2026", customer_id=customer.id),
+                Actor.rebase(),
+                rebase_ref=f"rebase:match={match_id}",
+            )
+        with session_factory(registry)() as session:
+            session.add(
+                RebaseEngagement(
+                    match_id=match_id,
+                    tenant_id=tenant_id,
+                    space_created=True,
+                    customer_id=customer.id,
+                    deal_id=deal.id,
+                )
+            )
+            session.commit()
+        return customer.id, deal.id
+    finally:
+        registry.dispose()
 
 
-def test_door_is_absent_without_the_token(container_settings: Settings) -> None:
-    """The default, empty token: a self-hosted installation exposes nothing new."""
-    without_token = container_settings.model_copy(update={"engagements_token": ""})
-    with _serving(without_token) as client:
-        match_id = uuid4()
-        put = client.put(f"/api/rebase/engagements/{match_id}", json=_upsert())
-        assert put.status_code == 404, put.text
-        report = client.get(f"/api/rebase/engagements/{match_id}/report")
-        assert report.status_code == 404, report.text
-        # Whatever the caller presents: a 401 would say "there is a door".
-        wrong = client.put(
-            f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer("qualcosa")
-        )
-        assert wrong.status_code == 404, wrong.text
-        # The gate is a router-level dependency, run before FastAPI even looks at the
-        # body or the path: an empty body and a non-UUID match id are still a 404, not
-        # the 422 either would earn once the door exists.
-        empty_body = client.put(f"/api/rebase/engagements/{match_id}", json={})
-        assert empty_body.status_code == 404, empty_body.text
-        bad_path = client.put("/api/rebase/engagements/not-a-uuid", json={})
-        assert bad_path.status_code == 404, bad_path.text
-
-
-def test_wrong_bearer_is_401(door_client: TestClient) -> None:
-    match_id = uuid4()
-    wrong = _bearer("sbagliato")
-    put_wrong = door_client.put(
-        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=wrong
-    )
-    assert put_wrong.status_code == 401, put_wrong.text
-    report_wrong = door_client.get(f"/api/rebase/engagements/{match_id}/report", headers=wrong)
-    assert report_wrong.status_code == 401, report_wrong.text
-    # No bearer at all is the same refusal, not a 404.
-    put_missing = door_client.put(f"/api/rebase/engagements/{match_id}", json=_upsert())
-    assert put_missing.status_code == 401, put_missing.text
-    # The token gate runs before the body or the path are parsed: a missing bearer with
-    # a body that would otherwise be a 422 (empty, or a non-UUID match id) is still 401.
-    bad_body = door_client.put(f"/api/rebase/engagements/{match_id}", json={})
-    assert bad_body.status_code == 401, bad_body.text
-    bad_path = door_client.put("/api/rebase/engagements/not-a-uuid", json={})
-    assert bad_path.status_code == 401, bad_path.text
-
-
-def test_report_without_bearer_is_401(door_client: TestClient) -> None:
-    match_id = uuid4()
-    refused = door_client.get(f"/api/rebase/engagements/{match_id}/report")
-    assert refused.status_code == 401, refused.text
-
-
-def test_root_only_a_spaces_own_prefix_is_404(door_client: TestClient) -> None:
-    """Spec § 2.1: the door answers only on the root installation. Under a real space's
-    own prefix -- not merely one that names no tenant -- the request must still be
-    refused outright: `space_base_settings` would fold that slug into
-    `PIGROCRM_PUBLIC_URL` and double it into the links this service builds, so the
-    router refuses the prefix itself rather than quietly using the wrong settings."""
-    match_id = uuid4()
-    created = door_client.put(
-        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
-    )
-    assert created.status_code == 201, created.text
-    slug = created.json()["slug"]
-
-    other_match = uuid4()
-    prefixed_put = door_client.put(
-        f"/{slug}/api/rebase/engagements/{other_match}", json=_upsert(), headers=_bearer()
-    )
-    assert prefixed_put.status_code == 404, prefixed_put.text
-    prefixed_report = door_client.get(
-        f"/{slug}/api/rebase/engagements/{match_id}/report", headers=_bearer()
-    )
-    assert prefixed_report.status_code == 404, prefixed_report.text
-
-
-def test_registry_token_does_not_open_the_door(container_settings: Settings) -> None:
-    """`PIGROCRM_REGISTRY_TOKEN` keeps listing spaces alone: a hub that holds only it
-    cannot create a space or read an hour (spec § 2.1)."""
-    both = container_settings.model_copy(update={"registry_token": REGISTRY_TOKEN})
-    with _serving(both) as client:
-        match_id = uuid4()
-        headers = _bearer(REGISTRY_TOKEN)
-        put = client.put(f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=headers)
-        assert put.status_code == 401, put.text
-        report = client.get(f"/api/rebase/engagements/{match_id}/report", headers=headers)
-        assert report.status_code == 401, report.text
-
-
-def test_put_creates_then_answers_200(door_client: TestClient) -> None:
-    match_id = uuid4()
-    created = door_client.put(
-        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
-    )
-    assert created.status_code == 201, created.text
-    body = created.json()
-    assert body["created"] is True and body["space_created"] is True
-    assert body["slug"] == "ada-lovelace"
-    assert body["url"] == "https://pigro.test/ada-lovelace/app/"
-    assert body["deal_url"] == f"https://pigro.test/ada-lovelace/app/deal/{body['deal_id']}"
-
-    again = door_client.put(
-        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
-    )
-    assert again.status_code == 200, again.text
-    again_body = again.json()
-    assert again_body["created"] is False
-    assert again_body["deal_id"] == body["deal_id"]
-    assert again_body["customer_id"] == body["customer_id"]
-
-
-def test_put_refuses_an_unknown_field(door_client: TestClient) -> None:
-    match_id = uuid4()
-    body = {**_upsert(), "extra": "sorpresa"}
-    refused = door_client.put(f"/api/rebase/engagements/{match_id}", json=body, headers=_bearer())
-    assert refused.status_code == 422, refused.text
-
-
-def test_put_without_public_url_is_503(container_settings: Settings) -> None:
-    """A missing setting is the installation's fault, not the caller's: 503, not 422."""
-    no_url = container_settings.model_copy(update={"public_url": ""})
-    with _serving(no_url) as client:
-        match_id = uuid4()
-        refused = client.put(
-            f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
-        )
-        assert refused.status_code == 503, refused.text
-        assert "PIGROCRM_PUBLIC_URL" in refused.text
-
-
-def test_report_answers_the_hours(door_client: TestClient, container_settings: Settings) -> None:
-    match_id = uuid4()
-    created = door_client.put(
-        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
-    )
-    assert created.status_code == 201, created.text
-    linked = created.json()
-    deal_id = UUID(linked["deal_id"])
-    today = today_local(container_settings)
-    first, second = today - timedelta(days=1), today
-    _log_hours(container_settings, linked["slug"], deal_id, first, "Setup")
-    _log_hours(container_settings, linked["slug"], deal_id, second, "API")
-
-    report = door_client.get(
-        f"/api/rebase/engagements/{match_id}/report",
-        params={"from": first.isoformat()},
-        headers=_bearer(),
-    )
-    assert report.status_code == 200, report.text
-    body = report.json()
-    assert body["slug"] == linked["slug"]
-    assert body["deal_url"] == linked["deal_url"]
-    assert [g["description"] for g in body["days"]] == ["Setup", "API"]
-    assert body["total_hours"] == "16.00"
-    assert body["billed_hours"] == "0.00"
-    assert body["unbilled_hours"] == "16.00"
-
-
-def _gone_problem(refused: httpx.Response) -> None:
-    """The deleted deal's 409 as the hub reads it: a problem document whose `reason`
-    is the sentence alone, beside the `detail` `Conflict` builds from it."""
-    assert refused.status_code == 409, refused.text
-    body = refused.json()
-    assert body["code"] == "conflict"
-    assert body["reason"] == GONE
-    assert body["detail"] == GONE_DETAIL
-
-
-def test_put_of_deleted_deal_is_409(door_client: TestClient, container_settings: Settings) -> None:
-    """Spec § 2.3 step 2 over HTTP: the match's deal deleted in the space, a retry of
-    the PUT is refused and nothing is recreated."""
-    match_id = uuid4()
-    created = door_client.put(
-        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
-    )
-    assert created.status_code == 201, created.text
-    linked = created.json()
-    with _space(container_settings, linked["slug"]) as space:
-        DealService(space).soft_delete(UUID(linked["deal_id"]), Actor.system())
-
-    refused = door_client.put(
-        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
-    )
-    _gone_problem(refused)
-    assert refused.json()["match_id"] == str(match_id)
+def _row(settings: Settings, match_id: UUID) -> RebaseEngagement:
+    registry = ensure_tenants_database(settings)
+    try:
+        with session_factory(registry)() as session:
+            row = session.query(RebaseEngagement).filter_by(match_id=match_id).one()
+            session.expunge(row)
+            return row
+    finally:
+        registry.dispose()
 
 
 def test_a_merge_over_http_points_the_registry_at_the_survivor(
     door_client: TestClient, container_settings: Settings
 ) -> None:
     """REB-1031 through the route a person takes: folding the customer the door made into
-    another row of the same company, inside the freelancer's space, leaves the hub's retry
-    answering the survivor instead of the archived row. A preview writes nothing."""
+    another row of the same company, inside the freelancer's space, points the registry row
+    at the survivor instead of the archived row. A preview writes nothing."""
     match_id = uuid4()
-    created = door_client.put(
-        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
-    )
-    assert created.status_code == 201, created.text
-    linked = created.json()
-    slug = linked["slug"]
-    with _space(container_settings, slug) as space:
+    customer_id, deal_id = _seed(container_settings, match_id)
+    with _space(container_settings, SLUG) as space:
         admin = UserRepository(space).get_by_email(FREELANCER_EMAIL)
         assert admin is not None
-        token = issue_access_token(admin.id, "admin", container_settings, space=slug)
+        token = issue_access_token(admin.id, "admin", container_settings, space=SLUG)
     member = {"Cookie": f"{ACCESS_COOKIE}={token}"}
     made = door_client.post(
-        f"/{slug}/api/organizations", json={"legal_name": "rebase srl"}, headers=member
+        f"/{SLUG}/api/organizations", json={"legal_name": "rebase srl"}, headers=member
     )
     assert made.status_code == 201, made.text
     survivor = made.json()["id"]
-    merge = f"/{slug}/api/organizations/{survivor}/merge"
+    merge = f"/{SLUG}/api/organizations/{survivor}/merge"
 
-    preview = door_client.post(merge, json={"loser_id": linked["customer_id"]}, headers=member)
+    preview = door_client.post(merge, json={"loser_id": str(customer_id)}, headers=member)
     assert preview.status_code == 200, preview.text
     assert preview.json()["moved"]["rebase_engagements"] == 1
-    unchanged = door_client.put(
-        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
-    )
-    assert unchanged.json()["customer_id"] == linked["customer_id"]
+    assert _row(container_settings, match_id).customer_id == customer_id
 
     done = door_client.post(
-        merge, json={"loser_id": linked["customer_id"], "dry_run": False}, headers=member
+        merge, json={"loser_id": str(customer_id), "dry_run": False}, headers=member
     )
     assert done.status_code == 200, done.text
     assert done.json()["moved"]["rebase_engagements"] == 1
-
-    retry = door_client.put(
-        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
-    )
-    assert retry.status_code == 200, retry.text
-    body = retry.json()
-    assert body["created"] is False
-    assert body["customer_id"] == survivor
-    assert body["deal_id"] == linked["deal_id"]
-
-
-def test_report_of_deleted_deal_is_409(
-    door_client: TestClient, container_settings: Settings
-) -> None:
-    match_id = uuid4()
-    created = door_client.put(
-        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
-    )
-    assert created.status_code == 201, created.text
-    linked = created.json()
-    with _space(container_settings, linked["slug"]) as space:
-        DealService(space).soft_delete(UUID(linked["deal_id"]), Actor.system())
-
-    refused = door_client.get(f"/api/rebase/engagements/{match_id}/report", headers=_bearer())
-    _gone_problem(refused)
-
-
-def test_report_of_unknown_match_is_404(door_client: TestClient) -> None:
-    unknown = uuid4()
-    refused = door_client.get(f"/api/rebase/engagements/{unknown}/report", headers=_bearer())
-    assert refused.status_code == 404, refused.text
-    assert refused.json()["code"] == "not_found"
-
-
-def test_report_reversed_period_is_422(door_client: TestClient) -> None:
-    """`a` before `da` is a `ValidationFailed("engagement", "periodo", ...)` like a span
-    over 800 days, with a sentence of its own (`test_engagements.py`'s own coverage):
-    here only the wire shape of the problem document is new."""
-    match_id = uuid4()
-    created = door_client.put(
-        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
-    )
-    assert created.status_code == 201, created.text
-
-    refused = door_client.get(
-        f"/api/rebase/engagements/{match_id}/report",
-        params={"from": "2026-10-02", "to": "2026-10-01"},
-        headers=_bearer(),
-    )
-    assert refused.status_code == 422, refused.text
-    body = refused.json()
-    assert body["code"] == "validation_failed"
-    assert body["entity"] == "engagement"
-    assert body["field"] == "period"
-    assert body["reason"] == REVERSED
-
-
-class _Lines(logging.Handler):
-    """The router's own log lines, on a handler of the logger itself: not `caplog`,
-    whose handler hangs off the root, which the provisioning's migration rebuilds
-    (`fileConfig` in `env.py`, the same reason `test_migrations.py`'s REB-190 test
-    brings its own)."""
-
-    def __init__(self) -> None:
-        super().__init__(logging.WARNING)
-        self.lines: list[str] = []
-
-    def emit(self, record: logging.LogRecord) -> None:
-        self.lines.append(record.getMessage())
-
-
-def test_unreachable_space_is_503(door_client: TestClient, container_settings: Settings) -> None:
-    """After the space exists, its database going away must not surface as a 500:
-    `_run` in `routers/engagements.py` turns it into a 503, on both routes, and logs
-    the match's id and the tenant's -- enough to find a space a restart left without
-    its database -- never its slug nor the address a lock statement's parameters would
-    carry."""
-    match_id = uuid4()
-    created = door_client.put(
-        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
-    )
-    assert created.status_code == 201, created.text
-    slug = created.json()["slug"]
-    registry = ensure_tenants_database(container_settings)
-    try:
-        with registry.connect() as connection:
-            tenant_id = connection.execute(
-                text("SELECT id FROM tenants WHERE slug = :slug"), {"slug": slug}
-            ).scalar_one()
-    finally:
-        registry.dispose()
-    drop_database(
-        container_settings, tenant_database_url(container_settings, tenant_database_name(slug))
-    )
-
-    router_log = logging.getLogger("pigrocrm_api.routers.engagements")
-    grab = _Lines()
-    router_log.addHandler(grab)
-    try:
-        again = door_client.put(
-            f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
-        )
-        assert again.status_code == 503, again.text
-
-        report = door_client.get(f"/api/rebase/engagements/{match_id}/report", headers=_bearer())
-        assert report.status_code == 503, report.text
-    finally:
-        router_log.removeHandler(grab)
-
-    assert len(grab.lines) == 2
-    for line in grab.lines:
-        assert str(match_id) in line and str(tenant_id) in line
-        assert slug not in line and FREELANCER_EMAIL not in line
-
-
-def test_busy_address_is_503_without_the_address(
-    door_client: TestClient, container_settings: Settings, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Another call holding the freelancer's address past the lock's timeout is a «not
-    now»: 503, which the hub retries, not the 409 it would file as refused for good;
-    and the answer carries the sentence, not the address."""
-    monkeypatch.setattr(engagements_service, "LOCK_TIMEOUT", "200ms")
-    registry = ensure_tenants_database(container_settings)
-    try:
-        with registry.connect() as holder:
-            holder.execute(text("SELECT pg_advisory_lock(hashtext(:e))"), {"e": FREELANCER_EMAIL})
-            try:
-                busy = door_client.put(
-                    f"/api/rebase/engagements/{uuid4()}", json=_upsert(), headers=_bearer()
-                )
-            finally:
-                holder.execute(
-                    text("SELECT pg_advisory_unlock(hashtext(:e))"), {"e": FREELANCER_EMAIL}
-                )
-                holder.commit()
-    finally:
-        registry.dispose()
-
-    assert busy.status_code == 503, busy.text
-    assert busy.json() == {"detail": BUSY}
-    assert FREELANCER_EMAIL not in busy.text
+    row = _row(container_settings, match_id)
+    assert str(row.customer_id) == survivor
+    assert row.deal_id == deal_id

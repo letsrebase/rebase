@@ -1,12 +1,12 @@
-"""The engagements door (spec 2026-09-25 § 2.3): what a signed letter sets up in the
-freelancer's CRM -- the space, the customer «rebase» in it, the deal of the letter and, since
-REB-1001 (collaborators design § 3), its contract with a rate card of the letter's unit --
-once per hub match, whatever the number of calls; and the report of that deal's hours
-with the invoices they sit on (§ 2.4), the one thing of the space the door reads back.
+"""What reads a freelancer's space through the registry: the report of a hub-era
+engagement's deal hours with the invoices they sit on (spec 2026-09-25 § 2.4), which the
+collaborators' days report still calls, and the space and lock helpers the leads and
+own-contract services borrow. The hub no longer creates engagements through this module
+(REB-1108); the CRM's own collaborators flow writes the contract (`collaborators/door.py`).
 
 On the registry's engine, never on a space's: the registry says which space, and each
-space is opened for the length of one step. Everything written in a space is written as
-`Actor.rebase()` (§ 2.5), so the space's own history says who did it.
+space is opened for the length of one step. Everything read in a space is read as
+`Actor.rebase()`, so the space's own history says who did it.
 
 Imported by its full path, never through `pigrocrm.core.engagements` (see that
 package's docstring: this module imports `tenants.service`, which imports
@@ -21,42 +21,20 @@ from decimal import Decimal
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from psycopg.errors import LockNotAvailable
-from sqlalchemy import Connection, Engine, create_engine, func, select, text
-from sqlalchemy.exc import OperationalError, SQLAlchemyError
+from sqlalchemy import Connection, Engine, create_engine, select, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.auth.repository import UserRepository
-from pigrocrm.core.auth.schemas import UserCreate
-from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings
-from pigrocrm.core.contracts.models import Contract
-from pigrocrm.core.contracts.rate_card_service import RateCardService
-from pigrocrm.core.contracts.repository import RateCardRepository
-from pigrocrm.core.contracts.schemas import (
-    ContractCreate,
-    ContractStateChange,
-    RateCardCreate,
-)
-from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.scope import bind_scope
-from pigrocrm.core.deals.repository import DealRepository
-from pigrocrm.core.deals.schemas import DealCreate, DealRead
+from pigrocrm.core.deals.schemas import DealRead
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.engagements.models import RebaseEngagement
 from pigrocrm.core.engagements.schemas import (
-    COMPANY_IN_DEAL_NAME,
-    HOURS_PER_DAY,
     REPORT_MAX_DAYS,
-    ROLE_IN_DEAL_NAME,
-    SPACE_NAME_MAX_LENGTH,
-    EngagementFreelancer,
-    EngagementLetter,
-    EngagementRead,
     EngagementReport,
-    EngagementUpsert,
     ReportDeal,
     ReportEntry,
     ReportInvoice,
@@ -64,18 +42,9 @@ from pigrocrm.core.engagements.schemas import (
 )
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
-from pigrocrm.core.mail import EmailSender
-from pigrocrm.core.modules.service import SpaceModulesService
 from pigrocrm.core.money import sum_hours
-from pigrocrm.core.organizations.repository import OrganizationRepository
-from pigrocrm.core.organizations.schemas import OrganizationCreate, OrganizationUpdate
-from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm.core.tenants.models import Tenant
-from pigrocrm.core.tenants.registry import space_base_settings
-from pigrocrm.core.tenants.schemas import SLUG_MAX, TenantSignup, slugify
-from pigrocrm.core.tenants.service import TenantService
-from pigrocrm.core.tenants.welcome import welcome
 from pigrocrm.core.timetracking.schemas import TimeEntryListQuery, TimeEntryRead
 from pigrocrm.core.timetracking.service import TimeEntryService, billed_entry_ids
 from pigrocrm.core.work_units.models import WorkUnit
@@ -83,35 +52,13 @@ from pigrocrm.core.work_units.models import WorkUnit
 logger = logging.getLogger(__name__)
 
 ENTITY = "engagement"
-# How long a call waits for another call on the same address before answering that it
-# is busy: long enough for a provisioning, short enough that a call which hung while
-# holding the address does not pin every later one forever.
-LOCK_TIMEOUT = "120s"
 LOCK = text("SELECT pg_advisory_lock(hashtext(:email))")
 UNLOCK = text("SELECT pg_advisory_unlock(hashtext(:email))")
-BUSY = "Un'altra chiamata sta preparando lo spazio di questo indirizzo: riprova tra poco."
 GONE = "Il deal di questa lettera è stato eliminato nello spazio."
 REVERSED = "La data di fine precede quella di inizio."
 # The report reads the deal's hours through `TimeEntryService.list`, this many a page
 # (its own cap), until the cursor runs out.
 REPORT_PAGE_SIZE = 200
-# `deals.hourly_rate` is Numeric(12, 6).
-RATE_PLACES = Decimal("0.000001")
-# What `slugify` of a name made only of characters it drops (a name in another script)
-# stands in with: an empty base would never become a valid slug, whatever its suffix.
-FALLBACK_SLUG = "space"
-# `-2` ... `-50`: past this many namesakes the name is not what is wrong.
-SLUG_SUFFIX_MAX = 50
-
-
-class EngagementBusy(Exception):
-    """Another call has held the freelancer's address for longer than `LOCK_TIMEOUT`.
-    Not a refusal of this request but a «not now»: the router answers it `503`, which
-    the hub retries, where a `409` would file the match as refused for good. It
-    carries no address: the answer is `BUSY` and nothing else."""
-
-    def __init__(self) -> None:
-        super().__init__(BUSY)
 
 
 class SpaceUnreachable(Exception):
@@ -123,66 +70,6 @@ class SpaceUnreachable(Exception):
     def __init__(self, tenant_id: UUID) -> None:
         super().__init__(f"space {tenant_id} unreachable")
         self.tenant_id = tenant_id
-
-
-def full_name(freelancer: EngagementFreelancer) -> str:
-    """`Ada Lovelace`, cut to the signup's 200 characters: the space's name and its
-    admin's, the same on a space the door opens and on an admin it completes."""
-    return f"{freelancer.first_name} {freelancer.last_name}"[:SPACE_NAME_MAX_LENGTH]
-
-
-def deal_name(number: str, role: str, legal_entity: str) -> str:
-    """`Lettera n. 3/2026 · Backend developer per Acme S.r.l.`, the role cut to 80 and
-    the company to 100 characters so the longest inputs stay under deals.name's 255.
-    A label: the marker below is what finds a deal again."""
-    role_part = role[:ROLE_IN_DEAL_NAME]
-    company_part = legal_entity[:COMPANY_IN_DEAL_NAME]
-    return f"Lettera n. {number} · {role_part} per {company_part}"
-
-
-def deal_marker(match_id: UUID) -> str:
-    """`rebase:match=<match_id>`, written to the deal's `rebase_refs` and the key a retry
-    recovers the deal by (`DealRepository.find_by_rebase_ref`). The name is not: a
-    freelancer may have a deal of their own with the same label, or rename ours."""
-    return f"rebase:match={match_id}"
-
-
-def _hourly_rate(letter: EngagementLetter) -> Decimal | None:
-    """The deal's rate per hour: the day's fee over `HOURS_PER_DAY`, an hourly fee as it
-    is, and none for a flat one, which prices no hour."""
-    if letter.fee_unit == "flat":
-        return None
-    per_hour = letter.fee / HOURS_PER_DAY if letter.fee_unit == "day" else letter.fee
-    return per_hour.quantize(RATE_PLACES)
-
-
-def rate_card_of(letter: EngagementLetter) -> RateCardCreate:
-    """The card the letter's fee becomes (collaborators design § 3): a day or hour fee is
-    a `daily` or `hourly` card valid for the engagement's dates, a flat one a `one_off`
-    card with the same dates. `expected_days` is the forecast per delivery period of a
-    day or hour card (hours at `HOURS_PER_DAY`, the one place hours become days); a card
-    carries a period only together with it."""
-    if letter.fee_unit == "flat":
-        return RateCardCreate(
-            valid_from=letter.start_date,
-            valid_to=letter.end_date,
-            type="one_off",
-            amount=letter.fee,
-            unit="flat",
-        )
-    unit = letter.fee_unit
-    quantity = None
-    if letter.expected_days is not None:
-        quantity = Decimal(letter.expected_days) * (HOURS_PER_DAY if unit == "hour" else 1)
-    return RateCardCreate(
-        valid_from=letter.start_date,
-        valid_to=letter.end_date,
-        type="hourly" if unit == "hour" else "daily",
-        amount=letter.fee,
-        unit=unit,
-        delivery_period="one_off" if quantity is not None else None,
-        expected_quantity=quantity,
-    )
 
 
 def _origin(settings: Settings) -> str:
@@ -199,79 +86,14 @@ def deal_url(settings: Settings, slug: str, deal_id: UUID) -> str:
     return f"{space_url(settings, slug)}deal/{deal_id}"
 
 
-def _customer_note(number: str) -> str:
-    return (
-        f"Creato da rebase per la lettera n. {number}. rebase legge le ore dei deal di "
-        "questo cliente per rendicontare gli incarichi."
-    )
-
-
-def _contract_note(number: str, legal_entity: str) -> str:
-    sentence = legal_entity if legal_entity.endswith(".") else f"{legal_entity}."
-    return (
-        f"Creato da rebase per la lettera n. {number} con {sentence} rebase legge le "
-        "giornate di questo contratto per la rendicontazione al cliente."
-    )
-
-
-def _deal_note(number: str, legal_entity: str) -> str:
-    # «con Acme S.r.l. rebase legge»: a company whose name ends in a full stop ends the
-    # sentence with it, and a second one would read as a typo.
-    sentence = legal_entity if legal_entity.endswith(".") else f"{legal_entity}."
-    return (
-        f"Creato da rebase per la lettera n. {number} con {sentence} rebase legge le ore "
-        "di questo deal per la rendicontazione al cliente."
-    )
-
-
 class EngagementService:
-    """On the registry's engine: `ensure` and `report` open their own sessions on it
-    (`ensure` one for the rows and one connection for the lock), so a caller hands over
-    the engine and nothing that is already in a transaction."""
+    """On the registry's engine: `report` opens its own sessions on it, so a caller hands
+    over the engine and nothing that is already in a transaction. The leads and own-contract
+    services borrow its `_space_session`, `_require_public_url` and `_unlock`."""
 
-    def __init__(
-        self, registry_engine: Engine, settings: Settings, sender: EmailSender | None = None
-    ) -> None:
+    def __init__(self, registry_engine: Engine, settings: Settings) -> None:
         self.registry_engine = registry_engine
         self.settings = settings
-        self.sender = sender
-
-    def ensure(self, match_id: UUID, data: EngagementUpsert) -> EngagementRead:
-        """The space, the customer «rebase» and the letter's deal for one match (spec
-        § 2.3 steps 1 to 6), each found before it is created, so any number of calls
-        with the same `match_id` sets them up once and answers the same ids.
-
-        Under a session-level advisory lock on the freelancer's address, taken on a
-        connection of its own and held for the whole call. Not `pg_advisory_xact_lock`:
-        the registry session below commits more than once (`TenantService.provision`
-        commits on its own, the row is committed before the space is touched), and a
-        transaction-level lock would go at the first of those commits. So two letters of
-        one freelancer activating together open one space, and two retries of one match
-        wait for each other from the first step to the last. A wait longer than
-        `LOCK_TIMEOUT` is `EngagementBusy`, and a database error inside the space is
-        `SpaceUnreachable`: both a «not now», never a refusal."""
-        self._require_public_url()
-        email = str(data.freelancer.email).strip().lower()
-        with self.registry_engine.connect() as lock:
-            try:
-                # `is_local`: the timeout lives as long as this transaction, and the
-                # pooled connection goes back without it.
-                lock.execute(
-                    text("SELECT set_config('lock_timeout', :timeout, true)"),
-                    {"timeout": LOCK_TIMEOUT},
-                )
-                lock.execute(LOCK, {"email": email})
-            except OperationalError as exc:
-                if not isinstance(exc.orig, LockNotAvailable):
-                    raise
-                raise EngagementBusy() from exc
-            try:
-                # Out of the transaction the lock was taken in: the lock is the
-                # session's, and the connection waits idle, not idle in a transaction.
-                lock.commit()
-                return self._ensure(match_id, data, email)
-            finally:
-                self._unlock(lock, email)
 
     def report(
         self, match_id: UUID, date_from: date | None = None, date_to: date | None = None
@@ -286,7 +108,7 @@ class EngagementService:
         CRM's zone; a period that ends before it starts, or spans over
         `REPORT_MAX_DAYS`, is refused, each with its own sentence. No row for the
         match, or a row a call left before its deal existed, is `NotFound`; a deal
-        deleted in the space is `ensure`'s `Conflict`."""
+        deleted in the space is a `Conflict`."""
         self._require_public_url()
         with session_factory(self.registry_engine)() as registry:
             row = self._row(registry, match_id)
@@ -390,8 +212,8 @@ class EngagementService:
         ]
 
     def _require_public_url(self) -> None:
-        """Both answers carry links built from `PIGROCRM_PUBLIC_URL`: without it the
-        door is not configured, whichever route is asked."""
+        """The report and the leads route carry links built from `PIGROCRM_PUBLIC_URL`:
+        without it the door is not configured."""
         if not _origin(self.settings):
             raise ValidationFailed(ENTITY, "public_url", "PIGROCRM_PUBLIC_URL non configurato")
 
@@ -514,223 +336,14 @@ class EngagementService:
             raise NotFound("tenant", row.tenant_id)
         return tenant
 
-    def _ensure(self, match_id: UUID, data: EngagementUpsert, email: str) -> EngagementRead:
-        with session_factory(self.registry_engine)() as registry:
-            row = self._row(registry, match_id)
-            if row is not None:
-                tenant = self._tenant(registry, row)
-                if row.deal_id is not None:
-                    return self._recorded(
-                        tenant, row.customer_id, row.deal_id, row.contract_id, match_id
-                    )
-                # A previous call stopped between steps 3 and 6: resume at step 4, in the
-                # space it had already chosen, with what it recorded of that space.
-            else:
-                owned = self._owned_space(registry, email)
-                tenant = (
-                    owned
-                    if owned is not None
-                    else self._provision(registry, data.freelancer, email)
-                )
-                # Committed before the space is touched: a failure from here on leaves a
-                # row that says «space found, deal missing», which step 2 resumes, and
-                # that says whether this match opened the space.
-                row = RebaseEngagement(
-                    match_id=match_id, tenant_id=tenant.id, space_created=owned is None
-                )
-                registry.add(row)
-                registry.commit()
-
-            with self._space_session(tenant) as space:
-                if UserRepository(space).get_by_email(email) is None:
-                    # A space whose provisioning a restart cut short after its registry
-                    # row, whose database the next boot then created: nobody in it, and
-                    # the welcome never sent. It is opened now, and said so; recorded
-                    # before the admin exists, so a failure in between still says it.
-                    if not row.space_created:
-                        row.space_created = True
-                        registry.commit()
-                    self._create_admin(space, data.freelancer, email)
-                customer_id, deal_id = self._customer_and_deal(space, match_id, data, email)
-                contract_id = self._contract(space, data, customer_id)
-                if row.space_created:
-                    # A freelancer's space is `solo`, with contracts on and the deals module
-                    # on only where it holds a deal, which the door still writes beside the
-                    # contract until the hub reads days from work units (spec 2026-11-09
-                    # B7, collaborators § 3). Written only where no profile is stored, so a
-                    # retry never undoes an admin's choice.
-                    SpaceModulesService(
-                        space, space_base_settings(self.settings, tenant.slug)
-                    ).ensure_profile("solo", Actor.rebase(), keep_on=("contracts",))
-                    # The welcome goes out with the call that completes the engagement,
-                    # not with the one that opened the space: a call that stops on the
-                    # way sends nothing, and the row tells its retry to send it. A call
-                    # that stops after this line, at the commit below, has its retry
-                    # send it again: two links rather than none.
-                    self._welcome(space, tenant.slug, email)
-
-            row.customer_id = customer_id
-            row.deal_id = deal_id
-            row.contract_id = contract_id
-            registry.commit()
-            return self._answer(
-                tenant.slug, customer_id, deal_id, contract_id, row.space_created, created=True
-            )
-
-    def _recorded(
-        self,
-        tenant: Tenant,
-        customer_id: UUID | None,
-        deal_id: UUID,
-        contract_id: UUID | None,
-        match_id: UUID,
-    ) -> EngagementRead:
-        """Step 2 with a deal on the row: alive, the row's ids (spec § 2.3); gone, a
-        409, and nothing is recreated behind the freelancer's back."""
-        with self._space_session(tenant) as space:
-            deal = self._live_deal(space, deal_id, match_id)
-        # Step 6 writes both ids together, so a row with a deal has its customer; the
-        # deal's own stands in only for a row somebody edited by hand.
-        answered = customer_id if customer_id is not None else deal.customer_id
-        return self._answer(tenant.slug, answered, deal_id, contract_id, False, created=False)
-
     @staticmethod
     def _live_deal(space: Session, deal_id: UUID, match_id: UUID) -> DealRead:
-        """The row's deal in its space; soft-deleted or missing, the `409` both routes
-        answer (spec § 2.3 step 2, § 2.4)."""
+        """The row's deal in its space; soft-deleted or missing, the `409` the report
+        answers."""
         try:
             return DealService(space).get(deal_id, Actor.rebase())
         except NotFound as exc:
             raise Conflict(ENTITY, GONE, match_id=str(match_id)) from exc
-
-    def _answer(
-        self,
-        slug: str,
-        customer_id: UUID,
-        deal_id: UUID,
-        contract_id: UUID | None,
-        space_created: bool,
-        *,
-        created: bool,
-    ) -> EngagementRead:
-        return EngagementRead(
-            slug=slug,
-            url=space_url(self.settings, slug),
-            customer_id=customer_id,
-            deal_id=deal_id,
-            deal_url=deal_url(self.settings, slug, deal_id),
-            contract_id=contract_id,
-            space_created=space_created,
-            created=created,
-        )
-
-    def _owned_space(self, registry: Session, email: str) -> Tenant | None:
-        """The oldest space the address owns, case-insensitively on both sides: the
-        freelancer who already signed up keeps working where they already are."""
-        return registry.scalars(
-            select(Tenant)
-            .where(func.lower(Tenant.owner_email) == email)
-            .order_by(Tenant.created_at, Tenant.id)
-            .limit(1)
-        ).first()
-
-    def _provision(self, registry: Session, freelancer: EngagementFreelancer, email: str) -> Tenant:
-        """A space in the freelancer's name (spec § 2.3 step 3): the slug from the name,
-        `-2`, `-3`... in place of its tail while the name is taken or reserved, up to
-        `SLUG_SUFFIX_MAX`. A name taken between the question and the insert (a
-        namesake's signup at that moment) is `provision`'s `Conflict` on that very slug,
-        and moves on to the next candidate; any other `Conflict`, or the last
-        candidate's, is the caller's. The welcome the signup sends is not sent here but
-        by `_ensure` once the deal exists, from the row's `space_created`."""
-        tenants = TenantService(registry, self.settings)
-        name = full_name(freelancer)
-        base = slugify(name) or FALLBACK_SLUG
-        for n in range(1, SLUG_SUFFIX_MAX + 1):
-            suffix = "" if n == 1 else f"-{n}"
-            candidate = base if n == 1 else f"{base[: SLUG_MAX - len(suffix)]}{suffix}"
-            if not tenants.availability(candidate).available:
-                continue
-            try:
-                created = tenants.provision(
-                    TenantSignup(
-                        slug=candidate,
-                        name=name,
-                        email=email,
-                        member=True,
-                        first_name=freelancer.first_name,
-                        last_name=freelancer.last_name,
-                    )
-                )
-            except Conflict as exc:
-                if exc.details.get("slug") != candidate or n == SLUG_SUFFIX_MAX:
-                    raise
-                continue
-            return tenants.get(created.slug)
-        raise Conflict("tenant", "questo nome è già in uso", slug=base)
-
-    def _welcome(self, space: Session, slug: str, email: str) -> None:
-        """What the signup sends after provisioning, sent at once: nothing here is a
-        request waiting on it."""
-        if self.sender is None:
-            return
-        mail = welcome(space, self.settings, self.sender, email, slug, member=True)
-        if mail is not None:
-            self.sender.send(mail)
-
-    @staticmethod
-    def _create_admin(space: Session, freelancer: EngagementFreelancer, email: str) -> None:
-        """The space's admin with the freelancer's address, for a space that has no user
-        with it, created the way `TenantService.provision` creates it: as
-        `Actor.system()`, with no password, entering by the welcome's link. A space
-        `provision` finished always has it; one whose provisioning stopped after the
-        registry row does not, and without it the deal would have no owner and the hub
-        would mail a link nobody can enter."""
-        UserService(space).create(
-            UserCreate(email=email, password=None, name=full_name(freelancer), role="admin"),
-            Actor.system(),
-        )
-
-    def _customer_and_deal(
-        self, space: Session, match_id: UUID, data: EngagementUpsert, email: str
-    ) -> tuple[UUID, UUID]:
-        """Steps 4 and 5. The live deal carrying this match's marker comes first, under
-        whichever customer it sits now: it is the one a previous call created and
-        failed to record, and its customer is the one that call found or created, even
-        after the freelancer renamed it or changed its VAT number. Only without it is
-        the customer looked up, or created, and the deal created under it."""
-        recorded = DealRepository(space).find_by_rebase_ref(deal_marker(match_id))
-        if recorded is not None:
-            return recorded.customer_id, recorded.id
-        customer_id = self._customer(space, data)
-        return customer_id, self._deal(space, match_id, data, customer_id, email)
-
-    @staticmethod
-    def _contract(space: Session, data: EngagementUpsert, customer_id: UUID) -> UUID:
-        """Step 5b: the letter's contract under the customer, active, with its rate card.
-        Found by its title (the letter's number is in it) under the customer before it
-        is created, and a contract a call left without its card gets the card on the
-        retry: the registry row records the ids only once this has finished, so a call
-        that stops here is resumed, never doubled. The renewal and notice terms are
-        none: the letter's terms live in the hub's document, not in this contract."""
-        letter = data.letter
-        title = deal_name(letter.number, letter.role, letter.company_name)
-        found = next(
-            (
-                contract
-                for contract in ContractService(space).repo.list_for_customer(customer_id)
-                if contract.title == title and contract.start == letter.start_date
-            ),
-            None,
-        )
-        contract = found or _new_contract(space, data, customer_id, title)
-        if contract.status == "draft":
-            # A call that stopped between the creation and the activation.
-            ContractService(space).set_state(
-                contract.id, ContractStateChange(status="active"), Actor.rebase()
-            )
-        if not RateCardRepository(space).list_for_contract(contract.id):
-            RateCardService(space).create(contract.id, rate_card_of(letter), Actor.rebase())
-        return contract.id
 
     @contextmanager
     def _space_session(self, tenant: Tenant) -> Iterator[Session]:
@@ -751,106 +364,3 @@ class EngagementService:
             raise SpaceUnreachable(tenant_id) from exc
         finally:
             engine.dispose()
-
-    def _customer(self, space: Session, data: EngagementUpsert) -> UUID:
-        """Step 4: the customer «rebase», by VAT number when the body carries one, then
-        by its exact name among the live organizations; created when neither finds it. The
-        name is tried after a VAT number that finds nothing too: a space whose customer
-        was created before the signer data had a VAT number keeps that one customer,
-        rather than gain a second the day the number arrives. An existing one is left as
-        it is: its fields are the freelancer's to edit."""
-        rebase = data.rebase
-        organizations = OrganizationRepository(space)
-        # Whatever role it holds: a company that is already a supplier here is the same
-        # company, and gets the customer role instead of a second row (one registry, one
-        # record per company, design 2026-11-09 suppliers § 1).
-        found = (
-            organizations.match_by_fiscal_id(
-                vat_number=rebase.vat_number, tax_code=None, role="any"
-            )
-            if rebase.vat_number is not None
-            else None
-        )
-        if found is None:
-            found = organizations.find_by_name(rebase.legal_name, role="any")
-        if found is not None:
-            if "customer" not in found.roles:
-                OrganizationService(space).update(
-                    found.id,
-                    OrganizationUpdate(roles=[*found.roles, "customer"]),
-                    Actor.rebase(),
-                )
-            return found.id
-        created = OrganizationService(space).create(
-            OrganizationCreate(
-                legal_name=rebase.legal_name,
-                vat_number=rebase.vat_number,
-                tax_code=rebase.tax_code,
-                address=rebase.address,
-                certified_email=str(rebase.certified_email)
-                if rebase.certified_email is not None
-                else None,
-                sdi_code=rebase.sdi_code,
-                note=_customer_note(data.letter.number),
-            ),
-            Actor.rebase(),
-        )
-        return created.id
-
-    def _deal(
-        self,
-        space: Session,
-        match_id: UUID,
-        data: EngagementUpsert,
-        customer_id: UUID,
-        email: str,
-    ) -> UUID:
-        """Step 5: the letter's deal under that customer, once `_customer_and_deal` has
-        found no deal with this match's marker. A deal with the same name and no marker
-        is somebody else's, and ours is created beside it, in the default open stage,
-        owned by the space's admin whose address is the freelancer's."""
-        letter = data.letter
-        owner = UserRepository(space).get_by_email(email)
-        created = DealService(space).create(
-            DealCreate(
-                name=deal_name(letter.number, letter.role, letter.company_name),
-                customer_id=customer_id,
-                hourly_rate=_hourly_rate(letter),
-                budgeted_hours=(
-                    letter.expected_days * HOURS_PER_DAY
-                    if letter.expected_days is not None
-                    else None
-                ),
-                expected_close_date=letter.end_date,
-                owner_id=owner.id if owner is not None and owner.active else None,
-                note=_deal_note(letter.number, letter.company_name),
-            ),
-            Actor.rebase(),
-            rebase_ref=deal_marker(match_id),
-        )
-        return created.id
-
-
-def _new_contract(
-    space: Session, data: EngagementUpsert, customer_id: UUID, title: str
-) -> Contract:
-    letter = data.letter
-    service = ContractService(space)
-    created = service.create(
-        ContractCreate(
-            customer_id=customer_id,
-            title=title,
-            start=letter.start_date,
-            end=letter.end_date,
-            renewal_type="none",
-            termination_notice_days=0,
-            billing_cadence="monthly",
-            expense_policy={"kind": "not_reimbursable"},
-            note=_contract_note(letter.number, letter.company_name),
-        ),
-        Actor.rebase(),
-    )
-    service.set_state(created.id, ContractStateChange(status="active"), Actor.rebase())
-    contract = service.repo.get(created.id)
-    assert contract is not None
-    return contract

@@ -14,7 +14,7 @@ import test_engagements as door_tests
 from fakes.customer_fixtures import make_customer
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
-from test_engagements import Door, _frozen, _log, _space, _upsert
+from test_engagements import Door, _frozen, _log, _seed, _space
 
 import pigrocrm.core.collaborators.days_report as days_report
 from pigrocrm.core.actor import Actor
@@ -610,8 +610,7 @@ def test_the_door_reads_the_work_units_of_the_contract_and_the_report_makes_them
 ) -> None:
     match_id = uuid4()
     engagement = _engagement(db_session, hub_match_id=match_id, email="Ada@studio.it")
-    answer = door.service().ensure(match_id, _upsert())
-    assert answer.contract_id is not None
+    answer = _seed(door, match_id)
 
     with _space(door, "ada-lovelace") as space:
         days = WorkUnitService(space)
@@ -659,7 +658,7 @@ def test_the_door_reads_the_work_units_of_the_contract_and_the_report_makes_them
 
 def test_a_match_that_is_not_the_freelancers_reads_nothing(db_session: Session, door: Door) -> None:
     match_id = uuid4()
-    door.service().ensure(match_id, _upsert())
+    _seed(door, match_id)
     stranger = _engagement(db_session, hub_match_id=match_id, email="someone@else.it")
     settings = door.settings.model_copy(update={"leads_space": "rebase", "root_slug": "rebase"})
     with pytest.raises(Conflict, match="non e' di questo freelance"):

@@ -97,8 +97,8 @@ pythonpath = [
   "projects/hub/packages/core/tests",
   "projects/hub/apps/api/tests",
   "projects/hub/apps/mcp/tests",
-  # Not a test root: the hub's typesetting scripts, so `test_contract_pdf.py` imports
-  # `build_contract_pdf` by the name it has when it runs (see mypy_path above).
+  # Not a test root: the hub's typesetting script, so `test_guide_pdf.py` and `test_brand.py`
+  # import `build_guide_pdf` by the name it has when it runs (see mypy_path above).
   "projects/hub/tools",
 ]
 asyncio_mode = "auto"

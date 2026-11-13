@@ -17,20 +17,15 @@ export const keys = {
   freelancerCard: (id: string) => ['freelancer-card', id] as const,
   talents: (filters?: object) => (filters ? (['talents', filters] as const) : (['talents'] as const)),
   signup: (id: string) => ['signup', id] as const,
-  contracts: (freelancerId: string) => ['contracts', freelancerId] as const,
 
   companies: (filters?: object) => (filters ? (['companies', filters] as const) : (['companies'] as const)),
-  /** The company picker of the match wizard. */
-  companiesForMatch: (term: string) => ['companies', 'match', term] as const,
+  /** The company picker of «Crea match». */
+  companiesForEngagement: (term: string) => ['companies', 'engagement', term] as const,
   company: (id: string) => ['company', id] as const,
 
   audit: (kind: ThreadKind, id: string) => ['audit', kind, id] as const,
   /** Every trail: what a merge writes into at once. */
   auditAll: ['audit'] as const,
-
-  match: (id: string) => ['match', id] as const,
-  matchReport: (id: string) => ['match-report', id] as const,
-  matches: (filters: object) => ['matches', filters] as const,
 
   campaigns: ['campaigns'] as const,
   campaign: (id: string | null | undefined) => ['campaign', id] as const,

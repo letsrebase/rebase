@@ -30,27 +30,17 @@ x-hub-links: &hub-links
 
 # PigroCRM's spaces in the admin area (ORB-142): the CRM's public URL, and the token its own
 # `.env` carries as PIGROCRM_REGISTRY_TOKEN. Empty token: 503. And the CRM's door for rebase's
-# engagements (REB-498), its own token: the link of an active match and its hours. Empty: the
-# link waits and the report answers 503.
+# engagements (REB-498), its own token: the company requests filed as leads and the freelancer
+# reads (contracts, merge check, availability). Empty: the link waits and the reads answer 503.
 x-hub-pigro: &hub-pigro
   REBASE_PIGRO_API_URL: ${REBASE_PIGRO_API_URL:-https://pigro.letsrebase.com}
   REBASE_PIGRO_REGISTRY_TOKEN: ${REBASE_PIGRO_REGISTRY_TOKEN:-}
   REBASE_PIGRO_ENGAGEMENTS_TOKEN: ${REBASE_PIGRO_ENGAGEMENTS_TOKEN:-}
 
-# The signing site (REB-387): Documenso's URL as this stack reaches it and this environment's
-# own token. Empty URL or token: signing is off and says so.
-x-hub-documenso: &hub-documenso
-  REBASE_DOCUMENSO_URL: ${REBASE_DOCUMENSO_URL:-}
-  REBASE_DOCUMENSO_API_TOKEN: ${REBASE_DOCUMENSO_API_TOKEN:-}
-
-# Who signs for rebase in the contracts (REB-387): one JSON object of `rebase-*` fields.
-# Empty: those fields print as blank lines. Where rebase's signed copies go. A draft text never
-# leaves for signature; only the preview sets the last one true. Not an empty default: a bool
-# field fails at start-up on an empty value.
-x-hub-signing: &hub-signing
-  REBASE_SIGNER_JSON: ${REBASE_SIGNER_JSON:-}
+# Where a team request's own mail to rebase goes. The contracts and their signature are PigroCRM's
+# since REB-1108: the hub holds no Documenso settings and no signer.
+x-hub-contracts-mail: &hub-contracts-mail
   REBASE_CONTRACTS_MAIL: ${REBASE_CONTRACTS_MAIL:-ciao@letsrebase.com}
-  REBASE_CONTRACTS_ALLOW_DRAFT: ${REBASE_CONTRACTS_ALLOW_DRAFT:-false}
 
 # Campaigns (P-REB-41): who the mail is from and the minimum gap between two campaigns to one
 # person. Not an empty default for the gap: an int field fails at start-up on an empty value.
@@ -100,9 +90,8 @@ x-hub-api-only: &hub-api-only
   # container only if it is named here.
   REBASE_POSTHOG_KEY: ${REBASE_POSTHOG_KEY:-}
   REBASE_POSTHOG_HOST: ${REBASE_POSTHOG_HOST:-https://eu.i.posthog.com}
-  # The secret typed into this environment's Documenso webhook, and the `whsec_` secret Resend
-  # shows for this environment's webhook (spec § 6.1). Empty: the route answers 503.
-  REBASE_DOCUMENSO_WEBHOOK_SECRET: ${REBASE_DOCUMENSO_WEBHOOK_SECRET:-}
+  # The `whsec_` secret Resend shows for this environment's webhook (spec § 6.1). Empty: the
+  # route answers 503.
   REBASE_RESEND_WEBHOOK_SECRET: ${REBASE_RESEND_WEBHOOK_SECRET:-}
   # Proposals at once in this process, and a day: past either, 503 «Troppe richieste». Not empty
   # defaults: an int field fails at start-up on an empty value.
@@ -190,7 +179,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      <<: [*hub-database, *hub-mail, *hub-links, *hub-pigro, *hub-documenso, *hub-signing, *hub-campaign, *hub-quota, *hub-secrets-key, *hub-github, *hub-cards, *hub-team, *hub-api-only]
+      <<: [*hub-database, *hub-mail, *hub-links, *hub-pigro, *hub-contracts-mail, *hub-campaign, *hub-quota, *hub-secrets-key, *hub-github, *hub-cards, *hub-team, *hub-api-only]
     healthcheck:
       # `GET /health` answers before any request touches the database. Written with the
       # image's own python: the api image carries neither curl nor wget. The first start
@@ -225,7 +214,7 @@ services:
       api:
         condition: service_healthy
     environment:
-      <<: [*hub-database, *hub-mail, *hub-links, *hub-pigro, *hub-documenso, *hub-signing, *hub-campaign, *hub-secrets-key, *hub-github, *hub-cards, *hub-team]
+      <<: [*hub-database, *hub-mail, *hub-links, *hub-pigro, *hub-contracts-mail, *hub-campaign, *hub-secrets-key, *hub-github, *hub-cards, *hub-team]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
       interval: 30s
@@ -259,27 +248,26 @@ services:
       <<: [*hub-database, *hub-mail, *hub-links, *hub-campaign, *hub-quota]
 
   sweep:
-    # `rebase contracts-sweep` (REB-391, every ten minutes), scheduled here rather than by the host, so both stacks carry their own schedule (REB-393): a loop, never a one-shot, because
+    # `rebase crm-sweep` (REB-868, every ten minutes), scheduled here rather than by the host, so both stacks carry their own schedule (REB-393): a loop, never a one-shot, because
     # `_deploy-compose.yml` fails a deploy on any container that is not `running`. Sleeps
-    # first so the api's `alembic upgrade head` (Dockerfile.api) has already run. Harmless
-    # on an environment with no Documenso settings: `finish` swallows `SigningUnavailable`.
-    # Reads the database, Documenso, the signer and contracts settings, the mail key, the
-    # CRM's URL and engagements token, and the key «Modelli AI» is sealed with (the round
-    # that files company requests in the CRM opens a model through it). Read with
-    # `docker logs rebase-sweep-1` (production) or `rebase-preview-sweep-1` (preview).
+    # first so the api's `alembic upgrade head` (Dockerfile.api) has already run. It files the
+    # company requests the CRM does not have yet; signatures are the CRM's since REB-1108.
+    # Reads the database, the mail key, the CRM's URL and engagements token, and the key
+    # «Modelli AI» is sealed with (the round opens a model through it). Read with
+    # `docker logs rebase-sweep-1` (production) or `docker logs rebase-preview-sweep-1` (preview).
     build: *api-build
     restart: unless-stopped
     <<: *hardening
     mem_limit: 512m
     pids_limit: 128
-    command: ['sh', '-c', 'while :; do sleep 600; rebase contracts-sweep; done']
+    command: ['sh', '-c', 'while :; do sleep 600; rebase crm-sweep; done']
     depends_on:
       db:
         condition: service_healthy
       api:
         condition: service_healthy
     environment:
-      <<: [*hub-database, *hub-mail, *hub-links, *hub-documenso, *hub-signing, *hub-secrets-key]
+      <<: [*hub-database, *hub-mail, *hub-links, *hub-secrets-key]
       REBASE_PIGRO_API_URL: ${REBASE_PIGRO_API_URL:-https://pigro.letsrebase.com}
       REBASE_PIGRO_ENGAGEMENTS_TOKEN: ${REBASE_PIGRO_ENGAGEMENTS_TOKEN:-}
 

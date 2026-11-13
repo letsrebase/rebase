@@ -24,12 +24,12 @@ products that need to agree on something agree through `shared/`.
 ## Layout
 
 ```
-packages/core/   rebase_core: models, migrations, services, the ad conversion, the perk files, the contracts and their texts
+packages/core/   rebase_core: models, migrations, services, the ad conversion, the perk files
 apps/api/        rebase_api: FastAPI, one process, its own database
 apps/mcp/        rebase_mcp: the same services over stdio or Streamable HTTP, for an admin with a token
 apps/web/        pnpm package `hub`: the SPA at letsrebase.com/hub/ (wizards, the member area, admin)
-content/         the prose a perk is made of, reviewed as prose, and the contracts' example data
-tools/           the scripts that typeset that prose into PDFs
+content/         the prose a perk is made of, reviewed as prose
+tools/           the script that typesets that prose into a PDF
 db-backup/       the nightly encrypted backups of the hub's and Documenso's databases: one image, the script, the drill
 ```
 
@@ -86,7 +86,7 @@ restart. Design record: `docs/superpowers/specs/2026-09-15-mcp-for-admins-design
 
 **The server is one module per tool family** (REB-805, REB-892): `tools_freelancers`,
 `tools_talents`, `tools_cards`, `tools_companies`, `tools_campaigns`, `tools_team`,
-`tools_admin`, `tools_matches` and `tools_fiscal`, each with `register(mcp, deps)`, and
+`tools_admin`, each with `register(mcp, deps)`, and
 `build_server` (`server.py`) only builds `Deps` and calls them. What they share is
 `tools_common.py`: `Deps` (the session factory, the admin, the settings and the transports'
 collaborators, `call`/`run`/`run_list` opening one session per tool call and mapping
@@ -95,8 +95,8 @@ collaborators, `call`/`run`/`run_list` opening one session per tool call and map
 naming the parameter, never a bare `ValueError`. Tool names, parameters and the Italian
 docstrings are the published surface; a new tool goes in its family's module and brings a
 test in that family's `apps/mcp/tests/test_*_tools.py`. The collaborators both transports
-need come from `rebase_core.dependencies.build_dependencies` (renderer, signing, the model
-seam, the mail sender, the CRM services), so stdio and HTTP cannot drift.
+need come from `rebase_core.dependencies.build_dependencies` (the model seam, the mail sender, the CRM
+leads service), so stdio and HTTP cannot drift.
 
 **Naming of tool parameters.** Entity fields keep the Italian domain noun the API and the
 database use (`status`, `origin`, `text`, `job_title`, `remote`, `daily_rate`);
@@ -127,7 +127,7 @@ never a value. The server instructions and `read_freelancer_cv` say that what co
 **The hub keeps a read model of the CRM's engagements, and the CRM keeps it current (REB-1106).**
 `hub_engagements` (`models/engagements.py`, migration 0052) holds what the referral reward, the
 verification of a referral by a first signed letter, the ledger and the card's engagement facts
-read, instead of `matches` and `contract_documents`: the CRM's engagement id (`crm_engagement_id`),
+read (it replaced `matches` and `contract_documents`, dropped by 0053): the CRM's engagement id (`crm_engagement_id`),
 the hub freelancer and company ids, the letter's id and number, `signed_at`, `mode` (`day`, `hour`,
 `flat`), fee, expected days, role, dates, `state` (the CRM's, plus `handoff`: a row the hub opened
 at «Crea match» that nothing reads) and `sequence`, and two columns of the hub's own: the company's
@@ -143,13 +143,12 @@ NOTHING`), including from a `closed` notice that overtook a lost `signed` one. T
 `engagement_reward_base`: a day fee against the daily budget, an hourly fee at 8 hours a day, a
 lump sum against the budget times the expected days. `POST /api/hub/referrer-name` answers each
 side's referrer with `ReferralService.referrer_name`, only for a verified referral. The ledger's
-`engagement_*` fields replace its `match_*` ones. **The match side still works until its removal
-card**: the old signing path no longer writes a reward, and `ReferralService.for_matches` reads a
-reward's engagement as the match with that id (true of a handed-off or migrated match), which is
-the one overlap limit the «Match» list has.
+`engagement_*` fields replace its `match_*` ones. The match side is gone (REB-1108): `hub_engagements` is
+the only source of an engagement the hub reads, `ReferralService.for_matches` was removed with it, and
+a referral's reward reads its engagement here.
 
 **«Crea match» hands the engagement to the CRM (REB-1105).** `POST /api/hub/freelancers/{id}/engagement-handoff`
-(`routers/matches.py`, body `{company_id}`, `EngagementHandoff` in `engagement_handoff.py`) asks the CRM's root
+(`routers/engagement_handoff.py`, body `{company_id}`, `EngagementHandoff` in core's `engagement_handoff.py`) asks the CRM's root
 door for the freelancer's organization (`PUT /api/rebase/freelancers/{hub id}/organization`,
 `FreelancerDoor.ensure_organization`: the card's name, login address, contact points and fiscal VAT number and tax
 code; by hub id, never by name), keeps one `hub_engagements` row in state `handoff` with the company's daily budget
@@ -158,31 +157,15 @@ a new one) and answers `{state: "ready", url, engagement_id}`: the CRM's form at
 `{space}/app/engagements?hub_match_id=<minted id>&freelancer_id=<organization>&deal_id=<request's deal>&client_id=<its
 customer>`. The space is read off the request's `crm_deal_url` (`{origin}/{slug}/app/deal/{id}`), so no setting names
 the leads space twice. A request not linked yet answers `{state: "no_deal", message}` and writes nothing; the page
-(`OpenEngagement.tsx`, the route of the old wizard) offers «Riprova» (`/crm/link`) and asks again. 409 carries the
+(`OpenEngagement.tsx`) offers «Riprova» (`/crm/link`) and asks again. 409 carries the
 CRM's refusal (an archived organization, a VAT number that is another freelancer's), 502 a CRM that did not answer,
-503 no engagements token. The old wizard (`CreateMatch.tsx` and its routes) is unreachable from «Crea match» and
-stays until its removal card.
+503 no engagements token.
 
-Every match and contract action is a tool too (REB-478): each runs the guard the admin
-API runs, then the same core service, with the calling admin as the actor, and answers
-`pdf_url`, never the PDF bytes, the tax identifiers or the client's budget. The guards
-are the core's `require_live_match` and `require_live_document`, and `SigningService`
-comes from the core's `signing_from_settings`, the one builder the API's `SigningDep`,
-the MCP transports and `rebase contracts-sweep` share; the tests hand `FakeRenderer` and
-a `SigningService` over `FakeDocumenso`.
+The CRM link of a company request is a tool too (REB-869, REB-870): each runs the same core
+service the admin API runs, with the calling admin as the actor.
 
-- `preview_match`: step 3's sentences for the hub's proposal with the given fields and letter type (`regime`, the proposal's when left out); writes nothing.
-- `create_match`: the draft match, «Salva senza inviare»; `match_id` makes a retry idempotent; `regime` as in `preview_match`.
-- `send_match_for_signature`: «Invia per la firma»; `message` is the page's sentence.
-- `resend_signing_mail`: «Reinvia email», for a document still waiting.
-- `refresh_contract`: «Aggiorna stato», Documenso's word applied as the webhook would.
-- `cancel_contract`: «Annulla» on a framework agreement not signed yet.
-- `record_notice`: «Registra disdetta» on an active framework agreement.
-- `cancel_match`: «Annulla» on a match in draft or in signature.
-- `close_match`: «Chiudi match», the engagement ends.
-- `link_company_to_pigro`: «Riprova» on a company request (REB-869), the way `link_match_to_pigro` is for matches: files it in the CRM now as the calling admin and answers the request with `crm_status`, `crm_situation` and `crm_deal_url`; with `deal_id` it is «Collega a un altro deal». `get_company` and `list_companies` carry the same three fields.
+- `link_company_to_pigro`: «Riprova» on a company request (REB-869): files it in the CRM now as the calling admin and answers the request with `crm_status`, `crm_situation` and `crm_deal_url`; with `deal_id` it is «Collega a un altro deal». `get_company` and `list_companies` carry the same three fields.
 - `create_company`: opens a company request for a company met directly, optionally linked to the CRM deal it already has (REB-870); sends no mail.
-- `set_freelancer_tax_data`: saves the tax data, the partita IVA optional; answers that they are saved, never the values.
 
 The team builder and the talent cloud are thirteen tools more (REB-520, spec § 8 of
 `docs/superpowers/specs/2026-09-25-team-builder-and-talent-cloud-design.md`), each
@@ -327,8 +310,8 @@ Every request written by `CompanyService.request` (the wizard) or
 `MemberService.create_additional_request` (a member's second one) is `crm_stato =
 da_collegare` in the transaction of its row; a row written before migration 0046 has `NULL`
 and the sweep never picks it up (no backfill: it reaches the CRM only by an admin's «Riprova»
-or «Collega a un altro deal»). `rebase_core.crm_link.CrmLeadService` is `EngagementService`'s
-twin: `link(company_id, admin_id, deal_id)` locks the row to read what is sent and stamp the
+or «Collega a un altro deal»). `rebase_core.crm_link.CrmLeadService` links a request to its CRM deal:
+`link(company_id, admin_id, deal_id)` locks the row to read what is sent and stamp the
 attempt, **releases it before the AI call and the HTTP call**, and locks again to write the
 answer; the draft of `crm_lead` is made once and kept in `crm_draft`, so a CRM that is down
 is retried without spending the cap again. The call is `PUT {pigro_api_url}/api/rebase/leads/
@@ -336,8 +319,8 @@ is retried without spending the cap again. The call is `PUT {pigro_api_url}/api/
 `201`/`200` is `linked`, `422` is `rejected` (only a person asks again), anything else
 `error` (the sweep retries). The deal is built in code and every value is cut to the CRM's
 limits; `hourly_rate` and `budgeted_hours` are never sent. The first attempt is a
-`BackgroundTasks` job (`deps.get_crm_filing`); the sweep is `crm_sweep` in `rebase
-contracts-sweep`, its own round and its own line, outside `SigningService`, and leaves a row
+`BackgroundTasks` job (`deps.get_crm_filing`); the sweep is `crm_sweep`, run by `rebase
+crm-sweep` from the compose service `sweep`, and leaves a row
 alone for five minutes after it was written or attempted so it never races that job.
 `POST /api/hub/companies/{id}/crm/link` is «Riprova»; with `{"deal_id"}` it is «Collega a un
 altro deal»: no draft, and a refusal is a 409 that changes nothing stored (the sweep would
@@ -529,108 +512,31 @@ and the `guide-pdf` preflight check rebuilds the bytes. Comparing bytes is meani
 only because the build is reproducible on purpose: `--creation-timestamp 0` for Typst,
 `recalcTimestamp=False` for the font instances.
 
-## The contracts are typeset at request time
+## Engagements, letters and signatures are PigroCRM's
 
-Since REB-387 the API writes the framework agreement and the letter of engagement itself,
-with `rebase_core.contracts`: pandoc and Typst over the Markdown in
-`packages/core/src/rebase_core/contracts/texts/`, the template beside it, and the
-palette, the typeface and the echo logo read from `shared/brand/` at the paths the image
-mirrors. So
-`Dockerfile.api` carries PigroCRM's pandoc and Typst (`test_api_image.py` holds the two
-images to one pair) and fontTools is a dependency of `rebase_core`. `rebase
-contracts-check` typesets every text from fiction and says whether a machine can; the
-`hub-image` preflight check and CI's image job run it inside the built image. Who signs
-for rebase comes from `REBASE_SIGNER_JSON` in the host `.env`, never from the repository.
+Since REB-1108 the hub no longer matches a freelancer with a company, typesets a framework
+agreement or a letter of engagement, signs them on Documenso or keeps a freelancer's fiscal
+data: all of that is PigroCRM's (`projects/pigrocrm/AGENTS.md`, and
+`projects/pigrocrm/docs/superpowers/specs/2026-11-09-collaborators-in-the-crm-design.md`).
+The hub keeps the handoff to the CRM's engagement form, the `hub_engagements` read model its
+notices feed, the member «Contratti» page (read through the CRM door), the merge check and the
+CV redaction through the door. The `matches`, `contract_documents`, `freelancer_fiscal` and
+`letter_counters` tables are dropped by migration 0053 (its downgrade recreates them empty).
 
-Since REB-687 there are two families of the same two documents, named by (kind, regime)
-in `rebase_core.regimes`: `framework-agreement.md` and `engagement-letter.md` for a member
-who works with a partita IVA, `framework-agreement-occasional.md` and
-`engagement-letter-occasional.md` for a member paid as a prestazione occasionale.
-Every `contract_documents` row carries its `regime`, and a match's regime is its letter's:
-«Tipo di lettera» on step 1 of «Crea match», proposed from the tax data, whose partita IVA
-may be missing; ticking «Senza partita IVA» there also switches «Tipo di lettera» to
-«Prestazione occasionale». Every lookup of a freelancer's framework agreement takes a
-regime, so a freelancer may hold one of each, a signature releases only the letters of its
-own regime, and «Match e contratti» shows one framework card per regime. An ordinary
-letter needs a saved partita IVA; the occasional texts never print one, and an occasional
-letter's payment term counts from the receipt. Design record:
-`docs/superpowers/specs/2026-10-12-prestazione-occasionale-design.md`.
+The CRM door is one module, `pigro_door` (`PigroDoor.put` never raises and maps the status to
+the state the row is left in, `PigroDoor.get`, `write`, `committed`, `sweep_round`): the
+registry (`pigro`) and the leads link (`crm_link`) pass it a path, a token and the row's column
+names, `FreelancerDoor` reads and writes the freelancer's organization, and the rule that **no
+database lock is held across the CRM's call** is written out in its docstring.
 
-Since REB-979 a letter may pay «a incasso»: the optional `collection_days` (`giorni-incasso`,
-1 to 60) on `LetterDraft`, «Condizioni» and the MCP `terms`. `checked` then writes the
-payment term as that many days after the client has paid, and in any case within 60 days of
-receiving the invoice (the receipt, on the occasional letter), and the letters' «Pagamento a
-incasso» paragraph, between `{{se giorni-incasso}}` and `{{fine se}}`, prints; without the
-field a letter is what it was. Both framework agreements were raised to 1.1 for it; an
-agreement signed at 1.0 keeps its text (article 17.3), so the letter itself carries the
-consent. The wording awaits the overall legal review of the contracts
-(`docs/design/DECISIONS.md`, 2026-11-09).
-
-## Contracts are signed on Documenso
-
-Since REB-387 phase 3 «Invia per la firma» sends a match's documents through Documenso
-(`rebase_core.signing`, `rebase_core.documenso`), and the hub mails the signing link
-itself: Documenso sends no mail of its own. Documenso calls back
-`POST /api/hub/documenso/webhook` with `X-Documenso-Secret` equal to
-`REBASE_DOCUMENSO_WEBHOOK_SECRET`, which must be long and random (`openssl rand -hex
-32`): the route sits public behind `/api/hub/` with no rate limit, and for a rejection
-or a cancellation the secret is the only guard. A completion is not moved on the secret
-alone (REB-431): the webhook only marks which document to confirm, and `finish` reads
-the envelope back with the hub's own API token before the document counts as signed, so
-a secret leaked to somebody who never held the token still cannot forge a signature.
-Production's webhook points at
-`http://api:8000/api/hub/documenso/webhook` inside the compose network, preview's at
-`https://preview.letsrebase.com/api/hub/documenso/webhook`. Documenso retries a failed
-delivery only at once, so an event lost while the API restarts is not lost for good: the
-sweep (below) reads the envelope and applies it on its own, every ten minutes, and
-«Aggiorna stato» on «Match e contratti» does the same thing at once, for an admin who
-does not want to wait for the next sweep. Without
-`REBASE_DOCUMENSO_URL` and `REBASE_DOCUMENSO_API_TOKEN` signing answers 503, and a text
-whose front matter says `status: draft` never leaves unless `REBASE_CONTRACTS_ALLOW_DRAFT`
-is true; only the preview's `.env` sets it, and even there it stays false while both
-texts are `status: final`, ready again for the next draft. Documenso reaches `api` only if
-`NEXT_PRIVATE_WEBHOOK_SSRF_BYPASS_HOSTS` lists it (probe § 5); the secret travels in
-clear, so the webhook URL stays on the compose network or is HTTPS.
-
-The webhook's own follow-up starts with that confirmation, then the sealed copy's
-download and mails, a framework agreement's waiting letters, all in the background,
-after the response: a restart caught mid-confirmation leaves a signed document plain
-`sent`, not even `signed` yet, until the next sweep tries it again; caught later, it
-leaves whichever step ran undone. `rebase contracts-sweep` redoes anything a restart, or
-a mail the provider refused, left behind, and runs every ten minutes on production and
-the preview alike, from the `sweep` service in `docker-compose.yml` (REB-393). Read what
-it did with `docker logs rebase-sweep-1` (production) or `docker logs
-rebase-preview-sweep-1` (preview): each run prints «N documenti ripresi», and, when
-Documenso itself refused a confirmation or could not be reached (an expired, revoked or
-wrong token among them, REB-431), «, M non confermati» on the same line. Then it links
-every active match still waiting for its deal on Pigro, or failed last time (REB-499),
-and adds «, N match collegati a Pigro», and «, M non collegati» when any stayed unlinked
-(the reason is on each match, `pigro_error`); without `REBASE_PIGRO_ENGAGEMENTS_TOKEN`
-it links nothing and says 0.
-
-**How the contracts code is laid out (REB-892).** No module passes 800 lines. A match's
-code is `rebase_core.matches.MatchService` (`create`, `cancel`, `close`) built from
-`reads` (`match_reads`: `get`, `list_all`, `for_freelancer`, `document_pdf`), `drafts`
-(`match_drafts`: `prefill`, `proposal`, `preview`, `check`, which write nothing) and
-`documents` (`match_documents`: what the documents print, `write_framework`); the shared
-rows and the **global lock order** (the freelancer's row, then the match, then its
-documents) are the functions of `match_rows`. `SigningService` (`signing`: `send_match`,
-`apply`, the plumbing) holds `recovery` (`signing_recovery`: `finish`, `sweep`) and `admin`
-(`signing_admin`: `refresh`, `resend_mail`, `cancel_document`, `cancel_match`,
-`record_notice`); the sentences they store are `signing_words`. The signing `dispatch`
-calls Documenso under the freelancer's row lock on purpose: it is one admin's click and
-the document must roll back when Documenso refuses, so the latency is the price. The CRM
-door is one module, `pigro_door` (`PigroDoor.put` never raises and maps the status to the
-state the row is left in, `PigroDoor.get`, `write`, `committed`, `sweep_round`): the
-registry (`pigro`), the engagements link (`engagements`, its report maths in
-`engagement_report`) and the leads link (`crm_link`) pass it a path, a token and the row's
-column names, and the rule that **no database lock is held across the CRM's call** is written out in
-its docstring.
+The image still carries Typst and the brand files: the anonymous CV print uses them
+(`rebase_core.contracts` is now only `brand.py` and `fields.py`, whose `ContractFailed` that print
+reads). Pandoc is only still there for the guide build; dropping it is a follow-up.
 
 ## The `rebase` command (REB-892)
 
 `rebase_core.cli` is a package, one module per group of commands (`members`, `cards`, `campaigns`,
-`signing`, `ai`) and a `REGISTRY` of names and help in `cli/__init__.py`; `main` imports a
+`crm`, `ai`) and a `REGISTRY` of names and help in `cli/__init__.py`; `main` imports a
 group's module only when one of its commands is chosen, and a command imports what its own work needs
 inside its handler, so `rebase campaigns-tick` does not load the model providers' libraries. A command
 is a `Command` (`cli/common.py`) in its module's `COMMANDS`. **The three compose loops stay shell
@@ -641,6 +547,11 @@ imports instead. `rebase createtoken` prints the token once on
 stdout, or with `--token-file PATH` writes it there alone (mode 0600, never over an existing file),
 and `--expires-in-days N` sets its expiry; `createtoken` and `setrole` prompt only at a terminal and
 otherwise refuse with exit code 2.
+
+`rebase crm-sweep` (`cli/crm.py`, REB-1108; it was `contracts-sweep` and the `signing` group is
+gone) files the company requests still waiting for the CRM, and nothing else. The compose
+service `sweep` runs it every ten minutes on production and the preview alike; read it with
+`docker logs rebase-sweep-1` or `docker logs rebase-preview-sweep-1`.
 
 ## Campaigns
 
@@ -752,7 +663,7 @@ already done (`done_at`) and, for a list built from a state or from filters, whe
 the person is still on it. That list is rebuilt once per pass, since it is a query over
 every card (the state is filtered in SQL, `states._journey_state`, held to `card_state` by a
 test); an opt-out or a bounce recorded mid-pass keeps a queued mail from leaving.
-Optouts are campaigns-only: the magic link, the welcome mail and the contracts flow
+Optouts are campaigns-only: the magic link, the welcome mail and the team requests' mail
 keep reaching an opted-out address, since none of those is a campaign. The unsubscribe
 route (`POST /api/hub/campaigns/unsubscribe`) has no rate limit on purpose: Gmail and
 Yahoo send RFC 8058's one-click POST from a few server addresses, the token is 256
@@ -1303,8 +1214,7 @@ names the person is asked once more. Two calls of 150 seconds plus the print is 
 nginx's 60 would answer 504 while the model went on writing a body the admin then pays
 for again. A regex location is never read once `^~ /api/hub/` matches, so both copies here
 carry a longer prefix, `location ^~ /api/hub/freelancers`, that mirrors `/api/hub/`'s
-directives and holds the route in a nested regex; no trailing slash, as
-`/api/hub/matches`, or nginx answers the wizard's `POST /api/hub/freelancers` and the
+directives and holds the route in a nested regex; no trailing slash, or nginx answers the wizard's `POST /api/hub/freelancers` and the
 admin list with a 301. Production's:
 
 ```
@@ -1386,11 +1296,10 @@ limit_req_status 429;
 | `= /api/community/signups` | `rebase_write` | `limit_req zone=rebase_write burst=3 nodelay;` |
 | `^~ /api/hub/auth/` | `rebase_auth` | `limit_req zone=rebase_auth burst=5 nodelay;` |
 | `= /api/hub/members/lookup` (PigroCRM's server, one address) | `rebase_door` | `limit_req zone=rebase_door burst=30 nodelay;` |
-| `= /api/hub/documenso/webhook` (Documenso retries three times in 160 ms) | `rebase_door` | `limit_req zone=rebase_door burst=30 nodelay;` |
 | `= /api/hub/webhooks/resend` | `rebase_door` | `limit_req zone=rebase_door burst=30 nodelay;` |
 | `^~ /api/hub/mcp` | `rebase_mcp` | `limit_req zone=rebase_mcp burst=60 nodelay;` |
 
-The bearer-secret doors (`/members/lookup`, the Documenso webhook, the MCP bearer) compare
+The bearer-secret doors (`/members/lookup`, the MCP bearer) compare
 in constant time against a long secret, so brute force is impractical; the zone is for
 the noise, and the MCP transport also refuses a client after
 `REBASE_MCP_BAD_BEARERS_PER_MINUTE` wrong bearers. Their `detail` strings are English
@@ -1413,7 +1322,8 @@ tool, no actor) is not guarded. The trail has two modes, `AdminActionService.rec
 best effort by default (its own commit after the change, a failure logged), and
 `commit=False` for the sensitive kinds, which the caller commits with the change and which
 fail the change when they cannot be written: `overridden` (card and company identity and
-profile), `status_changed`, `fiscal_updated`, `admin_promoted`, `admin_demoted`. A kind or
+profile), `status_changed`, `fiscal_updated` (history: the kind stays in `ADMIN_ACTION_KINDS`
+for old rows, the table it audited, `freelancer_fiscal`, went with migration 0053), `admin_promoted`, `admin_demoted`. A kind or
 entity type over its 20-character column raises `ValueError` instead of being cut, and
 `test_admin_actions.py` checks every kind in `ADMIN_ACTION_KINDS` fits.
 
@@ -1452,8 +1362,8 @@ assuming 4173.
 ## Testing on the preview
 
 Written from the 2026-09-29 end-to-end run. The container list and the `setrole` flags
-were re-checked read-only on 2026-10-05; the login, the match and the signing were not
-repeated, because they write data or send mail.
+were re-checked read-only on 2026-10-05; the login was not repeated, because it sends
+mail.
 
 - **The host is the origin.** `preview.letsrebase.com` shares its host with the hub's
   production (`docs/migrations/2026-09-14-letsrebase.md`): the Hetzner origin, one of
@@ -1469,27 +1379,9 @@ repeated, because they write data or send mail.
   names); `--role member` demotes.
 - **Log in.** There is no password: a login is a magic link mailed through Resend, so a
   `+alias` of an inbox you own (`you+hubtest@example.com`) works.
-- **Create a match** from the admin area, or with the `create_match` MCP tool, then send
-  it for signature.
-- **Sign on Documenso** with a headless browser at the `/sign/<token>` link from the
-  mail. The fields are a canvas, not form inputs: click the pad, type the name, «Next»,
-  then «Next Field», click the field by its coordinates, and repeat «Next Field» and the
-  click until none is left (the framework agreement has two signature fields for the
-  freelancer), «Complete», «Sign». The journey is in
-  `docs/superpowers/specs/2026-09-23-documenso-probe.md` § 6, written for a letter with
-  one field. Repeat for each document and each signer. A freelancer with no active
-  framework agreement gets the framework agreement first and the letter only once it is
-  signed, with a new mail; to test both, use a test freelancer without one. The preview
-  signs on production's Documenso
-  (`REBASE_DOCUMENSO_URL=https://firma.letsrebase.com`, the preview's own Documenso user,
-  § "Documenso, the signing site"), so the envelopes are created there;
-  `ssh pigrocrm docker exec rebase-preview-api-1 uv run --no-sync rebase documenso-check`
-  says whether it reaches it.
-- **A match sent for signature mails real addresses.** Give the freelancer and the
-  company only addresses you own.
-- **The preview keeps what earlier runs left**: test members, matches and contract rows
-  stay in its database, while the envelopes stay on production's Documenso. Expect rows
-  and envelopes you did not make in both places and do not clean them up unasked.
+- **Preview data**: test members and company requests from earlier runs stay in its
+  database. Expect rows you did not make and do not clean them up unasked. Engagements,
+  letters and signatures are tested in the CRM's own preview, not here.
 
 ## The database was inherited
 
@@ -1523,9 +1415,7 @@ Ports, loopback only, from the table in `docs/adding-a-project.md` §7: producti
 (api): `projects/website/deploy/letsrebase.conf` proxies them to production on the host
 vhost, and `projects/website/deploy/preview.letsrebase.conf` proxies the same paths to
 the preview stack at `preview.letsrebase.com` (`location ^~ /api/hub/`,
-`preview.letsrebase.conf`, 127.0.0.1:8086 for its api) -- which is why the
-preview's Documenso webhook, at `https://preview.letsrebase.com/api/hub/documenso/webhook`,
-depends on that vhost rather than reaching the preview api directly. The member area's
+`preview.letsrebase.conf`, 127.0.0.1:8086 for its api). The member area's
 mail needs `REBASE_RESEND_API_KEY` and `REBASE_MAIL_FROM` in the host `.env`; without
 the key `/hub/login` answers 503 with a sentence. A preview stack that gets a key must
 also set `REBASE_HUB_URL` to its own address, or every link it mints points at
@@ -1681,8 +1571,10 @@ every service of every file it reads, profiles or not, so the Documenso services
 `docker-compose.yml` would fail the preview's deploy and CI's build on their secrets.
 Anything you run by hand against production passes `-p rebase --env-file
 "${DEPLOY_PATH}/.env"` from `projects/hub`, or compose sees neither file nor stack. The
-webhook, its SSRF bypass and `REBASE_DOCUMENSO_*` are described above (§ "Contracts are
-signed on Documenso"); this section is the container's own.
+webhook and token are PigroCRM's configuration since REB-1108 (§ "Engagements, letters and
+signatures are PigroCRM's"): the hub API no longer calls Documenso or receives its webhook.
+Moving this stack, its backup and the vhost to the CRM's deploy is a later step; until then
+this section is the container's own runbook.
 
 - **Image**: `documenso/documenso:v2.21.1`, pinned by digest (phase 1 probed v2.18.0; REB-712
   moved it after the v2.19 and v2.20 release notes, REB-907 after v2.21.0 and v2.21.1). An
@@ -1710,29 +1602,23 @@ signed on Documenso"); this section is the container's own.
   `.p12` on one line of base64 with its passphrase. The seal is valid and PDF readers say
   its issuer is not trusted; a certificate on Adobe's trust list is a later purchase.
 - **Mail**: Documenso sends only its own account mails, through Resend with the hub's
-  key; every signing mail is the hub's.
+  key; a signing mail is the signing party's, never Documenso's.
 - **Accounts**: public sign-up is off (`DOCUMENSO_DISABLE_SIGNUP` defaults to true). One
-  Documenso user per environment, each with its own organisation, team, API token and
-  webhook, because a token reads and cancels every envelope of its user's teams
-  (probe § 8):
+  Documenso user per environment, each with its own organisation, team and API token,
+  because a token reads and cancels every envelope of its user's teams (probe § 8):
 
-  | Environment | Documenso user | Team | Webhook URL |
-  |---|---|---|---|
-  | production | `ciao+firma-is@letsrebase.com` | its Personal Team | `http://api:8000/api/hub/documenso/webhook` |
-  | preview | `ciao+firma-preview@letsrebase.com` | its Personal Team | `https://preview.letsrebase.com/api/hub/documenso/webhook` |
+  | Environment | Documenso user | Team |
+  |---|---|---|
+  | production | `ciao+firma-is@letsrebase.com` | its Personal Team |
+  | preview | `ciao+firma-preview@letsrebase.com` | its Personal Team |
 
   Made on 2026-09-25 (REB-408). Each user's own Personal Team holds its API token («prod»
-  and «demo», no expiry: revoke and replace one in Documenso, then in that hub's `.env`,
-  then redeploy) and its webhook. The two webhooks were written straight into Documenso's
-  `Webhook` table (URL, the three events, the secret, the user's own team) rather than
-  typed into its form, which is equivalent; the form is the way to edit them.
-
-  Both webhooks send `document.completed`, `document.rejected` and `document.cancelled`,
-  each with its own secret, which is that hub's `REBASE_DOCUMENSO_WEBHOOK_SECRET`.
-  Production's hub reaches Documenso as `REBASE_DOCUMENSO_URL=http://documenso:3000`,
-  the preview's as `https://firma.letsrebase.com`. `docker exec rebase-api-1 uv run
-  --no-sync rebase documenso-check` (and `rebase-preview-api-1`) says whether each hub
-  reaches Documenso with its token.
+  and «demo», no expiry: revoke and replace one in Documenso) and its webhook (the three
+  events `document.completed`, `document.rejected` and `document.cancelled`, with a secret).
+  Since REB-1108 the hub API reads neither: the token, the webhook URL and its secret belong
+  to PigroCRM's configuration, and a webhook still written into Documenso's `Webhook` table
+  for the hub's removed route has to be edited there (the form is the way) when the CRM's
+  is set.
 
   Step 5 of the rollout opens `DOCUMENSO_DISABLE_SIGNUP` for the tens of minutes the two
   environments' users take to be made, on a name already in certificate transparency
@@ -1743,19 +1629,6 @@ signed on Documenso"); this section is the container's own.
   -U documenso -d documenso -tAc 'SELECT email FROM "User"'` must list exactly the two
   `@letsrebase.com` addresses above, beside Documenso's own two internal accounts,
   `serviceaccount@firma.letsrebase.com` and `deleted-account@firma.letsrebase.com`.
-- **Who signs for rebase**: the `rebase-*` fields of `REBASE_SIGNER_JSON`, in the host's
-  `.env`, never in the repository. With every text `status: final`, production signs
-  with whoever's data is there, which until the SRL exists (roadmap #284) is a person's,
-  not the company's yet. The value is one line of compact JSON. Compose's `.env` parser
-  refuses shell-style quoting (`'...'"'"'...'`), which an apostrophe in an address
-  produces (the patch tag of 2026-09-25 failed on it once). Unquoted JSON works as long as
-  it holds no ` #` (the rest of the line would become a comment) and no `$` (compose would
-  interpolate it); otherwise wrap the value in double quotes and escape every inner `"`,
-  `\` and `$` as `\"`, `\\` and `$$`. Check with `docker compose -p rebase --env-file
-  /opt/hub/.env config | grep REBASE_SIGNER_JSON` before any tag.
-- **The preview sends real mail**: its `.env` carries `REBASE_RESEND_API_KEY` since
-  2026-09-25, because «Invia per la firma» refuses without a mail sender; its signer is
-  fiction, and its contracts mail is `ciao+firma-preview@letsrebase.com`.
 - **Branding** (REB-474): both organisations show rebase, set in Documenso under
   Organisation settings → Preferenze → Branding: the logo is the echo,
   `shared/brand/echo/echo-ink-watermelon-outlines.png` (Ivan, 2026-09-25: the signing

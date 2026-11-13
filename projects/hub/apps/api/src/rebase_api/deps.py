@@ -19,11 +19,8 @@ from rebase_core.campaigns.sender import CampaignSender, campaign_sender_from_se
 from rebase_core.card_batch import CardBatches
 from rebase_core.cloud import CLOUD_CLOSED, CloudCaller, CloudTalentService
 from rebase_core.config import Settings, get_settings
-from rebase_core.contracts.render import ContractRenderer, Renderer
 from rebase_core.crm_link import CrmLeadService, link_after_response
 from rebase_core.db import SessionOpener, create_engine_from_settings, session_factory
-from rebase_core.documenso import DocumensoClient, client_from_settings
-from rebase_core.engagements import EngagementService
 from rebase_core.http import HttpCall, urllib_call, urllib_engagements_call
 from rebase_core.llm import (
     AiCall,
@@ -37,7 +34,6 @@ from rebase_core.mail import EmailSender, sender_from_settings
 from rebase_core.member_schemas import MeRead
 from rebase_core.members import MemberService
 from rebase_core.pigro_door import FreelancerDoor, freelancer_door
-from rebase_core.signing import SigningFactory, signing_from_settings
 from rebase_core.team_builder import TeamBuilder
 from rebase_core.team_slots import ProposalSlots, proposal_slots
 from rebase_core.users import UserService
@@ -182,23 +178,11 @@ HttpCallDep = Annotated[HttpCall, Depends(get_http_call)]
 
 
 def _engagements_call(http: HttpCall) -> HttpCall:
-    """The seam the link to Pigro reads through (REB-499): the request's own
+    """The seam the CRM doors read through: the request's own
     `HttpCallDep`, so a test's override of `get_http_call` reaches it too, except that
     production's ten-second `urllib_call` becomes `urllib_engagements_call`, whose 90
     seconds leave room for the first link of a freelancer, which opens their space."""
     return urllib_engagements_call if http is urllib_call else http
-
-
-def get_engagements(
-    session: SessionDep, settings: SettingsDep, http: HttpCallDep, sender: SenderDep
-) -> EngagementService:
-    """The link of an active match to its deal on Pigro, and that deal's hours
-    (REB-499): «Riprova su Pigro» and «Consuntivo». The freelancer's mail goes through
-    the request's own sender, as every other mail of the API does."""
-    return EngagementService(session, settings, _engagements_call(http), sender=sender)
-
-
-EngagementsDep = Annotated[EngagementService, Depends(get_engagements)]
 
 
 def get_freelancer_door(settings: SettingsDep, http: HttpCallDep) -> FreelancerDoor:
@@ -218,49 +202,6 @@ def get_tracker(settings: SettingsDep) -> Tracker | None:
 
 
 TrackerDep = Annotated[Tracker | None, Depends(get_tracker)]
-
-
-def get_renderer() -> Renderer:
-    """The contracts' typesetter (REB-387): pandoc and Typst in the image. A dependency
-    so a test hands `FakeRenderer` and never needs either binary."""
-    return ContractRenderer()
-
-
-RendererDep = Annotated[Renderer, Depends(get_renderer)]
-
-
-def get_documenso(settings: SettingsDep) -> DocumensoClient | None:
-    """This environment's Documenso client (REB-387), or `None` when signing is off: the
-    send answers 503 with a sentence, as the member area does without a mail key."""
-    return client_from_settings(settings)
-
-
-DocumensoDep = Annotated[DocumensoClient | None, Depends(get_documenso)]
-
-
-def get_signing_factory(
-    settings: SettingsDep,
-    renderer: RendererDep,
-    documenso: DocumensoDep,
-    sender: SenderDep,
-    http: HttpCallDep,
-) -> SigningFactory:
-    """`SigningService` as this environment configures it, for any session: the request's
-    own, or the one a background task opens for itself (the webhook's). Built by the
-    core's `signing_from_settings`, the one builder the MCP server and the sweep use too,
-    with this request's own renderer, Documenso client and sender, so a test's dependency
-    override reaches the service. `REBASE_SIGNER_JSON` stays the raw setting, unparsed:
-    `build` runs for every route behind `SigningDep` (a cancel, a refresh, a resend or the
-    webhook among them), so parsing it here would 503 all of them on a malformed value.
-    `SigningService` itself parses it once, lazily, only where a document is about to be
-    typeset (REB-406). The engagement service it hands over, which links a match the
-    signature turns active (REB-499), reads through the seam `get_engagements` uses."""
-    return signing_from_settings(
-        settings, renderer, documenso=documenso, sender=sender, http=_engagements_call(http)
-    )
-
-
-SigningDep = Annotated[SigningFactory, Depends(get_signing_factory)]
 
 
 def get_session_opener() -> SessionOpener:

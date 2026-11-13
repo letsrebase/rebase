@@ -80,11 +80,11 @@ class Settings(BaseSettings):
     # also where a space is linked: `{pigro_api_url}/<slug>/app/`.
     pigro_api_url: str = "https://pigro.letsrebase.com"
     pigro_registry_token: str = ""
-    # The CRM's door for rebase's engagements (REB-498): an active match is linked to a
-    # deal in its freelancer's space, and the hub reads that deal's hours, with the
-    # value PigroCRM reads as `PIGROCRM_ENGAGEMENTS_TOKEN`, never the registry's. Empty
-    # means the link is skipped (the match waits as `to_link`) and the report and
-    # «Riprova» answer 503 with a sentence, as signing does without Documenso.
+    # The CRM's door for rebase's engagements (REB-498): the hub files a company request as a
+    # lead in the leads space and reads a freelancer's contracts, weeks and merge check (REB-1107),
+    # with the value PigroCRM reads as `PIGROCRM_ENGAGEMENTS_TOKEN`, never the registry's. Empty
+    # means the door is skipped: a request waits as `to_link` and the reads answer 503 with a
+    # sentence.
     pigro_engagements_token: str = ""
     # The bearer the CRM presents to the hub (REB-1106, collaborators design § 5): its notices
     # about the engagements it holds (`POST /api/hub/engagement-notices`) and the question of who
@@ -93,30 +93,9 @@ class Settings(BaseSettings):
     # the CRM) or the registry's. Empty means neither route exists (404).
     pigro_notices_token: str = ""
 
-    # --- the contracts (REB-387) -----------------------------------------------------
-    # Who signs for rebase, as the `rebase-*` fields of the framework agreement and the
-    # letter: one JSON object, e.g. {"rebase-rappresentante": "Nome Cognome"}, read over
-    # the package's own `rebase.json`. The server's `.env` only: this repository is
-    # public. Empty means those fields print as blank lines.
-    signer_json: str = ""
-
-    # --- the signing site: Documenso (REB-387) ---------------------------------------
-    # The instance's base URL as this process reaches it (production: the compose
-    # service, `http://documenso:3000`; preview: `https://firma.letsrebase.com`), and the
-    # API token of this environment's own Documenso user and team: one user per
-    # environment, because a token reads and cancels every envelope of its user's teams
-    # (probe § 8). Either empty: signing is off and «Invia per la firma» answers 503.
-    documenso_url: str = ""
-    documenso_api_token: str = ""
-    # The secret typed into this environment's Documenso webhook, which Documenso sends
-    # verbatim as `X-Documenso-Secret`. Empty: the webhook answers 503.
-    documenso_webhook_secret: str = ""
-    # Where rebase's own copy of every signed contract is mailed.
+    # Where a team request's own mail to rebase goes (`TeamRequestService`, REB-387's old
+    # «contracts» address, still the one inbox).
     contracts_mail: str = "ciao@letsrebase.com"
-    # A text still `status: draft` never leaves for signature (spec § 1f), except on the
-    # preview, whose own `.env` sets this true so a text still being drafted can still be
-    # sent end to end without waiting for it to lose its `draft` status.
-    contracts_allow_draft: bool = False
 
     # --- campaigns (P-REB-41) --------------------------------------------------------
     # Who a campaign mail is from: a person, as the two September waves were, not the

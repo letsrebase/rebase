@@ -1,20 +1,22 @@
-"""rebase's engagements door (spec 2026-09-25 § 2.3, § 2.4): the two routes the hub
-calls under `PIGROCRM_ENGAGEMENTS_TOKEN` (and, beside them, the leads route of spec
-2026-10-30 § 2, under the same token, on its own prefix), on the root installation, exactly like
+"""rebase's leads door (spec 2026-10-30 § 2): `PUT /api/rebase/leads/{request_id}`, which the
+hub calls under `PIGROCRM_ENGAGEMENTS_TOKEN`, on the root installation, exactly like
 `GET /api/tenants/` under `PIGROCRM_REGISTRY_TOKEN` -- one bearer the whole caller holds,
-checked by `require_service_token` (`service_token.py`) before either route touches
-`EngagementService`.
+checked by `require_service_token` (`service_token.py`) before the route touches
+`LeadService`. The hub no longer creates engagements through a door route (REB-1108): the
+CRM's own collaborators flow does, and the hub receives its notices.
+
+`_require_root_door` and `_plain_response` are shared with the freelancer door
+(`freelancer_door.py`).
 
 No `ActorDep`: the caller is the hub itself, not a person or an agent of a space.
 """
 
 import logging
 from collections.abc import Callable
-from datetime import date
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from sqlalchemy import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -25,31 +27,16 @@ from pigrocrm.core.engagements.leads import (
     LeadService,
     LeadsSpaceNotConfigured,
 )
-from pigrocrm.core.engagements.schemas import (
-    EngagementRead,
-    EngagementReport,
-    EngagementUpsert,
-    LeadRead,
-    LeadUpsert,
-)
-from pigrocrm.core.engagements.service import (
-    EngagementBusy,
-    EngagementService,
-    SpaceUnreachable,
-)
+from pigrocrm.core.engagements.schemas import LeadRead, LeadUpsert
+from pigrocrm.core.engagements.service import SpaceUnreachable
 from pigrocrm.core.errors import ValidationFailed
-from pigrocrm.core.mail import EmailSender
 from pigrocrm_api.deps import SettingsDep, TenantsRegistryDep
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.service_token import require_service_token
-from pigrocrm_api.sessions import SenderDep
 from pigrocrm_api.tenancy import tenant_slug
 
 logger = logging.getLogger(__name__)
 
-SPACE_NOT_REACHABLE = (
-    "Lo spazio del freelancer non è raggiungibile in questo momento: riprova più tardi."
-)
 SPACE_LEAD_NOT_REACHABLE = (
     "Lo spazio dei lead non è raggiungibile in questo momento: riprova più tardi."
 )
@@ -64,7 +51,7 @@ def _require_root_door(
     wearing a space's own prefix answers the same 404 an unconfigured installation
     gives -- never a hint the door exists under some space's own name, where
     `space_base_settings` folds the slug into `PIGROCRM_PUBLIC_URL` and would double
-    it into the links this service builds (`space_url`/`deal_url`).
+    it into the links this service builds (`deal_url`).
 
     Reads `get_settings` directly, not `SettingsDep`: that dependency opens a session
     scoped to whatever slug the URL wears (`deps.get_session` -> `space_session_factory`),
@@ -78,14 +65,6 @@ def _require_root_door(
     require_service_token(settings.engagements_token, authorization)
 
 
-router = APIRouter(
-    prefix="/api/rebase/engagements",
-    tags=["engagements"],
-    responses=PROBLEM_RESPONSES,
-    dependencies=[Depends(_require_root_door)],
-)
-
-
 def _registry_engine(registry: Session) -> Engine:
     """The engine behind a request-scoped registry session. `TenantsRegistryDep` binds a
     session to an Engine, never a bare Connection."""
@@ -95,62 +74,42 @@ def _registry_engine(registry: Session) -> Engine:
     return bind
 
 
-def _service(
-    registry: Session, settings: Settings, sender: EmailSender | None
-) -> EngagementService:
-    """`EngagementService` opens its own engine per space and keeps none between calls
-    (its own docstring), so a request-scoped `Session` lends it only the engine behind
-    it -- never a session already inside this request's own transaction."""
-    return EngagementService(_registry_engine(registry), settings, sender)
+def _run[T](request_id: UUID, action: Callable[[], T]) -> T:
+    """Runs one call into `LeadService` for `request_id`, turning every way the door
+    answers "not now" into a 503 in one place, which the hub retries (a 409 or a 422 it
+    files as refused, for good): `ValidationFailed` on `public_url` is a missing setting,
+    the installation's fault, not the caller's; `LeadBusy` is another request from the same
+    person still in progress; `LeadsSpaceNotConfigured` is the leads space unset;
+    `SpaceUnreachable` is the space's database missing, unreachable or not migrated yet;
+    any other `SQLAlchemyError` is the registry's own connection lost.
 
-
-def _run[T](match_id: UUID, action: Callable[[], T], *, what: str = "match") -> T:
-    """Runs one call into `EngagementService` for `match_id` (or into `LeadService` for a
-    request id, `what="request"`), turning every way the
-    door answers "not now" into a 503 in one place, which the hub retries (a 409 or a
-    422 it files as refused, for good): `ValidationFailed` on `public_url` is a missing
-    setting, the installation's fault, not the caller's (spec § 2.1); `EngagementBusy`
-    is another call still holding the freelancer's address; `SpaceUnreachable` is the
-    space's database missing, unreachable or not migrated yet; any other
-    `SQLAlchemyError` is the registry's own connection lost.
-
-    The last two are logged with the match's id and, for a space, the tenant's id, so
-    a space a restart left half-provisioned can be found from the log; never its slug
-    (the freelancer's name) nor the address. The error by type only, never its message
-    -- which can carry a statement's own bound parameters (`EngagementService.LOCK`'s
-    address) into the traceback, the same reason `EngagementService._unlock` logs its
-    own failure by type alone."""
+    The last two are logged with the request's id and, for a space, the tenant's id, never
+    its slug nor the address. The error by type only, never its message -- which can carry
+    a statement's own bound parameters into the traceback, the same reason
+    `EngagementService._unlock` logs its own failure by type alone."""
     try:
         return action()
     except ValidationFailed as exc:
         if exc.details.get("field") != "public_url":
             raise
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, exc.message) from exc
-    except (EngagementBusy, LeadBusy, LeadsSpaceNotConfigured) as exc:
+    except (LeadBusy, LeadsSpaceNotConfigured) as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     except SpaceUnreachable as exc:
         logger.warning(
-            "engagements: %s %s, space %s not reachable (%s)",
-            what,
-            match_id,
+            "engagements: request %s, space %s not reachable (%s)",
+            request_id,
             exc.tenant_id,
             type(exc.__cause__).__name__,
         )
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            SPACE_LEAD_NOT_REACHABLE if what == "request" else SPACE_NOT_REACHABLE,
-        ) from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, SPACE_LEAD_NOT_REACHABLE) from exc
     except SQLAlchemyError as exc:
         logger.warning(
-            "engagements: %s %s, the door's own call failed (%s)",
-            what,
-            match_id,
+            "engagements: request %s, the door's own call failed (%s)",
+            request_id,
             type(exc).__name__,
         )
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            SPACE_LEAD_NOT_REACHABLE if what == "request" else SPACE_NOT_REACHABLE,
-        ) from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, SPACE_LEAD_NOT_REACHABLE) from exc
 
 
 _HTTP_EXCEPTION_SCHEMA: dict[str, Any] = {
@@ -170,66 +129,6 @@ def _plain_response(description: str) -> dict[str, Any]:
         "description": description,
         "content": {"application/json": {"schema": _HTTP_EXCEPTION_SCHEMA}},
     }
-
-
-_UNAVAILABLE_RESPONSE = _plain_response(
-    "PIGROCRM_PUBLIC_URL is not configured, the freelancer's space cannot be reached "
-    "right now, or another call is preparing the space of the same address: retry later."
-)
-
-
-@router.put(
-    "/{match_id}",
-    response_model=EngagementRead,
-    responses={
-        201: {
-            "model": EngagementRead,
-            "description": (
-                "The space, the «rebase» customer, the letter's deal and its contract with "
-                "a rate card were created now, for the first time with this match."
-            ),
-        },
-        503: _UNAVAILABLE_RESPONSE,
-    },
-)
-def upsert_engagement(
-    match_id: UUID,
-    data: EngagementUpsert,
-    response: Response,
-    registry: TenantsRegistryDep,
-    settings: SettingsDep,
-    sender: SenderDep,
-) -> EngagementRead:
-    """Creates or finds the freelancer's space, the «rebase» client, the letter's deal
-    and its contract with a rate card (`fee_unit` day, hour or flat) for this hub match,
-    under the bearer of `PIGROCRM_ENGAGEMENTS_TOKEN` that only the hub holds."""
-    answer = _run(match_id, lambda: _service(registry, settings, sender).ensure(match_id, data))
-    response.status_code = status.HTTP_201_CREATED if answer.created else status.HTTP_200_OK
-    return answer
-
-
-@router.get(
-    "/{match_id}/report",
-    response_model=EngagementReport,
-    responses={503: _UNAVAILABLE_RESPONSE},
-)
-def engagement_report(
-    match_id: UUID,
-    registry: TenantsRegistryDep,
-    settings: SettingsDep,
-    sender: SenderDep,
-    date_from: Annotated[date | None, Query(alias="from")] = None,
-    date_to: Annotated[date | None, Query(alias="to")] = None,
-) -> EngagementReport:
-    """Reads the hours of this match's deal in the given period, with the invoices they
-    sit on, under the same bearer of `PIGROCRM_ENGAGEMENTS_TOKEN` that only the hub
-    holds."""
-    return _run(
-        match_id,
-        lambda: _service(registry, settings, sender).report(
-            match_id, date_from=date_from, date_to=date_to
-        ),
-    )
 
 
 leads_router = APIRouter(
@@ -271,10 +170,6 @@ def file_lead(
     linked to an existing deal and nothing else is created. The space is the one in
     `PIGROCRM_LEADS_SPACE`, never one chosen by the caller."""
     bind = _registry_engine(registry)
-    answer = _run(
-        request_id,
-        lambda: LeadService(bind, settings).file(request_id, data),
-        what="request",
-    )
+    answer = _run(request_id, lambda: LeadService(bind, settings).file(request_id, data))
     response.status_code = status.HTTP_201_CREATED if answer.created else status.HTTP_200_OK
     return answer

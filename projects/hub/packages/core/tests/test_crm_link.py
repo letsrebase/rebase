@@ -24,9 +24,9 @@ from rebase_core.config import Settings
 from rebase_core.contact_points import ContactPointInput, ContactPointService
 from rebase_core.crm_lead import LeadDraftOut
 from rebase_core.crm_link import CrmLeadService, contact_point_payload, link_after_response
+from rebase_core.crm_words import HTTPS_ONLY
 from rebase_core.errors import InvalidState, LlmCapReached, NotFound
 from rebase_core.llm import LlmCall, LlmRequest, LlmResponse, RecordingCall
-from rebase_core.match_words import HTTPS_ONLY
 from rebase_core.members import MemberService
 from rebase_core.models import AdminAction, Company, User, UserContactPoint
 from rebase_core.pigro_door import CAUSE_TIMEOUT

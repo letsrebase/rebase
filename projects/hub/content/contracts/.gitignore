@@ -1,3 +1,0 @@
-# A filled-in contract names a real person and a real client. Keep its data in a file
-# that ends in .local.json (or outside the repository); only the example is public.
-*.local.json

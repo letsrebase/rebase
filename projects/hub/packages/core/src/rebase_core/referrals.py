@@ -10,10 +10,9 @@ called once from `EngagementNoticeService` when the CRM's notice says an engagem
 is signed (REB-1106: the letters and their signature live in the CRM, and the hub keeps a read
 model of its engagements, `HubEngagement`): each side of the engagement that was referred,
 freelancer and company independently, gets a reward inserted once
-and never again, on the `INSERT ... ON CONFLICT DO NOTHING` idiom
-`rebase_core.framework.next_letter_number` already uses for "exactly once, even under a
-race" -- the one-time maturity design record 2026-09-26 asks for, immune to a later
-renewal, another match, or a rate an admin edits afterward.
+and never again, on an `INSERT ... ON CONFLICT DO NOTHING` ("exactly once, even under a
+race"): the one-time maturity design record 2026-09-26 asks for, immune to a later
+renewal, another engagement, or a rate an admin edits afterward.
 
 A referral counts only once the referred person is verified (REB-658, design record
 2026-10-05). The public routes do not verify the address a `ref` code is posted with,
@@ -32,38 +31,29 @@ billable days.
 """
 
 import secrets
-from collections.abc import Mapping, Sequence
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session
 
 from rebase_core.audit import utcnow
-from rebase_core.contract_schemas import DAY_RATE, LUMP_SUM
 from rebase_core.errors import NotFound, ValidationFailed
-from rebase_core.match_words import PAY_MODE_WORDS
 from rebase_core.models import (
     REFERRAL_CODE_LENGTH,
     REFERRAL_STATES,
     Company,
-    ContractDocument,
     Freelancer,
     HubEngagement,
-    Match,
     Referral,
     ReferralReward,
     TeamRequest,
     User,
 )
 from rebase_core.referral_schemas import (
-    ALREADY_ACCRUED,
-    EXPECTED,
-    MatchReferral,
     MemberReferral,
     MemberReferralItem,
 )
@@ -104,6 +94,10 @@ def reward_base(
     return max(Decimal("0"), daily_budget * expected_days - fee)
 
 
+# «Come si paga»: how a letter prices its fee, a day rate or a lump sum, which `reward_base`
+# decides the base on by equality.
+DAY_RATE = "to_work_unit"
+LUMP_SUM = "lump_sum"
 # An engagement whose letter is not signed yet: the only states in which a first signature can
 # still land and mature a reward. `active` and `concluded` already had one (a reward is
 # written in the transaction of the notice that says the letter is signed), `cancelled` never
@@ -123,16 +117,6 @@ def can_mature(kind: str, status: str) -> bool:
     return status == VERIFIED or kind == "freelancer"
 
 
-def letter_unit(data: Mapping[str, Any]) -> str:
-    """How a letter prices its fee, `to_work_unit` or `lump_sum` (`PAY_MODES`): its printed
-    `modalita`, read back as the mode it was written from, which the reward's base is
-    decided on by equality. The one reading of that field, shared by the reward at
-    signing, its projection, and the lists that show the letter's fee. A letter without one
-    (none is written without it) reads as `""`, which `reward_base` prices as a lump sum."""
-    printed = data.get("modalita")
-    return next((mode for mode, word in PAY_MODE_WORDS.items() if word == printed), "")
-
-
 def engagement_reward_base(engagement: HubEngagement) -> Decimal | None:
     """`reward_base` on an engagement's own figures (its fee and mode, the budget snapshot and
     the expected days); `None` when the fee, the mode or the snapshot is missing. An hourly
@@ -144,16 +128,6 @@ def engagement_reward_base(engagement: HubEngagement) -> Decimal | None:
         return reward_base(budget, fee, LUMP_SUM, engagement.expected_days)
     daily_fee = fee * HOURS_PER_DAY if mode == "hour" else fee
     return reward_base(budget, daily_fee, DAY_RATE, engagement.expected_days)
-
-
-def match_reward_base(match: Match, mode: str) -> Decimal | None:
-    """`reward_base` on a match's own snapshots (`letter_fee`,
-    `company_daily_budget`, `expected_days`); `None` when either snapshot is
-    missing, exactly as the reward at signing leaves its figure blank."""
-    fee, budget = match.letter_fee, match.company_daily_budget
-    if fee is None or budget is None:
-        return None
-    return reward_base(budget, fee, mode, match.expected_days)
 
 
 class ReferralService:
@@ -282,7 +256,7 @@ class ReferralService:
 
     def referrer_name(self, kind: str, entity_id: UUID) -> str | None:
         """Who referred this freelancer or this company, as a contract prints a name
-        (`rebase_core.matches`'s `_framework_date`/`_letter_date`): `None` prints as a
+        (`EngagementNoticeService`'s referrer-name route): `None` prints as a
         blank line, the same convention every other optional field of these templates
         already uses. Only a `verified` referral is named (REB-664): a pending one may
         be squatted (REB-646), and a signed document must not state an attribution nobody
@@ -455,7 +429,7 @@ class ReferralService:
             referred=referred,
         )
 
-    # ---- what a match would earn -----------------------------------------------------
+    # ---- what an engagement would earn -----------------------------------------------
 
     @staticmethod
     def project_reward(engagement: HubEngagement, rate: Decimal) -> Decimal | None:
@@ -468,102 +442,3 @@ class ReferralService:
             return None
         base = engagement_reward_base(engagement)
         return None if base is None else (base * rate).quantize(_CENT)
-
-    @staticmethod
-    def project_match_reward(match: Match, mode: str, rate: Decimal) -> Decimal | None:
-        """`project_reward` for the hub's own match, the one «Match» list still shows until
-        the match side is removed."""
-        if match.cancelled_at is not None or match.status not in EARNING_ENGAGEMENT_STATES:
-            return None
-        base = match_reward_base(match, mode)
-        return None if base is None else (base * rate).quantize(_CENT)
-
-    def for_matches(
-        self, rows: Sequence[tuple[Match, ContractDocument | None]]
-    ) -> dict[UUID, list[MatchReferral]]:
-        """The referred sides of every match of a page, freelancer first then company,
-        keyed by match id (a match with none is absent): three queries for the whole
-        page whatever its size -- referrals with their referrer and his card, their
-        rewards with the match each one's letter belongs to, and the rates. `rows` pairs
-        each match with its current letter, the one whose `mode` a projection reads.
-        A reward on this match shows its real figures and state; one already earned on
-        another match is `already_accrued`, since a referral pays once; none yet is
-        `expected`, projected at the current rate."""
-        if not rows:
-            return {}
-        freelancer_ids = {match.freelancer_id for match, _ in rows}
-        company_ids = {match.company_id for match, _ in rows}
-        referrer = aliased(User)
-        card = aliased(Freelancer)
-        referrals = {
-            (row.Referral.kind, row.Referral.entity_id): row
-            for row in self.session.execute(
-                select(
-                    Referral,
-                    referrer.first_name.label("first_name"),
-                    referrer.last_name.label("last_name"),
-                    card.id.label("card_id"),
-                )
-                .join(referrer, referrer.id == Referral.referrer_user_id)
-                .outerjoin(card, and_(card.user_id == referrer.id, card.deleted_at.is_(None)))
-                .where(
-                    or_(
-                        and_(Referral.kind == "freelancer", Referral.entity_id.in_(freelancer_ids)),
-                        and_(Referral.kind == "company", Referral.entity_id.in_(company_ids)),
-                    )
-                )
-            )
-        }
-        if not referrals:
-            return {}
-        # A reward belongs to an engagement, and the engagement of a match the hub holds is keyed
-        # by the match's own id (a handed-off or migrated match keeps it), so this is the match
-        # the reward came from until the match side is removed.
-        rewards = {
-            reward.referral_id: (reward, reward.engagement_id)
-            for reward in self.session.scalars(
-                select(ReferralReward).where(
-                    ReferralReward.referral_id.in_([r.Referral.id for r in referrals.values()])
-                )
-            )
-        }
-        settings = self._settings.get_settings()
-        out: dict[UUID, list[MatchReferral]] = {}
-        for match, letter in rows:
-            sides = (
-                ("freelancer", match.freelancer_id, settings.rate_freelancer),
-                ("company", match.company_id, settings.rate_company),
-            )
-            for kind, entity_id, rate in sides:
-                found = referrals.get((kind, entity_id))
-                if found is None:
-                    continue
-                earned = rewards.get(found.Referral.id)
-                rate_shown: Decimal | None = None
-                amount: Decimal | None = None
-                reward_id: UUID | None = None
-                if earned is None and not can_mature(kind, found.Referral.status):
-                    status = TO_VERIFY
-                elif earned is None:
-                    status = EXPECTED
-                    rate_shown = rate
-                    unit = letter_unit(letter.data) if letter is not None else ""
-                    amount = self.project_match_reward(match, unit, rate)
-                elif earned[1] == match.id:
-                    reward = earned[0]
-                    status, rate_shown, amount = reward.status, reward.rate, reward.reward_amount
-                    reward_id = reward.id
-                else:
-                    status = ALREADY_ACCRUED
-                out.setdefault(match.id, []).append(
-                    MatchReferral(
-                        kind=kind,
-                        referrer_name=f"{found.first_name} {found.last_name}".strip(),
-                        referrer_freelancer_id=found.card_id,
-                        rate=rate_shown,
-                        amount=amount,
-                        status=status,
-                        reward_id=reward_id,
-                    )
-                )
-        return out

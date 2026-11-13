@@ -1,5 +1,5 @@
 """REB-477: the web's admin labels are copies of the core's, which the MCP tools answer,
-so an admin reads the same word on «Match e contratti» as an agent does. The web cannot
+so an admin reads the same word on «Richieste team» as an agent does. The web cannot
 import Python, so this reads `format.ts` from the repository and compares the maps key
 by key. The parser is strict on purpose: each map is simple `key: 'value',` lines, and a
 line of any other shape fails here rather than being skipped."""
@@ -8,17 +8,10 @@ import importlib.util
 import re
 from pathlib import Path
 from types import ModuleType
-from typing import get_args
 
 import pytest
 
 from rebase_core.bands import BANDS
-from rebase_core.match_words import (
-    DOCUMENT_STATE_LABELS,
-    MATCH_STATE_LABELS,
-    PAY_MODE_WORDS,
-    Action,
-)
 from rebase_core.models import CARD_SENIORITIES
 from rebase_core.team_words import (
     CLOUD_VETTED_LABEL,
@@ -79,8 +72,6 @@ def _drift(name: str, web: dict[str, str], core: dict[str, str]) -> list[str]:
 @pytest.mark.parametrize(
     ("name", "core"),
     [
-        ("MATCH_STATE_LABELS", MATCH_STATE_LABELS),
-        ("DOCUMENT_STATE_LABELS", DOCUMENT_STATE_LABELS),
         # REB-514: «Richieste team» and the talents' answers (P-REB-43).
         ("TEAM_REQUEST_STATE_LABELS", TEAM_REQUEST_STATE_LABELS),
         ("TEAM_ORIGIN_LABELS", TEAM_ORIGIN_LABELS),
@@ -90,14 +81,6 @@ def _drift(name: str, web: dict[str, str], core: dict[str, str]) -> list[str]:
 def test_the_web_labels_a_state_as_the_core_does(name: str, core: dict[str, str]) -> None:
     drifted = _drift(name, _web_map(name), core)
     assert not drifted, "\n".join(drifted)
-
-
-@pytest.mark.parametrize("name", ["ACTION_LABELS", "ACTION_PENDING_LABELS"])
-def test_the_web_labels_every_action_the_core_names_and_no_other(name: str) -> None:
-    web, core = set(_web_map(name)), set(get_args(Action))
-    assert web == core, (
-        f"{name}: only on the web {sorted(web - core)}, only in the core {sorted(core - web)}"
-    )
 
 
 def test_the_web_says_pending_as_the_core_does() -> None:
@@ -156,9 +139,10 @@ def test_the_web_offers_the_bands_the_core_places_a_price_in() -> None:
 
 
 def test_a_drifted_label_is_named_with_both_words() -> None:
-    web = {**MATCH_STATE_LABELS, "draft": "Bozza"}
-    assert _drift("MATCH_STATE_LABELS", web, MATCH_STATE_LABELS) == [
-        "MATCH_STATE_LABELS.draft: web 'Bozza', core 'Da inviare'"
+    web = {**TEAM_REQUEST_STATE_LABELS, "closed": "Archiviata"}
+    assert _drift("TEAM_REQUEST_STATE_LABELS", web, TEAM_REQUEST_STATE_LABELS) == [
+        f"TEAM_REQUEST_STATE_LABELS.closed: web 'Archiviata', core "
+        f"{TEAM_REQUEST_STATE_LABELS['closed']!r}"
     ]
 
 
@@ -183,13 +167,6 @@ WORDED: list[tuple[str, Path, list[tuple[str, str]]]] = [
         "STATE_LABELS",
         FORMAT_TS,
         [("freelancers", "status"), ("companies", "status")],
-    ),
-    ("MATCH_STATE_LABELS", FORMAT_TS, [("matches", "status")]),
-    ("DOCUMENT_STATE_LABELS", FORMAT_TS, [("contract_documents", "status")]),
-    (
-        "PIGRO_STATE_LABELS",
-        FORMAT_TS,
-        [("matches", "pigro_status"), ("companies", "crm_status")],
     ),
     (
         "REFERRAL_STATE_LABELS",
@@ -218,12 +195,6 @@ def test_the_web_has_a_word_for_every_code_the_rename_gave_a_column(
     assert not missing, f"{name} has no word for {sorted(missing)}"
 
 
-def test_the_web_prints_a_letters_pay_mode_in_the_words_the_core_does() -> None:
-    """The matches list carries the letter's pay mode (`to_work_unit`, `lump_sum`), never the
-    words; the page words it with the core's `PAY_MODE_WORDS`."""
-    assert _drift("PAY_MODE_WORDS", _web_map("PAY_MODE_WORDS"), PAY_MODE_WORDS) == []
-
-
 def test_every_renamed_value_is_either_worded_or_not_shown_by_the_web() -> None:
     """Columns of migration 0049 with a closed value set that the web words elsewhere or never
     prints, each with the reason: a new vocabulary has to be worded above or listed here."""
@@ -233,8 +204,13 @@ def test_every_renamed_value_is_either_worded_or_not_shown_by_the_web() -> None:
         ("campaigns", "source"): "the wizard reads it; no page prints it",
         ("campaigns", "button_meta"): "worded by META_LABELS, which is partial by design",
         ("campaigns", "journey_status"): "the templates carry their own label",
-        ("contract_documents", "kind"): "no page prints it; the card's title says which",
-        ("contract_documents", "regime"): "worded by REGIME_OPTIONS in lib/contracts.ts",
+        ("companies", "crm_status"): "the CRM link says it in a sentence (`crm_words.py`)",
+        # The hub's match tables went with REB-1108 (migration 0053): their codes are the CRM's.
+        ("matches", "status"): "the table is gone; the CRM words an engagement's state",
+        ("matches", "pigro_status"): "the table is gone; the CRM words an engagement's state",
+        ("contract_documents", "kind"): "the table is gone; the member's page words the CRM's",
+        ("contract_documents", "status"): "the table is gone; the member's page words the CRM's",
+        ("contract_documents", "regime"): "the table is gone; the member's page words the CRM's",
         ("freelancers", "filled_by"): "worded by FILLED_BY_LABELS and the detail's sentence",
         ("freelancers", "remote"): "worded by REMOTE_LABELS",
         ("companies", "remote"): "worded by REMOTE_LABELS",

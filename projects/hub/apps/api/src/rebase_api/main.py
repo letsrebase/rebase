@@ -18,9 +18,8 @@ from rebase_api.routers import (
     campaigns,
     cloud,
     companies,
-    documenso,
+    engagement_handoff,
     freelancers,
-    matches,
     members,
     pigro,
     pigro_notices,
@@ -35,11 +34,9 @@ from rebase_core.contracts.fields import ContractFailed
 from rebase_core.errors import (
     AnonymousCvFailed,
     CvPrintFailed,
-    DocumensoFailed,
     DomainError,
     LlmUnavailable,
     NotFound,
-    SigningUnavailable,
     TeamBuilderBusy,
     TeamBuilderOff,
     ValidationFailed,
@@ -59,9 +56,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse:
     """A domain error is a sentence and a status, never a stack trace. `NotFound` is a
     404, `ValidationFailed` a 422 in FastAPI's own shape so a form can point at the
-    field, `LlmUnavailable` a 502, `ContractFailed` a 503, `DocumensoFailed` a 502,
-    `SigningUnavailable` a 503, `AnonymousCvFailed` a 422 with its sentence,
-    `CvPrintFailed` a 503, `TeamBuilderOff` a 503, `TeamBuilderBusy` a 503 with
+    field, `LlmUnavailable` a 502, `ContractFailed` a 503, `AnonymousCvFailed` a 422 with its
+    sentence, `CvPrintFailed` a 503, `TeamBuilderOff` a 503, `TeamBuilderBusy` a 503 with
     `Retry-After`, anything else a 409."""
     if not isinstance(exc, DomainError):
         raise exc  # registered for this type only, so never reached
@@ -94,16 +90,9 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
         # sentence only; Typst's words went to the log (`anonymous_cv.render`).
         return JSONResponse({"detail": exc.message}, status_code=503)
     if isinstance(exc, ContractFailed):
-        # A contract that could not be typeset is the server's failure, not the
-        # request's: pandoc missing, a template that no longer compiles, a malformed
-        # REBASE_SIGNER_JSON. A sentence, and a status that says so.
-        return JSONResponse({"detail": exc.message}, status_code=503)
-    if isinstance(exc, DocumensoFailed):
-        # The signing site refused or did not answer: a gateway's failure, in its words
-        # and never its stack trace, which only the log keeps.
-        _log.warning("documenso refused a call: %s", exc.detail)
-        return JSONResponse({"detail": exc.message}, status_code=502)
-    if isinstance(exc, SigningUnavailable):
+        # The brand a PDF is typeset in could not be read or built (the palette, the
+        # typeface): the server's failure, not the request's. A sentence, and a status that
+        # says so.
         return JSONResponse({"detail": exc.message}, status_code=503)
     if isinstance(exc, TeamBuilderOff):
         return JSONResponse({"detail": exc.message}, status_code=503)
@@ -140,8 +129,7 @@ def create_app() -> FastAPI:
     app.include_router(companies.router)
     app.include_router(admin.router)
     app.include_router(ai.router)
-    app.include_router(matches.router)
-    app.include_router(documenso.router)
+    app.include_router(engagement_handoff.router)
     app.include_router(members.router)
     app.include_router(referral_rates.router)
     app.include_router(campaigns.public)

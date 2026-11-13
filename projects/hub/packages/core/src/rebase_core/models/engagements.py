@@ -6,7 +6,6 @@ from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Index, Integ
 from sqlalchemy.orm import Mapped, mapped_column
 
 from rebase_core.db import Base, PrimaryKeyMixin, TimestampMixin
-from rebase_core.models.matches import LETTER_NUMBER_MAX_LENGTH
 from rebase_core.models.profiles import COMPANY_MAX_LENGTH
 
 # ---- the hub's read model of the CRM's engagements (REB-1106, collaborators design § 5) -------
@@ -17,6 +16,16 @@ ENGAGEMENT_STATES = ("handoff", "draft", "awaiting_signature", "active", "conclu
 # How the letter prices its fee: per day, per hour or a lump sum (the CRM's `fee_unit`).
 ENGAGEMENT_MODES = ("day", "hour", "flat")
 ENGAGEMENT_ROLE_MAX_LENGTH = 200
+LETTER_NUMBER_MAX_LENGTH = 12
+
+# ---- what the hub still names of the CRM's side --------------------------------------------
+# The link a company request (`Company.crm_status`) or a handed-off engagement carries to the
+# CRM: `to_link` until a deal exists, `linked` once it does, `error` on a failure the sweep may
+# still retry, `rejected` on one the CRM itself refused (a 4xx, never retried).
+PIGRO_STATES = ("to_link", "linked", "error", "rejected")
+# A contract a member reads in «Contratti» (through the CRM's door): its kind and its state.
+CONTRACT_KINDS = ("framework", "letter")
+CONTRACT_STATES = ("generated", "pending", "sent", "signed", "cancelled", "notice_served")
 
 
 class HubEngagement(Base, PrimaryKeyMixin, TimestampMixin):

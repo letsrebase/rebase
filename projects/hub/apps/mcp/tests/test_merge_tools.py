@@ -29,7 +29,6 @@ CRM_SETTINGS = Settings(
 TABLES = (
     "admin_actions",
     "notes",
-    "contract_documents",
     "freelancer_cards",
     "freelancers",
     "users",
