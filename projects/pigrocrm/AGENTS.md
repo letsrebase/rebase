@@ -794,6 +794,18 @@ when the stored value is «nessuno», and «nessuno» on any failure; an adminis
 either field. The MCP container does not hold the token, so a letter made there stores «nessuno» and
 is asked again at send. Design: `collaborators-in-the-crm` § 5.
 
+**The hub opens the engagement form in the CRM (REB-1105).** `PUT /api/rebase/freelancers/{hub_freelancer_id}/organization`
+(`routers/freelancer_door.py`, same root-only door and token as the reads, `HubDoorService.ensure_freelancer`) finds or
+creates the freelancer's organization in the leads space from the hub's card (`DoorFreelancerCard`: name, login address,
+extra contact points, optional VAT number and tax code) and answers its id. It is idempotent: a transaction advisory lock
+on `freelancer:<hub id>` serialises calls of one freelancer, an organization already holding the hub id is answered as it
+is (an archived one is a 409), one already holding the card's VAT number gains the role `freelancer` (and `supplier`) and
+the hub id instead of a second row, and nothing is ever matched by name. The hub then sends the admin to
+`/<slug>/app/engagements?hub_match_id=…&freelancer_id=…&deal_id=…&client_id=…`: `EngagementsPage` asks the list for that
+`hub_match_id` (`GET /api/engagements?hub_match_id=`) and opens the form prefilled (`EngagementFormDialog`'s `prefill`)
+when none exists, or opens the existing engagement when it does, so reopening the link never makes a second one. The
+draft is created with `hub_match_id`, which the first notice carries back to the hub's `handoff` row.
+
 **A router authenticates with `dependencies=[Depends(get_actor)]`, not per handler.** A
 handler that never names the actor is still behind it, and `test_routes_authenticate.py`
 asks every route of the OpenAPI document once with no credential. The open routes are the

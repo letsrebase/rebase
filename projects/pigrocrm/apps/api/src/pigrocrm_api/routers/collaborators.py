@@ -74,6 +74,9 @@ router = APIRouter(
 
 class EngagementListParams(KeysetParams):
     freelancer_id: UUID | None = Field(default=None, description="Only this freelancer")
+    hub_match_id: UUID | None = Field(
+        default=None, description="Only the engagement the hub opened under this id"
+    )
     state: SafeStr | None = Field(
         default=None,
         max_length=20,

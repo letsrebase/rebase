@@ -11,9 +11,11 @@ import datetime as dt
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from pigrocrm.core.collaborators.schemas import AvailabilityWeek, SignatureState
+from pigrocrm.core.contact_points.schemas import MAX_CONTACT_POINTS, ContactPointIn
+from pigrocrm.core.validation import SafeStr
 
 
 class DoorAvailability(BaseModel):
@@ -80,3 +82,32 @@ class DoorMergeCheck(BaseModel):
     framework_regimes: list[str]
     shared_clients: int
     tax_code_conflict: bool
+
+
+class DoorFreelancerCard(BaseModel):
+    """What the hub knows of a freelancer, as much as an organization needs to be born from: the
+    legal name is the person's name, `email` the login address (the primary email point) and
+    `contact_points` the extra ones. `vat_number` and `country` are only the key to an
+    organization that already exists (a customer or a supplier gains the role instead of a
+    duplicate); the hub's own id is the path's, never the body's."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    legal_name: SafeStr = Field(min_length=1, max_length=200)
+    email: SafeStr = Field(min_length=3, max_length=320)
+    contact_points: list[ContactPointIn] = Field(
+        default_factory=list, max_length=MAX_CONTACT_POINTS
+    )
+    vat_number: SafeStr | None = Field(default=None, max_length=40)
+    tax_code: SafeStr | None = Field(default=None, max_length=16)
+    country: SafeStr = Field(default="IT", min_length=2, max_length=2)
+
+
+class DoorFreelancerOrganization(BaseModel):
+    """The freelancer's organization in the space, by id: `created` is true only on the call that
+    wrote it, `joined` when an organization that was already there (found by its VAT number) gained
+    the role."""
+
+    organization_id: UUID
+    created: bool
+    joined: bool

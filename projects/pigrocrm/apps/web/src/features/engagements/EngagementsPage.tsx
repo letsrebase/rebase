@@ -1,6 +1,6 @@
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { BriefcaseBusiness, Plus, SlidersHorizontal } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FilterRow } from '@/components/FilterRow'
 import { LoadMore } from '@/components/LoadMore'
 import { LoadingState } from '@/components/LoadingState'
@@ -36,6 +36,37 @@ const ANY = 'all'
 const STATES = Object.keys(STATE_LABELS) as EngagementState[]
 
 const EMPTY_SENTENCE = 'Qui vedi le lettere di incarico dei freelance, dalla bozza alla firma.'
+
+/**
+ * The form the hub's «Crea match» opens (REB-1105): the link carries the engagement id the hub minted
+ * (`hub_match_id`) and what to fill in. Opening it again after the draft was saved must not make a second
+ * engagement, since the id is unique: the existing one is shown instead. The form opens only once the
+ * list says no engagement has that id.
+ */
+function HubHandoff({ search }: { search: EngagementsSearch }) {
+  const navigate = useNavigate()
+  const hubMatchId = search.hub_match_id
+  const existing = useEngagementList(null, { hubMatchId })
+  const found = existing.items[0]
+  useEffect(() => {
+    if (found !== undefined) {
+      void navigate({ to: '/app/engagements/$engagementId', params: { engagementId: found.id }, replace: true })
+    }
+  }, [found, navigate])
+  if (existing.isLoading || found !== undefined) return null
+  if (existing.isError) return <QueryErrorBanner error={existing.error} onRetry={existing.refetch} />
+  return (
+    <EngagementFormDialog
+      open
+      onOpenChange={(open) => {
+        // Closing leaves the link behind: the page is the plain list again.
+        if (!open) void navigate({ to: '/app/engagements', search: { tab: search.tab }, replace: true })
+      }}
+      freelancerId={search.freelancer_id}
+      prefill={{ clientId: search.client_id, dealId: search.deal_id, hubMatchId }}
+    />
+  )
+}
 
 /** The search as the URL should carry it: only the filters that apply. */
 function compact(search: EngagementsSearch): EngagementsSearch {
@@ -324,6 +355,7 @@ export function EngagementsPage() {
       )}
 
       <EngagementFormDialog open={creating} onOpenChange={setCreating} />
+      {search.hub_match_id === undefined ? null : <HubHandoff search={search} />}
     </Tabs>
   )
 }

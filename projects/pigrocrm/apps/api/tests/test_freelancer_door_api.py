@@ -34,6 +34,8 @@ from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
 from pigrocrm.core.mail import RecordingSender
 from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.organizations.schemas import OrganizationCreate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm.core.tenants.models import Tenant
@@ -480,3 +482,118 @@ def test_the_merge_check_is_clean_for_a_card_with_nothing_live_and_for_an_unknow
 
     missing = furnished.client.get(f"{ROOT}/{furnished.ada.hub_id}/merge-check", headers=_bearer())
     assert missing.status_code == 422, missing.text
+
+
+# ---- the freelancer's organization (REB-1105) ------------------------------------------------
+
+
+def _put_organization(furnished: Furnished, hub_id: UUID, **card: Any) -> Any:
+    body = {"legal_name": "Eva Gialli", "email": "eva@gialli.test", **card}
+    return furnished.client.put(f"{ROOT}/{hub_id}/organization", json=body, headers=_bearer())
+
+
+def _organizations_of(furnished: Furnished, hub_id: UUID) -> list[Organization]:
+    with _space(furnished.settings) as session:
+        return list(
+            session.scalars(select(Organization).where(Organization.hub_freelancer_id == hub_id))
+        )
+
+
+def test_the_organization_route_wants_the_bearer(furnished: Furnished) -> None:
+    url = f"{ROOT}/{uuid4()}/organization"
+    body = {"legal_name": "Eva Gialli", "email": "eva@gialli.test"}
+    assert furnished.client.put(url, json=body).status_code == 401
+    assert furnished.client.put(url, json=body, headers=_bearer("sbagliato")).status_code == 401
+
+
+def test_the_organization_is_written_from_the_card_once_however_often_it_is_asked(
+    furnished: Furnished,
+) -> None:
+    hub_id = uuid4()
+    first = _put_organization(
+        furnished,
+        hub_id,
+        contact_points=[
+            {"kind": "email", "value": "EVA@gialli.test"},
+            {"kind": "phone", "value": "+39 333 1234567"},
+        ],
+    )
+    second = _put_organization(furnished, hub_id)
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert first.json()["created"] is True and second.json()["created"] is False
+    assert first.json()["organization_id"] == second.json()["organization_id"]
+    (row,) = _organizations_of(furnished, hub_id)
+    assert str(row.id) == first.json()["organization_id"]
+    assert row.legal_name == "Eva Gialli"
+    assert set(row.roles) == {"freelancer", "supplier"}
+    with _space(furnished.settings) as session:
+        kinds = session.execute(
+            text(
+                "SELECT kind, is_primary FROM contact_points "
+                "WHERE customer_id = :id ORDER BY position"
+            ),
+            {"id": row.id},
+        ).all()
+    # The login address once and primary, the extra email the same address again (left out),
+    # then the phone.
+    assert [tuple(point) for point in kinds] == [("email", True), ("phone", True)]
+
+
+def test_concurrent_calls_for_one_freelancer_write_one_organization(furnished: Furnished) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    hub_id = uuid4()
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        answers = list(pool.map(lambda _: _put_organization(furnished, hub_id), range(6)))
+
+    assert [answer.status_code for answer in answers] == [200] * 6, [a.text for a in answers]
+    assert len({answer.json()["organization_id"] for answer in answers}) == 1
+    assert sum(answer.json()["created"] for answer in answers) == 1
+    assert len(_organizations_of(furnished, hub_id)) == 1
+
+
+def test_an_organization_that_holds_the_vat_number_gains_the_role_instead_of_a_duplicate(
+    furnished: Furnished,
+) -> None:
+    with _space(furnished.settings) as session:
+        OrganizationService(session)._insert(
+            OrganizationCreate(legal_name="Gamma S.r.l.", vat_number="01234567897"), ADMIN
+        )
+        session.commit()
+    hub_id = uuid4()
+
+    joined = _put_organization(
+        furnished, hub_id, legal_name="Gamma Freelance", vat_number="01234567897"
+    )
+    again = _put_organization(
+        furnished, hub_id, legal_name="Gamma Freelance", vat_number="01234567897"
+    )
+
+    assert joined.status_code == 200, joined.text
+    assert (joined.json()["created"], joined.json()["joined"]) == (False, True)
+    assert again.json()["organization_id"] == joined.json()["organization_id"]
+    (row,) = _organizations_of(furnished, hub_id)
+    assert row.legal_name == "Gamma S.r.l."
+    assert set(row.roles) == {"customer", "freelancer", "supplier"}
+    with _space(furnished.settings) as session:
+        total = session.scalar(
+            text("SELECT count(*) FROM organizations WHERE vat_number = '01234567897'")
+        )
+    assert total == 1
+
+
+def test_a_card_is_never_matched_by_name(furnished: Furnished) -> None:
+    a, b = uuid4(), uuid4()
+    first = _put_organization(furnished, a, legal_name="Omonimo Rossi")
+    second = _put_organization(furnished, b, legal_name="Omonimo Rossi")
+
+    assert first.json()["organization_id"] != second.json()["organization_id"]
+
+
+def test_an_archived_organization_is_a_conflict_not_a_second_row(furnished: Furnished) -> None:
+    answer = _put_organization(furnished, furnished.dan.hub_id)
+
+    assert answer.status_code == 409, answer.text
+    assert len(_organizations_of(furnished, furnished.dan.hub_id)) == 1

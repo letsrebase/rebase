@@ -18,15 +18,18 @@ import datetime as dt
 from collections.abc import Collection
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.collaborators import frameworks, letters
 from pigrocrm.core.collaborators.door_schemas import (
     DoorAvailability,
     DoorContracts,
     DoorDocument,
     DoorFiscalIdentifiers,
+    DoorFreelancerCard,
+    DoorFreelancerOrganization,
     DoorMergeCheck,
 )
 from pigrocrm.core.collaborators.letter_service import LetterService
@@ -35,12 +38,18 @@ from pigrocrm.core.collaborators.models import Engagement
 from pigrocrm.core.collaborators.repository import EngagementRepository
 from pigrocrm.core.collaborators.service import FreelancerService
 from pigrocrm.core.config import Settings
+from pigrocrm.core.contact_points.schemas import MAX_CONTACT_POINTS, ContactPointIn
+from pigrocrm.core.contact_points.service import prepare
 from pigrocrm.core.db import today_local
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.engagements.models import RebaseEngagement
 from pigrocrm.core.engagements.service import deal_url
-from pigrocrm.core.errors import NotFound
+from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.organizations.models import Organization
+from pigrocrm.core.organizations.repository import OrganizationRepository
+from pigrocrm.core.organizations.roles import with_freelancer_supplier
+from pigrocrm.core.organizations.schemas import OrganizationCreate, OrganizationUpdate
+from pigrocrm.core.organizations.service import OrganizationService
 from pigrocrm.core.storage.base import DocumentStorage
 from pigrocrm.core.tenants.models import Tenant
 
@@ -51,6 +60,8 @@ LETTER_KINDS = (FRAMEWORK_AGREEMENT, ENGAGEMENT_LETTER)
 LIVE_FRAMEWORK_STATES = ("sent", "pending", "signed")
 # The engagements that tie a freelancer to a client right now.
 LIVE_CLIENT_STATES = ("awaiting_signature", "active")
+# How long a call waits for another call of the same freelancer before the door says «not now».
+LOCK_TIMEOUT = "30s"
 
 
 class HubDoorService:
@@ -97,6 +108,75 @@ class HubDoorService:
             date_to=end,
             weeks=weeks,
         )
+
+    # ---- the freelancer's organization ---------------------------------------------------------
+
+    def ensure_freelancer(
+        self, hub_freelancer_id: UUID, card: DoorFreelancerCard
+    ) -> DoorFreelancerOrganization:
+        """The organization of this freelancer, found by the hub's id or written from the hub's
+        card, once however many times it is asked and however many ask at once: a transaction
+        advisory lock on the hub id serialises them. Never found by name. One that already holds
+        the card's VAT number (a customer, a supplier) gains the role `freelancer` and the hub id
+        instead of a second row (C3's unique index); one that is somebody else's freelancer, or
+        archived, is a conflict the admin reads."""
+        self.session.execute(
+            text("SELECT set_config('lock_timeout', :timeout, true)"), {"timeout": LOCK_TIMEOUT}
+        )
+        self.session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+            {"key": f"freelancer:{hub_freelancer_id}"},
+        )
+        actor = Actor.rebase()
+        organizations = OrganizationService(self.session)
+        known = self.session.execute(
+            select(Organization).where(Organization.hub_freelancer_id == hub_freelancer_id)
+        ).scalar_one_or_none()
+        if known is not None:
+            if known.deleted_at is not None:
+                raise Conflict(
+                    "organization",
+                    "l'anagrafica di questo freelance e' archiviata: ripristinala nel CRM",
+                    field="hub_freelancer_id",
+                )
+            self.session.rollback()
+            return DoorFreelancerOrganization(organization_id=known.id, created=False, joined=False)
+        country = card.country.upper()
+        if card.vat_number and card.vat_number.strip():
+            same = OrganizationRepository(self.session).find_by_vat(country, card.vat_number)
+            if same is not None:
+                if same.hub_freelancer_id is not None:
+                    raise Conflict(
+                        "organization",
+                        "la partita IVA e' gia' di un altro freelance dell'hub",
+                        field="vat_number",
+                    )
+                organizations.update(
+                    same.id,
+                    OrganizationUpdate(
+                        roles=with_freelancer_supplier([*same.roles, "freelancer"]),
+                        hub_freelancer_id=hub_freelancer_id,
+                    ),
+                    actor,
+                )
+                return DoorFreelancerOrganization(
+                    organization_id=same.id, created=False, joined=True
+                )
+        created = organizations._insert(
+            OrganizationCreate(
+                legal_name=card.legal_name,
+                vat_number=card.vat_number.strip() if card.vat_number else None,
+                tax_code=card.tax_code.strip() if card.tax_code else None,
+                country=country,
+                roles=["freelancer", "supplier"],
+                hub_freelancer_id=hub_freelancer_id,
+                contact_points=_card_points(card),
+                note="Creato da rebase dalla scheda del freelance sull'hub.",
+            ),
+            actor,
+        )
+        self.session.commit()
+        return DoorFreelancerOrganization(organization_id=created.id, created=True, joined=False)
 
     # ---- the member's contracts ---------------------------------------------------------------
 
@@ -299,6 +379,27 @@ class HubDoorService:
             for match_id, deal_id, slug in rows
             if deal_id is not None
         }
+
+
+def _card_points(card: DoorFreelancerCard) -> list[ContactPointIn]:
+    """The login address first and primary, then the card's own points that the point rules take
+    and that are not that address again: a point the rules refuse is left out, never a refusal of
+    the whole card."""
+    points = [ContactPointIn(kind="email", value=card.email.strip(), is_primary=True)]
+    seen = {(row.kind, row.normalized) for row in prepare("organization", points)}
+    for extra in card.contact_points:
+        if len(points) >= MAX_CONTACT_POINTS:
+            break
+        extra = extra.model_copy(update={"is_primary": False})
+        try:
+            row = prepare("organization", [extra])[0]
+        except ValidationFailed:
+            continue
+        if (row.kind, row.normalized) in seen:
+            continue
+        seen.add((row.kind, row.normalized))
+        points.append(extra)
+    return points
 
 
 def _visible(document: Document, engagement: Engagement | None) -> bool:
