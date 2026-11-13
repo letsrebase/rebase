@@ -521,7 +521,7 @@ data: all of that is PigroCRM's (`projects/pigrocrm/AGENTS.md`, and
 The hub keeps the handoff to the CRM's engagement form, the `hub_engagements` read model its
 notices feed, the member «Contratti» page (read through the CRM door), the merge check and the
 CV redaction through the door. The `matches`, `contract_documents`, `freelancer_fiscal` and
-`letter_counters` tables are dropped by migration 0053 (its downgrade recreates them empty).
+`contract_letter_counters` tables are dropped by migration 0053 (its downgrade recreates them empty).
 
 The CRM door is one module, `pigro_door` (`PigroDoor.put` never raises and maps the status to
 the state the row is left in, `PigroDoor.get`, `write`, `committed`, `sweep_round`): the

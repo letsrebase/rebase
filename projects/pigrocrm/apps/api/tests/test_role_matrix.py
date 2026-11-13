@@ -1097,6 +1097,12 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
         "None of the three role clients holds that bearer, so the sweep would only ever see "
         "the door's own 404/401."
     ),
+    ("PUT", "/api/rebase/freelancers/{hub_freelancer_id}/organization"): (
+        "The hub's root door (REB-1105): gated by `PIGROCRM_ENGAGEMENTS_TOKEN`, not a role. The "
+        "caller is the hub itself, with no session and no actor, and the organization it writes "
+        "is in the installation's own leads space. None of the three role clients holds that "
+        "bearer, so the sweep would only ever see the door's own 401/404."
+    ),
     ("POST", "/api/documenso/webhook"): (
         "Documenso's own delivery (REB-1019), authenticated by the `X-Documenso-Secret` header "
         "against `PIGROCRM_DOCUMENSO_WEBHOOK_SECRET`, not by a role: the caller is Documenso, "

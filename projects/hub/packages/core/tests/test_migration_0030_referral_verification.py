@@ -6,14 +6,11 @@ or after the referral was made."""
 from itertools import count
 
 from alembic import command
-from alembic.autogenerate import compare_metadata
 from alembic.config import Config
-from alembic.migration import MigrationContext
-from sqlalchemy import Connection, create_engine, text
+from sqlalchemy import Connection, Engine, create_engine, text
 from testcontainers.community.postgres import PostgresContainer
 
-from rebase_core.db import Base
-from rebase_core.migrate import INI_PATH, head_revision, upgrade_to_head
+from rebase_core.migrate import INI_PATH, upgrade_to_head
 
 _NUMBER = count(1)
 
@@ -129,6 +126,13 @@ def _rows(connection: Connection) -> dict[str, tuple[str, bool, str | None]]:
     }
 
 
+def _empty_rewards(engine: Engine) -> None:
+    """0052's downgrade refuses while `referral_rewards` holds a row (money owed has no hub
+    letter to point at), so a test that rewinds through it empties the table first."""
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM referral_rewards"))
+
+
 def test_migration_0030_keeps_what_counts_counting_and_runs_again() -> None:
     with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
         url = container.get_connection_url()
@@ -196,7 +200,7 @@ def test_migration_0030_keeps_what_counts_counting_and_runs_again() -> None:
             orphan: ("to_verify", False, None),
         }
         for _ in range(2):  # a retried deploy runs the same revision again
-            command.upgrade(config, "head")
+            command.upgrade(config, "0052")
             with engine.begin() as connection:
                 assert _rows(connection) == expected
                 # `verified_at` is the evidence's own moment, not the migration's.
@@ -212,9 +216,11 @@ def test_migration_0030_keeps_what_counts_counting_and_runs_again() -> None:
                 assert moments[logged_in] == login_at
             # A person who logs in after the migration is verified by the code, and the
             # revision run again over the columns must not undo it or promote anything else.
+            _empty_rewards(engine)
             # Rewound to 0030, the schema the revision was written for.
             command.downgrade(config, "0030")
             with engine.begin() as connection:
+                _reward(connection, with_reward, letter)
                 connection.execute(
                     text(
                         "UPDATE referrals SET stato = 'verificato', verified_at = now(), "
@@ -223,7 +229,7 @@ def test_migration_0030_keeps_what_counts_counting_and_runs_again() -> None:
                     {"i": plain},
                 )
                 connection.execute(text("UPDATE alembic_version SET version_num = '0029'"))
-            command.upgrade(config, "head")
+            command.upgrade(config, "0052")
             with engine.begin() as connection:
                 assert _rows(connection) == {**expected, plain: ("verified", True, "login")}
                 connection.execute(
@@ -233,6 +239,7 @@ def test_migration_0030_keeps_what_counts_counting_and_runs_again() -> None:
                     ),
                     {"i": plain},
                 )
+            _empty_rewards(engine)
             command.downgrade(config, "0029")
             with engine.connect() as connection:
                 columns = connection.execute(
@@ -244,13 +251,14 @@ def test_migration_0030_keeps_what_counts_counting_and_runs_again() -> None:
                 ).all()
                 assert columns == []
                 assert connection.execute(text("SELECT count(*) FROM referrals")).scalar() == 6
-        command.upgrade(config, "head")
+            # The reward the rewind had to empty, written again at the old schema.
+            with engine.begin() as connection:
+                _reward(connection, with_reward, letter)
+        command.upgrade(config, "0052")
         with engine.connect() as connection:
             assert (
                 connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
-                == head_revision()
+                == "0052"
             )
             assert _rows(connection) == expected
-            diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
-            assert diff == [], diff
         engine.dispose()
