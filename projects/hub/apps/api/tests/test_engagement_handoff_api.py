@@ -238,3 +238,24 @@ def test_an_unknown_card_or_request_is_a_404(
 
     assert _hand_off(client, str(uuid4()), company).status_code == 404
     assert _hand_off(client, freelancer, str(uuid4())).status_code == 404
+
+
+def test_a_deal_link_on_another_origin_than_the_configured_crm_is_no_deal(
+    client: TestClient, admin: None, sender: RecordingSender, api_session: Session
+) -> None:
+    login(client, sender)
+    freelancer, company = apply_freelancer(client), request_company(client)
+    _linked(api_session, company)
+    api_session.execute(
+        update(Company)
+        .where(Company.id == UUID(company))
+        .values(crm_deal_url=DEAL_URL.replace("pigro.test", "altro.example"))
+    )
+    api_session.commit()
+    crm = _crm(client)
+
+    answer = _hand_off(client, freelancer, company)
+
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["state"] == "no_deal" and answer.json()["url"] is None
+    assert crm.calls == [] and _rows(api_session) == []

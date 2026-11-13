@@ -7,7 +7,9 @@ one. `EngagementNoticeService.apply` makes that harmless: the row is found by th
 hub minted for it (`hub_match_id`, a handed-off row's key) or else by the CRM's engagement id, and
 a notice whose `sequence` is not newer than the one the row holds changes nothing. A newer one
 overwrites every field the CRM owns and leaves what is the hub's alone: the company's daily budget
-snapshot, and the company a row was opened for when the notice names none.
+snapshot, as long as the notice names the same company the row has. A notice that names another
+company re-snapshots from it, and one that names none clears the company and the snapshot: the
+engagement no longer serves the company it was handed off for.
 
 **The referral reward is written in the same transaction as the upsert**, when the row says its
 letter is signed (`ReferralService.record_reward_if_signed`, which inserts each referral's reward
@@ -51,7 +53,17 @@ class EngagementNoticeService:
             company_id = None
         row.crm_engagement_id = notice.engagement_id
         row.freelancer_id = notice.hub_freelancer_id
-        row.company_id = company_id if company_id is not None else row.company_id
+        if company_id != row.company_id:
+            # The budget snapshot belongs to the company it was taken from: another company takes
+            # it again from the new one, none drops it with the company. A row that had no company
+            # (born of a notice, never handed off) was never snapshotted and stays so.
+            had_company = row.company_id is not None
+            row.company_id = company_id
+            if company_id is None:
+                row.company_daily_budget = None
+            elif had_company:
+                company = self.session.get(Company, company_id)
+                row.company_daily_budget = company.daily_budget if company is not None else None
         row.client_name = notice.client_name
         row.letter_id = notice.letter_id
         row.letter_number = notice.letter_number
