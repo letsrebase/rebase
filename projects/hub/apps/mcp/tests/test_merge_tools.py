@@ -5,16 +5,26 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from fakes_crm_door import FakeCrmDoor
+from fakes_pigro import PIGRO, TOKEN
 from mcp import Client
 from mcp_tool_support import IVAN, PDF, _payload
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
 
+from rebase_core.config import Settings
 from rebase_core.duplicates import UNIQUE_INDEXES
 from rebase_core.freelancer_schemas import FreelancerCreate
 from rebase_core.freelancers import FreelancerService
-from rebase_core.models import ContractDocument, Freelancer, User
+from rebase_core.models import Freelancer, User
 from rebase_mcp.server import build_server
+
+CRM = FakeCrmDoor()
+CRM_SETTINGS = Settings(
+    _env_file=None,  # type: ignore[call-arg]
+    pigro_api_url=PIGRO,
+    pigro_engagements_token=TOKEN,
+)
 
 TABLES = (
     "admin_actions",
@@ -70,7 +80,9 @@ async def test_merge_freelancers_moves_the_card_and_answers_counts_and_the_actio
     factory: sessionmaker[Session],
 ) -> None:
     keep, other = _seed(factory, "uno@studio.it", "due@studio.it")
-    async with Client(build_server(factory, lambda: IVAN)) as client:
+    async with Client(
+        build_server(factory, lambda: IVAN, settings=CRM_SETTINGS, http=CRM)
+    ) as client:
         done = _payload(
             await client.call_tool(
                 "merge_freelancers", {"freelancer_id": str(keep), "da_id": str(other)}
@@ -88,25 +100,25 @@ async def test_merge_freelancers_moves_the_card_and_answers_counts_and_the_actio
 
 async def test_a_refused_merge_says_why(factory: sessionmaker[Session]) -> None:
     keep, other = _seed(factory, "uno@studio.it", "due@studio.it")
-    session = factory()
-    for card_id in (keep, other):
-        session.add(
-            ContractDocument(
-                kind="framework",
-                freelancer_id=card_id,
-                text_version="1",
-                pdf=PDF,
-                status="signed",
-                created_by=IVAN.id,
-            )
-        )
-    session.commit()
-    session.close()
-    async with Client(build_server(factory, lambda: IVAN)) as client:
+    conflict = {"framework_regimes": ["ordinary"], "shared_clients": 0, "tax_code_conflict": False}
+    crm = FakeCrmDoor(merge={(keep, other): conflict, (other, keep): conflict})
+    async with Client(
+        build_server(factory, lambda: IVAN, settings=CRM_SETTINGS, http=crm)
+    ) as client:
         refused = await client.call_tool(
             "merge_freelancers", {"freelancer_id": str(keep), "da_id": str(other)}
         )
     assert refused.is_error and "contratto quadro in corso o firmato" in refused.content[0].text
+    _wipe(factory)
+
+
+async def test_a_merge_with_no_crm_to_ask_is_refused(factory: sessionmaker[Session]) -> None:
+    keep, other = _seed(factory, "uno@studio.it", "due@studio.it")
+    async with Client(build_server(factory, lambda: IVAN)) as client:
+        refused = await client.call_tool(
+            "merge_freelancers", {"freelancer_id": str(keep), "da_id": str(other)}
+        )
+    assert refused.is_error and "senza il suo controllo non unisco" in refused.content[0].text
     _wipe(factory)
 
 
@@ -120,7 +132,9 @@ async def test_list_duplicates_answers_the_pairs_without_an_address(
     session.execute(text("UPDATE users SET linkedin_url = :u WHERE role = 'member'"), {"u": ADA})
     session.commit()
     try:
-        async with Client(build_server(factory, lambda: IVAN)) as client:
+        async with Client(
+            build_server(factory, lambda: IVAN, settings=CRM_SETTINGS, http=CRM)
+        ) as client:
             listed: dict[str, Any] = _payload(await client.call_tool("list_duplicates", {}))
         assert len(listed["mergeable"]) == 1 and listed["to_review"] == []
         pair = listed["mergeable"][0]

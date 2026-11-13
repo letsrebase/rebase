@@ -262,11 +262,13 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         by `cards-refresh`, or `regenerate_freelancer_card`); the other card is not deleted,
         it is hidden and points to this one, and the address it had still works to log in. The
         answer is how many rows moved, by type, and the action id. Refused with a sentence
-        when both have a framework agreement in progress or signed, an active engagement with
-        the same company or two different tax codes, or when the card to absorb belongs to an
-        administrator. Undone from the terminal with `rebase talent-duplicates --undo`."""
+        when the CRM, where the contracts and engagements are, says both cards have a framework
+        agreement in progress or signed of the same type or an engagement in progress with the
+        same client, when they have two different tax codes, when the card to absorb belongs
+        to an administrator, or when the CRM cannot be asked. Undone from the terminal with
+        `rebase talent-duplicates --undo`."""
         return deps.run(
-            lambda s: PersonMergeService(s).merge(
+            lambda s: PersonMergeService(s, deps.freelancer_door).merge(
                 to_uuid(freelancer_id, "freelancer_id"), to_uuid(da_id, "da_id"), deps.admin().id
             )
         )

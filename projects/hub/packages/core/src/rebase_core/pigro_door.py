@@ -1,10 +1,11 @@
 """The one door to PigroCRM's API: the call, what its answer means, the sweep and the write
 (REB-892, HCORE-08).
 
-Three clients reach the CRM: the registry of spaces (`rebase_core.pigro`, a `GET`), the
-engagements door (`rebase_core.engagements`, a `PUT` and a `GET`) and the leads door
-(`rebase_core.crm_link`, a `PUT`). They differ in a path, a token and the row they write,
-and in nothing else, so this module holds what they share and takes those three as
+Four clients reach the CRM: the registry of spaces (`rebase_core.pigro`, a `GET`), the
+engagements door (`rebase_core.engagements`, a `PUT` and a `GET`), the leads door
+(`rebase_core.crm_link`, a `PUT`) and the reads of a freelancer (`FreelancerDoor` below, `GET`s
+by the hub's own freelancer id). They differ in a path, a token and the row they write,
+and in nothing else, so this module holds what they share and takes those as
 parameters.
 
 **The `PUT`** (`PigroDoor.put`) never raises: whatever happens, a refused connection, a
@@ -16,7 +17,15 @@ the CRM's own sentence when its answer carries one). The bearer travels only ove
 (`speaks_https`), plain HTTP only to this machine.
 
 **The `GET`** (`PigroDoor.get`) raises `PigroUnavailable` with the sentence the admin area
-shows, or `Gone` for a status the caller names (the report's `409`).
+shows, or `Gone` for a status the caller names (the report's `409`). A read that may be asked
+again (`attempts`) is asked again on a connection that failed and on a `502`, `503` or `504`:
+every `GET` of the door is idempotent.
+
+**The freelancer reads** (`FreelancerDoor`, REB-1107) are what the hub keeps asking the CRM
+now that the relationship with a freelancer lives there: availability, the member's contracts
+and their signed PDF, the fiscal identifiers the anonymous CV redacts, and the merge check.
+They answer the way every `GET` does, and a caller decides what an unreachable CRM means for
+it: the anonymous CV is not written, the member's page shows an error, a merge is refused.
 
 **The lock discipline** is the house rule of REB-868 and REB-498: *no database lock is held
 across a network call*. A caller locks the row to read what is sent and to stamp the attempt,
@@ -32,14 +41,28 @@ import urllib.error
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import date
 from typing import NamedTuple
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 from uuid import UUID
 
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from rebase_core.http import MAX_BODY_BYTES, HttpCall
+from rebase_core.config import Settings
+from rebase_core.door_schemas import (
+    CrmAvailability,
+    CrmContracts,
+    CrmFiscalIdentifiers,
+    CrmMergeCheck,
+)
+from rebase_core.http import (
+    MAX_BODY_BYTES,
+    MAX_DOWNLOAD_BYTES,
+    HttpCall,
+    urllib_call,
+    urllib_download_call,
+)
 from rebase_core.match_words import ERROR, HTTPS_ONLY, LINKED, REJECTED
 
 _log = logging.getLogger(__name__)
@@ -72,12 +95,24 @@ ERROR_MAX_LENGTH = 500
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1"})
 _PUT_OK = (200, 201)
 _NOT_NOW = 503
+# The statuses of a CRM that is there but not ready (a restart, its space's database busy): a
+# read asked again once rather than reported at once.
+_TRANSIENT = (502, 503, 504)
+# What the reads of a freelancer say when this environment has no token for the door.
+NOT_CONFIGURED = "Pigro non è configurato su questo ambiente."
+FREELANCERS_PATH = "/api/rebase/freelancers"
+READ_ATTEMPTS = 2
 
 
 class PigroUnavailable(Exception):
     """The CRM did not answer as it should: no answer, a status other than the one asked
     for, or a body that is not the shape. The message is the sentence the admin area
     shows."""
+
+
+class PigroMisconfigured(PigroUnavailable):
+    """This environment cannot reach the door at all: no token, or a CRM that is not on HTTPS.
+    Not a CRM that failed to answer, so an API says 503 for it where it says 502 for the rest."""
 
 
 class Gone(Exception):
@@ -118,9 +153,9 @@ def speaks_https(url: str) -> bool:
     return parts.scheme == "http" and parts.hostname in LOCAL_HOSTS
 
 
-def too_long(raw: bytes) -> bool:
+def too_long(raw: bytes, limit: int = MAX_BODY_BYTES) -> bool:
     """Whether an answer passes the seam's cap (the seam reads one byte beyond it)."""
-    return len(raw) > MAX_BODY_BYTES
+    return len(raw) > limit
 
 
 def cause_of(raw: bytes, status: int) -> str:
@@ -235,25 +270,136 @@ class PigroDoor:
             return Outcome(ERROR, cause_of(raw, status))
         return Outcome(ERROR, CAUSE_STATUS.format(status=status))
 
-    def get[T](self, path: str, parse: Callable[[bytes], T], *, gone: Collection[int] = ()) -> T:
+    def get[T](
+        self,
+        path: str,
+        parse: Callable[[bytes], T],
+        *,
+        gone: Collection[int] = (),
+        limit: int = MAX_BODY_BYTES,
+        attempts: int = 1,
+    ) -> T:
         """One `GET`, parsed by `parse`, which raises a `ValueError` (Pydantic's
         `ValidationError` is one) for a body that is not the shape. `PigroUnavailable`
         with the admin's sentence for no answer, a status other than `200`, a body past
-        the cap or one that is not the shape; `Gone` for a status in `gone`."""
-        try:
-            status, raw = self.http("GET", self.url(path), self.headers(), b"")
-        except Exception as exc:  # noqa: BLE001 - a refused connection, a DNS miss, a timeout
-            raise PigroUnavailable(NOT_ANSWERING) from exc
+        `limit` (the seam's own cap; a file's is the download seam's) or one that is not the
+        shape; `Gone` for a status in `gone`. With `attempts` above one, a connection that
+        failed and a `502`, `503` or `504` are asked again at once, up to that many calls."""
+        for attempt in range(1, attempts + 1):
+            try:
+                status, raw = self.http("GET", self.url(path), self.headers(), b"")
+            except Exception as exc:  # noqa: BLE001 - a refused connection, a DNS miss, a timeout
+                if attempt < attempts:
+                    continue
+                raise PigroUnavailable(NOT_ANSWERING) from exc
+            if status in _TRANSIENT and attempt < attempts:
+                continue
+            break
         if status in gone:
             raise Gone(cause_of(raw, status))
         if status != 200:
             raise PigroUnavailable(ANSWERED_STATUS.format(status=status))
-        if too_long(raw):
+        if too_long(raw, limit):
             raise PigroUnavailable(TOO_LONG)
         try:
             return parse(raw)
         except ValueError as exc:
             raise PigroUnavailable(NOT_THE_SHAPE) from exc
+
+
+@dataclass(frozen=True)
+class FreelancerDoor:
+    """The CRM's reads of one freelancer, by the hub's own freelancer id (REB-1107, collaborators
+    design § 5): `GET`s under `{api_url}/api/rebase/freelancers/{id}`, behind the engagements
+    token, each asked twice at most (`READ_ATTEMPTS`). `http` is the JSON seam and `download`
+    the one with room for a signed PDF (`urllib_download_call`); a test hands the same fake.
+
+    Each read raises `PigroUnavailable` with the sentence an admin or a member is shown: the
+    environment has no token (`NOT_CONFIGURED`), the CRM is not on HTTPS (`HTTPS_ONLY`, the
+    bearer never travels in clear), or the call failed as `PigroDoor.get` says. What an
+    unreachable CRM means is the caller's decision, not this class's."""
+
+    api_url: str
+    token: str
+    http: HttpCall
+    download: HttpCall
+
+    def _door(self, http: HttpCall) -> PigroDoor:
+        if not self.token:
+            raise PigroMisconfigured(NOT_CONFIGURED)
+        if not speaks_https(self.api_url):
+            raise PigroMisconfigured(HTTPS_ONLY)
+        return PigroDoor(self.api_url, self.token, http)
+
+    def _path(self, freelancer_id: UUID, tail: str, query: Mapping[str, str] | None = None) -> str:
+        path = f"{FREELANCERS_PATH}/{freelancer_id}/{tail}"
+        return f"{path}?{urlencode(query)}" if query else path
+
+    def availability(
+        self,
+        freelancer_id: UUID,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> CrmAvailability:
+        """The weeks a freelancer is committed, from the CRM's live engagements: `unknown` for
+        a week an engagement with no `days_per_week` touches, never `free`. A card the CRM
+        holds nothing about is free in every week."""
+        query = {
+            key: value.isoformat()
+            for key, value in (("from", date_from), ("to", date_to))
+            if value is not None
+        }
+        return self._door(self.http).get(
+            self._path(freelancer_id, "availability", query),
+            CrmAvailability.model_validate_json,
+            attempts=READ_ATTEMPTS,
+        )
+
+    def contracts(self, freelancer_id: UUID) -> CrmContracts:
+        """The documents that reached the freelancer, newest first; none for a card the CRM
+        holds nothing about."""
+        return self._door(self.http).get(
+            self._path(freelancer_id, "contracts"),
+            CrmContracts.model_validate_json,
+            attempts=READ_ATTEMPTS,
+        )
+
+    def signed_pdf(self, freelancer_id: UUID, document_id: UUID) -> bytes:
+        """The signed copy of one of the freelancer's own documents. `Gone` for a document that
+        is not theirs, has no signed copy or does not exist: the CRM answers all three alike."""
+        return self._door(self.download).get(
+            self._path(freelancer_id, f"contracts/{document_id}/pdf"),
+            bytes,
+            gone=(404,),
+            limit=MAX_DOWNLOAD_BYTES,
+            attempts=READ_ATTEMPTS,
+        )
+
+    def fiscal_identifiers(self, freelancer_id: UUID) -> CrmFiscalIdentifiers:
+        """Tax code, VAT number and certified email of the freelancer's CRM organization, each
+        `None` when the CRM holds none, for the anonymous CV's redaction list."""
+        return self._door(self.http).get(
+            self._path(freelancer_id, "fiscal-identifiers"),
+            CrmFiscalIdentifiers.model_validate_json,
+            attempts=READ_ATTEMPTS,
+        )
+
+    def merge_check(self, freelancer_id: UUID, other_id: UUID) -> CrmMergeCheck:
+        """What the CRM holds that stops these two cards becoming one."""
+        return self._door(self.http).get(
+            self._path(freelancer_id, "merge-check", {"with": str(other_id)}),
+            CrmMergeCheck.model_validate_json,
+            attempts=READ_ATTEMPTS,
+        )
+
+
+def freelancer_door(settings: Settings, http: HttpCall = urllib_call) -> FreelancerDoor:
+    """The reads of a freelancer as this environment configures them: the CRM at
+    `REBASE_PIGRO_API_URL` under `REBASE_PIGRO_ENGAGEMENTS_TOKEN`, through `http`. A signed PDF
+    needs more room than the JSON seam gives, so production's `urllib_call` is paired with
+    `urllib_download_call` for it, and a test's fake serves both."""
+    download = urllib_download_call if http is urllib_call else http
+    return FreelancerDoor(settings.pigro_api_url, settings.pigro_engagements_token, http, download)
 
 
 def _json(body: Mapping[str, object]) -> bytes:

@@ -31,11 +31,13 @@ from rebase_api.deps import (
     CrmLeadsDep,
     CvLlmDep,
     CvRendererDep,
+    FreelancerDoorDep,
     HttpCallDep,
     SenderDep,
     SessionDep,
     SettingsDep,
 )
+from rebase_api.door_errors import door_unavailable
 from rebase_api.downloads import cv_response, pdf_response
 from rebase_api.params import Cursor, Limit, SearchQ, TalentTerms
 from rebase_core.admin_schemas import CrmLinkBody, StatusChange, VettedChange
@@ -74,6 +76,7 @@ from rebase_core.models import NAME_MAX_LENGTH, User
 from rebase_core.note_schemas import NoteCreate, NoteRead, NoteUpdate
 from rebase_core.notes import NoteService
 from rebase_core.perks import PerkService
+from rebase_core.pigro_door import PigroUnavailable
 from rebase_core.referral_ledger import ReferralLedgerService
 from rebase_core.referral_schemas import (
     ReferralLedgerItem,
@@ -293,6 +296,7 @@ def download_anonymous_cv(
     session: SessionDep,
     llm: CvLlmDep,
     renderer: CvRendererDep,
+    door: FreelancerDoorDep,
     freelancer_id: UUID,
 ) -> Response:
     """«Scarica CV anonimo» (REB-862): the talent's CV without the person, as a PDF in
@@ -304,8 +308,16 @@ def download_anonymous_cv(
     seniority the card marks uncertain is left out until an admin says one. One
     `anon_cv_downloaded` entry on success, naming whether the body was kept. A plain
     `def`: writing and printing wait minutes at worst, in the threadpool rather than on the
-    event loop."""
-    written = AnonymousCvWriter(session, llm).get_or_write(freelancer_id)
+    event loop. **Fails closed on the CRM** (REB-1107): the redaction list is the hub's tax
+    data and the CRM's (`FreelancerDoor.fiscal_identifiers`), and without the CRM's half nothing
+    is written and a kept body is not served either: 502 with the seam's sentence when the CRM
+    does not answer, 503 when this environment cannot reach it."""
+    try:
+        written = AnonymousCvWriter(session, llm, door).get_or_write(freelancer_id)
+    except PigroUnavailable as exc:
+        raise door_unavailable(
+            exc, "Il CV anonimo non si scrive né si scarica senza i dati da oscurare del CRM."
+        ) from exc
     # The card as the admin reads it: his seniority and years over Claude's. `None` for a
     # talent with no card yet, and for a card of an older CV, which may say another level
     # or city than the CV printed under it.
@@ -355,15 +367,20 @@ def list_duplicates(_: AdminDep, session: SessionDep) -> DuplicateListRead:
 
 @router.post("/freelancers/{freelancer_id}/merge", response_model=MergeRead)
 def merge_freelancer(
-    admin: AdminDep, session: SessionDep, freelancer_id: UUID, body: MergeRequest
+    admin: AdminDep,
+    session: SessionDep,
+    door: FreelancerDoorDep,
+    freelancer_id: UUID,
+    body: MergeRequest,
 ) -> MergeRead:
     """Merges the card `da` into this one (REB-800): its notes, logins, matches,
     contracts, campaign rows, referrals and audit entries move here, the newer of the two
     CVs stays here with its card flagged for regeneration, and the other card is
-    soft-deleted and points at this one. Refused with a sentence when both have a live
-    framework agreement or an active match with the same company, or two different tax
-    codes. Undone from the shell with `rebase talent-duplicates --undo`."""
-    return PersonMergeService(session).merge(freelancer_id, body.da, admin.id)
+    soft-deleted and points at this one. Refused with a sentence when the CRM says both have
+    a live framework agreement of the same type or an engagement in progress with the same
+    client, when the two have different tax codes, or when the CRM cannot be asked
+    (REB-1107). Undone from the shell with `rebase talent-duplicates --undo`."""
+    return PersonMergeService(session, door).merge(freelancer_id, body.da, admin.id)
 
 
 @router.get("/companies", response_model=CompanyList)

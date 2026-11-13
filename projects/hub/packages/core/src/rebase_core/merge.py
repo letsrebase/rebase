@@ -27,8 +27,13 @@ attribution (the UTM set and the page) stays, the older card's; the
 further `status` wins over `new`. Every changed value is kept in the entry, as it was.
 
 **What stops it**, each with a sentence: the same card, an admin as the absorbed side, two
-different tax codes, a live framework agreement of the same regime on both sides, or an
-active match with the same company on both.
+different tax codes (the hub's own, or the CRM's), a live framework agreement of the same type
+on both sides, an engagement in progress with the same client on both, or a CRM that cannot be
+asked. The contracts and engagements are the CRM's since the relationship with a freelancer
+moved there (collaborators design § 5, REB-1107): the merge asks it through the door
+(`FreelancerDoor.merge_check`), before it takes any lock, and **refuses when it cannot be
+asked**, since a merge it did not check could join two live agreements. The hub's own match
+tables are no longer read by the check; the removal card drops them with the rest of that side.
 """
 
 import hashlib
@@ -41,6 +46,7 @@ from sqlalchemy.orm import Session
 
 from rebase_core.audit import utcnow
 from rebase_core.contact_points import ContactPointService
+from rebase_core.door_schemas import CrmMergeCheck
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.merge_relations import (
     USER,
@@ -62,14 +68,13 @@ from rebase_core.models import (
     AUTHOR_MAX_LENGTH,
     AdminAction,
     CampaignOptout,
-    ContractDocument,
     Freelancer,
     FreelancerFiscal,
-    Match,
     Note,
     TeamProposal,
     User,
 )
+from rebase_core.pigro_door import FreelancerDoor, PigroUnavailable
 from rebase_core.schema_common import ResponseModel
 from rebase_core.sources import delete_sources
 from rebase_core.users import UserService
@@ -77,8 +82,8 @@ from rebase_core.vocabulary import enum_of
 
 ENTITY = "freelancer"
 
-_LIVE_FRAMEWORK = ("sent", "pending", "signed")
-_LIVE_MATCH = ("awaiting_signature", "active")
+# The CRM's letter types as the sentence names them (the hub's own regime names).
+_REGIME_NAMES = {"ordinary": "vat_registered", "occasional": "occasional"}
 
 
 class MergeRead(ResponseModel):
@@ -110,8 +115,9 @@ def _name(user: User) -> str:
 
 
 class PersonMergeService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, door: FreelancerDoor) -> None:
         self.session = session
+        self.door = door
         self.steps = MergeSteps(session)
 
     # ---- merge ------------------------------------------------------------------------
@@ -123,9 +129,11 @@ class PersonMergeService:
         survivor = self._live(into_id)
         absorbed = self._live(absorbed_id)
         s_user, a_user = self._user(survivor), self._user(absorbed)
+        # Before any lock: no row lock is held across a call to the CRM.
+        crm = self._crm_check(survivor.id, absorbed.id)
         self._lock(s_user, a_user, survivor, absorbed)
         self._still_live(survivor, absorbed, s_user, a_user)
-        self._check(survivor, absorbed, s_user, a_user)
+        self._check(survivor, absorbed, s_user, a_user, crm)
         admin = self.session.get(User, admin_id)
         if admin is None:
             raise NotFound(USER, admin_id)
@@ -215,7 +223,7 @@ class PersonMergeService:
         Raises the same refusals `merge` does."""
         survivor, absorbed = self._live(into_id), self._live(absorbed_id)
         s_user, a_user = self._user(survivor), self._user(absorbed)
-        self._check(survivor, absorbed, s_user, a_user)
+        self._check(survivor, absorbed, s_user, a_user, self._crm_check(survivor.id, absorbed.id))
         ctx = Context(s_user.id, a_user.id, survivor.id, absorbed.id)
         return count_movable(self.session, ctx)
 
@@ -355,8 +363,24 @@ class PersonMergeService:
 
     # ---- the checks -------------------------------------------------------------------
 
+    def _crm_check(self, survivor_id: UUID, absorbed_id: UUID) -> CrmMergeCheck:
+        """What the CRM holds that stops these two cards becoming one. A CRM that cannot be
+        asked refuses the merge, in the sentence the admin reads, and writes nothing."""
+        try:
+            return self.door.merge_check(survivor_id, absorbed_id)
+        except PigroUnavailable as exc:
+            raise MergeRefused(
+                f"{exc} I contratti e gli incarichi sono nel CRM e senza il suo controllo non "
+                "unisco le schede: riprova tra poco."
+            ) from exc
+
     def _check(
-        self, survivor: Freelancer, absorbed: Freelancer, s_user: User, a_user: User
+        self,
+        survivor: Freelancer,
+        absorbed: Freelancer,
+        s_user: User,
+        a_user: User,
+        crm: CrmMergeCheck,
     ) -> None:
         if a_user.role == "admin":
             raise MergeRefused(
@@ -368,43 +392,23 @@ class PersonMergeService:
         a_tax = self.session.scalar(
             select(FreelancerFiscal.tax_code).where(FreelancerFiscal.freelancer_id == absorbed.id)
         )
-        if s_tax and a_tax and s_tax.strip().upper() != a_tax.strip().upper():
+        if (s_tax and a_tax and s_tax.strip().upper() != a_tax.strip().upper()) or (
+            crm.tax_code_conflict
+        ):
             raise MergeRefused(
                 "Le due schede hanno codici fiscali diversi: non sono la stessa persona.",
             )
-        regimes = self._framework_regimes(survivor.id) & self._framework_regimes(absorbed.id)
-        if regimes:
+        if crm.framework_regimes:
+            regimes = {_REGIME_NAMES.get(regime, regime) for regime in crm.framework_regimes}
             raise MergeRefused(
                 "Entrambe le schede hanno un contratto quadro in corso o firmato "
                 f"({', '.join(sorted(regimes))}): annulla o disdici uno dei due prima di unirle.",
             )
-        shared = self._active_companies(survivor.id) & self._active_companies(absorbed.id)
-        if shared:
+        if crm.shared_clients:
             raise MergeRefused(
                 "Entrambe le schede hanno un incarico in corso con la stessa azienda: "
                 "chiudi o annulla uno dei due prima di unirle.",
             )
-
-    def _framework_regimes(self, freelancer_id: UUID) -> set[str]:
-        rows = self.session.execute(
-            select(
-                ContractDocument.regime, ContractDocument.status, ContractDocument.notice_at
-            ).where(
-                ContractDocument.freelancer_id == freelancer_id,
-                ContractDocument.kind == "framework",
-                ContractDocument.status.in_(_LIVE_FRAMEWORK),
-            )
-        ).all()
-        return {regime for regime, status, notice in rows if status != "signed" or notice is None}
-
-    def _active_companies(self, freelancer_id: UUID) -> set[UUID]:
-        return set(
-            self.session.scalars(
-                select(Match.company_id).where(
-                    Match.freelancer_id == freelancer_id, Match.status.in_(_LIVE_MATCH)
-                )
-            )
-        )
 
     # ---- helpers ----------------------------------------------------------------------
 

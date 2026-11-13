@@ -4,14 +4,17 @@ a refusal is a 409 with a sentence."""
 
 import re
 from collections.abc import Iterator
+from uuid import UUID
 
 import pytest
+from fakes_crm_door import FakeCrmDoor
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from rebase_api.deps import get_freelancer_door
 from rebase_core.mail import RecordingSender
-from rebase_core.models import ContractDocument, Freelancer, User
+from rebase_core.models import Freelancer, User
 
 ADMIN_EMAIL = "ivan@rebase.it"
 ADA = "https://www.linkedin.com/in/ada-lovelace"
@@ -136,18 +139,11 @@ def test_a_conflicting_merge_is_a_409_with_the_sentence(
     _apply(client, "uno@studio.it")
     _apply(client, "due@studio.it")
     ids = _card_ids(api_session)
-    for card_id in ids.values():
-        api_session.add(
-            ContractDocument(
-                kind="framework",
-                freelancer_id=card_id,
-                text_version="1",
-                pdf=b"%PDF-1",
-                status="signed",
-                created_by=admin.id,
-            )
-        )
-    api_session.commit()
+    first, second = UUID(str(ids["uno@studio.it"])), UUID(str(ids["due@studio.it"]))
+    conflict = {"framework_regimes": ["ordinary"], "shared_clients": 0, "tax_code_conflict": False}
+    client.app.dependency_overrides[get_freelancer_door] = FakeCrmDoor(  # type: ignore[attr-defined]
+        merge={(first, second): conflict, (second, first): conflict}
+    ).door
     _login(client, sender)
 
     refused = client.post(
