@@ -582,6 +582,29 @@ class FreelancerService:
         if freelancer is None or "freelancer" not in freelancer.roles:
             raise NotFound("organization", missing)
 
+        start, end, weeks = self.weeks_of(
+            freelancer.id, date_from, date_to, excluding=excluding_engagement_id
+        )
+        return FreelancerAvailability(
+            freelancer_id=freelancer.id,
+            hub_freelancer_id=freelancer.hub_freelancer_id,
+            date_from=start,
+            date_to=end,
+            weeks=weeks,
+        )
+
+    def weeks_of(
+        self,
+        freelancer_id: UUID | None,
+        date_from: dt.date | None,
+        date_to: dt.date | None,
+        *,
+        excluding: UUID | None = None,
+    ) -> tuple[dt.date, dt.date, list[AvailabilityWeek]]:
+        """The window and its weeks, with no permission check: the caller's own (`availability`
+        asks an administrator, the hub's door is the token's). `None` for a freelancer the CRM
+        holds no organization for, whose weeks are all free: nothing is committed that this
+        installation knows of."""
         start = rules.monday(date_from or today_local())
         end = date_to or start + dt.timedelta(weeks=AVAILABILITY_DEFAULT_WEEKS, days=-1)
         if end < start:
@@ -598,18 +621,22 @@ class FreelancerService:
                 f"al massimo {AVAILABILITY_MAX_WEEKS} settimane per volta",
                 expected=f"<= {AVAILABILITY_MAX_WEEKS} settimane",
             )
-        commitments = [
-            Commitment(e.id, e.starts_on, e.ends_on, e.days_per_week)
-            for e in self.repo.of_freelancer(
-                freelancer.id,
-                LIVE_STATES,
-                date_from=start,
-                excluding=excluding_engagement_id,
-                # To the Sunday of the last week shown: an engagement that starts on its Thursday
-                # still commits that week.
-                date_to=rules.monday(end) + dt.timedelta(days=6),
-            )
-        ]
+        commitments = (
+            [
+                Commitment(e.id, e.starts_on, e.ends_on, e.days_per_week)
+                for e in self.repo.of_freelancer(
+                    freelancer_id,
+                    LIVE_STATES,
+                    date_from=start,
+                    excluding=excluding,
+                    # To the Sunday of the last week shown: an engagement that starts on its
+                    # Thursday still commits that week.
+                    date_to=rules.monday(end) + dt.timedelta(days=6),
+                )
+            ]
+            if freelancer_id is not None
+            else []
+        )
         out: list[AvailabilityWeek] = []
         for week_start, week_end in rules.weeks(start, end):
             committed, unknown, ids = rules.committed_in(week_start, week_end, commitments)
@@ -628,13 +655,7 @@ class FreelancerService:
                     engagement_ids=ids,
                 )
             )
-        return FreelancerAvailability(
-            freelancer_id=freelancer.id,
-            hub_freelancer_id=freelancer.hub_freelancer_id,
-            date_from=start,
-            date_to=end,
-            weeks=out,
-        )
+        return start, end, out
 
     def set_tax_data(
         self, freelancer_id: UUID, data: FreelancerTaxData, actor: Actor
