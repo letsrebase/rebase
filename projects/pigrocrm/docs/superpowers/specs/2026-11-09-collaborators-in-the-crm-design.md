@@ -1,6 +1,7 @@
 # Collaborators in the CRM
 
-Status: approved by Lorenzo on 2026-11-09. Card: REB-963. Project:
+Status: approved by Lorenzo on 2026-11-09; § 7 amended on 2026-11-13 (REB-1104), a one-off
+migration in place of the import route. Card: REB-963. Project:
 «Run the relationship with freelancers from the CRM» (P-REB-84). Frame:
 `2026-11-09-space-profiles-modules-and-the-money-picture-design.md` (the «frame»), § A2, A3,
 A5, A8 and C5. Builds on the registry with roles of C3
@@ -53,8 +54,8 @@ linked to it as today's people are.
 - **Fiscal kind.** The kind (C3: `professional`, `flat_rate`, `occasional`) decides the letter
   type (ordinary or occasional, `2026-10-12` design), the withholding and the net to pay. It
   does not simply replace the hub's `FreelancerFiscal`: that table records only whether a VAT
-  number is present, so it cannot tell `professional` from `flat_rate`. The import therefore
-  leaves the kind unset and an admin classifies each freelancer (§ 7); a `flat_rate`
+  number is present, so it cannot tell `professional` from `flat_rate`. The migration (§ 7)
+  therefore leaves the kind unset and an admin classifies each freelancer; a `flat_rate`
   freelancer needs the written declaration kept as a document, since the declaration is what
   excuses the withholding (frame A5, L. 190/2014 art. 1 c. 67).
 
@@ -68,7 +69,7 @@ An engagement is the CRM's name for the hub's match. It holds:
 - **`days_per_week`**, a structured value from 0.5 to 5 in steps of 0.5 (the range the hub's
   team proposals already use). It is required for a new engagement. The hub's match has no
   such field, only `expected_days` and the free-text `impegno`
-  (`models/matches.py:79-152`, `contract_schemas.py:81`), so every imported engagement lacks
+  (`models/matches.py:79-152`, `contract_schemas.py:81`), so every migrated engagement lacks
   it until an admin fills it (§ 3);
 - the fee with its unit (day, hour, flat) and the expected days; for an hourly letter the
   expected days are the hours at the hub's 8 hours per day (`engagement_report.py`,
@@ -79,13 +80,13 @@ An engagement is the CRM's name for the hub's match. It holds:
   An `active` engagement can still be cancelled while its start date has not come (a signed
   letter for work that never began); from the first day it is closed, never cancelled.
 
-**Identity across the move.** An imported engagement keeps the hub match UUID as its id, and an
-imported document keeps its hub document id. The match id is already the registry's
+**Identity across the move.** A migrated engagement keeps the hub match UUID as its id, and a
+migrated document keeps its hub document id. The match id is already the registry's
 `rebase_engagements.match_id` and the `rebase:match=<id>` marker on the freelancer-space deal,
 so both keep working; the document id is already Documenso's `externalId`
 (`signing.py:295`). A new engagement takes an id minted by the hub at «Crea match» (§ 5). A
-unique `hub_match_id` column is the import's idempotency key, since rebase's space carries no
-marker for engagements (leads use `rebase:request=`).
+unique `hub_match_id` column records which hub match an engagement came from, since rebase's
+space carries no marker for engagements (leads use `rebase:request=`).
 
 **A notice of termination belongs to the framework agreement, not to the engagement**: it is
 valid only on a framework agreement (`ck_contract_documents_notice_for_framework`,
@@ -105,7 +106,7 @@ organisation, deal or contract).
 - **Keys.** The hub's texts use flat hyphenated keys (`{{professionista-nome}}`); the CRM
   engine uses dotted ones (`{{cliente.*}}`). A one-time key map converts the four texts
   (`projects/hub/packages/core/src/rebase_core/contracts/texts/`, plus `rebase.json`) when they
-  are seeded in rebase's space, and the map is kept in the import.
+  are seeded in rebase's space, and the map is kept beside the seeded templates.
 - **Drafts.** The texts' front matter carries `version` and `status`; a text whose status is
   `draft` is refused for sending, as the hub refuses it today.
 - **Who edits.** Templates of these two types are editable only by an admin person. The legal
@@ -142,7 +143,7 @@ document is cancelled on Documenso too.
 - **Routing the webhook.** The hub sets an envelope's `externalId` to the document id
   (`signing.py:295`), which names no space. A new envelope's `externalId` is
   `<tenant id>:<document id>`, so the root webhook reads the space from it and finds the
-  document there by its envelope id. An imported or hub-sent envelope carries the bare document
+  document there by its envelope id. A hub-sent envelope carries the bare document
   id, which resolves in the space `PIGROCRM_LEADS_SPACE` names, the only space that held hub
   documents. Whether Documenso accepts that `externalId` format is checked by the first card.
 - **The sweep.** The hub's `rebase contracts-sweep` does two things: it recovers signatures
@@ -451,34 +452,37 @@ in `permissions.ts` and its line in the surface-coverage test, within the tool b
 
 ## 7. Moving what exists
 
-**Neighbour work, and what lands first.** The one open card on the hub's matches side is
-REB-689 (Ivan, in progress: the company contract's general terms and proposal, and the
-freelancer NDA, in the project «Manage matches and the freelancer contract in the hub
-admin»). It lands first, in the hub, as planned. The CRM's import then carries every text
-under `contracts/texts/` as it stands at the freeze, REB-689's included: the freelancer NDA
-becomes a template of the `collaborators` module, the company contract a template for the
-customer side. Nothing here starts the cutover before REB-689 is merged, and Ivan is asked
-before the freeze.
+**Neighbour work, and what landed first.** REB-689 (the company contract's general terms and
+proposal, and the freelancer NDA) merged in the hub on 2026-11-10, before any of this. The CRM
+seeds every text under `contracts/texts/` as it stands then, REB-689's included: the
+freelancer NDA becomes a template of the `collaborators` module, the company contract a
+template for the customer side.
 
-One coordinated release per side, in this order:
+**No import route** (Lorenzo, 2026-11-13, REB-1104: «non serve avere una funzionalità di
+import dall'hub. facciamo noi una migrazione una tantum dei match esistenti dall'hub»). What
+exists in the hub is moved once, by us, and nothing in either product is built for it. On
+2026-11-13 production's hub held one match, a draft never sent (its letter drew 2026-001, its
+framework agreement was generated and not sent), tax data for two freelancers, the 2026
+letter counter at 1, no referral reward and no envelope on Documenso; so there is nothing to
+freeze, no delta, and no envelope that needs the hub's webhook after the switch.
 
-1. **The CRM ships** the module, the door routes of § 5, the outbox and its sweep, and an
-   **import route** on the root door. `pigrocrm ensure-space-defaults` writes
-   `module_collaborators = on` for the space `PIGROCRM_LEADS_SPACE` names: it is not a module
-   of today, so frame B2 would otherwise read it as off there and the module would be
-   invisible after the hub's tools are gone. The hub ships its `hub_engagements` table,
-   filled from `matches`, and its notice and referrer-name routes.
-2. **Freeze, import, delta.** Creating and sending matches are frozen in the hub. The import
-   route takes each match, its documents (PDF bytes included), its freelancer's tax data, its
-   signature state and the letter counter of each year (so numbering continues). It is
-   idempotent on a unique `hub_match_id`, and a client with no CRM deal (a match older than
-   2026-10-30) imports with the client deal empty and flagged. An admin then classifies each
-   freelancer's fiscal kind (`professional` or `flat_rate`, with the declaration document for
-   the second) and fills the missing `days_per_week`; the import reports both lists. A final
-   **delta import** takes whatever changed during the freeze. Envelopes already sent keep
-   their hub webhook until they complete or are cancelled, and the hub forwards their
-   completion to the CRM during the overlap; envelopes created from now on use the CRM's.
-3. **The hub's release** removes the match side, only once the import is confirmed and no
+In this order:
+
+1. **The CRM ships** the module, the door routes of § 5, the outbox and its sweep.
+   `pigrocrm ensure-space-defaults` writes `module_collaborators = on` for the space
+   `PIGROCRM_LEADS_SPACE` names: it is not a module of today, so frame B2 would otherwise
+   read it as off there and the module would be invisible after the hub's tools are gone. The
+   hub ships its `hub_engagements` table and its notice and referrer-name routes, and its
+   «Crea match» opens the CRM's form.
+2. **The one-off migration**, by hand through the CRM's own tools and routes, never by
+   writing either database directly. Each freelancer's tax data are set with
+   `set_freelancer_tax_data`, and an admin classifies the fiscal kind (`professional` or
+   `flat_rate`, with the declaration document for the second). A match that still matters is
+   recreated with `create_engagement` and its `hub_match_id`; one that does not is left to the
+   hub's backups. A letter number the hub drew for a draft that never reached a freelancer is
+   not carried, so the CRM's counter needs no write. The migration is checked against the
+   hub's tables before they are dropped, and its result is written on the card.
+3. **The hub's release** removes the match side, only once the migration is checked and no
    `days_per_week` is missing:
    - **admin pages**: `Matches`, `MatchReport`, `Contracts`, `CreateMatch`; `Referrals` changes
      to read the read model; `TalentMenu` loses «Match e contratti» and its «Crea match» opens
@@ -487,7 +491,8 @@ One coordinated release per side, in this order:
      `TeamRequests.tsx` still imports the shared `list-kit`: check that the state pill it shares
      with the match list survives;
    - **routes**: `routers/matches.py` whole (including the fiscal routes `:90-96` and
-     `pigro/link` at `:209`) and, after the overlap, `routers/documenso.py`;
+     `pigro/link` at `:209`) and `routers/documenso.py`, with the hub's webhook deleted on
+     Documenso;
    - **tools and text**: the fourteen tools of § 6, the MCP `INSTRUCTIONS` text
      (`server.py:59`), the engagement builder in `tools_common.py`, and the `link_match_to_pigro`
      service in `http.py`;
@@ -495,7 +500,7 @@ One coordinated release per side, in this order:
      (`config.py:100-104`) and `signer_json`; `pigro_engagements_token` stays, since `crm_link`
      uses it;
    - **tables and modules**: `matches`, `contract_documents`, `freelancer_fiscal` and
-     `letter_counter`, with `matches.py`, `match_*.py`, `contracts/`, `signing*.py`,
+     `contract_letter_counters`, with `matches.py`, `match_*.py`, `contracts/`, `signing*.py`,
      `documenso.py`, `framework.py`, `fiscal.py`, `engagements.py` and `engagement_report.py`;
      the readers that change are named in § 5 (referrals and ledger, the anonymous CV writer,
      the card facts, the merge).
@@ -514,9 +519,8 @@ with its client's settlement, with one client invoice covering two engagements; 
 replacing the engagement's forecast; withholding only when the payer is an agent, and the net
 formula; a day payable only in an approved or tacitly approved «Rendiconto»; the hub's
 availability read; the notice outbox with its retry, an out-of-order notice, and the reward
-written once on `signed`; the referrer's name «nessuno» when the call fails; the import
-idempotent on a second run and its delta; every hub match tool gone and every CRM tool
-classified as the table says.
+written once on `signed`; the referrer's name «nessuno» when the call fails; every hub match
+tool gone and every CRM tool classified as the table says.
 
 ## 9. Not in this design
 
@@ -542,5 +546,5 @@ sweep; the door writing a contract in the freelancer's space; the live report fr
 and the «Rendiconto» approval; availability and its door read; payment rules, due items,
 withholding and the net; the hub's read model, the notice outbox and the referral repoint; the
 door reads for the member area, the CV redaction and the merge; the hub's «Crea match» on the
-CRM; the import with its freeze, classification and delta; the hub's removal; the MCP tools
-moved and classified; the brief for the engagement pages; those pages.
+CRM; the one-off migration; the hub's removal; the MCP tools moved and classified; the brief
+for the engagement pages; those pages.
