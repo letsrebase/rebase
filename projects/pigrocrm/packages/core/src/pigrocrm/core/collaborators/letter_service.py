@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.collaborators import letters, rules
+from pigrocrm.core.collaborators.hub_notices import HubLink
 from pigrocrm.core.collaborators.letter_pdf import (
     RenderedLetter,
     SignatureBlank,
@@ -38,6 +39,7 @@ from pigrocrm.core.collaborators.letter_pdf import (
 )
 from pigrocrm.core.collaborators.letter_templates import SCOPE_ROOTS
 from pigrocrm.core.collaborators.models import Engagement
+from pigrocrm.core.collaborators.outbox import hub_company_of
 from pigrocrm.core.collaborators.repository import EngagementRepository
 from pigrocrm.core.collaborators.schemas import (
     LETTER_VARIABLE_MAX_LENGTH,
@@ -47,6 +49,7 @@ from pigrocrm.core.collaborators.schemas import (
 )
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import today_local
+from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.context import DocumentContext
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.schemas import DocumentRead
@@ -62,6 +65,12 @@ from pigrocrm.core.templates.scope import seat
 ENTITY = "letter"
 NOT_INDICATED = "non indicata"
 FLAGGED_NONE = "nessuno"
+# The two fields a letter prints about who referred the parties: the freelancer's (the framework
+# agreement) and the company's (the letter). They come from the hub and from nowhere else, so an
+# administrator cannot type them (`_variables`), and the value printed is stored with the document.
+REFERRER_FREELANCER = "segnalato_da"
+REFERRER_COMPANY = "azienda_segnalata_da"
+REFERRER_FIELDS = (REFERRER_FREELANCER, REFERRER_COMPANY)
 SIGNED_ELECTRONICALLY = "firmato elettronicamente"
 _VARIABLE_NAME = re.compile(r"[a-z][a-z0-9_]{0,59}")
 
@@ -202,10 +211,17 @@ class LetterService:
         variables = {
             key: value
             for key, value in (written or {}).items()
-            if key not in SCOPE_ROOTS and isinstance(value, str)
+            if key not in SCOPE_ROOTS and key not in REFERRER_FIELDS and isinstance(value, str)
+        }
+        # A letter keeps the referrer it was written with; only a «nessuno» is asked again, since
+        # the referral may have been verified since.
+        stored = {
+            key: value
+            for key in REFERRER_FIELDS
+            if isinstance(value := (written or {}).get(key), str)
         }
         scope, legal_entity_id = self._scope(
-            freelancer, engagement, variables, actor, framework_signed_on
+            freelancer, engagement, variables, actor, framework_signed_on, stored
         )
         compiled = compile_text(template.body_markdown, scope)
         issuer = scope["emittente"].get("ragione_sociale") or ""
@@ -311,6 +327,13 @@ class LetterService:
                     "il nome del campo e' parole minuscole con underscore",
                     expected="per esempio periodo_verifica",
                 )
+            if name in REFERRER_FIELDS:
+                raise ValidationFailed(
+                    ENTITY,
+                    name,
+                    "il nome di chi ha segnalato viene dall'hub: non si scrive qui",
+                    expected="un campo che il testo dichiara",
+                )
             if name in SCOPE_ROOTS:
                 raise ValidationFailed(
                     ENTITY,
@@ -337,6 +360,7 @@ class LetterService:
         variables: Mapping[str, str | None],
         actor: Actor,
         framework_signed_on: dt.date | None = None,
+        stored_referrers: Mapping[str, str] | None = None,
     ) -> tuple[dict[str, Any], str]:
         """What the text reads, and the legal entity that issues it. The administrator's fields
         go in first and the records' own second, so a field cannot shadow `emittente`,
@@ -370,11 +394,46 @@ class LetterService:
             "cliente": None,
         }
         scope["oggi"] = today.isoformat()
-        scope.setdefault("segnalato_da", FLAGGED_NONE)
-        scope.setdefault("azienda_segnalata_da", FLAGGED_NONE)
+        scope.update(self._referrers(freelancer, engagement, stored_referrers or {}))
         if engagement is not None and not scope.get("impegno") and engagement.days_per_week:
             scope["impegno"] = letters.days_per_week_words(engagement.days_per_week)
         return scope, str(legal_entity_id)
+
+    def _referrers(
+        self, freelancer: Organization, engagement: Engagement | None, stored: Mapping[str, str]
+    ) -> dict[str, str]:
+        """Who referred the freelancer and the company, as the hub names them for a verified
+        referral (collaborators design § 5, «What the CRM reads from the hub»), asked at render
+        and at send. A value already stored with the letter is kept; «nessuno» is printed when the
+        referral is unverified, when the party has no hub id and when the call fails, since a
+        letter must never say what nobody proved. The company is the one behind the engagement's
+        deal (`rebase:request=<hub company id>`): a framework agreement, which has no engagement,
+        asks only for the freelancer's."""
+        out = {
+            key: stored[key] if stored.get(key, FLAGGED_NONE) != FLAGGED_NONE else FLAGGED_NONE
+            for key in REFERRER_FIELDS
+        }
+        asking = [key for key in REFERRER_FIELDS if out[key] == FLAGGED_NONE]
+        company: UUID | None = None
+        if engagement is not None and engagement.deal_id is not None:
+            company = hub_company_of(
+                self.session.scalar(select(Deal.rebase_refs).where(Deal.id == engagement.deal_id))
+                or []
+            )
+        freelancer_id = freelancer.hub_freelancer_id if REFERRER_FREELANCER in asking else None
+        company_id = company if REFERRER_COMPANY in asking else None
+        if freelancer_id is None and company_id is None:
+            return out
+        answer = HubLink(self.ctx.settings).referrer_names(freelancer_id, company_id)
+        out[REFERRER_FREELANCER] = (
+            answer.freelancer
+            if freelancer_id is not None and answer.freelancer
+            else out[REFERRER_FREELANCER]
+        )
+        out[REFERRER_COMPANY] = (
+            answer.company if company_id is not None and answer.company else out[REFERRER_COMPANY]
+        )
+        return out
 
     def _client(self, engagement: Engagement | None) -> dict[str, Any]:
         if engagement is None or engagement.client_organization_id is None:

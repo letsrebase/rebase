@@ -86,6 +86,12 @@ class Settings(BaseSettings):
     # means the link is skipped (the match waits as `to_link`) and the report and
     # «Riprova» answer 503 with a sentence, as signing does without Documenso.
     pigro_engagements_token: str = ""
+    # The bearer the CRM presents to the hub (REB-1106, collaborators design § 5): its notices
+    # about the engagements it holds (`POST /api/hub/engagement-notices`) and the question of who
+    # referred a freelancer or a company (`POST /api/hub/referrer-name`). The value PigroCRM
+    # reads as `PIGROCRM_HUB_NOTICES_TOKEN`, its own and never the engagements token (which opens
+    # the CRM) or the registry's. Empty means neither route exists (404).
+    pigro_notices_token: str = ""
 
     # --- the contracts (REB-387) -----------------------------------------------------
     # Who signs for rebase, as the `rebase-*` fields of the framework agreement and the

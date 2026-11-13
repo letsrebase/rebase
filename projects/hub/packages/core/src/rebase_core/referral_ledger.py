@@ -14,12 +14,10 @@ from sqlalchemy.orm import Session, aliased
 
 from rebase_core.audit import utcnow
 from rebase_core.errors import NotFound, ValidationFailed
-from rebase_core.match_words import LETTER
 from rebase_core.models import (
     Company,
-    ContractDocument,
     Freelancer,
-    Match,
+    HubEngagement,
     Referral,
     ReferralReward,
     User,
@@ -32,11 +30,10 @@ from rebase_core.referral_schemas import (
 )
 from rebase_core.referral_settings import ReferralSettingsService
 from rebase_core.referrals import (
-    EARNING_MATCH_STATES,
+    EARNING_ENGAGEMENT_STATES,
     ENTITY,
     ReferralService,
     can_mature,
-    letter_unit,
 )
 
 # One row of `_ledger_query`: the referral, its reward and the referrer's card are outer
@@ -53,89 +50,74 @@ STATE_ORDER = ("to_confirm", "confirmed", "paid")
 STATE_WORDS = {"to_confirm": "da_confermare", "confirmed": "confermato", "paid": "pagato"}
 
 
-class _MatchFacts(NamedTuple):
-    match: Match
-    company_name: str
-    requested_role: str
+class _EngagementFacts(NamedTuple):
+    engagement: HubEngagement
+    company_name: str | None
+    role: str | None
     freelancer_id: UUID
     freelancer_name: str
     freelancer_deleted: bool
-    letter: ContractDocument | None
 
 
 class ReferralLedgerService:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def _live_matches(self, pending: set[tuple[str, UUID]]) -> dict[tuple[str, UUID], UUID]:
+    def _live_engagements(self, pending: set[tuple[str, UUID]]) -> dict[tuple[str, UUID], UUID]:
         """For each referred side without a reward (`kind`, `entity_id`), its newest
-        match that can still earn (not cancelled, letter not signed yet): the one the
-        first signature would mature the reward on. One query for all of them, one row
-        per side (`DISTINCT ON`), never a row per match the side ever had."""
+        engagement that can still earn (its letter not signed yet and not cancelled): the one
+        the first signature would mature the reward on. One query for all of them, one row
+        per side (`DISTINCT ON`), never a row per engagement the side ever had. Read from the
+        hub's read model of the CRM's engagements."""
         freelancer_ids = {entity for kind, entity in pending if kind == "freelancer"}
         company_ids = {entity for kind, entity in pending if kind == "company"}
         newest = []
         for kind, column, ids in (
-            ("freelancer", Match.freelancer_id, freelancer_ids),
-            ("company", Match.company_id, company_ids),
+            ("freelancer", HubEngagement.freelancer_id, freelancer_ids),
+            ("company", HubEngagement.company_id, company_ids),
         ):
             if ids:
                 newest.append(
-                    select(literal(kind).label("kind"), column.label("entity_id"), Match.id)
-                    .where(
-                        Match.cancelled_at.is_(None),
-                        Match.status.in_(EARNING_MATCH_STATES),
-                        column.in_(ids),
-                    )
+                    select(literal(kind).label("kind"), column.label("entity_id"), HubEngagement.id)
+                    .where(HubEngagement.state.in_(EARNING_ENGAGEMENT_STATES), column.in_(ids))
                     .ext(distinct_on(column))
-                    .order_by(column, Match.created_at.desc(), Match.id.desc())
+                    .order_by(column, HubEngagement.created_at.desc(), HubEngagement.id.desc())
                     .subquery()
                 )
         if not newest:
             return {}
         rows = self.session.execute(union_all(*(select(sub) for sub in newest)))
-        return {(kind, entity_id): match_id for kind, entity_id, match_id in rows}
+        return {(kind, entity_id): engagement_id for kind, entity_id, engagement_id in rows}
 
-    def _match_facts(self, match_ids: Iterable[UUID]) -> dict[UUID, _MatchFacts]:
-        ids = set(match_ids)
+    def _engagement_facts(self, engagement_ids: Iterable[UUID]) -> dict[UUID, _EngagementFacts]:
+        ids = set(engagement_ids)
         if not ids:
             return {}
         freelancer_user = aliased(User)
-        newer = aliased(ContractDocument)
-        current_letter = (
-            select(newer.id)
-            .where(newer.match_id == Match.id, newer.kind == LETTER)
-            .order_by(newer.created_at.desc(), newer.id.desc())
-            .limit(1)
-            .correlate(Match)
-            .scalar_subquery()
-        )
         rows = self.session.execute(
-            select(Match, Company, freelancer_user, Freelancer.deleted_at, ContractDocument)
-            .join(Company, Company.id == Match.company_id)
-            .join(Freelancer, Freelancer.id == Match.freelancer_id)
+            select(HubEngagement, Company.company_name, freelancer_user, Freelancer.deleted_at)
+            .outerjoin(Company, Company.id == HubEngagement.company_id)
+            .join(Freelancer, Freelancer.id == HubEngagement.freelancer_id)
             .join(freelancer_user, freelancer_user.id == Freelancer.user_id)
-            .outerjoin(ContractDocument, ContractDocument.id == current_letter)
-            .where(Match.id.in_(ids))
+            .where(HubEngagement.id.in_(ids))
         ).all()
         return {
-            match.id: _MatchFacts(
-                match,
-                company.company_name,
-                company.requested_role,
-                match.freelancer_id,
+            engagement.id: _EngagementFacts(
+                engagement,
+                company_name or engagement.client_name,
+                engagement.role,
+                engagement.freelancer_id,
                 f"{user.first_name} {user.last_name}".strip(),
                 freelancer_deleted_at is not None,
-                letter,
             )
-            for match, company, user, freelancer_deleted_at, letter in rows
+            for engagement, company_name, user, freelancer_deleted_at in rows
         }
 
     def _ledger_items(self, rows: Sequence[_LedgerRow]) -> list[ReferralLedgerItem]:
         """The page's rows as ledger items, every lookup batched over the whole page:
-        the referred names (two queries at most), the match each reward's letter belongs
-        to, the newest live match of each referral without a reward, those matches'
-        facts, and the rates -- a bounded handful of queries, never one per row."""
+        the referred names (two queries at most), the newest live engagement of each referral
+        without a reward, those engagements' facts and the rewards' own, and the rates -- a
+        bounded handful of queries, never one per row."""
         if not rows:
             return []
         settings = ReferralSettingsService(self.session).get_settings()
@@ -161,36 +143,24 @@ class ReferralLedgerService:
                 names["company", entity_id] = company_name
                 if deleted_at is not None:
                     deleted.add(("company", entity_id))
-        reward_ids = [r.ReferralReward.id for r in rows if r.ReferralReward is not None]
-        reward_match: dict[UUID, UUID | None] = (
-            {
-                reward_id: match_id
-                for reward_id, match_id in self.session.execute(
-                    select(ReferralReward.id, ContractDocument.match_id)
-                    .join(ContractDocument, ContractDocument.id == ReferralReward.document_id)
-                    .where(ReferralReward.id.in_(reward_ids))
-                )
-            }
-            if reward_ids
-            else {}
-        )
-        live = self._live_matches(
+        live = self._live_engagements(
             {
                 (r.Referral.kind, r.Referral.entity_id)
                 for r in rows
                 if r.ReferralReward is None and can_mature(r.Referral.kind, r.Referral.status)
             }
         )
-        facts = self._match_facts(
-            {m for m in reward_match.values() if m is not None} | set(live.values())
+        facts = self._engagement_facts(
+            {r.ReferralReward.engagement_id for r in rows if r.ReferralReward is not None}
+            | set(live.values())
         )
         evidence = referral_evidence(self.session, [(r.Referral, r.referrer_email) for r in rows])
         items = []
         for row in rows:
             referral, reward = row.Referral, row.ReferralReward
             key = (referral.kind, referral.entity_id)
-            match_id = reward_match.get(reward.id) if reward is not None else live.get(key)
-            found = facts.get(match_id) if match_id is not None else None
+            engagement_id = reward.engagement_id if reward is not None else live.get(key)
+            found = facts.get(engagement_id) if engagement_id is not None else None
             projected_rate = projected_amount = None
             if reward is None and found is not None:
                 projected_rate = (
@@ -198,8 +168,7 @@ class ReferralLedgerService:
                     if referral.kind == "freelancer"
                     else settings.rate_company
                 )
-                unit = letter_unit(found.letter.data) if found.letter is not None else ""
-                projected_amount = ReferralService.project_reward(found.match, unit, projected_rate)
+                projected_amount = ReferralService.project_reward(found.engagement, projected_rate)
             items.append(
                 ReferralLedgerItem(
                     referral_id=referral.id,
@@ -211,14 +180,14 @@ class ReferralLedgerService:
                     referrer_freelancer_id=row.referrer_freelancer_id,
                     referred_name=names.get(key, "-"),
                     referred_deleted=key in deleted,
-                    match_id=match_id if found is not None else None,
-                    match_freelancer_id=found.freelancer_id if found is not None else None,
-                    match_freelancer_name=found.freelancer_name if found is not None else None,
-                    match_freelancer_deleted=found.freelancer_deleted
+                    engagement_id=engagement_id if found is not None else None,
+                    engagement_freelancer_id=found.freelancer_id if found is not None else None,
+                    engagement_freelancer_name=found.freelancer_name if found is not None else None,
+                    engagement_freelancer_deleted=found.freelancer_deleted
                     if found is not None
                     else False,
-                    match_company_name=found.company_name if found is not None else None,
-                    match_requested_role=found.requested_role if found is not None else None,
+                    engagement_company_name=found.company_name if found is not None else None,
+                    engagement_role=found.role if found is not None else None,
                     projected_rate=projected_rate,
                     projected_amount=projected_amount,
                     rate=reward.rate if reward is not None else None,

@@ -9,7 +9,7 @@ import re
 from collections.abc import Callable, Iterator
 from datetime import date
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from admins import an_admin
@@ -36,12 +36,15 @@ from rebase_core.contract_schemas import (
     MatchCreate,
     MatchListItem,
 )
+from rebase_core.engagement_notices import EngagementNoticeService
+from rebase_core.engagement_schemas import EngagementNotice
 from rebase_core.freelancer_schemas import FreelancerCreate, FreelancerDraft
 from rebase_core.freelancers import FreelancerService
 from rebase_core.mail import RecordingSender
 from rebase_core.match_words import PAY_MODE_WORDS
 from rebase_core.matches import MatchService
 from rebase_core.models import (
+    HubEngagement,
     Match,
     Referral,
     ReferralReward,
@@ -163,6 +166,7 @@ def _sent_with_body(
     _signing(session, renderer, fake, RecordingSender()).send_match(match.id, admin_id)
     row = session.get(Match, match.id)
     assert row is not None
+    _tell_the_hub(session, row, "awaiting_signature", sequence=1)
     return row
 
 
@@ -219,6 +223,88 @@ def _fail_after_the_card_is_written(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ReferralService, "resolve_referrer", boom)
 
 
+# ---- what the CRM's notices tell the hub (REB-1106) --------------------------------
+
+
+def _notice(
+    key: UUID, freelancer_id: UUID, company_id: UUID | None, **change: object
+) -> EngagementNotice:
+    """The CRM's notice for an engagement the hub keyed by `key` (its `hub_match_id`):
+    a day-rate letter of 450 from 1 October 2026, signed unless `signed_at` says otherwise."""
+    fields: dict[str, object] = {
+        "sequence": 1,
+        "kind": "created",
+        "engagement_id": uuid4(),
+        "hub_match_id": key,
+        "hub_freelancer_id": freelancer_id,
+        "hub_company_id": company_id,
+        "client_name": "ACME S.r.l.",
+        "mode": "day",
+        "fee": Decimal("450"),
+        "expected_days": Decimal("20"),
+        "role": "Backend developer",
+        "starts_on": date(2026, 10, 1),
+        "state": "draft",
+    }
+    fields.update(change)
+    return EngagementNotice(**fields)  # type: ignore[arg-type]
+
+
+def _handoff(
+    session: Session, freelancer_id: UUID, company_id: UUID | None, budget: Decimal | None
+) -> UUID:
+    """The row «Crea match» opens before the CRM has said anything: the budget snapshot only."""
+    row = HubEngagement(
+        id=uuid4(),
+        freelancer_id=freelancer_id,
+        company_id=company_id,
+        company_daily_budget=budget,
+        state="handoff",
+        sequence=0,
+    )
+    session.add(row)
+    session.commit()
+    return row.id
+
+
+def _tell_the_hub(session: Session, match: Match, state: str, *, sequence: int) -> bool:
+    """What the CRM would have said about the hub's own match at this point: the match's own
+    letter figures, keyed by the match's id, on a row opened with the match's budget snapshot.
+    A match's letter is the only thing these tests have to stand in for the CRM's engagement."""
+    session.refresh(match)
+    if session.get(HubEngagement, match.id) is None:
+        session.add(
+            HubEngagement(
+                id=match.id,
+                freelancer_id=match.freelancer_id,
+                company_id=match.company_id,
+                company_daily_budget=match.company_daily_budget,
+                state="handoff",
+                sequence=0,
+            )
+        )
+        session.commit()
+    letter = _letter_of(session, match.id)
+    signed = state == "active"
+    notice = _notice(
+        match.id,
+        match.freelancer_id,
+        match.company_id,
+        sequence=sequence,
+        kind="signed" if signed else "sent",
+        mode="flat" if letter.data.get("modalita") == PAY_MODE_WORDS["lump_sum"] else "day",
+        fee=match.letter_fee,
+        expected_days=match.expected_days,
+        starts_on=match.letter_start_date,
+        ends_on=match.letter_end_date,
+        letter_id=letter.id,
+        letter_number=letter.number,
+        signed_at=letter.signed_at if signed else None,
+        state=state,
+    )
+    return EngagementNoticeService(session).apply(notice)
+
+
 # ---- the reward, at the first signed letter ----------------------------------------
 
 
@@ -231,6 +317,8 @@ def _sign_the_letter(
     signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
     signing.recovery.finish(signed)
+    session.expire_all()
+    _tell_the_hub(session, match, "active", sequence=2)
 
 
 # ---- a referral counts once the referred person is verified (REB-658) --------------

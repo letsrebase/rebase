@@ -194,7 +194,7 @@ def test_months_of_a_running_engagement_do_not_mark_the_card(clean_hub: Session)
     _write(clean_hub, person)  # written with the engagement in view
     assert _reasons(clean_hub) == {}
 
-    match.letter_start_date = date(2025, 12, 1)  # the same engagement, one month longer
+    match.starts_on = date(2025, 12, 1)  # the same engagement, one month longer
     clean_hub.commit()
 
     # `hash_material` leaves out what grows on its own, but not a changed start.

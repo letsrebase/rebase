@@ -27,6 +27,7 @@ from pigrocrm.core.bank.models import (  # noqa: F401
 )
 from pigrocrm.core.collaborators.models import (  # noqa: F401
     Engagement,
+    EngagementNotice,
     LetterCounter,
     MonthlyReport,
 )

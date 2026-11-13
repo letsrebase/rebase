@@ -37,6 +37,7 @@ from pigrocrm.core.collaborators import frameworks
 from pigrocrm.core.collaborators.forecast import EngagementForecastService
 from pigrocrm.core.collaborators.letters import ENGAGEMENT_LETTER, FRAMEWORK_AGREEMENT
 from pigrocrm.core.collaborators.models import Engagement
+from pigrocrm.core.collaborators.outbox import NoticeOutbox
 from pigrocrm.core.collaborators.signing_words import cancel_reason
 from pigrocrm.core.documenso.client import COMPLETED, outcome_from_envelope
 from pigrocrm.core.documents.models import Document
@@ -173,6 +174,7 @@ class SigningRecovery:
         if engagement is not None and engagement.state == "awaiting_signature":
             engagement.state = "active"
             self.session.flush()
+            NoticeOutbox(self.session).emit(engagement, "signed")
             EngagementForecastService(self.session).sync(engagement)
             self.service.activities.record(
                 "engagement",
@@ -429,5 +431,6 @@ class SigningRecovery:
         service.activities.record(
             ENTITY, letter.id, "signing_sent", self.system, {"kind": letter.type, "released": True}
         )
+        NoticeOutbox(self.session).emit(engagement, "sent")
         self.session.commit()
         return letter

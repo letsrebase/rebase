@@ -772,6 +772,28 @@ or a letter out for signature refuses it. The signature recovery is a step of th
 (`cli/signing.py::sweep_space`), isolated per space; `contracts-check` and `documenso-check` are commands. The MCP container has
 no mail key by design, so the MCP send tools answer 503 there until that is decided.
 
+**What the CRM tells the hub about an engagement goes through an outbox (REB-1106).** `NoticeOutbox.emit`
+(`core/collaborators/outbox.py`) writes one `engagement_notices` row in the transaction of every
+change the hub must hear of (created; a draft's role, dates, fee or client changed, `updated`; sent;
+signed; cancelled; closed; a framework notice served, once for each live engagement of that
+freelancer): the engagement's own `sequence` from 1, and the whole read model as it was (`payload`,
+never recomputed at delivery). A freelancer with no `hub_freelancer_id` writes nothing. The row has
+no foreign key and no legal-entity policy on purpose (it is bookkeeping read by no person), every
+space writes rows and **only the space `PIGROCRM_LEADS_SPACE` names sweeps them**: `pigrocrm
+reminders`, the quarter-hourly pass, calls `HubNoticeSweep` (`collaborators/hub_notices.py`) ahead
+of the reminders, so an hour's hub outage is retried by itself, with a backoff of 5 minutes doubling
+to 6 hours. It posts to `{PIGROCRM_HUB_URL}/api/hub/engagement-notices` under
+`PIGROCRM_HUB_NOTICES_TOKEN` (the hub's `REBASE_PIGRO_NOTICES_TOKEN`; never the engagements token),
+HTTPS only or plain HTTP to this machine, no redirect followed, no database lock held across the
+call. 2xx is `delivered`; 401, 403, 404, 408, 409, 429, 5xx and no answer are retried; any other 4xx
+is `rejected` and goes to `stderr` and the pass's exit status. Without the token the feature is
+inert and the rows wait. The same token and URL ask `POST /api/hub/referrer-name` for the letters'
+`{{segnalato-da}}` and `{{azienda-segnalata-da}}` (`LetterService._referrers`): printed only for a
+verified referral, stored with the document version, kept once stored, asked again at send only
+when the stored value is «nessuno», and «nessuno» on any failure; an administrator cannot type
+either field. The MCP container does not hold the token, so a letter made there stores «nessuno» and
+is asked again at send. Design: `collaborators-in-the-crm` § 5.
+
 **A router authenticates with `dependencies=[Depends(get_actor)]`, not per handler.** A
 handler that never names the actor is still behind it, and `test_routes_authenticate.py`
 asks every route of the OpenAPI document once with no credential. The open routes are the

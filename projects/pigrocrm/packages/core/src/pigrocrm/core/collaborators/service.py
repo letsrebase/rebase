@@ -27,6 +27,7 @@ from pigrocrm.core.collaborators.models import (
     Engagement,
     MonthlyReport,
 )
+from pigrocrm.core.collaborators.outbox import NOTICE_COLUMNS, NoticeOutbox
 from pigrocrm.core.collaborators.repository import EngagementRepository
 from pigrocrm.core.collaborators.rules import ENTITY, Commitment
 from pigrocrm.core.collaborators.schemas import (
@@ -68,6 +69,15 @@ def _days(value: Decimal) -> str:
     text = format(value.normalize(), "f")
     return text.replace(".", ",")
 
+
+# The notice each state a transition reaches tells the hub (`NoticeOutbox`): out for signature is
+# `sent`, active is `signed` (or `updated` when no letter was signed, see `transition`).
+TRANSITION_NOTICES = {
+    "awaiting_signature": "sent",
+    "active": "signed",
+    "concluded": "closed",
+    "cancelled": "cancelled",
+}
 
 # What a cancellation does about the engagement's letter, handed in by whoever can reach Documenso
 # (`SigningService.cancel_letters_of`): it runs inside the cancellation's transaction and answers
@@ -130,6 +140,7 @@ class EngagementService:
         self.activities.record(
             ENTITY, engagement.id, "created", actor, {"freelancer_id": str(freelancer.id)}
         )
+        NoticeOutbox(self.session).emit(engagement, "created")
         self.session.commit()
         return self._read(engagement)
 
@@ -190,6 +201,8 @@ class EngagementService:
         # What the freelancer is forecast to be paid follows the days and the client links.
         EngagementForecastService(self.session).sync(engagement)
         self.activities.record(ENTITY, engagement.id, "updated", actor, {"changed": changed})
+        if NOTICE_COLUMNS.intersection(changed):
+            NoticeOutbox(self.session).emit(engagement, "updated")
         self.session.commit()
         return self._read(engagement)
 
@@ -247,6 +260,12 @@ class EngagementService:
         self.activities.record(
             ENTITY, engagement.id, "state_changed", actor, {"from": previous, "to": state}
         )
+        outbox = NoticeOutbox(self.session)
+        notice = outbox.emit(engagement, TRANSITION_NOTICES[state])
+        if notice is not None and state == "active" and notice.payload["signed_at"] is None:
+            # Activated by a person with no signed letter behind it: nothing was signed, and the
+            # hub's reward waits for a signature, so the notice says only that the row changed.
+            notice.kind = "updated"
         self.session.commit()
         if after is not None:
             after()

@@ -24,6 +24,8 @@ from datetime import UTC, date, datetime, time
 from functools import partial
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import Engine
+
 from pigrocrm.core import telemetry
 from pigrocrm.core.accountant_export.retention import ExportRetention, RetentionReport
 from pigrocrm.core.automations.daily import AutomationPass, PassReport
@@ -34,6 +36,8 @@ from pigrocrm.core.cli.spaces_walk import (
     report_unreadable,
     space_engine,
 )
+from pigrocrm.core.collaborators.hub_notices import HubNoticeSweep, NoticeSweepReport
+from pigrocrm.core.collaborators.rules import is_leads_space
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.clock import today_local
@@ -177,7 +181,12 @@ def reminders(settings: Settings, *, slug: str | None, day: date | None, dry_run
     `ReminderRun.run_for_space` decides; `--dry-run` asks it what would be put in people's
     lists and writes nothing, and `--date` evaluates another day only with `--dry-run`.
     The pass writes its own success in the transaction that ends it, so only a failure is
-    written from here."""
+    written from here.
+
+    **It is also what delivers the engagement notices to the hub** (REB-1106): in the space
+    `PIGROCRM_LEADS_SPACE` names, and only there, `HubNoticeSweep` posts what the outbox holds,
+    ahead of the reminders and apart from them. It is the CRM's one frequent pass: the daily
+    `automations` would leave a notice that failed once waiting a day."""
     if _refuse_other_day(settings, day, dry_run):
         return 2
     walk = read_spaces(settings, slug=slug)
@@ -206,6 +215,13 @@ def reminders(settings: Settings, *, slug: str | None, day: date | None, dry_run
         now = datetime.combine(day, time(23, 59, 59), tzinfo=ZoneInfo(settings.timezone))
     for target in walk.targets:
         with space_engine(target.url) as engine:
+            # Apart from the reminders and before them, so a space whose reminders fail still
+            # tells the hub what happened to its engagements (REB-1106): only the leads space,
+            # the one that holds them.
+            if is_leads_space(settings, target.slug):
+                failed = (
+                    _sweep_hub_notices(settings, engine, target.label, dry_run=dry_run) or failed
+                )
             try:
                 outcome = run.run_for_space(
                     target.label,
@@ -225,6 +241,36 @@ def reminders(settings: Settings, *, slug: str | None, day: date | None, dry_run
                 continue
         _print_reminder_outcome(outcome, dry_run=dry_run)
     return 1 if failed else 0
+
+
+def _sweep_hub_notices(settings: Settings, engine: Engine, label: str, *, dry_run: bool) -> bool:
+    """The engagement notices the outbox owes the hub (`HubNoticeSweep`, REB-1106), delivered from
+    the quarter-hourly pass of the leads space. A line only when there is something to say. Rows
+    left to try again are counted on `stdout` (the backoff does the retrying, and an outage of the
+    hub should not stop the dead-man's-switch ping); rows the hub refused for good, and a sweep that
+    could not run at all, go to `stderr` and stop it, since a person has to look. Whether it
+    printed to `stderr`."""
+    try:
+        with session_factory(engine)() as space:
+            report = HubNoticeSweep(space, settings).run(dry_run=dry_run)
+    except Exception as exc:  # noqa: BLE001 - reported, the pass goes on
+        print(f"{label}: hub notices not sent ({type(exc).__name__})", file=sys.stderr)
+        return True
+    return _print_notice_sweep(label, report, dry_run=dry_run)
+
+
+def _print_notice_sweep(label: str, report: NoticeSweepReport, *, dry_run: bool) -> bool:
+    if dry_run:
+        if report.waiting:
+            print(f"{label}: hub notices due {report.waiting} (dry run)")
+        return False
+    if report.delivered or report.retrying:
+        print(f"{label}: hub notices sent {report.delivered}, to try again {report.retrying}")
+    elif report.waiting:
+        print(f"{label}: hub notices waiting for PIGROCRM_HUB_NOTICES_TOKEN {report.waiting}")
+    if report.rejected:
+        print(f"{label}: hub notices refused {report.rejected}", file=sys.stderr)
+    return report.rejected > 0
 
 
 def _print_reminder_outcome(outcome: ReminderOutcome, *, dry_run: bool) -> None:

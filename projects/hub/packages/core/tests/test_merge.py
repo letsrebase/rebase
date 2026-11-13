@@ -33,6 +33,7 @@ from rebase_core.models import (
     FreelancerFiscal,
     FreelancerSource,
     GuideDownload,
+    HubEngagement,
     Login,
     MagicLinkToken,
     Match,
@@ -65,6 +66,7 @@ TABLES = (
     "team_proposals",
     "talent_cloud_grants",
     "contract_documents",
+    "hub_engagements",
     "matches",
     "freelancer_fiscal",
     "freelancer_cards",
@@ -279,6 +281,12 @@ def _everything_of(session: Session, b: Freelancer, b_user: User, admin: User) -
         session.flush()
         ids[key] = row.id
     ids["matches"] = _match(session, b, company, admin, "draft").id
+    engagement = HubEngagement(
+        freelancer_id=b.id, company_id=company.id, state="active", sequence=1
+    )
+    session.add(engagement)
+    session.flush()
+    ids["hub_engagements"] = engagement.id
     session.add(
         ContractDocument(
             kind="framework",

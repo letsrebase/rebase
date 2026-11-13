@@ -85,6 +85,10 @@ x-hub-team: &hub-team
 
 # Only the API reads these: the webhooks' secrets and the signup's conversion and analytics.
 x-hub-api-only: &hub-api-only
+  # What the CRM presents to the hub (REB-1106): its engagement notices and the question of who
+  # referred somebody. The value the CRM's `.env` carries as PIGROCRM_HUB_NOTICES_TOKEN. Empty:
+  # neither route exists.
+  REBASE_PIGRO_NOTICES_TOKEN: ${REBASE_PIGRO_NOTICES_TOKEN:-}
   # ChatGPT Ads, the server half of the signup conversion. Empty defaults: a site that runs no
   # campaigns is the ordinary case, not a start-up failure.
   REBASE_OPENAI_PIXEL_ID: ${REBASE_OPENAI_PIXEL_ID:-}
