@@ -44,8 +44,10 @@ from pigrocrm.core.engagements.leads import lead_marker
 
 TOKEN = "un-token-lungo-per-gli-avvisi-verso-il-hub"
 HUB = "https://hub.example.test"
-# A little after the database's own clock, which stamps a notice's first turn when it is written.
-NOW = dt.datetime.now(dt.UTC) + dt.timedelta(minutes=5)
+# Far after the database's own clock, which stamps a notice's first turn when it is written: a
+# moment computed at import would be in the past by the time a long suite reaches this file, and
+# no notice would be due.
+NOW = dt.datetime(2100, 1, 1, tzinfo=dt.UTC)
 
 Call = tuple[str, str, dict[str, str], bytes]
 

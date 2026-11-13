@@ -21,11 +21,11 @@ again. The CRM's space address is the one the request's deal link already carrie
 """
 
 from typing import Any, Literal
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from rebase_core.crm_link import contact_point_payload
@@ -39,7 +39,8 @@ NOT_LINKED = (
     "Riprova a collegarla."
 )
 DEAL_ADDRESS_UNREADABLE = (
-    "Non riesco a ricavare lo spazio del CRM dal deal di questa richiesta: ricollegala e riprova."
+    "Il link al deal di questa richiesta non è uno spazio del CRM di questo ambiente: "
+    "ricollegala e riprova."
 )
 HANDED_OFF = "handoff"
 
@@ -95,6 +96,11 @@ def form_url(
     return f"{app_url}/engagements?{urlencode(query)}"
 
 
+def _origin(url: str) -> tuple[str, str]:
+    parts = urlsplit(url)
+    return parts.scheme.lower(), parts.netloc.lower()
+
+
 class EngagementHandoff:
     def __init__(self, session: Session, door: FreelancerDoor) -> None:
         self.session = session
@@ -116,6 +122,10 @@ class EngagementHandoff:
         if company.crm_status != LINKED or company.crm_deal_id is None:
             return HandoffRead(state="no_deal", url=None, engagement_id=None, message=NOT_LINKED)
         app_url = space_app_url(company.crm_deal_url or "", company.crm_deal_id)
+        if app_url is not None and _origin(app_url) != _origin(self.door.api_url):
+            # The link is stored text the CRM once answered: only the CRM this hub is configured
+            # for is somewhere to send an admin, whose browser then carries the freelancer's ids.
+            app_url = None
         if app_url is None:
             return HandoffRead(
                 state="no_deal", url=None, engagement_id=None, message=DEAL_ADDRESS_UNREADABLE
@@ -160,7 +170,12 @@ class EngagementHandoff:
         """The id this pair was handed over under: the one an earlier `handoff` row of the
         pair already has (the budget snapshot refreshed), else a new one. A pair whose
         engagement the CRM already noticed (any other state) gets a new id: that is another
-        engagement."""
+        engagement. A transaction lock on the pair makes two clicks at once take turns, so the
+        second finds the first's row."""
+        self.session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+            {"key": f"handoff:{freelancer_id}:{company.id}"},
+        )
         row = self.session.scalars(
             select(HubEngagement)
             .where(

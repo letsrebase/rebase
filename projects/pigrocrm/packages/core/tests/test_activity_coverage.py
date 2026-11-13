@@ -200,6 +200,11 @@ _DELEGATION: dict[Method, str] = {
         "`append_note` records `note_added` on the parent, the one function the creating "
         "services write a first note with as well"
     ),
+    ("HubDoorService", "ensure_freelancer"): (
+        "REB-1105: writes the freelancer's organization through `OrganizationService._insert` "
+        "(records `created`) or `OrganizationService.update` (records `updated`) as "
+        "`Actor.rebase()`, so the space's timeline says the hub did it"
+    ),
     ("DocumentService", "create"): "`DocumentContext.create_row` records `created`",
     ("DocumentTemplating", "regenerate"): "`DocumentUploads.add_version` records the version",
     ("InvoiceArtifacts", "export_xml"): "files the XML through `DocumentService.add_version`",
