@@ -41,7 +41,7 @@ function useFocusWhenOpened(open: boolean) {
   }
 }
 
-function CompanyList({
+export function CompanyList({
   selected,
   onSelect,
   searchRef,

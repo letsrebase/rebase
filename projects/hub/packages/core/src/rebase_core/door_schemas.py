@@ -76,3 +76,12 @@ class CrmMergeCheck(_Answer):
     framework_regimes: list[str]
     shared_clients: int
     tax_code_conflict: bool
+
+
+class CrmFreelancerOrganization(_Answer):
+    """The freelancer's organization in the CRM's leads space (REB-1105): found by the hub's id or
+    written from the card, `joined` when one that was already there gained the role."""
+
+    organization_id: UUID
+    created: bool
+    joined: bool

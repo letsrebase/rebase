@@ -41,7 +41,7 @@ const AdminCampaign = lazyRouteComponent(() => import('@/pages/admin/Campaign'),
 const AdminCampaigns = lazyRouteComponent(() => import('@/pages/admin/Campaigns'), 'AdminCampaigns')
 const AdminCreateCampaign = lazyRouteComponent(() => import('@/pages/admin/CreateCampaign'), 'AdminCreateCampaign')
 const AdminCreateCompany = lazyRouteComponent(() => import('@/pages/admin/CreateCompany'), 'AdminCreateCompany')
-const AdminCreateMatch = lazyRouteComponent(() => import('@/pages/admin/CreateMatch'), 'AdminCreateMatch')
+const AdminOpenEngagement = lazyRouteComponent(() => import('@/pages/admin/OpenEngagement'), 'AdminOpenEngagement')
 const AdminDuplicates = lazyRouteComponent(() => import('@/pages/admin/Duplicates'), 'AdminDuplicates')
 const AdminMatches = lazyRouteComponent(() => import('@/pages/admin/Matches'), 'AdminMatches')
 const AdminReferrals = lazyRouteComponent(() => import('@/pages/admin/Referrals'), 'AdminReferrals')
@@ -436,11 +436,11 @@ const adminFreelanceContracts = createRoute({
   path: '/freelance/$id/contracts',
   component: AdminContracts,
 })
-// REB-387, REB-476: the three-step «Crea match», from the talent row's menu and the contracts page.
+// REB-1105: «Crea match», from the talent row's menu and the contracts page, hands the pair over to the CRM's engagement form.
 const adminFreelanceMatchNew = createRoute({
   getParentRoute: () => adminArea,
   path: '/freelance/$id/match/new',
-  component: AdminCreateMatch,
+  component: AdminOpenEngagement,
 })
 // The website's footer links to /hub/admin/freelance (ORB-106: before
 // `adminIndexRedirect` above existed, the hub router had no index route under /admin

@@ -457,6 +457,7 @@ export type FiscalData = Narrow<Schemas['FiscalData'], { vat_number: string | nu
 export type Fiscal = Schemas['FiscalRead']
 export type ContractDocument = Schemas['ContractDocumentRead']
 export type Match = Schemas['MatchRead']
+export type EngagementHandoff = Schemas['HandoffRead']
 /** `previsto` while the first letter is not signed (a projection), the reward's own
  *  state after, `already_accrued` when the referral already paid on another match, and
  *  `to_verify` for a company whose referente has not logged in yet (REB-658). */
@@ -819,6 +820,19 @@ export const admin = {
         body: dealId ? { deal_id: dealId } : {},
       }),
       reading<Company>(),
+    ),
+  /** «Crea match» (REB-1105): the CRM finds or writes the freelancer's organization, the hub keeps
+   *  a `handoff` row under a new engagement id, and the answer carries the CRM's engagement form to
+   *  open, filled in (`ready`), or says the request has no deal in the CRM yet (`no_deal`). A 503
+   *  says this environment has no link to the CRM, a 409 is the CRM's refusal in its words, a 502
+   *  that it did not answer. */
+  handOffEngagement: (freelancerId: string, companyId: string) =>
+    unwrap(
+      client.POST('/api/hub/freelancers/{freelancer_id}/engagement-handoff', {
+        params: { path: { freelancer_id: freelancerId } },
+        body: { company_id: companyId },
+      }),
+      reading<EngagementHandoff>(),
     ),
   restoreCompany: (id: string) =>
     unwrap(

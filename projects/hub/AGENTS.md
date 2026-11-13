@@ -148,6 +148,21 @@ card**: the old signing path no longer writes a reward, and `ReferralService.for
 reward's engagement as the match with that id (true of a handed-off or migrated match), which is
 the one overlap limit the «Match» list has.
 
+**«Crea match» hands the engagement to the CRM (REB-1105).** `POST /api/hub/freelancers/{id}/engagement-handoff`
+(`routers/matches.py`, body `{company_id}`, `EngagementHandoff` in `engagement_handoff.py`) asks the CRM's root
+door for the freelancer's organization (`PUT /api/rebase/freelancers/{hub id}/organization`,
+`FreelancerDoor.ensure_organization`: the card's name, login address, contact points and fiscal VAT number and tax
+code; by hub id, never by name), keeps one `hub_engagements` row in state `handoff` with the company's daily budget
+snapshot (opening the same pair again reuses the row and its id; a pair whose engagement the CRM already noticed gets
+a new one) and answers `{state: "ready", url, engagement_id}`: the CRM's form at
+`{space}/app/engagements?hub_match_id=<minted id>&freelancer_id=<organization>&deal_id=<request's deal>&client_id=<its
+customer>`. The space is read off the request's `crm_deal_url` (`{origin}/{slug}/app/deal/{id}`), so no setting names
+the leads space twice. A request not linked yet answers `{state: "no_deal", message}` and writes nothing; the page
+(`OpenEngagement.tsx`, the route of the old wizard) offers «Riprova» (`/crm/link`) and asks again. 409 carries the
+CRM's refusal (an archived organization, a VAT number that is another freelancer's), 502 a CRM that did not answer,
+503 no engagements token. The old wizard (`CreateMatch.tsx` and its routes) is unreachable from «Crea match» and
+stays until its removal card.
+
 Every match and contract action is a tool too (REB-478): each runs the guard the admin
 API runs, then the same core service, with the calling admin as the actor, and answers
 `pdf_url`, never the PDF bytes, the tax identifiers or the client's budget. The guards
