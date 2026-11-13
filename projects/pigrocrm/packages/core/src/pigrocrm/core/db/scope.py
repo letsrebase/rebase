@@ -54,6 +54,14 @@ def _apply(connection: Any, scope: str, user: str) -> None:
     )
 
 
+# Which space a session serves, in `session.info`: the slug the registry opened it for, `None` for
+# the root installation. A session that carries no such key (a test's, a script's) does not say.
+# What reads it is the engagement notice outbox, which writes only in the space whose engagements
+# the hub reads (`PIGROCRM_LEADS_SPACE`, REB-1106); the registry's factories and the cron walk set
+# it.
+SPACE_SLUG_KEY = "space_slug"
+
+
 def bind_scope(session: Session, actor: Actor) -> None:
     """Make every transaction of `session` run inside `actor`'s scope.
 

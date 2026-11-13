@@ -275,7 +275,7 @@ class EngagementNotice(Base, PrimaryKeyMixin, TimestampMixin):
     The table has no foreign key on purpose: the notice is about a freelancer's engagement but is
     the CRM's own bookkeeping, read by no person and no API, so it carries no legal-entity policy
     (nothing joins it to `organizations`), and an engagement is never deleted, so the id never
-    dangles. Every space writes its rows; only the space `PIGROCRM_LEADS_SPACE` names sweeps them.
+    dangles. Only the space `PIGROCRM_LEADS_SPACE` names writes rows and sweeps them.
     """
 
     __tablename__ = "engagement_notices"

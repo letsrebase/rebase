@@ -17,9 +17,9 @@ belonged to, keyed by the match's id, with the figures the reward was computed f
 so the CRM's first real notice for it replaces them), and only then drops the old column. Every
 statement is conditional, like every migration of this package, so it can run again.
 
-`downgrade` puts `document_id` back from the match's signed letter and **deletes a reward whose
-engagement is not a match with one**: a reward earned from an engagement the CRM holds has no hub
-letter to point at.
+`downgrade` **refuses while `referral_rewards` holds any row**: a reward earned from an engagement
+the CRM holds has no hub letter to point at, and a rollback must not delete money owed. With the
+table empty it puts the old column back.
 """
 
 from collections.abc import Sequence
@@ -111,17 +111,17 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    held = op.get_bind().execute(sa.text("SELECT count(*) FROM referral_rewards")).scalar_one()
+    if held:
+        raise RuntimeError(
+            f"cannot roll back 0052: referral_rewards holds {held} row(s), each pointing at an "
+            "engagement the old schema has no letter for; settle or export them, empty the "
+            "table, then roll back"
+        )
     op.execute(
         "ALTER TABLE referral_rewards ADD COLUMN IF NOT EXISTS document_id UUID "
         "REFERENCES contract_documents (id)"
     )
-    op.execute(
-        "UPDATE referral_rewards r SET document_id = ("
-        "SELECT d.id FROM contract_documents d WHERE d.match_id = r.engagement_id "
-        "AND d.kind = 'letter' AND d.status = 'signed' ORDER BY d.signed_at, d.id LIMIT 1) "
-        "WHERE r.document_id IS NULL"
-    )
-    op.execute("DELETE FROM referral_rewards WHERE document_id IS NULL")
     op.execute("ALTER TABLE referral_rewards ALTER COLUMN document_id SET NOT NULL")
     op.execute("ALTER TABLE referral_rewards DROP COLUMN IF EXISTS engagement_id")
     op.execute("DROP TABLE IF EXISTS hub_engagements")

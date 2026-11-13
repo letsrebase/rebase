@@ -9,8 +9,11 @@ engagement's own sequence number and **the whole read model as it was** (`payloa
 upsert needs nothing else and a late delivery of an old row cannot overwrite a newer one: the hub
 ignores a sequence older than the one it holds.
 
-An engagement whose freelancer carries no hub id (one written in the CRM for somebody the hub
-never saw) has nothing to tell the hub and writes no row. The row is never edited afterwards
+Only the space `PIGROCRM_LEADS_SPACE` names writes rows (a session says which space it serves in
+`session.info`, set by the registry's factories and the cron walk; one that says nothing, a test's,
+does not hold a notice back), since the hub reads no other space's engagements. An engagement whose
+freelancer carries no hub id (one written in the CRM for somebody the hub never saw) has nothing to
+tell the hub and writes no row. The row is never edited afterwards
 except by the sweep that delivers it (`hub_notices.py`).
 """
 
@@ -24,6 +27,9 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.collaborators import letters
 from pigrocrm.core.collaborators.models import NOTICE_KINDS, Engagement, EngagementNotice
+from pigrocrm.core.collaborators.rules import is_leads_space
+from pigrocrm.core.config import get_settings
+from pigrocrm.core.db.scope import SPACE_SLUG_KEY
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.organizations.models import Organization
@@ -32,6 +38,11 @@ from pigrocrm.core.organizations.models import Organization
 # (`engagements.leads.lead_marker`, which a test holds this prefix to): that is how an engagement on
 # the request's deal knows the hub company behind it.
 REQUEST_REF_PREFIX = "rebase:request="
+
+# The longest client name the hub's read model keeps (its column and its schema): a longer legal
+# name is cut here, since the hub would refuse the whole notice for good (a 422) and the engagement
+# would never reach it.
+CLIENT_NAME_MAX = 200
 
 # The engagement's columns the hub's read model shows: a draft that changes one of them tells the
 # hub again (`updated`), since the read model would otherwise show the old value until the first
@@ -82,9 +93,15 @@ class NoticeOutbox:
 
     def emit(self, engagement: Engagement, kind: str) -> EngagementNotice | None:
         """Writes the engagement's next notice into the caller's transaction, flushed and never
-        committed. `None` when the freelancer has no hub id: there is nobody to tell."""
+        committed. `None` when the space is not the leads space (the only one whose engagements
+        the hub reads, so no other space accumulates rows nobody delivers) and when the freelancer
+        has no hub id: there is nobody to tell."""
         if kind not in NOTICE_KINDS:
             raise ValueError(f"unknown notice kind {kind!r}")
+        if SPACE_SLUG_KEY in self.session.info and not is_leads_space(
+            get_settings(), self.session.info[SPACE_SLUG_KEY]
+        ):
+            return None
         hub_freelancer_id = self.session.scalar(
             select(Organization.hub_freelancer_id).where(
                 Organization.id == engagement.freelancer_id
@@ -152,7 +169,7 @@ class NoticeOutbox:
             "hub_match_id": _text(engagement.hub_match_id),
             "hub_freelancer_id": str(hub_freelancer_id),
             "hub_company_id": _text(hub_company_of(refs or [])),
-            "client_name": client_name,
+            "client_name": client_name[:CLIENT_NAME_MAX] if client_name else client_name,
             "letter_id": _text(letter.id) if letter is not None else None,
             "letter_number": engagement.letter_number,
             "signed_at": _text(letter.signed_at) if signed and letter is not None else None,

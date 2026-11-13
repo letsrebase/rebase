@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
+from pigrocrm.core.db.scope import SPACE_SLUG_KEY
 from pigrocrm.core.space_settings import SpaceSettingsService, apply_overrides
 from pigrocrm.core.tenants.database import tenant_database_url, tenants_database_url
 from pigrocrm.core.tenants.google import (
@@ -183,6 +184,7 @@ class SpaceRegistry:
                 with self._lock:
                     if self._root is None:
                         self._root = session_factory(create_engine_from_settings(self.settings))
+                        self._root.configure(info={SPACE_SLUG_KEY: None})
             return self._root
         with self._lock:
             now = time.monotonic()
@@ -202,6 +204,7 @@ class SpaceRegistry:
             factory = session_factory(
                 _small_engine(tenant_database_url(self.settings, tenant.db_name))
             )
+            factory.configure(info={SPACE_SLUG_KEY: slug})
             self._spaces[slug] = (factory, now)
             while len(self._spaces) > self._max_open_spaces:
                 self._dispose(self._spaces.popitem(last=False)[1][0])

@@ -18,23 +18,26 @@ from sqlalchemy.orm import Session
 from test_signing import SIGNED_AT, Desk
 
 from pigrocrm.core.cli import cron
-from pigrocrm.core.collaborators import letter_service
+from pigrocrm.core.collaborators import letter_service, outbox
 from pigrocrm.core.collaborators.hub_notices import (
     NOTICES_PATH,
     REFERRER_PATH,
     HubLink,
     HubNoticeSweep,
+    NoticeSweepReport,
     retry_delay,
     speaks_https,
 )
 from pigrocrm.core.collaborators.models import Engagement, EngagementNotice
 from pigrocrm.core.collaborators.outbox import (
+    CLIENT_NAME_MAX,
     REQUEST_REF_PREFIX,
     NoticeOutbox,
     hub_company_of,
 )
 from pigrocrm.core.collaborators.schemas import EngagementUpdate
 from pigrocrm.core.config import Settings
+from pigrocrm.core.db.scope import SPACE_SLUG_KEY
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.engagements.leads import lead_marker
@@ -125,6 +128,20 @@ def test_an_engagement_creation_writes_notice_one_with_the_read_model(desk: Desk
     assert "7331" not in json.dumps(payload)
 
 
+def test_a_long_client_name_is_cut_to_what_the_hub_keeps(desk: Desk) -> None:
+    long_name = ("Società di consulenza " * 15)[:250]
+    client = desk.world.client
+    client.legal_name = long_name
+    desk.session.flush()
+
+    other = desk.world.engagement(desk.world.freelancer(legal_name="Grace Hopper"))
+    (created,) = [row for row in notices(desk.session) if row.engagement_id == other.id]
+
+    assert len(long_name) > CLIENT_NAME_MAX
+    assert created.payload["client_name"] == long_name[:CLIENT_NAME_MAX]
+    assert len(created.payload["client_name"]) == CLIENT_NAME_MAX
+
+
 @needs_binaries
 def test_every_change_the_hub_must_hear_of_writes_the_next_notice(desk: Desk) -> None:
     desk.service.send_engagement(desk.engagement.id, ADMIN)  # the framework agreement leaves
@@ -201,6 +218,43 @@ def test_the_notice_leaves_with_the_transaction_that_rolls_back(desk: Desk) -> N
     desk.session.rollback()
 
     assert [notice.sequence for notice in notices(desk.session)] == [1]
+
+
+@pytest.mark.parametrize(
+    ("serves", "writes"),
+    [
+        ("studio", True),  # the leads space
+        ("altro", False),  # another space: the hub reads none of its engagements
+        (None, False),  # the root installation, when it is not the leads space
+    ],
+)
+def test_only_the_leads_space_writes_notices(
+    desk: Desk, monkeypatch: pytest.MonkeyPatch, serves: str | None, writes: bool
+) -> None:
+    monkeypatch.setattr(outbox, "get_settings", lambda: settings(leads_space="studio"))
+    desk.session.info[SPACE_SLUG_KEY] = serves
+
+    other = desk.world.engagement(desk.world.freelancer(legal_name="Grace Hopper"))
+    desk.world.engagements.update(other.id, EngagementUpdate(role="Tech lead"), ADMIN)
+    desk.world.engagements.cancel(other.id, ADMIN)
+
+    mine = [row for row in notices(desk.session) if row.engagement_id == other.id]
+    assert [row.kind for row in mine] == (["created", "updated", "cancelled"] if writes else [])
+
+
+def test_the_root_installation_writes_when_it_is_the_leads_space(
+    desk: Desk, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        outbox, "get_settings", lambda: settings(leads_space="studio", root_slug="studio")
+    )
+    desk.session.info[SPACE_SLUG_KEY] = None
+
+    other = desk.world.engagement(desk.world.freelancer(legal_name="Grace Hopper"))
+
+    assert [row.kind for row in notices(desk.session) if row.engagement_id == other.id] == [
+        "created"
+    ]
 
 
 def test_the_hub_company_is_the_one_on_the_deals_request_reference(desk: Desk) -> None:
@@ -330,6 +384,31 @@ def test_a_wrong_token_a_missing_route_and_a_hub_in_trouble_are_asked_again(
     assert row.state == "pending"
 
 
+def test_a_notice_the_hub_keeps_answering_401_403_or_404_is_reported_as_stuck(
+    desk: Desk,
+) -> None:
+    hub = FakeHub()
+    hub.default = (401, {})
+
+    reports = [sweep(desk, hub, now=NOW + dt.timedelta(days=n)) for n in range(4)]
+
+    # Retried like any failure, and reported from the third answer on.
+    assert [(report.retrying, report.stuck) for report in reports] == [
+        (1, 0),
+        (1, 0),
+        (1, 1),
+        (1, 1),
+    ]
+    (row,) = notices(desk.session)
+    assert (row.state, row.attempts) == ("pending", 4)
+
+    # A hub in trouble (503) retries as long as it takes and is never «stuck».
+    other = FakeHub(default=(503, {}))
+    desk.world.engagements.update(desk.engagement.id, EngagementUpdate(role="Tech lead"), ADMIN)
+    late = NOW + dt.timedelta(days=9)
+    assert [sweep(desk, other, now=late + dt.timedelta(days=n)).stuck for n in range(4)] == [0] * 4
+
+
 def test_without_the_token_the_sweep_is_inert_and_keeps_its_rows(desk: Desk) -> None:
     hub = FakeHub()
 
@@ -391,6 +470,10 @@ def test_the_reminder_pass_reports_what_the_sweep_did_and_stops_on_a_refusal(
     hub.default = (422, {})
     assert cron._sweep_hub_notices(settings(), engine, "root", dry_run=False) is True
     assert "root: hub notices refused 1" in capsys.readouterr().err
+
+    stuck = NoticeSweepReport(retrying=1, stuck=1)
+    assert cron._print_notice_sweep("root", stuck, dry_run=False) is True
+    assert "again and again 1" in capsys.readouterr().err
 
     # Nothing to say: no line at all.
     assert cron._sweep_hub_notices(settings(), engine, "root", dry_run=False) is False

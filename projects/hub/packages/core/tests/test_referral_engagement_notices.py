@@ -16,7 +16,7 @@ from referral_fixtures import (
     _request,
     clean_referrals,  # noqa: F401  (fixture)
 )
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from rebase_core.engagement_notices import EngagementNoticeService
@@ -196,11 +196,11 @@ def test_a_later_notice_that_still_carries_the_signature_writes_the_reward_the_l
     assert len(clean_referrals.scalars(select(ReferralReward)).all()) == 1
 
 
-def test_an_engagement_with_no_budget_snapshot_leaves_the_reward_to_be_priced_by_hand(
+def test_a_row_the_hub_did_not_open_takes_the_companys_budget_as_its_snapshot(
     clean_referrals: Session,
 ) -> None:
     freelancer_id, company_id = _referred(clean_referrals)
-    key = uuid4()  # no handoff row: nobody took the company's budget
+    key = uuid4()  # no handoff row: the notice creates it
 
     _apply(
         clean_referrals,
@@ -208,6 +208,44 @@ def test_an_engagement_with_no_budget_snapshot_leaves_the_reward_to_be_priced_by
             key,
             freelancer_id,
             company_id,
+            sequence=1,
+            kind="signed",
+            state="active",
+            signed_at=SIGNED,
+        ),
+    )
+
+    assert _row(clean_referrals, key).company_daily_budget == Decimal("800.00")
+    (reward,) = clean_referrals.scalars(select(ReferralReward)).all()
+    # Margin: (800 - 450) * 20 expected days = 7000, at 10%.
+    assert (reward.base_amount, reward.reward_amount) == (Decimal("7000.00"), Decimal("700.00"))
+
+
+def test_the_snapshot_is_never_overwritten_by_a_later_notice_or_a_budget_edit(
+    clean_referrals: Session,
+) -> None:
+    freelancer_id, company_id = _referred(clean_referrals)
+    key = uuid4()
+    _apply(clean_referrals, _notice(key, freelancer_id, company_id, sequence=1))
+    clean_referrals.execute(text("UPDATE companies SET daily_budget = 900"))
+    clean_referrals.commit()
+
+    _apply(clean_referrals, _notice(key, freelancer_id, company_id, sequence=2))
+
+    assert _row(clean_referrals, key).company_daily_budget == Decimal("800.00")
+
+
+def test_an_engagement_with_no_company_leaves_the_reward_to_be_priced_by_hand(
+    clean_referrals: Session,
+) -> None:
+    freelancer_id, _ = _referred(clean_referrals)
+
+    _apply(
+        clean_referrals,
+        _notice(
+            uuid4(),
+            freelancer_id,
+            None,
             sequence=1,
             kind="signed",
             state="active",
