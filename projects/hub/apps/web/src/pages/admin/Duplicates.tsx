@@ -247,8 +247,8 @@ function MergeDialog({
           </p>
           <ul className="list-disc space-y-1 pl-5">
             <li>
-              Passano alla scheda che resta gli accessi, le note, i match e i contratti, le campagne, i
-              referral, le richieste e il registro delle modifiche.
+              Passano alla scheda che resta gli accessi, le note, gli incarichi che l’hub conosce, le
+              campagne, i referral, le richieste e il registro delle modifiche.
             </li>
             <li>Resta il CV più recente; se serve, la scheda anonima va riscritta.</li>
             <li>L’altra scheda è nascosta, non cancellata.</li>

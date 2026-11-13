@@ -287,14 +287,14 @@
               core = ./projects/pigrocrm/packages/core;
             };
             # The anonymous CV's print (`rebase_core.anonymous_cv.render`) shells out to bare
-            # `typst`, and `rebase_core.contracts.brand` reads the palette, the typeface and the echo logo at the
-            # repository's own paths (`REPO = parents[7]`), which a store venv does not
-            # have. Both binaries and a copy of the three files go into this
-            # derivation, the files at `share/hub-api/brand`; `postBuild` then rewraps
+            # `typst`, and `rebase_core.contracts.brand` reads the palette, the typeface and
+            # the echo logo at the repository's own paths (`REPO = parents[7]`), which a
+            # store venv does not have. The binary and a copy of the three files go into
+            # this derivation, the files at `share/hub-api/brand`; `postBuild` then rewraps
             # `bin/rebase` (the CLI: `crm-sweep`, `cards-refresh`, ...) and
             # `bin/uvicorn` (both `rebase_api.main:app` and `rebase_mcp.http:app` run
             # from it, one venv for both) with `makeWrapper`, so every entry point that
-            # can print a PDF finds `pandoc`, `typst` and the brand on its own,
+            # can print a PDF finds `typst` and the brand on its own,
             # with nothing set by a caller (REB-403, the echo since REB-479).
             hub-api = pkgs.symlinkJoin {
               name = "hub-api";
@@ -307,7 +307,6 @@
                   ];
                   core = ./projects/hub/packages/core;
                 })
-                pandoc
                 typst
                 (pkgs.runCommand "hub-api-brand" { } ''
                   install -Dm444 ${./shared/brand/palette.css} \
@@ -452,6 +451,9 @@
             # The hub beside the website on one name, which is letsrebase.com's own
             # layout: two modules adding locations to the same virtual host.
             hub =
+              let
+                hubApi = self.packages.${pkgs.stdenv.hostPlatform.system}.hub-api;
+              in
               pkgs.testers.runNixOSTest {
                 name = "hub";
                 nodes.machine = {
@@ -521,6 +523,18 @@
                   machine.wait_until_succeeds(
                       "journalctl -u rebase-hub-campaigns-tick --no-pager -o cat"
                       " | grep -Fx '0 campagne, 0 inviate, 0 saltate, 0 fallite, 0 esiti registrati'"
+                  )
+                  # The anonymous CV's toolchain, under the unit's own sandbox: Typst is
+                  # on the package's PATH and the brand directory is the one the wrappers
+                  # set, the way the `hub-image` preflight checks the Docker image.
+                  machine.succeed(
+                      "systemd-run --wait --pipe --uid=rebase -p ProtectSystem=strict "
+                      "-p PrivateDevices=true -p PrivateTmp=true "
+                      "--setenv=PATH=${hubApi}/bin "
+                      "--setenv=REBASE_CONTRACTS_BRAND_DIR=${hubApi}/share/hub-api/brand "
+                      "${hubApi}/bin/python -c "
+                      "'import shutil; from rebase_core.contracts import brand; "
+                      "assert shutil.which(\"typst\"); brand.fonts_dir(); assert brand.ECHO.is_file()'"
                   )
                   # The magic link's token travels in the SPA's URL and in no Referer,
                   # and the header is set once although two modules share the name.

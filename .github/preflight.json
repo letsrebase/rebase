@@ -325,7 +325,7 @@
         "projects/hub/packages/core/src/rebase_core/contracts/**"
       ],
       "serial": true,
-      "why": "The one project whose images were verified on no tier before the trunk: ci.yml builds them on push only, so a broken Dockerfile here reached main before anything said so. `-p rebase` because that is the project name the deploy passes (docs/adding-a-project.md section 7) and the name decides the image tags. Serial for the same reason as the other two: a docker build saturates the box. Then it typesets both contracts inside the built image (`rebase contracts-check`), which is the one place pandoc, Typst, fontTools and the brand files all have to be present at once."
+      "why": "The one project whose images were verified on no tier before the trunk: ci.yml builds them on push only, so a broken Dockerfile here reached main before anything said so. `-p rebase` because that is the project name the deploy passes (docs/adding-a-project.md section 7) and the name decides the image tags. Serial for the same reason as the other two: a docker build saturates the box. Then it checks inside the built image that Typst runs and that the brand reads (the palette, the typeface built with fontTools, the echo logo), which is the one place those all have to be present at once for the anonymous CV print."
     },
     {
       "id": "hub-documenso-compose",

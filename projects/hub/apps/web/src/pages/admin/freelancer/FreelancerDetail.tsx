@@ -141,6 +141,13 @@ export function AdminFreelancerDetail() {
             </>
           )}
           {f.deleted_at === null && (
+            <Button asChild variant="outline" size="sm">
+              <Link to="/admin/freelance/$id/match/new" params={{ id: f.id }}>
+                Crea match
+              </Link>
+            </Button>
+          )}
+          {f.deleted_at === null && (
             <Button type="button" variant="outline" size="sm" onClick={() => setOverrideOpen(true)}>
               Modifica scheda
             </Button>

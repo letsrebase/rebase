@@ -256,12 +256,12 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def merge_freelancers(freelancer_id: str, da_id: str) -> dict[str, Any]:
-        """Merges card `da_id` into `freelancer_id` (REB-800): notes, logins, matches,
-        contracts, campaign rows, referrals and log entries move to the card that stays; the
-        most recent CV stays there, with its anonymous card marked to be rewritten (rewritten
-        by `cards-refresh`, or `regenerate_freelancer_card`); the other card is not deleted,
-        it is hidden and points to this one, and the address it had still works to log in. The
-        answer is how many rows moved, by type, and the action id. Refused with a sentence
+        """Merges card `da_id` into `freelancer_id` (REB-800): notes, logins, the hub's
+        engagement read model, campaign rows, referrals and log entries move to the card that
+        stays; the most recent CV stays there, with its anonymous card marked to be rewritten
+        (rewritten by `cards-refresh`, or `regenerate_freelancer_card`); the other card is not
+        deleted, it is hidden and points to this one, and the address it had still works to log
+        in. The answer is how many rows moved, by type, and the action id. Refused with a sentence
         when the CRM, where the contracts and engagements are, says both cards have a framework
         agreement in progress or signed of the same type or an engagement in progress with the
         same client, when they have two different tax codes, when the card to absorb belongs

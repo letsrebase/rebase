@@ -141,8 +141,8 @@ services:
       NEXT_PRIVATE_SIGNING_TRANSPORT: local
       NEXT_PRIVATE_SIGNING_PASSPHRASE: ${DOCUMENSO_SIGNING_PASSPHRASE:?set it in .env}
       NEXT_PRIVATE_SIGNING_LOCAL_FILE_CONTENTS: ${DOCUMENSO_SIGNING_CERT_BASE64:?set it in .env, the .p12 as base64}
-      # Documenso's own account mails only (a confirmation, a password reset): every
-      # signing mail is the hub's. Through Resend, with the hub's own key.
+      # Documenso's own account mails only (a confirmation, a password reset): the signing
+      # mails are PigroCRM's. Through Resend, with the hub's own key.
       NEXT_PRIVATE_SMTP_TRANSPORT: resend
       NEXT_PRIVATE_RESEND_API_KEY: ${REBASE_RESEND_API_KEY:?Documenso mails through the hub's Resend key}
       NEXT_PRIVATE_SMTP_FROM_NAME: rebase
@@ -188,8 +188,8 @@ services:
       BACKUP_PING_URL: ${DOCUMENSO_BACKUP_PING_URL:?an Environment secret, written by the deploy}
 
   hub-backup:
-    # The hub's own database (`rebase-db-1`: members, companies, matches, contracts and
-    # their signed copies), every night at 03:15 UTC, under `hub/`, so the three backups
+    # The hub's own database (`rebase-db-1`: members, companies, talent cards and the
+    # engagement read model), every night at 03:15 UTC, under `hub/`, so the three backups
     # on this host (this, Vaultwarden's at 03:30, Documenso's at 03:45) never dump at once
     # on a machine with 3.8 GiB. Its own monitor.
     <<: *db-backup

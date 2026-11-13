@@ -20,7 +20,7 @@ so `pigrocrm-v*` ships before `hub-v*`.
 
 Who runs it: a `BackgroundTasks` job right after the response (`link_after_response`), on
 every path that writes a request; `link_pending`, the recovery round of `rebase
-contracts-sweep`, which picks up only the rows in `to_link` or `error` that are not
+crm-sweep`, which picks up only the rows in `to_link` or `error` that are not
 being attempted right now (a row written before this shipped has a `NULL` state and is
 never picked up); and an admin's «Riprova», or «Collega a un altro deal» with a `deal_id`,
 which makes the door link that deal and create nothing. A request changed after it was

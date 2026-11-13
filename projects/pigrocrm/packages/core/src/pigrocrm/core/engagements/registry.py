@@ -1,9 +1,8 @@
 """What the registry holds about one space's organizations (REB-1031).
 
 `rebase_engagements.customer_id` is the id of the customer «rebase» in the freelancer's own
-space. The door writes it with the deal and answers it to every retry of the hub's call: the
-row's id, never the one the deal points at now (`EngagementService._recorded`, pinned by
-`test_second_call_answers_the_same_ids_and_creates_nothing`), because a retry must answer what
+space. The CRM writes it with the deal (`leads.py`, `own.py`) and answers it to every retry of the
+hub's call: the row's id, never the one the deal points at now, because a retry must answer what
 the first call did. The column lives in the registry database, outside the space's, so the
 foreign keys `OrganizationMerge` walks cannot reach it: folding two organizations of that space
 would leave it on the archived one, and the next retry would hand the hub a customer that is
