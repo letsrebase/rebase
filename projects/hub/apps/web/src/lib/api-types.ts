@@ -395,9 +395,9 @@ export interface paths {
         put?: never;
         /**
          * Merge Freelancer
-         * @description Merges the card `da` into this one (REB-800): its notes, logins, matches,
-         *     contracts, campaign rows, referrals and audit entries move here, the newer of the two
-         *     CVs stays here with its card flagged for regeneration, and the other card is
+         * @description Merges the card `da` into this one (REB-800): its notes, logins, the hub's
+         *     engagement read model, campaign rows, referrals and audit entries move here, the newer of
+         *     the two CVs stays here with its card flagged for regeneration, and the other card is
          *     soft-deleted and points at this one. Refused with a sentence when the CRM says both have
          *     a live framework agreement of the same type or an engagement in progress with the same
          *     client, when the two have different tax codes, or when the CRM cannot be asked
