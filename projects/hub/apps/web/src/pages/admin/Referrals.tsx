@@ -8,7 +8,6 @@ import { Label } from '@rebase/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin, type ReferralLedgerItem, type ReferralSettings, type RewardStatus } from '@/lib/api'
 import { failureMessage, pageItems, useCursorList } from '@/lib/adminList'
-import { matchHeadingId } from '@/lib/contracts'
 import {
   REFERRAL_STATE_LABELS,
   REFERRAL_VERIFIED_VIA_LABELS,
@@ -180,36 +179,36 @@ function ReferredName({ item }: { item: ReferralLedgerItem }) {
   )
 }
 
-/** The match the reward came from or, for a referral with none yet, the referred side's
- *  live one, on its freelancer's «Match e contratti» (REB-609). */
-function MatchCell({ item }: { item: ReferralLedgerItem }) {
-  if (item.match_id === null || item.match_freelancer_id === null) {
+/** The engagement the reward came from or, for a referral with none yet, the referred side's
+ *  live one, linked to its freelancer's card (REB-609). It is the hub's read model of the CRM's
+ *  engagement (REB-1106), so the link leads to the card, not to a match page of the hub's. */
+function EngagementCell({ item }: { item: ReferralLedgerItem }) {
+  if (item.engagement_id === null || item.engagement_freelancer_id === null) {
     return <span className="text-muted-foreground">—</span>
   }
   return (
     <>
-      {item.match_freelancer_deleted ? (
-        <p className="font-medium">{item.match_company_name}</p>
+      {item.engagement_freelancer_deleted ? (
+        <p className="font-medium">{item.engagement_company_name}</p>
       ) : (
         <Link
-          to="/admin/freelance/$id/contracts"
-          params={{ id: item.match_freelancer_id }}
-          hash={matchHeadingId(item.match_id)}
-          aria-label={`Dettaglio del match con ${item.match_company_name} come ${item.match_requested_role}`}
+          to="/admin/freelance/$id"
+          params={{ id: item.engagement_freelancer_id }}
+          aria-label={`Dettaglio dell'incarico con ${item.engagement_company_name} come ${item.engagement_role}`}
           className="font-medium hover:underline"
         >
-          {item.match_company_name}
+          {item.engagement_company_name}
         </Link>
       )}
       <p className="text-xs text-muted-foreground">
-        {item.match_requested_role} · {item.match_freelancer_name}
+        {item.engagement_role} · {item.engagement_freelancer_name}
       </p>
     </>
   )
 }
 
 /** What the referral is worth: the reward as computed or priced, else the estimate the
- *  referred side's live match gives (`projected_*`), marked as one. A real figure is
+ *  referred side's live engagement gives (`projected_*`), marked as one. A real figure is
  *  never replaced by the estimate. A pending referral with no estimate says what it is
  *  waiting for instead (REB-658): its referred person's proof, never a letter. */
 function RewardCell({ item, onPriced }: { item: ReferralLedgerItem; onPriced: () => void }) {
@@ -218,7 +217,7 @@ function RewardCell({ item, onPriced }: { item: ReferralLedgerItem; onPriced: ()
       return (
         <>
           <p className="font-medium text-muted-foreground tabular-nums">{formatMoney(item.projected_amount)}</p>
-          <p className="text-xs text-muted-foreground">{`Stima al ${formatRate(item.projected_rate)}, se il match firma`}</p>
+          <p className="text-xs text-muted-foreground">{`Stima al ${formatRate(item.projected_rate)}, se la lettera firma`}</p>
         </>
       )
     }
@@ -233,7 +232,7 @@ function RewardCell({ item, onPriced }: { item: ReferralLedgerItem; onPriced: ()
     }
     return (
       <p className="text-sm text-muted-foreground">
-        {item.match_id === null ? 'In attesa del primo contratto firmato' : 'Nessuna stima per il match'}
+        {item.engagement_id === null ? 'In attesa del primo contratto firmato' : "Nessuna stima per l'incarico"}
       </p>
     )
   }
@@ -337,7 +336,7 @@ function ReferralRow({ item }: { item: ReferralLedgerItem }) {
         <p className="text-xs text-muted-foreground">{item.referrer_email}</p>
       </TableCell>
       <TableCell className="align-top">
-        <MatchCell item={item} />
+        <EngagementCell item={item} />
       </TableCell>
       <TableCell className="text-right align-top">
         <RewardCell item={item} onPriced={() => void client.invalidateQueries({ queryKey: keys.referrals() })} />
@@ -416,7 +415,7 @@ export function AdminReferrals() {
                   <TableRow>
                     <TableHead>Segnalato</TableHead>
                     <TableHead>Segnalato da</TableHead>
-                    <TableHead>Match</TableHead>
+                    <TableHead>Incarico</TableHead>
                     <TableHead className="text-right">Reward</TableHead>
                     <TableHead>Stato</TableHead>
                     <TableHead className="text-right">Da quando</TableHead>

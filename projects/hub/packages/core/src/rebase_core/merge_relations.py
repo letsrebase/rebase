@@ -21,6 +21,7 @@ from rebase_core.models import (
     ContractDocument,
     FreelancerFiscal,
     GuideDownload,
+    HubEngagement,
     Login,
     MagicLinkToken,
     Match,
@@ -175,6 +176,7 @@ RELATIONS: tuple[Relation, ...] = (
     Relation("referrals_made", Referral.referrer_user_id, USER, movable=_no_self_referral),
     Relation("matches", Match.freelancer_id, FREELANCER),
     Relation("contract_documents", ContractDocument.freelancer_id, FREELANCER),
+    Relation("hub_engagements", HubEngagement.freelancer_id, FREELANCER),
     Relation("campaign_recipients_card", CampaignRecipient.freelancer_id, FREELANCER),
     Relation(
         "team_request_talents",

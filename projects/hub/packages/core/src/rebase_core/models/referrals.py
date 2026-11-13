@@ -80,13 +80,13 @@ class Referral(Base, PrimaryKeyMixin, TimestampMixin):
 class ReferralReward(Base, PrimaryKeyMixin, TimestampMixin):
     """One reward, once per referral (`uq_referral_rewards_referral_id`): written the
     moment the referred entity's first `letter` is signed
-    (`rebase_core.signing_recovery.SigningRecovery._confirm_completion`), with the rate and the
-    base that letter's numbers printed at that moment, so a rate an admin edits later
+    (`rebase_core.engagement_notices.EngagementNoticeService`, from the CRM's notice), with the
+    rate and the base that letter's numbers printed at that moment, so a rate an admin edits later
     (`ReferralSettings`) never re-prices a reward already recorded -- the one-time
     maturity design record 2026-09-26 asks for. `base_amount` is rebase's own margin on
     that letter (`Company.daily_budget` against the letter's `fee`, never
     the freelancer's fee alone, which the contract flow never lets a freelancer's own
-    document see either), projected over `Match.expected_days` when the admin
+    document see either), projected over the engagement's expected days when the admin
     estimated one; `None` when there is no reliable figure to project (a `lump_sum`
     letter with no estimate), left for an admin to price by hand on the ledger.
     `reward_amount` is `None` exactly when `base_amount` is. `status` moves by hand
@@ -95,7 +95,9 @@ class ReferralReward(Base, PrimaryKeyMixin, TimestampMixin):
     __tablename__ = "referral_rewards"
 
     referral_id: Mapped[UUID] = mapped_column(ForeignKey("referrals.id"), nullable=False)
-    document_id: Mapped[UUID] = mapped_column(ForeignKey("contract_documents.id"), nullable=False)
+    # The engagement whose first signed letter earned it (REB-1106): the hub's read model of the
+    # CRM's engagement, upserted by its notices, not the hub's own letter any more.
+    engagement_id: Mapped[UUID] = mapped_column(ForeignKey("hub_engagements.id"), nullable=False)
     rate: Mapped[Decimal] = mapped_column(Numeric(RATE_DIGITS, RATE_PLACES), nullable=False)
     base_amount: Mapped[Decimal | None] = mapped_column(
         Numeric(REWARD_AMOUNT_DIGITS, REWARD_AMOUNT_PLACES), default=None

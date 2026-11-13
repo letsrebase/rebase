@@ -20,6 +20,7 @@ from referral_fixtures import (
     _request,
     _sent_with_body,
     _sign_the_letter,
+    _tell_the_hub,
     clean_referrals,  # noqa: F401  (fixture)
 )
 from signing_fixtures import (
@@ -36,6 +37,7 @@ from rebase_core.contract_schemas import (
 )
 from rebase_core.matches import MatchService
 from rebase_core.models import (
+    HubEngagement,
     Referral,
     ReferralReward,
 )
@@ -110,9 +112,12 @@ def test_a_referred_freelancer_and_a_referred_company_each_earn_a_reward_once(
     assert by_kind["company"].reward_amount == Decimal("2100.00")
     assert by_kind["freelancer"].status == "to_confirm"
 
-    # Re-running the confirmation (a repeated webhook, a sweep) never doubles the reward.
+    # Telling the hub again (a retried notice, a later one of the same signed engagement) never
+    # doubles the reward.
+    assert _tell_the_hub(clean_referrals, match, "active", sequence=2) is False
+    assert _tell_the_hub(clean_referrals, match, "active", sequence=3) is True
     ReferralService(clean_referrals).record_reward_if_signed(
-        _letter_of(clean_referrals, match.id), match
+        clean_referrals.get(HubEngagement, match.id)  # type: ignore[arg-type]
     )
     clean_referrals.commit()
     again = clean_referrals.scalars(
@@ -209,7 +214,7 @@ def test_to_squatted_company_earns_nothing_until_its_contact_person_logs_in_then
     assert listed["company"].status == "to_verify"
     assert (listed["company"].rate, listed["company"].amount) == (None, None)
     (ledger,) = ReferralLedgerService(clean_referrals).list_rewards().items
-    assert (ledger.referral_status, ledger.match_id, ledger.projected_amount) == (
+    assert (ledger.referral_status, ledger.engagement_id, ledger.projected_amount) == (
         "to_verify",
         None,
         None,
@@ -232,9 +237,9 @@ def test_to_squatted_company_earns_nothing_until_its_contact_person_logs_in_then
         Decimal("7000.00"),
         Decimal("2100.00"),
     )
-    assert item.match_id == match.id
+    assert item.engagement_id == match.id
     (reward,) = clean_referrals.scalars(select(ReferralReward)).all()
-    assert reward.document_id == _letter_of(clean_referrals, match.id).id
+    assert reward.engagement_id == match.id
 
 
 def test_a_referred_freelancers_own_signature_verifies_them_and_writes_the_reward(
@@ -252,7 +257,7 @@ def test_a_referred_freelancers_own_signature_verifies_them_and_writes_the_rewar
     # is what verifies them. The pending company's is not.
     by_kind = {i.kind: i for i in ReferralLedgerService(clean_referrals).list_rewards().items}
     assert by_kind["freelancer"].projected_amount == Decimal("700.00")
-    assert by_kind["company"].projected_amount is None and by_kind["company"].match_id is None
+    assert by_kind["company"].projected_amount is None and by_kind["company"].engagement_id is None
 
     _sign_the_letter(clean_referrals, renderer, fake, match)
 

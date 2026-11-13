@@ -28,12 +28,12 @@ const CONFIRMED_REWARD = {
   referrer_email: 'mario@community.it',
   referrer_freelancer_id: null,
   referred_name: 'Ada Lovelace',
-  match_id: 'm1',
-  match_freelancer_id: 'f1',
-  match_freelancer_name: 'Ada Lovelace',
-  match_freelancer_deleted: false,
-  match_company_name: 'ACME Srl',
-  match_requested_role: 'Backend developer',
+  engagement_id: 'm1',
+  engagement_freelancer_id: 'f1',
+  engagement_freelancer_name: 'Ada Lovelace',
+  engagement_freelancer_deleted: false,
+  engagement_company_name: 'ACME Srl',
+  engagement_role: 'Backend developer',
   projected_rate: null,
   projected_amount: null,
   rate: '0.1000',
@@ -74,11 +74,11 @@ const PENDING_REFERRAL = {
   kind: 'freelancer',
   referred_id: 'f3',
   referred_name: 'Grace Hopper',
-  match_id: null,
-  match_freelancer_id: null,
-  match_freelancer_name: null,
-  match_company_name: null,
-  match_requested_role: null,
+  engagement_id: null,
+  engagement_freelancer_id: null,
+  engagement_freelancer_name: null,
+  engagement_company_name: null,
+  engagement_role: null,
   rate: null,
   base_amount: null,
   reward_amount: null,
@@ -322,9 +322,9 @@ describe('the Referral admin page (P-REB-44)', () => {
     expect(screen.queryByLabelText('Base, €')).toBeNull()
   })
 
-  it('links the referred, the referrer with a card and the match, and leaves a referrer without a card as text (REB-609)', async () => {
+  it('links the referred, the referrer with a card and the engagement, and leaves a referrer without a card as text (REB-609)', async () => {
     const withCard = { ...CONFIRMED_REWARD, referrer_freelancer_id: 'f9' }
-    const company = { ...UNPRICED_REWARD, match_freelancer_id: 'f2', match_id: 'm2' }
+    const company = { ...UNPRICED_REWARD, engagement_freelancer_id: 'f2', engagement_id: 'm2' }
     mount([withCard, company])
     await screen.findByText('Ada Lovelace')
 
@@ -336,43 +336,43 @@ describe('the Referral admin page (P-REB-44)', () => {
     )
     expect(
       within(rows[0]!)
-        .getByRole('link', { name: 'Dettaglio del match con ACME Srl come Backend developer' })
+        .getByRole('link', { name: "Dettaglio dell'incarico con ACME Srl come Backend developer" })
         .getAttribute('href'),
-    ).toMatch(/\/admin\/freelance\/f1\/contracts#match-m1$/)
+    ).toMatch(/\/admin\/freelance\/f1$/)
     // The company is `kind: company`: its own page, not a freelance card; the referrer has no card.
     expect(within(rows[1]!).getByRole('link', { name: 'ACME S.r.l.' }).getAttribute('href')).toMatch(
       /\/admin\/companies\/c1$/,
     )
     expect(within(rows[1]!).queryByRole('link', { name: 'Mario Rossi' })).toBeNull()
-    expect(within(rows[1]!).getByRole('link', { name: /Dettaglio del match/ }).getAttribute('href')).toMatch(
-      /\/admin\/freelance\/f2\/contracts#match-m2$/,
+    expect(within(rows[1]!).getByRole('link', { name: /Dettaglio dell'incarico/ }).getAttribute('href')).toMatch(
+      /\/admin\/freelance\/f2$/,
     )
   })
 
   it('leaves a deleted person, request or freelancer unlinked, since their pages answer not found (REB-609)', async () => {
-    const person = { ...CONFIRMED_REWARD, referred_deleted: true, match_freelancer_deleted: true }
+    const person = { ...CONFIRMED_REWARD, referred_deleted: true, engagement_freelancer_deleted: true }
     const company = { ...UNPRICED_REWARD, referred_deleted: true }
     mount([person, company])
     await screen.findByText('Ada Lovelace')
 
     const rows = screen.getAllByRole('row').slice(1)
     expect(within(rows[0]!).queryByRole('link', { name: 'Ada Lovelace' })).toBeNull()
-    expect(within(rows[0]!).queryByRole('link', { name: /Dettaglio del match/ })).toBeNull()
+    expect(within(rows[0]!).queryByRole('link', { name: /Dettaglio dell'incarico/ })).toBeNull()
     expect(rows[0]).toHaveTextContent('Freelance · eliminato')
     expect(rows[0]).toHaveTextContent('ACME Srl')
     expect(within(rows[1]!).queryByRole('link', { name: 'ACME S.r.l.' })).toBeNull()
     expect(rows[1]).toHaveTextContent('Azienda · eliminata')
   })
 
-  it('shows a pending referral’s estimate from its live match, marked as an estimate (REB-609)', async () => {
+  it('shows a pending referral’s estimate from its live engagement, marked as an estimate (REB-609)', async () => {
     mount([
       {
         ...PENDING_REFERRAL,
-        match_id: 'm5',
-        match_freelancer_id: 'f3',
-        match_freelancer_name: 'Grace Hopper',
-        match_company_name: 'Bianchi Srl',
-        match_requested_role: 'Designer',
+        engagement_id: 'm5',
+        engagement_freelancer_id: 'f3',
+        engagement_freelancer_name: 'Grace Hopper',
+        engagement_company_name: 'Bianchi Srl',
+        engagement_role: 'Designer',
         projected_rate: '0.1000',
         projected_amount: '350.00',
       },
@@ -380,17 +380,17 @@ describe('the Referral admin page (P-REB-44)', () => {
     await screen.findByText('Bianchi Srl')
 
     expect(screen.getByText('350,00 €')).toBeInTheDocument()
-    expect(screen.getByText('Stima al 10%, se il match firma')).toBeInTheDocument()
+    expect(screen.getByText('Stima al 10%, se la lettera firma')).toBeInTheDocument()
     expect(screen.getByText('Previsto')).toBeInTheDocument()
     expect(screen.queryByText('In attesa')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Conferma' })).toBeNull()
   })
 
-  it('says there is no estimate when a live match cannot be projected, never a made-up figure (REB-609)', async () => {
-    mount([{ ...PENDING_REFERRAL, match_id: 'm5', match_freelancer_id: 'f3', match_company_name: 'Bianchi Srl' }])
+  it('says there is no estimate when a live engagement cannot be projected, never a made-up figure (REB-609)', async () => {
+    mount([{ ...PENDING_REFERRAL, engagement_id: 'm5', engagement_freelancer_id: 'f3', engagement_company_name: 'Bianchi Srl' }])
     await screen.findByText('Bianchi Srl')
 
-    expect(screen.getByText('Nessuna stima per il match')).toBeInTheDocument()
+    expect(screen.getByText("Nessuna stima per l'incarico")).toBeInTheDocument()
     expect(screen.getByText('In attesa')).toBeInTheDocument()
   })
 
@@ -450,11 +450,11 @@ describe('the Referral admin page (P-REB-44)', () => {
     mount([
       {
         ...PENDING_REFERRAL,
-        match_id: 'm5',
-        match_freelancer_id: 'f3',
-        match_freelancer_name: 'Grace Hopper',
-        match_company_name: 'Bianchi Srl',
-        match_requested_role: 'Designer',
+        engagement_id: 'm5',
+        engagement_freelancer_id: 'f3',
+        engagement_freelancer_name: 'Grace Hopper',
+        engagement_company_name: 'Bianchi Srl',
+        engagement_role: 'Designer',
         projected_rate: '0.1000',
         projected_amount: '350.00',
         referral_status: 'to_verify',
@@ -466,7 +466,7 @@ describe('the Referral admin page (P-REB-44)', () => {
     const row = screen.getByText('Bianchi Srl').closest('tr')!
 
     expect(within(row).getByText('Da verificare')).toBeInTheDocument()
-    expect(within(row).getByText('Stima al 10%, se il match firma')).toBeInTheDocument()
+    expect(within(row).getByText('Stima al 10%, se la lettera firma')).toBeInTheDocument()
     expect(within(row).queryByText('Previsto')).toBeNull()
   })
 
