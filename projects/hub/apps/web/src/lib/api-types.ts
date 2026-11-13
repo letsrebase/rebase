@@ -309,7 +309,10 @@ export interface paths {
          *     seniority the card marks uncertain is left out until an admin says one. One
          *     `anon_cv_downloaded` entry on success, naming whether the body was kept. A plain
          *     `def`: writing and printing wait minutes at worst, in the threadpool rather than on the
-         *     event loop.
+         *     event loop. **Fails closed on the CRM** (REB-1107): the redaction list is the hub's tax
+         *     data and the CRM's (`FreelancerDoor.fiscal_identifiers`), and without the CRM's half nothing
+         *     is written and a kept body is not served either: 502 with the seam's sentence when the CRM
+         *     does not answer, 503 when this environment cannot reach it.
          */
         post: operations["download_anonymous_cv_api_hub_freelancers__freelancer_id__anonymous_cv_post"];
         delete?: never;
@@ -395,9 +398,10 @@ export interface paths {
          * @description Merges the card `da` into this one (REB-800): its notes, logins, matches,
          *     contracts, campaign rows, referrals and audit entries move here, the newer of the two
          *     CVs stays here with its card flagged for regeneration, and the other card is
-         *     soft-deleted and points at this one. Refused with a sentence when both have a live
-         *     framework agreement or an active match with the same company, or two different tax
-         *     codes. Undone from the shell with `rebase talent-duplicates --undo`.
+         *     soft-deleted and points at this one. Refused with a sentence when the CRM says both have
+         *     a live framework agreement of the same type or an engagement in progress with the same
+         *     client, when the two have different tax codes, or when the CRM cannot be asked
+         *     (REB-1107). Undone from the shell with `rebase talent-duplicates --undo`.
          */
         post: operations["merge_freelancer_api_hub_freelancers__freelancer_id__merge_post"];
         delete?: never;
@@ -1115,6 +1119,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub/freelancers/{freelancer_id}/engagement-handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Hand Off Engagement
+         * @description «Crea match» (REB-1105): the CRM finds or writes the freelancer's organization, the hub
+         *     keeps a `handoff` row under a freshly minted engagement id with the company's budget
+         *     snapshot, and the answer carries the CRM's engagement form to open, filled in. A request not
+         *     in the CRM yet answers `no_deal` with its sentence and writes nothing. 503 without the CRM's
+         *     token, 409 with the CRM's sentence when it refuses the card, 502 when it does not answer.
+         */
+        post: operations["hand_off_engagement_api_hub_freelancers__freelancer_id__engagement_handoff_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub/freelancers/{freelancer_id}/matches": {
         parameters: {
             query?: never;
@@ -1644,7 +1672,9 @@ export interface paths {
          * My Contracts
          * @description «Contratti» (REB-392): the caller's own framework agreement and letters, read from
          *     the session and never from the URL. A person with no card is a 404 named «scheda»,
-         *     as `/me/cv` is.
+         *     as `/me/cv` is. The documents are the CRM's (REB-1107), read through its door by the
+         *     caller's freelancer id: 502 when the CRM does not answer and 503 when this environment
+         *     cannot reach it, and the page shows its error line rather than an empty list.
          */
         get: operations["my_contracts_api_hub_me_contracts_get"];
         put?: never;
@@ -1664,9 +1694,9 @@ export interface paths {
         };
         /**
          * My Signed Contract
-         * @description The signed copy of one of the caller's own documents. Someone else's document, and
-         *     one not signed yet, are the same 404 as a document that does not exist: a 403 would
-         *     say it exists.
+         * @description The signed copy of one of the caller's own documents, served by the CRM through its
+         *     door. Someone else's document, and one not signed yet, are the same 404 as a document
+         *     that does not exist: a 403 would say it exists. 502 and 503 as `/me/contracts`.
          */
         get: operations["my_signed_contract_api_hub_me_contracts__document_id__pdf_get"];
         put?: never;
@@ -4399,6 +4429,32 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HandoffBody */
+        HandoffBody: {
+            /**
+             * Company Id
+             * Format: uuid
+             */
+            company_id: string;
+        };
+        /**
+         * HandoffRead
+         * @description `ready`: open `url`, the CRM's form, under `engagement_id`. `no_deal`: the request has no
+         *     deal in the CRM yet, `message` says so and nothing was written.
+         */
+        HandoffRead: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "ready" | "no_deal";
+            /** Url */
+            url: string | null;
+            /** Engagement Id */
+            engagement_id: string | null;
+            /** Message */
+            message: string | null;
         };
         /** KeyBody */
         KeyBody: {
@@ -8992,6 +9048,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FiscalRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hand_off_engagement_api_hub_freelancers__freelancer_id__engagement_handoff_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                freelancer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HandoffBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandoffRead"];
                 };
             };
             /** @description Validation Error */

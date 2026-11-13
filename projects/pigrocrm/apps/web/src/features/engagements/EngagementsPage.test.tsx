@@ -236,3 +236,46 @@ describe('«Collaboratori» on a phone', () => {
     expect(screen.getByRole('button', { name: 'Filtri' })).toBeInTheDocument()
   })
 })
+
+describe('the form the hub’s «Crea match» opens', () => {
+  const HUB_ID = '0197f0b2-7a3c-7b1e-9c53-2f0a6a1d4e55'
+  const handoff = {
+    tab: 'todo',
+    hub_match_id: HUB_ID,
+    freelancer_id: '0197f0b2-0000-7000-8000-000000000001',
+    deal_id: '0197f0b2-0000-7000-8000-000000000002',
+    client_id: '0197f0b2-0000-7000-8000-000000000003',
+  } satisfies EngagementsSearch
+
+  it('asks for the engagement under that id first, and opens the form filled in when there is none', async () => {
+    search = handoff
+    answering([page([])])
+    renderWithQuery(<EngagementsPage />)
+
+    expect(await screen.findByRole('heading', { name: 'Nuovo incarico' })).toBeInTheDocument()
+    expect(listCalls().some(([, init]) => init.params.query.hub_match_id === HUB_ID)).toBe(true)
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('shows the engagement that already has the id instead of a second form', async () => {
+    search = handoff
+    answering([page([engagement({ id: 'e7' })])])
+    renderWithQuery(<EngagementsPage />)
+
+    await vi.waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        to: '/app/engagements/$engagementId',
+        params: { engagementId: 'e7' },
+        replace: true,
+      }),
+    )
+    expect(screen.queryByRole('heading', { name: 'Nuovo incarico' })).not.toBeInTheDocument()
+  })
+
+  it('opens no form for a plain visit', async () => {
+    answering([page([engagement()])])
+    renderWithQuery(<EngagementsPage />)
+    await screen.findByRole('button', { name: /Nuovo incarico/ })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+})

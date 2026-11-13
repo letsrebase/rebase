@@ -93,12 +93,27 @@ interface Values {
   collectionDays: string
 }
 
-function initialValues(engagement: Engagement | undefined, freelancerId: string | undefined): Values {
+/**
+ * What the hub's «Crea match» fills in (REB-1105): the client and the deal of the request, and the
+ * engagement id the hub minted, which the draft is created under (`hub_match_id`) so the CRM's first
+ * notice finds the hub's row.
+ */
+export interface EngagementPrefill {
+  clientId?: string
+  dealId?: string
+  hubMatchId?: string
+}
+
+function initialValues(
+  engagement: Engagement | undefined,
+  freelancerId: string | undefined,
+  prefill: EngagementPrefill | undefined,
+): Values {
   if (engagement === undefined) {
     return {
       freelancerId: freelancerId ?? null,
-      clientId: null,
-      dealId: '',
+      clientId: prefill?.clientId ?? null,
+      dealId: prefill?.dealId ?? '',
       contractId: '',
       role: '',
       startsOn: '',
@@ -180,7 +195,7 @@ function validate(values: Values, locked: boolean): Errors {
 }
 
 /** The body of a new draft: what was filled in, and nothing the person left empty. */
-function createBody(values: Values): Create {
+function createBody(values: Values, hubMatchId: string | undefined): Create {
   const body: Create = {
     freelancer_id: values.freelancerId ?? '',
     role: values.role.trim(),
@@ -191,6 +206,7 @@ function createBody(values: Values): Create {
     payment_rule: values.paymentRule,
     payment_end_of_month: values.paymentRule === 'fixed_term' && values.endOfMonth,
   }
+  if (hubMatchId !== undefined) body.hub_match_id = hubMatchId
   if (values.clientId !== null) body.client_organization_id = values.clientId
   if (values.dealId !== '') body.deal_id = values.dealId
   if (values.contractId !== '') body.contract_id = values.contractId
@@ -371,17 +387,19 @@ function WarningsBand({ warnings }: { warnings: readonly EngagementWarning[] }) 
 function EngagementForm({
   engagement,
   freelancerId,
+  prefill,
   onClose,
 }: {
   engagement: Engagement | undefined
   freelancerId: string | undefined
+  prefill: EngagementPrefill | undefined
   onClose: () => void
 }) {
   const navigate = useNavigate()
   const modules = useModules()
   const create = useCreateEngagement()
   const update = useUpdateEngagement(engagement?.id ?? '')
-  const [values, setValues] = useState(() => initialValues(engagement, freelancerId))
+  const [values, setValues] = useState(() => initialValues(engagement, freelancerId, prefill))
   const [errors, setErrors] = useState<Errors>({})
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
 
@@ -410,7 +428,7 @@ function EngagementForm({
     setProblem(null)
     if (Object.keys(found).length > 0) return
     if (engagement === undefined) {
-      create.mutate(createBody(values), {
+      create.mutate(createBody(values, prefill?.hubMatchId), {
         onSuccess: (saved) => done(saved, 'Bozza creata'),
         onError: (error) => setProblem(toProblem(error)),
       })
@@ -710,7 +728,7 @@ function EngagementForm({
  * engagement is a draft; its letter is written and sent from its own page. With `engagement` the
  * dialog edits: a draft changes freely, a letter that has gone out only the days a week and the
  * client, deal and contract (the rest reads as it is). `freelancerId` fixes the freelancer, as the
- * registry's own page does. The overlap and over-capacity sentences are the server's, and so is
+ * registry's own page does, and `prefill` fills a new one in from the hub's «Crea match». The overlap and over-capacity sentences are the server's, and so is
  * every refusal: a field error sits under its field, any other in the dialog. Decimals travel as
  * the strings they were typed as; nothing is computed here.
  */
@@ -719,11 +737,13 @@ export function EngagementFormDialog({
   onOpenChange,
   engagement,
   freelancerId,
+  prefill,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   engagement?: Engagement
   freelancerId?: string
+  prefill?: EngagementPrefill
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -741,6 +761,7 @@ export function EngagementFormDialog({
         <EngagementForm
           engagement={engagement}
           freelancerId={freelancerId}
+          prefill={prefill}
           onClose={() => onOpenChange(false)}
         />
       </DialogContent>

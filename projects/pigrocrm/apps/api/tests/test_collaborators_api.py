@@ -219,6 +219,29 @@ def test_the_list_filters_by_freelancer_and_state(
     assert logged_in.get("/api/engagements", params={"limit": 0}).status_code == 422
 
 
+def test_the_hub_match_id_creates_one_engagement_and_finds_it_again(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    """REB-1105: «Crea match» mints the id and the CRM's form creates the draft under it, so the
+    form opened again from the same link finds that draft and cannot make a second."""
+    _module(api_session)
+    who = _freelancer(api_session)
+    minted = str(uuid4())
+
+    assert logged_in.get("/api/engagements", params={"hub_match_id": minted}).json()["items"] == []
+    made = _create(logged_in, who, hub_match_id=minted)
+    found = logged_in.get("/api/engagements", params={"hub_match_id": minted}).json()
+    assert [i["id"] for i in found["items"]] == [made["id"]]
+    assert found["items"][0]["hub_match_id"] == minted
+    _create(logged_in, who)
+    assert len(logged_in.get("/api/engagements").json()["items"]) == 2
+    again = logged_in.post("/api/engagements", json=_body(who, hub_match_id=minted))
+    assert again.status_code == 409, again.text
+    assert (
+        len(logged_in.get("/api/engagements", params={"hub_match_id": minted}).json()["items"]) == 1
+    )
+
+
 def test_the_tax_data_is_saved_on_the_freelancers_organization(
     logged_in: TestClient, api_session: Session
 ) -> None:

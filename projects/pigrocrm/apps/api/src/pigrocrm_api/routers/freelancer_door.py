@@ -1,12 +1,14 @@
 """The hub's reads of a freelancer through the root door (REB-1107, collaborators design § 5):
 availability, the member's contracts and their signed PDF, the fiscal identifiers the anonymous CV
-redacts, and the merge check, each by the hub's own freelancer id.
+redacts, and the merge check, each by the hub's own freelancer id; and the one write, finding or
+creating the freelancer's organization for «Crea match» (REB-1105).
 
 Same door as `engagements.py`: root-only (a space's own prefix answers the 404 a route that does
 not exist gives) and behind `PIGROCRM_ENGAGEMENTS_TOKEN`, checked by the router-level
 `_require_root_door` before a path or a query is parsed. No `ActorDep`: the caller is the hub
-itself. Every route is a `GET` and so idempotent, which is what lets the hub retry them. They read
-the one space `PIGROCRM_LEADS_SPACE` names, never one the caller chooses.
+itself. Every route is idempotent, which is what lets the hub retry them: the reads are `GET`s and
+the one write, the freelancer's organization (REB-1105), a `PUT`. They use the one space
+`PIGROCRM_LEADS_SPACE` names, never one the caller chooses.
 
 A freelancer this installation holds no organization for is an empty answer, never a 404. The one
 refusal is a document that is not theirs, a 404 like a document that does not exist. A leads space
@@ -30,6 +32,8 @@ from pigrocrm.core.collaborators.door_schemas import (
     DoorAvailability,
     DoorContracts,
     DoorFiscalIdentifiers,
+    DoorFreelancerCard,
+    DoorFreelancerOrganization,
     DoorMergeCheck,
 )
 from pigrocrm.core.config import Settings, get_settings
@@ -194,3 +198,22 @@ def freelancer_merge_check(
     both, an engagement with the same client on both, or two different tax codes."""
     with _door(settings, registry) as door:
         return door.merge_check(hub_freelancer_id, with_)
+
+
+@router.put(
+    "/{hub_freelancer_id}/organization",
+    response_model=DoorFreelancerOrganization,
+    responses={503: _UNAVAILABLE},
+)
+def freelancer_organization(
+    hub_freelancer_id: UUID,
+    card: DoorFreelancerCard,
+    settings: SettingsOfTheRoot,
+    registry: TenantsRegistryDep,
+) -> DoorFreelancerOrganization:
+    """Finds or creates the freelancer's organization from the hub's card (REB-1105), by the
+    hub's id and never by name: a `PUT`, so idempotent, and serialised per freelancer. An
+    organization that already holds the card's VAT number gains the role; one the hub id already
+    names is answered as it is."""
+    with _door(settings, registry) as door:
+        return door.ensure_freelancer(hub_freelancer_id, card)

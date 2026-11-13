@@ -4163,6 +4163,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rebase/freelancers/{hub_freelancer_id}/organization": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Freelancer Organization
+         * @description Finds or creates the freelancer's organization from the hub's card (REB-1105), by the
+         *     hub's id and never by name: a `PUT`, so idempotent, and serialised per freelancer. An
+         *     organization that already holds the card's VAT number gains the role; one the hub id already
+         *     names is answered as it is.
+         */
+        put: operations["freelancer_organization_api_rebase_freelancers__hub_freelancer_id__organization_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/identity/spaces": {
         parameters: {
             query?: never;
@@ -11497,6 +11520,48 @@ export interface components {
             vat_number: string | null;
             /** Certified Email */
             certified_email: string | null;
+        };
+        /**
+         * DoorFreelancerCard
+         * @description What the hub knows of a freelancer, as much as an organization needs to be born from: the
+         *     legal name is the person's name, `email` the login address (the primary email point) and
+         *     `contact_points` the extra ones. `vat_number` and `country` are only the key to an
+         *     organization that already exists (a customer or a supplier gains the role instead of a
+         *     duplicate); the hub's own id is the path's, never the body's.
+         */
+        DoorFreelancerCard: {
+            /** Legal Name */
+            legal_name: string;
+            /** Email */
+            email: string;
+            /** Contact Points */
+            contact_points?: components["schemas"]["ContactPointIn"][];
+            /** Vat Number */
+            vat_number?: string | null;
+            /** Tax Code */
+            tax_code?: string | null;
+            /**
+             * Country
+             * @default IT
+             */
+            country: string;
+        };
+        /**
+         * DoorFreelancerOrganization
+         * @description The freelancer's organization in the space, by id: `created` is true only on the call that
+         *     wrote it, `joined` when an organization that was already there (found by its VAT number) gained
+         *     the role.
+         */
+        DoorFreelancerOrganization: {
+            /**
+             * Organization Id
+             * Format: uuid
+             */
+            organization_id: string;
+            /** Created */
+            created: boolean;
+            /** Joined */
+            joined: boolean;
         };
         /**
          * DoorMergeCheck
@@ -54156,6 +54221,142 @@ export interface operations {
             };
         };
     };
+    freelancer_organization_api_rebase_freelancers__hub_freelancer_id__organization_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                hub_freelancer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DoorFreelancerCard"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DoorFreelancerOrganization"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The leads space is not configured (PIGROCRM_LEADS_SPACE) or cannot be reached right now: retry later. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
+            };
+        };
+    };
     spaces_api_identity_spaces_get: {
         parameters: {
             query?: never;
@@ -64127,6 +64328,8 @@ export interface operations {
                 cursor?: string | null;
                 /** @description Only this freelancer */
                 freelancer_id?: string | null;
+                /** @description Only the engagement the hub opened under this id */
+                hub_match_id?: string | null;
                 /** @description draft | awaiting_signature | active | concluded | cancelled */
                 state?: string | null;
                 client_organization_id?: string | null;

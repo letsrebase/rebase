@@ -54,6 +54,7 @@ from rebase_core.door_schemas import (
     CrmAvailability,
     CrmContracts,
     CrmFiscalIdentifiers,
+    CrmFreelancerOrganization,
     CrmMergeCheck,
 )
 from rebase_core.http import (
@@ -390,6 +391,25 @@ class FreelancerDoor:
             self._path(freelancer_id, "merge-check", {"with": str(other_id)}),
             CrmMergeCheck.model_validate_json,
             attempts=READ_ATTEMPTS,
+        )
+
+    def ensure_organization(
+        self, freelancer_id: UUID, card: Mapping[str, object]
+    ) -> Outcome[CrmFreelancerOrganization]:
+        """«Crea match» (REB-1105): the CRM finds or writes the freelancer's organization from
+        the hub's card, by the hub id and never by name (a `PUT`, so asking twice is asking
+        once). Never raises: a refusal (`409` for an archived organization or a VAT number that
+        is another freelancer's, `422` for a card it cannot take) is a `rejected` outcome with the
+        CRM's sentence, anything else an `error` one. `card` is the door's body: `legal_name`,
+        `email`, `contact_points`, `vat_number`, `tax_code`."""
+        if not self.token:
+            return Outcome(ERROR, NOT_CONFIGURED)
+        return PigroDoor(self.api_url, self.token, self.http).put(
+            self._path(freelancer_id, "organization"),
+            card,
+            CrmFreelancerOrganization,
+            subject=f"the organization of freelancer {freelancer_id}",
+            refused=(409, 422),
         )
 
 

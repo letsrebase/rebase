@@ -172,6 +172,7 @@ class EngagementRead(BaseModel):
 
 class EngagementListQuery(BaseModel):
     freelancer_id: UUID | None = None
+    hub_match_id: UUID | None = None
     state: SafeStr | None = Field(default=None, max_length=KIND_MAX_LENGTH)
     client_organization_id: UUID | None = None
     deal_id: UUID | None = None

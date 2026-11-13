@@ -21,6 +21,8 @@ export interface EngagementFilters {
   freelancerId?: string
   clientId?: string
   state?: EngagementState
+  /** The engagement the hub opened under this id (REB-1105). */
+  hubMatchId?: string
 }
 
 /**
@@ -42,6 +44,7 @@ export function useEngagementList(bucket: EngagementBucket | null, filters: Enga
               freelancer_id: filters.freelancerId,
               client_organization_id: filters.clientId,
               state: filters.state,
+              hub_match_id: filters.hubMatchId,
               limit: PAGE_SIZE,
               cursor: pageParam,
             },
