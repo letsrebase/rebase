@@ -659,9 +659,12 @@ def test_a_snoozed_reminder_comes_back_when_the_snooze_ends(
     # not own: pin it to the fixture's day, or the snooze would end on a day the fixture has no
     # reminders for once the real date passes it.
     monkeypatch.setattr(reminder_state, "today_local", lambda: TODAY)
-    row = world.task(TODAY - timedelta(days=2), assigned_to=world.alice.id)
+    # A readonly assignee: their snooze is theirs alone and leaves the task overdue, where a
+    # member who may edit tasks would move its due date out of the way too (REB-1110).
+    reader = world.user("readonly")
+    row = world.task(TODAY - timedelta(days=2), assigned_to=reader.id)
     key = reminder_key("task_overdue", row.id)
-    ReminderStateService(world.session).snooze(_actor(world.alice), key, "serious", "tomorrow")
+    ReminderStateService(world.session).snooze(_actor(reader), key, "serious", "tomorrow")
     engine = ReminderEngine(world.session, SETTINGS)
 
     assert engine.record_pass(world.evaluate(TODAY), today=TODAY).delivered == 0

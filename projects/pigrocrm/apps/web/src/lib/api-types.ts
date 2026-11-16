@@ -5451,7 +5451,8 @@ export interface paths {
         /**
          * Snooze
          * @description Snoozes a reminder until tomorrow, next Monday, in a week or in a
-         *     month. It applies to you; it shows up again if its severity rises.
+         *     month. It applies to you; it shows up again if its severity rises. On a task's
+         *     reminder it also moves the task's due date to that day, if you may edit tasks.
          */
         post: operations["snooze_api_reminders_snooze_post"];
         delete?: never;
