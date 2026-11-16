@@ -33,8 +33,8 @@ copy inside an application (REB-304). A project small enough to be a
 single artifact may be one package at its own root rather than growing an `apps/`
 directory with one entry in it, which is what
 `projects/website` is. `tooling/` holds the client-repo starter kit, the weekly
-Snyk report, the workflow kit and the English lint, and a directory is not created
-there before something real goes in it.
+Snyk report, the workflow kit, the English lint and the Google Docs template, and a
+directory is not created there before something real goes in it.
 
 ## The dependency rule, which is the whole reason these projects live together
 
@@ -425,11 +425,11 @@ the state changes, the API quirks) and `linear-content` (how an issue, a comment
 closing comment or a project update is written). This repository's own steps for them
 are in `docs/agents/` (the Greptile and CodeRabbit loop, paused since 2026-10-30 with both
 bots off, REB-864; milestone branches; releases),
-and its own skills sit beside them (`client-repo-onboarding`, `posthog-analytics`,
-`social-content`). They point at this file, `docs/tracker.md`, `.github/workflow.json`
-and `docs/design/DECISIONS.md` and restate as little of them as they can: the documents
-are the contract, the skills are the order of operations, and where the two disagree
-the skill has the bug.
+and its own skills sit beside them (`client-repo-onboarding`, `google-docs`,
+`posthog-analytics`, `social-content`). They point at this file, `docs/tracker.md`,
+`.github/workflow.json` and `docs/design/DECISIONS.md` and restate as little of them as
+they can: the documents are the contract, the skills are the order of operations, and
+where the two disagree the skill has the bug.
 
 The Linear server is committed: `.mcp.json` (Claude Code, omp) and `.codex/config.toml`
 (Codex) define it with no credential, and each person signs in on their own account the
