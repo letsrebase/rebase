@@ -50,7 +50,9 @@ export function TalentRow({ item }: { item: Talent }) {
         <p className="font-medium">{item.role ?? '—'}</p>
         <p className="text-xs text-muted-foreground">{profileLine(item)}</p>
       </TableCell>
-      <TableCell className="max-w-64 text-muted-foreground">
+      {/* The width cap needs the wrap: with the cell's own `whitespace-nowrap` the line of
+          skills ran on over Tariffa and Modalità (REB-1119). */}
+      <TableCell className="max-w-64 min-w-48 whitespace-normal text-muted-foreground">
         {item.skills.length > 0 ? item.skills.slice(0, FIRST_SKILLS).join(', ') : '—'}
       </TableCell>
       <TableCell className="text-right text-muted-foreground">
