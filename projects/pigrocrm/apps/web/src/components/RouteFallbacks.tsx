@@ -68,9 +68,18 @@ export function ModuleOff({ module }: { module: string }) {
   )
 }
 
+/** The one wait while the app opens: the session read (`routes/app.tsx`), the modules
+ *  read for an administrator (`OnboardingGate`) and for a guarded page (`ModuleGate`) all
+ *  draw this, so the reads that follow each other look like a single screen. `Loader` is
+ *  decorative, so the `role="status"` sentence is what a screen reader hears, as in
+ *  `LoadingState`. */
 export function RoutePending() {
   return (
-    <div className="flex min-h-full items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
+    <div
+      role="status"
+      aria-label="Caricamento…"
+      className="flex min-h-full items-center justify-center gap-2 p-8 text-sm text-muted-foreground"
+    >
       <Loader className="size-8" />
       Caricamento…
     </div>

@@ -75,4 +75,10 @@ describe('OnboardingGate', () => {
     renderGate(undefined)
     expect(screen.queryByText('onboarding')).not.toBeInTheDocument()
   })
+
+  it('waits with the same «Caricamento…» the session read showed, never a bare logo', () => {
+    renderGate(undefined)
+    expect(screen.getByRole('status', { name: 'Caricamento…' })).toHaveTextContent('Caricamento…')
+    expect(screen.queryByText('shell')).not.toBeInTheDocument()
+  })
 })

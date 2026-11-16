@@ -1,6 +1,6 @@
 import { useLocation } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
-import { Loader } from '@rebase/ui/loader'
+import { RoutePending } from '@/components/RouteFallbacks'
 import { useAuth, useIsAdmin } from '@/lib/auth'
 import { useModules } from '@/lib/modules'
 import { Onboarding } from './Onboarding'
@@ -20,13 +20,9 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
   const modules = useModules()
   const { pathname } = useLocation()
   if (!isAdmin) return children
-  if (modules.loading) {
-    return (
-      <div className="flex min-h-full items-center justify-center p-8">
-        <Loader className="size-8" />
-      </div>
-    )
-  }
+  // The same wait the session read just showed (`routes/app.tsx`), so the two reads that
+  // open the app look like one screen rather than two loaders in a row (REB-1117).
+  if (modules.loading) return <RoutePending />
   const revisiting = modules.onboarding === 'skipped' && pathname.replace(/\/+$/, '') === '/app/onboarding'
   if (modules.onboarding === 'pending' || revisiting) return <Onboarding />
   return children
