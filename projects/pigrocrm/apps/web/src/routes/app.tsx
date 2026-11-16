@@ -3,8 +3,8 @@ import { useEffect } from 'react'
 import { AppShell } from '@/components/AppShell'
 import { GmailBanner } from '@/components/GmailBanner'
 import { ModuleGate } from '@/components/ModuleGate'
+import { RoutePending } from '@/components/RouteFallbacks'
 import { Button } from '@rebase/ui/button'
-import { Loader } from '@rebase/ui/loader'
 import { OnboardingGate } from '@/features/onboarding/OnboardingGate'
 import { useAuth } from '@/lib/auth'
 import { PUBLIC_APP_ROUTES } from '@/lib/tenant'
@@ -40,14 +40,7 @@ function AppLayout() {
 
   if (isLoginRoute) return <Outlet />
 
-  if (isLoading) {
-    return (
-      <div className="flex min-h-full items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
-        <Loader className="size-8" />
-        Caricamento…
-      </div>
-    )
-  }
+  if (isLoading) return <RoutePending />
   // The session could not be read at all (the API is restarting, the network dropped):
   // that is not "signed out", so the login page is no answer. Say so and offer a retry.
   if (isError) {
