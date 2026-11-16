@@ -112,12 +112,13 @@ def register(
             .model_dump(mode="json")
         )
 
-    @mcp.tool(annotations=ADDITIVE)
+    # Destructive since REB-1110: on a task's reminder it also moves the task's due date.
+    @mcp.tool(annotations=DESTRUCTIVE)
     @guard
     def snooze_reminder(key: str, severity: str, until: str) -> dict[str, Any]:
-        """Snoozes a reminder for whoever is asking. `until` is `tomorrow`, `next_monday`,
-        `in_a_week` or `in_a_month`, never a free date. It reappears that day, or earlier if it
-        rises in severity.
+        """Snoozes a reminder for whoever is asking until `tomorrow`, `next_monday`, `in_a_week`
+        or `in_a_month`, or until its severity rises. A task's reminder also moves the task's
+        due date to that day.
         """
         data = SnoozeRequest(
             key=key,

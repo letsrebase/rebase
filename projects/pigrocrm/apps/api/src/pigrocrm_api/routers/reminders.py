@@ -140,5 +140,6 @@ def acknowledge(
 @router.post("/snooze", response_model=ReminderStateRead)
 def snooze(data: SnoozeRequest, session: SessionDep, actor: ActorDep) -> ReminderStateRead:
     """Snoozes a reminder until tomorrow, next Monday, in a week or in a
-    month. It applies to you; it shows up again if its severity rises."""
+    month. It applies to you; it shows up again if its severity rises. On a task's
+    reminder it also moves the task's due date to that day, if you may edit tasks."""
     return ReminderStateService(session).snooze(actor, data.key, data.severity, data.until)

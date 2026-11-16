@@ -11,8 +11,10 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
+from pigrocrm.core.db.clock import today_local
 from pigrocrm.core.errors import Conflict, ValidationFailed
 from pigrocrm.core.reminders.catalogue import (
     REMINDER_TYPES,
@@ -32,6 +34,7 @@ from pigrocrm.core.reminders.state import (
     snooze_until,
     states_for,
 )
+from pigrocrm.core.tasks.models import Task
 
 TODAY = date(2026, 10, 26)  # a Monday
 
@@ -189,6 +192,118 @@ def test_a_readonly_member_may_acknowledge_their_own_reminders(db_session: Sessi
 
     assert done.acknowledged_severity == "warning"
     assert [state.key for state in ReminderStateService(db_session).mine(_actor(reader))] == [KEY]
+
+
+# -- a task's reminder (REB-1110) ----------------------------------------------------------
+
+
+def _task(session: Session, due: date | None) -> Task:
+    task = Task(title="Richiamare il cliente", due_date=due, status="open", origin="manual")
+    session.add(task)
+    session.flush()
+    return task
+
+
+def test_snoozing_a_task_reminder_moves_the_task_to_the_snooze_day(db_session: Session) -> None:
+    user = _user(db_session)
+    today = today_local()
+    task = _task(db_session, today)
+    key = reminder_key("task_due", task.id)
+
+    state = ReminderStateService(db_session).snooze(_actor(user), key, "warning", "tomorrow")
+
+    db_session.refresh(task)
+    assert state.snoozed_until == snooze_until("tomorrow", today)
+    assert task.due_date == state.snoozed_until, "«Attività» shows what «Rimanda» chose"
+    entry = db_session.scalars(
+        select(Activity).where(Activity.entity_type == "task", Activity.entity_id == task.id)
+    ).one()
+    assert entry.kind == "updated" and entry.actor_id == user.id
+
+
+def test_snoozing_an_overdue_task_moves_it_out_of_the_past(db_session: Session) -> None:
+    user = _user(db_session)
+    today = today_local()
+    task = _task(db_session, date.fromordinal(today.toordinal() - 3))
+
+    ReminderStateService(db_session).snooze(
+        _actor(user), reminder_key("task_overdue", task.id), "serious", "next_monday"
+    )
+
+    db_session.refresh(task)
+    assert task.due_date == snooze_until("next_monday", today)
+
+
+def test_a_snooze_never_pulls_a_later_due_date_earlier(db_session: Session) -> None:
+    user = _user(db_session)
+    today = today_local()
+    later = date.fromordinal(today.toordinal() + 5)
+    task = _task(db_session, later)
+
+    ReminderStateService(db_session).snooze(
+        _actor(user), reminder_key("task_due", task.id), "warning", "tomorrow"
+    )
+
+    db_session.refresh(task)
+    assert task.due_date == later
+
+
+def test_a_readonly_member_snoozes_for_themselves_and_leaves_the_task(db_session: Session) -> None:
+    reader = _user(db_session, "readonly")
+    today = today_local()
+    task = _task(db_session, today)
+    key = reminder_key("task_due", task.id)
+
+    state = ReminderStateService(db_session).snooze(_actor(reader), key, "warning", "tomorrow")
+
+    db_session.refresh(task)
+    assert state.snoozed_until is not None, "the per-user snooze is still recorded"
+    assert task.due_date == today, "a readonly member does not rewrite the task"
+
+
+def test_a_closed_task_keeps_its_date_when_its_reminder_is_snoozed(db_session: Session) -> None:
+    user = _user(db_session)
+    today = today_local()
+    task = _task(db_session, today)
+    task.status = "cancelled"
+    db_session.flush()
+
+    ReminderStateService(db_session).snooze(
+        _actor(user), reminder_key("task_due", task.id), "warning", "tomorrow"
+    )
+
+    db_session.refresh(task)
+    assert task.due_date == today
+
+
+def test_a_move_the_task_refuses_still_records_the_snooze(db_session: Session) -> None:
+    owner, gone = _user(db_session, "admin"), _user(db_session)
+    today = today_local()
+    task = _task(db_session, today)
+    task.assigned_to = gone.id
+    gone.active = False
+    db_session.flush()
+    key = reminder_key("task_due", task.id)
+
+    state = ReminderStateService(db_session).snooze(_actor(owner), key, "warning", "tomorrow")
+
+    db_session.refresh(task)
+    assert task.due_date == today, "a task assigned to a deactivated person is not rewritten"
+    assert state.snoozed_until == snooze_until("tomorrow", today), "the snooze is not lost"
+
+
+def test_an_agent_that_may_edit_tasks_moves_the_task_like_its_owner(db_session: Session) -> None:
+    user = _user(db_session)
+    today = today_local()
+    task = _task(db_session, today)
+    agent = Actor(id=user.id, type="mcp", role=user.role)  # type: ignore[arg-type]
+
+    ReminderStateService(db_session).snooze(
+        agent, reminder_key("task_due", task.id), "warning", "in_a_week"
+    )
+
+    db_session.refresh(task)
+    assert task.due_date == snooze_until("in_a_week", today)
 
 
 # -- the ledger ----------------------------------------------------------------------------

@@ -11,6 +11,12 @@ What a person may do here is their own bookkeeping and nothing else, so neither 
 asks for a write role: a `readonly` member is reminded too and may say they have seen it.
 The severity is the one the caller saw; it can only ever make *their own* state cover
 more, which is why the server does not re-detect to check it.
+
+**A task's reminder is the one exception** (REB-1110). «Rimanda» on `task_due` or
+`task_overdue` is a person postponing the task, not hiding a notice about it, so the snooze
+also moves the open task's due date to the snooze day, through `TaskService.update` and so
+with its write check and its timeline entry. A caller who may not write tasks keeps the
+plain per-user snooze, and a due date already on or after that day is never pulled earlier.
 """
 
 from __future__ import annotations
@@ -27,7 +33,13 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.db.clock import today_local
-from pigrocrm.core.errors import Conflict, ValidationFailed
+from pigrocrm.core.errors import (
+    AgentForbidden,
+    Conflict,
+    NotFound,
+    PermissionDenied,
+    ValidationFailed,
+)
 from pigrocrm.core.reminders.catalogue import (
     REMINDER_TYPES,
     SEVERITY_RANK,
@@ -36,6 +48,9 @@ from pigrocrm.core.reminders.catalogue import (
 )
 from pigrocrm.core.reminders.models import KEY_MAX_LENGTH, ReminderAck, ReminderSnooze
 from pigrocrm.core.reminders.schemas import ReminderStateRead
+from pigrocrm.core.tasks.repository import TaskRepository
+from pigrocrm.core.tasks.schemas import TaskUpdate
+from pigrocrm.core.tasks.service import TaskService
 
 ENTITY = "reminder"
 
@@ -184,8 +199,33 @@ class ReminderStateService:
                 },
             )
         )
+        # The person's own snooze is committed first: moving the task is a consequence of it
+        # and may be refused (a deactivated assignee), which must not lose the snooze too.
         self.session.commit()
+        self._postpone_task(actor, key, until)
         return self._read(user_id, key)
+
+    def _postpone_task(self, actor: Actor, key: str, until: date) -> None:
+        """Moves the task a `task_*` reminder is about to `until`, when it is open, its due
+        date is before that day, and the caller may write it. A move the task refuses
+        leaves the task as it was and the snooze in place."""
+        kind, _, subject = key.partition(":")
+        if REMINDER_TYPES[kind].subject != "task":
+            return
+        try:
+            task_id = UUID(subject)
+        except ValueError:
+            return
+        task = TaskRepository(self.session).get(task_id)
+        if task is None or task.status != "open":
+            return
+        if task.due_date is None or task.due_date >= until:
+            return
+        try:
+            actor.require_write("update_task")
+            TaskService(self.session).update(task_id, TaskUpdate(due_date=until), actor)
+        except (AgentForbidden, PermissionDenied, Conflict, NotFound):
+            self.session.rollback()
 
     def _read(self, user_id: UUID, key: str) -> ReminderStateRead:
         self.session.expire_all()

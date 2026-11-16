@@ -84,15 +84,20 @@ export function useAcknowledge() {
   })
 }
 
-/** Postpones the reminder to one of the four days the API offers. */
+/**
+ * Postpones the reminder to one of the four days the API offers. On a task's reminder the
+ * API also moves the task's due date to that day (REB-1110), so what shows the task (its
+ * lists, the calendar, its timeline, the palette's search) is read again with the reminders.
+ */
 export function useSnooze() {
   const settled = useSettled()
+  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({
       reminder,
       until,
     }: {
-      reminder: Pick<Reminder, 'key' | 'severity'>
+      reminder: Pick<Reminder, 'key' | 'severity' | 'entity' | 'entity_id'>
       until: SnoozeOption
     }) =>
       unwrap(
@@ -100,6 +105,16 @@ export function useSnooze() {
           body: { key: reminder.key, severity: reminder.severity, until },
         }),
       ),
-    onSuccess: (state) => settled(state),
+    onSuccess: (state, { reminder }) => {
+      settled(state)
+      if (reminder.entity === 'task') {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.activitiesAll })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.calendarAll })
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.timeline('task', reminder.entity_id),
+        })
+        void queryClient.invalidateQueries({ queryKey: ['search'] })
+      }
+    },
   })
 }
