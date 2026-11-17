@@ -107,6 +107,11 @@ class WorkProfile(Base, PrimaryKeyMixin):
     tool_version: Mapped[str | None] = mapped_column(String(TOOL_VERSION_MAX_LENGTH), default=None)
     groundedness: Mapped[int] = mapped_column(Integer, nullable=False)
     unsupported_anchors: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    # What the anonymity guards found in the fields a company reads: `{field, rule}`, never the
+    # matched text (REB-1127). Approval is refused while one stands, unless an admin overrides.
+    guard_hits: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
     state: Mapped[str] = mapped_column(String(10), nullable=False, default="draft")
     submitted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
