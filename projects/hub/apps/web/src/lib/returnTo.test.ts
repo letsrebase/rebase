@@ -15,7 +15,16 @@ describe('the code kept across the sign-in', () => {
     expect(takeCliCode(31 * 60 * 1000)).toBeNull()
   })
 
-  it('keeps nothing that is not a code', () => {
+  it('keeps a code as the server would read it, upper case', () => {
+    rememberCliCode(' abcd-efgh ', 0)
+    expect(takeCliCode(1)).toBe('ABCD-EFGH')
+  })
+
+  it('keeps nothing that is not a code of the server alphabet', () => {
+    rememberCliCode('ABCD-EFG0', 0)
+    expect(takeCliCode(1)).toBeNull()
+    rememberCliCode('ABCD-EFGHJ', 0)
+    expect(takeCliCode(1)).toBeNull()
     rememberCliCode('https://evil.example/x', 0)
     expect(takeCliCode(1)).toBeNull()
     window.localStorage.setItem('rebase.returnTo', '{"code":"//evil","at":1}')

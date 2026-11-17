@@ -8,7 +8,8 @@
 
 const KEY = 'rebase.returnTo'
 const KEEP_MS = 30 * 60 * 1000
-const CODE = /^[A-Za-z0-9-]{1,12}$/
+/** The server's alphabet (`cli_auth.USER_CODE_ALPHABET`): no `0 O 1 I L`. */
+const CODE = /^[A-HJKMNP-Z2-9]{4}-[A-HJKMNP-Z2-9]{4}$/
 
 interface Kept {
   code: string
@@ -17,7 +18,8 @@ interface Kept {
 
 /** Keeps the code of `/hub/cli` for the sign-in about to happen. Storage that is not there
  *  (private modes, tests) loses nothing but the convenience. */
-export function rememberCliCode(code: string, now = Date.now()): void {
+export function rememberCliCode(typed: string, now = Date.now()): void {
+  const code = typed.trim().toUpperCase()
   if (!CODE.test(code)) return
   try {
     window.localStorage.setItem(KEY, JSON.stringify({ code, at: now } satisfies Kept))
