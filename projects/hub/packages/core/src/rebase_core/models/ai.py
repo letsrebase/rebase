@@ -249,26 +249,31 @@ class CardBatchItem(Base):
     )
 
 
-AI_SOURCE_KINDS = ("github", "links")
+# `work_profile` is the approved work profile read as a source (REB-1134): the hub's own data,
+# so it has a switch here and no row in `freelancer_sources`.
+AI_SOURCE_KINDS = ("github", "links", "work_profile")
 SOURCE_KINDS = ("github", "link")
 SOURCE_STATUSES = ("ok", "unreadable", "blocked", "robots", "too_large", "error")
 
 
 class AiSource(Base):
-    """The switch of one kind of source the card may be written from (REB-837): `github`
-    and `links`, off by default and off in production until the privacy notice covers
-    reading what a person linked (design 2026-10-27, «Privacy and legal»). Off means no
-    fetch, no stored text read and none kept: `SourceService` deletes the rows of a kind
-    that is off the next time it refetches."""
+    """The switch of one kind of source the card may be written from (REB-837): `github`,
+    `links` and, since REB-1134, `work_profile`, off by default and off in production until
+    the privacy notice covers reading what a person linked or sent (design 2026-10-27,
+    «Privacy and legal»; 2026-11-17 § 9). Off means no fetch, no stored text read and none
+    kept: `SourceService` deletes the rows of a kind that is off the next time it refetches,
+    and a work profile that is off is never read for a card (`hub_facts`)."""
 
     __tablename__ = "ai_sources"
 
-    kind: Mapped[str] = mapped_column(String(10), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     updated_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
-    __table_args__ = (CheckConstraint("kind IN ('github', 'links')", name="ck_ai_sources_kind"),)
+    __table_args__ = (
+        CheckConstraint("kind IN ('github', 'links', 'work_profile')", name="ck_ai_sources_kind"),
+    )
 
 
 class FreelancerSource(Base, PrimaryKeyMixin):

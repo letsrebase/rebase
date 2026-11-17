@@ -431,23 +431,31 @@ def test_test_goes_through_the_real_seam_and_counts_against_postal_code(
 def test_source_switches_default_off_and_toggle(
     client: TestClient, admin: User, api_session: Session
 ) -> None:
-    """Both switches are off until the privacy notice covers reading what people linked;
+    """Every switch is off until the privacy notice covers it;
     turning one is an `ai_switch` entry with the before and after, and off is read back."""
     assert [(s["kind"], s["enabled"]) for s in client.get(BASE).json()["sources"]] == [
         ("github", False),
         ("links", False),
+        ("work_profile", False),
     ]
 
     on = client.put(f"{BASE}/sources/github/enabled", json={"enabled": True})
     assert on.status_code == 200, on.text
     assert on.json()["enabled"] is True and on.json()["updated_by_name"] == "Ivan Sala"
-    assert [s["enabled"] for s in client.get(BASE).json()["sources"]] == [True, False]
+    assert [s["enabled"] for s in client.get(BASE).json()["sources"]] == [True, False, False]
     [action] = api_session.scalars(select(AdminAction).where(AdminAction.kind == "ai_switch"))
     assert action.payload["source"] == "github"
 
     off = client.put(f"{BASE}/sources/github/enabled", json={"enabled": False})
     assert off.json()["enabled"] is False
     assert client.put(f"{BASE}/sources/linkedin/enabled", json={"enabled": True}).status_code == 422
+    # The work profile switch is the third, and has no stored copies to delete (REB-1134).
+    profile = client.put(f"{BASE}/sources/work_profile/enabled", json={"enabled": True})
+    assert profile.status_code == 200 and profile.json()["kind"] == "work_profile"
+    assert (
+        client.put(f"{BASE}/sources/work_profile/enabled", json={"enabled": False}).status_code
+        == 200
+    )
     api_session.execute(text("UPDATE ai_sources SET enabled = false, updated_by = NULL"))
     api_session.commit()
 

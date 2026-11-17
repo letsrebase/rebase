@@ -157,9 +157,9 @@ def set_enabled(
 def set_source_enabled(
     admin: AdminDep, service: ServiceDep, session: SessionDep, kind: str, body: EnabledBody
 ) -> SourceSwitchRead:
-    """Turns one kind of source the card is written from (`github`, `links`) on or off.
-    Off deletes the text already read at once (`SourceService.set_enabled`); both are off
-    until the privacy notice covers reading what people linked."""
+    """Turns one kind of source the card is written from (`github`, `links`, `work_profile`)
+    on or off. Off deletes the text already read at once (`SourceService.set_enabled`); all
+    are off until the privacy notice covers them."""
     default_source_service(session).set_enabled(admin.id, kind, body.enabled)
     return next(row for row in service.sources() if row.kind == kind)
 

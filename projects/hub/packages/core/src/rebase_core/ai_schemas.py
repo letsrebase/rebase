@@ -8,6 +8,7 @@ from typing import Literal
 from uuid import UUID
 
 from rebase_core.schema_common import ResponseModel
+from rebase_core.vocabulary import AiSourceKind
 
 
 class ProviderRead(ResponseModel):
@@ -59,10 +60,10 @@ class SpendRead(ResponseModel):
 
 
 class SourceSwitchRead(ResponseModel):
-    """The switch of one kind of source the card is written from: `github` or `links`,
-    off until the privacy notice covers reading what people linked."""
+    """The switch of one kind of source the card is written from: `github`, `links` or
+    `work_profile` (REB-1134), off until the privacy notice covers it."""
 
-    kind: Literal["github", "links"]
+    kind: AiSourceKind
     enabled: bool
     updated_at: datetime | None
     updated_by_name: str | None

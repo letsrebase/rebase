@@ -5,9 +5,11 @@ the links they gave are read by `GithubSource` and `SafeFetcher`; this service i
 keeps the result per person in `freelancer_sources`, so a card can say what it was
 written from and a change of a source can mark it stale.
 
-* **Off by default.** `ai_sources` holds one switch per kind (`github`, `links`), both
-  off, and neither is turned on in production until the privacy notice covers reading what people
-  linked (it does since REB-841). A kind that is off is not fetched, and its
+* **Off by default.** `ai_sources` holds one switch per kind (`github`, `links`, and since
+  REB-1134 `work_profile`, which this service only switches: the profile is read from
+  `work_profiles`, never copied here), all off. The first two are not turned on in production
+  until the privacy notice covers reading what people linked (it does since REB-841), the
+  third until it covers the work profile. A kind that is off is not fetched, and its
   rows are deleted at once when an admin turns it off and again at the next refetch.
 * **The hash ignores what moves on its own.** The hash of a GitHub source is its
   `hash_material()` (no stars, last push or language counts); of a page, its text without
@@ -274,8 +276,16 @@ class SourceService:
     # ---- the switches ----------------------------------------------------------------
 
     def enabled_kinds(self) -> set[str]:
-        """The kinds an admin has turned on: `github`, `links`."""
-        return set(self.session.scalars(select(AiSource.kind).where(AiSource.enabled.is_(True))))
+        """The kinds an admin has turned on that are fetched from outside: `github`, `links`.
+        The work profile is the hub's own data, with a switch (`hub_facts.work_profile_on`)
+        and nothing to fetch, so it never makes a card's sources worth refetching."""
+        return set(
+            self.session.scalars(
+                select(AiSource.kind).where(
+                    AiSource.enabled.is_(True), AiSource.kind.in_(tuple(_ROW_KIND))
+                )
+            )
+        )
 
     def set_enabled(self, admin_id: UUID, kind: str, enabled: bool) -> None:
         if kind not in AI_SOURCE_KINDS:
@@ -289,9 +299,10 @@ class SourceService:
         row.enabled = enabled
         row.updated_by = admin_id
         row.updated_at = self.now()
-        if not enabled:
+        if not enabled and kind in _ROW_KIND:
             # Off must mean off now, not at the next weekly pass: the text of a page
-            # nobody may read for the card any more is not kept.
+            # nobody may read for the card any more is not kept. (The work profile has no
+            # copy here: the card reads it from `work_profiles` while the switch is on.)
             self.session.execute(
                 delete(FreelancerSource).where(FreelancerSource.kind == _ROW_KIND[kind])
             )
