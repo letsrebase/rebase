@@ -87,6 +87,14 @@ A `freelancer` is always a `supplier` too: the role is added for you and cannot 
 or `extra_eu` and `supplier_supplies` `goods` or `services`); `customer_kind` is `business`,
 `consumer` or `public_body` (whose `sdi_code` is its 6-character IPA code); and
 `is_withholding_agent` marks a customer that withholds on our professional invoices.
+A freelancer placed through the rebase hub is an organization with the role `freelancer` and a
+`hub_freelancer_id`, the id of their card on the hub, which keeps talent search, team requests and
+campaigns: the relationship itself lives here, in the `collaborators` module, and every read and
+write of it is an administrator's. An engagement (`create_engagement`, what the hub called a match)
+holds the fee, `days_per_week` and the payment rule; `preview_engagement` renders its letter,
+`send_engagement_for_signature` mails it to the freelancer, `get_engagement_report` reads the days
+they recorded and `get_freelancer_availability` the days a week their live engagements already
+take, by ISO week, which the hub also shows beside each card.
 """
 
 

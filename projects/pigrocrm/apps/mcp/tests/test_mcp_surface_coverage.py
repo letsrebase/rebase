@@ -1389,6 +1389,11 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "door under the engagements token and for the hub's service alone; an agent reads the "
         "same weeks with `get_freelancer_availability`"
     ),
+    ("HubDoorService", "commitments"): (
+        "REB-1120: the hub's read of every committed freelancer at once, for its talent lists, "
+        "through the root door under the engagements token and for the hub's service alone; an "
+        "agent reads one freelancer's weeks with `get_freelancer_availability`"
+    ),
     ("HubDoorService", "contracts"): (
         "REB-1107: the hub's read of a member's contracts for its member area, through the root "
         "door under the engagements token and for the hub's service alone, authorised by the "
@@ -1418,6 +1423,10 @@ _COVERED_OR_HUMAN: dict[Method, str] = {
         "REB-1107: the computation behind `get_freelancer_availability` and the hub's door, with "
         "no permission check of its own: the caller's own (an administrator's, or the door's "
         "token), so it is not a surface"
+    ),
+    ("FreelancerService", "window"): (
+        "REB-1120: the date window `weeks_of` and the hub's commitments read share, a pure "
+        "computation with no data of its own, so it is not a surface"
     ),
     ("TenantService", "get_by_id"): (
         "REB-1019: the registry's lookup of a space by id, which the Documenso webhook runs on the "

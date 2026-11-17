@@ -612,18 +612,10 @@ class FreelancerService:
             weeks=weeks,
         )
 
-    def weeks_of(
-        self,
-        freelancer_id: UUID | None,
-        date_from: dt.date | None,
-        date_to: dt.date | None,
-        *,
-        excluding: UUID | None = None,
-    ) -> tuple[dt.date, dt.date, list[AvailabilityWeek]]:
-        """The window and its weeks, with no permission check: the caller's own (`availability`
-        asks an administrator, the hub's door is the token's). `None` for a freelancer the CRM
-        holds no organization for, whose weeks are all free: nothing is committed that this
-        installation knows of."""
+    @staticmethod
+    def window(date_from: dt.date | None, date_to: dt.date | None) -> tuple[dt.date, dt.date]:
+        """The weeks an availability covers: from the Monday of `date_from` (this week's with
+        none) to `date_to` (twelve weeks on with none), at most `AVAILABILITY_MAX_WEEKS`."""
         start = rules.monday(date_from or today_local())
         end = date_to or start + dt.timedelta(weeks=AVAILABILITY_DEFAULT_WEEKS, days=-1)
         if end < start:
@@ -640,6 +632,21 @@ class FreelancerService:
                 f"al massimo {AVAILABILITY_MAX_WEEKS} settimane per volta",
                 expected=f"<= {AVAILABILITY_MAX_WEEKS} settimane",
             )
+        return start, end
+
+    def weeks_of(
+        self,
+        freelancer_id: UUID | None,
+        date_from: dt.date | None,
+        date_to: dt.date | None,
+        *,
+        excluding: UUID | None = None,
+    ) -> tuple[dt.date, dt.date, list[AvailabilityWeek]]:
+        """The window and its weeks, with no permission check: the caller's own (`availability`
+        asks an administrator, the hub's door is the token's). `None` for a freelancer the CRM
+        holds no organization for, whose weeks are all free: nothing is committed that this
+        installation knows of."""
+        start, end = self.window(date_from, date_to)
         commitments = (
             [
                 Commitment(e.id, e.starts_on, e.ends_on, e.days_per_week)

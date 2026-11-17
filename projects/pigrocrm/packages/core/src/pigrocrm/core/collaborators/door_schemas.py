@@ -29,6 +29,16 @@ class DoorAvailability(BaseModel):
     weeks: list[AvailabilityWeek]
 
 
+class DoorCommitments(BaseModel):
+    """Every freelancer the hub knows with a live engagement in the window, each with the weeks
+    `availability` would answer for them (REB-1120). A hub card that is not in `freelancers` is
+    free in every week of the window: one read answers a whole list of cards."""
+
+    date_from: dt.date
+    date_to: dt.date
+    freelancers: list[DoorAvailability]
+
+
 class DoorDocument(BaseModel):
     """One document as its freelancer reads it in the hub's «Contratti»: never the PDF's bytes and
     never the engagement's fee. `customer`, `start` and `end` are a letter's, the dates as the
