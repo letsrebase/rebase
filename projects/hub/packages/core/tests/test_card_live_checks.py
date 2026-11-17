@@ -3,16 +3,25 @@ against its CV and the hub's facts, with no model, and the fields its sources do
 or contradict are stored beside it with a sentence saying why; the admin's card read and the
 MCP's `read` give them back. The rules themselves are in `test_card_eval_checks.py`."""
 
+import time
 from datetime import UTC, date, datetime
 from typing import Any
 
+import pytest
 from fakes_cards import CARD, card_response, text_pdf
 from freelancer_fixtures import apply_freelancer, card_writer, stored_card
 from sqlalchemy.orm import Session
 
 from rebase_core.card_draft import Conflict
+from rebase_core.card_eval_checks import parse
 from rebase_core.card_guard import KnownIdentifiers
-from rebase_core.card_live_checks import CardFlag, card_flags, flags_json, split_stored
+from rebase_core.card_live_checks import (
+    MAX_YEARS_CHARS,
+    CardFlag,
+    card_flags,
+    flags_json,
+    split_stored,
+)
 from rebase_core.card_writer import CardWriter
 from rebase_core.hub_facts import HubFacts, MatchFact
 from rebase_core.llm import RecordingCall
@@ -125,6 +134,46 @@ def test_a_skill_a_source_spells_another_way_is_supported() -> None:
     assert _skills(["Python 3", "Vue.js", "Node.js", "Next.js"], cv) == []
 
 
+@pytest.mark.parametrize(
+    ("skill", "cv"),
+    [
+        ("ES6", "Modern JavaScript (ES6+)"),
+        ("HTML", "HTML5, CSS3"),
+        ("CSS", "HTML5, CSS3"),
+        ("Python", "Python3 scripting"),
+        ("C++", "Embedded C++17"),
+        ("Qt", "Desktop apps with Qt5"),
+        ("Java", "Java8 services"),
+        ("Vue.js", "Frontends in Vue3"),
+        ("PHP", "Legacy PHP7"),
+        ("Bootstrap", "Bootstrap4 themes"),
+        ("Angular", "Angular2+ apps"),
+        ("Angular", "Maintained AngularJS code"),
+        ("AngularJS", "Angular apps"),
+        ("Microservices", "microservizi in produzione"),
+        ("Microservices", "a microservice architecture"),
+        ("Microservice", "microservices"),
+        ("Docker", "Dockers and Compose"),
+        ("REST API", "Designed REST APIs"),
+        ("Unit Test", "wrote unit tests"),
+        ("Web Service", "SOAP web services"),
+        ("Kubernetes", "Kubernetes operators"),
+        ("S3", "AWS S3 buckets"),
+    ],
+)
+def test_a_skill_the_cv_spells_with_a_version_a_plus_or_a_plural_is_supported(
+    skill: str, cv: str
+) -> None:
+    assert _skills([skill], cv) == []
+
+
+def test_a_version_or_a_plural_does_not_make_a_skill_a_mention_of_another() -> None:
+    assert [flag.reason for flag in _skills(["Java"], "JavaScript5, JavaScripts")] == [
+        "Nessuna fonte cita Java"
+    ]
+    assert _skills(["S3"], "Python3") != []
+
+
 def test_a_skill_no_source_mentions_is_unsupported_and_named() -> None:
     [flag] = _skills(["Python", "Rust", "Terraform"])
 
@@ -192,6 +241,32 @@ def test_the_stored_list_keeps_conflicts_and_flags_apart() -> None:
 
     assert split_stored(stored) == ([Conflict("different_experience_years", 2, 5)], [flag])
     assert split_stored(None) == ([], [])
+
+
+# ---- the CV's dates are read in time -------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "cv",
+    [
+        "03/2019 - " * 5_000,  # fifty thousand characters, one line, five thousand ranges
+        "Acme 2015 - 2019 Python\n" * 20_000,  # four hundred and eighty thousand characters
+    ],
+)
+def test_a_crafted_cv_is_read_in_seconds(cv: str) -> None:
+    started = time.process_time()
+    card_flags(_card(experience_years=3), cv, NO_FACTS, KNOWN, TODAY)
+    parse(cv, TODAY)
+
+    assert time.process_time() - started < 2
+
+
+def test_a_cv_past_the_cap_is_not_read_for_its_years() -> None:
+    cv = "Backend developer, Acme, 2015 - 2025. " + "Python, FastAPI, PostgreSQL, AWS. " * 2_000
+
+    assert len(cv) > MAX_YEARS_CHARS
+    assert _flags(_card(experience_years=2), cv) == []
+    assert _flags(_card(experience_years=2), cv[:1_000]) != []
 
 
 # ---- on the live path ----------------------------------------------------------------------

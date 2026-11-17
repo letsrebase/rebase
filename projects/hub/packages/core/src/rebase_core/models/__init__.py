@@ -129,6 +129,7 @@ from rebase_core.models.sessions import (
     UserSession,
 )
 from rebase_core.models.team import (
+    CARD_FLAG_VERDICTS,
     CARD_MODEL_MAX_LENGTH,
     CARD_SENIORITIES,
     TALENT_ANSWERS,
@@ -194,6 +195,7 @@ __all__ = [
     "CARD_BATCH_STATUSES",
     "CARD_EVAL_LABEL_MAX_LENGTH",
     "CARD_MODEL_MAX_LENGTH",
+    "CARD_FLAG_VERDICTS",
     "CARD_SENIORITIES",
     "CLI_AUTHORIZATION_STATES",
     "CLI_HASH_LENGTH",

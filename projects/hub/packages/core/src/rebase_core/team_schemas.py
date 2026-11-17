@@ -43,6 +43,7 @@ from rebase_core.schema_common import (
 )
 from rebase_core.validation import SafeStr
 from rebase_core.vocabulary import (
+    CardFlagVerdict,
     RemoteOption,
     Seniority,
     TalentAnswer,
@@ -138,7 +139,7 @@ class CardFlagRead(ResponseModel):
     (`card_live_checks`, REB-1128). Derived from the CV: for the admin only, never in a log."""
 
     field: str
-    verdict: Literal["unsupported", "contradicted"]
+    verdict: CardFlagVerdict
     reason: str
 
 

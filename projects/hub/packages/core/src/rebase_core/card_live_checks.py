@@ -25,17 +25,19 @@ import re
 import unicodedata
 from collections.abc import Iterable
 from datetime import date
-from typing import Any, Literal, NamedTuple
+from typing import Any, NamedTuple
 
 from rebase_core.card_draft import Conflict
 from rebase_core.card_eval_checks import YearsCheck, anonymity_leaks, check_years
 from rebase_core.card_guard import KnownIdentifiers
 from rebase_core.hub_facts import HubFacts
+from rebase_core.models import CARD_FLAG_VERDICTS
 from rebase_core.sources import SourceSet
 from rebase_core.team_schemas import Card
 
-FlagVerdict = Literal["unsupported", "contradicted"]
-FLAG_KINDS: tuple[FlagVerdict, ...] = ("unsupported", "contradicted")
+FLAG_KINDS = CARD_FLAG_VERDICTS
+# The longest CV text whose dates are parsed for a live card (a real CV is a few thousand).
+MAX_YEARS_CHARS = 50_000
 
 
 class CardFlag(NamedTuple):
@@ -43,7 +45,7 @@ class CardFlag(NamedTuple):
     (`contradicted`), and why, in a sentence of ours that the admin reads."""
 
     field: str
-    verdict: FlagVerdict
+    verdict: str
     reason: str
 
 
@@ -53,7 +55,7 @@ def _span(low: int | None, high: int | None) -> str:
     return f"{low}" if low == high else f"da {low} a {high}"
 
 
-def _years_reason(card: Card, years: YearsCheck) -> tuple[FlagVerdict, str]:
+def _years_reason(card: Card, years: YearsCheck) -> tuple[str, str]:
     got = card.experience_years
     if years.mode == "admin":
         return "contradicted", "Gli anni della scheda non sono quelli indicati dall'admin"
@@ -73,19 +75,21 @@ def _years_reason(card: Card, years: YearsCheck) -> tuple[FlagVerdict, str]:
 # The obvious pairs, written in normalised form (`_normal`): a skill and a source that spell the
 # same technology differently. Explicit on purpose: nothing fuzzy, so a false flag is rare and
 # can be explained.
-_ALIASES: tuple[frozenset[str], ...] = tuple(
-    frozenset(group)
-    for group in (
-        ("javascript", "js"),
-        ("typescript", "ts"),
-        ("postgresql", "postgres"),
-        ("kubernetes", "k8s"),
-        ("react", "react js", "reactjs"),
-        ("node js", "node", "nodejs"),
-        ("golang", "go"),
-    )
+_ALIAS_GROUPS = (
+    ("javascript", "js"),
+    ("typescript", "ts"),
+    ("postgresql", "postgres"),
+    ("kubernetes", "k8s"),
+    ("react", "react js", "reactjs"),
+    ("node js", "node", "nodejs"),
+    ("golang", "go"),
+    ("angular", "angularjs", "angular js"),
+    ("microservices", "microservizi"),
 )
 _NOT_WORD = re.compile(r"[^a-z0-9+#]+")
+# A version glued to a name (`html5`, `c++17`, `qt5`, `es6+`, `angular2+`): two characters
+# at least stay before it, so `s3` and `k8s` are left alone.
+_VERSION = re.compile(r"(?<=[a-z+#]{2})[0-9]+\+?$")
 
 
 def _normal(text: str) -> str:
@@ -96,38 +100,60 @@ def _normal(text: str) -> str:
     return _NOT_WORD.sub(" ", plain).strip()
 
 
+def _stem(token: str) -> str:
+    """`token` without a glued version and a plural: `html5` is `html`, `services` is
+    `service`, `libraries` is `library`. Not a language, only the same cut on both sides of
+    the comparison, so what the skill and the source spell alike meet (`classes` and `class`
+    do not, which is the price of nothing fuzzy)."""
+    token = _VERSION.sub("", token)
+    if len(token) > 4 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return token
+
+
+def _stems(normal: str) -> str:
+    return " ".join(_stem(token) for token in normal.split())
+
+
+_ALIASES: tuple[frozenset[str], ...] = tuple(
+    frozenset(_stems(form) for form in group) for group in _ALIAS_GROUPS
+)
+
+
 def _forms(skill: str) -> set[str]:
-    """The spellings a source may use for `skill`, all normalised: itself, joined (`node js` as
-    `nodejs`), without a trailing `js` (`vue js`, `nodejs`) and without a trailing version
-    (`python 3`, `html5`), and the explicit aliases of any of them."""
+    """The spellings a source may use for `skill`, all normalised and stemmed (`_stem`): itself,
+    joined (`node js` as `nodejs`), without a trailing `js` (`vue js`, `nodejs`) and without a
+    trailing version (`python 3`), and the explicit aliases of any of them."""
     base = _normal(skill)
     if not base:
         return set()
     forms = {base}
     for form in list(forms):
         tokens = form.split()
-        if tokens and tokens[-1] == "js" and len(tokens) > 1:
+        if len(tokens) > 1 and tokens[-1] == "js":
             forms.add(" ".join(tokens[:-1]))
-        if tokens and len(tokens[-1]) > 2 and tokens[-1].endswith("js"):
+        if len(tokens[-1]) > 2 and tokens[-1].endswith("js"):
             forms.add(" ".join([*tokens[:-1], tokens[-1][:-2]]))
     for form in list(forms):
         tokens = form.split()
         while len(tokens) > 1 and tokens[-1].isdigit():
             tokens = tokens[:-1]
-        stem = re.sub(r"(?<=[a-z]{2})[0-9]+$", "", tokens[-1])
-        forms.add(" ".join([*tokens[:-1], stem]))
         forms.add(" ".join(tokens))
     forms |= {form.replace(" ", "") for form in forms}
+    stemmed = {_stems(form) for form in forms}
     for group in _ALIASES:
-        if forms & group:
-            forms |= group
-    return {form for form in forms if form}
+        if stemmed & group:
+            stemmed |= group
+    return {form for form in stemmed if form}
 
 
 def unsupported_skills(card: Card, texts: Iterable[str]) -> list[str]:
     """The entries of `card.skills` that no text of `texts` (what the card was written from)
-    mentions, as whole words after `_normal`, by any of their `_forms`."""
-    pool = f" {' '.join(_normal(text) for text in texts)} "
+    mentions, as whole words after `_normal` and `_stem` on both sides, by any of their
+    `_forms`."""
+    pool = f" {' '.join(_stems(_normal(text)) for text in texts)} "
     return [
         skill for skill in card.skills if not any(f" {form} " in pool for form in _forms(skill))
     ]
@@ -149,22 +175,30 @@ def card_flags(
     sources: SourceSet | None = None,
     job_title: str | None = None,
 ) -> list[CardFlag]:
-    """The flags of `card` as it is about to be kept, in the card's field order. The years
-    are read against the CV's dated periods, the hub's completed engagements and an admin's
-    word, only when the CV allows a reliable parse (`YearsCheck.ok` is `None` otherwise, and
-    nothing is flagged); a seniority that follows years the sources do not support is flagged
-    with them. The anonymity is read against everything the person's data holds, as
-    `cards-eval` does (the writer's own guard is wider and has already failed such a card, so
-    this is a second reader, not a gate). The skills are read against every text the card was
-    written from: the CV's, each readable source's (GitHub, the links), the hub's facts and the
-    position (`unsupported_skills`); the skills no text mentions are one flag, naming them."""
+    """The flags of `card` as it is about to be kept, in the card's field order.
+
+    The years are read against the CV's dated periods, the hub's completed engagements and an
+    admin's word, only when the CV allows a reliable parse (`YearsCheck.ok` is `None` otherwise,
+    and nothing is flagged, as for a CV longer than `MAX_YEARS_CHARS`); a seniority that follows
+    years the sources do not support is flagged with them. The anonymity is read against
+    everything the person's data holds, as `cards-eval` does (the writer's own guard is wider and
+    has already failed such a card, so this is a second reader, not a gate). The skills are read
+    against every text the card was written from: the CV's, each readable source's (GitHub, the
+    links), the hub's facts and the position (`unsupported_skills`); the skills no text mentions
+    are one flag, naming them."""
     found: list[CardFlag] = []
-    years = check_years(
-        card,
-        cv_text,
-        hub_completed_months=facts.completed_months,
-        experience_years_admin=facts.experience_years_admin,
-        today=today,
+    # A backstop on the live path: a CV past `MAX_YEARS_CHARS` is not read for its dates, never
+    # read in part (the years of a cut CV would be too few). Nothing is flagged for it.
+    years = (
+        check_years(
+            card,
+            cv_text,
+            hub_completed_months=facts.completed_months,
+            experience_years_admin=facts.experience_years_admin,
+            today=today,
+        )
+        if len(cv_text) <= MAX_YEARS_CHARS
+        else YearsCheck("judged", None)
     )
     if years.ok is False:
         verdict, reason = _years_reason(card, years)

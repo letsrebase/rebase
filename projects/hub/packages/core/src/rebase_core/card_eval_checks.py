@@ -28,6 +28,7 @@ person's identifiers come in, a verdict comes out.
 """
 
 import re
+from bisect import bisect_right
 from dataclasses import dataclass
 from datetime import date
 from typing import Literal
@@ -167,6 +168,24 @@ class Parsed:
     complete: bool
 
 
+# How far from a period a study word still says the period is a study: the characters of its own
+# line on each side of it, and as many of the line before and after. A real CV line is a
+# fraction of it; the bound is what keeps a text of one enormous line linear.
+_NEAR = 400
+
+
+def _near(
+    text: str, lines: list[str], offsets: list[int], number: int, span: tuple[int, int]
+) -> str:
+    """The text beside a period: its line from `_NEAR` characters before it to `_NEAR` after it,
+    and the end of the line before and the start of the line after."""
+    begin = offsets[number]
+    here = text[max(begin, span[0] - _NEAR) : min(begin + len(lines[number]), span[1] + _NEAR)]
+    before = lines[number - 1][-_NEAR:] if number > 0 else ""
+    after = lines[number + 1][:_NEAR] if number + 1 < len(lines) else ""
+    return " ".join((before, here, after))
+
+
 def parse(text: str, today: date) -> Parsed:
     """Every dated period the CV writes, `Period.study` when the line or one beside it
     names a study. Periods that end before they start, start in the future or last under
@@ -190,8 +209,8 @@ def parse(text: str, today: date) -> Parsed:
         if finish is None or begin.earliest > now or finish.latest < begin.earliest:
             continue
         covered.append(hit.span())
-        number = max(i for i, at in enumerate(offsets) if at <= hit.start())
-        near = " ".join(lines[max(0, number - 1) : number + 2])
+        number = bisect_right(offsets, hit.start()) - 1
+        near = _near(text, lines, offsets, number, hit.span())
         period = Period(
             begin.earliest,
             min(finish.latest, now),
@@ -201,10 +220,15 @@ def parse(text: str, today: date) -> Parsed:
         )
         if period.months >= MIN_MONTHS:
             found.append(period)
-    complete = all(
-        any(start <= year.start() < end for start, end in covered)
-        for year in _ANY_YEAR.finditer(text)
-    )
+    # `covered` is in the text's order and its spans never overlap (`finditer`), so a year is
+    # in one of them or in none: one binary search each.
+    starts = [start for start, _ in covered]
+    complete = True
+    for year in _ANY_YEAR.finditer(text):
+        at = bisect_right(starts, year.start()) - 1
+        if at < 0 or year.start() >= covered[at][1]:
+            complete = False
+            break
     return Parsed(found, complete)
 
 
