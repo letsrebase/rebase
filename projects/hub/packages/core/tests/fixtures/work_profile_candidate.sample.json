@@ -1,0 +1,542 @@
+{
+  "schema": "playnew-profile/v1",
+  "generatedAt": "2026-05-30T13:42:24.654Z",
+  "contact": {
+    "name": "Giulia",
+    "email": "giulia@example.com",
+    "city": "Milano",
+    "status": "freelance"
+  },
+  "window": {
+    "from": "2026-04",
+    "to": "2026-05"
+  },
+  "volume": {
+    "products": 23,
+    "sessions": 44,
+    "instructions": 2701
+  },
+  "summary": "Works with AI in a research-first, orchestrated way: explores in depth before touching code, decomposes work into well-defined, delegable tasks, and verifies stubbornly before shipping. Switches registers cleanly: structured English to delegate execution, fast vernacular for product decisions.",
+  "projects": [
+    {
+      "id": "p1",
+      "selected": true,
+      "type": [
+        "feature-work",
+        "testing"
+      ],
+      "domain": "Creator intelligence platform for talent management: public roster of creators and an admin dashboard for agency operations (scouting, quotation, production, reporting), with sync from social APIs and spreadsheets, evolving into an internal CRM.",
+      "span": {
+        "from": "2026-05",
+        "to": "2026-05"
+      },
+      "sessions": 6,
+      "did": "Security code review (SQL injection, dead code), consolidation of admin API route patterns (creator CRUD), domain-renaming refactors across the codebase, dead column and table detection, on an event-driven stack with background jobs and a managed DB.",
+      "whyRepresentative": "The largest, most sustained body of work, with clean delivery: 153 commits, 0 reverts.",
+      "tech": [
+        "Supabase/Postgres",
+        "Zod"
+      ],
+      "landing": {
+        "checksRun": true,
+        "commits": 6,
+        "reverts": 0,
+        "revertChurn": "low"
+      },
+      "metrics": {
+        "researchToMutation": 0.81,
+        "delegation": 1
+      },
+      "artifact": null
+    },
+    {
+      "id": "p2",
+      "selected": true,
+      "type": [
+        "exploration"
+      ],
+      "domain": "Internal operational business intelligence dashboard: companies/persons/projects/deals records, pipeline, and invoice reconciliation against an external accounting system; with an in-app conversational agent that has a skill registry and entity navigation.",
+      "span": {
+        "from": "2026-04",
+        "to": "2026-05"
+      },
+      "sessions": 3,
+      "did": "Continuous build and maintenance: relationship and finance data model, invoice reconciliation engine (multi-tier matching, time windows, VAT and tax-code handling, deduplication), invoicing tables and UI, plus the in-app agent. 136 commits, 0 reverts.",
+      "whyRepresentative": "Continuous build over several months on the most complex domain logic: financial reconciliation.",
+      "tech": [
+        "Supabase/Postgres"
+      ],
+      "landing": {
+        "checksRun": false,
+        "commits": 0,
+        "reverts": 0,
+        "revertChurn": "n/d"
+      },
+      "metrics": {
+        "researchToMutation": null,
+        "delegation": 0
+      },
+      "artifact": null
+    },
+    {
+      "id": "p3",
+      "selected": true,
+      "type": [
+        "product-build",
+        "testing",
+        "orchestrated"
+      ],
+      "domain": "Tooling toolkit for AI agents: commands, skills, hooks, and documentation for an assisted-development plugin, with research on existing agent architectures and plugin systems.",
+      "span": {
+        "from": "2026-04",
+        "to": "2026-05"
+      },
+      "sessions": 2,
+      "did": "Design of commands, skills, and hooks with documentation; consistency audit between declared structure and actual code; deep research on agent architectures and plugin systems to derive patterns.",
+      "whyRepresentative": "Shows the meta side: building tools that make agents work better, not just using them.",
+      "tech": [
+        "Inngest (job event-driven)",
+        "Supabase/Postgres",
+        "Playwright (E2E)",
+        "shadcn/ui",
+        "Zod"
+      ],
+      "landing": {
+        "checksRun": true,
+        "commits": 157,
+        "reverts": 0,
+        "revertChurn": "low"
+      },
+      "metrics": {
+        "researchToMutation": 0.64,
+        "delegation": 15
+      },
+      "artifact": null
+    },
+    {
+      "id": "p4",
+      "selected": true,
+      "type": [
+        "product-build",
+        "orchestrated"
+      ],
+      "domain": "Event-venue sourcing platform: AI-powered semantic search and cascading enrichment from multiple sources (booking portals, maps, websites), with a venue and opportunity data schema.",
+      "span": {
+        "from": "2026-04",
+        "to": "2026-05"
+      },
+      "sessions": 1,
+      "did": "Exploration and technical direction: semantic search, cascading enrichment logic, venue/opportunity schema, verification of search-prompt parsing.",
+      "whyRepresentative": "Shows the architect/reviewer mode: understanding and steering a system more than writing code.",
+      "tech": [
+        "Supabase/Postgres",
+        "Playwright (E2E)",
+        "shadcn/ui"
+      ],
+      "landing": {
+        "checksRun": true,
+        "commits": 136,
+        "reverts": 0,
+        "revertChurn": "low"
+      },
+      "metrics": {
+        "researchToMutation": 0.8,
+        "delegation": 19
+      },
+      "artifact": null
+    }
+  ],
+  "otherProjects": [
+    {
+      "type": [
+        "product-build",
+        "orchestrated",
+        "design-research"
+      ],
+      "span": {
+        "from": "2026-05",
+        "to": "2026-05"
+      },
+      "sessions": 5,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "data-migration"
+      ],
+      "span": {
+        "from": "2026-05",
+        "to": "2026-05"
+      },
+      "sessions": 3,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "feature-work"
+      ],
+      "span": {
+        "from": "2026-05",
+        "to": "2026-05"
+      },
+      "sessions": 3,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "feature-work",
+        "orchestrated"
+      ],
+      "span": {
+        "from": "2026-05",
+        "to": "2026-05"
+      },
+      "sessions": 2,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "feature-work"
+      ],
+      "span": {
+        "from": "2026-05",
+        "to": "2026-05"
+      },
+      "sessions": 2,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "feature-work",
+        "data-migration"
+      ],
+      "span": {
+        "from": "2026-05",
+        "to": "2026-05"
+      },
+      "sessions": 2,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "product-build",
+        "testing"
+      ],
+      "span": {
+        "from": "2026-05",
+        "to": "2026-05"
+      },
+      "sessions": 2,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "exploration"
+      ],
+      "span": {
+        "from": "2026-05",
+        "to": "2026-05"
+      },
+      "sessions": 2,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "exploration"
+      ],
+      "span": {
+        "from": "2026-05",
+        "to": "2026-05"
+      },
+      "sessions": 1,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "feature-work"
+      ],
+      "span": {
+        "from": "2026-04",
+        "to": "2026-04"
+      },
+      "sessions": 1,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "feature-work",
+        "testing"
+      ],
+      "span": {
+        "from": "2026-04",
+        "to": "2026-05"
+      },
+      "sessions": 1,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "feature-work"
+      ],
+      "span": {
+        "from": "2026-05",
+        "to": "2026-05"
+      },
+      "sessions": 1,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "exploration"
+      ],
+      "span": {
+        "from": "2026-05",
+        "to": "2026-05"
+      },
+      "sessions": 1,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "data-migration"
+      ],
+      "span": {
+        "from": "2026-04",
+        "to": "2026-05"
+      },
+      "sessions": 1,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "feature-work"
+      ],
+      "span": {
+        "from": "2026-05",
+        "to": "2026-05"
+      },
+      "sessions": 1,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "feature-work",
+        "testing"
+      ],
+      "span": {
+        "from": "2026-05",
+        "to": "2026-05"
+      },
+      "sessions": 1,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "feature-work",
+        "design-research"
+      ],
+      "span": {
+        "from": "2026-04",
+        "to": "2026-05"
+      },
+      "sessions": 1,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "exploration"
+      ],
+      "span": {
+        "from": "2026-05",
+        "to": "2026-05"
+      },
+      "sessions": 1,
+      "includedBy": "tool:inventory"
+    },
+    {
+      "type": [
+        "exploration"
+      ],
+      "span": {
+        "from": "2026-05",
+        "to": "2026-05"
+      },
+      "sessions": 1,
+      "includedBy": "tool:inventory"
+    }
+  ],
+  "cognitive": {
+    "tags": [
+      "orchestrator",
+      "risk-calibrated"
+    ],
+    "narrative": "Almost always starts with an explicit exploration phase, with a high read-to-modify ratio. Decomposes requests into numbered mini-specs with file paths and acceptance criteria, so execution stays unambiguous. Delegates to sub-agents for parallel research and execution and tracks them with the task tool. Demanding on verification: insists on clean type-checks and lint, security and dead-code reviews, cleanup before push. Manages risk in a calibrated way, with defensive commits before large changes, and calibrates trust in the AI: delegates when the task is clear, corrects when the agent goes wrong."
+  },
+  "aiRelationship": {
+    "mode": "co-thinking-leaning",
+    "directing": 17,
+    "coThinking": 83,
+    "narrative": "Picks mode by context. On security, data, and migrations the prompts are long and structured \u2014 file paths, acceptance criteria, hard constraints, the model directed as a careful junior. On UI exploration, naming, and product direction the prompts shrink to short conversational turns (\"ti sembra?\", \"vai da solo\", \"che ne dici se\") and the model becomes a thinking partner."
+  },
+  "agenticLiteracy": {
+    "uses": {
+      "subagentDelegations": 70,
+      "taskTrackingEvents": 1125,
+      "builtinSlashInvocations": 4,
+      "customSkillsCommands": {
+        "distinct": 3,
+        "invocations": 5
+      },
+      "publicMcp": {
+        "servers": 2,
+        "calls": 13
+      },
+      "customMcp": {
+        "servers": 1,
+        "tools": 4,
+        "calls": 16
+      }
+    },
+    "builds": {
+      "skillsAuthored": 0,
+      "commandsAuthored": 2,
+      "agentsAuthored": 0,
+      "hooksEdited": 0,
+      "projectMemoryFiles": 13
+    },
+    "designs": {
+      "plansFirst": 6,
+      "subtaskTracking": 0,
+      "clarifies": 45
+    },
+    "narrative": "Builds before uses. Has authored their own slash commands and maintains a custom MCP server connecting an agent to a domain-specific data source \u2014 a capability rarer than basic AI tool usage and a clear sign of agentic-infrastructure maturity. Orchestrates work track-while-running through the sub-agent task system rather than planning upfront, and maintains CLAUDE.md as a living doctrine across projects."
+  },
+  "intensity": {
+    "observedDays": 45,
+    "activeDays": 25,
+    "activeDaysRatio": 0.56,
+    "medianSessionsPerActiveDay": 1,
+    "medianSessionToolCalls": 58,
+    "longestStreak": 5,
+    "peakDayToolCalls": 11399,
+    "cadence": "heavy regular",
+    "sessionShape": "deep sessions",
+    "narrative": "Daily driver in deep, frequently multi-day-streak sessions. Claude is the workflow, not a tool reached for on specific tasks."
+  },
+  "trajectory": {
+    "shifts": {
+      "available": true,
+      "midpoint": "2026-05",
+      "early": {
+        "sessions": 14,
+        "medianPromptWords": 11,
+        "delegationRate": 0.021,
+        "researchToMutation": 0.68,
+        "verificationRate": 0.57
+      },
+      "late": {
+        "sessions": 30,
+        "medianPromptWords": 13,
+        "delegationRate": 0.05,
+        "researchToMutation": 0.89,
+        "verificationRate": 0.3
+      },
+      "deltas": [
+        {
+          "metric": "median prompt words",
+          "format": "number",
+          "early": 11,
+          "late": 13,
+          "dir": "up"
+        },
+        {
+          "metric": "delegation rate",
+          "format": "percent",
+          "early": 0.021,
+          "late": 0.05,
+          "dir": "up"
+        },
+        {
+          "metric": "research:mutation",
+          "format": "ratio",
+          "early": 0.68,
+          "late": 0.89,
+          "dir": "up"
+        },
+        {
+          "metric": "verification rate",
+          "format": "percent",
+          "early": 0.57,
+          "late": 0.3,
+          "dir": "down"
+        }
+      ]
+    },
+    "topics": [
+      {
+        "quarter": "2026-Q2",
+        "themes": [
+          {
+            "name": "AI patterns",
+            "count": 77
+          },
+          {
+            "name": "agent architecture",
+            "count": 75
+          },
+          {
+            "name": "design & UI",
+            "count": 72
+          },
+          {
+            "name": "data & schema",
+            "count": 44
+          }
+        ]
+      }
+    ],
+    "newVocabulary": [
+      "invoicing",
+      "scouting",
+      "enrichment",
+      "reconciliation",
+      "compaction",
+      "trajectory",
+      "groundedness",
+      "subagent"
+    ],
+    "narrative": "The way of working shifted measurably across the window: requests became deeper and more structured (median prompt length nearly doubled), and delegation to sub-agents emerged from zero to a recurring pattern. The web reading list moved from agent architecture and SDK fundamentals to design-systems thinking applied to AI interfaces, then back to deeper agent composition \u2014 evidence of a builder learning the medium itself, not only the tools. By the late half, the candidate had codified their own working rules into the project's doctrine files, treating each repo's CLAUDE.md as a living spec for both their future self and their AI collaborator.",
+    "principlesAdopted": [
+      {
+        "when": "2026-03",
+        "text": "Commit before any structural refactor \u2014 keep the option to revert intact."
+      },
+      {
+        "when": "2026-04",
+        "text": "Explore the codebase fully before modifying; the cost of reading is small compared to a wrong edit."
+      },
+      {
+        "when": "2026-05",
+        "text": "Treat the project's doctrine file as a contract with the future self and the AI, not as documentation."
+      }
+    ]
+  },
+  "stackAdopted": [
+    "Supabase/Postgres",
+    "Zod",
+    "Tailwind",
+    "Inngest (job event-driven)",
+    "Playwright (E2E)",
+    "shadcn/ui"
+  ],
+  "authenticity": {
+    "score": 100,
+    "manifestHash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "note": "screen, not proof"
+  },
+  "groundedness": {
+    "score": 89,
+    "supported": 25,
+    "total": 28
+  }
+}

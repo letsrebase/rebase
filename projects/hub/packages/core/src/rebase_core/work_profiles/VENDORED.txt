@@ -1,0 +1,9 @@
+tech-lexicon.json is vendored verbatim from letsrebase/work-profile (share/tech-lexicon.json at
+commit 6a9943a90f7ccb93c2f5da121f724943fdecfd8f), rebase's fork of Play-New/apply-new. The
+lexicon, and groundedness.py, which ports src/groundedness.mjs, are Play New's work under the MIT
+licence in LICENSE-apply-new (Copyright (c) 2026 Cosmico Srl - Play New).
+
+To refresh it: copy share/tech-lexicon.json from the fork over tech-lexicon.json, update the commit
+above, and run `uv run pytest projects/hub/packages/core/tests/test_work_profile_groundedness.py`.
+The fork's `npm run lexicon` regenerates it from its label maps; if groundedness.mjs changed, port
+the change to groundedness.py and the test vectors with it.
