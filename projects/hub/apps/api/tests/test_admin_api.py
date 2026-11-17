@@ -1126,8 +1126,15 @@ def test_an_admin_reads_and_regenerates_the_anonymous_card(
     assert body["provenance"]["field_sources"]["role"] == ["cv"]
     assert (body["provenance"]["sources"], body["provenance"]["conflicts"]) == ([], [])
     assert body["provenance"]["stale"] is None
+    # The CV dates nothing, so the live checks (REB-1128) find the card's years unsupported;
+    # they are the admin's list beside the card, not a conflict.
+    assert [(flag["field"], flag["verdict"]) for flag in body["flags"]] == [
+        ("experience_years", "unsupported"),
+        ("seniority", "unsupported"),
+    ]
+    assert body["provenance"]["conflicts"] == []
     talents = client.get("/api/hub/talent").text
-    for key in ("sources", "source_hashes", "conflicts", "provenance", "prompt_version"):
+    for key in ("sources", "source_hashes", "conflicts", "provenance", "prompt_version", "flags"):
         assert f'"{key}"' not in talents
 
     # The wizard's own write was started by no person: nothing of it in the trail (REB-861).

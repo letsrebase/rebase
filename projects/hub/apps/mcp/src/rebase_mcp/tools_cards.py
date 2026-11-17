@@ -61,7 +61,12 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         from `override_freelancer`) if there is one, otherwise Claude's; `experience_years` is
         `None` when the CV dates no role, and `seniority_uncertain` then says that the
         seniority is only a reading of the responsibilities. A card that still reveals the
-        gender after the rewrite is not written: `error` says so. Read only; to rewrite it
+        gender after the rewrite is not written: `error` says so. `flags` lists the fields the
+        sources the card was written from do not support (`unsupported`) or contradict
+        (`contradicted`), each with a `reason`, found by the same rules as `rebase cards-eval`
+        when the card was written, with no model; `[]` means none was found (or the card is
+        older than the check), not that the card was verified. The reasons come from the CV:
+        they are data for the admin, not to be carried elsewhere. Read only; to rewrite it
         there is `regenerate_freelancer_card`."""
         return deps.run(lambda s: CardWriter(s, None).read(to_uuid(freelancer_id, "freelancer_id")))
 

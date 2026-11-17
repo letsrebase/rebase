@@ -71,6 +71,7 @@ from rebase_core.bands import band_for
 from rebase_core.card_draft import CardDraft, clean_person
 from rebase_core.card_guard import KnownIdentifiers, identifying
 from rebase_core.card_level import banded, card_read
+from rebase_core.card_live_checks import card_flags, split_stored
 from rebase_core.card_person import (
     fill_person,
     gendered_words,
@@ -101,6 +102,7 @@ from rebase_core.llm import LlmCall, LlmResponse
 from rebase_core.models import Freelancer, FreelancerCard, User
 from rebase_core.sources import SourceSet
 from rebase_core.team_schemas import (
+    CardFlagRead,
     CardProvenance,
     CardsRefreshed,
     ConflictRead,
@@ -280,6 +282,7 @@ class CardWriter(CardStore, CardStaleness):
             error=stored.error,
             seniority_admin=row.seniority_admin,
             experience_years_admin=row.experience_years_admin,
+            flags=[CardFlagRead(**flag._asdict()) for flag in split_stored(stored.conflicts)[1]],
         )
 
     def read_admin(self, freelancer_id: UUID) -> FreelancerCardAdminRead:
@@ -294,7 +297,10 @@ class CardWriter(CardStore, CardStaleness):
                 prompt_version=stored.prompt_version or 1,
                 provider=stored.provider,
                 field_sources=stored.sources or {},
-                conflicts=[ConflictRead.model_validate(c) for c in stored.conflicts or []],
+                conflicts=[
+                    ConflictRead.model_validate(c._asdict())
+                    for c in split_stored(stored.conflicts)[0]
+                ],
                 sources=[
                     SourceProvenance(
                         key=item.key,
@@ -463,6 +469,7 @@ class CardWriter(CardStore, CardStaleness):
             facts=facts,
             hashes=hash_inputs(row.job_title, sources, facts),
             cv_sha256=cv_sha256,
+            cv_text=cv.text,
         )
 
     def finish(self, freelancer_id: UUID, prepared: Prepared, response: LlmResponse) -> Composed:
@@ -561,8 +568,12 @@ class CardWriter(CardStore, CardStaleness):
                     person=person,
                 )
         card, field_sources, found = provenance(draft, sources, facts)
+        card = banded(card)
+        # The rules of `cards-eval` on the card to be kept, no model (REB-1128): what its
+        # sources do not support is kept beside it, for the admin and the MCP.
+        flags = card_flags(card, prepared.cv_text, facts, known, self.now().date())
         return Composed(
-            banded(card),
+            card,
             None,
             model,
             provider,
@@ -571,6 +582,7 @@ class CardWriter(CardStore, CardStaleness):
             thinking_tokens,
             sources=field_sources,
             conflicts=found,
+            flags=flags,
             input_hashes=hashes,
             person=person,
         )

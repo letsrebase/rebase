@@ -248,7 +248,9 @@ def test_years_from_the_cv_are_kept_beside_a_source(clean_hub: Session) -> None:
 
     stored = _stored(clean_hub, person)
     assert stored.card is not None and stored.card["experience_years"] == CARD["experience_years"]
-    assert stored.conflicts == []
+    # The CV of this fixture dates nothing, so the live checks (REB-1128) find the years
+    # unsupported; no conflict is recorded.
+    assert [item["kind"] for item in stored.conflicts or []] == ["unsupported", "unsupported"]
 
 
 # ---- the guard and the private answer -----------------------------------------------------

@@ -267,7 +267,8 @@ def get_freelancer_card(
     read from the profile now, the CV and the model it came from, and the last failure,
     which may sit beside an older card; and what it was written from (`provenance`: the
     sources the model says it used, the prompt version, the conflicts), which no other
-    reader of a card sees (REB-839)."""
+    reader of a card sees (REB-839); and `flags`, the fields its sources do not support or
+    contradict by the rules of `cards-eval` (REB-1128)."""
     return CardWriter(session, None).read_admin(freelancer_id)
 
 

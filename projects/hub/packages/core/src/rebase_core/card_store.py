@@ -12,6 +12,7 @@ from uuid import UUID
 from sqlalchemy import func, null, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from rebase_core.card_live_checks import flags_json
 from rebase_core.card_person import PERSON_CV, person_json, stored_gendered
 from rebase_core.card_prompt import PROMPT_VERSION
 from rebase_core.card_regen import RegenerationTrail
@@ -79,7 +80,11 @@ class CardStore(RegenerationTrail):
                 "provider": composed.provider or None,
                 "sources": composed.sources,
                 "source_hashes": composed.input_hashes,
-                "conflicts": [conflict._asdict() for conflict in composed.conflicts],
+                # The conflicts and the flags of the live checks (REB-1128) share the column.
+                "conflicts": [
+                    *(conflict._asdict() for conflict in composed.conflicts),
+                    *flags_json(composed.flags),
+                ],
                 "thinking_tokens": composed.thinking_tokens,
                 "person": (
                     person_json(composed.person, digest) if composed.person is not None else null()

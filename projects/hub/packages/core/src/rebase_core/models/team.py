@@ -68,7 +68,10 @@ class FreelancerCard(Base, TimestampMixin):
     # before: the prompt version and provider, the model's claim of which sources
     # supported each field (`sources`, checked by code, never public), the hash of every
     # source it read (`source_hashes`: `github`, `link:<n>`), the conflicts the code found
-    # between the CV and another source, and the thinking tokens the call spent.
+    # between the CV and another source, and the thinking tokens the call spent. The same
+    # `conflicts` list also holds the flags of the live checks (REB-1128): entries with
+    # `kind` `unsupported` or `contradicted`, a `field` and a `reason`
+    # (`card_live_checks.split_stored` tells them apart).
     prompt_version: Mapped[int | None] = mapped_column(Integer, default=None)
     provider: Mapped[str | None] = mapped_column(String(20), default=None)
     sources: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)

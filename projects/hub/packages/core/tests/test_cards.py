@@ -95,7 +95,11 @@ def test_card_from_a_cv(clean_hub: Session) -> None:
     }
     assert stored.sources == SOURCES
     assert stored.source_hashes == {"wizard": sha(b"Backend developer")}
-    assert stored.conflicts == []
+    # No conflict; the CV dates nothing, so the live checks (REB-1128) flag the years.
+    assert [(item["kind"], item["field"]) for item in stored.conflicts or []] == [
+        ("unsupported", "experience_years"),
+        ("unsupported", "seniority"),
+    ]
 
     # One call, shaped for a card: the answer is `CardDraft` (the `Card`, and the private
     # `sources` and `employers` beside it), whose schema the seam sends closed, every

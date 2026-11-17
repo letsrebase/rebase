@@ -177,7 +177,7 @@ running the core service the admin area runs, with the calling admin as the acto
 - `set_team_request_summary`: «Salva il riassunto», refused while it names the company.
 - `contact_team_talents`: «Contatta i talenti», or with `only_silent` «Rimanda a chi non ha risposto», on a request filed from the site or the cloud.
 - `set_team_request_status`: «Segna come contattata», «Chiudi», with an optional note.
-- `get_freelancer_card`, `regenerate_freelancer_card`: the anonymous card, and «Rigenera scheda». The card's `seniority` and `experience_years` are the admin's when `override_freelancer` set them (`seniority`, `experience_years`), Claude's otherwise; `experience_years` is `null` and `seniority_uncertain` true when the CV dates no role (REB-799).
+- `get_freelancer_card`, `regenerate_freelancer_card`: the anonymous card, and «Rigenera scheda». The card's `seniority` and `experience_years` are the admin's when `override_freelancer` set them (`seniority`, `experience_years`), Claude's otherwise; `experience_years` is `null` and `seniority_uncertain` true when the CV dates no role (REB-799). `flags` lists the fields the card's sources do not support or contradict, found by the deterministic rules of `cards-eval` when it was written (REB-1128).
 - `set_freelancer_vetted`: «Segna come verificato» and «Togli la verifica».
 - `grant_talent_cloud`, `revoke_talent_cloud`, `list_talent_cloud_grants`: the cloud's grants.
 
@@ -966,6 +966,25 @@ tried. With none the report says «Nessun riferimento»: run the live configurat
 is the baseline. To measure the sources, write the baseline first with `--prompt-version 1`, then run
 the current prompt with `--baseline <that run>`. Record the ids in the PR that changes the prompt
 (`PROMPT_VERSION` in `card_prompt.py`).
+
+**Every live card now runs the deterministic checks too** (REB-1128). `rebase cards-eval` only
+measures a sample an operator runs, so a card that read a senior as a junior used to reach search
+between two runs. `CardWriter.finish`, the one place a card is made for a synchronous write, an
+admin's «Rigenera scheda», `regenerate_stale` and a Message Batch's apply alike, runs the rules of
+`card_eval_checks.py` (the years against the CV's dated periods, the hub's completed engagements and
+an admin's years; the anonymity) on the card it is about to keep, against the sources it was written
+from (`card_live_checks.card_flags`). **No judge and no model call**: a live card costs nothing more
+to check than to write, and the judge stays the evaluation's. What the rules find is stored as
+`CardFlag`s, the field, `unsupported` or `contradicted`, and a sentence of ours with the reason (a
+seniority that follows years the CV does not support is flagged with them), in the **same
+`freelancer_cards.conflicts` JSONB list** as the conflicts (a flag's `kind` is its verdict, a
+conflict's is its own; `card_live_checks.split_stored` tells them apart), so no migration. The reason
+quotes the years the CV adds up to: it is derived from the CV, so it lives in the database only,
+never in a log, Linear or the repository. It is retired with the card and written again by each
+write; a card written before REB-1128 has none (`[]` means none found, not verified). The flags are
+`FreelancerCardRead.flags`: «Scheda anonima» shows them as «Da verificare» next to the card, and the
+MCP `get_freelancer_card` returns the same list. They are as of the writing: an admin's later
+correction of the level (`override_freelancer`) does not clear them.
 
 **The card is written from more than the CV, and every switch is off in production** (REB-837 to
 REB-839, design 2026-10-27, «Sources» and «Provenance, versions and regeneration»). The prompt is
