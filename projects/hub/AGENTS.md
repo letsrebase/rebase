@@ -637,6 +637,28 @@ non-goals). MCP is read only: `get_talent` carries `work_profile_state`, and `ge
 `work_profile_read` (entity `freelancer`, payload the tool name and the door, no value). **There is no
 approve or reject tool on purpose**: the decision is a person's, made in the app.
 
+**What an approved profile changes outside the admin (REB-1127, spec §§ 5 and 7).**
+`CloudTalentRead.work_profile` (`CloudWorkProfile | null`, `team_schemas.py`) carries the summary,
+the domains' labels with their counts and the representative projects' abstract domains of a
+profile that is `approved` and not past `expires_at`, read in the one query of
+`CloudTalentService.list` (`work_profiles/view.cloud_work_profile` is the only code that reads the
+payload for a company: a new field here is a decision, and the docstring of `CloudTalentRead`,
+which lists what a company may read, names it). The cloud's order is unchanged, so the only search
+effect of a profile is the vetted flag. The admin's reading of the summary is the anonymity check:
+nothing else filters it, so a client name in a summary is a reason to reject.
+
+`MeRead.work_profile` (`MemberWorkProfile | null`) is the person's own view: the state, the dates,
+`expired`, and the admin's note **only for a rejected profile** (an approval's note stays with the
+admins). The member area (`pages/member/WorkProfile.tsx`, below «La tua scheda», for a person with a
+card) explains the tool and gives the three commands before any submission, and after one shows
+«In revisione», «Approvato fino al <data>», «Non approvato» with the note, or «Scaduto», with
+«Elimina il profilo» behind a second click. `DELETE /api/hub/me/work-profile` deletes the row at
+once (idempotent) and **does not touch `vetted_at`**: removing it is the admins' judgement («Togli la
+verifica»), which the page says. The decision mails (`mail_member.work_profile_approved_mail` and
+`work_profile_rejected_mail`, through `mail_layout.py`) are built by `WorkProfileService.decision_mail`
+and sent after the answer of `approve`/`reject` like the cloud's grant mail; the rejection mail
+repeats the admin's note, escaped in the HTML.
+
 ## Campaigns
 
 Since P-REB-41 «Invia una campagna» the `campaigns` service in `docker-compose.yml` runs
