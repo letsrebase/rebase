@@ -212,7 +212,9 @@ class AdminActionPayload(TypedDict, total=False):
     amounts decimal strings: that is how `sanitize_payload` stores them.
 
     * a field override or clear (`field_changes`): `changed`, `before`, `after`;
-    * `vetted`: `vetted`; a note or status entry: `source`, `text`, `note_id`;
+    * `vetted`: `vetted`; `work_profile_decided`: `decision` (`approved` or `rejected`) and
+      `vetted`, whether the approval verified the person;
+    * a note or status entry: `source`, `text`, `note_id`;
     * `pigro_link`: `outcome`, `error`; `anon_cv_downloaded`: `reused`;
     * a merge (REB-800): `into_freelancer_id`/`from_freelancer_id`, `moved`, `left_behind`,
       `cv`, `card_to_regenerate`, and `put_back` on the undo;
@@ -226,6 +228,9 @@ class AdminActionPayload(TypedDict, total=False):
     before: Annotated[dict[str, Any] | str, _MAY_BE_ABSENT]
     after: Annotated[dict[str, Any] | str, _MAY_BE_ABSENT]
     vetted: Annotated[bool, _MAY_BE_ABSENT]
+    decision: Annotated[str, _MAY_BE_ABSENT]
+    override: Annotated[bool, _MAY_BE_ABSENT]
+    override_note: Annotated[str, _MAY_BE_ABSENT]
     source: Annotated[str, _MAY_BE_ABSENT]
     text: Annotated[str, _MAY_BE_ABSENT]
     note_id: Annotated[str, _MAY_BE_ABSENT]

@@ -29,6 +29,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from pydantic import ValidationError
@@ -54,11 +55,20 @@ from rebase_core.models import (
     FreelancerCard,
     TalentCloudGrant,
     User,
+    WorkProfile,
 )
 from rebase_core.referrals import ReferralService
 from rebase_core.search import any_element_matches
 from rebase_core.team_catalogue import cloud_visible
-from rebase_core.team_schemas import Card, CloudTalentList, CloudTalentQuery, CloudTalentRead
+from rebase_core.team_schemas import (
+    Card,
+    CloudTalentList,
+    CloudTalentQuery,
+    CloudTalentRead,
+    CloudWorkProfile,
+)
+from rebase_core.work_profiles.guard import guard_hits_for
+from rebase_core.work_profiles.view import cloud_work_profile
 
 logger = logging.getLogger(__name__)
 
@@ -426,7 +436,21 @@ class CloudTalentService:
                 FreelancerCard.card,
                 Freelancer.seniority_admin,
                 Freelancer.experience_years_admin,
-            ).join(User, User.id == Freelancer.user_id)
+                WorkProfile.payload["summary"].label("wp_summary"),
+                WorkProfile.payload["domains"].label("wp_domains"),
+                WorkProfile.payload["projects"].label("wp_projects"),
+            )
+            .join(User, User.id == Freelancer.user_id)
+            # Only an approved profile that has not expired counts (REB-1127): a draft, a
+            # rejected one and one past its 12 months are no profile here.
+            .outerjoin(
+                WorkProfile,
+                and_(
+                    WorkProfile.freelancer_id == Freelancer.id,
+                    WorkProfile.state == "approved",
+                    WorkProfile.expires_at > utcnow(),
+                ),
+            )
         ).where(*_filter_clauses(query))
         rows = self.session.execute(
             stmt.order_by(
@@ -457,6 +481,7 @@ class CloudTalentService:
                     mode=row.remote,
                     band=band_for(row.daily_rate),
                     has_cv=bool(row.has_cv),
+                    work_profile=self._work_profile(row),
                 )
             )
         return CloudTalentList(
@@ -464,6 +489,20 @@ class CloudTalentService:
             roles=_cloud_roles(self.session),
             capped=len(items) > CLOUD_LIST_CAP,
         )
+
+    def _work_profile(self, row: Any) -> CloudWorkProfile | None:
+        """The approved profile's cloud fields, from the three JSON paths the query selected;
+        a field the anonymity guards find a hit in now (a client may have come since the
+        approval) is left out."""
+        if row.wp_summary is None and row.wp_domains is None and row.wp_projects is None:
+            return None
+        payload = {
+            "summary": row.wp_summary,
+            "domains": row.wp_domains,
+            "projects": row.wp_projects,
+        }
+        flagged = {hit["field"] for hit in guard_hits_for(self.session, row.id, payload)}
+        return cloud_work_profile(payload, flagged)
 
     def cv(self, freelancer_id: UUID) -> CvFile:
         """The CV of a talent the cloud shows, as stored; `NotInTheCloud` for anyone

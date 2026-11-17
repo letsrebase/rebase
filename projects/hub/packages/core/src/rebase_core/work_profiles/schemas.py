@@ -6,12 +6,15 @@ requires them nullable. Here only the SHAPE is checked (a string is a string); t
 dates, ranges) are `structure.py`'s, the step after, so a refusal names the right step.
 """
 
-from typing import Any, Literal
+from datetime import datetime
+from typing import Annotated, Any, Literal
+from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
-from rebase_core.schema_common import ResponseModel
+from rebase_core.schema_common import ResponseModel, clean_multiline
 from rebase_core.vocabulary import WorkProfileState
+from rebase_core.work_profiles.view import WorkProfileView
 
 SCHEMA_ID = "playnew-profile/v1"
 
@@ -84,3 +87,80 @@ class WorkProfileAccepted(ResponseModel):
 
     state: WorkProfileState
     review_url: str
+
+
+DECISION_NOTE_MAX_LENGTH = 2000
+
+
+def _clean_note(value: str) -> str:
+    return clean_multiline(value, what="la nota")
+
+
+def _optional_note(value: str | None) -> str | None:
+    return None if value is None or not value.strip() else _clean_note(value)
+
+
+class WorkProfileApproval(BaseModel):
+    """«Approva»: the note is optional and stays with the admins."""
+
+    note: Annotated[
+        str | None, Field(max_length=DECISION_NOTE_MAX_LENGTH), AfterValidator(_optional_note)
+    ] = None
+    # Approve although the anonymity guards stand (REB-1127): the note is then required and is
+    # written into the audit entry.
+    override: bool = False
+    # The version the admin read (`WorkProfileAdminRead.submitted_at`): a profile sent again
+    # since is another profile, and the decision is refused.
+    submitted_at: datetime
+
+    @model_validator(mode="after")
+    def _override_needs_a_note(self) -> "WorkProfileApproval":
+        if self.override and not self.note:
+            raise ValueError("per approvare nonostante le segnalazioni serve una nota")
+        return self
+
+
+class WorkProfileRejection(BaseModel):
+    """«Rifiuta»: the note is required, because the freelancer reads it in their area."""
+
+    note: Annotated[
+        str, Field(min_length=1, max_length=DECISION_NOTE_MAX_LENGTH), AfterValidator(_clean_note)
+    ]
+    submitted_at: datetime
+
+
+class WorkProfileAnchor(ResponseModel):
+    """A claim of the prose the recheck did not find in the data, with the field it came
+    from (`where`, as `view.WorkProfileView` names them)."""
+
+    where: str
+    anchor: str
+    kind: str
+
+
+class WorkProfileGuardHit(ResponseModel):
+    """A field a company reads that an anonymity guard stopped, and the rule: never the text."""
+
+    field: str
+    rule: str
+
+
+class WorkProfileAdminRead(ResponseModel):
+    """What the admin's «Profilo di lavoro» section reads: the review state, the dates, the
+    tool version, the hub's recheck (`groundedness`, `unsupported_anchors`) and the profile
+    rendered from the payload. `expired` says `expires_at` has passed: nothing outside this
+    page counts such a profile, and the sweep deletes it."""
+
+    freelancer_id: UUID
+    state: WorkProfileState
+    submitted_at: datetime
+    expires_at: datetime
+    expired: bool
+    tool_version: str | None
+    groundedness: int
+    unsupported_anchors: list[WorkProfileAnchor]
+    decided_at: datetime | None
+    decided_by_name: str | None
+    decision_note: str | None
+    guard_hits: list[WorkProfileGuardHit]
+    profile: WorkProfileView

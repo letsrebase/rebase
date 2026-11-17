@@ -5,7 +5,7 @@ small enough to read."""
 
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -15,15 +15,16 @@ from fakes_crm_door import FakeCrmDoor
 from fakes_pigro import PIGRO, TOKEN
 from mcp import Client
 from mcp_tool_support import IVAN, PDF, _payload, _seed, _seed_admin, _seed_freelancer, _wipe
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
+from work_profile_helpers import sample
 
 import rebase_mcp.tools_talents as tools_talents
 from rebase_core.config import Settings
 from rebase_core.errors import ValidationFailed
 from rebase_core.freelancer_schemas import FreelancerCreate, FreelancerDraft
 from rebase_core.freelancers import FreelancerService
-from rebase_core.models import FreelancerCard, User
+from rebase_core.models import AdminAction, FreelancerCard, User, WorkProfile
 from rebase_core.service import SignupService
 from rebase_core.signup_schemas import SignupCreate, SignupUtm
 from rebase_core.talent_schemas import TalentRead
@@ -671,3 +672,83 @@ async def test_a_crm_that_cannot_answer_leaves_the_list_and_says_why(
     assert [row["id"] for row in page["items"]] == [ada]
     assert "availability" not in page["items"][0] and page["availability_error"]
     assert card["availability"] is None and card["availability_error"]
+
+
+def _work_profile(
+    factory: sessionmaker[Session], freelancer_id: str, *, state: str = "draft", days: int = 300
+) -> None:
+    session = factory()
+    try:
+        now = datetime.now(UTC)
+        session.add(
+            WorkProfile(
+                freelancer_id=UUID(freelancer_id),
+                payload={k: v for k, v in sample().items() if k != "contact"},
+                groundedness=89,
+                unsupported_anchors=[{"where": "summary", "anchor": "12", "kind": "number"}],
+                state=state,
+                submitted_at=now - timedelta(days=1),
+                expires_at=now + timedelta(days=days),
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+
+async def test_work_profile_review_state_filters_the_list_and_reads_only_live_rows(
+    clean: sessionmaker[Session],
+) -> None:
+    _seed_admin(clean)
+    waiting = _card(clean, "wait@studio.it")
+    done = _card(clean, "done@studio.it")
+    old = _card(clean, "old@studio.it")
+    none = _card(clean, "none@studio.it")
+    _work_profile(clean, waiting)
+    _work_profile(clean, done, state="approved")
+    _work_profile(clean, old, days=-1)
+
+    async with _server(clean) as client:
+        draft = _payload(await client.call_tool("list_talents", {"work_profile": "draft"}))
+        approved = _payload(await client.call_tool("list_talents", {"work_profile": "approved"}))
+        nothing = _payload(await client.call_tool("list_talents", {"work_profile": "none"}))
+        wide = _payload(await client.call_tool("list_talents", {"fields": ["work_profile_state"]}))
+        talent = _payload(await client.call_tool("get_talent", {"talent_id": waiting}))
+        refused = await client.call_tool("list_talents", {"work_profile": "maybe"})
+
+    assert [r["id"] for r in draft["items"]] == [waiting]
+    assert [r["id"] for r in approved["items"]] == [done]
+    assert {r["id"] for r in nothing["items"]} == {old, none}
+    assert {r["id"]: r.get("work_profile_state") for r in wide["items"]}[waiting] == "draft"
+    assert talent["work_profile_state"] == "draft"
+    assert refused.is_error
+
+
+async def test_get_work_profile_returns_the_profile_and_leaves_a_read_without_a_value(
+    clean: sessionmaker[Session],
+) -> None:
+    _seed_admin(clean)
+    live = _card(clean, "ada@studio.it")
+    old = _card(clean, "old@studio.it")
+    _work_profile(clean, live)
+    _work_profile(clean, old, days=-1)
+
+    async with _server(clean) as client:
+        read = _payload(await client.call_tool("get_work_profile", {"freelancer_id": live}))
+        expired = await client.call_tool("get_work_profile", {"freelancer_id": old})
+        tools = {tool.name for tool in (await client.list_tools()).tools}
+
+    assert read["state"] == "draft" and read["groundedness"] == 89
+    assert read["unsupported_anchors"][0]["where"] == "summary"
+    assert read["profile"]["summary"] == sample()["summary"]
+    assert expired.is_error
+    assert not {"approve_work_profile", "reject_work_profile"} & tools
+    session = clean()
+    try:
+        [action] = session.scalars(
+            select(AdminAction).where(AdminAction.kind == "work_profile_read")
+        ).all()
+    finally:
+        session.close()
+    assert str(action.entity_id) == live
+    assert action.payload == {"source": "mcp", "tool": "get_work_profile"}

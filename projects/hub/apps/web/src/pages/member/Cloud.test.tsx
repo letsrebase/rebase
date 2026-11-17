@@ -218,6 +218,33 @@ describe('Talent cloud, its states', () => {
 })
 
 describe('Talent cloud, the cards', () => {
+  it('shows the summary of an approved work profile on the card that has one, and nothing on the others (REB-1127)', async () => {
+    serve({
+      '/api/hub/me/cloud/talents': () =>
+        answer(200, {
+      items: [
+        {
+          ...ADA,
+          work_profile: {
+            summary: 'Lavora con gli agenti in modo orchestrato.',
+            domains: [{ label: 'Pagamenti', products: 4, sessions: 1 }],
+            project_domains: ['Piattaforma di pagamenti per marketplace.'],
+          },
+        },
+        { ...GRACE, work_profile: null },
+      ],
+      roles: [],
+      capped: false,
+        }),
+    })
+    mount()
+    const ada = await screen.findByRole('region', { name: 'Profilo di lavoro di Ada Lovelace' })
+    expect(within(ada).getByText('Lavora con gli agenti in modo orchestrato.')).toBeInTheDocument()
+    expect(within(ada).getByText('Pagamenti · 4 prodotti, 1 sessione')).toBeInTheDocument()
+    expect(within(ada).getByText('Piattaforma di pagamenti per marketplace.')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Profilo di lavoro di Grace Hopper' })).toBeNull()
+  })
+
   it('shows each talent by name with the links, the CV, the card, the mode, the band and the vetted badge', async () => {
     serve()
     mount()

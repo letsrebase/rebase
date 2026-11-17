@@ -70,7 +70,7 @@ from rebase_core.freelancers import ENTITY as FREELANCER
 from rebase_core.freelancers import FreelancerService
 from rebase_core.login_schemas import GuideStats, LoginStats
 from rebase_core.logins import LoginService
-from rebase_core.mail import send_after_response
+from rebase_core.mail import EmailSender, send_after_response
 from rebase_core.merge import MergeRead, MergeRequest, PersonMergeService
 from rebase_core.models import NAME_MAX_LENGTH, User
 from rebase_core.note_schemas import NoteCreate, NoteRead, NoteUpdate
@@ -96,6 +96,12 @@ from rebase_core.talents import TalentsService, lead_by_id
 from rebase_core.team_schemas import FreelancerCardAdminRead
 from rebase_core.users import UserService
 from rebase_core.validation import SafeStr
+from rebase_core.work_profiles.intake import WorkProfileService
+from rebase_core.work_profiles.schemas import (
+    WorkProfileAdminRead,
+    WorkProfileApproval,
+    WorkProfileRejection,
+)
 
 router = APIRouter(prefix="/api/hub", tags=["hub-admin"])
 
@@ -257,6 +263,78 @@ def set_freelancer_vetted(
     """«Segna come verificato» with `{vetted: true}`, «Togli la verifica» with `false`
     (REB-518): the talent cloud's badge, recorded as a `vetted` entry of the trail."""
     return FreelancerService(session).set_vetted(freelancer_id, change.vetted, admin.id)
+
+
+def _mail_decision(
+    service: WorkProfileService, sender: EmailSender | None, freelancer_id: UUID
+) -> None:
+    """The decision's mail, sent after the response like the other member mails; with no
+    sender configured it is logged and not sent, as the talent cloud's is."""
+    mail = service.decision_mail(freelancer_id)
+    if mail is None:
+        return
+    if sender is None:
+        _log.info("work profile decision %s: no mail sender, not mailed", freelancer_id)
+        return
+    send_after_response(sender, mail, f"work profile decision {freelancer_id}")
+
+
+@router.get("/freelancers/{freelancer_id}/work-profile", response_model=WorkProfileAdminRead)
+def get_work_profile(
+    _: AdminDep, session: SessionDep, settings: SettingsDep, freelancer_id: UUID
+) -> WorkProfileAdminRead:
+    """The talent's work profile as the «Profilo di lavoro» section reads it (REB-1126): the
+    review state, the dates, the hub's recheck and the profile rendered from its payload; 404
+    when the person sent none. A profile past its 12 months is answered with `expired`."""
+    return WorkProfileService(session, settings).admin_read(freelancer_id)
+
+
+@router.post(
+    "/freelancers/{freelancer_id}/work-profile/approve", response_model=WorkProfileAdminRead
+)
+def approve_work_profile(
+    admin: AdminDep,
+    session: SessionDep,
+    settings: SettingsDep,
+    sender: SenderDep,
+    freelancer_id: UUID,
+    decision: WorkProfileApproval,
+) -> WorkProfileAdminRead:
+    """«Approva»: the profile counts from now, the person is verified when they were not, and
+    the decision is signed in the trail (`work_profile_decided`). The optional note stays with
+    the admins; while an anonymity guard stands the answer is 422, unless `override` comes with a
+    note (written into the audit). The person is mailed after the answer (REB-1127). 409 for a
+    profile already decided or past its 12 months."""
+    service = WorkProfileService(session, settings)
+    read = service.approve(
+        freelancer_id,
+        admin.id,
+        decision.note,
+        decision.submitted_at,
+        override=decision.override,
+    )
+    _mail_decision(service, sender, freelancer_id)
+    return read
+
+
+@router.post(
+    "/freelancers/{freelancer_id}/work-profile/reject", response_model=WorkProfileAdminRead
+)
+def reject_work_profile(
+    admin: AdminDep,
+    session: SessionDep,
+    settings: SettingsDep,
+    sender: SenderDep,
+    freelancer_id: UUID,
+    decision: WorkProfileRejection,
+) -> WorkProfileAdminRead:
+    """«Rifiuta»: the note is required, and the person reads it in their area and in the mail
+    they get after the answer (REB-1127). The verified flag is not touched. 409 for a profile
+    already decided or past its 12 months."""
+    service = WorkProfileService(session, settings)
+    read = service.reject(freelancer_id, admin.id, decision.note, decision.submitted_at)
+    _mail_decision(service, sender, freelancer_id)
+    return read
 
 
 @router.get("/freelancers/{freelancer_id}/card", response_model=FreelancerCardAdminRead)
@@ -630,6 +708,7 @@ def list_talents(
     industries: TalentTerms = None,
     languages: TalentTerms = None,
     card: Annotated[str | None, Query(max_length=20)] = None,
+    work_profile: Annotated[str | None, Query(max_length=20)] = None,
     sort: Annotated[str | None, Query(max_length=30)] = None,
 ) -> TalentList:
     """`talents` (REB-282): every freelancer card and every bare sign-up as one list,
@@ -641,7 +720,8 @@ def list_talents(
     started from (REB-798; the page filter was `origin` before). REB-823 gives the screen
     what the MCP tool `list_talents` already took (REB-778, REB-801): `skills`, `location`,
     `seniority`, `min_years`, `max_years`, `industries`, `languages`, `card` and `sort`,
-    read by the same service, which refuses a value it does not allow."""
+    read by the same service, which refuses a value it does not allow. REB-1126 adds
+    `work_profile` (`draft`, `approved`, `none`): the review state of the person's work profile."""
     return TalentsService(session).list_recent(
         limit=limit,
         status=status,
@@ -666,6 +746,7 @@ def list_talents(
         industries=industries,
         languages=languages,
         card=card,
+        work_profile=work_profile,
         sort=sort,
     )
 

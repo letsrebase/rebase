@@ -51,6 +51,7 @@ def test_switches_default_off_and_nothing_fetched_when_off(clean_hub: Session) -
     assert {r.kind: r.enabled for r in clean_hub.scalars(select(AiSource))} == {
         "github": False,
         "links": False,
+        "work_profile": False,
     }
     result = service.refetch(person)
 

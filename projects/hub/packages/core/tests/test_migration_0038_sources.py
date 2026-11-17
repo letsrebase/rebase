@@ -96,11 +96,11 @@ def test_upgrade_creates_tables_columns_and_seed(hub_postgres: Any) -> None:
             card = _columns(connection, "freelancer_cards")
             for name, data_type in CARD_COLUMNS.items():
                 assert card[name] == (data_type, "YES"), name
-            # Both switches exist, and both are off: nothing reads a third party's page
-            # until an admin says so.
+            # Every switch exists, and every one is off: nothing reads a third party's page
+            # until an admin says so (`work_profile` came with 0055).
             assert connection.execute(
                 text("SELECT kind, enabled FROM ai_sources ORDER BY kind")
-            ).all() == [("github", False), ("links", False)]
+            ).all() == [("github", False), ("links", False), ("work_profile", False)]
             diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
             assert diff == [], diff
         engine.dispose()
@@ -129,7 +129,7 @@ def test_upgrade_is_idempotent(hub_postgres: Any) -> None:
             )
             assert connection.execute(
                 text("SELECT kind, enabled FROM ai_sources ORDER BY kind")
-            ).all() == [("github", True), ("links", False)]
+            ).all() == [("github", True), ("links", False), ("work_profile", False)]
         engine.dispose()
 
 

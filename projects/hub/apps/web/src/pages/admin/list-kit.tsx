@@ -39,6 +39,15 @@ export function VettedPill() {
   )
 }
 
+/** On a talent whose work profile waits for an admin (REB-1126): «Da rivedere». */
+export function ToReviewPill() {
+  return (
+    <Badge variant="pill" dot="accent">
+      Da rivedere
+    </Badge>
+  )
+}
+
 /** On a company request that came from the team builder's beta box (REB-518), whose
  *  referente asked for the talent cloud: the admin knows who to call about it. */
 export function TeamBuilderPill() {

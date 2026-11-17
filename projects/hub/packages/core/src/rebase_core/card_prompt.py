@@ -11,6 +11,7 @@ from rebase_core.card_draft import (
     CV,
     HUB,
     SOURCES_FIELDS,
+    WORK_PROFILE,
     CardDraft,
     CardPerson,
     CardSources,
@@ -162,10 +163,15 @@ def prompt_sources(sources: SourceSet) -> list[SourceItem]:
 
 def source_keys(sources: SourceSet, facts: HubFacts) -> list[str]:
     """The keys a card's `sources` may name for this person, in the order the prompt lists
-    them: the CV always, each source the prompt carries, and `hub` when it has anything to
-    say."""
+    them: the CV always, each source the prompt carries, `hub` when it has anything to say and
+    `work_profile` when an approved profile is read (REB-1134)."""
     kept = prompt_sources(sources)
-    return [CV, *(item.key for item in kept), *([] if facts.empty else [HUB])]
+    return [
+        CV,
+        *(item.key for item in kept),
+        *([] if facts.empty else [HUB]),
+        *([WORK_PROFILE] if facts.work_profile else []),
+    ]
 
 
 _SOURCE_TAG = re.compile(r"<(\s*/?\s*source)", re.IGNORECASE)
@@ -189,12 +195,16 @@ def _source_block(item: SourceItem) -> str:
 
 
 def source_blocks(sources: SourceSet, facts: HubFacts) -> list[str]:
-    """One data block per source the prompt carries, the hub's facts last: what the writer
-    reads beside the CV, and what the evaluation's judge reads beside it."""
+    """One data block per source the prompt carries, the hub's facts and the work profile
+    last: what the writer reads beside the CV, and what the evaluation's judge reads beside
+    it."""
     blocks = [_source_block(item) for item in prompt_sources(sources)]
     if not facts.empty:
         header, _, body = facts.text().partition("\n")
         blocks.append(data_block(HUB, header, body))
+    if facts.work_profile:
+        header, _, body = facts.work_profile.partition("\n")
+        blocks.append(data_block(WORK_PROFILE, header, body))
     return blocks
 
 

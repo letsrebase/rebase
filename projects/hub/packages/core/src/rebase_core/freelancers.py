@@ -4,7 +4,7 @@ ORB-155 the card an admin writes from a signup for the person to complete."""
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Subquery, func, select
+from sqlalchemy import Subquery, delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -44,6 +44,7 @@ from rebase_core.models import (
     Login,
     Signup,
     User,
+    WorkProfile,
 )
 from rebase_core.notes import NoteService
 from rebase_core.perks import PerkService
@@ -610,6 +611,9 @@ class FreelancerService:
         row = self._require(freelancer_id)
         row.deleted_at = utcnow()
         delete_sources(self.session, row.id)
+        # A soft-deleted person's work profile goes with them, like their sources: it is the
+        # person's, and a restored card starts without it (REB-1126).
+        self.session.execute(delete(WorkProfile).where(WorkProfile.freelancer_id == row.id))
         self.session.commit()
         AdminActionService(self.session).record(ENTITY, row.id, "deleted", admin_id, {})
         user = self._owner(row)

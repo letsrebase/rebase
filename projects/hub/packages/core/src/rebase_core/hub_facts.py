@@ -12,22 +12,31 @@ Only an engagement that started counts as work: a draft, one in signature and a 
 one never did, and one with no start date cannot be placed in time, so it is left out
 rather than guessed. `completed_months` is what `experience_years` may add from the hub: the months
 covered by completed engagements, overlapping ones counted once.
+
+The approved work profile (REB-1134, `work_profiles/source.py`) is read here too, as
+`work_profile`: its text, when the `work_profile` switch of `ai_sources` is on and the profile is
+`approved`, has not expired and passes the anonymity guard. It is a source of its own (key
+`work_profile`, its own hash), not part of `empty`, `text()` or `hash_material()`: those are what
+every stored card's `source_hashes["hub"]` was made from and a changed byte would mark every card
+stale.
 """
 
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.orm import Session
 
 from rebase_core.audit import utcnow
-from rebase_core.card_guard import STOPLIST
+from rebase_core.card_guard import STOPLIST, KnownIdentifiers
 from rebase_core.errors import NotFound
-from rebase_core.models import Company, Freelancer, HubEngagement
+from rebase_core.models import AiSource, Company, Freelancer, HubEngagement, User, WorkProfile
+from rebase_core.sources import github_login_of, link_hostnames
+from rebase_core.work_profiles.source import source_text
 
 Outcome = Literal["completed", "in_progress", "closed_before"]
 # The words an outcome has in the block the model reads and in the hash material: they are
@@ -68,6 +77,9 @@ class HubFacts:
     # to nothing else (not `text()`, not `hash_material()`, not the prompt), so a form of a
     # name the role's scrub missed still cannot reach a card.
     clients: list[str] = field(default_factory=list)
+    # The approved work profile as the prompt reads it, or `None` (switch off, no profile, not
+    # approved, expired, or the guard found the person in it). Its own source and hash.
+    work_profile: str | None = None
 
     @property
     def empty(self) -> bool:
@@ -177,12 +189,39 @@ def hub_facts_many(
     wanted = list(dict.fromkeys(freelancer_ids))
     if not wanted:
         return {}
+    # The work profile rides in the people's own query, so a read of the facts costs the same
+    # statements with the switch on or off: the payload is read only while the switch is on, and
+    # only of an approved profile that has not expired.
+    switch_on = func.coalesce(
+        select(AiSource.enabled).where(AiSource.kind == "work_profile").scalar_subquery(), False
+    )
     people = {
-        row.id: (row.seniority_admin, row.experience_years_admin)
+        row.id: _Person(
+            row.seniority_admin,
+            row.experience_years_admin,
+            row.last_name,
+            list(row.links or []),
+            row.work_profile,
+        )
         for row in session.execute(
             select(
-                Freelancer.id, Freelancer.seniority_admin, Freelancer.experience_years_admin
-            ).where(Freelancer.id.in_(wanted))
+                Freelancer.id,
+                Freelancer.seniority_admin,
+                Freelancer.experience_years_admin,
+                Freelancer.links,
+                User.last_name,
+                case((switch_on, WorkProfile.payload), else_=None).label("work_profile"),
+            )
+            .join(User, User.id == Freelancer.user_id)
+            .outerjoin(
+                WorkProfile,
+                and_(
+                    WorkProfile.freelancer_id == Freelancer.id,
+                    WorkProfile.state == "approved",
+                    WorkProfile.expires_at > utcnow(),
+                ),
+            )
+            .where(Freelancer.id.in_(wanted))
         )
     }
     rows = session.execute(
@@ -203,8 +242,19 @@ def hub_facts_many(
     return {person: _facts_of(people[person], engagements[person], today) for person in people}
 
 
+@dataclass(frozen=True)
+class _Person:
+    """What `hub_facts_many` reads of one person beside their engagements."""
+
+    seniority_admin: str | None
+    experience_years_admin: int | None
+    last_name: str
+    links: list[str]
+    work_profile: dict[str, Any] | None
+
+
 def _facts_of(
-    person: tuple[str | None, int | None],
+    person: _Person,
     rows: list[tuple[HubEngagement, str | None, str | None]],
     today: date,
 ) -> HubFacts:
@@ -241,10 +291,20 @@ def _facts_of(
         )
         if outcome == "completed":
             completed.append((start, end))
+    work_profile = None
+    if person.work_profile:
+        known = KnownIdentifiers(
+            last_name=person.last_name,
+            github_login=github_login_of(person.links),
+            hostnames=link_hostnames(person.links),
+            employers=sorted(clients),
+        )
+        work_profile = source_text(person.work_profile, known)
     return HubFacts(
-        seniority_admin=person[0],
-        experience_years_admin=person[1],
+        seniority_admin=person.seniority_admin,
+        experience_years_admin=person.experience_years_admin,
         matches=facts,
         completed_months=_span_months(_union_days(completed)),
         clients=sorted(clients),
+        work_profile=work_profile,
     )

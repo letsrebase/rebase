@@ -21,6 +21,7 @@ from pydantic import Field
 from rebase_core.models import (
     ADMIN_ACTION_ENTITY_TYPES,
     ADMIN_ACTION_KINDS,
+    AI_SOURCE_KINDS,
     CAMPAIGN_ACTIONS,
     CAMPAIGN_DESTINATIONS,
     CAMPAIGN_SOURCES,
@@ -100,6 +101,7 @@ CampaignDestination = Annotated[str, Field(json_schema_extra=enum_of(CAMPAIGN_DE
 RecipientKind = Annotated[str, Field(json_schema_extra=enum_of(RECIPIENT_KINDS))]
 ContactKind = Annotated[str, Field(json_schema_extra=enum_of(CONTACT_KINDS))]
 ContactLabel = Annotated[str, Field(json_schema_extra=enum_of(CONTACT_LABELS))]
+AiSourceKind = Annotated[str, Field(json_schema_extra=enum_of(AI_SOURCE_KINDS))]
 WorkProfileState = Annotated[str, Field(json_schema_extra=enum_of(WORK_PROFILE_STATES))]
 CliAuthorizationState = Annotated[str, Field(json_schema_extra=enum_of(CLI_AUTHORIZATION_STATES))]
 CliScope = Annotated[str, Field(json_schema_extra=enum_of(CLI_SCOPES))]

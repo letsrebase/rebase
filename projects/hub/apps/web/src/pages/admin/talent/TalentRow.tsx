@@ -9,7 +9,7 @@ import { formatMoney } from '@rebase/ui/format'
 import { keys } from '@/lib/query-keys'
 import { isHttpUrl } from '@/lib/url'
 import { DuplicatePill } from '../DuplicateMarks'
-import { StatePill, VettedPill } from '../list-kit'
+import { StatePill, ToReviewPill, VettedPill } from '../list-kit'
 import { AvailabilityCell } from './Availability'
 import { TalentMenu } from './TalentMenu'
 
@@ -51,6 +51,7 @@ export function TalentRow({
         <div className="flex flex-wrap items-center gap-1.5">
           <StatePill status={item.status} />
           {item.vetted_at && <VettedPill />}
+          {item.work_profile_state === 'draft' && <ToReviewPill />}
           <DuplicatePill others={item.duplicate_possible_of} />
         </div>
       </TableCell>

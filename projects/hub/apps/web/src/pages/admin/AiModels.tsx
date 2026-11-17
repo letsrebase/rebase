@@ -31,7 +31,11 @@ const TASK_LABELS: Record<string, string> = {
   anonymous_cv: 'CV anonimo',
   crm_lead: 'Bozza del deal nel CRM',
 }
-const SOURCE_LABELS: Record<string, string> = { github: 'GitHub', links: 'Altri link' }
+const SOURCE_LABELS: Record<string, string> = {
+  github: 'GitHub',
+  links: 'Altri link',
+  work_profile: 'Profilo di lavoro',
+}
 const OPEN_REFRESH_MS = 10_000
 const OPEN_WATCH_MS = 3 * 24 * 60 * 60 * 1000
 const BATCH_REFRESH_MS = 30_000

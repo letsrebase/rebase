@@ -160,6 +160,7 @@ function sourceLabel(key: string): string {
   if (key === 'cv') return 'CV'
   if (key === 'github') return 'GitHub'
   if (key === 'hub') return 'Dati della hub'
+  if (key === 'work_profile') return 'Profilo di lavoro'
   const link = /^link:(\d+)$/.exec(key)
   return link ? `Link ${link[1]}` : key
 }

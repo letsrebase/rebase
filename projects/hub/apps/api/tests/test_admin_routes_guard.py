@@ -87,6 +87,7 @@ NOT_ADMIN: dict[Route, tuple[str, str]] = {
     ("GET", "/api/hub/me/contracts"): (MEMBER, "the member's own contracts"),
     ("GET", "/api/hub/me/contracts/{document_id}/pdf"): (MEMBER, "one of their own contracts"),
     ("GET", "/api/hub/me/referral"): (MEMBER, "the member's own referral page"),
+    ("DELETE", "/api/hub/me/work-profile"): (MEMBER, "the member deletes their own work profile"),
     # --- the CLI's sign-in and the work-profile intake (REB-1133, REB-1124)
     ("POST", "/api/hub/cli/device"): (
         PUBLIC,

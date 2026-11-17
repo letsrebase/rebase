@@ -35,6 +35,7 @@ import {
   CvPhoneRows,
 } from './CvRows'
 import { FreelancerSignup, RecentEvents } from './Subscription'
+import { WorkProfile } from './WorkProfile'
 
 /** What REB-284 adds to the freelancer detail beyond `Freelancer`: everywhere else in
  *  the hub that already knows this address, fetched server-side in the same call so
@@ -233,6 +234,7 @@ export function AdminFreelancerDetail() {
       {f.deleted_at === null && (
         <AnonymousCard freelancerId={f.id} hasCv={f.cv_filename !== null} />
       )}
+      {f.deleted_at === null && <WorkProfile freelancerId={f.id} vettedAt={f.vetted_at} />}
       <FreelancerSignup utm={f.signup_utm} />
       <RecentEvents
         title="Ultimi accessi"

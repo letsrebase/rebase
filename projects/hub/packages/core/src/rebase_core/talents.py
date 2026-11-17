@@ -65,6 +65,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Session, aliased, defer
 
+from rebase_core.audit import utcnow
 from rebase_core.bands import Band, band_for
 from rebase_core.card_level import level
 from rebase_core.card_rows import card_emails, card_row_fields
@@ -80,6 +81,7 @@ from rebase_core.models import (
     Login,
     Signup,
     User,
+    WorkProfile,
 )
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
 from rebase_core.search import (
@@ -105,10 +107,34 @@ _FILLED_BY_BY_ORIGIN: dict[str, str] = {
 ORIGINS: tuple[str, ...] = get_args(TalentOrigin)
 SENIORITIES = ("junior", "mid", "senior", "lead")
 CARD_STATES = ("present", "absent", "failed")
+# The work-profile filter of «Talenti» (REB-1126): `draft` is «da rivedere», `approved`
+# «approvato», `none` «nessuno». They read the review state of a profile that has not
+# expired, never a field of its payload; a rejected profile is in none of the three.
+WORK_PROFILE_FILTERS = ("draft", "approved", "none")
 SORT_VALUES = ("recent", "rate_asc", "rate_desc", "experience_years_asc", "experience_years_desc")
 
 _ENTITY = "talents"
 _RankedBy = Literal["rate", "experience_years"]
+
+
+def _work_profile_is(state: str) -> ColumnElement[bool]:
+    """Whether the freelancer's work profile, one that has not expired, is in `state`;
+    `none` is no profile at all (an expired one is none, the sweep deletes it)."""
+    profile = aliased(WorkProfile)
+    live = exists(
+        select(profile.id).where(
+            profile.freelancer_id == Freelancer.id, profile.expires_at > utcnow()
+        )
+    )
+    if state == "none":
+        return ~live
+    return exists(
+        select(profile.id).where(
+            profile.freelancer_id == Freelancer.id,
+            profile.expires_at > utcnow(),
+            profile.state == state,
+        )
+    )
 
 
 def _card_only_active(*values: object) -> bool:
@@ -197,10 +223,13 @@ def card_fields(
     }
 
 
-def _card_read(row: Freelancer, user: User, card: object) -> TalentRead:
+def _card_read(
+    row: Freelancer, user: User, card: object, work_profile_state: str | None = None
+) -> TalentRead:
     """One freelancer as a row: the columns every card row carries (`card_row_fields`),
     then `card_fields` for what the anonymous `card` says."""
     return TalentRead(
+        work_profile_state=work_profile_state,
         **card_row_fields(row, user),
         origin=_ORIGIN_BY_FILLED_BY.get(row.filled_by, "wizard"),
         has_anonymous_card=isinstance(card, dict),
@@ -389,6 +418,7 @@ class _Filters:
     industries: tuple[str, ...]
     languages: tuple[str, ...]
     card: str | None
+    work_profile: str | None
     ranked_by: _RankedBy | None
 
     @property
@@ -411,6 +441,7 @@ class _Filters:
             self.industries,
             self.languages,
             self.card,
+            self.work_profile,
             self.ranked_by,
         )
 
@@ -481,6 +512,8 @@ def _card_stmt(f: _Filters, *, counting: bool = False) -> Select[Freelancer, Use
         stmt = stmt.where(_card_list_names("languages", language))
     if f.card is not None:
         stmt = stmt.where(_card_is(f.card))
+    if f.work_profile is not None:
+        stmt = stmt.where(_work_profile_is(f.work_profile))
     if f.ranked_by == "rate":
         stmt = stmt.where(Freelancer.daily_rate.is_not(None))
     elif f.ranked_by == "experience_years":
@@ -529,6 +562,19 @@ def _lead_stmt(f: _Filters) -> Select[Signup]:
     return stmt
 
 
+def work_profile_states(session: Session, freelancer_ids: Sequence[UUID]) -> dict[UUID, str]:
+    """The review state of each person's work profile that has not expired, by freelancer
+    id; a person with none, or an expired one, is not in the answer."""
+    if not freelancer_ids:
+        return {}
+    rows = session.execute(
+        select(WorkProfile.freelancer_id, WorkProfile.state).where(
+            WorkProfile.freelancer_id.in_(freelancer_ids), WorkProfile.expires_at > utcnow()
+        )
+    )
+    return {freelancer_id: state for freelancer_id, state in rows}
+
+
 class TalentsService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -546,7 +592,12 @@ class TalentsService:
         ).first()
         if found is None:
             raise NotFound("talento", freelancer_id)
-        row = _card_read(found[0], found[1], found.card)
+        row = _card_read(
+            found[0],
+            found[1],
+            found.card,
+            work_profile_states(self.session, [freelancer_id]).get(freelancer_id),
+        )
         row.duplicate_possible_of = duplicates_of(self.session, [freelancer_id]).get(
             freelancer_id, []
         )
@@ -578,6 +629,7 @@ class TalentsService:
         industries: Sequence[str] | None = None,
         languages: Sequence[str] | None = None,
         card: str | None = None,
+        work_profile: str | None = None,
         sort: str | None = None,
     ) -> TalentList:
         """Every card and every bare sign-up as one row, newest-or-best-match first,
@@ -601,7 +653,9 @@ class TalentsService:
         REB-801 adds, on the same anonymous card: `seniority` (one of `SENIORITIES`,
         any of those given), `min_years`/`max_years` (inclusive), `industries` and `languages`
         (every term must be named by one element, a substring, like `skills`), and
-        `card`, the card's own state (`CARD_STATES`).
+        `card`, the card's own state (`CARD_STATES`). `work_profile` (REB-1126) is the
+        review state of the person's work profile (`WORK_PROFILE_FILTERS`); a lead has none,
+        so the filter drops the leads like the other card-only ones.
 
         `sort` is `recent` (newest first, even while searching), or `rate_asc`,
         `rate_desc`, `experience_years_asc`, `experience_years_desc`: the cursor then carries that
@@ -616,11 +670,16 @@ class TalentsService:
         origin_page = (origin_page or "").strip() or None
         card = (card or "").strip().lower() or None
         sort = (sort or "").strip().lower() or None
+        work_profile = (work_profile or "").strip().lower() or None
         order = _order(sort, term)
         if origin is not None and origin not in ORIGINS:
             raise ValidationFailed(_ENTITY, "origin", f"atteso uno fra {', '.join(ORIGINS)}")
         if card is not None and card not in CARD_STATES:
             raise ValidationFailed(_ENTITY, "card", f"atteso uno fra {', '.join(CARD_STATES)}")
+        if work_profile is not None and work_profile not in WORK_PROFILE_FILTERS:
+            raise ValidationFailed(
+                _ENTITY, "work_profile", f"atteso uno fra {', '.join(WORK_PROFILE_FILTERS)}"
+            )
         f = _Filters(
             q=term,
             job_title=job_title,
@@ -642,6 +701,7 @@ class TalentsService:
             industries=_terms(industries),
             languages=_terms(languages),
             card=card,
+            work_profile=work_profile,
             ranked_by=order.ranked_by,
         )
         wants_cards = status is None or status != LEAD_STATE
@@ -686,9 +746,18 @@ class TalentsService:
             # The anonymous card rides along whole (one row per freelancer, the primary
             # key): its fields are what an agent matches a request on (REB-778), and a
             # JSON object there is also what makes a live card (REB-518).
-            stmt = stmt.outerjoin(
-                FreelancerCard, FreelancerCard.freelancer_id == Freelancer.id
-            ).add_columns(FreelancerCard.card.label("card"))
+            stmt = (
+                stmt.outerjoin(FreelancerCard, FreelancerCard.freelancer_id == Freelancer.id)
+                .add_columns(FreelancerCard.card.label("card"))
+                .outerjoin(
+                    WorkProfile,
+                    and_(
+                        WorkProfile.freelancer_id == Freelancer.id,
+                        WorkProfile.expires_at > utcnow(),
+                    ),
+                )
+                .add_columns(WorkProfile.state.label("work_state"))
+            )
             # A row reads `cv_size` and the file's name, never the PDF itself: a page of
             # 100 cards (or a campaign's whole list, P-REB-41) must not carry 100 CVs.
             rows = self.session.execute(
@@ -707,7 +776,11 @@ class TalentsService:
                     freelancer.created_at if sort_spec.key == "created_at" else float(row.sort_key)
                 )
                 candidates.append(
-                    (sort_value, freelancer.id, _card_read(freelancer, user, row.card))
+                    (
+                        sort_value,
+                        freelancer.id,
+                        _card_read(freelancer, user, row.card, row.work_state),
+                    )
                 )
 
         if wants_leads:

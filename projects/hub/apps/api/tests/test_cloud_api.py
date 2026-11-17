@@ -351,6 +351,7 @@ def test_the_cloud_lists_the_talents_by_name_and_filters_them(
         and first["card"]["location"] is None
     )
     assert first["band"] == {"min": 500, "max": 650} and first["mode"] == "remote"
+    assert first["work_profile"] is None  # nobody sent one (REB-1127)
     # Never the rate, the state, the notes, the address or the phone, nor what the CV says
     # of the person.
     secrets = ("463.21", "rate", '"stato"', "Nota riservata", "@studio.it", "+39")

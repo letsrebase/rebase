@@ -21,14 +21,19 @@ def provenance(
     """The card to keep, what supported it, and what the code found wrong with it.
     `sources` is cut to the sources that exist for the person (`verify_sources`). Years are
     set by dated professional periods only: when a source beside the CV and the hub was
-    read and the sources named for `experience_years` include neither, the years are dropped, and
+    read (the approved work profile counts as one) and the sources named for `experience_years`
+    include neither, the years are dropped, and
     that is recorded (`discarded_experience_years`). With no such source there is nothing but the CV
     and the hub to take them from. A hub that shows more real work than the card counts is
     recorded too (`conflicts`)."""
     field_sources = verify_sources(draft.sources.as_dict(), set(source_keys(sources, facts)))
     card = draft.card
     found: list[Conflict] = []
-    if card.experience_years is not None and sources.readable() and not dated_by(field_sources):
+    if (
+        card.experience_years is not None
+        and (sources.readable() or facts.work_profile)
+        and not dated_by(field_sources)
+    ):
         found.append(Conflict("discarded_experience_years", card.experience_years, None))
         card = card.model_copy(update={"experience_years": None})
         field_sources["experience_years"] = []
@@ -44,10 +49,14 @@ def hash_inputs(job_title: str | None, sources: SourceSet, facts: HubFacts) -> d
     position the person gave (the rate and the work mode are not read by the prompt, and
     are shown from the row), `hub` the hub's facts without what moves by itself, and each
     readable source its own (`SourceSet.hashes`). `hub` is absent when the hub has nothing
-    to say, so the first fact that appears is a change."""
+    to say, so the first fact that appears is a change. `work_profile` (REB-1134) is the text of
+    an approved, unexpired profile read while its switch is on: an approval, a replacement, a
+    deletion or the 12 months' end changes it, and so makes the card stale."""
     hashes = {"wizard": sha(job_title or ""), **sources.hashes()}
     if not facts.empty:
         hashes["hub"] = sha(facts.hash_material())
+    if facts.work_profile:
+        hashes["work_profile"] = sha(facts.work_profile)
     return hashes
 
 

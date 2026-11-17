@@ -64,6 +64,8 @@ __all__ = [
     "CloudTalentList",
     "CloudTalentQuery",
     "CloudTalentRead",
+    "CloudWorkDomain",
+    "CloudWorkProfile",
     "CardPersonRead",
     "CardProvenance",
     "ConflictRead",
@@ -604,13 +606,36 @@ class CloudTalentQuery(BaseModel):
     max_band: int | None = Field(default=None, ge=0)
 
 
+class CloudWorkDomain(ResponseModel):
+    """A field of work the person's profile names, with how many products and sessions it
+    covers (both `None` when the profile gave none)."""
+
+    label: str
+    products: int | None
+    sessions: int | None
+
+
+class CloudWorkProfile(ResponseModel):
+    """What a company reads of an approved work profile (REB-1127, spec 2026-11-17 § 5): the
+    summary the person's own model wrote and an admin read, the labels of the domains with
+    their counts and the abstract domain of each representative project. Not the narratives,
+    the trajectory, the agentic-literacy counts nor the artifacts: they stay in the admin."""
+
+    summary: str | None
+    domains: list[CloudWorkDomain]
+    project_domains: list[str]
+
+
 class CloudTalentRead(ResponseModel):
     """A talent as an admitted company reads them in the cloud (spec § 4.2): who they
     are, the links they gave, whether rebase vetted them, the anonymous card (its
-    `location` left out: the CV is one click away), the work mode, the client's band and
-    whether there is a CV to open. Never the freelancer's own rate, their state, the
-    admin's notes, nor their address or phone: those are not fields here,
-    so no read can carry them."""
+    `location` left out: the CV is one click away), the work mode, the client's band,
+    whether there is a CV to open and, only while an approved work profile of theirs
+    has not expired, its summary (`work_profile`: the summary, the domains' labels with
+    their counts and the representative projects' abstract domains, REB-1127). Never the
+    freelancer's own rate, their state, the admin's notes, nor their address or phone, nor
+    anything else of the profile (its narratives, trajectory, counts of how they use agents,
+    artifacts and repository names): those are not fields here, so no read can carry them."""
 
     freelancer_id: UUID
     first_name: str
@@ -622,6 +647,7 @@ class CloudTalentRead(ResponseModel):
     mode: RemoteOption | None
     band: Band | None
     has_cv: bool
+    work_profile: CloudWorkProfile | None
 
 
 class CloudTalentList(ResponseModel):

@@ -185,6 +185,14 @@ def create_my_company_request(
     return read
 
 
+@router.delete("/me/work-profile", response_model=MeRead)
+def delete_my_work_profile(me: MeDep, session: SessionDep) -> MeRead:
+    """«Elimina il profilo» (REB-1127): the person's work profile goes at once, whatever its
+    state. The card follows (it is rewritten without it) and the verified flag stays: that is
+    the admins' judgement. 404 for somebody with no card."""
+    return MemberService(session).delete_work_profile(me.id)
+
+
 @router.put("/me/cv", response_model=MeRead)
 def replace_my_cv(
     me: MeDep,

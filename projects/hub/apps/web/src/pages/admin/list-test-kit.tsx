@@ -218,6 +218,7 @@ export function mount(
   path: string,
   duplicates: Record<string, unknown> | (() => Response) = NO_DUPLICATES,
   availability: Record<string, unknown> | (() => Response) = NO_COMMITMENTS,
+  workProfile: Record<string, unknown> | (() => Response) | null = null,
 ) {
   // REB-800: Talenti and a card's page read the duplicate pairs too, beside what the
   // test mocked for the page itself. They are answered here, apart, so a test that hands
@@ -225,15 +226,23 @@ export function mount(
   // they were; a test about the pairs passes its own body, or a function making the
   // whole `Response` when the answer itself is the point. REB-1120: the CRM's availability,
   // which that list reads beside its rows, is answered apart the same way.
+  // REB-1126: a talent's page asks for the work profile on every open. A person who sent none
+  // is a 404, which is what every test that is not about it gets, apart like the two above.
   const inner = globalThis.fetch
+  const isWorkProfile = (input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+    (init?.method ?? 'GET') === 'GET' && /^\/api\/hub\/freelancers\/[^/]+\/work-profile$/.test(String(input))
   const apart = (body: Record<string, unknown> | (() => Response)) =>
     Promise.resolve(typeof body === 'function' ? body() : answer(200, body))
   vi.stubGlobal('fetch', (input: Parameters<typeof fetch>[0], init?: RequestInit) =>
-    String(input) === '/api/hub/talent/duplicates'
-      ? apart(duplicates)
-      : String(input) === '/api/hub/talent/availability'
-        ? apart(availability)
-        : inner(input, init),
+    isWorkProfile(input, init)
+      ? workProfile === null
+        ? Promise.resolve(answer(404, { detail: 'Nessun profilo di lavoro.' }))
+        : apart(workProfile)
+      : String(input) === '/api/hub/talent/duplicates'
+        ? apart(duplicates)
+        : String(input) === '/api/hub/talent/availability'
+          ? apart(availability)
+          : inner(input, init),
   )
   const root = createRootRoute({ component: () => <Outlet /> })
   const signedIn = createRoute({ getParentRoute: () => root, id: 'signedIn', component: () => <Outlet /> })

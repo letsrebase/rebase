@@ -61,9 +61,10 @@ SOURCES_FIELDS = (
 CV = "cv"
 HUB = "hub"
 GITHUB = "github"
+WORK_PROFILE = "work_profile"
 
-# `cv`, `github`, `hub` or `link:<n>`: short on purpose, so a model that writes a sentence
-# there is a shape failure, not a stored paragraph.
+# `cv`, `github`, `hub`, `work_profile` or `link:<n>`: short on purpose, so a model that writes
+# a sentence there is a shape failure, not a stored paragraph.
 SourceKey = Annotated[str, StringConstraints(max_length=16)]
 SourceKeys = Annotated[list[SourceKey], Field(max_length=10)]
 

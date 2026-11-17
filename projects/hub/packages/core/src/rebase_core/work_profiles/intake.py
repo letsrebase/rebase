@@ -13,24 +13,51 @@ import math
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from rebase_core.audit import utcnow
+from rebase_core.ai_spend import ROME
+from rebase_core.audit import AdminActionService, utcnow
 from rebase_core.cli_auth import sha256_hex
 from rebase_core.config import Settings
-from rebase_core.errors import CliNotAllowed, CliTokenInvalid, WorkProfileRefused
+from rebase_core.errors import (
+    CliNotAllowed,
+    CliTokenInvalid,
+    InvalidState,
+    NotFound,
+    WorkProfileGuardBlocked,
+    WorkProfileRefused,
+)
+from rebase_core.freelancers import ENTITY as FREELANCER
+from rebase_core.freelancers import FreelancerService
+from rebase_core.mail import Mail
+from rebase_core.mail_member import work_profile_approved_mail, work_profile_rejected_mail
 from rebase_core.members import MemberService
-from rebase_core.models import TOOL_VERSION_MAX_LENGTH, CliAuthorization, Freelancer, WorkProfile
+from rebase_core.models import (
+    TOOL_VERSION_MAX_LENGTH,
+    CliAuthorization,
+    Freelancer,
+    User,
+    WorkProfile,
+)
 from rebase_core.work_profiles.groundedness import (
     Groundedness,
     TooManyAnchors,
     assess_groundedness,
 )
-from rebase_core.work_profiles.schemas import CandidateProfile, WorkProfileAccepted
+from rebase_core.work_profiles.guard import guard_hits_for
+from rebase_core.work_profiles.schemas import (
+    CandidateProfile,
+    WorkProfileAccepted,
+    WorkProfileAdminRead,
+    WorkProfileAnchor,
+    WorkProfileGuardHit,
+)
 from rebase_core.work_profiles.structure import forbidden, shape, structure
+from rebase_core.work_profiles.view import render_profile
 
 MAX_BYTES = 512 * 1024
 MIN_GROUNDEDNESS = 60
@@ -38,6 +65,15 @@ MIN_GROUNDEDNESS = 60
 MAX_ANCHORS = 2000
 RETENTION_MONTHS = 12
 ATTACHMENTS_REFUSED = "gli allegati non sono accettati: indica un link"
+NO_PROFILE = "lavoro"
+ALREADY_DECIDED = "Il profilo è già stato deciso."
+GUARD_BLOCKED = (
+    "Un campo che le aziende leggono nomina la persona o qualcosa di suo: correggi il profilo "
+    "o approva con una nota che spiega perché va bene."
+)
+OVERRIDE_NEEDS_NOTE = "Per approvare nonostante le segnalazioni serve una nota."
+CHANGED = "Il profilo è cambiato: rileggilo."
+EXPIRED = "Il profilo è scaduto: la persona deve inviarne uno nuovo."
 
 
 def add_months(moment: datetime, months: int) -> datetime:
@@ -146,6 +182,8 @@ class WorkProfileService:
         version = payload.get("toolVersion")
         if not isinstance(version, str):
             version = tool_version
+        # Read before the row is touched: the guards query, and a half-filled row must not flush.
+        hits = guard_hits_for(self.session, card.id, stored)
         row = self.session.scalar(
             select(WorkProfile).where(WorkProfile.freelancer_id == card.id).with_for_update()
         )
@@ -156,6 +194,7 @@ class WorkProfileService:
         row.tool_version = version[:TOOL_VERSION_MAX_LENGTH] if version else None
         row.groundedness = score.score or 0
         row.unsupported_anchors = score.anomalies
+        row.guard_hits = hits
         row.state = "draft"
         row.submitted_at = now
         row.expires_at = add_months(now, RETENTION_MONTHS)
@@ -206,3 +245,151 @@ class WorkProfileService:
                 f"servono almeno {MIN_GROUNDEDNESS}%)."
             )
         return payload, score
+
+    # ---- the review (REB-1126, spec § 4) ----
+
+    def _pending(self, freelancer_id: UUID, submitted_at: datetime) -> WorkProfile:
+        """The profile an admin may decide on: locked, there, not past its 12 months. A profile
+        already decided is decided again only by a new submission, which is a `draft`."""
+        row = self.session.scalar(
+            select(WorkProfile)
+            .where(WorkProfile.freelancer_id == freelancer_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        card = self.session.get(Freelancer, freelancer_id)
+        if row is None or card is None or card.deleted_at is not None:
+            raise NotFound(NO_PROFILE, freelancer_id)
+        if row.submitted_at != submitted_at:
+            raise InvalidState(CHANGED)
+        if row.expires_at <= self._now():
+            raise InvalidState(EXPIRED)
+        if row.state != "draft":
+            raise InvalidState(ALREADY_DECIDED)
+        return row
+
+    def admin_read(self, freelancer_id: UUID, *, live_only: bool = False) -> WorkProfileAdminRead:
+        """The profile as the admin's section reads it, an expired one included and marked
+        (`expired`): the page says why a profile that counts for nothing is still there. With
+        `live_only` an expired one is not there at all, as for every other reader."""
+        row = self.session.scalar(
+            select(WorkProfile).where(WorkProfile.freelancer_id == freelancer_id)
+        )
+        if row is None or (live_only and row.expires_at <= self._now()):
+            raise NotFound(NO_PROFILE, freelancer_id)
+        decider = self.session.get(User, row.decided_by) if row.decided_by else None
+        return WorkProfileAdminRead(
+            freelancer_id=row.freelancer_id,
+            state=row.state,
+            submitted_at=row.submitted_at,
+            expires_at=row.expires_at,
+            expired=row.expires_at <= self._now(),
+            tool_version=row.tool_version,
+            groundedness=row.groundedness,
+            unsupported_anchors=[
+                WorkProfileAnchor(
+                    where=str(a.get("where", "")),
+                    anchor=str(a.get("anchor", "")),
+                    kind=str(a.get("kind", "")),
+                )
+                for a in row.unsupported_anchors
+            ],
+            decided_at=row.decided_at,
+            decided_by_name=(
+                f"{decider.first_name} {decider.last_name}".strip() if decider else None
+            ),
+            decision_note=row.decision_note,
+            guard_hits=[
+                WorkProfileGuardHit(field=str(h.get("field", "")), rule=str(h.get("rule", "")))
+                for h in row.guard_hits
+            ],
+            profile=render_profile(row.payload),
+        )
+
+    def decision_mail(self, freelancer_id: UUID) -> Mail | None:
+        """The mail the person gets for the decision just taken (REB-1127): approved with the
+        date it stops counting, or not approved with the admin's note. `None` for a profile
+        still in review, which is nobody's news."""
+        row = self.session.scalar(
+            select(WorkProfile).where(WorkProfile.freelancer_id == freelancer_id)
+        )
+        card = self.session.get(Freelancer, freelancer_id)
+        if row is None or card is None or card.deleted_at is not None or row.state == "draft":
+            return None
+        user = self.session.get_one(User, card.user_id)
+        url = f"{self.settings.hub_url.rstrip('/')}/me"
+        if row.state == "approved":
+            return work_profile_approved_mail(
+                user.email,
+                first_name=user.first_name,
+                expires_on=row.expires_at.astimezone(ROME).date(),
+                url=url,
+            )
+        return work_profile_rejected_mail(
+            user.email, first_name=user.first_name, note=row.decision_note or "", url=url
+        )
+
+    def approve(
+        self,
+        freelancer_id: UUID,
+        admin_id: UUID,
+        note: str | None,
+        submitted_at: datetime,
+        *,
+        override: bool = False,
+    ) -> WorkProfileAdminRead:
+        """«Approva»: the state, the date and the admin, and an entry of kind
+        `work_profile_decided` in the same transaction every time. The person is vetted only
+        when `vetted_at` is still null (`FreelancerService.set_vetted`, which writes its own
+        `vetted` entry and records nothing when the flag already matches, which is why the
+        decision has an entry of its own). The card follows by its inputs' hash: a profile
+        that counts is one of them (REB-1134), so approving it makes the card stale."""
+        row = self._pending(freelancer_id, submitted_at)
+        card = self.session.get_one(Freelancer, freelancer_id)
+        vets = card.vetted_at is None
+        # The guards read again, with what the hub knows now (a client may have come since).
+        row.guard_hits = guard_hits_for(self.session, freelancer_id, row.payload)
+        overridden = bool(row.guard_hits) and override
+        if row.guard_hits and not override:
+            self.session.commit()  # the fresh hits are kept, the profile stays a draft
+            raise WorkProfileGuardBlocked(GUARD_BLOCKED)
+        if overridden and not note:
+            raise WorkProfileGuardBlocked(OVERRIDE_NEEDS_NOTE)
+        row.state = "approved"
+        row.decided_at = self._now()
+        row.decided_by = admin_id
+        row.decision_note = note
+        AdminActionService(self.session).record(
+            FREELANCER,
+            freelancer_id,
+            "work_profile_decided",
+            admin_id,
+            {"decision": "approved", "vetted": vets}
+            | ({"override": True, "override_note": note} if overridden else {}),
+            commit=False,
+        )
+        if vets:
+            FreelancerService(self.session).set_vetted(freelancer_id, True, admin_id)
+        else:
+            self.session.commit()
+        return self.admin_read(freelancer_id)
+
+    def reject(
+        self, freelancer_id: UUID, admin_id: UUID, note: str, submitted_at: datetime
+    ) -> WorkProfileAdminRead:
+        """«Rifiuta»: the note is the freelancer's to read. `vetted_at` is not touched."""
+        row = self._pending(freelancer_id, submitted_at)
+        row.state = "rejected"
+        row.decided_at = self._now()
+        row.decided_by = admin_id
+        row.decision_note = note
+        AdminActionService(self.session).record(
+            FREELANCER,
+            freelancer_id,
+            "work_profile_decided",
+            admin_id,
+            {"decision": "rejected", "vetted": False},
+            commit=False,
+        )
+        self.session.commit()
+        return self.admin_read(freelancer_id)

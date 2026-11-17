@@ -364,6 +364,7 @@ export type LoginStats = Schemas['LoginStats']
  *  has no such field yet (HubBackend adds it, `null` for a company contact), so until the
  *  types are regenerated this is the page's own reading. */
 export type GuideStats = Schemas['GuideStats']
+export type WorkProfileAdmin = Schemas['WorkProfileAdminRead']
 export type Talent = Schemas['TalentRead']
 export type TalentList = Schemas['TalentList']
 /** Who is committed, as the CRM says (REB-1120): this week and its next change, by card. */
@@ -416,6 +417,9 @@ export interface TalentsFilters {
   industries?: string
   languages?: string
   card?: string
+  /** The review state of the person's work profile (REB-1126): `draft` («da rivedere»),
+   *  `approved` or `none`. */
+  work_profile?: string
   sort?: string
 }
 
@@ -580,6 +584,29 @@ export const admin = {
         body: { vetted },
       }),
       reading<Freelancer>(),
+    ),
+  /** The talent's work profile as «Profilo di lavoro» reads it (REB-1126): the state, the hub's
+   *  recheck and the profile rendered from its payload. 404 when the person sent none. */
+  workProfile: (id: string) =>
+    unwrap(
+      client.GET('/api/hub/freelancers/{freelancer_id}/work-profile', { params: { path: { freelancer_id: id } } }),
+    ),
+  /** «Approva», with an optional note kept for the admins: the profile counts and the person
+   *  is verified when they were not. */
+  approveWorkProfile: (id: string, note: string | null, submittedAt: string, override = false) =>
+    unwrap(
+      client.POST('/api/hub/freelancers/{freelancer_id}/work-profile/approve', {
+        params: { path: { freelancer_id: id } },
+        body: { note, submitted_at: submittedAt, override },
+      }),
+    ),
+  /** «Rifiuta», with the note the person reads in their area. */
+  rejectWorkProfile: (id: string, note: string, submittedAt: string) =>
+    unwrap(
+      client.POST('/api/hub/freelancers/{freelancer_id}/work-profile/reject', {
+        params: { path: { freelancer_id: id } },
+        body: { note, submitted_at: submittedAt },
+      }),
     ),
   /** The anonymous card Claude wrote from the CV (REB-510), with the last failure. */
   freelancerCard: (id: string) =>
@@ -1037,6 +1064,9 @@ export const member = {
   contractPdfUrl: (documentId: string) => `/api/hub/me/contracts/${encodeURIComponent(documentId)}/pdf`,
   /** The member's own link, issued the first time it is asked for (P-REB-44). */
   referral: () => unwrap(client.GET('/api/hub/me/referral'), reading<MemberReferral>()),
+  /** «Elimina il profilo» (REB-1127): the person's work profile, deleted at once whatever its
+   *  state; answers the person's read without it. The verified flag stays. */
+  deleteWorkProfile: () => unwrap(client.DELETE('/api/hub/me/work-profile'), reading<Me>()),
   logout: () => unwrap(client.POST('/api/hub/me/logout')),
 }
 

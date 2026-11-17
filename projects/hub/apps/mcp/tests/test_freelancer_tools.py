@@ -100,6 +100,7 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "regenerate_freelancer_card",
             "get_freelancer_audit",
             "revert_freelancer_action",
+            "get_work_profile",
             "list_duplicates",
             "merge_freelancers",
             "add_freelancer_note",

@@ -87,3 +87,34 @@ describe('«Verificato» on Talenti and on the talent (REB-518)', () => {
     expect(within(ada).queryByText('Verificato')).toBeNull()
   })
 })
+
+describe('«Da rivedere» on Talenti (REB-1126)', () => {
+  it('shows the pill on a row whose work profile waits for an admin, and not on an approved one', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, {
+        total: 2,
+        items: [
+          { ...CARD_TALENT, work_profile_state: 'draft' },
+          { ...VETTED_TALENT, id: 'f9', email: 'grace@studio.it', work_profile_state: 'approved' },
+        ],
+        by_status: {},
+      }),
+    )
+    mount('/admin/talent')
+    const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
+    expect(within(cellUnder(ada, 'Stato')).getByText('Da rivedere')).toBeInTheDocument()
+    const grace = screen.getByText('grace@studio.it').closest('tr')!
+    expect(within(grace).queryByText('Da rivedere')).toBeNull()
+  })
+
+  it('asks the API for the review state the filter names', async () => {
+    const spy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(answer(200, { total: 0, items: [], by_status: {} }))
+    mount('/admin/talent?work_profile=draft')
+    await waitFor(() =>
+      expect(spy.mock.calls.some(([url]) => String(url).includes('work_profile=draft'))).toBe(true),
+    )
+    expect(await screen.findByLabelText('Profilo di lavoro')).toBeInTheDocument()
+  })
+})

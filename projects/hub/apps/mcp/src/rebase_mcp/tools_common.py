@@ -74,6 +74,7 @@ SKILL_TERMS_MAX = 10
 CV_READ = "cv_read"
 EMAILS_READ = "emails_read"
 RECIPIENTS_READ = "recipients_read"
+WORK_PROFILE_READ = "work_profile_read"
 READ_ENTITY = "mcp_read"
 _READ_ENTITY_NAMESPACE = "https://letsrebase.com/hub/mcp_read/"
 
