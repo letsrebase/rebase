@@ -19,7 +19,14 @@ from uuid import UUID, uuid4
 
 import pytest
 from fakes.fake_documenso import SIGNING_HOST, FakeDocumenso
-from fakes.letter_world import ADMIN, LEGAL_ENTITY_FIELDS, World, needs_binaries
+from fakes.letter_world import (
+    ADMIN,
+    LEGAL_ENTITY_FIELDS,
+    World,
+    needs_binaries,
+    prints_figure,
+    shows_client_price,
+)
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, select, text, update
 from sqlalchemy.orm import Session
@@ -346,7 +353,8 @@ def test_contracts_carry_the_state_the_link_and_the_derived_dates(furnished: Fur
     assert letter["customer"] == "Acme S.r.l."
     assert (letter["start"], letter["end"]) == ("2 novembre 2026", "29 novembre 2026")
     assert letter["has_signed_copy"] is False and letter["filename"] is None
-    assert "450" not in answer.text and "7331" not in answer.text
+    # Neither the freelancer's fee nor the client price, as a figure of its own (REB-1116).
+    assert not prints_figure(answer.text, 450) and not shows_client_price(answer.text)
 
 
 def test_a_letter_links_to_its_deal_in_the_freelancers_own_space_once_the_door_wrote_it(

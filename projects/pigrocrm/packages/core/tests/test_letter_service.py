@@ -4,6 +4,8 @@ legal payment term, framework before letter's own rules, drafts refused for a st
 templates of these types an administrator's alone.
 """
 
+import json
+from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
@@ -16,17 +18,20 @@ from fakes.letter_world import (
     SYSTEM,
     World,
     needs_binaries,
+    shows_client_price,
 )
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.collaborators.letter_templates import SEEDS, seed_collaborator_templates
+from pigrocrm.core.collaborators.letters import italian_money
 from pigrocrm.core.collaborators.models import Engagement
 from pigrocrm.core.db import today_local
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.errors import Conflict, PermissionDenied, ValidationFailed
 from pigrocrm.core.legal_entities.schemas import LegalEntityUpsert
 from pigrocrm.core.legal_entities.service import LegalEntityService
+from pigrocrm.core.templates.escaping import escape_markdown
 from pigrocrm.core.templates.models import Template
 from pigrocrm.core.templates.schemas import TemplateCreate, TemplateUpdate
 from pigrocrm.core.templates.service import TemplateService
@@ -125,6 +130,23 @@ def test_these_templates_are_an_admins_and_say_their_regime_and_version(
 # ---- a letter rendered ------------------------------------------------------------------------
 
 
+def test_the_client_price_check_sees_the_price_and_nothing_that_only_holds_its_digits() -> None:
+    # Every shape the price can reach a letter or a notice in, the letter's own escaping included,
+    # so a check that never matches cannot pass the letter test by accident (REB-1116).
+    for amount in (Decimal(CLIENT_PRICE), Decimal(CLIENT_PRICE) * 10):
+        printed = italian_money(amount)
+        assert shows_client_price(printed), printed
+        assert shows_client_price(escape_markdown(printed)), printed
+    assert shows_client_price(json.dumps({"unit_price": f"{CLIENT_PRICE}.00"}))
+    for noise in (
+        "12373310123",
+        "07331",
+        "3f2a7331-0000-4000-8000-000000000000",
+        "00000000-7331-4000-8000-000000000000",
+    ):
+        assert not shows_client_price(noise), noise
+
+
 @needs_binaries
 def test_an_engagements_letter_renders_with_its_facts_and_no_client_price(world: World) -> None:
     who = world.freelancer()
@@ -162,7 +184,7 @@ def test_an_engagements_letter_renders_with_its_facts_and_no_client_price(world:
     ):
         assert printed in text.replace("\\", ""), printed
     # What rebase agrees with the client never reaches a freelancer's document.
-    assert CLIENT_PRICE not in text and "7.331" not in text and "73.310" not in text
+    assert not shows_client_price(text)
     assert "firma professionista" in preview.blank and "data firma" in preview.blank
     assert "Pagamento a incasso" not in text
 

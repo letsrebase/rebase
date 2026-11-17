@@ -12,7 +12,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from fakes.letter_world import ADMIN, World, needs_binaries
+from fakes.letter_world import ADMIN, World, needs_binaries, shows_client_price
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from test_signing import SIGNED_AT, Desk
@@ -127,7 +127,7 @@ def test_an_engagement_creation_writes_notice_one_with_the_read_model(desk: Desk
     assert payload["signed_at"] is None and payload["letter_id"] is None
     # What rebase agreed with the client is not the freelancer's, and never reaches the hub.
     assert not any("price" in key or "budget" in key for key in payload)
-    assert "7331" not in json.dumps(payload)
+    assert not shows_client_price(json.dumps(payload))
 
 
 def test_a_long_client_name_is_cut_to_what_the_hub_keeps(desk: Desk) -> None:
