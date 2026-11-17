@@ -12,7 +12,30 @@ from datetime import datetime
 from typing import Any
 
 MAX_PROJECTS = 10
-_MONTH = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+_MONTH = re.compile(r"\d{4}-(?:0[1-9]|1[0-2])\Z", re.ASCII)
+MAX_DEPTH = 40
+MAX_COUNT = 10**9
+
+
+def shape(payload: Any) -> list[str]:
+    """What no honest profile has and what the database cannot store: nesting deeper than
+    `MAX_DEPTH`, and a NUL character in a string or a key (JSONB refuses it). Iterative, so a
+    hostile nesting costs no stack."""
+    issues: list[str] = []
+    pending: list[tuple[Any, int]] = [(payload, 1)]
+    while pending:
+        node, depth = pending.pop()
+        if depth > MAX_DEPTH:
+            return [f"il profilo è annidato per più di {MAX_DEPTH} livelli"]
+        if isinstance(node, dict):
+            if any("\x00" in key for key in node):
+                issues.append("un nome di campo contiene il carattere nullo")
+            pending.extend((value, depth + 1) for value in node.values())
+        elif isinstance(node, list):
+            pending.extend((item, depth + 1) for item in node)
+        elif isinstance(node, str) and "\x00" in node:
+            issues.append("un testo contiene il carattere nullo")
+    return issues[:1]
 
 
 def forbidden(payload: Any) -> list[str]:
@@ -43,7 +66,7 @@ def forbidden(payload: Any) -> list[str]:
 
 
 def _is_count(value: Any) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= MAX_COUNT
 
 
 def _month(value: Any) -> bool:
@@ -80,7 +103,7 @@ def structure(payload: dict[str, Any]) -> list[str]:
     for key in ("products", "sessions", "instructions"):
         value = volume.get(key)
         if (key != "instructions" or value is not None) and not _is_count(value):
-            issues.append(f"volume.{key}: serve un numero intero, zero o più")
+            issues.append(f"volume.{key}: serve un numero intero tra zero e un miliardo")
     counted: list[tuple[str, Any]] = []
     for index, project in enumerate(projects):
         counted.append((f"projects[{index}].sessions", project.get("sessions")))
@@ -93,7 +116,7 @@ def structure(payload: dict[str, Any]) -> list[str]:
         counted.append((f"domains[{index}].products", domain.get("products")))
         counted.append((f"domains[{index}].sessions", domain.get("sessions")))
     issues.extend(
-        f"{where}: serve un numero intero, zero o più"
+        f"{where}: serve un numero intero tra zero e un miliardo"
         for where, value in counted
         if value is not None and not _is_count(value)
     )

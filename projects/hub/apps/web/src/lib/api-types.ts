@@ -2132,7 +2132,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Token */
+        /**
+         * Token
+         * @description Never cached: the 200 holds the access token.
+         */
         post: operations["token_api_hub_cli_token_post"];
         delete?: never;
         options?: never;
@@ -3549,13 +3552,22 @@ export interface components {
             /** Deal Id */
             deal_id?: string | null;
         };
+        /**
+         * Detail
+         * @description An error of this route: one sentence.
+         */
+        Detail: {
+            /** Detail */
+            detail: string;
+        };
         /** DeviceRequest */
         DeviceRequest: {
             /**
              * Scope
              * @default work_profile
+             * @constant
              */
-            scope: string;
+            scope: "work_profile";
         };
         /**
          * DeviceStart
@@ -9966,7 +9978,9 @@ export interface operations {
     approve_api_hub_cli_authorizations__code__approve_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "sec-fetch-site"?: string | null;
+            };
             path: {
                 code: string;
             };
@@ -9997,7 +10011,9 @@ export interface operations {
     deny_api_hub_cli_authorizations__code__deny_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "sec-fetch-site"?: string | null;
+            };
             path: {
                 code: string;
             };
@@ -10035,7 +10051,17 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description candidate.json, at most 512 KB
+                     */
+                    profile: string;
+                };
+            };
+        };
         responses: {
             /** @description Successful Response */
             201: {
@@ -10046,13 +10072,40 @@ export interface operations {
                     "application/json": components["schemas"]["WorkProfileAccepted"];
                 };
             };
-            /** @description Validation Error */
+            /** @description No live bearer: unknown, expired or spent */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Detail"];
+                };
+            };
+            /** @description The person has no live freelancer card */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Detail"];
+                };
+            };
+            /** @description The profile is over 512 KB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Detail"];
+                };
+            };
+            /** @description The profile is refused, with the reason */
             422: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["Detail"];
                 };
             };
         };

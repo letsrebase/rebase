@@ -9,6 +9,7 @@ replaces the previous one and goes back to `draft`.
 
 import calendar
 import json
+import math
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
@@ -22,13 +23,19 @@ from rebase_core.cli_auth import sha256_hex
 from rebase_core.config import Settings
 from rebase_core.errors import CliNotAllowed, CliTokenInvalid, WorkProfileRefused
 from rebase_core.members import MemberService
-from rebase_core.models import TOOL_VERSION_MAX_LENGTH, CliAuthorization, WorkProfile
-from rebase_core.work_profiles.groundedness import assess_groundedness
+from rebase_core.models import TOOL_VERSION_MAX_LENGTH, CliAuthorization, Freelancer, WorkProfile
+from rebase_core.work_profiles.groundedness import (
+    Groundedness,
+    TooManyAnchors,
+    assess_groundedness,
+)
 from rebase_core.work_profiles.schemas import CandidateProfile, WorkProfileAccepted
-from rebase_core.work_profiles.structure import forbidden, structure
+from rebase_core.work_profiles.structure import forbidden, shape, structure
 
 MAX_BYTES = 512 * 1024
 MIN_GROUNDEDNESS = 60
+# A person's profile has a few dozen anchors; this many is a payload built to be slow.
+MAX_ANCHORS = 2000
 RETENTION_MONTHS = 12
 ATTACHMENTS_REFUSED = "gli allegati non sono accettati: indica un link"
 
@@ -38,6 +45,17 @@ def add_months(moment: datetime, months: int) -> datetime:
     year, month = moment.year + index // 12, index % 12 + 1
     day = min(moment.day, calendar.monthrange(year, month)[1])
     return moment.replace(year=year, month=month, day=day)
+
+
+def _finite_float(text: str) -> float:
+    value = float(text)
+    if not math.isfinite(value):
+        raise ValueError("a number too large to hold")
+    return value
+
+
+def _refuse_constant(name: str) -> float:
+    raise ValueError(f"{name} is not a number in JSON")
 
 
 def _sentence(issues: list[str]) -> str:
@@ -58,11 +76,16 @@ class WorkProfileService:
         self._now = now
 
     def live_token(self, raw: str | None, *, lock: bool = False) -> CliAuthorization:
-        """The authorization a bearer names, or `CliTokenInvalid`: unknown, expired or spent."""
+        """The authorization a bearer names, or `CliTokenInvalid`: unknown, expired or spent.
+        With `lock` the row is read `FOR UPDATE` and refreshed from the database
+        (`populate_existing`), so a second submission waits for the first and then sees it spent,
+        not the copy the session loaded before."""
         if not raw:
             raise CliTokenInvalid("Accesso non valido o scaduto.")
         query = select(CliAuthorization).where(CliAuthorization.token_hash == sha256_hex(raw))
-        row = self.session.scalar(query.with_for_update() if lock else query)
+        if lock:
+            query = query.with_for_update().execution_options(populate_existing=True)
+        row = self.session.scalar(query)
         if (
             row is None
             or row.state != "approved"
@@ -73,17 +96,51 @@ class WorkProfileService:
             raise CliTokenInvalid("Accesso non valido o scaduto.")
         return row
 
+    def precheck(self, raw: str | None) -> None:
+        """The router's look at the bearer before it reads the body: unlocked, and the
+        transaction it opened is ended, so the locked read of `submit` starts clean."""
+        try:
+            self.live_token(raw)
+        finally:
+            self.session.rollback()
+
+    def spend(self, raw: str | None) -> None:
+        """Spends the token of a refused upload: whatever refuses a profile after the token was
+        accepted costs the sign-in, so a payload built to be expensive cannot be tried again."""
+        try:
+            auth = self.live_token(raw, lock=True)
+        except CliTokenInvalid:
+            self.session.rollback()
+            return
+        self._mark_spent(auth)
+        self.session.commit()
+
+    def _mark_spent(self, auth: CliAuthorization) -> None:
+        auth.state = "spent"
+        auth.spent_at = self._now()
+
     def submit(
         self, raw_token: str | None, body: bytes, tool_version: str | None = None
     ) -> WorkProfileAccepted:
         auth = self.live_token(raw_token, lock=True)  # 1. the token
-        payload = self._checked(body)  # 2 to 5
-        if auth.user_id is None:  # `live_token` has refused this already
-            raise CliTokenInvalid("Accesso non valido o scaduto.")
-        card = MemberService(self.session).card_for_user(auth.user_id)
-        if card is None:
-            raise CliNotAllowed("Non c'è una scheda rebase a cui collegare il profilo.")
-        score = assess_groundedness(payload)
+        try:
+            payload, score = self._checked(body)  # 2 to 5
+            if auth.user_id is None:  # `live_token` has refused this already
+                raise CliTokenInvalid("Accesso non valido o scaduto.")
+            card = MemberService(self.session).card_for_user(auth.user_id)
+            if card is None:
+                raise CliNotAllowed("Non c'è una scheda rebase a cui collegare il profilo.")
+        except (WorkProfileRefused, CliNotAllowed):
+            self._mark_spent(auth)
+            self.session.commit()
+            raise
+        # Two first submissions of one freelancer would both insert: the card's row serialises them.
+        self.session.scalar(
+            select(Freelancer.id)
+            .where(Freelancer.id == card.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         stored = {key: value for key, value in payload.items() if key != "contact"}
         now = self._now()
         version = payload.get("toolVersion")
@@ -105,22 +162,25 @@ class WorkProfileService:
         row.decided_at = None
         row.decided_by = None
         row.decision_note = None
-        auth.state = "spent"
-        auth.spent_at = now
+        self._mark_spent(auth)
         self.session.commit()
         return WorkProfileAccepted(
             state="draft", review_url=f"{self.settings.hub_url.rstrip('/')}/me"
         )
 
-    def _checked(self, body: bytes) -> dict[str, Any]:
+    def _checked(self, body: bytes) -> tuple[dict[str, Any], Groundedness]:
         if len(body) > MAX_BYTES:
             raise WorkProfileRefused("Il profilo supera i 512 KB.")
         try:
-            payload = json.loads(body.decode("utf-8"))
-        except (UnicodeDecodeError, ValueError) as error:
+            payload = json.loads(
+                body.decode("utf-8"), parse_float=_finite_float, parse_constant=_refuse_constant
+            )
+        except (UnicodeDecodeError, ValueError, RecursionError) as error:
             raise WorkProfileRefused("Il file non è un JSON valido.") from error
         if not isinstance(payload, dict):
             raise WorkProfileRefused("Il file non è un profilo: serve un oggetto JSON.")
+        if issues := shape(payload):
+            raise WorkProfileRefused(_sentence(issues))
         try:  # 2. the schema
             CandidateProfile.model_validate(payload)
         except ValidationError as error:
@@ -130,7 +190,12 @@ class WorkProfileService:
             raise WorkProfileRefused(_sentence(issues))
         if issues := structure(payload):  # 4. the structure
             raise WorkProfileRefused(_sentence(issues))
-        score = assess_groundedness(payload)  # 5. groundedness, recomputed
+        try:  # 5. groundedness, recomputed
+            score = assess_groundedness(payload, max_anchors=MAX_ANCHORS)
+        except TooManyAnchors as error:
+            raise WorkProfileRefused(
+                "Il testo del profilo contiene troppe cifre e nomi da verificare."
+            ) from error
         if score.score is None:
             raise WorkProfileRefused(
                 "Il profilo ha troppo poco testo verificabile: non si può controllare."
@@ -140,4 +205,4 @@ class WorkProfileService:
                 f"Il testo del profilo non regge con i suoi dati (verificabile al {score.score}%, "
                 f"servono almeno {MIN_GROUNDEDNESS}%)."
             )
-        return payload
+        return payload, score

@@ -577,7 +577,9 @@ retention `work_profiles/sweep.py`. API: `routers/cli_auth.py` (`/api/hub/cli/..
 token is minted by the first poll after the approval, which is the only moment the raw value
 exists, and is handed out once; it lives 900 seconds (`expires_at` is the code's deadline, 600
 seconds, until then and the token's after), can send one profile and is spent in the same
-transaction that stores it. A refused profile leaves it unspent. `poll_interval` grows by 5 seconds
+transaction that stores it, under a row lock (`populate_existing`) so two uploads of one token give
+one 201 and one 401. A profile refused after the token was accepted spends it too: a payload built to
+be expensive cannot be tried again. `poll_interval` grows by 5 seconds
 at each `slow_down`. Only a user with a live freelancer card may approve the `work_profile` scope.
 `/token` answers RFC 8628's errors as a 400 with `{"error": ...}`, the shape the fork's CLI reads.
 Limits (per process, like the other limiters): 10 starts an hour per `X-Real-IP` (an IPv6 address as
@@ -589,7 +591,9 @@ login, which keeps the code in `localStorage` (`lib/returnTo.ts`, 30 minutes, on
 fields kept), what must not be there (a `repoLabel` anywhere or a `file` artifact: 422), structure,
 groundedness recomputed (refused under 60, or when too little prose can be checked). `contact` is
 dropped; one row per freelancer, replaced on resubmission and back to `draft`; any multipart part
-but `profile` is a 422 with «gli allegati non sono accettati: indica un link»; 512 KB cap. The tool's
+but `profile` is a 422 with «gli allegati non sono accettati: indica un link»; 512 KB cap, enforced while the body streams. Hostile input (deep or non-finite JSON, NUL, counts over
+10^9, more than 2000 anchors) is a 422, never a 500. Approve and deny refuse a browser's
+`Sec-Fetch-Site` other than `same-origin`. The tool's
 version is the payload's `toolVersion` or the `User-Agent` token `work-profile/<version>`.
 
 **The groundedness port.** `groundedness.py` is the fork's `src/groundedness.mjs` line for line

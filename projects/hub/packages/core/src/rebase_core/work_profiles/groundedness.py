@@ -22,6 +22,7 @@ Provenance and licence of this module and `tech-lexicon.json`: `VENDORED.txt` be
 import json
 import math
 import re
+from bisect import bisect_left, bisect_right
 from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import cache
@@ -88,12 +89,14 @@ _COGNITIVE_TAGS = (
     "risk-calibrated",
 )
 
+# JavaScript's `\s` (ECMAScript WhiteSpace and LineTerminator), which `re.ASCII` does not give.
+_JS_SPACE = "\\t\\n\\v\\f\\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
 _PERIOD = r"\b20\d{2}-(?:Q[1-4]|0?[1-9]|1[0-2])\b"
 _NUMBER_RE = re.compile(r"\b\d{1,5}(?:[.,]\d+)?\b", re.ASCII)
-_PERCENT_RE = re.compile(r"(\d{1,3})\s*%", re.ASCII)
+_PERCENT_RE = re.compile(rf"(\d{{1,3}})[{_JS_SPACE}]*%", re.ASCII)
 _PERIOD_RE = re.compile(_PERIOD, re.ASCII)
 # What `splitTech` splits on, and what it keeps.
-_SPLIT_RE = re.compile(r"[\s/(),]+")
+_SPLIT_RE = re.compile(rf"[{_JS_SPACE}/(),]+")
 _UNKEPT_RE = re.compile(r"[^a-z.+-]")
 
 
@@ -143,24 +146,59 @@ def _round(value: float) -> int:
     return math.floor(value + 0.5)
 
 
+_DECIMAL = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?\Z", re.ASCII)
+_RADIX = re.compile(r"0(?:[xX][0-9a-fA-F]+|[oO][0-7]+|[bB][01]+)\Z", re.ASCII)
+_JS_TRIM = re.compile(rf"^[{_JS_SPACE}]+|[{_JS_SPACE}]+$")
+
+
+def _js_string(value: Any) -> str:
+    """`String(value)` for the JSON values `Number` is applied to: an array joins its
+    elements with a comma, `null` inside one is empty, an object is `[object Object]`."""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, list):
+        return ",".join(_js_string(item) for item in value)
+    if isinstance(value, dict):
+        return "[object Object]"
+    return str(value)
+
+
+def _number_of_string(text: str) -> float | None:
+    """`Number("...")` where it is finite: no underscores, `0x10` is 16, `""` is 0."""
+    trimmed = _JS_TRIM.sub("", text)
+    try:
+        if not trimmed:
+            return 0.0
+        if _RADIX.match(trimmed):
+            return float(int(trimmed, 0))
+        if _DECIMAL.match(trimmed):
+            number = float(trimmed)
+            return number if math.isfinite(number) else None
+    except (ValueError, OverflowError):
+        return None
+    return None
+
+
 def _number(value: Any) -> float | None:
     """JavaScript's `Number(value)` where it is finite, `None` where it is not (`NaN`,
-    `Infinity`, an object)."""
+    `Infinity`, an object, a string that is not a number)."""
     if value is None:
-        return None
+        return None  # callers skip `null` before they ask, as upstream's `n == null` does
     if isinstance(value, bool):
         return float(value)
     if isinstance(value, int | float):
-        number = float(value)
-    elif isinstance(value, str):
-        text = value.strip()
         try:
-            number = float(text) if text else 0.0
-        except ValueError:
+            number = float(value)
+        except OverflowError:
             return None
-    else:
-        return None
-    return number if math.isfinite(number) else None
+        return number if math.isfinite(number) else None
+    if isinstance(value, str):
+        return _number_of_string(value)
+    if isinstance(value, list):
+        return _number_of_string(_js_string(value))
+    return None
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -244,7 +282,7 @@ class _Pool:
 
     def add_percent_of(self, fraction: Any) -> None:
         number = _number(fraction)
-        if number is not None:
+        if number is not None and math.isfinite(number * 100):
             self.numbers.add(float(_round(number * 100)))
 
 
@@ -354,17 +392,39 @@ def collect_support_pool(profile: dict[str, Any]) -> _Pool:
     return pool
 
 
-def _number_matches(value: float, numbers: set[float]) -> bool:
-    """Equal to a structured number or within 5% of one (the model may round «153 commits»
-    as «around 150»)."""
-    if value in numbers:
-        return True
-    for candidate in numbers:
-        if candidate == 0 or value == 0:
-            continue
-        if abs((value - candidate) / candidate) <= 0.05:
+_PAD = 1e-9
+
+
+class _Matcher:
+    """`numberMatches` of upstream, without its scan of the whole pool for every anchor: a value
+    matches a pooled number that equals it or is within 5% of it, and the pooled numbers
+    within 5% of `n` lie in `[n / 1.05, n / 0.95]` (the other sign never matches), so the sorted
+    pool is searched for that window and the exact predicate is applied to what is in it. The
+    window is padded, so a rounding at its edge never decides; parity is the predicate's."""
+
+    def __init__(self, numbers: set[float]) -> None:
+        self.numbers = numbers
+        self.ordered = sorted(numbers)
+        self._known: dict[float, bool] = {}
+
+    def matches(self, value: float) -> bool:
+        known = self._known.get(value)
+        if known is None:
+            known = self._known[value] = self._decide(value)
+        return known
+
+    def _decide(self, value: float) -> bool:
+        if value in self.numbers:
             return True
-    return False
+        if value == 0:
+            return False
+        low, high = sorted((value / 1.05, value / 0.95))
+        start = bisect_left(self.ordered, low - abs(low) * _PAD)
+        stop = bisect_right(self.ordered, high + abs(high) * _PAD)
+        for candidate in self.ordered[start:stop]:
+            if candidate != 0 and abs((value - candidate) / candidate) <= 0.05:
+                return True
+        return False
 
 
 def classify_text_fields(profile: dict[str, Any]) -> list[tuple[str, str]]:
@@ -392,11 +452,11 @@ def classify_text_fields(profile: dict[str, Any]) -> list[tuple[str, str]]:
     return fields
 
 
-def _supported(anchor: Anchor, pool: _Pool) -> bool:
+def _supported(anchor: Anchor, pool: _Pool, numbers: _Matcher, ratios: _Matcher) -> bool:
     if anchor.kind == "number" and isinstance(anchor.value, float):
-        return _number_matches(anchor.value, pool.numbers)
+        return numbers.matches(anchor.value)
     if anchor.kind == "percent" and isinstance(anchor.value, float):
-        return _number_matches(anchor.value, pool.ratios)
+        return ratios.matches(anchor.value)
     if anchor.kind == "period":
         return anchor.value in pool.periods
     if anchor.kind == "tech":
@@ -407,8 +467,16 @@ def _supported(anchor: Anchor, pool: _Pool) -> bool:
     return anchor.kind == "ai-tooling"
 
 
-def assess_groundedness(profile: dict[str, Any]) -> Groundedness:
+class TooManyAnchors(Exception):
+    """The prose holds more anchors than a profile can honestly carry."""
+
+
+def assess_groundedness(profile: dict[str, Any], max_anchors: int | None = None) -> Groundedness:
+    """The score of a profile. `max_anchors`, when given, stops the work with `TooManyAnchors`
+    past that many anchors: a person's profile has a few dozen, and the intake must not spend
+    its time on a payload made of them."""
     pool = collect_support_pool(profile)
+    numbers, ratios = _Matcher(pool.numbers), _Matcher(pool.ratios)
     total = 0
     supported = 0
     anomalies: list[dict[str, str]] = []
@@ -416,7 +484,9 @@ def assess_groundedness(profile: dict[str, Any]) -> Groundedness:
     for where, text in classify_text_fields(profile):
         for anchor in extract_anchors(text):
             total += 1
-            if _supported(anchor, pool):
+            if max_anchors is not None and total > max_anchors:
+                raise TooManyAnchors
+            if _supported(anchor, pool, numbers, ratios):
                 supported += 1
             else:
                 anomalies.append({"where": where, "anchor": anchor.raw, "kind": anchor.kind})
@@ -457,4 +527,6 @@ def assess_groundedness(profile: dict[str, Any]) -> Groundedness:
 
 def _plain(value: float) -> str:
     """A number as JavaScript prints it in a template: `5`, not `5.0`."""
+    if not math.isfinite(value):
+        return str(value)
     return str(int(value)) if value == int(value) else str(value)

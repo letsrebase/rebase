@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 from contract_api_helpers import login_as
 from fastapi.testclient import TestClient
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 from work_profile_api_helpers import apply_card
 
@@ -164,3 +164,57 @@ def test_the_eleventh_start_an_hour_from_one_address_is_429_and_an_ipv6_net_is_o
     assert blocked.status_code == 429 and "Retry-After" in blocked.headers
     other = client.post("/api/hub/cli/device", json={}, headers={"X-Real-IP": "203.0.113.9"})
     assert other.status_code == 200
+
+
+def test_the_token_answer_is_never_cached(
+    client: TestClient, api_session: Session, sender: RecordingSender
+) -> None:
+    started = _start(client)
+    assert _poll(client, api_session, started["device_code"]).headers["cache-control"] == "no-store"
+    apply_card(client)
+    login_as(client, sender, CARD)
+    client.post(f"/api/hub/cli/authorizations/{started['user_code']}/approve").raise_for_status()
+    granted = _poll(client, api_session, started["device_code"])
+    assert granted.status_code == 200 and granted.headers["cache-control"] == "no-store"
+
+
+def test_the_approval_binds_the_authorization_to_the_approver(
+    client: TestClient, api_session: Session, sender: RecordingSender
+) -> None:
+    started = _start(client)
+    apply_card(client)
+    login_as(client, sender, CARD)
+    me = client.get("/api/hub/me").json()
+
+    client.post(f"/api/hub/cli/authorizations/{started['user_code']}/approve").raise_for_status()
+
+    row = api_session.scalars(select(CliAuthorization)).one()
+    assert str(row.user_id) == me["id"]
+
+
+@pytest.mark.parametrize("site", ["same-site", "cross-site", "none"])
+@pytest.mark.parametrize("verdict", ["approve", "deny"])
+def test_a_decision_a_browser_says_did_not_come_from_this_origin_is_refused(
+    client: TestClient, api_session: Session, sender: RecordingSender, site: str, verdict: str
+) -> None:
+    started = _start(client)
+    apply_card(client)
+    login_as(client, sender, CARD)
+
+    refused = client.post(
+        f"/api/hub/cli/authorizations/{started['user_code']}/{verdict}",
+        headers={"Sec-Fetch-Site": site},
+    )
+
+    assert refused.status_code == 403
+    assert api_session.scalars(select(CliAuthorization)).one().state == "pending"
+    ok = client.post(
+        f"/api/hub/cli/authorizations/{started['user_code']}/{verdict}",
+        headers={"Sec-Fetch-Site": "same-origin"},
+    )
+    assert ok.status_code == 200
+
+
+def test_the_device_start_and_the_token_poll_bound_what_they_read(client: TestClient) -> None:
+    assert client.post("/api/hub/cli/device", json={"scope": "admin"}).status_code == 422
+    assert client.post("/api/hub/cli/token", json={"device_code": "x" * 201}).status_code == 422

@@ -75,18 +75,22 @@ def test_any_other_part_is_refused_with_the_sentence_of_the_spec(
     assert api_session.scalar(select(func.count()).select_from(WorkProfile)) == 0
 
 
-def test_a_repo_label_is_a_422_and_the_token_is_still_good(client: TestClient, token: str) -> None:
+def test_a_repo_label_is_a_422_and_the_token_is_spent_by_the_refusal(
+    client: TestClient, token: str
+) -> None:
     profile = sample()
     profile["projects"][0]["repoLabel"] = "acme"
 
     assert _send(client, token, profile).status_code == 422
-    assert _send(client, token).status_code == 201
+    assert _send(client, token).status_code == 401
 
 
-def test_a_missing_profile_part_or_a_plain_body_is_422(client: TestClient, token: str) -> None:
-    assert (
-        client.post(URL, json={}, headers={"Authorization": f"Bearer {token}"}).status_code == 422
-    )
+def test_a_plain_body_is_422(client: TestClient, token: str) -> None:
+    refused = client.post(URL, json={}, headers={"Authorization": f"Bearer {token}"})
+    assert refused.status_code == 422
+
+
+def test_a_missing_profile_part_is_422(client: TestClient, token: str) -> None:
     empty = client.post(
         URL, files={"other": ("x", b"1")}, headers={"Authorization": f"Bearer {token}"}
     )
@@ -100,3 +104,46 @@ def test_an_upload_far_over_512_kb_is_413(client: TestClient, token: str) -> Non
         headers={"Authorization": f"Bearer {token}"},
     )
     assert big.status_code == 413
+
+
+def test_a_chunked_upload_with_no_content_length_is_cut_off_at_the_cap(
+    client: TestClient, api_session: Session, token: str
+) -> None:
+    def chunks() -> Any:
+        for _ in range(40):
+            yield b"x" * (16 * 1024)
+
+    response = client.post(
+        URL,
+        content=chunks(),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "multipart/form-data; boundary=b",
+        },
+    )
+
+    assert response.status_code == 413
+    assert api_session.scalars(select(CliAuthorization)).one().state == "spent"
+
+
+def test_many_extra_parts_still_get_the_attachment_sentence(client: TestClient, token: str) -> None:
+    extras = {f"a{i}": (f"a{i}.bin", b"x", "application/octet-stream") for i in range(6)}
+    response = _send(client, token, **extras)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "gli allegati non sono accettati: indica un link"
+
+
+def test_a_refused_upload_spends_the_token(client: TestClient, token: str) -> None:
+    assert _send(client, token, attachment=("a.zip", b"PK", "application/zip")).status_code == 422
+    assert _send(client, token).status_code == 401
+
+
+def test_the_openapi_of_the_intake_declares_the_multipart_body_and_its_errors(
+    client: TestClient,
+) -> None:
+    operation = client.get("/openapi.json").json()["paths"][URL]["post"]
+
+    part = operation["requestBody"]["content"]["multipart/form-data"]["schema"]
+    assert part["required"] == ["profile"] and part["properties"]["profile"]["format"] == "binary"
+    assert {"201", "401", "403", "413", "422"} <= set(operation["responses"])

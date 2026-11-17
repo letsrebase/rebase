@@ -181,7 +181,7 @@ def _refusals() -> list[tuple[str, Any, str]]:
 @pytest.mark.parametrize(
     ("name", "profile", "sentence"), _refusals(), ids=[case[0] for case in _refusals()]
 )
-def test_a_refused_profile_is_a_sentence_and_changes_nothing(
+def test_a_refused_profile_is_a_sentence_changes_nothing_and_spends_the_token(
     hub_session: Session, name: str, profile: Any, sentence: str
 ) -> None:
     clock = Clock()
@@ -193,7 +193,9 @@ def test_a_refused_profile_is_a_sentence_and_changes_nothing(
 
     assert sentence in refused.value.message
     assert hub_session.scalar(select(func.count()).select_from(WorkProfile)) == 0
-    assert hub_session.scalars(select(CliAuthorization)).one().state == "approved"  # not spent
+    assert (
+        hub_session.scalars(select(CliAuthorization)).one().state == "spent"
+    )  # a refusal costs the sign-in
 
 
 def test_a_profile_over_512_kb_is_refused(hub_session: Session) -> None:

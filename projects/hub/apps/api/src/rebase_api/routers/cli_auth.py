@@ -11,10 +11,11 @@ under nginx's.
 """
 
 from collections.abc import Callable
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from rebase_api.deps import MeDep, SessionDep, SettingsDep
 from rebase_api.ratelimit import client_key
@@ -45,11 +46,12 @@ def reset_cli_limits() -> None:
 
 
 class DeviceRequest(BaseModel):
-    scope: str = "work_profile"
+    scope: Literal["work_profile"] = "work_profile"
 
 
 class TokenRequest(BaseModel):
-    device_code: str
+    # 43 characters as minted; the bound keeps a hostile value out of the hash and the log.
+    device_code: str = Field(max_length=200)
 
 
 @router.post("/device", response_model=DeviceStart)
@@ -66,15 +68,26 @@ def start(
 
 
 @router.post("/token", response_model=TokenGranted, responses={400: {"model": TokenRefused}})
-def token(
-    body: TokenRequest, session: SessionDep, settings: SettingsDep
-) -> TokenGranted | JSONResponse:
+def token(body: TokenRequest, session: SessionDep, settings: SettingsDep) -> JSONResponse:
+    """Never cached: the 200 holds the access token."""
     polled = CliAuthService(session, settings).poll(body.device_code)
+    no_store = {"Cache-Control": "no-store"}
     if polled.error is not None:
-        return JSONResponse({"error": polled.error}, status_code=400)
-    return TokenGranted(
+        return JSONResponse({"error": polled.error}, status_code=400, headers=no_store)
+    granted = TokenGranted(
         access_token=str(polled.access_token), expires_in=int(polled.expires_in or 0)
     )
+    return JSONResponse(granted.model_dump(), headers=no_store)
+
+
+def same_origin_only(sec_fetch_site: Annotated[str | None, Header()] = None) -> None:
+    """A decision is made from `/hub/cli` itself: a request a browser says came from another
+    site, or only from a sibling subdomain (`same-site`), is refused. Clients that send no
+    `Sec-Fetch-Site` (scripts, tests) are not browsers and carry no ambient cookie."""
+    if sec_fetch_site is not None and sec_fetch_site != "same-origin":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Questa richiesta non viene da questa pagina."
+        )
 
 
 def _counted(me: MeDep, call: Callable[[], CliAuthorizationRead]) -> CliAuthorizationRead:
@@ -99,13 +112,21 @@ def read(code: str, me: MeDep, session: SessionDep, settings: SettingsDep) -> Cl
     return _counted(me, lambda: CliAuthService(session, settings).read(code, me.id))
 
 
-@router.post("/authorizations/{code}/approve", response_model=CliAuthorizationRead)
+@router.post(
+    "/authorizations/{code}/approve",
+    response_model=CliAuthorizationRead,
+    dependencies=[Depends(same_origin_only)],
+)
 def approve(
     code: str, me: MeDep, session: SessionDep, settings: SettingsDep
 ) -> CliAuthorizationRead:
     return _counted(me, lambda: CliAuthService(session, settings).approve(code, me.id))
 
 
-@router.post("/authorizations/{code}/deny", response_model=CliAuthorizationRead)
+@router.post(
+    "/authorizations/{code}/deny",
+    response_model=CliAuthorizationRead,
+    dependencies=[Depends(same_origin_only)],
+)
 def deny(code: str, me: MeDep, session: SessionDep, settings: SettingsDep) -> CliAuthorizationRead:
     return _counted(me, lambda: CliAuthService(session, settings).deny(code, me.id))
