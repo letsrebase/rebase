@@ -87,6 +87,31 @@ NOT_ADMIN: dict[Route, tuple[str, str]] = {
     ("GET", "/api/hub/me/contracts"): (MEMBER, "the member's own contracts"),
     ("GET", "/api/hub/me/contracts/{document_id}/pdf"): (MEMBER, "one of their own contracts"),
     ("GET", "/api/hub/me/referral"): (MEMBER, "the member's own referral page"),
+    # --- the CLI's sign-in and the work-profile intake (REB-1133, REB-1124)
+    ("POST", "/api/hub/cli/device"): (
+        PUBLIC,
+        "the CLI asks for a code, behind its own hourly limit",
+    ),
+    ("POST", "/api/hub/cli/token"): (
+        PUBLIC,
+        "the CLI polls with its device code, a 256-bit secret",
+    ),
+    ("POST", "/api/hub/work-profiles"): (
+        PUBLIC,
+        "the CLI's intake: no cookie, the sign-in's single-use bearer, checked first",
+    ),
+    ("GET", "/api/hub/cli/authorizations/{code}"): (
+        MEMBER,
+        "the page shows the code to the signed-in person; wrong codes count against them",
+    ),
+    ("POST", "/api/hub/cli/authorizations/{code}/approve"): (
+        MEMBER,
+        "the signed-in person with a live card says yes to the CLI",
+    ),
+    ("POST", "/api/hub/cli/authorizations/{code}/deny"): (
+        MEMBER,
+        "the signed-in person says no to the CLI",
+    ),
     # --- the talent cloud: signed in, then a live grant
     ("GET", "/api/hub/me/cloud/talents"): (CLOUD, "the cloud's talents"),
     ("GET", "/api/hub/me/cloud/talents/{freelancer_id}/cv"): (CLOUD, "a cloud talent's CV"),

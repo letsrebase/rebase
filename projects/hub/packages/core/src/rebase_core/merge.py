@@ -77,6 +77,7 @@ from rebase_core.schema_common import ResponseModel
 from rebase_core.sources import delete_sources
 from rebase_core.users import UserService
 from rebase_core.vocabulary import enum_of
+from rebase_core.work_profiles.merge import drop_cli_authorizations, keep_newest_work_profile
 
 ENTITY = "freelancer"
 
@@ -153,6 +154,9 @@ class PersonMergeService:
         # What other pages said about a card that no longer exists is not kept (REB-837);
         # the survivor reads its own links, and an undo reads the absorbed card's again.
         delete_sources(self.session, absorbed.id)
+        # One work profile per card: the newer submission stays, on the survivor (spec § 8).
+        keep_newest_work_profile(self.session, survivor.id, absorbed.id)
+        drop_cli_authorizations(self.session, a_user.id)
         self.session.flush()
         flagged = self.steps.needs_card(survivor)
 
