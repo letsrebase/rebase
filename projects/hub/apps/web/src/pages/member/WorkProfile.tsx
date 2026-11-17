@@ -15,7 +15,9 @@ const PRIVACY_URL = 'https://letsrebase.com/privacy'
 const COMMANDS = ['git clone https://github.com/letsrebase/work-profile', 'cd work-profile', 'claude'] as const
 
 function Command({ children }: { children: string }) {
-  return <code className="break-all border bg-muted px-1.5 py-0.5 font-mono text-sm">{children}</code>
+  // A short command stays whole; a long one (the clone URL) breaks where the line ends.
+  const wrap = children.length > 24 ? 'break-all' : 'whitespace-nowrap'
+  return <code className={`${wrap} border bg-muted px-1.5 py-0.5 font-mono text-sm`}>{children}</code>
 }
 
 /** The commands as the steps of a list, ruled like the rows of «La tua scheda». */

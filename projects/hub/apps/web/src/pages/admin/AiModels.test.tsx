@@ -46,6 +46,7 @@ const CONFIG = {
   sources: [
     { kind: 'github', enabled: false, updated_at: null, updated_by_name: null },
     { kind: 'links', enabled: false, updated_at: null, updated_by_name: null },
+    { kind: 'work_profile', enabled: false, updated_at: null, updated_by_name: null },
   ],
   prices: [],
   spend: { month: '2026-10', rows: [] },
@@ -213,6 +214,7 @@ describe('the Modelli AI page (REB-833)', () => {
           sources: [
             { kind: 'github', enabled: github, updated_at: null, updated_by_name: null },
             CONFIG.sources[1],
+            CONFIG.sources[2],
           ],
         }),
       '/api/hub/admin/ai/sources/github/enabled': () => {
@@ -223,10 +225,11 @@ describe('the Modelli AI page (REB-833)', () => {
     const gh = await screen.findByRole('switch', { name: 'GitHub' })
     expect(gh).toHaveAttribute('aria-checked', 'false')
     expect(screen.getByRole('switch', { name: 'Altri link' })).toHaveAttribute('aria-checked', 'false')
-    expect(screen.getAllByText('Spenta finché la privacy non è aggiornata')).toHaveLength(2)
+    expect(screen.getByRole('switch', { name: 'Profilo di lavoro' })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getAllByText('Spenta finché la privacy non è aggiornata')).toHaveLength(3)
     await userEvent.setup().click(gh)
     await waitFor(() => expect(screen.getByRole('switch', { name: 'GitHub' })).toHaveAttribute('aria-checked', 'true'))
-    expect(screen.getAllByText('Spenta finché la privacy non è aggiornata')).toHaveLength(1)
+    expect(screen.getAllByText('Spenta finché la privacy non è aggiornata')).toHaveLength(2)
     const call = spy.mock.calls.find(([url]) => String(url).endsWith('/sources/github/enabled'))!
     expect(call[1]?.method).toBe('PUT')
     expect(JSON.parse(call[1]?.body as string)).toEqual({ enabled: true })

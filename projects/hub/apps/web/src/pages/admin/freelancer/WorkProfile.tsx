@@ -93,11 +93,11 @@ function Lens({ lens, anchors }: { lens: Profile['lenses'][number]; anchors: Map
       )}
       <Prose text={lens.narrative} where={lens.where} anchors={anchors} />
       {lens.counts.length > 0 && (
-        <dl className="grid gap-x-6 gap-y-0.5 text-muted-foreground sm:grid-cols-[minmax(0,1fr)_auto]">
+        <dl className="space-y-0.5 text-muted-foreground">
           {lens.counts.map((count) => (
-            <div key={count.label} className="contents">
+            <div key={count.label} className="flex justify-between gap-4">
               <dt>{count.label}</dt>
-              <dd className="tabular-nums sm:text-right">{count.value}</dd>
+              <dd className="shrink-0 tabular-nums">{count.value}</dd>
             </div>
           ))}
         </dl>
@@ -112,12 +112,13 @@ function Trajectory({ trajectory, anchors }: { trajectory: NonNullable<Profile['
       <h4 className="font-medium">Come è cambiato</h4>
       <Prose text={trajectory.narrative} where={trajectory.where} anchors={anchors} />
       {trajectory.shifts.length > 0 && (
-        <dl className="grid gap-x-6 gap-y-0.5 text-muted-foreground sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+        <dl className="space-y-0.5 text-muted-foreground">
           {trajectory.shifts.map((shift) => (
-            <div key={shift.metric} className="contents">
+            <div key={shift.metric} className="flex justify-between gap-4">
               <dt>{shift.metric}</dt>
-              <dd className="tabular-nums sm:text-right">{shift.early}</dd>
-              <dd className="tabular-nums sm:text-right">→ {shift.late}</dd>
+              <dd className="shrink-0 tabular-nums">
+                {shift.early} → {shift.late}
+              </dd>
             </div>
           ))}
         </dl>

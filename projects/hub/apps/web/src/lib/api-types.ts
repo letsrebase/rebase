@@ -1072,9 +1072,9 @@ export interface paths {
         get?: never;
         /**
          * Set Source Enabled
-         * @description Turns one kind of source the card is written from (`github`, `links`) on or off.
-         *     Off deletes the text already read at once (`SourceService.set_enabled`); both are off
-         *     until the privacy notice covers reading what people linked.
+         * @description Turns one kind of source the card is written from (`github`, `links`, `work_profile`)
+         *     on or off. Off deletes the text already read at once (`SourceService.set_enabled`); all
+         *     are off until the privacy notice covers them.
          */
         put: operations["set_source_enabled_api_hub_admin_ai_sources__kind__enabled_put"];
         post?: never;
@@ -5368,15 +5368,15 @@ export interface components {
         };
         /**
          * SourceSwitchRead
-         * @description The switch of one kind of source the card is written from: `github` or `links`,
-         *     off until the privacy notice covers reading what people linked.
+         * @description The switch of one kind of source the card is written from: `github`, `links` or
+         *     `work_profile` (REB-1134), off until the privacy notice covers it.
          */
         SourceSwitchRead: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "github" | "links";
+            kind: "github" | "links" | "work_profile";
             /** Enabled */
             enabled: boolean;
             /** Updated At */
