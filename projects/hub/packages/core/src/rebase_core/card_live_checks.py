@@ -184,8 +184,8 @@ def card_flags(
     everything the person's data holds, as `cards-eval` does (the writer's own guard is wider and
     has already failed such a card, so this is a second reader, not a gate). The skills are read
     against every text the card was written from: the CV's, each readable source's (GitHub, the
-    links), the hub's facts and the position (`unsupported_skills`); the skills no text mentions
-    are one flag, naming them."""
+    links), the hub's facts, the approved work profile and the position (`unsupported_skills`);
+    the skills no text mentions are one flag, naming them."""
     found: list[CardFlag] = []
     # A backstop on the live path: a CV past `MAX_YEARS_CHARS` is not read for its dates, never
     # read in part (the years of a cut CV would be too few). Nothing is flagged for it.
@@ -217,6 +217,8 @@ def card_flags(
                 )
             )
     texts = [cv_text, facts.text(), job_title or ""]
+    if facts.work_profile:
+        texts.append(facts.work_profile)
     if sources is not None:
         texts.extend(item.text for item in sources.readable())
     missing = unsupported_skills(card, texts)

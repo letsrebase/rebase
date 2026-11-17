@@ -44,10 +44,14 @@ def hash_inputs(job_title: str | None, sources: SourceSet, facts: HubFacts) -> d
     position the person gave (the rate and the work mode are not read by the prompt, and
     are shown from the row), `hub` the hub's facts without what moves by itself, and each
     readable source its own (`SourceSet.hashes`). `hub` is absent when the hub has nothing
-    to say, so the first fact that appears is a change."""
+    to say, so the first fact that appears is a change. `work_profile` (REB-1134) is the text of
+    an approved, unexpired profile read while its switch is on: an approval, a replacement, a
+    deletion or the 12 months' end changes it, and so makes the card stale."""
     hashes = {"wizard": sha(job_title or ""), **sources.hashes()}
     if not facts.empty:
         hashes["hub"] = sha(facts.hash_material())
+    if facts.work_profile:
+        hashes["work_profile"] = sha(facts.work_profile)
     return hashes
 
 
