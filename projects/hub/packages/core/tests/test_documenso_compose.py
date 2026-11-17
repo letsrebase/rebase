@@ -107,7 +107,7 @@ def test_the_hub_compose_file_runs_the_sweep_on_a_loop_with_no_port() -> None:
     `running`, and no port, since nothing ever calls the sweep directly."""
     services = _compose().split("\nservices:", 1)[1]
     sweep = services.split("\n  sweep:", 1)[1].split("\n  cards:", 1)[0]
-    assert "while :; do sleep 600; rebase crm-sweep; done" in sweep
+    assert "while :; do sleep 600; rebase crm-sweep; rebase work-profile-sweep; done" in sweep
     assert "<<: *hardening" in sweep
     assert "ports:" not in sweep
 

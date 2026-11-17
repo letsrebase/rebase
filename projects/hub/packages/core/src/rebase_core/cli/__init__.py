@@ -1,8 +1,8 @@
 """`rebase`: the operator's commands (`rebase_core.cli:main`, the `rebase` script).
 
 One module per group of commands: `members` (tokens, roles, the welcome mail, duplicate
-talents), `cards`, `campaigns`, `crm` (the sweep that files company requests), `ai` (the model
-providers).
+talents), `cards`, `campaigns`, `crm` (the sweep that files company requests), `work_profiles`
+(the retention sweep), `ai` (the model providers).
 `main` knows only the names and the help of the commands, and imports a group's module when
 one of its commands is chosen, which then imports what its own work needs inside its
 handler (REB-892): `rebase campaigns-tick` does not load the model providers' libraries.
@@ -25,6 +25,10 @@ REGISTRY: dict[str, tuple[str, str]] = {
     "crm-sweep": (
         "crm",
         "File the company requests the CRM does not have yet",
+    ),
+    "work-profile-sweep": (
+        "work_profiles",
+        "Delete the work profiles past their 12 months and the spent CLI sign-ins",
     ),
     "campaigns-tick": (
         "campaigns",

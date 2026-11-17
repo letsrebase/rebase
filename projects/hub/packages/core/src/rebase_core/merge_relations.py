@@ -237,6 +237,15 @@ LEFT_IN_PLACE: dict[str, str] = {
         "only if the card's inputs are still those"
     ),
     "card_batches.started_by": "the admin who started the regeneration",
+    "work_profiles.freelancer_id": (
+        "one profile per card, so not a plain move: the merge keeps the newer submission of the "
+        "two on the survivor and deletes the other (`work_profiles.merge`)"
+    ),
+    "work_profiles.decided_by": "the admin who approved or rejected it",
+    "cli_authorizations.user_id": (
+        "a sign-in lives minutes: the absorbed person's are deleted by the merge "
+        "(`work_profiles.merge`)"
+    ),
 }
 
 

@@ -26,6 +26,7 @@ from rebase_core.models import (
     Campaign,
     CampaignOptout,
     CampaignRecipient,
+    CliAuthorization,
     Company,
     Freelancer,
     FreelancerCard,
@@ -43,6 +44,7 @@ from rebase_core.models import (
     User,
     UserContactPoint,
     UserSession,
+    WorkProfile,
 )
 from rebase_core.pigro_door import FreelancerDoor
 from rebase_core.users import UserService
@@ -928,3 +930,76 @@ def test_a_cv_upload_on_a_card_a_merge_hid_is_refused(clean: Session) -> None:
     _merges(clean).merge(a.id, b.id, admin.id)
     with pytest.raises(NotFound):
         MemberService(clean).replace_cv(b.id, PDF, "cv.pdf", "application/pdf")
+
+
+def _profile(session: Session, card: Freelancer, submitted: datetime, marker: str) -> None:
+    session.add(
+        WorkProfile(
+            freelancer_id=card.id,
+            payload={"marker": marker},
+            groundedness=90,
+            unsupported_anchors=[],
+            submitted_at=submitted,
+            expires_at=submitted + timedelta(days=365),
+        )
+    )
+    session.commit()
+
+
+def test_the_merge_keeps_the_newer_work_profile_on_the_survivor(clean: Session) -> None:
+    """Spec 2026-11-17 § 8: one profile per card, so the newer of the two stays, whichever
+    card held it, and the other is deleted."""
+    a, b, _, _, admin = _pair(clean)
+    _profile(clean, a, NOW - timedelta(days=10), "survivor, older")
+    _profile(clean, b, NOW - timedelta(days=1), "absorbed, newer")
+
+    _merges(clean).merge(a.id, b.id, admin.id)
+
+    clean.expire_all()
+    rows = clean.scalars(select(WorkProfile)).all()
+    assert [(r.freelancer_id, r.payload["marker"]) for r in rows] == [(a.id, "absorbed, newer")]
+
+
+def test_the_merge_keeps_the_survivors_work_profile_when_it_is_the_newer(clean: Session) -> None:
+    a, b, _, _, admin = _pair(clean)
+    _profile(clean, a, NOW - timedelta(days=1), "survivor, newer")
+    _profile(clean, b, NOW - timedelta(days=10), "absorbed, older")
+
+    _merges(clean).merge(a.id, b.id, admin.id)
+
+    clean.expire_all()
+    rows = clean.scalars(select(WorkProfile)).all()
+    assert [(r.freelancer_id, r.payload["marker"]) for r in rows] == [(a.id, "survivor, newer")]
+
+
+def test_the_absorbed_cards_only_work_profile_moves_to_the_survivor(clean: Session) -> None:
+    a, b, _, _, admin = _pair(clean)
+    _profile(clean, b, NOW, "only")
+
+    _merges(clean).merge(a.id, b.id, admin.id)
+
+    clean.expire_all()
+    assert [r.freelancer_id for r in clean.scalars(select(WorkProfile))] == [a.id]
+
+
+def test_the_absorbed_persons_cli_sign_ins_are_deleted_and_the_survivors_stay(
+    clean: Session,
+) -> None:
+    a, b, a_user, b_user, admin = _pair(clean)
+    for user, n in ((a_user, 1), (b_user, 2)):
+        clean.add(
+            CliAuthorization(
+                device_code_hash=f"{n}" * 64,
+                user_code=f"ABCD-EFG{n}",
+                scope="work_profile",
+                user_id=user.id,
+                state="approved",
+                expires_at=NOW + timedelta(minutes=10),
+            )
+        )
+    clean.commit()
+
+    _merges(clean).merge(a.id, b.id, admin.id)
+
+    clean.expire_all()
+    assert [r.user_id for r in clean.scalars(select(CliAuthorization))] == [a_user.id]

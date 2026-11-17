@@ -1,4 +1,4 @@
-import { Link, Outlet, useNavigate } from '@tanstack/react-router'
+import { Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { Menu } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { BrandMark } from '@rebase/ui/brand-mark'
@@ -9,6 +9,7 @@ import { Loader } from '@rebase/ui/loader'
 import { Sheet, SheetContent, SheetTrigger } from '@rebase/ui/sheet'
 import { useIdentify } from '@/lib/analytics'
 import { useMe } from '@/lib/me'
+import { rememberCliCode } from '@/lib/returnTo'
 
 /** The same `lg` line the CRM's `AppShell` draws its sidebar/overlay boundary at: below
  *  it the sidebar is not a column beside the content, it is a menu over it (REB-316). */
@@ -18,7 +19,7 @@ const DESKTOP = '(min-width: 1024px)'
  * The one guard and the one frame every signed-in route passes through (REB-279):
  * `AdminLayout.tsx`'s dark sidebar and `pages/member/Guard.tsx`'s `MemberGuard`
  * collapse into this one component, reading `useMe()`. Nothing renders while the
- * session is unknown, a signed-out visitor goes to `/login`, and the admin group of
+ * session is unknown, a signed-out visitor goes to `/login` (keeping the code of `/hub/cli`, REB-1133), and the admin group of
  * the sidebar shows only for `role === 'admin'`. `/admin/*`'s own access rule lives
  * one level further in, `AdminGuard`: a signed-in non-admin still belongs in this same
  * frame, just not in that section of it, which is what closes the old empty-frame bug
@@ -36,6 +37,7 @@ const DESKTOP = '(min-width: 1024px)'
 export function SignedInLayout() {
   const me = useMe()
   const navigate = useNavigate()
+  const location = useLocation()
   useIdentify(me.data, me.data?.role)
 
   const isDesktop = useMediaQuery(DESKTOP)
@@ -46,8 +48,12 @@ export function SignedInLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false)
 
   useEffect(() => {
-    if (!me.isPending && me.data === null) void navigate({ to: '/login', replace: true })
-  }, [me.isPending, me.data, navigate])
+    if (me.isPending || me.data !== null) return
+    // `/hub/cli` is opened from a terminal: keep its code so the magic link brings the visitor back.
+    const code = (location.search as { code?: unknown }).code
+    if (location.pathname === '/cli' && typeof code === 'string') rememberCliCode(code)
+    void navigate({ to: '/login', replace: true })
+  }, [me.isPending, me.data, navigate, location.pathname, location.search])
 
   if (me.isPending) {
     return (

@@ -291,7 +291,7 @@
             # the echo logo at the repository's own paths (`REPO = parents[7]`), which a
             # store venv does not have. The binary and a copy of the three files go into
             # this derivation, the files at `share/hub-api/brand`; `postBuild` then rewraps
-            # `bin/rebase` (the CLI: `crm-sweep`, `cards-refresh`, ...) and
+            # `bin/rebase` (the CLI: `crm-sweep`, `work-profile-sweep`, `cards-refresh`, ...) and
             # `bin/uvicorn` (both `rebase_api.main:app` and `rebase_mcp.http:app` run
             # from it, one venv for both) with `makeWrapper`, so every entry point that
             # can print a PDF finds `typst` and the brand on its own,
@@ -509,6 +509,12 @@
                       "journalctl -u rebase-hub-crm-sweep --no-pager -o cat"
                   )
                   assert "0 requests linked to the CRM" in out, out
+                  # The work profiles' retention sweep (REB-1124), the same way.
+                  machine.succeed("systemctl start rebase-hub-work-profile-sweep.service")
+                  out = machine.succeed(
+                      "journalctl -u rebase-hub-work-profile-sweep --no-pager -o cat"
+                  )
+                  assert "0 work profiles past their 12 months deleted" in out, out
                   # The campaigns tick (REB-523): its timer is active and fires its
                   # oneshot, and the timer does it alone, a minute after boot, with no
                   # `systemctl start` from here. The line is a full pass against the
@@ -1258,6 +1264,29 @@
                     };
                     systemd.timers.rebase-hub-crm-sweep = {
                       description = "rebase hub CRM sweep, every ten minutes";
+                      wantedBy = [ "timers.target" ];
+                      timerConfig = {
+                        OnBootSec = "10min";
+                        OnUnitActiveSec = "10min";
+                      };
+                    };
+                    # The retention sweep of the work profiles (REB-1124): the compose
+                    # stack's `sweep` loop runs `rebase work-profile-sweep` after
+                    # `rebase crm-sweep`; here it is a oneshot of its own on the same
+                    # ten-minute cadence. It deletes the profiles past their 12 months
+                    # and the CLI sign-ins a day after they expired or were spent.
+                    systemd.services.rebase-hub-work-profile-sweep = {
+                      description = "rebase hub work profile sweep";
+                      inherit unitConfig;
+                      after = [ "rebase-hub-api.service" ];
+                      wants = [ "rebase-hub-api.service" ];
+                      inherit environment;
+                      serviceConfig = sweepServiceConfig // {
+                        ExecStart = "${cfg.package}/bin/rebase work-profile-sweep";
+                      };
+                    };
+                    systemd.timers.rebase-hub-work-profile-sweep = {
+                      description = "rebase hub work profile sweep, every ten minutes";
                       wantedBy = [ "timers.target" ];
                       timerConfig = {
                         OnBootSec = "10min";

@@ -10,6 +10,7 @@ export const keys = {
   tokens: (q?: string) => (q === undefined ? (['tokens'] as const) : (['tokens', q] as const)),
   pigroSpaces: (q: string) => ['pigro-spaces', q] as const,
   guideStats: ['guide-stats'] as const,
+  cliAuthorization: (code: string) => ['cli-authorization', code] as const,
 
   freelancer: (id: string) => ['freelancer', id] as const,
   /** Every freelancer detail: what a merge changes at once. */

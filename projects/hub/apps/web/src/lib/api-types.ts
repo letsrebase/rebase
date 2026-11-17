@@ -2106,6 +2106,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub/cli/device": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start */
+        post: operations["start_api_hub_cli_device_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/cli/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Token
+         * @description Never cached: the 200 holds the access token.
+         */
+        post: operations["token_api_hub_cli_token_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/cli/authorizations/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read */
+        get: operations["read_api_hub_cli_authorizations__code__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/cli/authorizations/{code}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve */
+        post: operations["approve_api_hub_cli_authorizations__code__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/cli/authorizations/{code}/deny": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Deny */
+        post: operations["deny_api_hub_cli_authorizations__code__deny_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/work-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit */
+        post: operations["submit_api_hub_work_profiles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -2864,6 +2969,34 @@ export interface components {
             seniority_uncertain: boolean;
         };
         /**
+         * CliAuthorizationRead
+         * @description What `/hub/cli` shows of a code: the request, never a device name or an address (the CLI
+         *     sends none), and whether this person may say yes.
+         */
+        CliAuthorizationRead: {
+            /** User Code */
+            user_code: string;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "work_profile";
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "pending" | "approved" | "denied" | "spent" | "expired";
+            /** Can Authorize */
+            can_authorize: boolean;
+            /** Blocked Reason */
+            blocked_reason: string | null;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /**
          * CloudRequestCreate
          * @description What the cloud files, with no form: «Assumi team» on the builder's proposal
          *     (`proposal_id`) or «Richiedi» on one card (`freelancer_id`), exactly one of the two.
@@ -3418,6 +3551,41 @@ export interface components {
         CrmLinkBody: {
             /** Deal Id */
             deal_id?: string | null;
+        };
+        /**
+         * Detail
+         * @description An error of this route: one sentence.
+         */
+        Detail: {
+            /** Detail */
+            detail: string;
+        };
+        /** DeviceRequest */
+        DeviceRequest: {
+            /**
+             * Scope
+             * @default work_profile
+             * @constant
+             */
+            scope: "work_profile";
+        };
+        /**
+         * DeviceStart
+         * @description The answer of `POST /api/hub/cli/device`, RFC 8628's names.
+         */
+        DeviceStart: {
+            /** Device Code */
+            device_code: string;
+            /** User Code */
+            user_code: string;
+            /** Verification Uri */
+            verification_uri: string;
+            /** Verification Uri Complete */
+            verification_uri_complete: string;
+            /** Expires In */
+            expires_in: number;
+            /** Interval */
+            interval: number;
         };
         /** DuplicateListRead */
         DuplicateListRead: {
@@ -5895,6 +6063,38 @@ export interface components {
             /** Expires At */
             expires_at?: string | null;
         };
+        /**
+         * TokenGranted
+         * @description The 200 of `POST /api/hub/cli/token`: the access token, shown once.
+         */
+        TokenGranted: {
+            /** Access Token */
+            access_token: string;
+            /**
+             * Token Type
+             * @default Bearer
+             * @constant
+             */
+            token_type: "Bearer";
+            /** Expires In */
+            expires_in: number;
+        };
+        /**
+         * TokenRefused
+         * @description The 400 of `POST /api/hub/cli/token`: RFC 8628's `error`, whatever the status.
+         */
+        TokenRefused: {
+            /**
+             * Error
+             * @enum {string}
+             */
+            error: "authorization_pending" | "slow_down" | "access_denied" | "expired_token";
+        };
+        /** TokenRequest */
+        TokenRequest: {
+            /** Device Code */
+            device_code: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -5916,6 +6116,19 @@ export interface components {
         VettedChange: {
             /** Vetted */
             vetted: boolean;
+        };
+        /**
+         * WorkProfileAccepted
+         * @description The 201 of the intake: where the profile stands and where its owner can see it.
+         */
+        WorkProfileAccepted: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "draft" | "approved" | "rejected";
+            /** Review Url */
+            review_url: string;
         };
     };
     responses: never;
@@ -9652,6 +9865,247 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_api_hub_cli_device_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceStart"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    token_api_hub_cli_token_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenGranted"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenRefused"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_api_hub_cli_authorizations__code__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CliAuthorizationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_api_hub_cli_authorizations__code__approve_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "sec-fetch-site"?: string | null;
+            };
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CliAuthorizationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    deny_api_hub_cli_authorizations__code__deny_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "sec-fetch-site"?: string | null;
+            };
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CliAuthorizationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_api_hub_work_profiles_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+                "user-agent"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description candidate.json, at most 512 KB
+                     */
+                    profile: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkProfileAccepted"];
+                };
+            };
+            /** @description No live bearer: unknown, expired or spent */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Detail"];
+                };
+            };
+            /** @description The person has no live freelancer card */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Detail"];
+                };
+            };
+            /** @description The profile is over 512 KB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Detail"];
+                };
+            };
+            /** @description The profile is refused, with the reason */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Detail"];
                 };
             };
         };

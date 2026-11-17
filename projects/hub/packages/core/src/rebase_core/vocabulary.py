@@ -26,6 +26,8 @@ from rebase_core.models import (
     CAMPAIGN_SOURCES,
     CAMPAIGN_STATES,
     CARD_SENIORITIES,
+    CLI_AUTHORIZATION_STATES,
+    CLI_SCOPES,
     COMPANY_STATES,
     CONTACT_KINDS,
     CONTACT_LABELS,
@@ -48,6 +50,7 @@ from rebase_core.models import (
     TEAM_REQUEST_ORIGINS,
     TEAM_REQUEST_STATES,
     USER_ROLES,
+    WORK_PROFILE_STATES,
 )
 
 
@@ -95,3 +98,6 @@ CampaignDestination = Annotated[str, Field(json_schema_extra=enum_of(CAMPAIGN_DE
 RecipientKind = Annotated[str, Field(json_schema_extra=enum_of(RECIPIENT_KINDS))]
 ContactKind = Annotated[str, Field(json_schema_extra=enum_of(CONTACT_KINDS))]
 ContactLabel = Annotated[str, Field(json_schema_extra=enum_of(CONTACT_LABELS))]
+WorkProfileState = Annotated[str, Field(json_schema_extra=enum_of(WORK_PROFILE_STATES))]
+CliAuthorizationState = Annotated[str, Field(json_schema_extra=enum_of(CLI_AUTHORIZATION_STATES))]
+CliScope = Annotated[str, Field(json_schema_extra=enum_of(CLI_SCOPES))]
