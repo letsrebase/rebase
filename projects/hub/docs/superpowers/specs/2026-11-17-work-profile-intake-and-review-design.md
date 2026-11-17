@@ -1,6 +1,7 @@
 # Work profiles: receiving them in the hub and reviewing them before they count
 
-Status: draft, awaiting Lorenzo's approval. Card: REB-1122. Project: «Let freelancers show
+Status: approved by Lorenzo on 2026-11-17, with the four surfaces drawn in the artifact
+`work-profile-surfaces` and every call of § 12 as written. Card: REB-1122. Project: «Let freelancers show
 how they work with a reviewed work profile» (P-REB-91). Decision row:
 `docs/design/DECISIONS.md`, 2026-11-17 (REB-1121).
 
@@ -237,7 +238,7 @@ In the member area (`/hub/me`), a «Profilo di lavoro» section below «La tua s
 
 Deleting (`DELETE /api/hub/me/work-profile`) deletes the row at once and marks the card
 stale. It does not remove the vetted flag: that is the admins' judgement, and an admin
-removes it with «Togli la verifica» if they want to. Lorenzo should confirm this (§ 12).
+removes it with «Togli la verifica» if they want to. Lorenzo confirmed this on 2026-11-17.
 
 A mail on each decision, through `mail_layout.py`: approved (with the expiry date) and not
 approved (with the note). Its Italian copy is reviewed with the campaign's (REB-1131).
@@ -299,7 +300,7 @@ says is verified and that matches a login address (spec 2026-09-17, one hub one 
 what happens to a person with no card, and the two OAuth clients, which Lorenzo creates
 under letsrebase's accounts. `/hub/cli` works with whichever sign-in the hub has.
 
-## 12. Calls made in this design, for Lorenzo to check
+## 12. Calls made in this design, confirmed by Lorenzo on 2026-11-17
 
 - Deleting the profile, or its expiry, leaves the vetted flag in place (§ 7).
 - A rejection note is shown to the freelancer; an approval note is not.
