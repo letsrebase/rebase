@@ -325,6 +325,7 @@ export type PersonDifference = Schemas['PersonDifference']
 export type PersonDifferenceField = PersonDifference['field']
 export type CardConflict = Schemas['ConflictRead']
 export type CardProvenance = Schemas['CardProvenance']
+export type CardFlag = Schemas['CardFlagRead']
 
 // ---- the admin area -------------------------------------------------------------------
 

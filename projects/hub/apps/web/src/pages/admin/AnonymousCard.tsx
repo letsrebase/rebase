@@ -9,6 +9,7 @@ import {
   admin,
   ApiError,
   type CardConflict,
+  type CardFlag,
   type CardProvenance,
   type FreelancerCard,
   type Card,
@@ -168,6 +169,33 @@ function conflictSentence(conflict: CardConflict): string {
     return `Gli incarichi completati in hub fanno ${conflict.experience_years_hub} anni, la scheda ne dichiara ${conflict.experience_years_card} (date del CV)`
   }
   return `Anni scartati: ${conflict.experience_years_card}, venivano solo da fonti senza date professionali`
+}
+
+const FLAG_VERDICTS: Record<CardFlag['verdict'], string> = {
+  unsupported: 'non confermato dalle fonti',
+  contradicted: 'contraddetto dalle fonti',
+}
+
+/**
+ * The fields the card's sources do not support or contradict (REB-1128), found by the rules
+ * of `cards-eval` when the card was written and kept with it: a short list next to the card,
+ * nothing when there is none. The reasons are the API's sentences, never the model's.
+ */
+function Flags({ flags }: { flags: CardFlag[] }) {
+  if (flags.length === 0) return null
+  return (
+    <div className="space-y-1 rounded-md border border-destructive/40 p-3 text-sm">
+      <p className="font-medium">Da verificare</p>
+      <ul>
+        {flags.map((flag) => (
+          <li key={flag.field}>
+            <span className="font-medium">{FIELD_LABELS[flag.field] ?? flag.field}</span>: {FLAG_VERDICTS[flag.verdict]}.{' '}
+            {flag.reason}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }
 
 function Provenance({ provenance }: { provenance: CardProvenance }) {
@@ -333,6 +361,7 @@ export function AnonymousCard({ freelancerId, hasCv }: { freelancerId: string; h
     body = (
       <div className="space-y-4">
         <Written read={read.data} />
+        <Flags flags={read.data.flags} />
         {read.data.provenance && <Provenance provenance={read.data.provenance} />}
         <LevelEditor key={`${read.data.seniority_admin}-${read.data.experience_years_admin}`} freelancerId={freelancerId} read={read.data} />
       </div>

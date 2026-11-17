@@ -99,6 +99,7 @@ export function noCard(id: string) {
     model: null,
     generated_at: null,
     error: null,
+    flags: [],
   }
 }
 

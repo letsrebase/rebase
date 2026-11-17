@@ -270,7 +270,8 @@ export interface paths {
          *     read from the profile now, the CV and the model it came from, and the last failure,
          *     which may sit beside an older card; and what it was written from (`provenance`: the
          *     sources the model says it used, the prompt version, the conflicts), which no other
-         *     reader of a card sees (REB-839).
+         *     reader of a card sees (REB-839); and `flags`, the fields its sources do not support or
+         *     contradict by the rules of `cards-eval` (REB-1128).
          */
         get: operations["get_freelancer_card_api_hub_freelancers__freelancer_id__card_get"];
         put?: never;
@@ -2871,6 +2872,23 @@ export interface components {
             submitted_at: string | null;
         };
         /**
+         * CardFlagRead
+         * @description A field of a live card that the rules of `cards-eval` found its sources do not support
+         *     (`unsupported`) or contradict (`contradicted`), with a sentence of ours saying why
+         *     (`card_live_checks`, REB-1128). Derived from the CV: for the admin only, never in a log.
+         */
+        CardFlagRead: {
+            /** Field */
+            field: string;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "unsupported" | "contradicted";
+            /** Reason */
+            reason: string;
+        };
+        /**
          * CardPersonRead
          * @description What the CV (and the sources beside it) says of who the person is, read out by the
          *     same call that writes the anonymous card (REB-855): for the admin only, stored on the
@@ -3719,6 +3737,8 @@ export interface components {
             seniority_admin: ("junior" | "mid" | "senior" | "lead") | null;
             /** Experience Years Admin */
             experience_years_admin: number | null;
+            /** Flags */
+            flags: components["schemas"]["CardFlagRead"][];
             provenance: components["schemas"]["CardProvenance"] | null;
             person: components["schemas"]["CardPersonRead"] | null;
             /** Differences */
