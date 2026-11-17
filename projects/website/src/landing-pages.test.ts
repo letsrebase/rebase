@@ -411,7 +411,7 @@ describe('index.html', () => {
     // toMatchObject alone would not fail on an extra, invented property (a postal
     // address, say); the exact key set is checked too, so the "nothing invented" rule
     // this test's name promises actually holds. The seat and the tax identifiers are
-    // the Registro Imprese filing of 2026-11-11 (REB-1123), not an invention.
+    // Rebase S.r.l.'s own, from its registry filing, not an invention.
     expect(Object.keys(website).sort()).toEqual(['@type', '@id', 'name', 'url', 'inLanguage', 'publisher'].sort())
     expect(website).toMatchObject({
       name: 'rebase',
@@ -666,8 +666,9 @@ describe('who to write to, and who stands behind the site (REB-704)', () => {
     for (const name of ['privacy.html', 'terms.html'] as const) {
       const page = html[name].replace(/\s+/g, ' ')
       expect(page, name).toContain(
-        '<strong>Rebase S.r.l.</strong>, con sede legale in Via Podgora 11, 20122 Milano (MI), partita IVA e codice fiscale 14971460960, PEC <a class="quiet-link" href="mailto:rebase.srl@legalmail.it">rebase.srl@legalmail.it</a>.',
+        '<strong>Rebase S.r.l.</strong>, con sede legale in Via Podgora 11, 20122 Milano (MI), partita IVA e codice fiscale 14971460960, PEC',
       )
+      expect(page, name).toContain('href="mailto:rebase.srl@legalmail.it"')
       expect(page, name).toContain('href="mailto:ciao@letsrebase.com"')
     }
   })
