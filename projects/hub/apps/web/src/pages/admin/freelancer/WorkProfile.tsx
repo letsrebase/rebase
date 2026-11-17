@@ -257,18 +257,22 @@ const GUARD_RULES: Record<string, string> = {
 
 /** «Cosa leggono le aziende»: exactly the three fields the talent cloud shows once the profile is
  *  approved, each with the anonymity guards' hits (the field and the rule, never the text). */
-function CloudPanel({ profile }: { profile: WorkProfileAdmin }) {
-  const view = profile.profile
-  const hitsOf = (field: string) => profile.guard_hits.filter((hit) => hit.field === field)
-  const Hits = ({ field }: { field: string }) => (
+function Hits({ profile, field }: { profile: WorkProfileAdmin; field: string }) {
+  return (
     <>
-      {hitsOf(field).map((hit) => (
-        <p key={hit.rule} className="text-xs text-destructive">
-          Controllo di anonimato: {GUARD_RULES[hit.rule] ?? hit.rule}
-        </p>
-      ))}
+      {profile.guard_hits
+        .filter((hit) => hit.field === field)
+        .map((hit) => (
+          <p key={hit.rule} className="text-xs text-destructive">
+            Controllo di anonimato: {GUARD_RULES[hit.rule] ?? hit.rule}
+          </p>
+        ))}
     </>
   )
+}
+
+function CloudPanel({ profile }: { profile: WorkProfileAdmin }) {
+  const view = profile.profile
   const projects = view.projects.filter((project) => project.domain)
   return (
     <div aria-label="Cosa leggono le aziende" role="group" className="space-y-2 border p-3 text-sm">
@@ -276,7 +280,7 @@ function CloudPanel({ profile }: { profile: WorkProfileAdmin }) {
       <div>
         <p className="text-muted-foreground">Riassunto</p>
         <p>{view.summary ?? '—'}</p>
-        <Hits field="summary" />
+        <Hits profile={profile} field="summary" />
       </div>
       <div>
         <p className="text-muted-foreground">Ambiti di lavoro</p>
@@ -284,7 +288,7 @@ function CloudPanel({ profile }: { profile: WorkProfileAdmin }) {
         {view.domains.map((domain) => (
           <div key={domain.where}>
             <p>{domain.label}</p>
-            <Hits field={domain.where.replace('.note', '.label')} />
+            <Hits profile={profile} field={domain.where.replace('.note', '.label')} />
           </div>
         ))}
       </div>
@@ -294,7 +298,7 @@ function CloudPanel({ profile }: { profile: WorkProfileAdmin }) {
         {projects.map((project) => (
           <div key={project.id}>
             <p>{project.domain}</p>
-            <Hits field={`${project.id}.domain`} />
+            <Hits profile={profile} field={`${project.id}.domain`} />
           </div>
         ))}
       </div>
