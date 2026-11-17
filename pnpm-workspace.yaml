@@ -25,7 +25,7 @@ packages:
 catalog:
   '@axe-core/playwright': ^4.14.0
   '@eslint/js': ^10.0.1
-  '@playwright/test': 1.64.1
+  '@playwright/test': 1.65.0
   '@testing-library/jest-dom': ^7.0.1
   '@testing-library/react': ^16.3.3
   '@testing-library/user-event': ^14.6.8
@@ -41,7 +41,7 @@ catalog:
   openapi-typescript: 7.13.0
   typescript: '6.0'
   typescript-eslint: ^8.72.1
-  vite: ^8.3.5
+  vite: ^8.3.6
   vitest: ^5.1.0
 
 # esbuild compiles a native binary in its install script. Without this it is skipped,
