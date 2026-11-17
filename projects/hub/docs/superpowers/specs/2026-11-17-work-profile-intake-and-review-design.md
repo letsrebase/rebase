@@ -1,7 +1,7 @@
 # Work profiles: receiving them in the hub and reviewing them before they count
 
-Status: approved by Lorenzo on 2026-11-17, with the four surfaces drawn in the artifact
-`work-profile-surfaces` and every call of § 12 as written. Card: REB-1122. Project: «Let freelancers show
+Status: approved by Lorenzo on 2026-11-17, the four surfaces as § 10 and §§ 2, 4, 5 and 7
+describe them, and every call of § 12 as written. Card: REB-1122. Project: «Let freelancers show
 how they work with a reviewed work profile» (P-REB-91). Decision row:
 `docs/design/DECISIONS.md`, 2026-11-17 (REB-1121).
 
@@ -118,7 +118,7 @@ while pending), `scope`, `user_id` (null until decided), `state` (`pending`, `ap
 
 **Limits**, answered 429 with a sentence: 10 device starts an hour per client address
 (`X-Real-IP`, an IPv6 address as its /64, the MCP transport's rule); 5 wrong codes typed on
-`/hub/cli` per user in 10 minutes. With 20^8 codes alive for 10 minutes, guessing one is
+`/hub/cli` per user in 10 minutes. With 31^8 codes (the alphabet without `0 O 1 I L`) alive for 10 minutes, guessing one is
 not a practical attack; the per-user limit is for typos and scripts.
 
 ## 3. The intake
