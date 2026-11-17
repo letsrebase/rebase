@@ -26,6 +26,7 @@ from rebase_api.deps import (
 from rebase_api.main import create_app
 from rebase_api.ratelimit import _limiter as _public_limiter
 from rebase_api.ratelimit import reset_rate_limit
+from rebase_api.routers.cli_auth import reset_cli_limits
 from rebase_core.config import Settings, get_settings
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.llm import RecordingCall
@@ -72,6 +73,7 @@ def fresh_process_state(request: pytest.FixtureRequest, monkeypatch: pytest.Monk
     and a test of a 429 asks for `strict_rate_limit`; the others get a roomy limit, so a
     test that signs in four times beside a wizard's request is not about the speed bump."""
     reset_rate_limit()
+    reset_cli_limits()
     reset_proposal_slots()
     if "strict_rate_limit" not in request.fixturenames:
         monkeypatch.setattr(_public_limiter, "limit", ROOMY_LIMIT)

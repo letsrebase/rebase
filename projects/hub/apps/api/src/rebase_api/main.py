@@ -16,6 +16,7 @@ from rebase_api.routers import (
     admin_team,
     ai,
     campaigns,
+    cli_auth,
     cloud,
     companies,
     engagement_handoff,
@@ -28,11 +29,14 @@ from rebase_api.routers import (
     signups,
     team,
     tokens,
+    work_profiles,
 )
 from rebase_core import analytics
 from rebase_core.contracts.fields import ContractFailed
 from rebase_core.errors import (
     AnonymousCvFailed,
+    CliNotAllowed,
+    CliTokenInvalid,
     CvPrintFailed,
     DomainError,
     LlmUnavailable,
@@ -40,6 +44,7 @@ from rebase_core.errors import (
     TeamBuilderBusy,
     TeamBuilderOff,
     ValidationFailed,
+    WorkProfileRefused,
 )
 
 _log = logging.getLogger(__name__)
@@ -57,8 +62,8 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
     """A domain error is a sentence and a status, never a stack trace. `NotFound` is a
     404, `ValidationFailed` a 422 in FastAPI's own shape so a form can point at the
     field, `LlmUnavailable` a 502, `ContractFailed` a 503, `AnonymousCvFailed` a 422 with its
-    sentence, `CvPrintFailed` a 503, `TeamBuilderOff` a 503, `TeamBuilderBusy` a 503 with
-    `Retry-After`, anything else a 409."""
+    sentence, the work-profile intake's errors a 422, 401 and 403, `CvPrintFailed` a 503,
+    `TeamBuilderOff` a 503, `TeamBuilderBusy` a 503 with `Retry-After`, anything else a 409."""
     if not isinstance(exc, DomainError):
         raise exc  # registered for this type only, so never reached
     if isinstance(exc, NotFound):
@@ -85,6 +90,15 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
         # person): the request was fine, the CV on file is what cannot be done. One
         # sentence of ours, in the `detail` a page shows as it stands.
         return JSONResponse({"detail": exc.message}, status_code=422)
+    if isinstance(exc, WorkProfileRefused):
+        # A profile the intake will not store (REB-1124): the sentence the CLI prints.
+        return JSONResponse({"detail": exc.message}, status_code=422)
+    if isinstance(exc, CliTokenInvalid):
+        return JSONResponse(
+            {"detail": exc.message}, status_code=401, headers={"WWW-Authenticate": "Bearer"}
+        )
+    if isinstance(exc, CliNotAllowed):
+        return JSONResponse({"detail": exc.message}, status_code=403)
     if isinstance(exc, CvPrintFailed):
         # The PDF could not be typeset: the server's failure, as a contract's is. The
         # sentence only; Typst's words went to the log (`anonymous_cv.render`).
@@ -142,6 +156,8 @@ def create_app() -> FastAPI:
     app.include_router(team.router)
     app.include_router(admin_team.router)
     app.include_router(cloud.router)
+    app.include_router(cli_auth.router)
+    app.include_router(work_profiles.router)
 
     @app.get("/health")
     def health(session: SessionDep) -> dict[str, str]:
