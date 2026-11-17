@@ -69,7 +69,7 @@ describe.each(PAGES)('%s', (name) => {
       // An href the reader clicks -- the repository, the hosted signup, or OpenAI's
       // own privacy policy, which the cookie section has to point at -- is fine; a
       // subresource is not. `humancraft.tech` left this list with REB-704 (2026-10-20):
-      // the policy pages still name Humancraft di Ivan Sala as titolare, as the law asks,
+      // the policy pages name Rebase S.r.l. as titolare, as the law asks,
       // but no page links its site any more.
       // `www.linkedin.com` since ORB-151: the four voices' avatars link to their public
       // profiles. An href, never a src: the photos themselves are served from here.
@@ -410,7 +410,8 @@ describe('index.html', () => {
     const organization = data['@graph'].find((node: { '@type': string }) => node['@type'] === 'Organization')
     // toMatchObject alone would not fail on an extra, invented property (a postal
     // address, say); the exact key set is checked too, so the "nothing invented" rule
-    // this test's name promises actually holds.
+    // this test's name promises actually holds. The seat and the tax identifiers are
+    // Rebase S.r.l.'s own, from its registry filing, not an invention.
     expect(Object.keys(website).sort()).toEqual(['@type', '@id', 'name', 'url', 'inLanguage', 'publisher'].sort())
     expect(website).toMatchObject({
       name: 'rebase',
@@ -418,13 +419,22 @@ describe('index.html', () => {
       publisher: { '@id': organization['@id'] },
     })
     expect(Object.keys(organization).sort()).toEqual(
-      ['@type', '@id', 'name', 'legalName', 'url', 'logo', 'description', 'vatID', 'email', 'sameAs'].sort(),
+      ['@type', '@id', 'name', 'legalName', 'url', 'logo', 'description', 'vatID', 'taxID', 'address', 'email', 'sameAs'].sort(),
     )
     expect(organization).toMatchObject({
       name: 'rebase',
-      legalName: 'Humancraft di Ivan Sala',
+      legalName: 'Rebase S.r.l.',
       url: 'https://letsrebase.com/',
-      vatID: '14518240966',
+      vatID: '14971460960',
+      taxID: '14971460960',
+      address: {
+        '@type': 'PostalAddress',
+        streetAddress: 'Via Podgora 11',
+        postalCode: '20122',
+        addressLocality: 'Milano',
+        addressRegion: 'MI',
+        addressCountry: 'IT',
+      },
       email: 'ciao@letsrebase.com',
       sameAs: ['https://github.com/letsrebase'],
     })
@@ -439,9 +449,9 @@ describe('index.html', () => {
 
   it('signs its footer with the site alone, never with a fixture', () => {
     // ORB-116 put the studio behind the site in this footer; REB-704 (2026-10-20) took
-    // it off: the legal entity is named where the law needs it, in privacy.html and
-    // terms.html, and nowhere else. A fixture host on a public page still fails here
-    // and in links.test.ts.
+    // it off, and since REB-1123 the footer carries the company line of the srl, which
+    // is not a studio. A fixture host on a public page still fails here and in
+    // links.test.ts.
     const footer = page.match(/<footer[\s\S]*?<\/footer>/)?.[0] ?? ''
     expect(footer).not.toMatch(/humancraft/i)
     expect(page).not.toMatch(/Studio Rossi|example\.com/)
@@ -652,10 +662,35 @@ describe('pigrocrm.html structured data (REB-701)', () => {
 })
 
 describe('who to write to, and who stands behind the site (REB-704)', () => {
-  it('names the legal entity and its VAT number on the two policy pages, with ciao@ as the address', () => {
+  it('names the legal entity, its seat and its tax identifiers on the two policy pages, with ciao@ as the address', () => {
     for (const name of ['privacy.html', 'terms.html'] as const) {
-      expect(html[name], name).toMatch(/<strong>Humancraft di Ivan Sala<\/strong>, partita IVA\s+14518240966\./)
-      expect(html[name], name).toContain('href="mailto:ciao@letsrebase.com"')
+      const page = html[name].replace(/\s+/g, ' ')
+      expect(page, name).toContain(
+        '<strong>Rebase S.r.l.</strong>, con sede legale in Via Podgora 11, 20122 Milano (MI), partita IVA e codice fiscale 14971460960, PEC',
+      )
+      expect(page, name).toContain('href="mailto:rebase.srl@legalmail.it"')
+      expect(page, name).toContain('href="mailto:ciao@letsrebase.com"')
+    }
+  })
+
+  it('names Rebase S.r.l. in the meta descriptions and the liability clause, and no one else', () => {
+    expect(meta(html['privacy.html'], 'og:description')).toMatch(/^Titolare Rebase S\.r\.l\. /)
+    expect(meta(html['terms.html'], 'description')).toContain('A quali condizioni Rebase S.r.l. offre')
+    expect(html['terms.html']).toContain('Rebase S.r.l. non risponde di perdite di dati')
+    for (const name of [...PAGES, 'company.html', 'pitch.html'] as const) {
+      const page = name === 'company.html' || name === 'pitch.html' ? readFileSync(join(__dirname, name), 'utf-8') : html[name]
+      expect(page, name).not.toMatch(/humancraft|14518240\d{3}/i)
+    }
+  })
+
+  it('shows the company line of the srl in the footer of every page, the two decks on their closing slide', () => {
+    const line =
+      'Rebase S.r.l. · Via Podgora 11, 20122 Milano · P.IVA e C.F. 14971460960 · REA MI-2819107 · Capitale sociale 10.000 € (versato 2.500 €)'
+    for (const name of ['index.html', 'pigrocrm.html', 'privacy.html', 'terms.html', 'company.html', 'pitch.html'] as const) {
+      const page = readFileSync(join(__dirname, name), 'utf-8')
+      const footers = [...page.matchAll(/<footer\b[\s\S]*?<\/footer>/g)].map((m) => m[0])
+      expect(footers.length, name).toBeGreaterThan(0)
+      expect(footers.at(-1), name).toContain(line)
     }
   })
 
