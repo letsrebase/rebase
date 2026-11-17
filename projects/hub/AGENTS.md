@@ -558,6 +558,53 @@ gone) files the company requests still waiting for the CRM, and nothing else. Th
 service `sweep` runs it every ten minutes on production and the preview alike; read it with
 `docker logs rebase-sweep-1` or `docker logs rebase-preview-sweep-1`.
 
+## Work profiles and the CLI's sign-in (REB-1124, REB-1133)
+
+Design record: `docs/superpowers/specs/2026-11-17-work-profile-intake-and-review-design.md`. A
+freelancer runs `letsrebase/work-profile` (our MIT fork of Play New's `apply-new`), approves a
+sign-in in the browser and the CLI sends a redacted work profile, which waits as a `draft` for an
+admin. Nothing counts before a person approves it.
+
+**Where the code is.** Tables `cli_authorizations` and `work_profiles` (`models/work_profiles.py`,
+migration 0054; neither is in `WAREHOUSE_TABLES`). The sign-in is `cli_auth.py`
+(`CliAuthService`), the intake `work_profiles/intake.py` (`WorkProfileService`), its shape and checks
+`work_profiles/schemas.py` and `structure.py`, the recheck `work_profiles/groundedness.py`, the
+retention `work_profiles/sweep.py`. API: `routers/cli_auth.py` (`/api/hub/cli/...`) and
+`routers/work_profiles.py` (`POST /api/hub/work-profiles`); page `/hub/cli`
+(`apps/web/src/pages/member/Cli.tsx`).
+
+**The token rules.** The device code and the access token are stored as their sha256 only. The
+token is minted by the first poll after the approval, which is the only moment the raw value
+exists, and is handed out once; it lives 900 seconds (`expires_at` is the code's deadline, 600
+seconds, until then and the token's after), can send one profile and is spent in the same
+transaction that stores it. A refused profile leaves it unspent. `poll_interval` grows by 5 seconds
+at each `slow_down`. Only a user with a live freelancer card may approve the `work_profile` scope.
+`/token` answers RFC 8628's errors as a 400 with `{"error": ...}`, the shape the fork's CLI reads.
+Limits (per process, like the other limiters): 10 starts an hour per `X-Real-IP` (an IPv6 address as
+its /64), 5 wrong codes per person in 10 minutes. A signed-out visitor of `/hub/cli` is sent to the
+login, which keeps the code in `localStorage` (`lib/returnTo.ts`, 30 minutes, only a code) for
+`Verify` to bring them back to.
+
+**The intake runs in the order of the spec**: token (401), schema (`CandidateProfile`, unknown
+fields kept), what must not be there (a `repoLabel` anywhere or a `file` artifact: 422), structure,
+groundedness recomputed (refused under 60, or when too little prose can be checked). `contact` is
+dropped; one row per freelancer, replaced on resubmission and back to `draft`; any multipart part
+but `profile` is a 422 with «gli allegati non sono accettati: indica un link»; 512 KB cap. The tool's
+version is the payload's `toolVersion` or the `User-Agent` token `work-profile/<version>`.
+
+**The groundedness port.** `groundedness.py` is the fork's `src/groundedness.mjs` line for line
+(JavaScript's rounding included), and `tests/test_work_profile_groundedness.py` carries upstream's
+own test vectors plus the fork's sample profile (`tests/fixtures/work_profile_candidate.sample.json`,
+the score the Node code computes for it: 89, 25 of 28). A change upstream that moves a score fails
+there when the fork merges it: port it to Python, and the vector with it. The lexicon is vendored
+verbatim (`tech-lexicon.json`; provenance and the MIT notice in `VENDORED.txt` and
+`LICENSE-apply-new`). To refresh it, copy `share/tech-lexicon.json` from the fork (it is generated
+there by `npm run lexicon`), update the commit in `VENDORED.txt` and run the groundedness tests.
+
+**Retention.** `rebase work-profile-sweep` deletes profiles past their 12 months and
+authorizations a day after they expired or were spent. It runs in the compose `sweep` loop after
+`rebase crm-sweep`, and in the NixOS module as the timer `rebase-hub-work-profile-sweep`.
+
 ## Campaigns
 
 Since P-REB-41 «Invia una campagna» the `campaigns` service in `docker-compose.yml` runs
