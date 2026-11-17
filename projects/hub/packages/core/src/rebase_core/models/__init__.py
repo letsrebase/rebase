@@ -142,6 +142,16 @@ from rebase_core.models.team import (
     TeamRequest,
     TeamRequestTalent,
 )
+from rebase_core.models.work_profiles import (
+    CLI_AUTHORIZATION_STATES,
+    CLI_HASH_LENGTH,
+    CLI_SCOPES,
+    TOOL_VERSION_MAX_LENGTH,
+    USER_CODE_LENGTH,
+    WORK_PROFILE_STATES,
+    CliAuthorization,
+    WorkProfile,
+)
 
 __all__ = [
     "RATE_DIGITS",
@@ -185,6 +195,10 @@ __all__ = [
     "CARD_EVAL_LABEL_MAX_LENGTH",
     "CARD_MODEL_MAX_LENGTH",
     "CARD_SENIORITIES",
+    "CLI_AUTHORIZATION_STATES",
+    "CLI_HASH_LENGTH",
+    "CLI_SCOPES",
+    "CliAuthorization",
     "COMPANY_STATES",
     "FILLED_BY",
     "CONTRACT_KINDS",
@@ -257,7 +271,11 @@ __all__ = [
     "TeamProposal",
     "TeamRequest",
     "TeamRequestTalent",
+    "TOOL_VERSION_MAX_LENGTH",
+    "USER_CODE_LENGTH",
     "USER_ROLES",
+    "WORK_PROFILE_STATES",
+    "WorkProfile",
     "UTM_COLUMNS",
     "UTM_MAX_LENGTH",
     "User",
