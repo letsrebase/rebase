@@ -10,6 +10,7 @@ from uuid import UUID
 
 from rebase_core.card_draft import Conflict
 from rebase_core.card_guard import KnownIdentifiers
+from rebase_core.card_live_checks import CardFlag
 from rebase_core.hub_facts import HubFacts
 from rebase_core.llm import LlmRequest
 from rebase_core.sources import SourceSet
@@ -71,6 +72,8 @@ class Composed:
     `sources`, `conflicts` and `input_hashes` are what the card row stores beside the card
     (REB-839): the sources the model says supported each field, checked; the
     disagreements the code found; and the hash of every input the prompt was built from.
+    `flags` (REB-1128) are the fields the rules of `cards-eval` found the sources do not
+    support or contradict, kept on the row with the conflicts.
     `person` (REB-855) is the named card the same answer held: kept with the card, and also
     when the guard refused the card, since the contacts are not the card's. The employers
     the model reported are in it, as `companies`, and nowhere else."""
@@ -84,6 +87,7 @@ class Composed:
     thinking_tokens: int
     sources: dict[str, list[str]] = field(default_factory=dict)
     conflicts: list[Conflict] = field(default_factory=list)
+    flags: list[CardFlag] = field(default_factory=list)
     input_hashes: dict[str, str] = field(default_factory=dict)
     person: CardPersonRead | None = None
 
@@ -93,7 +97,8 @@ class Prepared:
     """What `CardWriter.prepare` built for one person before any model is asked: the
     `request` (the prompt, with the answer shape), what `known` could name them, the
     `sources` and `facts` it read, the hash of every input (`hashes`) and of the CV
-    (`cv_sha256`). A Message Batch keeps the two hashes beside the request, so its answer is
+    (`cv_sha256`), and the CV's `cv_text` and the `job_title` the rules read the card against
+    (kept in memory only). A Message Batch keeps the two hashes beside the request, so its answer is
     applied only to a card whose inputs are still these."""
 
     request: LlmRequest
@@ -102,6 +107,8 @@ class Prepared:
     facts: HubFacts
     hashes: dict[str, str]
     cv_sha256: str
+    cv_text: str
+    job_title: str | None
 
 
 class StaleCard(NamedTuple):

@@ -167,6 +167,14 @@ async def test_freelancer_card_tools_read_write_and_off_is_the_sentence(
             await client.call_tool("get_freelancer_card", {"freelancer_id": freelancer_id})
         )
         assert read_back["card"] == written["card"]
+        # REB-1128: this CV writes its years in words and dates nothing, so the live checks
+        # find the card's nine years unsupported, and the tool carries the list.
+        assert [(flag["field"], flag["verdict"]) for flag in read_back["flags"]] == [
+            ("experience_years", "unsupported"),
+            ("seniority", "unsupported"),
+            ("skills", "unsupported"),
+        ]
+        assert empty["flags"] == []
         assert (written["card"]["seniority"], written["card"]["experience_years"]) == ("senior", 9)
         assert (written["seniority_admin"], written["experience_years_admin"]) == (None, None)
 

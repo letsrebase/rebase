@@ -31,6 +31,7 @@ const WRITTEN = {
   model: 'claude-opus-5',
   generated_at: '2026-09-25T10:00:00Z',
   error: null,
+  flags: [],
 }
 
 const NONE = {
@@ -42,6 +43,7 @@ const NONE = {
   model: null,
   generated_at: null,
   error: null,
+  flags: [],
 }
 
 /** A CV on file, unless the test says otherwise. */
@@ -361,6 +363,41 @@ describe('«Scheda anonima» on the talent page (REB-514, spec § 2.1, § 5.1)',
     expect(within(card).getByText('Scheda scritta prima della registrazione delle fonti')).toBeInTheDocument()
     expect(within(card).getByText(/Prompt v1/)).toBeInTheDocument()
     expect(within(card).getByText('Il CV è cambiato: la scheda si rigenera da sola')).toBeInTheDocument()
+  })
+})
+
+describe('the fields the sources do not support (REB-1128)', () => {
+  it('lists each flagged field with its verdict and reason, next to the card', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, {
+        ...WRITTEN,
+        flags: [
+          {
+            field: 'experience_years',
+            verdict: 'contradicted',
+            reason: 'La scheda dichiara 2 anni, le date del CV ne danno da 9 a 11',
+          },
+          { field: 'seniority', verdict: 'unsupported', reason: 'Segue gli anni, che le fonti non confermano' },
+        ],
+      }),
+    )
+    mount()
+    await screen.findByText('Backend developer')
+    const card = section()
+    expect(within(card).getByText('Da verificare')).toBeInTheDocument()
+    const box = within(card).getByText('Da verificare').parentElement as HTMLElement
+    const flagged = within(box).getAllByRole('listitem')
+    expect(flagged.map((item) => item.textContent)).toEqual([
+      'Esperienza: contraddetto dalle fonti. La scheda dichiara 2 anni, le date del CV ne danno da 9 a 11',
+      'Seniority: non confermato dalle fonti. Segue gli anni, che le fonti non confermano',
+    ])
+  })
+
+  it('shows nothing when no field is flagged', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, WRITTEN))
+    mount()
+    await screen.findByText('Backend developer')
+    expect(within(section()).queryByText('Da verificare')).not.toBeInTheDocument()
   })
 })
 

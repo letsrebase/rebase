@@ -24,6 +24,9 @@ from rebase_core.models.sessions import TOKEN_HASH_LENGTH
 # ---- the team builder and the talent cloud (REB-509, design 2026-09-25) ----------------
 
 CARD_SENIORITIES = ("junior", "mid", "senior", "lead")
+# What a live check (`card_live_checks`, REB-1128) says of a field of a card: its sources do
+# not say it, or say otherwise. Kept in the `conflicts` JSONB list as the entry's `kind`.
+CARD_FLAG_VERDICTS = ("unsupported", "contradicted")
 TEAM_REQUEST_STATES = ("new", "contacted", "closed")
 TEAM_PROPOSAL_ORIGINS = ("public", "cloud", "admin")
 # The refusals an attempt row keeps in `error` (0028): the domain codes of
@@ -68,7 +71,10 @@ class FreelancerCard(Base, TimestampMixin):
     # before: the prompt version and provider, the model's claim of which sources
     # supported each field (`sources`, checked by code, never public), the hash of every
     # source it read (`source_hashes`: `github`, `link:<n>`), the conflicts the code found
-    # between the CV and another source, and the thinking tokens the call spent.
+    # between the CV and another source, and the thinking tokens the call spent. The same
+    # `conflicts` list also holds the flags of the live checks (REB-1128): entries with
+    # `kind` `unsupported` or `contradicted`, a `field` and a `reason`
+    # (`card_live_checks.split_stored` tells them apart).
     prompt_version: Mapped[int | None] = mapped_column(Integer, default=None)
     provider: Mapped[str | None] = mapped_column(String(20), default=None)
     sources: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)

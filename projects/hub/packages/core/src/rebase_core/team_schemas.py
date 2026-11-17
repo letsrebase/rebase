@@ -43,6 +43,7 @@ from rebase_core.schema_common import (
 )
 from rebase_core.validation import SafeStr
 from rebase_core.vocabulary import (
+    CardFlagVerdict,
     RemoteOption,
     Seniority,
     TalentAnswer,
@@ -56,6 +57,7 @@ __all__ = [
     "CARD_SENIORITIES",
     "Band",
     "Card",
+    "CardFlagRead",
     "CardRead",
     "CardsRefreshed",
     "CloudRequestCreate",
@@ -131,6 +133,16 @@ class CardRead(Card):
     seniority_uncertain: bool = False
 
 
+class CardFlagRead(ResponseModel):
+    """A field of a live card that the rules of `cards-eval` found its sources do not support
+    (`unsupported`) or contradict (`contradicted`), with a sentence of ours saying why
+    (`card_live_checks`, REB-1128). Derived from the CV: for the admin only, never in a log."""
+
+    field: str
+    verdict: CardFlagVerdict
+    reason: str
+
+
 class FreelancerCardRead(ResponseModel):
     """A freelancer's anonymous card as the admin reads it (spec § 5.1): the last card
     written, the CV it came from, the model and when, and the last failure, which may
@@ -142,7 +154,9 @@ class FreelancerCardRead(ResponseModel):
     stay `None` until a CV produces a card; `error` is set or not on its own. `card` is
     the effective one (`CardRead`); `seniority_admin` and `experience_years_admin` are the admin's
     own values, `None` while nobody corrected them (REB-799), so the page can tell a
-    correction from Claude's reading."""
+    correction from Claude's reading. `flags` are the fields the card's sources do not
+    support or contradict by the rules of `cards-eval` (REB-1128), `[]` for a card with none
+    and for one written before they were kept."""
 
     freelancer_id: UUID
     card: CardRead | None
@@ -154,6 +168,7 @@ class FreelancerCardRead(ResponseModel):
     error: str | None
     seniority_admin: Seniority | None = None
     experience_years_admin: int | None = None
+    flags: list[CardFlagRead] = Field(default_factory=list)
 
 
 class SourceProvenance(ResponseModel):
