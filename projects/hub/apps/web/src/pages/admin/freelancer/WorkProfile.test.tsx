@@ -18,6 +18,7 @@ const PROFILE = {
     { where: 'p1.did', anchor: 'Kafka', kind: 'tech' },
     { where: 'p9.did', anchor: 'Redis', kind: 'tech' },
   ],
+  guard_hits: [],
   decided_at: null,
   decided_by_name: null,
   decision_note: null,
@@ -97,7 +98,7 @@ describe('«Profilo di lavoro» on the talent page (REB-1126)', () => {
     expect(within(section).getByText('Da rivedere')).toBeInTheDocument()
     expect(within(section).getByText('1.0.0')).toBeInTheDocument()
     expect(within(section).getByText('89%')).toBeInTheDocument()
-    const summary = within(section).getByText('Lavora con l’AI in modo orchestrato.').parentElement as HTMLElement
+    const summary = within(section).getAllByText('Lavora con l’AI in modo orchestrato.').at(-1)!.parentElement as HTMLElement
     expect(within(summary).getByText(/«12 commits» \(numero\)/)).toBeInTheDocument()
     const project = within(section).getByText('Revisione di sicurezza.').parentElement as HTMLElement
     expect(within(project).getByText(/«Kafka» \(tecnologia\)/)).toBeInTheDocument()
@@ -122,7 +123,7 @@ describe('«Profilo di lavoro» on the talent page (REB-1126)', () => {
     await userEvent.click(within(section).getByRole('button', { name: 'Approva' }))
     expect(await within(section).findByText('Approvato')).toBeInTheDocument()
     const call = spy.mock.calls.find(([url]) => String(url).endsWith('/work-profile/approve'))
-    expect(JSON.parse(call?.[1]?.body as string)).toEqual({ note: 'solido' })
+    expect(JSON.parse(call?.[1]?.body as string)).toEqual({ note: 'solido', submitted_at: PROFILE.submitted_at, override: false })
     expect(within(section).queryByRole('button', { name: 'Approva' })).toBeNull()
   })
 
@@ -141,7 +142,19 @@ describe('«Profilo di lavoro» on the talent page (REB-1126)', () => {
     await userEvent.click(reject)
     expect(await within(section).findByText('Rifiutato')).toBeInTheDocument()
     const call = spy.mock.calls.find(([url]) => String(url).endsWith('/work-profile/reject'))
-    expect(JSON.parse(call?.[1]?.body as string)).toEqual({ note: 'Manca un link.' })
+    expect(JSON.parse(call?.[1]?.body as string)).toEqual({ note: 'Manca un link.', submitted_at: PROFILE.submitted_at })
+  })
+
+  it('lists the guard hits in «Cosa leggono le aziende» and holds «Approva» until an override has a note', async () => {
+    open({ ...PROFILE, guard_hits: [{ field: 'summary', rule: 'name_account_site_or_client' }] })
+    const section = await screen.findByRole('region', { name: 'Profilo di lavoro' })
+    const panel = within(section).getByRole('group', { name: 'Cosa leggono le aziende' })
+    expect(within(panel).getByText(/Controllo di anonimato: il nome, un account/)).toBeInTheDocument()
+    const approve = within(section).getByRole('button', { name: 'Approva' })
+    expect(approve).toBeDisabled()
+    await userEvent.click(within(section).getByRole('checkbox'))
+    await userEvent.type(within(section).getByLabelText('Nota'), 'Il cliente è pubblico.')
+    expect(approve).toBeEnabled()
   })
 
   it('shows an expired profile as expired and offers no decision', async () => {

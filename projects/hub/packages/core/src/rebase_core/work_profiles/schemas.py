@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
 from rebase_core.schema_common import ResponseModel, clean_multiline
 from rebase_core.vocabulary import WorkProfileState
@@ -106,6 +106,18 @@ class WorkProfileApproval(BaseModel):
     note: Annotated[
         str | None, Field(max_length=DECISION_NOTE_MAX_LENGTH), AfterValidator(_optional_note)
     ] = None
+    # Approve although the anonymity guards stand (REB-1127): the note is then required and is
+    # written into the audit entry.
+    override: bool = False
+    # The version the admin read (`WorkProfileAdminRead.submitted_at`): a profile sent again
+    # since is another profile, and the decision is refused.
+    submitted_at: datetime
+
+    @model_validator(mode="after")
+    def _override_needs_a_note(self) -> "WorkProfileApproval":
+        if self.override and not self.note:
+            raise ValueError("per approvare nonostante le segnalazioni serve una nota")
+        return self
 
 
 class WorkProfileRejection(BaseModel):
@@ -114,6 +126,7 @@ class WorkProfileRejection(BaseModel):
     note: Annotated[
         str, Field(min_length=1, max_length=DECISION_NOTE_MAX_LENGTH), AfterValidator(_clean_note)
     ]
+    submitted_at: datetime
 
 
 class WorkProfileAnchor(ResponseModel):
@@ -123,6 +136,13 @@ class WorkProfileAnchor(ResponseModel):
     where: str
     anchor: str
     kind: str
+
+
+class WorkProfileGuardHit(ResponseModel):
+    """A field a company reads that an anonymity guard stopped, and the rule: never the text."""
+
+    field: str
+    rule: str
 
 
 class WorkProfileAdminRead(ResponseModel):
@@ -142,4 +162,5 @@ class WorkProfileAdminRead(ResponseModel):
     decided_at: datetime | None
     decided_by_name: str | None
     decision_note: str | None
+    guard_hits: list[WorkProfileGuardHit]
     profile: WorkProfileView

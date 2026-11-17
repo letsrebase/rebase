@@ -12,7 +12,7 @@ import pytest
 from fakes_cards import CARD
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from work_profile_helpers import START, Clock, person, sample, settings, sign_in
+from work_profile_helpers import START, Clock, person, sample, seen, settings, sign_in
 
 from rebase_core.cloud import CloudTalentService
 from rebase_core.mail_member import italian_date
@@ -52,7 +52,7 @@ def test_the_cloud_reads_the_summary_of_an_approved_profile_only(hub_session: Se
     assert _cloud_profile(hub_session) is None  # a draft counts for nothing
 
     service = WorkProfileService(hub_session, settings(), clock)
-    service.approve(freelancer_id, admin_id)
+    service.approve(freelancer_id, admin_id, None, seen(hub_session, freelancer_id))
     shown = _cloud_profile(hub_session)
 
     assert shown.summary == sample()["summary"]
@@ -70,7 +70,9 @@ def test_a_rejected_profile_is_not_in_the_cloud(hub_session: Session) -> None:
     clock = Clock()
     admin_id = _admin(hub_session)
     _, freelancer_id = _in_the_cloud(hub_session, clock, "ada@studio.it")
-    WorkProfileService(hub_session, settings(), clock).reject(freelancer_id, admin_id, "no")
+    WorkProfileService(hub_session, settings(), clock).reject(
+        freelancer_id, admin_id, "no", seen(hub_session, freelancer_id)
+    )
     assert _cloud_profile(hub_session) is None
 
 
@@ -84,12 +86,12 @@ def test_the_person_reads_their_state_and_only_a_rejections_note(hub_session: Se
     assert waiting is not None and (waiting.state, waiting.decision_note) == ("draft", None)
 
     service = WorkProfileService(hub_session, settings(), clock)
-    service.approve(freelancer_id, admin_id, "solo per noi")
+    service.approve(freelancer_id, admin_id, "solo per noi", seen(hub_session, freelancer_id))
     approved = members.me_read(user_id).work_profile
     assert approved is not None and (approved.state, approved.decision_note) == ("approved", None)
 
     other_user, other = _in_the_cloud(hub_session, clock, "grace@studio.it")
-    service.reject(other, admin_id, "Manca un link.")
+    service.reject(other, admin_id, "Manca un link.", seen(hub_session, other))
     rejected = members.me_read(other_user).work_profile
     assert rejected is not None and rejected.decision_note == "Manca un link."
     nobody, _ = person(hub_session, "none@studio.it")
@@ -100,7 +102,9 @@ def test_deleting_the_profile_removes_it_and_keeps_the_vetted_flag(hub_session: 
     clock = Clock()
     admin_id = _admin(hub_session)
     user_id, freelancer_id = _in_the_cloud(hub_session, clock, "ada@studio.it")
-    WorkProfileService(hub_session, settings(), clock).approve(freelancer_id, admin_id)
+    WorkProfileService(hub_session, settings(), clock).approve(
+        freelancer_id, admin_id, None, seen(hub_session, freelancer_id)
+    )
 
     after = MemberService(hub_session).delete_work_profile(user_id)
 
@@ -122,8 +126,10 @@ def test_the_decision_mails_say_the_date_or_the_note_and_escape_what_was_typed(
     service = WorkProfileService(hub_session, settings(), clock)
     assert service.decision_mail(approved_id) is None  # still in review: nobody's news
 
-    service.approve(approved_id, admin_id)
-    service.reject(rejected_id, admin_id, "Serve <un link> a un progetto.")
+    service.approve(approved_id, admin_id, None, seen(hub_session, approved_id))
+    service.reject(
+        rejected_id, admin_id, "Serve <un link> a un progetto.", seen(hub_session, rejected_id)
+    )
 
     yes = service.decision_mail(approved_id)
     no = service.decision_mail(rejected_id)

@@ -308,7 +308,7 @@ export function Area() {
       <div className="space-y-8">
         <MemberReferral />
         {cardSection}
-        {profile.has_card && <MemberWorkProfile profile={profile.work_profile} />}
+        {profile.has_card && <MemberWorkProfile profile={profile.work_profile} vetted={profile.vetted} />}
         {requestsSection}
         {roleSection}
         <MemberContacts />

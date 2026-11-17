@@ -159,6 +159,13 @@ class WorkProfileRefused(DomainError):
     code = "work_profile_refused"
 
 
+class WorkProfileGuardBlocked(WorkProfileRefused):
+    """An approval the anonymity guards stop (REB-1127): a field a company reads names the
+    person or something of theirs. A 422 with the sentence; an admin's override note lifts it."""
+
+    code = "work_profile_guard_blocked"
+
+
 class CliTokenInvalid(DomainError):
     """The bearer of the work-profile intake is unknown, expired or spent (REB-1133): a 401."""
 

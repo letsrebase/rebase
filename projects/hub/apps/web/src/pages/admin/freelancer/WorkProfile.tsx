@@ -162,7 +162,7 @@ function Project({ project, anchors }: { project: Profile['projects'][number]; a
         <span className="text-muted-foreground tabular-nums">
           {[
             span.length ? [...new Set(span)].join(' – ') : null,
-            project.sessions !== null ? `${project.sessions} sessioni` : null,
+            project.sessions !== null ? `${project.sessions} ${project.sessions === 1 ? 'sessione' : 'sessioni'}` : null,
             project.commits !== null ? `${project.commits} commit` : null,
             project.reverts !== null ? `${project.reverts} revert` : null,
           ]
@@ -247,12 +247,69 @@ function ProfileBody({ profile, anchors }: { profile: Profile; anchors: Map<stri
   )
 }
 
+const GUARD_RULES: Record<string, string> = {
+  link_or_email: 'un indirizzo web o una email',
+  email: 'l’email della persona',
+  phone: 'un telefono della persona',
+  tax_id: 'un codice fiscale o una partita IVA',
+  name_account_site_or_client: 'il nome, un account, un sito o un cliente della persona',
+}
+
+/** «Cosa leggono le aziende»: exactly the three fields the talent cloud shows once the profile is
+ *  approved, each with the anonymity guards' hits (the field and the rule, never the text). */
+function CloudPanel({ profile }: { profile: WorkProfileAdmin }) {
+  const view = profile.profile
+  const hitsOf = (field: string) => profile.guard_hits.filter((hit) => hit.field === field)
+  const Hits = ({ field }: { field: string }) => (
+    <>
+      {hitsOf(field).map((hit) => (
+        <p key={hit.rule} className="text-xs text-destructive">
+          Controllo di anonimato: {GUARD_RULES[hit.rule] ?? hit.rule}
+        </p>
+      ))}
+    </>
+  )
+  const projects = view.projects.filter((project) => project.domain)
+  return (
+    <div aria-label="Cosa leggono le aziende" role="group" className="space-y-2 border p-3 text-sm">
+      <h3 className="font-medium">Cosa leggono le aziende</h3>
+      <div>
+        <p className="text-muted-foreground">Riassunto</p>
+        <p>{view.summary ?? '—'}</p>
+        <Hits field="summary" />
+      </div>
+      <div>
+        <p className="text-muted-foreground">Ambiti di lavoro</p>
+        {view.domains.length === 0 && <p>—</p>}
+        {view.domains.map((domain) => (
+          <div key={domain.where}>
+            <p>{domain.label}</p>
+            <Hits field={domain.where.replace('.note', '.label')} />
+          </div>
+        ))}
+      </div>
+      <div>
+        <p className="text-muted-foreground">Progetti rappresentativi</p>
+        {projects.length === 0 && <p>—</p>}
+        {projects.map((project) => (
+          <div key={project.id}>
+            <p>{project.domain}</p>
+            <Hits field={`${project.id}.domain`} />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /** «Approva» and «Rifiuta»: one note, optional for the first (it stays with the admins),
  *  required for the second (the person reads it). Admins only, as the whole area is. */
-function Decision({ freelancerId, vettedAt }: { freelancerId: string; vettedAt: string | null }) {
+function Decision({ profile, freelancerId, vettedAt }: { profile: WorkProfileAdmin; freelancerId: string; vettedAt: string | null }) {
   const client = useQueryClient()
   const noteId = useId()
   const [note, setNote] = useState('')
+  const [override, setOverride] = useState(false)
+  const hits = profile.guard_hits.length > 0
   const onDone = (read: WorkProfileAdmin) => {
     client.setQueryData(keys.workProfile(freelancerId), read)
     void client.invalidateQueries({ queryKey: keys.freelancer(freelancerId) })
@@ -260,11 +317,11 @@ function Decision({ freelancerId, vettedAt }: { freelancerId: string; vettedAt: 
     void client.invalidateQueries({ queryKey: keys.talents() })
   }
   const approve = useMutation({
-    mutationFn: () => admin.approveWorkProfile(freelancerId, note.trim() || null),
+    mutationFn: () => admin.approveWorkProfile(freelancerId, note.trim() || null, profile.submitted_at, override),
     onSuccess: onDone,
   })
   const reject = useMutation({
-    mutationFn: () => admin.rejectWorkProfile(freelancerId, note.trim()),
+    mutationFn: () => admin.rejectWorkProfile(freelancerId, note.trim(), profile.submitted_at),
     onSuccess: onDone,
   })
   const failure = failureMessage(approve.error ?? reject.error, 'Non riesco a salvare la decisione.')
@@ -284,6 +341,15 @@ function Decision({ freelancerId, vettedAt }: { freelancerId: string; vettedAt: 
         gli admin.
         {vettedAt === null && ` Approvare segna anche la persona come «${VETTED_LABEL}».`}
       </p>
+      {hits && (
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-1" checked={override} onChange={(event) => setOverride(event.target.checked)} />
+          <span>
+            Un controllo di anonimato è scattato su ciò che leggono le aziende: non si può approvare. Per approvare
+            comunque spunta qui e scrivi nella nota perché va bene: la nota finisce nel registro.
+          </span>
+        </label>
+      )}
       {failure && (
         <p role="alert" className="text-sm text-destructive">
           {failure}
@@ -293,7 +359,11 @@ function Decision({ freelancerId, vettedAt }: { freelancerId: string; vettedAt: 
         <Button type="button" variant="outline" disabled={busy || note.trim() === ''} onClick={() => reject.mutate()}>
           {reject.isPending ? 'Rifiuto…' : 'Rifiuta'}
         </Button>
-        <Button type="button" disabled={busy} onClick={() => approve.mutate()}>
+        <Button
+          type="button"
+          disabled={busy || (hits && (!override || note.trim() === ''))}
+          onClick={() => approve.mutate()}
+        >
           {approve.isPending ? 'Approvo…' : 'Approva'}
         </Button>
       </div>
@@ -375,8 +445,9 @@ export function WorkProfile({ freelancerId, vettedAt }: { freelancerId: string; 
           ))}
         </ul>
       )}
+      <CloudPanel profile={profile} />
       <ProfileBody profile={profile.profile} anchors={anchors} />
-      {profile.state === 'draft' && !profile.expired && <Decision freelancerId={freelancerId} vettedAt={vettedAt} />}
+      {profile.state === 'draft' && !profile.expired && <Decision profile={profile} freelancerId={freelancerId} vettedAt={vettedAt} />}
     </section>
   )
 }

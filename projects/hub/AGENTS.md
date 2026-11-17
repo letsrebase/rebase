@@ -659,6 +659,29 @@ verifica»), which the page says. The decision mails (`mail_member.work_profile_
 and sent after the answer of `approve`/`reject` like the cloud's grant mail; the rejection mail
 repeats the admin's note, escaped in the HTML.
 
+**The anonymity guard over what a company reads (REB-1127).** The admin's reading is not the only
+guard. `work_profiles/guard.py` runs the hub's deterministic rules over the three cloud fields (the
+summary, each domain label, each project's abstract domain): the anonymous CV's identifier rules (a
+link or profile host, an email, a phone, a tax identifier) and `card_guard.identifying` (the person's
+name, GitHub account, link hosts and the clients of their engagements). It runs when the profile is
+stored (`work_profiles.guard_hits`, migration 0056: `{field, rule}`, **never the matched text**), again
+when an admin approves (a client may have come since), and again every time the cloud is read
+(`CloudTalentService._work_profile` leaves out a field that hits now; the query selects only the three
+JSON paths, and the summary is cut at a word within 600 characters). While a hit stands «Approva» is a
+422 (`WorkProfileGuardBlocked`, Italian sentence) unless the body says `override` with a note, which
+is written into the `work_profile_decided` entry (`override`, `override_note`). The admin section has a
+«Cosa leggono le aziende» panel with exactly those fields and their hits beside the groundedness
+anchors. A client is matched by its whole name without the legal form («Initech Italia»), as the card
+guard reads employers.
+
+**A decision names the version read.** Approve and reject bodies carry `submitted_at`, compared under
+the row lock (`_pending`): a profile sent again since is a 409 «Il profilo è cambiato: rileggilo.».
+`FreelancerService.soft_delete` deletes the person's work profile with their sources, and `_pending` and
+`decision_mail` refuse a soft-deleted card. `MeRead.vetted` is what the member copy «Verificato da
+rebase» is derived from. The card's years backstop counts the work profile as a source beside the CV
+(`card_provenance.provenance`); **the system prompt was not changed** to say so, because a prompt
+change means a new `PROMPT_VERSION` and marks every card stale: Lorenzo's call.
+
 ## Campaigns
 
 Since P-REB-41 «Invia una campagna» the `campaigns` service in `docker-compose.yml` runs

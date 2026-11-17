@@ -10,11 +10,12 @@ from uuid import UUID
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from work_profile_helpers import Clock, person, sample, settings, sign_in
+from test_hub_facts import _match
+from work_profile_helpers import START, Clock, person, sample, seen, settings, sign_in
 
-from rebase_core.errors import InvalidState, NotFound, ValidationFailed
+from rebase_core.errors import InvalidState, NotFound, ValidationFailed, WorkProfileGuardBlocked
 from rebase_core.freelancers import FreelancerService
-from rebase_core.models import AdminAction, Freelancer, User
+from rebase_core.models import AdminAction, Freelancer, User, WorkProfile
 from rebase_core.talents import TalentsService
 from rebase_core.work_profiles.intake import WorkProfileService
 from rebase_core.work_profiles.schemas import WorkProfileApproval, WorkProfileRejection
@@ -53,7 +54,7 @@ def test_approval_vets_the_person_and_signs_both_entries(hub_session: Session) -
     freelancer_id = _submitted(hub_session, clock)
 
     read = WorkProfileService(hub_session, settings(), clock).approve(
-        freelancer_id, admin_id, "ottimo"
+        freelancer_id, admin_id, "ottimo", seen(hub_session, freelancer_id)
     )
 
     assert (read.state, read.decided_by_name, read.decision_note) == (
@@ -80,7 +81,9 @@ def test_approval_of_an_already_vetted_person_keeps_their_date_and_still_signs(
     FreelancerService(hub_session).set_vetted(freelancer_id, True, admin_id)
     first = hub_session.get_one(Freelancer, freelancer_id, populate_existing=True).vetted_at
 
-    WorkProfileService(hub_session, settings(), clock).approve(freelancer_id, admin_id)
+    WorkProfileService(hub_session, settings(), clock).approve(
+        freelancer_id, admin_id, None, seen(hub_session, freelancer_id)
+    )
 
     card = hub_session.get_one(Freelancer, freelancer_id, populate_existing=True)
     assert card.vetted_at == first
@@ -99,7 +102,7 @@ def test_rejection_keeps_the_note_for_the_person_and_leaves_the_flag_alone(
     freelancer_id = _submitted(hub_session, clock)
 
     read = WorkProfileService(hub_session, settings(), clock).reject(
-        freelancer_id, admin_id, "Manca un progetto con un link."
+        freelancer_id, admin_id, "Manca un progetto con un link.", seen(hub_session, freelancer_id)
     )
 
     assert (read.state, read.decision_note) == ("rejected", "Manca un progetto con un link.")
@@ -107,8 +110,8 @@ def test_rejection_keeps_the_note_for_the_person_and_leaves_the_flag_alone(
     assert card.vetted_at is None
     assert _kinds(hub_session, freelancer_id) == ["work_profile_decided"]
     with pytest.raises(ValueError):  # the request body refuses a blank note
-        WorkProfileRejection.model_validate({"note": "   "})
-    assert WorkProfileApproval.model_validate({"note": "  "}).note is None
+        WorkProfileRejection.model_validate({"note": "   ", "submitted_at": START})
+    assert WorkProfileApproval.model_validate({"note": "  ", "submitted_at": START}).note is None
 
 
 def test_a_decided_expired_or_missing_profile_cannot_be_decided(hub_session: Session) -> None:
@@ -116,19 +119,19 @@ def test_a_decided_expired_or_missing_profile_cannot_be_decided(hub_session: Ses
     admin_id = _admin(hub_session)
     freelancer_id = _submitted(hub_session, clock)
     service = WorkProfileService(hub_session, settings(), clock)
-    service.reject(freelancer_id, admin_id, "no")
+    service.reject(freelancer_id, admin_id, "no", seen(hub_session, freelancer_id))
     with pytest.raises(InvalidState):
-        service.approve(freelancer_id, admin_id)
+        service.approve(freelancer_id, admin_id, None, seen(hub_session, freelancer_id))
 
     other = _submitted(hub_session, clock, "grace@studio.it")
     clock.advance(days=366)
     with pytest.raises(InvalidState):
-        service.approve(other, admin_id)
+        service.approve(other, admin_id, None, seen(hub_session, other))
     assert service.admin_read(other).expired is True
     with pytest.raises(NotFound):
         service.admin_read(other, live_only=True)
     with pytest.raises(NotFound):
-        service.approve(UUID(int=1), admin_id)
+        service.approve(UUID(int=1), admin_id, None, seen(hub_session, UUID(int=1)))
 
 
 def test_the_profile_is_rendered_from_its_payload(hub_session: Session) -> None:
@@ -173,7 +176,9 @@ def test_the_talents_filter_reads_the_review_state_of_a_live_profile(
     waiting = _submitted(hub_session, clock, "wait@studio.it")
     approved = _submitted(hub_session, clock, "yes@studio.it")
     _, nobody = person(hub_session, "none@studio.it")
-    WorkProfileService(hub_session, settings(), clock).approve(approved, admin_id)
+    WorkProfileService(hub_session, settings(), clock).approve(
+        approved, admin_id, None, seen(hub_session, approved)
+    )
     talents = TalentsService(hub_session)
 
     def ids(state: str) -> set[UUID]:
@@ -185,3 +190,82 @@ def test_the_talents_filter_reads_the_review_state_of_a_live_profile(
     assert {i.id: i.work_profile_state for i in talents.list_recent().items}[approved] == "approved"
     with pytest.raises(ValidationFailed):
         talents.list_recent(work_profile="maybe")
+
+
+def test_a_decision_names_the_version_read_and_a_resubmission_makes_it_a_409(
+    hub_session: Session,
+) -> None:
+    clock = Clock()
+    admin_id = _admin(hub_session)
+    user_id, freelancer_id = person(hub_session, "ada@studio.it")
+    service = WorkProfileService(hub_session, settings(), clock)
+    service.submit(sign_in(hub_session, clock, user_id), json.dumps(sample()).encode())
+    old = seen(hub_session, freelancer_id)
+    clock.advance(days=1)
+    service.submit(sign_in(hub_session, clock, user_id), json.dumps(sample()).encode())
+
+    with pytest.raises(InvalidState, match="rileggilo"):
+        service.approve(freelancer_id, admin_id, None, old)
+    with pytest.raises(InvalidState, match="rileggilo"):
+        service.reject(freelancer_id, admin_id, "no", old)
+    assert service.approve(freelancer_id, admin_id, None, seen(hub_session, freelancer_id))
+
+
+def test_a_summary_naming_a_client_blocks_the_approval_and_an_override_audits_its_note(
+    hub_session: Session,
+) -> None:
+    clock = Clock()
+    admin_id = _admin(hub_session)
+    freelancer_id = _submitted(hub_session, clock)
+    card = hub_session.get_one(Freelancer, freelancer_id)
+    _match(hub_session, card, company_name="Initech Italia srl")
+    row = hub_session.scalars(select(WorkProfile)).one()
+    row.payload = {**row.payload, "summary": "Rebuilt the billing of Initech Italia with agents."}
+    hub_session.commit()
+    service = WorkProfileService(hub_session, settings(), clock)
+    version = seen(hub_session, freelancer_id)
+
+    with pytest.raises(WorkProfileGuardBlocked):
+        service.approve(freelancer_id, admin_id, None, version)
+    hub_session.expire_all()
+    assert service.admin_read(freelancer_id).guard_hits[0].field == "summary"
+    assert service.admin_read(freelancer_id).state == "draft" and card.vetted_at is None
+    with pytest.raises(ValueError):  # the override needs a note
+        WorkProfileApproval.model_validate({"override": True, "submitted_at": version})
+
+    read = service.approve(
+        freelancer_id, admin_id, "Il cliente è pubblico.", version, override=True
+    )
+
+    assert read.state == "approved"
+    decided = hub_session.scalars(
+        select(AdminAction).where(AdminAction.kind == "work_profile_decided")
+    ).one()
+    assert decided.payload["override"] is True
+    assert decided.payload["override_note"] == "Il cliente è pubblico."
+
+
+def test_a_clean_summary_approves_without_an_override(hub_session: Session) -> None:
+    clock = Clock()
+    freelancer_id = _submitted(hub_session, clock)
+    assert (
+        WorkProfileService(hub_session, settings(), clock).admin_read(freelancer_id).guard_hits
+        == []
+    )
+
+
+def test_a_soft_deleted_person_loses_the_profile_and_cannot_be_decided(
+    hub_session: Session,
+) -> None:
+    clock = Clock()
+    admin_id = _admin(hub_session)
+    freelancer_id = _submitted(hub_session, clock)
+    version = seen(hub_session, freelancer_id)
+
+    FreelancerService(hub_session).soft_delete(freelancer_id, admin_id)
+
+    assert hub_session.scalars(select(WorkProfile)).all() == []
+    service = WorkProfileService(hub_session, settings(), clock)
+    with pytest.raises(NotFound):
+        service.approve(freelancer_id, admin_id, None, version)
+    assert service.decision_mail(freelancer_id) is None

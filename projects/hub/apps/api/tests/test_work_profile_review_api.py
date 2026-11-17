@@ -4,6 +4,7 @@ second decision, and the «Talenti» filter."""
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 import pytest
@@ -89,7 +90,7 @@ def test_approving_vets_and_a_second_decision_is_a_409(
     freelancer_id = _seed(api_session)
     url = f"/api/hub/freelancers/{freelancer_id}/work-profile"
 
-    approved = client.post(f"{url}/approve", json={"note": "solido"})
+    approved = _decide(client, f"{url}", "approve", {"note": "solido"})
 
     assert approved.status_code == 200, approved.text
     assert approved.json()["state"] == "approved" and approved.json()["decision_note"] == "solido"
@@ -97,8 +98,8 @@ def test_approving_vets_and_a_second_decision_is_a_409(
     assert api_session.get_one(Freelancer, freelancer_id).vetted_at is not None
     kinds = {a.kind for a in api_session.scalars(select(AdminAction))}
     assert {"vetted", "work_profile_decided"} <= kinds
-    assert client.post(f"{url}/reject", json={"note": "no"}).status_code == 409
-    assert client.post(f"{url}/approve", json={}).status_code == 409
+    assert _decide(client, f"{url}", "reject", {"note": "no"}).status_code == 409
+    assert _decide(client, f"{url}", "approve", {}).status_code == 409
 
 
 def test_rejecting_needs_a_note_and_an_expired_profile_cannot_be_decided(
@@ -106,10 +107,10 @@ def test_rejecting_needs_a_note_and_an_expired_profile_cannot_be_decided(
 ) -> None:
     freelancer_id = _seed(api_session)
     url = f"/api/hub/freelancers/{freelancer_id}/work-profile"
-    assert client.post(f"{url}/reject", json={}).status_code == 422
-    assert client.post(f"{url}/reject", json={"note": "  "}).status_code == 422
+    assert _decide(client, f"{url}", "reject", {}).status_code == 422
+    assert _decide(client, f"{url}", "reject", {"note": "  "}).status_code == 422
 
-    rejected = client.post(f"{url}/reject", json={"note": "Manca un link."})
+    rejected = _decide(client, f"{url}", "reject", {"note": "Manca un link."})
     assert rejected.json()["state"] == "rejected"
     api_session.expire_all()
     assert api_session.get_one(Freelancer, freelancer_id).vetted_at is None
@@ -118,7 +119,8 @@ def test_rejecting_needs_a_note_and_an_expired_profile_cannot_be_decided(
     gone = client.get(f"/api/hub/freelancers/{old}/work-profile").json()
     assert gone["expired"] is True
     assert (
-        client.post(f"/api/hub/freelancers/{old}/work-profile/approve", json={}).status_code == 409
+        _decide(client, f"/api/hub/freelancers/{old}/work-profile", "approve", {}).status_code
+        == 409
     )
 
 
@@ -153,9 +155,14 @@ def test_a_decision_mails_the_person_and_the_person_reads_and_deletes_their_prof
     approved = _seed(api_session, "ada@studio.it")
     rejected = _seed(api_session, "grace@studio.it")
     sender.sent.clear()
-    client.post(f"/api/hub/freelancers/{approved}/work-profile/approve", json={}).raise_for_status()
-    client.post(
-        f"/api/hub/freelancers/{rejected}/work-profile/reject", json={"note": "Manca un link."}
+    _decide(
+        client, f"/api/hub/freelancers/{approved}/work-profile", "approve", {}
+    ).raise_for_status()
+    _decide(
+        client,
+        f"/api/hub/freelancers/{rejected}/work-profile",
+        "reject",
+        {"note": "Manca un link."},
     ).raise_for_status()
 
     by_address = {mail.to: mail for mail in sender.sent}
@@ -182,7 +189,7 @@ def test_the_cloud_shows_the_summary_of_an_approved_profile(
     card = api_session.get_one(Freelancer, freelancer_id)
     api_session.add(FreelancerCard(freelancer_id=card.id, cv_sha256="0" * 64, card=dict(CARD)))
     api_session.commit()
-    client.post(f"/api/hub/freelancers/{freelancer_id}/work-profile/approve", json={})
+    _decide(client, f"/api/hub/freelancers/{freelancer_id}/work-profile", "approve", {})
     grant = _grant(api_session)
     client.cookies.clear()
     login_as(client, sender, grant)
@@ -191,6 +198,13 @@ def test_the_cloud_shows_the_summary_of_an_approved_profile(
 
     assert item["work_profile"]["summary"] == sample()["summary"]
     assert set(item["work_profile"]) == {"summary", "domains", "project_domains"}
+
+
+def _decide(client: TestClient, url: str, action: str, body: dict[str, Any]) -> Any:
+    """What the page sends: the decision with the version of the profile the admin read."""
+    read = client.get(url)
+    submitted = read.json()["submitted_at"] if read.status_code == 200 else None
+    return client.post(f"{url}/{action}", json={**body, "submitted_at": submitted})
 
 
 def _grant(session: Session) -> str:
@@ -214,3 +228,25 @@ def _grant(session: Session) -> str:
     admin_row = session.scalars(select(User).where(User.role == "admin")).one()
     TalentCloudService(session, settings()).grant(read.id, admin_row.id)
     return "wile@acme.it"
+
+
+def test_a_decision_without_the_version_read_is_a_422_and_a_stale_one_a_409(
+    client: TestClient, api_session: Session, admin: None
+) -> None:
+    url = f"/api/hub/freelancers/{_seed(api_session)}/work-profile"
+    assert client.post(f"{url}/approve", json={}).status_code == 422
+    stale = {"submitted_at": "2020-01-01T00:00:00Z"}
+    assert client.post(f"{url}/approve", json=stale).status_code == 409
+    assert client.post(f"{url}/reject", json={**stale, "note": "no"}).status_code == 409
+
+
+def test_approve_and_reject_are_closed_to_members_and_the_signed_out(
+    client: TestClient, api_session: Session, sender: RecordingSender, admin: None
+) -> None:
+    url = f"/api/hub/freelancers/{_seed(api_session)}/work-profile"
+    body = {"submitted_at": "2020-01-01T00:00:00Z", "note": "x"}
+    client.cookies.clear()
+    assert client.post(f"{url}/approve", json=body).status_code == 401
+    login_as(client, sender, "ada@studio.it")
+    assert client.post(f"{url}/approve", json=body).status_code == 403
+    assert client.post(f"{url}/reject", json=body).status_code == 403

@@ -137,6 +137,9 @@ class MeRead(ResponseModel):
     talent_cloud: bool = False
     # REB-1127: the work profile the person sent with the `work-profile` command, if any.
     work_profile: MemberWorkProfile | None = None
+    # Whether rebase verified the person (`freelancers.vetted_at`): what «Verificato da rebase»
+    # in the member area is derived from, never from the state of the work profile.
+    vetted: bool = False
 
     @computed_field  # type: ignore[prop-decorator]
     @property

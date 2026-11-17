@@ -208,6 +208,9 @@ the tool, never a value.
   agentic-literacy counts or the artifacts, which stay in the admin. The cloud's order is
   unchanged (vetted first, then by name), so the only search effect is through the flag.
   `CloudTalentRead`'s docstring, which lists what a company may read, names the summary.
+  The hub's deterministic anonymity guards (`work_profiles/guard.py`) read those three fields when the
+  profile is stored, at approval and at every cloud read: approval is refused while a hit stands unless
+  an admin overrides with a note, so the admin's reading is not the only guard (REB-1127).
 - **The card** (§ 6).
 - **The freelancer's area** shows «Approvato» and the date it expires.
 

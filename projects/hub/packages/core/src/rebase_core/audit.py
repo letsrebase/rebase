@@ -229,6 +229,8 @@ class AdminActionPayload(TypedDict, total=False):
     after: Annotated[dict[str, Any] | str, _MAY_BE_ABSENT]
     vetted: Annotated[bool, _MAY_BE_ABSENT]
     decision: Annotated[str, _MAY_BE_ABSENT]
+    override: Annotated[bool, _MAY_BE_ABSENT]
+    override_note: Annotated[str, _MAY_BE_ABSENT]
     source: Annotated[str, _MAY_BE_ABSENT]
     text: Annotated[str, _MAY_BE_ABSENT]
     note_id: Annotated[str, _MAY_BE_ABSENT]

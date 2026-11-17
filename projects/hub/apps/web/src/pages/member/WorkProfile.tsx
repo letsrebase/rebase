@@ -80,7 +80,7 @@ function Explanation() {
 }
 
 /** What the state is, in the person's own words. */
-function Standing({ profile }: { profile: Profile }) {
+function Standing({ profile, vetted }: { profile: Profile; vetted: boolean }) {
   if (profile.expired) {
     return (
       <>
@@ -99,7 +99,8 @@ function Standing({ profile }: { profile: Profile }) {
           Approvato fino al {formatDate(profile.expires_at)}
         </Badge>
         <p className="text-sm">
-          Sei «Verificato da rebase» e le aziende del talent cloud leggono il riassunto del tuo profilo.
+          {vetted ? 'Sei «Verificato da rebase» e le' : 'Le'} aziende del talent cloud leggono il riassunto del tuo
+          profilo.
         </p>
       </>
     )
@@ -147,7 +148,8 @@ function Delete() {
   return (
     <div className="space-y-2">
       <p className="text-sm">
-        Lo eliminiamo subito. Il «Verificato da rebase» resta: lo toglie, se vuole, chi lo ha dato.
+        Lo eliminiamo subito. La tua scheda anonima tiene quello che ha imparato dal profilo finché non viene
+        riscritta. Il «Verificato da rebase» resta: lo toglie, se vuole, chi lo ha dato.
       </p>
       <div className="flex flex-wrap gap-2">
         <Button type="button" size="sm" disabled={remove.isPending} onClick={() => remove.mutate()}>
@@ -173,7 +175,7 @@ function Delete() {
  * `Approvato fino al <data>`, `Non approvato` with the admin's note, or expired), when it
  * was sent, and offers «Elimina il profilo», which does not touch «Verificato».
  */
-export function MemberWorkProfile({ profile }: { profile: Me['work_profile'] }) {
+export function MemberWorkProfile({ profile, vetted }: { profile: Me['work_profile']; vetted: boolean }) {
   return (
     <section aria-labelledby="me-work-profile" className="space-y-3">
       <h2 id="me-work-profile" className="text-lg font-semibold tracking-tight">
@@ -188,7 +190,7 @@ export function MemberWorkProfile({ profile }: { profile: Me['work_profile'] }) 
       ) : (
         <div className="space-y-3 border bg-card p-4">
           <div className="space-y-2">
-            <Standing profile={profile} />
+            <Standing profile={profile} vetted={vetted} />
           </div>
           <p className="text-sm text-muted-foreground">Inviato il {formatDate(profile.submitted_at)}.</p>
           {(profile.state === 'rejected' || profile.expired) && (

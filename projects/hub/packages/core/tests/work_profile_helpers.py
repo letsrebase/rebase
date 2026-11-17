@@ -7,11 +7,12 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from rebase_core.cli_auth import CliAuthService
 from rebase_core.config import Settings
-from rebase_core.models import Freelancer, User
+from rebase_core.models import Freelancer, User, WorkProfile
 
 SAMPLE = Path(__file__).parent / "fixtures" / "work_profile_candidate.sample.json"
 START = datetime(2026, 11, 17, 10, 0, tzinfo=UTC)
@@ -62,3 +63,11 @@ def sign_in(session: Session, clock: Clock, user_id: UUID) -> str:
     polled = service.poll(start.device_code)
     assert polled.access_token is not None
     return polled.access_token
+
+
+def seen(session: Session, freelancer_id: UUID) -> datetime:
+    """The version of the profile an admin would have read: its `submitted_at`."""
+    value = session.scalar(
+        select(WorkProfile.submitted_at).where(WorkProfile.freelancer_id == freelancer_id)
+    )
+    return value if value is not None else START

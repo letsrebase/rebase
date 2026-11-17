@@ -192,6 +192,7 @@ class MemberService:
             requests=[MemberRequest.model_validate(row) for row in self.requests_for_user(user_id)],
             talent_cloud=TalentCloudService(self.session).for_user(user_id) is not None,
             work_profile=self._work_profile(card),
+            vetted=card is not None and card.vetted_at is not None,
         )
 
     def _work_profile(self, card: Freelancer | None) -> MemberWorkProfile | None:

@@ -342,23 +342,42 @@ def render_profile(payload: dict[str, Any]) -> WorkProfileView:
     )
 
 
-def cloud_work_profile(payload: dict[str, Any]) -> CloudWorkProfile:
-    """What a company in the talent cloud reads of an approved profile (spec § 5): the summary,
-    the domains' labels with their counts and each representative project's abstract domain,
-    each once. Nothing else of the payload is read here, so nothing else can reach a company."""
+SUMMARY_CLOUD_MAX = 600
+
+
+def _cut(text: str, limit: int) -> str:
+    """`text` cut at a word boundary within `limit` characters, with an ellipsis."""
+    if len(text) <= limit:
+        return text
+    return text[:limit].rsplit(" ", 1)[0].rstrip(" ,;:.") + "…"
+
+
+def cloud_work_profile(
+    payload: dict[str, Any], flagged: set[str] | None = None
+) -> CloudWorkProfile:
+    """What a company in the talent cloud reads of an approved profile (spec § 5): the summary
+    (cut at `SUMMARY_CLOUD_MAX`), the domains' labels with their counts and each representative
+    project's abstract domain, each once. A field named in `flagged` (the anonymity guards' hits,
+    `work_profiles/guard.py`) is left out. Nothing else of the payload is read here."""
+    flagged = flagged or set()
     domains = [
         CloudWorkDomain(
             label=label,
             products=_int(domain.get("products")),
             sessions=_int(domain.get("sessions")),
         )
-        for domain in _dicts(payload.get("domains"))
-        if (label := _text(domain.get("label")))
+        for index, domain in enumerate(_dicts(payload.get("domains")))
+        if (label := _text(domain.get("label"))) and f"domains[{index}].label" not in flagged
     ]
     seen: dict[str, None] = {}
     for project in _dicts(payload.get("projects")):
-        if domain := _text(project.get("domain")):
+        if (
+            domain := _text(project.get("domain"))
+        ) and f"{project.get('id')}.domain" not in flagged:
             seen.setdefault(domain.strip(), None)
+    summary = _text(payload.get("summary")) if "summary" not in flagged else None
     return CloudWorkProfile(
-        summary=_text(payload.get("summary")), domains=domains, project_domains=list(seen)
+        summary=_cut(summary, SUMMARY_CLOUD_MAX) if summary else None,
+        domains=domains,
+        project_domains=list(seen),
     )

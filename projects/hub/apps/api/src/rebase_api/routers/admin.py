@@ -302,10 +302,17 @@ def approve_work_profile(
 ) -> WorkProfileAdminRead:
     """«Approva»: the profile counts from now, the person is verified when they were not, and
     the decision is signed in the trail (`work_profile_decided`). The optional note stays with
-    the admins. The person is mailed after the answer (REB-1127). 409 for a profile already
-    decided or past its 12 months."""
+    the admins; while an anonymity guard stands the answer is 422, unless `override` comes with a
+    note (written into the audit). The person is mailed after the answer (REB-1127). 409 for a
+    profile already decided or past its 12 months."""
     service = WorkProfileService(session, settings)
-    read = service.approve(freelancer_id, admin.id, decision.note)
+    read = service.approve(
+        freelancer_id,
+        admin.id,
+        decision.note,
+        decision.submitted_at,
+        override=decision.override,
+    )
     _mail_decision(service, sender, freelancer_id)
     return read
 
@@ -325,7 +332,7 @@ def reject_work_profile(
     they get after the answer (REB-1127). The verified flag is not touched. 409 for a profile
     already decided or past its 12 months."""
     service = WorkProfileService(session, settings)
-    read = service.reject(freelancer_id, admin.id, decision.note)
+    read = service.reject(freelancer_id, admin.id, decision.note, decision.submitted_at)
     _mail_decision(service, sender, freelancer_id)
     return read
 

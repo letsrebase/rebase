@@ -292,8 +292,9 @@ export interface paths {
          * Approve Work Profile
          * @description «Approva»: the profile counts from now, the person is verified when they were not, and
          *     the decision is signed in the trail (`work_profile_decided`). The optional note stays with
-         *     the admins. The person is mailed after the answer (REB-1127). 409 for a profile already
-         *     decided or past its 12 months.
+         *     the admins; while an anonymity guard stands the answer is 422, unless `override` comes with a
+         *     note (written into the audit). The person is mailed after the answer (REB-1127). 409 for a
+         *     profile already decided or past its 12 months.
          */
         post: operations["approve_work_profile_api_hub_freelancers__freelancer_id__work_profile_approve_post"];
         delete?: never;
@@ -2415,6 +2416,10 @@ export interface components {
                 vetted?: boolean;
                 /** Decision */
                 decision?: string;
+                /** Override */
+                override?: boolean;
+                /** Override Note */
+                override_note?: string;
                 /** Source */
                 source?: string;
                 /** Text */
@@ -4408,6 +4413,11 @@ export interface components {
              */
             talent_cloud: boolean;
             work_profile: components["schemas"]["MemberWorkProfile"] | null;
+            /**
+             * Vetted
+             * @default false
+             */
+            vetted: boolean;
             /** Complete */
             readonly complete: boolean;
             /** Has Company */
@@ -6349,6 +6359,8 @@ export interface components {
             decided_by_name: string | null;
             /** Decision Note */
             decision_note: string | null;
+            /** Guard Hits */
+            guard_hits: components["schemas"]["WorkProfileGuardHit"][];
             profile: components["schemas"]["WorkProfileView"];
         };
         /**
@@ -6371,6 +6383,16 @@ export interface components {
         WorkProfileApproval: {
             /** Note */
             note?: string | null;
+            /**
+             * Override
+             * @default false
+             */
+            override: boolean;
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
         };
         /**
          * WorkProfileArtifact
@@ -6401,6 +6423,16 @@ export interface components {
             sessions: number | null;
             /** Note */
             note: string | null;
+        };
+        /**
+         * WorkProfileGuardHit
+         * @description A field a company reads that an anonymity guard stopped, and the rule: never the text.
+         */
+        WorkProfileGuardHit: {
+            /** Field */
+            field: string;
+            /** Rule */
+            rule: string;
         };
         /**
          * WorkProfileLens
@@ -6461,6 +6493,11 @@ export interface components {
         WorkProfileRejection: {
             /** Note */
             note: string;
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
         };
         /** WorkProfileShift */
         WorkProfileShift: {

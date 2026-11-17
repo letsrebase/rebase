@@ -593,19 +593,19 @@ export const admin = {
     ),
   /** «Approva», with an optional note kept for the admins: the profile counts and the person
    *  is verified when they were not. */
-  approveWorkProfile: (id: string, note: string | null) =>
+  approveWorkProfile: (id: string, note: string | null, submittedAt: string, override = false) =>
     unwrap(
       client.POST('/api/hub/freelancers/{freelancer_id}/work-profile/approve', {
         params: { path: { freelancer_id: id } },
-        body: { note },
+        body: { note, submitted_at: submittedAt, override },
       }),
     ),
   /** «Rifiuta», with the note the person reads in their area. */
-  rejectWorkProfile: (id: string, note: string) =>
+  rejectWorkProfile: (id: string, note: string, submittedAt: string) =>
     unwrap(
       client.POST('/api/hub/freelancers/{freelancer_id}/work-profile/reject', {
         params: { path: { freelancer_id: id } },
-        body: { note },
+        body: { note, submitted_at: submittedAt },
       }),
     ),
   /** The anonymous card Claude wrote from the CV (REB-510), with the last failure. */

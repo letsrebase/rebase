@@ -16,11 +16,11 @@ const BASE: Profile = {
   decision_note: null,
 }
 
-function show(profile: Me['work_profile']) {
+function show(profile: Me['work_profile'], vetted = true) {
   const client = new QueryClient()
   render(
     <QueryClientProvider client={client}>
-      <MemberWorkProfile profile={profile} />
+      <MemberWorkProfile profile={profile} vetted={vetted} />
     </QueryClientProvider>,
   )
   return client
@@ -56,6 +56,12 @@ describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
   it('says until when an approved profile counts', () => {
     show({ ...BASE, state: 'approved' })
     expect(screen.getByText('Approvato fino al 12 nov 2027')).toBeInTheDocument()
+  })
+
+  it('says «Verificato» only for a person who is verified', () => {
+    show({ ...BASE, state: 'approved' }, false)
+    expect(screen.queryByText(/Sei «Verificato da rebase»/)).toBeNull()
+    expect(screen.getByText(/leggono il riassunto del tuo profilo/)).toBeInTheDocument()
   })
 
   it('shows the note of a rejected profile and how to send another', () => {
