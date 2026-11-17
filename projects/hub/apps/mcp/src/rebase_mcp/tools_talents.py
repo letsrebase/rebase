@@ -15,9 +15,16 @@ from rebase_core.freelancers import FreelancerService
 from rebase_core.merge import PersonMergeService
 from rebase_core.models import Freelancer, Signup, User
 from rebase_core.talents import TalentsService, signup_read
+from rebase_mcp.talents_view import (
+    AVAILABILITY,
+    availability_read,
+    compact_result,
+    row_fields,
+    talents_page,
+    with_availability,
+)
 from rebase_mcp.talents_view import LIST_LIMIT_DEFAULT as TALENTS_LIMIT_DEFAULT
 from rebase_mcp.talents_view import LIST_LIMIT_MAX as TALENTS_LIMIT_MAX
-from rebase_mcp.talents_view import compact_result, row_fields, talents_page
 from rebase_mcp.tools_common import (
     EMAILS_READ,
     READ_ENTITY,
@@ -104,6 +111,16 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         most relevant first when `q` narrows. A row's `id` goes to `get_talent`, which for a
         lead answers the row itself; a lead's card is created with `create_freelancer_from_signup`.
 
+        `availability` is whether the person is already committed, as PigroCRM says from their
+        live engagements (draft, out for signature, active), read in one call for the page:
+        `status` this week (`free`; `committed`, with `committed_days` a week; `unknown`, an
+        engagement of the week with no days a week, never to be read as free), `committed_from`
+        the Monday of the first week that is not free (committed or unknown) when this one is,
+        `free_from` the Monday of the first free week when this one is not, and `until` the last
+        day PigroCRM was asked about (twelve weeks). A lead has none. When PigroCRM cannot
+        answer, no row has it and `availability_error` says why; the list itself is never refused
+        for it. The week by week detail is PigroCRM's `get_freelancer_availability`.
+
         Filters, all together: `q` searches first name, last name, login email, position and
         the person's extra contact points (an extra email, a phone in any form, a LinkedIn
         profile);
@@ -113,8 +130,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         `lead`); `min_years` and `max_years` by the card's years of experience (bounds
         included); `industries` and `languages` by the card's industries and languages (every
         term must appear, like `skills`: `["fintech"]`, `["English"]`); `location` by the
-        card's location (`"Milano"`); `job_title` by the declared role; `remote` by
-        availability (`remote`/`hybrid`/`on_site`); `min_rate` and `max_rate` by daily rate
+        card's location (`"Milano"`); `job_title` by the declared role; `remote` by work mode
+        (`remote`/`hybrid`/`on_site`); `min_rate` and `max_rate` by daily rate
         (string, «500», «450.50» or in Italian format «1.500», «1.234,50»); `origin` by how
         the row was born (`form` sign-up without a card, `wizard` filled in by the person,
         `admin` written by an admin from a search), `origin_page` by the site page it started
@@ -163,7 +180,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         rate_from = number(min_rate, "min_rate")
         rate_to = number(max_rate, "max_rate")
 
-        def call(session: Session) -> CallToolResult:
+        def call(session: Session) -> tuple[dict[str, Any], tuple[str, ...] | None]:
             # The fields first: a misspelt name costs no query.
             selected = row_fields(fields)
             page = TalentsService(session).list_recent(
@@ -200,9 +217,18 @@ def register(mcp: MCPServer, deps: Deps) -> None:
                     EMAILS_READ,
                     {"tool": "list_talents", "lines": len(page.items)},
                 )
-            return compact_result(talents_page(page.model_dump(mode="json"), selected))
+            return page.model_dump(mode="json"), selected
 
-        return deps.call(call)
+        page, selected = deps.call(call)
+        # PigroCRM is asked once the session is closed, and only when a card on the page will
+        # show it.
+        wanted = (selected is None or AVAILABILITY in selected) and any(
+            row["status"] != "lead" for row in page["items"]
+        )
+        commitments, unavailable = deps.commitments() if wanted else (None, None)
+        return compact_result(
+            talents_page(with_availability(page, commitments, unavailable), selected)
+        )
 
     @mcp.tool()
     def get_talent(talent_id: str) -> dict[str, Any]:
@@ -220,7 +246,8 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         `create_freelancer_from_signup`; an id whose email now has a card answers the card,
         like the list. Every row with a card also carries `vetted_at` (REB-518, `None` if not
         verified) and `has_anonymous_card`, whether Claude has written one to propose in the
-        team builder. Read-only."""
+        team builder, and `availability` as `list_talents` describes it, read from PigroCRM for
+        this card alone (`availability_error` instead when PigroCRM cannot answer). Read-only."""
         key = to_uuid(talent_id, "talent_id")
 
         def call(session: Session) -> dict[str, Any]:
@@ -240,7 +267,13 @@ def register(mcp: MCPServer, deps: Deps) -> None:
                 return _freelancer_talent(session, holder[0])
             return signup_read(signup).model_dump(mode="json")
 
-        return deps.call(call)
+        talent = deps.call(call)
+        if talent["status"] == "lead":
+            return talent
+        availability, unavailable = deps.availability_of(UUID(talent["id"]))
+        if availability is None:
+            return {**talent, "availability": None, "availability_error": unavailable}
+        return {**talent, "availability": availability_read(availability)}
 
     @mcp.tool()
     def list_duplicates() -> dict[str, Any]:

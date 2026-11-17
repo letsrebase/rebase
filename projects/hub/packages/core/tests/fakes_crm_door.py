@@ -90,9 +90,11 @@ class FakeCrmDoor:
             return failure
         assert method == "GET", "the door's freelancer reads are all GETs"
         assert parts.path.startswith(PREFIX), parts.path
+        query = parse_qs(parts.query)
+        if parts.path.removeprefix(PREFIX) == "commitments":
+            return self._json(self._commitments(query))
         freelancer_text, _, tail = parts.path.removeprefix(PREFIX).partition("/")
         freelancer = UUID(freelancer_text)
-        query = parse_qs(parts.query)
         if tail == "contracts":
             return self._json({"documents": self.documents.get(freelancer, [])})
         if tail.startswith("contracts/") and tail.endswith("/pdf"):
@@ -137,7 +139,18 @@ class FakeCrmDoor:
         return {
             "freelancer_id": None if freelancer not in self.committed else str(freelancer),
             "hub_freelancer_id": str(freelancer),
-            "date_from": start.isoformat(),
-            "date_to": (start + timedelta(days=6)).isoformat(),
+            "date_from": weeks[0]["starts_on"],
+            "date_to": weeks[-1]["ends_on"],
             "weeks": weeks,
+        }
+
+    def _commitments(self, query: dict[str, list[str]]) -> dict[str, Any]:
+        """Every card a test committed, each as its own `availability` answers it; the window
+        is the first one's, or this fake's one free week when nobody is committed."""
+        answers = [self._availability(freelancer, query) for freelancer in self.committed]
+        window = answers[0] if answers else self._availability(UUID(int=0), query)
+        return {
+            "date_from": window["date_from"],
+            "date_to": window["date_to"],
+            "freelancers": answers,
         }

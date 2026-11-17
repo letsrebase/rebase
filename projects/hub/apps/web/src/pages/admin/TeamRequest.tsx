@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { useId, useState, type FormEvent } from 'react'
@@ -11,6 +11,7 @@ import {
   ApiError,
   type TeamMember,
   type TeamProposal,
+  type TalentCommitments,
   type TeamRequest,
   type TeamRequestStatus,
   type TeamRequestTalent,
@@ -28,6 +29,8 @@ import {
 import { formatMoney } from '@rebase/ui/format'
 import { keys } from '@/lib/query-keys'
 import { Empty, Header, LoadingState, Row } from './list-kit'
+import { useTalentAvailability } from '@/lib/availability'
+import { AvailabilityCell, AvailabilityFailure } from './talent/Availability'
 
 /** Core's `SUMMARY_MAX_LENGTH` and `PROJECT_MAX_LENGTH` (the note's ceiling). */
 const SummaryMax = 1500
@@ -122,6 +125,7 @@ function RequestPage({ request }: { request: TeamRequest }) {
   )
   const teamId = useId()
   const contactsId = useId()
+  const availability = useTalentAvailability()
   return (
     <>
       <Header title={request.company} />
@@ -150,6 +154,8 @@ function RequestPage({ request }: { request: TeamRequest }) {
           Il team
         </h2>
         <ContactTalents request={request} onContacted={apply} />
+        {/* Who the CRM already has committed (REB-1120), read before «Contatta i talenti». */}
+        <AvailabilityFailure query={availability} />
         {request.talents.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nessun talento in questa richiesta.</p>
         ) : (
@@ -161,12 +167,18 @@ function RequestPage({ request }: { request: TeamRequest }) {
                   <TableHead>Ruolo</TableHead>
                   <TableHead>Tariffa</TableHead>
                   <TableHead>Fascia cliente</TableHead>
+                  <TableHead>Disponibilità</TableHead>
                   <TableHead>Risposta</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {request.talents.map((talent) => (
-                  <TalentRow key={talent.freelancer_id} talent={talent} member={members.get(talent.freelancer_id)} />
+                  <TalentRow
+                    key={talent.freelancer_id}
+                    talent={talent}
+                    member={members.get(talent.freelancer_id)}
+                    availability={availability}
+                  />
                 ))}
               </TableBody>
             </Table>
@@ -204,7 +216,15 @@ function RequestPage({ request }: { request: TeamRequest }) {
   )
 }
 
-function TalentRow({ talent, member }: { talent: TeamRequestTalent; member: TeamMember | undefined }) {
+function TalentRow({
+  talent,
+  member,
+  availability,
+}: {
+  talent: TeamRequestTalent
+  member: TeamMember | undefined
+  availability: UseQueryResult<TalentCommitments>
+}) {
   return (
     <TableRow>
       <TableCell>
@@ -221,6 +241,9 @@ function TalentRow({ talent, member }: { talent: TeamRequestTalent; member: Team
       </TableCell>
       <TableCell>{talent.daily_rate === null ? '—' : formatMoney(talent.daily_rate)}</TableCell>
       <TableCell>{talent.band ? bandLabel(talent.band) : '—'}</TableCell>
+      <TableCell className="whitespace-normal">
+        <AvailabilityCell query={availability} freelancerId={talent.freelancer_id} />
+      </TableCell>
       <TableCell>{answer(talent)}</TableCell>
     </TableRow>
   )

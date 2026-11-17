@@ -4,6 +4,7 @@ cloud."""
 
 import logging
 from typing import Any
+from uuid import UUID
 
 from mcp.server import MCPServer
 from pydantic import ValidationError as PydanticValidationError
@@ -24,6 +25,7 @@ from rebase_core.team_schemas import (
     TeamRequestRead,
     TeamRequestSummary,
 )
+from rebase_mcp.talents_view import availability_read
 from rebase_mcp.tools_common import (
     Deps,
     field_refusal,
@@ -82,10 +84,25 @@ def register(mcp: MCPServer, deps: Deps) -> None:
     def get_team_request(request_id: str) -> dict[str, Any]:
         """One team request, by id (spec § 3.5): the proposal with the talents by name and their
         rate and band, the summary and the location the talents will read, the company's
-        contacts, the status, the admin's note, and each talent's answer with its time.
-        Read-only."""
+        contacts, the status, the admin's note, and each talent's answer with its time. Each
+        talent also carries `availability`, whether PigroCRM already has them committed, as
+        `list_talents` describes it, so whom to write to is decided before
+        `contact_team_talents`; when PigroCRM cannot answer every talent's is `None` and
+        `availability_error` says why. Read-only."""
         key = to_uuid(request_id, "request_id")
-        return deps.run(lambda s: TeamRequestService(s, settings=deps.team_settings()).get(key))
+        request = deps.run(lambda s: TeamRequestService(s, settings=deps.team_settings()).get(key))
+        if not request["talents"]:
+            return request
+        commitments, unavailable = deps.commitments()
+        for talent in request["talents"]:
+            talent["availability"] = (
+                availability_read(commitments.of(UUID(talent["freelancer_id"])))
+                if commitments is not None
+                else None
+            )
+        if unavailable is not None:
+            request["availability_error"] = unavailable
+        return request
 
     @mcp.tool()
     def set_team_request_summary(request_id: str, summary: str) -> dict[str, Any]:

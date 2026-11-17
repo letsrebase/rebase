@@ -19,6 +19,8 @@ import { FREELANCER_LIST_STATES, REMOTE_LABELS, SENIORITY_LABELS } from '@/lib/f
 import { keys } from '@/lib/query-keys'
 import { DuplicatesLink } from '../DuplicateMarks'
 import { AmountFilter, Empty, FilterField, Header, LoadingState, LoadMore, StateFilter } from '../list-kit'
+import { useTalentAvailability } from '@/lib/availability'
+import { AvailabilityFailure } from './Availability'
 import { TalentRow } from './TalentRow'
 
 /** What `sort` can be, in the words the screen shows (the keys are the service's own). */
@@ -81,6 +83,9 @@ export function AdminTalents() {
     fetchPage: (cursor) => admin.talent({ ...filters, cursor }),
     itemsOf: pageItems,
   })
+  // Who is already committed, as the CRM says (REB-1120): one read for every row, apart from
+  // the list, so a slow or absent CRM never holds the list back.
+  const availability = useTalentAvailability()
   // What the request carries: an amount it cannot send narrows nothing, so it is no filter.
   const activeFilters = isFilterActive(filters)
 
@@ -313,13 +318,15 @@ export function AdminTalents() {
              container closed by a 1px ink line, 48px rows, a 2px rule under the header
              and a 1px separator between the cells, all from `@rebase/ui/table`. The
              padding the raw `th`/`td` used to type is the primitive's own. */}
-          <div className="px-6 pt-6 pb-6">
+          <div className="space-y-3 px-6 pt-6 pb-6">
+            <AvailabilityFailure query={availability} />
             <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
               <Table scrollLabel="Talenti">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Chi</TableHead>
                     <TableHead>Stato</TableHead>
+                    <TableHead>Disponibilità</TableHead>
                     <TableHead>Profilo</TableHead>
                     <TableHead>Competenze</TableHead>
                     <TableHead className="text-right">Tariffa</TableHead>
@@ -332,7 +339,7 @@ export function AdminTalents() {
                 </TableHeader>
                 <TableBody>
                   {items.map((item) => (
-                    <TalentRow key={item.id} item={item} />
+                    <TalentRow key={item.id} item={item} availability={availability} />
                   ))}
                 </TableBody>
               </Table>

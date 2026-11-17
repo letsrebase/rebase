@@ -16,6 +16,9 @@ export const keys = {
   freelancerAll: ['freelancer'] as const,
   freelancerCard: (id: string) => ['freelancer-card', id] as const,
   talents: (filters?: object) => (filters ? (['talents', filters] as const) : (['talents'] as const)),
+  /** The CRM's read, apart from `talents` so refreshing a list after a vet does not ask the
+   *  CRM again (REB-1120). */
+  talentAvailability: ['talent-availability'] as const,
   signup: (id: string) => ['signup', id] as const,
 
   companies: (filters?: object) => (filters ? (['companies', filters] as const) : (['companies'] as const)),

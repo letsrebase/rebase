@@ -320,17 +320,20 @@ def test_each_read_is_a_get_on_the_freelancers_own_path_with_the_bearer() -> Non
             b'{"framework_regimes": ["ordinary"], "shared_clients": 1, '
             b'"tax_code_conflict": false, "organization": true, "other_organization": false}',
         ),
+        (200, b'{"date_from": "2026-11-02", "date_to": "2026-11-08", "freelancers": []}'),
     )
 
     availability = door.availability(freelancer, date(2026, 11, 2), date(2026, 11, 8))
     contracts = door.contracts(freelancer)
     fiscal = door.fiscal_identifiers(freelancer)
     merge = door.merge_check(freelancer, other)
+    commitments = door.commitments(date(2026, 11, 2), date(2026, 11, 8))
 
     assert availability.freelancer_id is None and availability.weeks == []
     assert contracts.documents == []
     assert fiscal.tax_code == "X"
     assert (merge.framework_regimes, merge.shared_clients) == (["ordinary"], 1)
+    assert commitments.freelancers == []
     assert [(method, target) for method, target, _ in seam.calls] == [
         (
             "GET",
@@ -339,6 +342,7 @@ def test_each_read_is_a_get_on_the_freelancers_own_path_with_the_bearer() -> Non
         ("GET", f"{URL}/api/rebase/freelancers/{freelancer}/contracts"),
         ("GET", f"{URL}/api/rebase/freelancers/{freelancer}/fiscal-identifiers"),
         ("GET", f"{URL}/api/rebase/freelancers/{freelancer}/merge-check?with={other}"),
+        ("GET", f"{URL}/api/rebase/freelancers/commitments?from=2026-11-02&to=2026-11-08"),
     ]
     assert {headers["Authorization"] for _, _, headers in seam.calls} == {f"Bearer {TOKEN}"}
     # With no dates the window is the CRM's default: nothing is sent.

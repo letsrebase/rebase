@@ -39,6 +39,15 @@ class CrmAvailability(_Answer):
     weeks: list[CrmWeek]
 
 
+class CrmCommitments(_Answer):
+    """Every freelancer the CRM holds a live engagement for in the window, each as `availability`
+    answers them (REB-1120). A card that is not in `freelancers` is free in every week."""
+
+    date_from: date
+    date_to: date
+    freelancers: list[CrmAvailability]
+
+
 class CrmDocument(_Answer):
     id: UUID
     kind: str

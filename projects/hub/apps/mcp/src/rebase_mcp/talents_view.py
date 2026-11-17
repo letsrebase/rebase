@@ -13,11 +13,13 @@ database.
 
 from collections.abc import Sequence
 from typing import Any
+from uuid import UUID
 
 import pydantic_core
 from mcp.types import CallToolResult, TextContent
 
 from rebase_core.errors import ValidationFailed
+from rebase_core.talent_availability import Commitments, TalentAvailability
 from rebase_core.talent_schemas import TalentRead
 
 # The page size an agent gets without asking, and the most it can ask for. The service
@@ -41,6 +43,7 @@ SHORT_FIELDS = (
     "location",
     "skills",
     "profile_summary",
+    "availability",
 )
 # «Top skills»: the card lists up to twenty, the first ones are what the person leads
 # with, and the summary (up to 400 characters) is cut where a sentence of it is already
@@ -49,7 +52,9 @@ SHORT_FIELDS = (
 SHORT_SKILLS = 5
 SHORT_PROFILE_SUMMARY = 160
 ALL = "all"
-ROW_FIELDS: tuple[str, ...] = tuple(TalentRead.model_fields)
+# `availability` is not the service's: it is the CRM's (REB-1120), laid over each card's row.
+AVAILABILITY = "availability"
+ROW_FIELDS: tuple[str, ...] = (*TalentRead.model_fields, AVAILABILITY)
 
 
 def row_fields(fields: Sequence[str] | None) -> tuple[str, ...] | None:
@@ -77,7 +82,8 @@ def row_fields(fields: Sequence[str] | None) -> tuple[str, ...] | None:
 def talent_row(row: dict[str, Any], fields: tuple[str, ...] | None) -> dict[str, Any]:
     """One row of the list as it is sent. With `fields` exactly those keys, whole;
     without, the short row: `SHORT_FIELDS`, the keys with no value left out, the skills
-    cut to `SHORT_SKILLS` and the summary to `SHORT_PROFILE_SUMMARY` characters."""
+    cut to `SHORT_SKILLS` and the summary to `SHORT_PROFILE_SUMMARY` characters. The row has
+    been through `with_availability`."""
     if fields is not None:
         return {name: row[name] for name in fields}
     short = {name: row[name] for name in SHORT_FIELDS if row[name] not in (None, [])}
@@ -94,7 +100,46 @@ def talent_row(row: dict[str, Any], fields: tuple[str, ...] | None) -> dict[str,
         short["skills"] = short["skills"][:SHORT_SKILLS]
     if "profile_summary" in short:
         short["profile_summary"] = _cut(short["profile_summary"], SHORT_PROFILE_SUMMARY)
+    if AVAILABILITY in short:
+        short[AVAILABILITY] = short_availability(short[AVAILABILITY])
     return short
+
+
+def availability_read(availability: TalentAvailability) -> dict[str, Any]:
+    """One card's availability as a tool sends it whole."""
+    return availability.model_dump(mode="json")
+
+
+def short_availability(availability: dict[str, Any]) -> dict[str, Any]:
+    """The availability of a short row: only the keys with a value, and no `committed_days` on a
+    free week, which has none."""
+    short = {key: value for key, value in availability.items() if value is not None}
+    if short.get("status") == "free":
+        short.pop("committed_days", None)
+    return short
+
+
+def with_availability(
+    page: dict[str, Any], commitments: Commitments | None, error: str | None
+) -> dict[str, Any]:
+    """A dumped `TalentList` with each card's `availability` from the CRM's one read, `None` on
+    a lead (no card, nothing the CRM can hold) and on every row when the CRM could not answer,
+    which `availability_error` then says, only then."""
+    items = [
+        {
+            **row,
+            AVAILABILITY: (
+                availability_read(commitments.of(UUID(row["id"])))
+                if commitments is not None and row["status"] != "lead"
+                else None
+            ),
+        }
+        for row in page["items"]
+    ]
+    shown = {**page, "items": items}
+    if error is not None:
+        shown["availability_error"] = error
+    return shown
 
 
 def _cut(text: str, length: int) -> str:

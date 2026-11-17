@@ -32,10 +32,16 @@ from rebase_core.errors import DomainError
 from rebase_core.http import HttpCall, urllib_call
 from rebase_core.llm import LlmCall
 from rebase_core.mail import EmailSender
-from rebase_core.pigro_door import FreelancerDoor, freelancer_door
+from rebase_core.pigro_door import FreelancerDoor, PigroUnavailable, freelancer_door
 from rebase_core.ratelimit import RateLimiter
 from rebase_core.schema_common import Remote
 from rebase_core.search import SEARCH_MAX_LENGTH
+from rebase_core.talent_availability import (
+    Commitments,
+    TalentAvailability,
+    of_one,
+    read_commitments,
+)
 from rebase_core.validation import NOT_VALID, field_reason
 
 _REMOTE_WORDS: tuple[Remote, ...] = get_args(Remote)
@@ -262,6 +268,22 @@ class Deps:
         answers that this environment is not configured, and the tool refuses."""
         settings = self.settings if self.settings is not None else Settings(_env_file=None)  # type: ignore[call-arg]
         return freelancer_door(settings, self.http if self.http is not None else urllib_call)
+
+    def commitments(self) -> tuple[Commitments | None, str | None]:
+        """Who is committed, as the CRM says (REB-1120), for a tool that reads talents, or the
+        sentence why the CRM could not say: a talent read is never refused because the CRM is
+        down. Called outside any session, since it waits on the network."""
+        try:
+            return read_commitments(self.freelancer_door), None
+        except PigroUnavailable as exc:
+            return None, str(exc)
+
+    def availability_of(self, freelancer_id: UUID) -> tuple[TalentAvailability | None, str | None]:
+        """`commitments` for one card: the CRM's read of that freelancer alone."""
+        try:
+            return of_one(self.freelancer_door.availability(freelancer_id)), None
+        except PigroUnavailable as exc:
+            return None, str(exc)
 
     @property
     def campaign_settings(self) -> Settings:

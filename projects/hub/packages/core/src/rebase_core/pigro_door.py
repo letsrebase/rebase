@@ -22,8 +22,9 @@ again (`attempts`) is asked again on a connection that failed and on a `502`, `5
 every `GET` of the door is idempotent.
 
 **The freelancer reads** (`FreelancerDoor`, REB-1107) are what the hub keeps asking the CRM
-now that the relationship with a freelancer lives there: availability, the member's contracts
-and their signed PDF, the fiscal identifiers the anonymous CV redacts, and the merge check.
+now that the relationship with a freelancer lives there: availability (of one card, or of every
+committed one at once for a list, REB-1120), the member's contracts and their signed PDF, the
+fiscal identifiers the anonymous CV redacts, and the merge check.
 They answer the way every `GET` does, and a caller decides what an unreachable CRM means for
 it: the anonymous CV is not written, the member's page shows an error, a merge is refused.
 
@@ -53,6 +54,7 @@ from rebase_core.config import Settings
 from rebase_core.crm_words import ERROR, HTTPS_ONLY, LINKED, REJECTED
 from rebase_core.door_schemas import (
     CrmAvailability,
+    CrmCommitments,
     CrmContracts,
     CrmFiscalIdentifiers,
     CrmFreelancerOrganization,
@@ -157,6 +159,16 @@ def speaks_https(url: str) -> bool:
 def too_long(raw: bytes, limit: int = MAX_BODY_BYTES) -> bool:
     """Whether an answer passes the seam's cap (the seam reads one byte beyond it)."""
     return len(raw) > limit
+
+
+def _window(date_from: date | None, date_to: date | None) -> dict[str, str]:
+    """An availability read's `from` and `to`, each only when given: the CRM's default otherwise
+    (this week, twelve weeks on)."""
+    return {
+        key: value.isoformat()
+        for key, value in (("from", date_from), ("to", date_to))
+        if value is not None
+    }
 
 
 def cause_of(raw: bytes, status: int) -> str:
@@ -345,14 +357,22 @@ class FreelancerDoor:
         """The weeks a freelancer is committed, from the CRM's live engagements: `unknown` for
         a week an engagement with no `days_per_week` touches, never `free`. A card the CRM
         holds nothing about is free in every week."""
-        query = {
-            key: value.isoformat()
-            for key, value in (("from", date_from), ("to", date_to))
-            if value is not None
-        }
         return self._door(self.http).get(
-            self._path(freelancer_id, "availability", query),
+            self._path(freelancer_id, "availability", _window(date_from, date_to)),
             CrmAvailability.model_validate_json,
+            attempts=READ_ATTEMPTS,
+        )
+
+    def commitments(
+        self, date_from: date | None = None, date_to: date | None = None
+    ) -> CrmCommitments:
+        """`availability` of every card the CRM holds a live engagement for, in one read: what a
+        list needs (REB-1120). A card that is not in the answer is free in every week."""
+        query = _window(date_from, date_to)
+        path = f"{FREELANCERS_PATH}/commitments"
+        return self._door(self.http).get(
+            f"{path}?{urlencode(query)}" if query else path,
+            CrmCommitments.model_validate_json,
             attempts=READ_ATTEMPTS,
         )
 

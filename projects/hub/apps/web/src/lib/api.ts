@@ -365,6 +365,9 @@ export type LoginStats = Schemas['LoginStats']
 export type GuideStats = Schemas['GuideStats']
 export type Talent = Schemas['TalentRead']
 export type TalentList = Schemas['TalentList']
+/** Who is committed, as the CRM says (REB-1120): this week and its next change, by card. */
+export type TalentAvailability = Schemas['TalentAvailability']
+export type TalentCommitments = Schemas['TalentCommitments']
 
 /** Why two cards look like one person (REB-800): the same LinkedIn profile, the same name
  *  or the same telephone number. Only the first is a reason to merge. */
@@ -763,6 +766,10 @@ export const admin = {
   /** Who is on the list twice (REB-800): the pairs that share a LinkedIn profile
    *  (`mergeable`) and the ones that only share a name or a number (`to_review`). */
   duplicates: () => unwrap(client.GET('/api/hub/talent/duplicates'), reading<DuplicateList>()),
+  /** Every card the CRM has a live engagement for, in one read (REB-1120): a card that is not
+   *  in it is free. 502 or 503 with the door's sentence when the CRM cannot answer. */
+  talentAvailability: () =>
+    unwrap(client.GET('/api/hub/talent/availability'), reading<TalentCommitments>()),
   /** «Unisci» (REB-800): the card `absorbedId` into the card `survivorId`. A refusal is a
    *  409 carrying the API's sentence; the merge is undone from the shell only. */
   mergeFreelancer: (survivorId: string, absorbedId: string) =>

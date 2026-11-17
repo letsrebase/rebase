@@ -90,6 +90,7 @@ from rebase_core.referral_settings import ReferralSettingsService
 from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.service import SignupService
 from rebase_core.signup_schemas import SignupList
+from rebase_core.talent_availability import TalentCommitments, read_commitments
 from rebase_core.talent_schemas import TalentList, TalentRead
 from rebase_core.talents import TalentsService, lead_by_id
 from rebase_core.team_schemas import FreelancerCardAdminRead
@@ -363,6 +364,19 @@ def list_duplicates(_: AdminDep, session: SessionDep) -> DuplicateListRead:
     can be merged, and the ones that only share a name or a number, which are for an
     admin to look at. The survivor of each pair is the card with the newest CV."""
     return duplicate_list(session)
+
+
+@router.get("/talent/availability", response_model=TalentCommitments)
+def talent_availability(_: AdminDep, door: FreelancerDoorDep) -> TalentCommitments:
+    """Who is already committed, as the CRM says (REB-1120): this week's status and when it
+    changes, for every freelancer the CRM holds a live engagement for, in one read of the CRM.
+    A card that is not in the answer is free. Kept apart from the list, so «Talenti» and a team
+    request show their rows even when the CRM is slow or down: 502 with the seam's sentence when
+    the CRM does not answer, 503 when this environment cannot reach it."""
+    try:
+        return read_commitments(door).read
+    except PigroUnavailable as exc:
+        raise door_unavailable(exc, "La disponibilità non si legge senza il CRM.") from exc
 
 
 @router.post("/freelancers/{freelancer_id}/merge", response_model=MergeRead)

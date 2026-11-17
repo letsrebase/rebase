@@ -11,12 +11,15 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from fakes_crm_door import FakeCrmDoor
+from fakes_pigro import PIGRO, TOKEN
 from mcp import Client
 from mcp_tool_support import IVAN, PDF, _payload, _seed, _seed_admin, _seed_freelancer, _wipe
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
 import rebase_mcp.tools_talents as tools_talents
+from rebase_core.config import Settings
 from rebase_core.errors import ValidationFailed
 from rebase_core.freelancer_schemas import FreelancerCreate, FreelancerDraft
 from rebase_core.freelancers import FreelancerService
@@ -146,7 +149,8 @@ def _row(**fields: Any) -> dict[str, Any]:
         created_at=datetime(2026, 10, 1, tzinfo=UTC),
         **fields,
     )
-    return row.model_dump(mode="json")
+    # The row as `list_talents` hands it on: the CRM's availability laid over it (REB-1120).
+    return {**row.model_dump(mode="json"), "availability": None}
 
 
 def test_the_short_row_is_the_card_without_addresses_dates_or_empty_keys() -> None:
@@ -187,7 +191,8 @@ def test_fields_names_the_fields_whole_with_the_id_and_all_is_the_full_row() -> 
     picked = talent_row(row, row_fields(["industries", "skills"]))
     assert list(picked) == ["id", "industries", "skills"]
     assert picked["skills"] == FULL_CARD["skills"]
-    assert set(talent_row(row, row_fields(["all"]))) == set(TalentRead.model_fields)
+    # The full row is the service's, plus the CRM's availability laid over it (REB-1120).
+    assert set(talent_row(row, row_fields(["all"]))) == {*TalentRead.model_fields, "availability"}
     assert row_fields(None) is None and row_fields([]) is None and row_fields([" "]) is None
 
 
@@ -591,3 +596,78 @@ async def test_a_deleted_freelancer_is_not_found_through_a_contact_point(
         assert not deleted.is_error, deleted.content[0].text
         gone = _payload(await client.call_tool("list_talents", {"q": "3888713657"}))
         assert gone["items"] == []
+
+
+# ---- availability, as PigroCRM says (REB-1120) ------------------------------------------------
+
+CRM_SETTINGS = Settings(
+    _env_file=None,  # type: ignore[call-arg]
+    pigro_api_url=PIGRO,
+    pigro_engagements_token=TOKEN,
+)
+BUSY_WEEK = {
+    "week": "2026-W47",
+    "starts_on": "2026-11-16",
+    "ends_on": "2026-11-22",
+    "status": "committed",
+    "label": "impegnata",
+    "committed_days": "3.0",
+    "free_days": "2.0",
+    "engagement_ids": [],
+}
+FREE_WEEK = {
+    **BUSY_WEEK,
+    "week": "2026-W48",
+    "starts_on": "2026-11-23",
+    "ends_on": "2026-11-29",
+    "status": "free",
+    "label": "libera",
+    "committed_days": "0",
+    "free_days": "5",
+}
+
+
+async def test_each_card_says_whether_the_crm_has_it_committed_from_one_read(
+    clean: sessionmaker[Session],
+) -> None:
+    busy = _card(clean, "ada@studio.it", card=FULL_CARD)
+    idle = _card(clean, "bea@studio.it", first_name="Bea")
+    _lead(clean, "giulia@studio.it")
+    crm = FakeCrmDoor(committed={UUID(busy): [BUSY_WEEK, FREE_WEEK]})
+    async with Client(build_server(clean, lambda: IVAN, settings=CRM_SETTINGS, http=crm)) as client:
+        short = _payload(await client.call_tool("list_talents", {}))
+        narrow = _payload(await client.call_tool("list_talents", {"fields": ["role"]}))
+        card = _payload(await client.call_tool("get_talent", {"talent_id": busy}))
+
+    rows = {row["id"]: row for row in short["items"]}
+    assert rows[busy]["availability"] == {
+        "status": "committed",
+        "committed_days": "3.0",
+        "free_from": "2026-11-23",
+        "until": "2026-11-29",
+    }
+    assert rows[idle]["availability"] == {"status": "free", "until": "2026-11-29"}
+    assert all("availability" not in row for row in rows.values() if row["status"] == "lead")
+    assert "availability_error" not in short
+    # A page whose fields leave availability out does not ask the CRM at all.
+    assert all(list(row) == ["id", "role"] for row in narrow["items"])
+    assert card["availability"]["free_from"] == "2026-11-23"
+    assert [path for _, path in crm.calls] == [
+        "/api/rebase/freelancers/commitments",
+        f"/api/rebase/freelancers/{busy}/availability",
+    ]
+
+
+async def test_a_crm_that_cannot_answer_leaves_the_list_and_says_why(
+    clean: sessionmaker[Session],
+) -> None:
+    ada = _card(clean, "ada@studio.it")
+    crm = FakeCrmDoor()
+    crm.down(*[(500, b"{}")] * 4)
+    async with Client(build_server(clean, lambda: IVAN, settings=CRM_SETTINGS, http=crm)) as client:
+        page = _payload(await client.call_tool("list_talents", {}))
+        card = _payload(await client.call_tool("get_talent", {"talent_id": ada}))
+
+    assert [row["id"] for row in page["items"]] == [ada]
+    assert "availability" not in page["items"][0] and page["availability_error"]
+    assert card["availability"] is None and card["availability_error"]
