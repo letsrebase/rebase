@@ -292,7 +292,8 @@ export interface paths {
          * Approve Work Profile
          * @description «Approva»: the profile counts from now, the person is verified when they were not, and
          *     the decision is signed in the trail (`work_profile_decided`). The optional note stays with
-         *     the admins. 409 for a profile already decided or past its 12 months.
+         *     the admins. The person is mailed after the answer (REB-1127). 409 for a profile already
+         *     decided or past its 12 months.
          */
         post: operations["approve_work_profile_api_hub_freelancers__freelancer_id__work_profile_approve_post"];
         delete?: never;
@@ -312,8 +313,9 @@ export interface paths {
         put?: never;
         /**
          * Reject Work Profile
-         * @description «Rifiuta»: the note is required and the person reads it in their area. The verified
-         *     flag is not touched. 409 for a profile already decided or past its 12 months.
+         * @description «Rifiuta»: the note is required, and the person reads it in their area and in the mail
+         *     they get after the answer (REB-1127). The verified flag is not touched. 409 for a profile
+         *     already decided or past its 12 months.
          */
         post: operations["reject_work_profile_api_hub_freelancers__freelancer_id__work_profile_reject_post"];
         delete?: never;
@@ -1327,6 +1329,28 @@ export interface paths {
         head?: never;
         /** Update My Company Request */
         patch: operations["update_my_company_request_api_hub_me_company__company_id__patch"];
+        trace?: never;
+    };
+    "/api/hub/me/work-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete My Work Profile
+         * @description «Elimina il profilo» (REB-1127): the person's work profile goes at once, whatever its
+         *     state. The card follows (it is rewritten without it) and the verified flag stays: that is
+         *     the admins' judgement. 404 for somebody with no card.
+         */
+        delete: operations["delete_my_work_profile_api_hub_me_work_profile_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/hub/me/cv": {
@@ -2366,7 +2390,9 @@ export interface components {
              *     amounts decimal strings: that is how `sanitize_payload` stores them.
              *
              *     * a field override or clear (`field_changes`): `changed`, `before`, `after`;
-             *     * `vetted`: `vetted`; a note or status entry: `source`, `text`, `note_id`;
+             *     * `vetted`: `vetted`; `work_profile_decided`: `decision` (`approved` or `rejected`) and
+             *       `vetted`, whether the approval verified the person;
+             *     * a note or status entry: `source`, `text`, `note_id`;
              *     * `pigro_link`: `outcome`, `error`; `anon_cv_downloaded`: `reused`;
              *     * a merge (REB-800): `into_freelancer_id`/`from_freelancer_id`, `moved`, `left_behind`,
              *       `cv`, `card_to_regenerate`, and `put_back` on the undo;
@@ -2387,6 +2413,8 @@ export interface components {
                 } | string;
                 /** Vetted */
                 vetted?: boolean;
+                /** Decision */
+                decision?: string;
                 /** Source */
                 source?: string;
                 /** Text */
@@ -3111,10 +3139,13 @@ export interface components {
          * CloudTalentRead
          * @description A talent as an admitted company reads them in the cloud (spec § 4.2): who they
          *     are, the links they gave, whether rebase vetted them, the anonymous card (its
-         *     `location` left out: the CV is one click away), the work mode, the client's band and
-         *     whether there is a CV to open. Never the freelancer's own rate, their state, the
-         *     admin's notes, nor their address or phone: those are not fields here,
-         *     so no read can carry them.
+         *     `location` left out: the CV is one click away), the work mode, the client's band,
+         *     whether there is a CV to open and, only while an approved work profile of theirs
+         *     has not expired, its summary (`work_profile`: the summary, the domains' labels with
+         *     their counts and the representative projects' abstract domains, REB-1127). Never the
+         *     freelancer's own rate, their state, the admin's notes, nor their address or phone, nor
+         *     anything else of the profile (its narratives, trajectory, counts of how they use agents,
+         *     artifacts and repository names): those are not fields here, so no read can carry them.
          */
         CloudTalentRead: {
             /**
@@ -3138,6 +3169,35 @@ export interface components {
             band: components["schemas"]["Band"] | null;
             /** Has Cv */
             has_cv: boolean;
+            work_profile: components["schemas"]["CloudWorkProfile"] | null;
+        };
+        /**
+         * CloudWorkDomain
+         * @description A field of work the person's profile names, with how many products and sessions it
+         *     covers (both `None` when the profile gave none).
+         */
+        CloudWorkDomain: {
+            /** Label */
+            label: string;
+            /** Products */
+            products: number | null;
+            /** Sessions */
+            sessions: number | null;
+        };
+        /**
+         * CloudWorkProfile
+         * @description What a company reads of an approved work profile (REB-1127, spec 2026-11-17 § 5): the
+         *     summary the person's own model wrote and an admin read, the labels of the domains with
+         *     their counts and the abstract domain of each representative project. Not the narratives,
+         *     the trajectory, the agentic-literacy counts nor the artifacts: they stay in the admin.
+         */
+        CloudWorkProfile: {
+            /** Summary */
+            summary: string | null;
+            /** Domains */
+            domains: components["schemas"]["CloudWorkDomain"][];
+            /** Project Domains */
+            project_domains: string[];
         };
         /**
          * CompaniesFilters
@@ -4347,6 +4407,7 @@ export interface components {
              * @default false
              */
             talent_cloud: boolean;
+            work_profile: components["schemas"]["MemberWorkProfile"] | null;
             /** Complete */
             readonly complete: boolean;
             /** Has Company */
@@ -4556,6 +4617,34 @@ export interface components {
             remote: "remote" | "hybrid" | "on_site";
             /** Links */
             links?: string[];
+        };
+        /**
+         * MemberWorkProfile
+         * @description The work profile as its owner reads it in their area (REB-1127, spec 2026-11-17 § 7):
+         *     where it stands (`draft` is «In revisione»), when it was sent and when it stops counting,
+         *     and the admin's note only when it was rejected: an approval's note stays with the admins.
+         *     `expired` says `expires_at` has passed; the sweep deletes the row soon after.
+         */
+        MemberWorkProfile: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "draft" | "approved" | "rejected";
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Expired */
+            expired: boolean;
+            /** Decision Note */
+            decision_note: string | null;
         };
         /**
          * MergeRead
@@ -8828,6 +8917,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_my_work_profile_api_hub_me_work_profile_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeRead"];
                 };
             };
         };

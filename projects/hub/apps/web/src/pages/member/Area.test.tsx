@@ -407,11 +407,12 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
 describe('/me, one column in a fixed order (REB-641), the referral panel first (REB-610)', () => {
   const PERKS = ['PigroCRM è tuo, gratis', 'I primi passi da freelance']
   const CONTACTS = 'I tuoi recapiti'
+  const WORK_PROFILE = 'Profilo di lavoro'
   const cases: [string, unknown, string[]][] = [
-    ['a card only', PROFILE, ['La tua scheda', CONTACTS, ...PERKS, 'Contratti']],
+    ['a card only', PROFILE, ['La tua scheda', WORK_PROFILE, CONTACTS, ...PERKS, 'Contratti']],
     ['a company only', COMPANY_ONLY, ['La tua richiesta', CONTACTS]],
     ['a company with two requests', COMPANY_TWO_REQUESTS, ['Le tue richieste', CONTACTS]],
-    ['a card and a company', BOTH, ['La tua scheda', 'La tua richiesta', CONTACTS, ...PERKS, 'Contratti']],
+    ['a card and a company', BOTH, ['La tua scheda', WORK_PROFILE, 'La tua richiesta', CONTACTS, ...PERKS, 'Contratti']],
     ['a card-less admin', CARDLESS_ADMIN, [CONTACTS, ...PERKS]],
     ['a plain member with nothing else', NOBODY, [CONTACTS]],
   ]
@@ -431,8 +432,10 @@ describe('/me, one column in a fixed order (REB-641), the referral panel first (
     mount()
     await screen.findByText('Nessuna segnalazione ancora.')
     const rows = Array.from(stack().children) as HTMLElement[]
-    // Six sections, one per row: referral, card, request, contacts, perks, contracts.
+    // Seven sections, one per row: referral, card, work profile, request, contacts, perks,
+    // contracts.
     expect(rows.map((row) => row.tagName)).toEqual([
+      'SECTION',
       'SECTION',
       'SECTION',
       'SECTION',
@@ -441,14 +444,33 @@ describe('/me, one column in a fixed order (REB-641), the referral panel first (
       'SECTION',
     ])
     expect(rows[0]).toContainElement(screen.getByRole('heading', { name: 'Il tuo link di segnalazione' }))
-    expect(rows[3]).toContainElement(screen.getByRole('heading', { name: 'I tuoi recapiti' }))
-    expect(rows[5]).toContainElement(screen.getByRole('heading', { name: 'Contratti' }))
+    expect(rows[2]).toContainElement(screen.getByRole('heading', { name: 'Profilo di lavoro' }))
+    expect(rows[4]).toContainElement(screen.getByRole('heading', { name: 'I tuoi recapiti' }))
+    expect(rows[6]).toContainElement(screen.getByRole('heading', { name: 'Contratti' }))
     // The perks are two boxes in one section, stacked at every viewport: no column
     // class and no responsive variant on the section or on the stack.
     const perks = screen.getByLabelText('I tuoi vantaggi')
-    expect(perks).toBe(rows[4])
+    expect(perks).toBe(rows[5])
     expect(perks.className).not.toMatch(/grid-cols-|\b(sm|md|lg|xl|2xl):/)
     expect(stack().className).not.toMatch(/grid-cols-|\b(sm|md|lg|xl|2xl):/)
+  })
+
+  it('shows a rejected work profile with the admin\'s note under the card (REB-1127)', async () => {
+    meFetch({
+      ...PROFILE,
+      work_profile: {
+        state: 'rejected',
+        submitted_at: '2026-11-12T10:00:00Z',
+        expires_at: '2027-11-12T10:00:00Z',
+        expired: false,
+        decision_note: 'Manca un progetto con un link.',
+      },
+    })
+    mount()
+    await screen.findByText('Nessuna segnalazione ancora.')
+    const section = screen.getByRole('region', { name: 'Profilo di lavoro' })
+    expect(within(section).getByText('Non approvato')).toBeInTheDocument()
+    expect(within(section).getByText('Manca un progetto con un link.')).toBeInTheDocument()
   })
 
   it('shows the «Chi sei» fallback in the requests\' place, and only the contacts after it', async () => {

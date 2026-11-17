@@ -321,6 +321,7 @@ function TalentCard({ talent }: { talent: CloudTalent }) {
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-3">
         <p className="text-muted-foreground">{card.profile_summary}</p>
+        {talent.work_profile && <WorkProfileSummary profile={talent.work_profile} name={name} />}
         <Badges label="Competenze" items={card.skills} variant="outline" />
         <Badges label="Settori" items={card.industries} variant="secondary" />
         <Badges label="Lingue" items={card.languages} variant="secondary" />
@@ -373,6 +374,41 @@ function TalentCard({ talent }: { talent: CloudTalent }) {
       </CardContent>
     </Card>
   )
+}
+
+/** The summary of an approved work profile (REB-1127, spec 2026-11-17 § 5): how the person
+ *  works with agents in a few lines, the fields of work with their counts and the kind of
+ *  project they build. Nothing of the profile beyond these three reaches a company. */
+function WorkProfileSummary({ profile, name }: { profile: NonNullable<CloudTalent['work_profile']>; name: string }) {
+  return (
+    <section aria-label={`Profilo di lavoro di ${name}`} className="space-y-2 border-t pt-3">
+      <h4 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Profilo di lavoro</h4>
+      {profile.summary && <p className="text-sm">{profile.summary}</p>}
+      <Badges
+        label="Ambiti di lavoro"
+        items={profile.domains.map((domain) => domainLabel(domain))}
+        variant="secondary"
+      />
+      {profile.project_domains.length > 0 && (
+        <ul aria-label="Progetti rappresentativi" className="space-y-1 text-sm text-muted-foreground">
+          {profile.project_domains.map((domain) => (
+            <li key={domain} className="line-clamp-2">
+              {domain}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+/** «Fintech · 4 prodotti, 9 sessioni», what of the counts the profile gave. */
+function domainLabel(domain: NonNullable<CloudTalent['work_profile']>['domains'][number]): string {
+  const counts = [
+    domain.products === null ? null : domain.products === 1 ? '1 prodotto' : `${domain.products} prodotti`,
+    domain.sessions === null ? null : domain.sessions === 1 ? '1 sessione' : `${domain.sessions} sessioni`,
+  ].filter(Boolean)
+  return counts.length > 0 ? `${domain.label} · ${counts.join(', ')}` : domain.label
 }
 
 function Badges({

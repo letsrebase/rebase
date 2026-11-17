@@ -14,6 +14,7 @@ import { FREELANCER_FIELDS } from '@/pages/FreelancerWizard'
 import { MemberContacts } from '@/pages/member/Contacts'
 import { MemberContracts } from '@/pages/member/Contracts'
 import { MemberReferral } from '@/pages/member/Referral'
+import { MemberWorkProfile } from '@/pages/member/WorkProfile'
 
 // `/app/login`, not `/app/register`: PigroCRM's own login already knows what to do with
 // whoever is behind it (REB-377's identity-cookie chooser, its own effect that sends an
@@ -307,6 +308,7 @@ export function Area() {
       <div className="space-y-8">
         <MemberReferral />
         {cardSection}
+        {profile.has_card && <MemberWorkProfile profile={profile.work_profile} />}
         {requestsSection}
         {roleSection}
         <MemberContacts />

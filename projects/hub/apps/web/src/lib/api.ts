@@ -1064,6 +1064,9 @@ export const member = {
   contractPdfUrl: (documentId: string) => `/api/hub/me/contracts/${encodeURIComponent(documentId)}/pdf`,
   /** The member's own link, issued the first time it is asked for (P-REB-44). */
   referral: () => unwrap(client.GET('/api/hub/me/referral'), reading<MemberReferral>()),
+  /** «Elimina il profilo» (REB-1127): the person's work profile, deleted at once whatever its
+   *  state; answers the person's read without it. The verified flag stays. */
+  deleteWorkProfile: () => unwrap(client.DELETE('/api/hub/me/work-profile'), reading<Me>()),
   logout: () => unwrap(client.POST('/api/hub/me/logout')),
 }
 
