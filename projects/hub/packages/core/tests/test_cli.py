@@ -1052,3 +1052,32 @@ def test_createtoken_and_setrole_fail_rather_than_wait_for_input_without_a_termi
     assert main(["createtoken"]) == 2
     assert main(["setrole", "--role", "admin"]) == 2
     assert capsys.readouterr().err.count("when there is no terminal") == 2
+
+
+def test_the_work_profile_sweep_command_prints_what_it_deleted(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """REB-1124: the retention sweep is a registered command and says how many of each it
+    deleted."""
+    from types import SimpleNamespace
+
+    from rebase_core.cli import work_profiles as cli_work_profiles
+    from rebase_core.work_profiles import sweep as sweep_module
+
+    monkeypatch.setattr(cli_work_profiles, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(
+        cli_work_profiles,
+        "open_session",
+        lambda settings: lambda: SimpleNamespace(close=lambda: None),
+    )
+    monkeypatch.setattr(
+        sweep_module,
+        "sweep",
+        lambda session: sweep_module.SweepCounts(profiles=2, authorizations=5),
+    )
+
+    assert main(["work-profile-sweep"]) == 0
+
+    assert capsys.readouterr().out.strip() == (
+        "2 work profiles past their 12 months deleted, 5 CLI authorizations deleted"
+    )

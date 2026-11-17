@@ -149,3 +149,36 @@ class SecretsKeyInvalid(DomainError):
             "Una chiave salvata non si decifra: verifica REBASE_SECRETS_KEY, "
             "oppure salva di nuovo la chiave del fornitore."
         )
+
+
+class WorkProfileRefused(DomainError):
+    """A work profile the intake will not store (REB-1124): not the schema, a field that must
+    not be there, a broken structure, prose its own data does not support. A 422 whose
+    `message` is the sentence the CLI prints. Nothing was stored and the token is not spent."""
+
+    code = "work_profile_refused"
+
+
+class CliTokenInvalid(DomainError):
+    """The bearer of the work-profile intake is unknown, expired or spent (REB-1133): a 401."""
+
+    code = "cli_token_invalid"
+
+
+class CliNotAllowed(DomainError):
+    """A signed-in person who may not do what the CLI sign-in asks: no live freelancer card
+    for the `work_profile` scope (REB-1133). A 403 whose `message` the page shows."""
+
+    code = "cli_not_allowed"
+
+
+class CliCodeNotFound(NotFound):
+    """The `XXXX-XXXX` typed on `/hub/cli` names no live authorization: wrong, expired or
+    never issued. A 404; the API counts it against the person's wrong-code budget."""
+
+    def __init__(self) -> None:
+        super().__init__("codice", "")
+        self.message = (
+            "Il codice non è valido o è scaduto. Controlla quello che vedi nel terminale."
+        )
+        self.args = (self.message,)
