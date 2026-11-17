@@ -11,6 +11,7 @@ import { render, screen } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { stripVerifyToken, takeVerifyToken } from '@rebase/analytics/verify-token'
+import { rememberCliCode, takeCliCode } from '@/lib/returnTo'
 import { Verify } from './Verify'
 
 function answer(status: number, body: unknown) {
@@ -46,8 +47,17 @@ function mount(path: string, { strict = false }: { strict?: boolean } = {}) {
   })
   const me = createRoute({ getParentRoute: () => root, path: '/me', component: () => <h1>La tua area</h1> })
   const login = createRoute({ getParentRoute: () => root, path: '/login', component: () => <h1>Accedi</h1> })
+  const cli = createRoute({
+    getParentRoute: () => root,
+    path: '/cli',
+    validateSearch: (search: Record<string, unknown>): { code?: string } => ({ code: String(search.code ?? '') }),
+    component: () => {
+      const { code } = cli.useSearch()
+      return <h1>Terminale {code}</h1>
+    },
+  })
   const router = createRouter({
-    routeTree: root.addChildren([verify, me, login]),
+    routeTree: root.addChildren([verify, me, login, cli]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   const tree = (
@@ -64,6 +74,7 @@ afterEach(() => {
   // one-shot slot, so the next test's `?? fromSearch` fallback starts clean.
   window.history.replaceState(null, '', '/')
   takeVerifyToken()
+  window.localStorage.clear()
 })
 
 describe('/verify', () => {
@@ -74,6 +85,14 @@ describe('/verify', () => {
     const enterCalls = fetchSpy.mock.calls.filter(([url]) => url === '/api/hub/auth/enter')
     expect(enterCalls).toHaveLength(1)
     expect(enterCalls[0]![1]).toMatchObject({ method: 'POST', body: JSON.stringify({ token: 'abc-123_XYZ' }) })
+  })
+
+  it('goes back to /hub/cli with its code when the visitor was sent to the login from there', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, PROFILE))
+    rememberCliCode('ABCD-EFGH')
+    mount('/verify?t=abc-123_XYZ')
+    await screen.findByRole('heading', { name: 'Terminale ABCD-EFGH' })
+    expect(takeCliCode()).toBeNull()
   })
 
   it('says the link is no longer valid and offers another', async () => {

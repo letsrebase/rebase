@@ -4,6 +4,7 @@ import { Button } from '@rebase/ui/button'
 import { ApiError } from '@/lib/api'
 import { takeVerifyToken } from '@rebase/analytics/verify-token'
 import { useEnter } from '@/lib/me'
+import { takeCliCode } from '@/lib/returnTo'
 
 /** Where the mail's link lands. The token is posted from here, once, and never fetched
  *  by the link itself: a scanner that opens every link in a message does not run this
@@ -34,7 +35,13 @@ export function Verify() {
     if (started.current || !t) return
     started.current = true
     mutateAsync(t).then(
-      () => void navigate({ to: '/me', replace: true }),
+      () => {
+        // A visitor sent to the login from `/hub/cli` goes back to it, with the code.
+        const code = takeCliCode()
+        void (code
+          ? navigate({ to: '/cli', search: { code }, replace: true })
+          : navigate({ to: '/me', replace: true }))
+      },
       (error: unknown) => {
         const refusal = error instanceof ApiError ? error : null
         setFailure(refusal?.status === 401 ? 'invalid' : 'other')

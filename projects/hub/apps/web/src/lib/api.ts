@@ -1076,6 +1076,21 @@ export const cloud = {
     unwrap(client.POST('/api/hub/me/cloud/requests', { body: { freelancer_id: freelancerId } })),
 }
 
+// ---- the CLI's sign-in (REB-1133) ---------------------------------------------------------
+
+export type CliAuthorization = Schemas['CliAuthorizationRead']
+
+/** What `/hub/cli` asks of the API for the code the person typed or followed. A code that
+ *  names nothing live is a 404 with the API's sentence; too many wrong ones, a 429. */
+export const cli = {
+  authorization: (code: string) =>
+    unwrap(client.GET('/api/hub/cli/authorizations/{code}', { params: { path: { code } } })),
+  approve: (code: string) =>
+    unwrap(client.POST('/api/hub/cli/authorizations/{code}/approve', { params: { path: { code } } })),
+  deny: (code: string) =>
+    unwrap(client.POST('/api/hub/cli/authorizations/{code}/deny', { params: { path: { code } } })),
+}
+
 // ---- campaigns, the public part -----------------------------------------------------------
 
 export const campaigns = {

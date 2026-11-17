@@ -21,6 +21,7 @@ vi.mock('@rebase/analytics/browser', () => ({
 }))
 import { identifyUser, resetUser } from '@rebase/analytics/browser'
 import { ME_KEY } from '@/lib/me'
+import { takeCliCode } from '@/lib/returnTo'
 
 const IVAN = {
   id: 'a1',
@@ -71,6 +72,14 @@ function mount(path = '/admin/talent') {
   // REB-518: a stub, so a mount at /me/cloud has somewhere real to land -- the sidebar
   // active-state tests below are about the nav, not this page's own content.
   const cloud = createRoute({ getParentRoute: () => me, path: '/cloud', component: () => <h1>Cloud</h1> })
+  const cliSignIn = createRoute({
+    getParentRoute: () => signedIn,
+    path: '/cli',
+    validateSearch: (search: Record<string, unknown>): { code?: string } => ({
+      code: typeof search.code === 'string' ? search.code : undefined,
+    }),
+    component: () => <h1>Terminale</h1>,
+  })
   const adminArea = createRoute({ getParentRoute: () => signedIn, path: '/admin', component: AdminGuard })
   const adminTalent = createRoute({
     getParentRoute: () => adminArea,
@@ -80,7 +89,7 @@ function mount(path = '/admin/talent') {
   const router = createRouter({
     routeTree: root.addChildren([
       login,
-      signedIn.addChildren([me.addChildren([ioIndex, cloud]), adminArea.addChildren([adminTalent])]),
+      signedIn.addChildren([me.addChildren([ioIndex, cloud]), cliSignIn, adminArea.addChildren([adminTalent])]),
     ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
@@ -148,6 +157,20 @@ describe('the signed-in frame and PostHog (ORB-185, REB-279)', () => {
     mount()
     await screen.findByRole('heading', { name: 'Accedi' })
     expect(identifyUser).not.toHaveBeenCalled()
+  })
+
+  it('keeps the code of /hub/cli for the sign-in, so the magic link brings the visitor back', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(401, { detail: 'Autenticazione richiesta' }))
+    mount('/cli?code=ABCD-EFGH')
+    await screen.findByRole('heading', { name: 'Accedi' })
+    expect(takeCliCode()).toBe('ABCD-EFGH')
+  })
+
+  it('keeps nothing when the signed-out visitor was going anywhere else', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(401, { detail: 'Autenticazione richiesta' }))
+    mount('/me')
+    await screen.findByRole('heading', { name: 'Accedi' })
+    expect(takeCliCode()).toBeNull()
   })
 
   it('forgets the person on Esci, before the page leaves', async () => {

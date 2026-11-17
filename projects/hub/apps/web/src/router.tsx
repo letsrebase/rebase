@@ -52,6 +52,7 @@ const AdminTalents = lazyRouteComponent(() => import('@/pages/admin/talent/Talen
 const AdminTalentLead = lazyRouteComponent(() => import('@/pages/admin/talent/LeadForm'), 'AdminTalentLead')
 const Login = lazyRouteComponent(() => import('@/pages/member/Login'), 'Login')
 const Area = lazyRouteComponent(() => import('@/pages/member/Area'), 'Area')
+const Cli = lazyRouteComponent(() => import('@/pages/member/Cli'), 'Cli')
 const Cloud = lazyRouteComponent(() => import('@/pages/member/Cloud'), 'Cloud')
 const Verify = lazyRouteComponent(() => import('@/pages/member/Verify'), 'Verify')
 const Edit = lazyRouteComponent(() => import('@/pages/member/Edit'), 'Edit')
@@ -368,6 +369,14 @@ const meEditCompanyRedirect = createRoute({
   },
 })
 
+// The CLI's sign-in (REB-1133, spec 2026-11-17 § 2): the terminal opens `/hub/cli?code=...`. Signed
+// out, the visitor goes through the login and `Verify` brings them back with the code kept.
+const cliSignIn = createRoute({
+  getParentRoute: () => signedInLayout,
+  path: '/cli',
+  validateSearch: (search: Record<string, unknown>): { code?: string } => ({ code: strParam(search.code) }),
+  component: Cli,
+})
 const adminArea = createRoute({ getParentRoute: () => signedInLayout, path: '/admin', component: AdminGuard })
 // A signed-in admin lands here bare: `landingRoute()` in the website's `session.js`
 // sends the marketing site's "Accedi" link straight to `/hub/admin` for anyone whose
@@ -608,6 +617,7 @@ export const routeTree = root.addChildren([
   ]),
   signedInLayout.addChildren([
     me.addChildren([meIndex, meEdit, meEditCompany, meEditCompanyById, meNewCompany, meCloud]),
+    cliSignIn,
     meRedirect,
     meEditRedirect,
     meEditCompanyRedirect,
