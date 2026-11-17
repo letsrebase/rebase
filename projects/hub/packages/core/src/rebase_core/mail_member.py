@@ -2,6 +2,7 @@
 
 import html as html_escape
 from dataclasses import dataclass
+from datetime import date
 
 from rebase_core.mail import Mail
 from rebase_core.mail_layout import (
@@ -99,6 +100,92 @@ def confirmation_mail(to: str, link: str, days: int) -> Mail:
         subject="Conferma il tuo indirizzo su rebase",
         text=text,
         html=frame("Conferma il tuo indirizzo su rebase", "\n".join(rows)),
+    )
+
+
+_MONTHS = (
+    "gennaio",
+    "febbraio",
+    "marzo",
+    "aprile",
+    "maggio",
+    "giugno",
+    "luglio",
+    "agosto",
+    "settembre",
+    "ottobre",
+    "novembre",
+    "dicembre",
+)
+
+
+def italian_date(day: date) -> str:
+    """«17 novembre 2027»."""
+    return f"{day.day} {_MONTHS[day.month - 1]} {day.year}"
+
+
+def _decision_mail(
+    to: str, subject: str, first_name: str | None, paragraphs: list[str], url: str
+) -> Mail:
+    """The two mails of a work profile's review: a greeting, a few plain paragraphs, one
+    button to the person's area, the signature. What the person or an admin wrote is
+    escaped in the HTML, and the link goes into an attribute and into the text."""
+    e = html_escape.escape
+    greeting = f"Ciao {first_name}," if first_name else "Ciao,"
+    text = "\n\n".join([greeting, *paragraphs, f"La tua area: {url}", "Noi di rebase"]) + "\n"
+    safe_url = e(url, quote=True)
+    small = f'style="margin:24px 0 0 0;font-size:13px;line-height:1.5;color:{INK_QUIET};'
+    rows = [f'<p style="margin:0 0 20px 0;">{e(greeting)}</p>']
+    rows.extend(
+        f'<p style="margin:0 0 20px 0;white-space:pre-line;">{e(paragraph)}</p>'
+        for paragraph in paragraphs
+    )
+    rows.extend(
+        (
+            button(safe_url, "Apri la tua area"),
+            f'<p {small}word-break:break-all;">'
+            "Se il bottone non si apre, copia questo indirizzo nel browser:<br>"
+            f"{quiet_link(safe_url, safe_url)}</p>",
+            '<p style="margin:24px 0 0 0;">Noi di rebase</p>',
+        )
+    )
+    return Mail(to=to, subject=subject, text=text, html=frame(subject, "\n".join(rows)))
+
+
+def work_profile_approved_mail(
+    to: str, *, first_name: str | None, expires_on: date, url: str
+) -> Mail:
+    """A work profile approved (REB-1127, spec 2026-11-17 § 7): what changes for the person
+    and until when, in a few lines."""
+    return _decision_mail(
+        to,
+        "Il tuo profilo di lavoro è stato approvato",
+        first_name,
+        [
+            "abbiamo letto il tuo profilo di lavoro e l'abbiamo approvato. Da ora sei "
+            "«Verificato da rebase» e le aziende del talent cloud leggono il riassunto del "
+            "tuo profilo accanto alla tua scheda.",
+            f"Vale fino al {italian_date(expires_on)}. Lo trovi nella tua area, dove puoi "
+            "eliminarlo quando vuoi.",
+        ],
+        url,
+    )
+
+
+def work_profile_rejected_mail(to: str, *, first_name: str | None, note: str, url: str) -> Mail:
+    """A work profile not approved (REB-1127): the admin's note, as they wrote it, and what
+    the person can do next."""
+    return _decision_mail(
+        to,
+        "Il tuo profilo di lavoro non è stato approvato",
+        first_name,
+        [
+            "abbiamo letto il tuo profilo di lavoro e per ora non lo approviamo. Il motivo:",
+            note,
+            "Il profilo non compare da nessuna parte. Se vuoi, sistemalo e rilancia il "
+            "comando: lo rileggiamo.",
+        ],
+        url,
     )
 
 

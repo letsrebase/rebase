@@ -11,7 +11,13 @@ from rebase_core.contact_points import CONTACT_POINTS_MAX, ContactPointInput, Co
 from rebase_core.regimes import Regime
 from rebase_core.schema_common import ResponseModel, is_complete
 from rebase_core.signup_schemas import SignupUtm
-from rebase_core.vocabulary import ContractKind, ContractState, RemoteOption, UserRole
+from rebase_core.vocabulary import (
+    ContractKind,
+    ContractState,
+    RemoteOption,
+    UserRole,
+    WorkProfileState,
+)
 
 
 class MemberProfile(BaseModel):
@@ -75,6 +81,19 @@ class MemberRequest(ResponseModel):
     created_at: datetime
 
 
+class MemberWorkProfile(ResponseModel):
+    """The work profile as its owner reads it in their area (REB-1127, spec 2026-11-17 § 7):
+    where it stands (`draft` is «In revisione»), when it was sent and when it stops counting,
+    and the admin's note only when it was rejected: an approval's note stays with the admins.
+    `expired` says `expires_at` has passed; the sweep deletes the row soon after."""
+
+    state: WorkProfileState
+    submitted_at: datetime
+    expires_at: datetime
+    expired: bool
+    decision_note: str | None
+
+
 class MeRead(ResponseModel):
     """Whoever `rebase_user` resolves to, member or admin, replacing `MemberProfile`
     on `GET /me` (REB-278): a `users` row is not necessarily an applicant with a card
@@ -116,6 +135,8 @@ class MeRead(ResponseModel):
     # REB-518: whether any talent cloud grant of this person is live, which puts «Talent
     # cloud» in the member area's nav (`rebase_core.cloud.TalentCloudService.for_user`).
     talent_cloud: bool = False
+    # REB-1127: the work profile the person sent with the `work-profile` command, if any.
+    work_profile: MemberWorkProfile | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property

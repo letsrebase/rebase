@@ -70,7 +70,7 @@ from rebase_core.freelancers import ENTITY as FREELANCER
 from rebase_core.freelancers import FreelancerService
 from rebase_core.login_schemas import GuideStats, LoginStats
 from rebase_core.logins import LoginService
-from rebase_core.mail import send_after_response
+from rebase_core.mail import EmailSender, send_after_response
 from rebase_core.merge import MergeRead, MergeRequest, PersonMergeService
 from rebase_core.models import NAME_MAX_LENGTH, User
 from rebase_core.note_schemas import NoteCreate, NoteRead, NoteUpdate
@@ -265,6 +265,20 @@ def set_freelancer_vetted(
     return FreelancerService(session).set_vetted(freelancer_id, change.vetted, admin.id)
 
 
+def _mail_decision(
+    service: WorkProfileService, sender: EmailSender | None, freelancer_id: UUID
+) -> None:
+    """The decision's mail, sent after the response like the other member mails; with no
+    sender configured it is logged and not sent, as the talent cloud's is."""
+    mail = service.decision_mail(freelancer_id)
+    if mail is None:
+        return
+    if sender is None:
+        _log.info("work profile decision %s: no mail sender, not mailed", freelancer_id)
+        return
+    send_after_response(sender, mail, f"work profile decision {freelancer_id}")
+
+
 @router.get("/freelancers/{freelancer_id}/work-profile", response_model=WorkProfileAdminRead)
 def get_work_profile(
     _: AdminDep, session: SessionDep, settings: SettingsDep, freelancer_id: UUID
@@ -282,13 +296,18 @@ def approve_work_profile(
     admin: AdminDep,
     session: SessionDep,
     settings: SettingsDep,
+    sender: SenderDep,
     freelancer_id: UUID,
     decision: WorkProfileApproval,
 ) -> WorkProfileAdminRead:
     """«Approva»: the profile counts from now, the person is verified when they were not, and
     the decision is signed in the trail (`work_profile_decided`). The optional note stays with
-    the admins. 409 for a profile already decided or past its 12 months."""
-    return WorkProfileService(session, settings).approve(freelancer_id, admin.id, decision.note)
+    the admins. The person is mailed after the answer (REB-1127). 409 for a profile already
+    decided or past its 12 months."""
+    service = WorkProfileService(session, settings)
+    read = service.approve(freelancer_id, admin.id, decision.note)
+    _mail_decision(service, sender, freelancer_id)
+    return read
 
 
 @router.post(
@@ -298,12 +317,17 @@ def reject_work_profile(
     admin: AdminDep,
     session: SessionDep,
     settings: SettingsDep,
+    sender: SenderDep,
     freelancer_id: UUID,
     decision: WorkProfileRejection,
 ) -> WorkProfileAdminRead:
-    """«Rifiuta»: the note is required and the person reads it in their area. The verified
-    flag is not touched. 409 for a profile already decided or past its 12 months."""
-    return WorkProfileService(session, settings).reject(freelancer_id, admin.id, decision.note)
+    """«Rifiuta»: the note is required, and the person reads it in their area and in the mail
+    they get after the answer (REB-1127). The verified flag is not touched. 409 for a profile
+    already decided or past its 12 months."""
+    service = WorkProfileService(session, settings)
+    read = service.reject(freelancer_id, admin.id, decision.note)
+    _mail_decision(service, sender, freelancer_id)
+    return read
 
 
 @router.get("/freelancers/{freelancer_id}/card", response_model=FreelancerCardAdminRead)

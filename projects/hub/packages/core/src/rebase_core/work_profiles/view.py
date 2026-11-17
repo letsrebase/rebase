@@ -15,6 +15,7 @@ came from.
 from typing import Any
 
 from rebase_core.schema_common import ResponseModel
+from rebase_core.team_schemas import CloudWorkDomain, CloudWorkProfile
 
 SUMMARY_WHERE = "summary"
 DOMAINS_WHERE = "domains"
@@ -338,4 +339,26 @@ def render_profile(payload: dict[str, Any]) -> WorkProfileView:
         stack=_texts(payload.get("stackAdopted")),
         projects=projects,
         other_projects=len(_dicts(payload.get("otherProjects"))),
+    )
+
+
+def cloud_work_profile(payload: dict[str, Any]) -> CloudWorkProfile:
+    """What a company in the talent cloud reads of an approved profile (spec § 5): the summary,
+    the domains' labels with their counts and each representative project's abstract domain,
+    each once. Nothing else of the payload is read here, so nothing else can reach a company."""
+    domains = [
+        CloudWorkDomain(
+            label=label,
+            products=_int(domain.get("products")),
+            sessions=_int(domain.get("sessions")),
+        )
+        for domain in _dicts(payload.get("domains"))
+        if (label := _text(domain.get("label")))
+    ]
+    seen: dict[str, None] = {}
+    for project in _dicts(payload.get("projects")):
+        if domain := _text(project.get("domain")):
+            seen.setdefault(domain.strip(), None)
+    return CloudWorkProfile(
+        summary=_text(payload.get("summary")), domains=domains, project_domains=list(seen)
     )

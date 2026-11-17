@@ -19,6 +19,7 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from rebase_core.ai_spend import ROME
 from rebase_core.audit import AdminActionService, utcnow
 from rebase_core.cli_auth import sha256_hex
 from rebase_core.config import Settings
@@ -31,6 +32,8 @@ from rebase_core.errors import (
 )
 from rebase_core.freelancers import ENTITY as FREELANCER
 from rebase_core.freelancers import FreelancerService
+from rebase_core.mail import Mail
+from rebase_core.mail_member import work_profile_approved_mail, work_profile_rejected_mail
 from rebase_core.members import MemberService
 from rebase_core.models import (
     TOOL_VERSION_MAX_LENGTH,
@@ -282,6 +285,29 @@ class WorkProfileService:
             ),
             decision_note=row.decision_note,
             profile=render_profile(row.payload),
+        )
+
+    def decision_mail(self, freelancer_id: UUID) -> Mail | None:
+        """The mail the person gets for the decision just taken (REB-1127): approved with the
+        date it stops counting, or not approved with the admin's note. `None` for a profile
+        still in review, which is nobody's news."""
+        row = self.session.scalar(
+            select(WorkProfile).where(WorkProfile.freelancer_id == freelancer_id)
+        )
+        card = self.session.get(Freelancer, freelancer_id)
+        if row is None or card is None or row.state == "draft":
+            return None
+        user = self.session.get_one(User, card.user_id)
+        url = f"{self.settings.hub_url.rstrip('/')}/me"
+        if row.state == "approved":
+            return work_profile_approved_mail(
+                user.email,
+                first_name=user.first_name,
+                expires_on=row.expires_at.astimezone(ROME).date(),
+                url=url,
+            )
+        return work_profile_rejected_mail(
+            user.email, first_name=user.first_name, note=row.decision_note or "", url=url
         )
 
     def approve(

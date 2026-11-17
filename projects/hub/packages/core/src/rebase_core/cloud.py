@@ -54,11 +54,13 @@ from rebase_core.models import (
     FreelancerCard,
     TalentCloudGrant,
     User,
+    WorkProfile,
 )
 from rebase_core.referrals import ReferralService
 from rebase_core.search import any_element_matches
 from rebase_core.team_catalogue import cloud_visible
 from rebase_core.team_schemas import Card, CloudTalentList, CloudTalentQuery, CloudTalentRead
+from rebase_core.work_profiles.view import cloud_work_profile
 
 logger = logging.getLogger(__name__)
 
@@ -426,7 +428,19 @@ class CloudTalentService:
                 FreelancerCard.card,
                 Freelancer.seniority_admin,
                 Freelancer.experience_years_admin,
-            ).join(User, User.id == Freelancer.user_id)
+                WorkProfile.payload.label("work_profile"),
+            )
+            .join(User, User.id == Freelancer.user_id)
+            # Only an approved profile that has not expired counts (REB-1127): a draft, a
+            # rejected one and one past its 12 months are no profile here.
+            .outerjoin(
+                WorkProfile,
+                and_(
+                    WorkProfile.freelancer_id == Freelancer.id,
+                    WorkProfile.state == "approved",
+                    WorkProfile.expires_at > utcnow(),
+                ),
+            )
         ).where(*_filter_clauses(query))
         rows = self.session.execute(
             stmt.order_by(
@@ -457,6 +471,9 @@ class CloudTalentService:
                     mode=row.remote,
                     band=band_for(row.daily_rate),
                     has_cv=bool(row.has_cv),
+                    work_profile=(
+                        cloud_work_profile(row.work_profile) if row.work_profile else None
+                    ),
                 )
             )
         return CloudTalentList(

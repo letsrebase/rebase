@@ -2,19 +2,30 @@
 second decision, and the «Talenti» filter."""
 
 from collections.abc import Iterator
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from uuid import UUID
 
 import pytest
 from contract_api_helpers import login_as
+from fakes_cards import CARD
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from work_profile_helpers import sample
+from work_profile_helpers import sample, settings
 
 from rebase_api.deps import get_sender
+from rebase_core.cloud import TalentCloudService
+from rebase_core.companies import CompanyService
+from rebase_core.company_schemas import CompanyCreate
 from rebase_core.mail import RecordingSender
-from rebase_core.models import AdminAction, Freelancer, User, WorkProfile
+from rebase_core.models import (
+    AdminAction,
+    Freelancer,
+    FreelancerCard,
+    User,
+    WorkProfile,
+)
 
 ADMIN_EMAIL = "ivan@rebase.it"
 
@@ -134,3 +145,72 @@ def _user(session: Session, email: str) -> UUID:
     session.add(user)
     session.flush()
     return user.id
+
+
+def test_a_decision_mails_the_person_and_the_person_reads_and_deletes_their_profile(
+    client: TestClient, api_session: Session, sender: RecordingSender, admin: None
+) -> None:
+    approved = _seed(api_session, "ada@studio.it")
+    rejected = _seed(api_session, "grace@studio.it")
+    sender.sent.clear()
+    client.post(f"/api/hub/freelancers/{approved}/work-profile/approve", json={}).raise_for_status()
+    client.post(
+        f"/api/hub/freelancers/{rejected}/work-profile/reject", json={"note": "Manca un link."}
+    ).raise_for_status()
+
+    by_address = {mail.to: mail for mail in sender.sent}
+    assert by_address["ada@studio.it"].subject == "Il tuo profilo di lavoro è stato approvato"
+    assert "Manca un link." in by_address["grace@studio.it"].text
+
+    client.cookies.clear()
+    login_as(client, sender, "grace@studio.it")
+    me = client.get("/api/hub/me").json()
+    assert me["work_profile"]["state"] == "rejected"
+    assert me["work_profile"]["decision_note"] == "Manca un link."
+    deleted = client.delete("/api/hub/me/work-profile")
+    assert deleted.status_code == 200 and deleted.json()["work_profile"] is None
+    assert client.delete("/api/hub/me/work-profile").status_code == 200
+    api_session.expire_all()
+    assert api_session.scalars(select(WorkProfile)).all() != []  # Ada's is still there
+    assert api_session.get_one(Freelancer, rejected).vetted_at is None
+
+
+def test_the_cloud_shows_the_summary_of_an_approved_profile(
+    client: TestClient, api_session: Session, sender: RecordingSender, admin: None
+) -> None:
+    freelancer_id = _seed(api_session)
+    card = api_session.get_one(Freelancer, freelancer_id)
+    api_session.add(FreelancerCard(freelancer_id=card.id, cv_sha256="0" * 64, card=dict(CARD)))
+    api_session.commit()
+    client.post(f"/api/hub/freelancers/{freelancer_id}/work-profile/approve", json={})
+    grant = _grant(api_session)
+    client.cookies.clear()
+    login_as(client, sender, grant)
+
+    [item] = client.get("/api/hub/me/cloud/talents").json()["items"]
+
+    assert item["work_profile"]["summary"] == sample()["summary"]
+    assert set(item["work_profile"]) == {"summary", "domains", "project_domains"}
+
+
+def _grant(session: Session) -> str:
+    """A company contact with a live talent cloud grant, by address."""
+    read, _ = CompanyService(session).request(
+        CompanyCreate(
+            company_name="Acme S.r.l.",
+            contact_first_name="Wile",
+            contact_last_name="Coyote",
+            email="wile@acme.it",
+            phone="+39 345 1234567",
+            requested_role="Backend developer",
+            project="Serve un backend developer per tre mesi.",
+            period_from=date(2026, 10, 1),
+            duration="3 mesi",
+            daily_budget=Decimal("500"),
+            remote="remote",
+            headcount=1,
+        )
+    )
+    admin_row = session.scalars(select(User).where(User.role == "admin")).one()
+    TalentCloudService(session, settings()).grant(read.id, admin_row.id)
+    return "wile@acme.it"
