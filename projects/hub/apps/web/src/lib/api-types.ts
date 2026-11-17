@@ -257,6 +257,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub/freelancers/{freelancer_id}/work-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Work Profile
+         * @description The talent's work profile as the «Profilo di lavoro» section reads it (REB-1126): the
+         *     review state, the dates, the hub's recheck and the profile rendered from its payload; 404
+         *     when the person sent none. A profile past its 12 months is answered with `expired`.
+         */
+        get: operations["get_work_profile_api_hub_freelancers__freelancer_id__work_profile_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/freelancers/{freelancer_id}/work-profile/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve Work Profile
+         * @description «Approva»: the profile counts from now, the person is verified when they were not, and
+         *     the decision is signed in the trail (`work_profile_decided`). The optional note stays with
+         *     the admins. 409 for a profile already decided or past its 12 months.
+         */
+        post: operations["approve_work_profile_api_hub_freelancers__freelancer_id__work_profile_approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/freelancers/{freelancer_id}/work-profile/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject Work Profile
+         * @description «Rifiuta»: the note is required and the person reads it in their area. The verified
+         *     flag is not touched. 409 for a profile already decided or past its 12 months.
+         */
+        post: operations["reject_work_profile_api_hub_freelancers__freelancer_id__work_profile_reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub/freelancers/{freelancer_id}/card": {
         parameters: {
             query?: never;
@@ -724,7 +789,8 @@ export interface paths {
          *     started from (REB-798; the page filter was `origin` before). REB-823 gives the screen
          *     what the MCP tool `list_talents` already took (REB-778, REB-801): `skills`, `location`,
          *     `seniority`, `min_years`, `max_years`, `industries`, `languages`, `card` and `sort`,
-         *     read by the same service, which refuses a value it does not allow.
+         *     read by the same service, which refuses a value it does not allow. REB-1126 adds
+         *     `work_profile` (`draft`, `approved`, `none`): the review state of the person's work profile.
          */
         get: operations["list_talents_api_hub_talent_get"];
         put?: never;
@@ -2284,7 +2350,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "overridden" | "cleared" | "deleted" | "restored" | "match_created" | "match_cancelled" | "match_closed" | "fiscal_updated" | "documents_sent" | "document_cancelled" | "mail_resent" | "notice_recorded" | "vetted" | "pigro_link" | "talents_contacted" | "ai_key" | "ai_task" | "ai_price" | "ai_switch" | "merged" | "absorbed" | "unmerged" | "eval_add" | "eval_remove" | "eval_expected" | "eval_accept" | "eval_rate" | "cards_regenerate" | "cards_regenerated" | "card_regenerated" | "note_added" | "note_edited" | "note_deleted" | "status_changed" | "anon_cv_downloaded" | "crm_link" | "company_created" | "admin_promoted" | "admin_demoted";
+            kind: "overridden" | "cleared" | "deleted" | "restored" | "match_created" | "match_cancelled" | "match_closed" | "fiscal_updated" | "documents_sent" | "document_cancelled" | "mail_resent" | "notice_recorded" | "vetted" | "pigro_link" | "talents_contacted" | "ai_key" | "ai_task" | "ai_price" | "ai_switch" | "merged" | "absorbed" | "unmerged" | "eval_add" | "eval_remove" | "eval_expected" | "eval_accept" | "eval_rate" | "cards_regenerate" | "cards_regenerated" | "card_regenerated" | "note_added" | "note_edited" | "note_deleted" | "status_changed" | "anon_cv_downloaded" | "crm_link" | "company_created" | "admin_promoted" | "admin_demoted" | "work_profile_decided" | "work_profile_read";
             /**
              * Admin Id
              * Format: uuid
@@ -5514,6 +5580,8 @@ export interface components {
             band: components["schemas"]["Band"] | null;
             /** Duplicate Possible Of */
             duplicate_possible_of: string[];
+            /** Work Profile State */
+            work_profile_state: ("draft" | "approved" | "rejected") | null;
         };
         /**
          * TalentsFilters
@@ -6150,6 +6218,218 @@ export interface components {
             /** Review Url */
             review_url: string;
         };
+        /**
+         * WorkProfileAdminRead
+         * @description What the admin's «Profilo di lavoro» section reads: the review state, the dates, the
+         *     tool version, the hub's recheck (`groundedness`, `unsupported_anchors`) and the profile
+         *     rendered from the payload. `expired` says `expires_at` has passed: nothing outside this
+         *     page counts such a profile, and the sweep deletes it.
+         */
+        WorkProfileAdminRead: {
+            /**
+             * Freelancer Id
+             * Format: uuid
+             */
+            freelancer_id: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "draft" | "approved" | "rejected";
+            /**
+             * Submitted At
+             * Format: date-time
+             */
+            submitted_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Expired */
+            expired: boolean;
+            /** Tool Version */
+            tool_version: string | null;
+            /** Groundedness */
+            groundedness: number;
+            /** Unsupported Anchors */
+            unsupported_anchors: components["schemas"]["WorkProfileAnchor"][];
+            /** Decided At */
+            decided_at: string | null;
+            /** Decided By Name */
+            decided_by_name: string | null;
+            /** Decision Note */
+            decision_note: string | null;
+            profile: components["schemas"]["WorkProfileView"];
+        };
+        /**
+         * WorkProfileAnchor
+         * @description A claim of the prose the recheck did not find in the data, with the field it came
+         *     from (`where`, as `view.WorkProfileView` names them).
+         */
+        WorkProfileAnchor: {
+            /** Where */
+            where: string;
+            /** Anchor */
+            anchor: string;
+            /** Kind */
+            kind: string;
+        };
+        /**
+         * WorkProfileApproval
+         * @description «Approva»: the note is optional and stays with the admins.
+         */
+        WorkProfileApproval: {
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * WorkProfileArtifact
+         * @description A URL artifact of a project, kept as text: file artifacts are refused at the intake.
+         */
+        WorkProfileArtifact: {
+            /** Label */
+            label: string | null;
+            /** Url */
+            url: string;
+        };
+        /** WorkProfileCount */
+        WorkProfileCount: {
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+        };
+        /** WorkProfileDomain */
+        WorkProfileDomain: {
+            /** Where */
+            where: string;
+            /** Label */
+            label: string;
+            /** Products */
+            products: number | null;
+            /** Sessions */
+            sessions: number | null;
+            /** Note */
+            note: string | null;
+        };
+        /**
+         * WorkProfileLens
+         * @description One lens of the profile: a heading, the narrative the person's own model wrote, the
+         *     tags and the counts behind it.
+         */
+        WorkProfileLens: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Narrative */
+            narrative: string | null;
+            /** Where */
+            where: string;
+            /** Tags */
+            tags: string[];
+            /** Counts */
+            counts: components["schemas"]["WorkProfileCount"][];
+        };
+        /** WorkProfilePrinciple */
+        WorkProfilePrinciple: {
+            /** When */
+            when: string | null;
+            /** Text */
+            text: string;
+        };
+        /** WorkProfileProject */
+        WorkProfileProject: {
+            /** Id */
+            id: string;
+            /** Domain */
+            domain: string | null;
+            /** Did */
+            did: string | null;
+            /** Why Representative */
+            why_representative: string | null;
+            /** Tech */
+            tech: string[];
+            /** Types */
+            types: string[];
+            /** Sessions */
+            sessions: number | null;
+            /** Span From */
+            span_from: string | null;
+            /** Span To */
+            span_to: string | null;
+            /** Commits */
+            commits: number | null;
+            /** Reverts */
+            reverts: number | null;
+            artifact: components["schemas"]["WorkProfileArtifact"] | null;
+        };
+        /**
+         * WorkProfileRejection
+         * @description «Rifiuta»: the note is required, because the freelancer reads it in their area.
+         */
+        WorkProfileRejection: {
+            /** Note */
+            note: string;
+        };
+        /** WorkProfileShift */
+        WorkProfileShift: {
+            /** Metric */
+            metric: string;
+            /** Early */
+            early: string;
+            /** Late */
+            late: string;
+        };
+        /** WorkProfileTopic */
+        WorkProfileTopic: {
+            /** Quarter */
+            quarter: string;
+            /** Themes */
+            themes: components["schemas"]["WorkProfileCount"][];
+        };
+        /** WorkProfileTrajectory */
+        WorkProfileTrajectory: {
+            /** Narrative */
+            narrative: string | null;
+            /** Where */
+            where: string;
+            /** Shifts */
+            shifts: components["schemas"]["WorkProfileShift"][];
+            /** Topics */
+            topics: components["schemas"]["WorkProfileTopic"][];
+            /** Principles */
+            principles: components["schemas"]["WorkProfilePrinciple"][];
+            /** New Vocabulary */
+            new_vocabulary: string[];
+        };
+        /** WorkProfileView */
+        WorkProfileView: {
+            /** Window From */
+            window_from: string | null;
+            /** Window To */
+            window_to: string | null;
+            /** Products */
+            products: number | null;
+            /** Sessions */
+            sessions: number | null;
+            /** Instructions */
+            instructions: number | null;
+            /** Summary */
+            summary: string | null;
+            /** Domains */
+            domains: components["schemas"]["WorkProfileDomain"][];
+            /** Lenses */
+            lenses: components["schemas"]["WorkProfileLens"][];
+            trajectory: components["schemas"]["WorkProfileTrajectory"] | null;
+            /** Stack */
+            stack: string[];
+            /** Projects */
+            projects: components["schemas"]["WorkProfileProject"][];
+            /** Other Projects */
+            other_projects: number;
+        };
     };
     responses: never;
     parameters: never;
@@ -6674,6 +6954,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FreelancerRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_work_profile_api_hub_freelancers__freelancer_id__work_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                freelancer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkProfileAdminRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_work_profile_api_hub_freelancers__freelancer_id__work_profile_approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                freelancer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkProfileApproval"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkProfileAdminRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_work_profile_api_hub_freelancers__freelancer_id__work_profile_reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                freelancer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkProfileRejection"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkProfileAdminRead"];
                 };
             };
             /** @description Validation Error */
@@ -7408,6 +7789,7 @@ export interface operations {
                 industries?: string[] | null;
                 languages?: string[] | null;
                 card?: string | null;
+                work_profile?: string | null;
                 sort?: string | null;
             };
             header?: never;

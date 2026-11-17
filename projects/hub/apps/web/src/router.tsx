@@ -113,6 +113,7 @@ export function validateTalentsSearch(search: Record<string, unknown>): TalentsF
     industries: strParam(search.industries),
     languages: strParam(search.languages),
     card: strParam(search.card),
+    work_profile: strParam(search.work_profile),
     sort: strParam(search.sort),
   }
 }

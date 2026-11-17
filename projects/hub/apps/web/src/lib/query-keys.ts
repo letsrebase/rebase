@@ -16,6 +16,7 @@ export const keys = {
   /** Every freelancer detail: what a merge changes at once. */
   freelancerAll: ['freelancer'] as const,
   freelancerCard: (id: string) => ['freelancer-card', id] as const,
+  workProfile: (id: string) => ['work-profile', id] as const,
   talents: (filters?: object) => (filters ? (['talents', filters] as const) : (['talents'] as const)),
   /** The CRM's read, apart from `talents` so refreshing a list after a vet does not ask the
    *  CRM again (REB-1120). */

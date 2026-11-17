@@ -30,6 +30,8 @@ const KIND_LABELS: Partial<Record<AdminAction['kind'], string>> = {
   anon_cv_downloaded: 'CV anonimo scaricato',
   admin_promoted: 'Reso amministratore',
   admin_demoted: 'Tolto da amministratore',
+  work_profile_decided: 'Profilo di lavoro deciso',
+  work_profile_read: 'Profilo di lavoro letto da un agente',
 }
 
 /** What a merge did, in one line (REB-800), for the two entries that carry its counts:
@@ -52,6 +54,9 @@ function mergeSummary(action: AdminAction): string | null {
 function kindLabel(action: AdminAction): string {
   if (action.kind === 'vetted' && action.payload.vetted !== undefined) {
     return action.payload.vetted ? 'Segnato come verificato' : 'Verifica tolta'
+  }
+  if (action.kind === 'work_profile_decided') {
+    return action.payload.decision === 'approved' ? 'Profilo di lavoro approvato' : 'Profilo di lavoro rifiutato'
   }
   if (action.kind === 'card_regenerated' && action.payload.outcome === 'not_written') {
     return `Scheda non rigenerata: ${regenerationReason(action.payload.reason)}`

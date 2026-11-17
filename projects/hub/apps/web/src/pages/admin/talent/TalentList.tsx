@@ -38,6 +38,13 @@ const CARD_LABELS: Record<string, string> = {
   absent: 'Assente',
 }
 
+/** The review state of a work profile, as the `work_profile` filter names it (REB-1126). */
+const WORK_PROFILE_LABELS: Record<string, string> = {
+  draft: 'Da rivedere',
+  approved: 'Approvato',
+  none: 'Nessuno',
+}
+
 /** «Talenti»: every freelancer card and every bare sign-up as one list (REB-282/283),
  *  `status` `lead` for the bare ones and the freelancer's own state otherwise -- the
  *  single list that replaced «Developer e CTO» and «Iscrizioni». A card row opens the
@@ -203,6 +210,24 @@ export function AdminTalents() {
             <SelectContent>
               <SelectItem value={ANY}>Tutte</SelectItem>
               {Object.entries(CARD_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterField>
+        <FilterField label="Profilo di lavoro" htmlFor="talents-work-profile">
+          <Select
+            value={search.work_profile ?? ANY}
+            onValueChange={(value) => setFilter('work_profile', value === ANY ? undefined : value)}
+          >
+            <SelectTrigger id="talents-work-profile">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ANY}>Tutti</SelectItem>
+              {Object.entries(WORK_PROFILE_LABELS).map(([value, label]) => (
                 <SelectItem key={value} value={value}>
                   {label}
                 </SelectItem>
