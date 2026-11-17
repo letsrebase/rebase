@@ -97,8 +97,8 @@ class Prepared:
     """What `CardWriter.prepare` built for one person before any model is asked: the
     `request` (the prompt, with the answer shape), what `known` could name them, the
     `sources` and `facts` it read, the hash of every input (`hashes`) and of the CV
-    (`cv_sha256`), and the CV's `cv_text` the rules read the card against (kept in memory
-    only). A Message Batch keeps the two hashes beside the request, so its answer is
+    (`cv_sha256`), and the CV's `cv_text` and the `job_title` the rules read the card against
+    (kept in memory only). A Message Batch keeps the two hashes beside the request, so its answer is
     applied only to a card whose inputs are still these."""
 
     request: LlmRequest
@@ -108,6 +108,7 @@ class Prepared:
     hashes: dict[str, str]
     cv_sha256: str
     cv_text: str
+    job_title: str | None
 
 
 class StaleCard(NamedTuple):

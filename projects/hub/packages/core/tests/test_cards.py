@@ -95,10 +95,12 @@ def test_card_from_a_cv(clean_hub: Session) -> None:
     }
     assert stored.sources == SOURCES
     assert stored.source_hashes == {"wizard": sha(b"Backend developer")}
-    # No conflict; the CV dates nothing, so the live checks (REB-1128) flag the years.
+    # No conflict; the CV dates nothing and names no PostgreSQL, so the live checks
+    # (REB-1128) flag the years, the seniority and a skill.
     assert [(item["kind"], item["field"]) for item in stored.conflicts or []] == [
         ("unsupported", "experience_years"),
         ("unsupported", "seniority"),
+        ("unsupported", "skills"),
     ]
 
     # One call, shaped for a card: the answer is `CardDraft` (the `Card`, and the private

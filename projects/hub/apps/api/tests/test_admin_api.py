@@ -1131,6 +1131,7 @@ def test_an_admin_reads_and_regenerates_the_anonymous_card(
     assert [(flag["field"], flag["verdict"]) for flag in body["flags"]] == [
         ("experience_years", "unsupported"),
         ("seniority", "unsupported"),
+        ("skills", "unsupported"),
     ]
     assert body["provenance"]["conflicts"] == []
     talents = client.get("/api/hub/talent").text

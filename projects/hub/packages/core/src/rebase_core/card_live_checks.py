@@ -14,11 +14,15 @@ conflicts`, a JSONB list: a flag has `kind` `unsupported` or `contradicted`, a c
 from the CV (the years its dated periods add up to): they live in the hub's database only and
 are shown to the admin, never written to a log, Linear or the repository.
 
-Only what a rule can settle is flagged: the years (and the seniority, which follows them) and
-any field that names the person. A card with no flag is not certified by this: the judge of
-`cards-eval` is still the one that reads the prose.
+Only what a rule can settle is flagged: the years (and the seniority, which follows them), any
+field that names the person, and the skills no source text mentions (the groundedness check of
+apply-new, applied to a card: each skill is looked for in the CV, the GitHub and link texts, the
+hub's facts and the position the card was written from). A card with no flag is not certified
+by this: the judge of `cards-eval` is still the one that reads the prose.
 """
 
+import re
+import unicodedata
 from collections.abc import Iterable
 from datetime import date
 from typing import Any, Literal, NamedTuple
@@ -27,6 +31,7 @@ from rebase_core.card_draft import Conflict
 from rebase_core.card_eval_checks import YearsCheck, anonymity_leaks, check_years
 from rebase_core.card_guard import KnownIdentifiers
 from rebase_core.hub_facts import HubFacts
+from rebase_core.sources import SourceSet
 from rebase_core.team_schemas import Card
 
 FlagVerdict = Literal["unsupported", "contradicted"]
@@ -63,12 +68,86 @@ def _years_reason(card: Card, years: YearsCheck) -> tuple[FlagVerdict, str]:
     return "contradicted", f"La scheda dichiara {got} anni, le date del CV ne danno {span}"
 
 
+# ---- skills --------------------------------------------------------------------------------
+
+# The obvious pairs, written in normalised form (`_normal`): a skill and a source that spell the
+# same technology differently. Explicit on purpose: nothing fuzzy, so a false flag is rare and
+# can be explained.
+_ALIASES: tuple[frozenset[str], ...] = tuple(
+    frozenset(group)
+    for group in (
+        ("javascript", "js"),
+        ("typescript", "ts"),
+        ("postgresql", "postgres"),
+        ("kubernetes", "k8s"),
+        ("react", "react js", "reactjs"),
+        ("node js", "node", "nodejs"),
+        ("golang", "go"),
+    )
+)
+_NOT_WORD = re.compile(r"[^a-z0-9+#]+")
+
+
+def _normal(text: str) -> str:
+    """`text` in lower case, without accents, punctuation (but `+` and `#`: C++, C#) or runs
+    of whitespace: `Node.js` is `node js`, `Next-JS` is `next js`."""
+    plain = unicodedata.normalize("NFKD", text).casefold()
+    plain = "".join(char for char in plain if not unicodedata.combining(char))
+    return _NOT_WORD.sub(" ", plain).strip()
+
+
+def _forms(skill: str) -> set[str]:
+    """The spellings a source may use for `skill`, all normalised: itself, joined (`node js` as
+    `nodejs`), without a trailing `js` (`vue js`, `nodejs`) and without a trailing version
+    (`python 3`, `html5`), and the explicit aliases of any of them."""
+    base = _normal(skill)
+    if not base:
+        return set()
+    forms = {base}
+    for form in list(forms):
+        tokens = form.split()
+        if tokens and tokens[-1] == "js" and len(tokens) > 1:
+            forms.add(" ".join(tokens[:-1]))
+        if tokens and len(tokens[-1]) > 2 and tokens[-1].endswith("js"):
+            forms.add(" ".join([*tokens[:-1], tokens[-1][:-2]]))
+    for form in list(forms):
+        tokens = form.split()
+        while len(tokens) > 1 and tokens[-1].isdigit():
+            tokens = tokens[:-1]
+        stem = re.sub(r"(?<=[a-z]{2})[0-9]+$", "", tokens[-1])
+        forms.add(" ".join([*tokens[:-1], stem]))
+        forms.add(" ".join(tokens))
+    forms |= {form.replace(" ", "") for form in forms}
+    for group in _ALIASES:
+        if forms & group:
+            forms |= group
+    return {form for form in forms if form}
+
+
+def unsupported_skills(card: Card, texts: Iterable[str]) -> list[str]:
+    """The entries of `card.skills` that no text of `texts` (what the card was written from)
+    mentions, as whole words after `_normal`, by any of their `_forms`."""
+    pool = f" {' '.join(_normal(text) for text in texts)} "
+    return [
+        skill for skill in card.skills if not any(f" {form} " in pool for form in _forms(skill))
+    ]
+
+
+def _skills_reason(missing: list[str]) -> str:
+    if len(missing) == 1:
+        return f"Nessuna fonte cita {missing[0]}"
+    return f"Nessuna fonte cita queste competenze: {', '.join(missing)}"
+
+
 def card_flags(
     card: Card,
     cv_text: str,
     facts: HubFacts,
     known: KnownIdentifiers,
     today: date,
+    *,
+    sources: SourceSet | None = None,
+    job_title: str | None = None,
 ) -> list[CardFlag]:
     """The flags of `card` as it is about to be kept, in the card's field order. The years
     are read against the CV's dated periods, the hub's completed engagements and an admin's
@@ -76,7 +155,9 @@ def card_flags(
     nothing is flagged); a seniority that follows years the sources do not support is flagged
     with them. The anonymity is read against everything the person's data holds, as
     `cards-eval` does (the writer's own guard is wider and has already failed such a card, so
-    this is a second reader, not a gate)."""
+    this is a second reader, not a gate). The skills are read against every text the card was
+    written from: the CV's, each readable source's (GitHub, the links), the hub's facts and the
+    position (`unsupported_skills`); the skills no text mentions are one flag, naming them."""
     found: list[CardFlag] = []
     years = check_years(
         card,
@@ -101,6 +182,12 @@ def card_flags(
                     "Nomina la persona o qualcosa di suo (nome, account, sito, cliente)",
                 )
             )
+    texts = [cv_text, facts.text(), job_title or ""]
+    if sources is not None:
+        texts.extend(item.text for item in sources.readable())
+    missing = unsupported_skills(card, texts)
+    if missing:
+        found.append(CardFlag("skills", "unsupported", _skills_reason(missing)))
     return found
 
 

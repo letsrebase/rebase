@@ -976,7 +976,7 @@ an admin's years; the anonymity) on the card it is about to keep, against the so
 from (`card_live_checks.card_flags`). **No judge and no model call**: a live card costs nothing more
 to check than to write, and the judge stays the evaluation's. What the rules find is stored as
 `CardFlag`s, the field, `unsupported` or `contradicted`, and a sentence of ours with the reason (a
-seniority that follows years the CV does not support is flagged with them), in the **same
+seniority that follows years the CV does not support is flagged with them; the skills no source text mentions are one `skills` flag naming them, the groundedness check of apply-new on a card: each skill is looked for, as whole words after lower-casing and stripping accents and punctuation, with `.js`, a trailing version and a small explicit alias table (JavaScript/JS, TypeScript/TS, PostgreSQL/Postgres, Kubernetes/k8s, React/React.js, Node.js/Node, Golang/Go) as equivalents, in the CV, the readable GitHub and link texts, the hub's facts and the position), in the **same
 `freelancer_cards.conflicts` JSONB list** as the conflicts (a flag's `kind` is its verdict, a
 conflict's is its own; `card_live_checks.split_stored` tells them apart), so no migration. The reason
 quotes the years the CV adds up to: it is derived from the CV, so it lives in the database only,

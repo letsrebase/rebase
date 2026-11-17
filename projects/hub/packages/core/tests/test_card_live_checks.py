@@ -14,8 +14,9 @@ from rebase_core.card_draft import Conflict
 from rebase_core.card_guard import KnownIdentifiers
 from rebase_core.card_live_checks import CardFlag, card_flags, flags_json, split_stored
 from rebase_core.card_writer import CardWriter
-from rebase_core.hub_facts import HubFacts
+from rebase_core.hub_facts import HubFacts, MatchFact
 from rebase_core.llm import RecordingCall
+from rebase_core.sources import SourceItem, SourceSet
 from rebase_core.team_schemas import Card
 
 NOW = datetime(2026, 11, 17, 9, 0, tzinfo=UTC)
@@ -82,7 +83,7 @@ def test_an_admins_years_are_a_fact_the_card_is_held_to() -> None:
 
 def test_a_cv_the_rules_cannot_parse_reliably_is_left_to_the_judge() -> None:
     # A year written outside any period (`Python (2019)`) is not read, so nothing is flagged.
-    cv = "Backend developer, Python (2019), Acme 2015 - 2025"
+    cv = "Backend developer, Python (2019), FastAPI, PostgreSQL, AWS, Acme 2015 - 2025"
     assert _flags(_card(experience_years=2), cv) == []
 
 
@@ -90,6 +91,92 @@ def test_a_field_that_names_the_person_is_flagged() -> None:
     [leak] = _flags(_card(role="Lovelace backend developer", experience_years=10), DATED_CV)
 
     assert (leak.field, leak.verdict) == ("role", "contradicted")
+
+
+# ---- skills --------------------------------------------------------------------------------
+
+
+def _skills(skills: list[str], cv: str = DATED_CV, **sources: Any) -> list[CardFlag]:
+    return [
+        flag
+        for flag in card_flags(
+            _card(skills=skills, experience_years=10), cv, NO_FACTS, KNOWN, TODAY, **sources
+        )
+        if flag.field == "skills"
+    ]
+
+
+def test_a_skill_a_source_spells_another_way_is_supported() -> None:
+    cv = "Dev: JS, TS, Postgres, k8s, React.js, Node, Golang, Python 3.11, Vue.js, Next-JS."
+    skills = [
+        "JavaScript",
+        "TypeScript",
+        "PostgreSQL",
+        "Kubernetes",
+        "React",
+        "Node.js",
+        "Go",
+        "Python",
+        "VueJS",
+        "Next JS",
+    ]
+
+    assert _skills(skills, cv) == []
+    assert _skills(["Python 3", "Vue.js", "Node.js", "Next.js"], cv) == []
+
+
+def test_a_skill_no_source_mentions_is_unsupported_and_named() -> None:
+    [flag] = _skills(["Python", "Rust", "Terraform"])
+
+    assert (flag.field, flag.verdict) == ("skills", "unsupported")
+    assert flag.reason == "Nessuna fonte cita queste competenze: Rust, Terraform"
+    [one] = _skills(["Rust"])
+    assert one.reason == "Nessuna fonte cita Rust"
+
+
+def test_a_skill_is_a_word_not_a_part_of_one() -> None:
+    # `go` in «going» and `java` in «javascript» are no mention.
+    assert [flag.reason for flag in _skills(["Go", "Java"], "Always going: JavaScript")] == [
+        "Nessuna fonte cita queste competenze: Go, Java"
+    ]
+
+
+def test_a_skill_only_a_github_or_link_text_mentions_is_supported() -> None:
+    github = SourceItem(
+        "github",
+        "adadev",
+        1,
+        "FONTE: GitHub\nRepository:\n- infra: Terraform modules",
+        "a" * 64,
+        "ok",
+        NOW,
+    )
+    link = SourceItem("link", "https://ada.example", 1, "Ada, Rust and Go", "b" * 64, "ok", NOW)
+    unread = SourceItem("link", "https://x.example", 2, "Elixir", "c" * 64, "fetch_failed", NOW)
+
+    assert _skills(["Terraform"], sources=None) != []
+    assert _skills(["Terraform", "Rust"], sources=SourceSet([github, link])) == []
+    assert _skills(["Elixir"], sources=SourceSet([unread])) != []
+
+
+def test_the_hub_facts_and_the_position_are_sources_of_a_skill() -> None:
+    facts = HubFacts(
+        seniority_admin=None,
+        experience_years_admin=None,
+        matches=[MatchFact("Backend Elixir developer", 6, "completed", "2025-01")],
+        completed_months=6,
+    )
+
+    flags = card_flags(
+        _card(skills=["Elixir", "Svelte"], experience_years=10),
+        DATED_CV,
+        facts,
+        KNOWN,
+        TODAY,
+        job_title="Svelte developer",
+    )
+
+    assert [flag.field for flag in flags if flag.field == "skills"] == []
 
 
 def test_the_stored_list_keeps_conflicts_and_flags_apart() -> None:

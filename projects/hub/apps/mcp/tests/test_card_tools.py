@@ -172,6 +172,7 @@ async def test_freelancer_card_tools_read_write_and_off_is_the_sentence(
         assert [(flag["field"], flag["verdict"]) for flag in read_back["flags"]] == [
             ("experience_years", "unsupported"),
             ("seniority", "unsupported"),
+            ("skills", "unsupported"),
         ]
         assert empty["flags"] == []
         assert (written["card"]["seniority"], written["card"]["experience_years"]) == ("senior", 9)

@@ -28,6 +28,7 @@ from rebase_core.card_draft import (
     conflicts,
     verify_sources,
 )
+from rebase_core.card_live_checks import split_stored
 from rebase_core.card_prompt import IDENTIFYING_AGAIN, NEUTRAL_AGAIN, card_prompt, source_keys
 from rebase_core.card_writer import CardWriter
 from rebase_core.cloud import CloudTalentService
@@ -201,13 +202,8 @@ def test_card_follows_cv_dates_and_conflict_recorded(clean_hub: Session) -> None
 
     stored = _stored(clean_hub, person)
     assert stored.card is not None and stored.card["experience_years"] == 2
-    assert stored.conflicts == [
-        {
-            "kind": "different_experience_years",
-            "experience_years_card": 2,
-            "experience_years_hub": 4,
-        }
-    ]
+    # The live checks' flags (REB-1128) share the column; the conflicts are what is not one.
+    assert split_stored(stored.conflicts)[0] == [Conflict("different_experience_years", 2, 4)]
     assert "hub" in (stored.source_hashes or {})
 
 
@@ -227,13 +223,7 @@ def test_github_never_sets_years(clean_hub: Session) -> None:
     stored = _stored(clean_hub, person)
     assert stored.card is not None
     assert stored.card["experience_years"] is None and stored.card["seniority"] == "senior"
-    assert stored.conflicts == [
-        {
-            "kind": "discarded_experience_years",
-            "experience_years_card": 12,
-            "experience_years_hub": None,
-        }
-    ]
+    assert split_stored(stored.conflicts)[0] == [Conflict("discarded_experience_years", 12, None)]
     assert stored.sources is not None and stored.sources["experience_years"] == []
     read = CardWriter(clean_hub, None).read(person)
     assert read.card is not None and read.card.seniority_uncertain
@@ -248,9 +238,11 @@ def test_years_from_the_cv_are_kept_beside_a_source(clean_hub: Session) -> None:
 
     stored = _stored(clean_hub, person)
     assert stored.card is not None and stored.card["experience_years"] == CARD["experience_years"]
-    # The CV of this fixture dates nothing, so the live checks (REB-1128) find the years
-    # unsupported; no conflict is recorded.
-    assert [item["kind"] for item in stored.conflicts or []] == ["unsupported", "unsupported"]
+    # The CV of this fixture dates nothing and names no PostgreSQL, so the live checks
+    # (REB-1128) flag the years, the seniority and a skill; no conflict is recorded.
+    conflicts, flags = split_stored(stored.conflicts)
+    assert conflicts == []
+    assert [flag.field for flag in flags] == ["experience_years", "seniority", "skills"]
 
 
 # ---- the guard and the private answer -----------------------------------------------------

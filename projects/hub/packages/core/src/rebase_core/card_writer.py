@@ -470,6 +470,7 @@ class CardWriter(CardStore, CardStaleness):
             hashes=hash_inputs(row.job_title, sources, facts),
             cv_sha256=cv_sha256,
             cv_text=cv.text,
+            job_title=row.job_title,
         )
 
     def finish(self, freelancer_id: UUID, prepared: Prepared, response: LlmResponse) -> Composed:
@@ -571,7 +572,15 @@ class CardWriter(CardStore, CardStaleness):
         card = banded(card)
         # The rules of `cards-eval` on the card to be kept, no model (REB-1128): what its
         # sources do not support is kept beside it, for the admin and the MCP.
-        flags = card_flags(card, prepared.cv_text, facts, known, self.now().date())
+        flags = card_flags(
+            card,
+            prepared.cv_text,
+            facts,
+            known,
+            self.now().date(),
+            sources=sources,
+            job_title=prepared.job_title,
+        )
         return Composed(
             card,
             None,
