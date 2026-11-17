@@ -1090,6 +1090,27 @@ scheda»; the hourly `refresh_stale` only writes a card whose CV is new.
   Phase 2 baseline, `--baseline` the id of that last version 1 run (the default baseline is a run
   of the current prompt version, and there is none until one is made), and read the report as
   above; only then production.
+- **The approved work profile is a source too, off by default (REB-1134, spec
+  2026-11-17 § 6).** `ai_sources` has a third switch, `work_profile` (migration 0055 widened `kind` to
+  20 characters), listed in «Fonti» as «Profilo di lavoro» and kept off until the privacy notice covers
+  it. It is the hub's own data, read like `hub_facts`: `hub_facts_many` reads the `approved`,
+  unexpired profile's payload **in the same query as the people**, and only while the switch is on, so
+  a read of the facts costs the same statements on or off (`test_work_profile_card_source.py` holds
+  it), and it becomes `HubFacts.work_profile`, the text `work_profiles/source.py` writes: the summary,
+  the domains, each project's domain and stack and the agentic-literacy narrative, no date, count or
+  window, so it can inform skills and industries and never the years. **Nothing is copied into
+  `freelancer_sources`** (its kinds stay `github` and `link`, and `SourceService.enabled_kinds` still
+  means the kinds fetched from outside). It is its own source: key `work_profile` (`card_draft.WORK_PROFILE`,
+  in `source_keys`, `source_blocks` and the model's per-field `sources`), its own entry in
+  `source_hashes` (`hash_inputs`; absent when there is none), so **an approval, a replacement, a deletion
+  or the 12 months' end makes the card stale** (`source`) and the normal start of «Schede da aggiornare»
+  writes it again; it is not part of `HubFacts.empty`, `text()` or `hash_material()`, which every stored
+  card's `source_hashes["hub"]` was made from. The anonymity guard runs on the text before it is a
+  source (`source_text`, `card_guard.identifying` over the text read as a card): a profile that names the
+  person's surname, a link's host or GitHub account or a client of their engagements is **left out of the
+  card** and logged, with no word of it; the first name is not read here (ordinary words), the card's
+  own guard still reads it in what the model writes. The live checks (`card_live_checks`) count it as a
+  text a skill may be found in. A draft or a rejected profile is never read.
 - **What the model is told, and what the code checks.** Each source is a `<source key="...">`
   block with its header, wrapped as data (it cannot close its own block), and the system text says
   no identifier of a source may reach the card, repositories are described by what they do, and
