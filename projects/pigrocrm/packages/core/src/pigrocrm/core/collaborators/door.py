@@ -1,6 +1,7 @@
 """The hub's reads of a freelancer through the root door (REB-1107, collaborators design § 5,
 «What the hub reads from the CRM through the door»): availability, the member's contracts and
-their signed PDF, the fiscal identifiers the anonymous CV redacts, and the merge check.
+their signed PDF, the fiscal identifiers the anonymous CV redacts, and the merge check; and the
+commitments of every freelancer at once, for the hub's lists (REB-1120).
 
 Every read names the freelancer by the hub's own id, never by an email or a name, and answers from
 the one space `PIGROCRM_LEADS_SPACE` names, which the caller opens as `Actor.rebase()`: the
@@ -22,9 +23,10 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.collaborators import frameworks, letters
+from pigrocrm.core.collaborators import frameworks, letters, rules
 from pigrocrm.core.collaborators.door_schemas import (
     DoorAvailability,
+    DoorCommitments,
     DoorContracts,
     DoorDocument,
     DoorFiscalIdentifiers,
@@ -108,6 +110,29 @@ class HubDoorService:
             date_to=end,
             weeks=weeks,
         )
+
+    def commitments(self, date_from: dt.date | None, date_to: dt.date | None) -> DoorCommitments:
+        """`availability` for every freelancer the hub knows who has a live engagement in the
+        window, in one read: what «Talenti» and a team request need for a whole list, where one
+        read per card would not do. Anyone else is free in every week, as `availability` would
+        say of them. Few freelancers are committed at once, so their weeks are read one by one."""
+        service = FreelancerService(self.session)
+        start, end = service.window(date_from, date_to)
+        last_sunday = rules.monday(end) + dt.timedelta(days=6)
+        freelancers: list[DoorAvailability] = []
+        for freelancer in self.repo.committed_hub_freelancers(start, last_sunday):
+            assert freelancer.hub_freelancer_id is not None
+            _, _, weeks = service.weeks_of(freelancer.id, start, end)
+            freelancers.append(
+                DoorAvailability(
+                    freelancer_id=freelancer.id,
+                    hub_freelancer_id=freelancer.hub_freelancer_id,
+                    date_from=start,
+                    date_to=end,
+                    weeks=weeks,
+                )
+            )
+        return DoorCommitments(date_from=start, date_to=end, freelancers=freelancers)
 
     # ---- the freelancer's organization ---------------------------------------------------------
 

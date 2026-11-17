@@ -106,8 +106,19 @@ const REQUEST = {
   created_at: '2026-09-25T10:00:00Z',
 }
 
-/** The pathless `signedIn` id and the two admin routes this page links to, stubbed. */
-function mount(path = '/admin/team/r1') {
+/** The CRM has nobody committed (REB-1120). */
+const NO_COMMITMENTS = { date_from: '2026-11-16', date_to: '2027-02-07', freelancers: {} }
+
+/** The pathless `signedIn` id and the two admin routes this page links to, stubbed. The CRM's
+ *  availability, which the page reads beside the request (REB-1120), is answered apart, so a
+ *  test's own mock of the request stays what it was. */
+function mount(path = '/admin/team/r1', availability: unknown = NO_COMMITMENTS) {
+  const inner = globalThis.fetch
+  vi.stubGlobal('fetch', (input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+    String(input) === '/api/hub/talent/availability'
+      ? Promise.resolve(answer(200, availability))
+      : inner(input, init),
+  )
   const root = createRootRoute({ component: () => <Outlet /> })
   const signedIn = createRoute({ getParentRoute: () => root, id: 'signedIn', component: () => <Outlet /> })
   const page = createRoute({ getParentRoute: () => signedIn, path: '/admin/team/$id', component: AdminTeamRequest })
@@ -148,7 +159,10 @@ function cellUnder(row: HTMLElement, header: string): HTMLElement {
   return within(row).getAllByRole('cell')[index]!
 }
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 describe('a team request, as the admin reads it (REB-514, spec § 3.5)', () => {
   it('shows the description, the summary in a box, the place, the contacts and the state', async () => {
@@ -199,6 +213,23 @@ describe('a team request, as the admin reads it (REB-514, spec § 3.5)', () => {
     expect(cellUnder(graceRow, 'Risposta')).toHaveTextContent('26 set 2026')
     // A member without a rate leaves the team with no band.
     expect(screen.getByText('Tariffa da definire')).toBeInTheDocument()
+  })
+
+  it('says which talents the CRM already has committed, before «Contatta i talenti» (REB-1120)', async () => {
+    serve()
+    mount('/admin/team/r1', {
+      ...NO_COMMITMENTS,
+      freelancers: {
+        f1: { status: 'committed', committed_days: '5.0', committed_from: null, free_from: null, until: '2027-02-07' },
+      },
+    })
+
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    const adaRow = within(team).getByRole('link', { name: 'Ada Lovelace' }).closest('tr')!
+    await within(cellUnder(adaRow, 'Disponibilità')).findByText('Impegnata 5 gg/sett.')
+    expect(cellUnder(adaRow, 'Disponibilità')).toHaveTextContent('nessuna settimana libera fino al 7 feb 2027')
+    const graceRow = within(team).getByRole('link', { name: 'Grace Hopper' }).closest('tr')!
+    expect(cellUnder(graceRow, 'Disponibilità')).toHaveTextContent(/^Libera$/)
   })
 
   it('saves the summary with «Salva il riassunto»', async () => {

@@ -384,6 +384,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub/talent/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Talent Availability
+         * @description Who is already committed, as the CRM says (REB-1120): this week's status and when it
+         *     changes, for every freelancer the CRM holds a live engagement for, in one read of the CRM.
+         *     A card that is not in the answer is free. Kept apart from the list, so «Talenti» and a team
+         *     request show their rows even when the CRM is slow or down: 502 with the seam's sentence when
+         *     the CRM does not answer, 503 when this environment cannot reach it.
+         */
+        get: operations["talent_availability_api_hub_talent_availability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub/freelancers/{freelancer_id}/merge": {
         parameters: {
             query?: never;
@@ -5092,6 +5116,33 @@ export interface components {
             status: string;
         };
         /**
+         * TalentAvailability
+         * @description One freelancer's availability as the CRM reads it, summarised. `status` is this week's:
+         *     `free`, `committed` (`committed_days` a week) or `unknown`, when an engagement of the week has
+         *     no days a week in the CRM, which is never to be read as free. `committed_from` is the Monday
+         *     of the first week that is not free, when this one is; `free_from` the Monday of the first free
+         *     week, when this one is not. Both are `None` when nothing changes before `until`, the last day
+         *     the CRM was asked about.
+         */
+        TalentAvailability: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "free" | "committed" | "unknown";
+            /** Committed Days */
+            committed_days: string;
+            /** Committed From */
+            committed_from: string | null;
+            /** Free From */
+            free_from: string | null;
+            /**
+             * Until
+             * Format: date
+             */
+            until: string;
+        };
+        /**
          * TalentCloudGrantRead
          * @description One grant of the talent cloud (REB-518, spec § 4.1), as the admin reads it: the
          *     request it was opened from and its company's name, the contact by name and
@@ -5138,6 +5189,28 @@ export interface components {
             revoked_by_name: string | null;
             /** Revoked At */
             revoked_at: string | null;
+        };
+        /**
+         * TalentCommitments
+         * @description The availability of every freelancer the CRM holds a live engagement for, by hub
+         *     freelancer id, from `date_from` to `date_to`. A card that is not in `freelancers` is free in
+         *     every week of it.
+         */
+        TalentCommitments: {
+            /**
+             * Date From
+             * Format: date
+             */
+            date_from: string;
+            /**
+             * Date To
+             * Format: date
+             */
+            date_to: string;
+            /** Freelancers */
+            freelancers: {
+                [key: string]: components["schemas"]["TalentAvailability"];
+            };
         };
         /**
          * TalentList
@@ -6555,6 +6628,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DuplicateListRead"];
+                };
+            };
+        };
+    };
+    talent_availability_api_hub_talent_availability_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TalentCommitments"];
                 };
             };
         };

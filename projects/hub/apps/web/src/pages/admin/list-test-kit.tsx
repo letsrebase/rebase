@@ -203,6 +203,9 @@ export function settle(): Promise<void> {
 /** `GET /api/hub/talent/duplicati` when nobody is on the list twice. */
 export const NO_DUPLICATES = { mergeable: [], to_review: [], signups: 0 }
 
+/** `GET /api/hub/talent/availability` when the CRM has nobody committed (REB-1120). */
+export const NO_COMMITMENTS = { date_from: '2026-11-16', date_to: '2027-02-07', freelancers: {} }
+
 /** The admin routes these pages sit on, without the frame and its guard: the pages
  *  read `useParams` and render `Link`s, so a router has to be there. The pathless
  *  `signedIn` id mirrors the real tree (REB-279's `SignedInLayout`), since
@@ -210,17 +213,26 @@ export const NO_DUPLICATES = { mergeable: [], to_review: [], signups: 0 }
  *  that full route id. `talent`/`companies` take their `validateSearch` from `router.tsx`
  *  itself (REB-286, REB-983), so a new filter needs no change here. Returns the router so a test can read
  *  `router.state.location.search` back out after an interaction. */
-export function mount(path: string, duplicates: Record<string, unknown> | (() => Response) = NO_DUPLICATES) {
+export function mount(
+  path: string,
+  duplicates: Record<string, unknown> | (() => Response) = NO_DUPLICATES,
+  availability: Record<string, unknown> | (() => Response) = NO_COMMITMENTS,
+) {
   // REB-800: Talenti and a card's page read the duplicate pairs too, beside what the
   // test mocked for the page itself. They are answered here, apart, so a test that hands
   // one `Response` to every call (which can be read once) and its call counts stay as
   // they were; a test about the pairs passes its own body, or a function making the
-  // whole `Response` when the answer itself is the point.
+  // whole `Response` when the answer itself is the point. REB-1120: the CRM's availability,
+  // which that list reads beside its rows, is answered apart the same way.
   const inner = globalThis.fetch
+  const apart = (body: Record<string, unknown> | (() => Response)) =>
+    Promise.resolve(typeof body === 'function' ? body() : answer(200, body))
   vi.stubGlobal('fetch', (input: Parameters<typeof fetch>[0], init?: RequestInit) =>
     String(input) === '/api/hub/talent/duplicates'
-      ? Promise.resolve(typeof duplicates === 'function' ? duplicates() : answer(200, duplicates))
-      : inner(input, init),
+      ? apart(duplicates)
+      : String(input) === '/api/hub/talent/availability'
+        ? apart(availability)
+        : inner(input, init),
   )
   const root = createRootRoute({ component: () => <Outlet /> })
   const signedIn = createRoute({ getParentRoute: () => root, id: 'signedIn', component: () => <Outlet /> })

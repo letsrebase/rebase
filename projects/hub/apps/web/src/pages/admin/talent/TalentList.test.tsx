@@ -111,6 +111,50 @@ describe('the Talenti list (REB-282/283)', () => {
   })
 })
 
+describe('who is already committed, as the CRM says (REB-1120)', () => {
+  const items = [
+    CARD_TALENT,
+    { ...CARD_TALENT, id: 'f2', email: 'bea@studio.it' },
+    { ...CARD_TALENT, id: 'f3', email: 'cleo@studio.it' },
+    LEAD_TALENT,
+  ]
+  const commitments = {
+    date_from: '2026-11-16',
+    date_to: '2027-02-07',
+    freelancers: {
+      f1: { status: 'committed', committed_days: '3.0', committed_from: null, free_from: '2027-01-11', until: '2027-02-07' },
+      f3: { status: 'unknown', committed_days: '0', committed_from: null, free_from: null, until: '2027-02-07' },
+    },
+  }
+
+  it('reads each card in one call: committed with its days, unknown in words, free otherwise', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 4, items, by_status: {} }))
+    mount('/admin/talent', undefined, commitments)
+
+    const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
+    await within(cellUnder(ada, 'Disponibilità')).findByText('Impegnata 3 gg/sett.')
+    expect(cellUnder(ada, 'Disponibilità')).toHaveTextContent('libera dal 11 gen 2027')
+    const bea = screen.getByText('bea@studio.it').closest('tr')!
+    expect(cellUnder(bea, 'Disponibilità')).toHaveTextContent('Libera')
+    const cleo = screen.getByText('cleo@studio.it').closest('tr')!
+    expect(cellUnder(cleo, 'Disponibilità')).toHaveTextContent('Sconosciuta')
+    expect(cellUnder(cleo, 'Disponibilità')).toHaveTextContent('nessuna settimana libera fino al 7 feb 2027')
+    const bob = screen.getByText('bob@example.org').closest('tr')!
+    expect(cellUnder(bob, 'Disponibilità')).toHaveTextContent('—')
+  })
+
+  it('keeps the list when the CRM cannot answer and says why above it', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 1, items: [CARD_TALENT], by_status: {} }))
+    mount('/admin/talent', undefined, () =>
+      answer(502, { detail: 'Pigro non risponde. La disponibilità non si legge senza il CRM.' }),
+    )
+
+    expect(await screen.findByText('Pigro non risponde. La disponibilità non si legge senza il CRM.')).toBeInTheDocument()
+    const ada = screen.getByText('ada@studio.it').closest('tr')!
+    expect(cellUnder(ada, 'Disponibilità')).toHaveTextContent('—')
+  })
+})
+
 describe('the search box debounces before it reaches the API and the URL (REB-286)', () => {
   it('waits for a pause in typing before searching Talenti', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(

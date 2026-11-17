@@ -520,7 +520,12 @@ data: all of that is PigroCRM's (`projects/pigrocrm/AGENTS.md`, and
 `projects/pigrocrm/docs/superpowers/specs/2026-11-09-collaborators-in-the-crm-design.md`).
 The hub keeps the handoff to the CRM's engagement form, the `hub_engagements` read model its
 notices feed, the member «Contratti» page (read through the CRM door), the merge check and the
-CV redaction through the door. The `matches`, `contract_documents`, `freelancer_fiscal` and
+CV redaction through the door, and who is already committed (REB-1120): «Talenti», a team
+request's talents and the MCP `list_talents`, `get_talent` and `get_team_request` show each
+card's availability from one door read of every committed freelancer
+(`GET /api/rebase/freelancers/commitments`, `rebase_core.talent_availability`, admin route
+`GET /api/hub/talent/availability`); a card the CRM does not name is free, and a CRM that cannot
+answer leaves the lists working and says so. The `matches`, `contract_documents`, `freelancer_fiscal` and
 `contract_letter_counters` tables are dropped by migration 0053 (its downgrade recreates them empty).
 
 The CRM door is one module, `pigro_door` (`PigroDoor.put` never raises and maps the status to

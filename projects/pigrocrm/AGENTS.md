@@ -809,6 +809,12 @@ the hub id instead of a second row, and nothing is ever matched by name. The hub
 when none exists, or opens the existing engagement when it does, so reopening the link never makes a second one. The
 draft is created with `hub_match_id`, which the first notice carries back to the hub's `handoff` row.
 
+**The hub reads who is committed in one call (REB-1120).** `GET /api/rebase/freelancers/commitments?from=&to=`
+(same door, `HubDoorService.commitments`) answers, for the availability window (`FreelancerService.window`, default this
+week and twelve weeks on), every live organization with a hub freelancer id and the role `freelancer` that has a live
+engagement touching it, each with the weeks `/{hub_freelancer_id}/availability` would answer. A hub card it does not name
+is free. It exists so «Talenti» and a team request ask once per page, never once per row.
+
 **A router authenticates with `dependencies=[Depends(get_actor)]`, not per handler.** A
 handler that never names the actor is still behind it, and `test_routes_authenticate.py`
 asks every route of the OpenAPI document once with no credential. The open routes are the

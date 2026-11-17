@@ -7,6 +7,8 @@ from typing import Any
 from uuid import UUID
 
 from fakes_cards import CARD, MODEL
+from fakes_crm_door import FakeCrmDoor
+from fakes_pigro import PIGRO, TOKEN
 from mcp import Client
 from mcp_tool_support import IVAN, _payload, _seed_admin, _seed_company, _wipe_team
 from sqlalchemy import update
@@ -23,6 +25,18 @@ from rebase_mcp.server import build_server
 
 def _team_settings(**overrides: Any) -> Settings:
     return Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
+
+
+COMMITTED_WEEK = {
+    "week": "2026-W47",
+    "starts_on": "2026-11-16",
+    "ends_on": "2026-11-22",
+    "status": "committed",
+    "label": "impegnata",
+    "committed_days": "3.0",
+    "free_days": "2.0",
+    "engagement_ids": [],
+}
 
 
 def _talent_with_card(session: Session, n: int = 1) -> UUID:
@@ -120,7 +134,10 @@ async def test_team_request_tools_list_and_read_the_admins_page(
         for company in ("Uno Srl", "Due Srl", "Tre Srl")
     ]
 
-    async with Client(build_server(factory, lambda: IVAN, settings=_team_settings())) as client:
+    # PigroCRM has the talent committed this week (REB-1120): the request's page says so.
+    crm = FakeCrmDoor(committed={member: [COMMITTED_WEEK]})
+    settings = _team_settings(pigro_api_url=PIGRO, pigro_engagements_token=TOKEN)
+    async with Client(build_server(factory, lambda: IVAN, settings=settings, http=crm)) as client:
         page = _payload(await client.call_tool("list_team_requests", {"limit": 2}))
         assert [item["id"] for item in page["items"]] == [ids[2], ids[1]]
         rest = _payload(
@@ -145,6 +162,9 @@ async def test_team_request_tools_list_and_read_the_admins_page(
         [talent] = detail["talents"]
         assert (talent["first_name"], talent["last_name"]) == ("Ada1", "Lovelace1")
         assert talent["daily_rate"] == "450.00"
+        assert talent["availability"]["status"] == "committed"
+        assert talent["availability"]["committed_days"] == "3.0"
+        assert "availability_error" not in detail
 
         missing = await client.call_tool(
             "get_team_request", {"request_id": "01a00000-0000-7000-8000-0000000000fe"}

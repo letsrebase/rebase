@@ -1,8 +1,8 @@
 import { Link } from '@tanstack/react-router'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { TableCell, TableRow } from '@rebase/ui/table'
 import { WebLink } from '@/components/WebLink'
-import { admin, type Talent } from '@/lib/api'
+import { admin, type Talent, type TalentCommitments } from '@/lib/api'
 import { failureMessage } from '@/lib/adminList'
 import { REMOTE_LABELS, SENIORITY_LABELS, formatDate } from '@/lib/format'
 import { formatMoney } from '@rebase/ui/format'
@@ -10,9 +10,17 @@ import { keys } from '@/lib/query-keys'
 import { isHttpUrl } from '@/lib/url'
 import { DuplicatePill } from '../DuplicateMarks'
 import { StatePill, VettedPill } from '../list-kit'
+import { AvailabilityCell } from './Availability'
 import { TalentMenu } from './TalentMenu'
 
-export function TalentRow({ item }: { item: Talent }) {
+export function TalentRow({
+  item,
+  availability,
+}: {
+  item: Talent
+  /** The CRM's one read for the whole list (REB-1120); a lead has no card it could hold. */
+  availability: UseQueryResult<TalentCommitments>
+}) {
   const name = [item.first_name, item.last_name].filter(Boolean).join(' ')
   const to = item.status === 'lead' ? '/admin/talent/$id' : '/admin/freelance/$id'
   const client = useQueryClient()
@@ -45,6 +53,9 @@ export function TalentRow({ item }: { item: Talent }) {
           {item.vetted_at && <VettedPill />}
           <DuplicatePill others={item.duplicate_possible_of} />
         </div>
+      </TableCell>
+      <TableCell className="whitespace-normal">
+        {item.status === 'lead' ? '—' : <AvailabilityCell query={availability} freelancerId={item.id} />}
       </TableCell>
       <TableCell>
         <p className="font-medium">{item.role ?? '—'}</p>

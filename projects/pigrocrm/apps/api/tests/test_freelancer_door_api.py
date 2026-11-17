@@ -231,6 +231,7 @@ def _settings(furnished: Furnished, **changes: Any) -> Iterator[None]:
 def _every_route(hub_id: UUID) -> list[str]:
     other = uuid4()
     return [
+        f"{ROOT}/commitments",
         f"{ROOT}/{hub_id}/availability",
         f"{ROOT}/{hub_id}/contracts",
         f"{ROOT}/{hub_id}/contracts/{other}/pdf",
@@ -315,6 +316,38 @@ def test_availability_of_a_freelancer_the_crm_does_not_know_is_free_not_a_404(
 def test_an_availability_window_the_crm_refuses_is_a_422(furnished: Furnished) -> None:
     backwards = furnished.get(
         furnished.ada, "availability", **{"from": "2026-11-09", "to": "2026-11-02"}
+    )
+    assert backwards.status_code == 422, backwards.text
+
+
+def test_commitments_answer_each_committed_freelancer_as_their_own_availability_does(
+    furnished: Furnished,
+) -> None:
+    window = {"from": "2026-11-02", "to": "2026-12-06"}
+    answer = furnished.client.get(f"{ROOT}/commitments", params=window, headers=_bearer())
+
+    assert answer.status_code == 200, answer.text
+    body = answer.json()
+    assert (body["date_from"], body["date_to"]) == ("2026-11-02", "2026-12-06")
+    by_hub = {item["hub_freelancer_id"]: item for item in body["freelancers"]}
+    # Ada, Bea and Cleo each hold a live engagement (out for signature, active, a draft); Dan's
+    # organization is archived and holds none.
+    committed = (furnished.ada, furnished.bea, furnished.cleo)
+    assert set(by_hub) == {str(who.hub_id) for who in committed}
+    for who in committed:
+        assert by_hub[str(who.hub_id)] == furnished.get(who, "availability", **window).json()
+
+
+def test_commitments_after_every_engagement_ended_are_empty_and_a_bad_window_is_a_422(
+    furnished: Furnished,
+) -> None:
+    later = furnished.client.get(
+        f"{ROOT}/commitments", params={"from": "2027-01-04", "to": "2027-01-31"}, headers=_bearer()
+    )
+    assert later.status_code == 200, later.text
+    assert later.json()["freelancers"] == []
+    backwards = furnished.client.get(
+        f"{ROOT}/commitments", params={"from": "2026-11-09", "to": "2026-11-02"}, headers=_bearer()
     )
     assert backwards.status_code == 422, backwards.text
 

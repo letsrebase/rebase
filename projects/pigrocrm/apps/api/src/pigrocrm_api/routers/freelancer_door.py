@@ -1,7 +1,8 @@
 """The hub's reads of a freelancer through the root door (REB-1107, collaborators design § 5):
 availability, the member's contracts and their signed PDF, the fiscal identifiers the anonymous CV
-redacts, and the merge check, each by the hub's own freelancer id; and the one write, finding or
-creating the freelancer's organization for «Crea match» (REB-1105).
+redacts, and the merge check, each by the hub's own freelancer id; the commitments of every
+freelancer at once, for the hub's lists (REB-1120); and the one write, finding or creating the
+freelancer's organization for «Crea match» (REB-1105).
 
 Same door as `engagements.py`: root-only (a space's own prefix answers the 404 a route that does
 not exist gives) and behind `PIGROCRM_ENGAGEMENTS_TOKEN`, checked by the router-level
@@ -30,6 +31,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.collaborators.door import HubDoorService
 from pigrocrm.core.collaborators.door_schemas import (
     DoorAvailability,
+    DoorCommitments,
     DoorContracts,
     DoorFiscalIdentifiers,
     DoorFreelancerCard,
@@ -103,6 +105,29 @@ def _door(
     finally:
         if session is not None:
             session.close()
+
+
+@router.get(
+    "/commitments",
+    response_model=DoorCommitments,
+    responses={503: _UNAVAILABLE},
+)
+def freelancer_commitments(
+    settings: SettingsOfTheRoot,
+    registry: TenantsRegistryDep,
+    date_from: Annotated[
+        date | None,
+        Query(alias="from", description="The week of this day is the first; default this week"),
+    ] = None,
+    date_to: Annotated[
+        date | None, Query(alias="to", description="Default twelve weeks on, at most 104")
+    ] = None,
+) -> DoorCommitments:
+    """Every freelancer the hub knows with a live engagement in the window, with their weeks as
+    `/{hub_freelancer_id}/availability` answers them: one read for a whole list of cards
+    (REB-1120). A card that is not in the answer is free in every week of the window."""
+    with _door(settings, registry) as door:
+        return door.commitments(date_from, date_to)
 
 
 @router.get(

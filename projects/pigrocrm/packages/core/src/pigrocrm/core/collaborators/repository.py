@@ -226,3 +226,26 @@ class EngagementRepository:
                 Organization.deleted_at.is_(None),
             )
         ).scalar_one_or_none()
+
+    def committed_hub_freelancers(self, date_from: dt.date, date_to: dt.date) -> list[Organization]:
+        """The live freelancer organizations the hub knows (a hub freelancer id) with at least one
+        live engagement touching `date_from` to `date_to`, by hub id: the ones whose availability
+        the hub's lists cannot take for free (REB-1120)."""
+        touching = exists().where(
+            Engagement.freelancer_id == Organization.id,
+            Engagement.state.in_(LIVE_STATES),
+            Engagement.starts_on <= date_to,
+            or_(Engagement.ends_on.is_(None), Engagement.ends_on >= date_from),
+        )
+        return list(
+            self.session.execute(
+                select(Organization)
+                .where(
+                    Organization.hub_freelancer_id.is_not(None),
+                    Organization.deleted_at.is_(None),
+                    Organization.roles.contains(["freelancer"]),
+                    touching,
+                )
+                .order_by(Organization.hub_freelancer_id)
+            ).scalars()
+        )

@@ -4012,6 +4012,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rebase/freelancers/commitments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Freelancer Commitments
+         * @description Every freelancer the hub knows with a live engagement in the window, with their weeks as
+         *     `/{hub_freelancer_id}/availability` answers them: one read for a whole list of cards
+         *     (REB-1120). A card that is not in the answer is free in every week of the window.
+         */
+        get: operations["freelancer_commitments_api_rebase_freelancers_commitments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rebase/freelancers/{hub_freelancer_id}/availability": {
         parameters: {
             query?: never;
@@ -11392,6 +11414,26 @@ export interface components {
             date_to: string;
             /** Weeks */
             weeks: components["schemas"]["AvailabilityWeek"][];
+        };
+        /**
+         * DoorCommitments
+         * @description Every freelancer the hub knows with a live engagement in the window, each with the weeks
+         *     `availability` would answer for them (REB-1120). A hub card that is not in `freelancers` is
+         *     free in every week of the window: one read answers a whole list of cards.
+         */
+        DoorCommitments: {
+            /**
+             * Date From
+             * Format: date
+             */
+            date_from: string;
+            /**
+             * Date To
+             * Format: date
+             */
+            date_to: string;
+            /** Freelancers */
+            freelancers: components["schemas"]["DoorAvailability"][];
         };
         /**
          * DoorContracts
@@ -53007,6 +53049,141 @@ export interface operations {
                 headers: {
                     /** @description Seconds to wait before retrying. */
                     "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
+            };
+        };
+    };
+    freelancer_commitments_api_rebase_freelancers_commitments_get: {
+        parameters: {
+            query?: {
+                /** @description The week of this day is the first; default this week */
+                from?: string | null;
+                /** @description Default twelve weeks on, at most 104 */
+                to?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DoorCommitments"];
+                };
+            };
+            /** @description Permission denied: the actor does not have the required role. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The requested resource does not exist or was removed. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description The request conflicts with the current state of the resource. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description A domain rule was not met (application/problem+json), or the request's body, parameters or path did not have the expected shape and never reached the endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description The leads space is not configured (PIGROCRM_LEADS_SPACE) or cannot be reached right now: retry later. */
+            503: {
+                headers: {
                     [name: string]: unknown;
                 };
                 content: {

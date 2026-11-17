@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.collaborators import rules
+from pigrocrm.core.collaborators.repository import EngagementRepository
 from pigrocrm.core.collaborators.schemas import (
     EngagementCreate,
     EngagementListQuery,
@@ -614,6 +615,35 @@ def test_an_engagement_without_days_per_week_makes_its_weeks_sconosciuta_never_l
         ("free", "libera", Decimal("5")),
     ]
     assert answer.weeks[1].committed_days == Decimal("0")
+
+
+def test_the_hubs_commitments_hold_every_live_engagement_touching_the_window_and_no_other(
+    db_session: Session, service: EngagementService
+) -> None:
+    # The window the hub reads (REB-1120): the weeks of 16 and 23 November, to Sunday the 29th.
+    first, last = D(2026, 11, 16), D(2026, 11, 29)
+    late = freelancer(db_session)
+    make(service, late, starts_on=D(2026, 11, 26), ends_on=D(2026, 12, 20))  # its last Thursday
+    edge = freelancer(db_session)
+    make(service, edge, starts_on=D(2026, 11, 2), ends_on=first)  # ends on the first day
+    open_ended = freelancer(db_session)
+    activate(service, make(service, open_ended, starts_on=D(2026, 10, 5), ends_on=None).id)
+    before = freelancer(db_session)
+    make(service, before, starts_on=D(2026, 11, 2), ends_on=D(2026, 11, 15))
+    after = freelancer(db_session)
+    make(service, after, starts_on=D(2026, 11, 30), ends_on=D(2026, 12, 20))
+    cancelled = freelancer(db_session)
+    service.cancel(make(service, cancelled).id, ADMIN)
+    archived = freelancer(db_session)
+    make(service, archived)
+    archived.deleted_at = dt.datetime.now(dt.UTC)
+    no_hub = freelancer(db_session, hub_freelancer_id=None)
+    make(service, no_hub)
+    db_session.flush()
+
+    found = EngagementRepository(db_session).committed_hub_freelancers(first, last)
+
+    assert {organization.id for organization in found} == {late.id, edge.id, open_ended.id}
 
 
 def test_availability_is_found_by_the_hub_id_and_defaults_to_twelve_weeks(
