@@ -421,7 +421,7 @@ export function WorkProfile({ freelancerId, vettedAt }: { freelancerId: string; 
       </div>
       <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[10rem_1fr]">
         <Field label="Inviato il">{formatDate(profile.submitted_at)}</Field>
-        <Field label="Scade il">{formatDate(profile.expires_at)}</Field>
+        <Field label={profile.expired ? 'Scaduto il' : 'Scade il'}>{formatDate(profile.expires_at)}</Field>
         <Field label="Versione dello strumento">{profile.tool_version ?? '—'}</Field>
         <Field label="Testo verificabile">
           <span className="tabular-nums">{profile.groundedness}%</span>{' '}
