@@ -5,6 +5,7 @@ Moved out of `test_letter_service.py` so the signing tests build the same world.
 """
 
 import datetime as dt
+import re
 import shutil
 from decimal import Decimal
 from pathlib import Path
@@ -37,6 +38,27 @@ ADMIN = Actor(id=None, type="user", role="admin")  # type: ignore[arg-type]
 COLLABORATOR = Actor(id=None, type="user", role="collaborator")  # type: ignore[arg-type]
 SYSTEM = Actor(id=None, type="system", role="admin")  # type: ignore[arg-type]
 CLIENT_PRICE = "7331"
+
+
+def prints_figure(text: str, *figures: int) -> bool:
+    """Whether `text` prints one of `figures` as a figure of its own: raw (`7331`, `7331.00` in
+    JSON) or as Italian money prints it (`7.331,00`). A letter's Markdown escapes the punctuation
+    of what it prints (`7\\.331\\,00`), so the backslashes are dropped before the search. Bounded
+    by anything but a letter, a digit or a hyphen, so a random VAT number, a UUID (a whole group
+    of one included) or a signing token that happens to hold the same digits is not the figure
+    (REB-1116)."""
+    shapes = "|".join(
+        f"{re.escape(str(n))}|{re.escape(f'{n:,}'.replace(',', '.'))}" for n in figures
+    )
+    pattern = rf"(?<![0-9A-Za-z-])(?:{shapes})(?![0-9A-Za-z-])"
+    return re.search(pattern, text.replace("\\", "")) is not None
+
+
+def shows_client_price(text: str) -> bool:
+    """Whether `text` prints what rebase agreed with the client a day, or ten days of it."""
+    return prints_figure(text, int(CLIENT_PRICE), int(CLIENT_PRICE) * 10)
+
+
 LEGAL_ENTITY_FIELDS: dict[str, str] = {
     "legal_name": "rebase S.r.l.",
     "vat_number": "01234567890",
