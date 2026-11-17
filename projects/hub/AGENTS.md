@@ -609,6 +609,34 @@ there by `npm run lexicon`), update the commit in `VENDORED.txt` and run the gro
 authorizations a day after they expired or were spent. It runs in the compose `sweep` loop after
 `rebase crm-sweep`, and in the NixOS module as the timer `rebase-hub-work-profile-sweep`.
 
+**The review (REB-1126, spec § 4).** The talent page (`/hub/admin/freelance/$id`) has a «Profilo di
+lavoro» section (`pages/admin/freelancer/WorkProfile.tsx`) that shows nothing for a person who sent
+none. `GET /api/hub/freelancers/{id}/work-profile` answers `WorkProfileAdminRead`: the state, the
+dates, `tool_version`, the hub's groundedness and `unsupported_anchors` (each `{where, anchor, kind}`,
+and `where` is the key of the prose it came from, which the page sets the anchor under) and the
+profile rendered from the payload by `work_profiles/view.py` (`render_profile`: every read is
+defensive, a field of the wrong type reads as missing, and a `file` artifact never shows). `POST
+.../work-profile/approve` (optional note, kept for the admins) and `.../reject` (note required, the
+freelancer reads it) call `WorkProfileService.approve/reject` in `work_profiles/intake.py`; a profile
+already decided or past `expires_at` is a 409, a person with none a 404. **Approval writes an
+`AdminAction` `work_profile_decided` every time** (payload `decision` and `vetted`, never the note),
+in the same transaction as the state, **and calls `FreelancerService.set_vetted` only when
+`vetted_at` is null**, which writes the usual `vetted` entry; rejection leaves the flag alone. The
+card follows the profile through its inputs' hash (REB-1134), not through a column.
+
+**An expired row counts for nothing, for every reader but the admin's page.** `talents.work_profile_states`
+and the filter read only rows with `expires_at` in the future, the MCP `get_work_profile` answers
+not found for one, and the admin section shows it as «Scaduto» with no buttons, so an admin sees why
+a profile that counts for nothing is still there until the sweep deletes it. «Talenti» filters by
+`work_profile` (`draft` is «da rivedere», `approved`, `none`; API and MCP `list_talents` alike, a
+value outside the three is a 422 and a rejected profile is in none of them), shows a «Da rivedere»
+pill on a `draft`, and every row carries `work_profile_state`. These read the state of the review,
+never a field of the payload: no sort, filter or threshold reads a number off a profile (spec
+non-goals). MCP is read only: `get_talent` carries `work_profile_state`, and `get_work_profile`
+(talents family) returns the rendered profile, the score and the anchors, leaving an `AdminAction`
+`work_profile_read` (entity `freelancer`, payload the tool name and the door, no value). **There is no
+approve or reject tool on purpose**: the decision is a person's, made in the app.
+
 ## Campaigns
 
 Since P-REB-41 «Invia una campagna» the `campaigns` service in `docker-compose.yml` runs
