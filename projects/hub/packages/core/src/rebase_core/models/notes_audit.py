@@ -124,6 +124,11 @@ ADMIN_ACTION_ENTITY_TYPES = (
 # REB-889 adds `admin_promoted` and `admin_demoted` on entity type `user` (the person whose
 # role changed; the payload says whether a row was created and what the role was), written
 # in the same transaction as the role change.
+# REB-1126 adds `work_profile_decided` on the `freelancer` whose work profile an admin approved
+# or rejected (the payload: `decision` and, for an approval, whether it `vetted` the person;
+# never the note), written with the decision in one transaction, and `work_profile_read` on
+# the same freelancer when an agent reads the profile through MCP `get_work_profile` (the
+# payload names the tool, never a value).
 ADMIN_ACTION_KINDS = (
     "overridden",
     "cleared",
@@ -164,6 +169,8 @@ ADMIN_ACTION_KINDS = (
     "company_created",
     "admin_promoted",
     "admin_demoted",
+    "work_profile_decided",
+    "work_profile_read",
 )
 
 

@@ -9,7 +9,7 @@ from pydantic import ConfigDict, Field
 
 from rebase_core.bands import Band
 from rebase_core.schema_common import ResponseModel
-from rebase_core.vocabulary import RemoteOption, Seniority, TalentStatus
+from rebase_core.vocabulary import RemoteOption, Seniority, TalentStatus, WorkProfileState
 
 TalentOrigin = Literal["form", "wizard", "admin"]
 
@@ -72,6 +72,10 @@ class TalentRead(ResponseModel):
     # name or telephone number, by freelancer id. Empty for almost everyone, and for a
     # lead. `rebase_core.duplicates` says which signal; an admin merges from there.
     duplicate_possible_of: list[UUID] = Field(default_factory=list)
+    # The review state of the person's work profile (REB-1126): `draft` waits for an admin
+    # (the «Da rivedere» pill), `approved`, `rejected`; `None` for none and for one past its
+    # 12 months. The state of the review, never a number read off the profile.
+    work_profile_state: WorkProfileState | None = None
 
 
 class TalentList(ResponseModel):
