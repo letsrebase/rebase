@@ -23,6 +23,7 @@ import {
   linkProblem,
   payloadOf,
   withMeta,
+  withProfileProposal,
   withTemplate,
   type CampaignForm,
 } from './create-campaign/form'
@@ -131,7 +132,7 @@ function Editor({ initial }: { initial: Campaign | null }) {
   // Another source is another list: an untick made on the old one must not leave out
   // someone who is on the new one too.
   function changeSource(patch: Partial<CampaignForm>) {
-    setForm((current) => ({ ...current, ...patch }))
+    setForm((current) => withProfileProposal(current, { ...current, ...patch }))
     setExcluded([])
   }
   function changeMail(patch: Partial<CampaignForm>) {

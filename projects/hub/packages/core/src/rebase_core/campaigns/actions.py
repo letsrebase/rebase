@@ -30,6 +30,7 @@ from rebase_core.models import (
     Login,
     Note,
     User,
+    WorkProfile,
 )
 
 # What `MemberService.replace_cv` writes on a card's first CV (`members.py:303`).
@@ -238,6 +239,8 @@ def done_at_many(
         return _card_action(session, recipients, action, moments, now)
     if action == "request_updated":
         return _requests_updated(session, recipients, moments)
+    if action == "work_profile_sent":
+        return _work_profiles_sent(session, recipients, moments)
     if action == "click":
         # «Un link» (REB-530): of a page outside the hub, the first click Resend reports
         # is all the hub sees. This mail's own, or, for a «Riscrivi», the click on a mail
@@ -296,6 +299,33 @@ def _card_action(
             answer[r.id] = None
         else:
             answer[r.id] = now or card.updated_at
+    return answer
+
+
+def _work_profiles_sent(
+    session: Session, recipients: Sequence[CampaignRecipient], moments: _Moments
+) -> dict[UUID, datetime | None]:
+    """«Ha inviato un profilo di lavoro» (REB-1131): the freelancer's work profile was
+    submitted after the moment. A profile is any state (a draft or a rejected one was sent
+    all the same), one row per freelancer that a resubmission replaces, so `submitted_at`
+    is the latest send. The tick stamps it once; a profile the sweep deletes later still
+    counts for a row already stamped."""
+    cards = _cards_by_email(session, {r.email.lower() for r in recipients})
+    submitted: dict[UUID, datetime] = {}
+    if cards:
+        submitted = {
+            freelancer_id: stamp
+            for freelancer_id, stamp in session.execute(
+                select(WorkProfile.freelancer_id, WorkProfile.submitted_at).where(
+                    WorkProfile.freelancer_id.in_({card.id for card in cards.values()})
+                )
+            )
+        }
+    answer: dict[UUID, datetime | None] = {}
+    for r in recipients:
+        card = cards.get(r.email.lower())
+        stamp = submitted.get(card.id) if card is not None else None
+        answer[r.id] = stamp if stamp is not None and stamp > moments[r.id] else None
     return answer
 
 

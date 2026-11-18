@@ -1,7 +1,7 @@
 """What a sent mail led to, stamped once by the tick (spec § 6.2)."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from campaign_fixtures import (  # noqa: F401  (fixture)
@@ -16,7 +16,7 @@ from campaign_fixtures import (  # noqa: F401  (fixture)
     lead,
     person,
 )
-from sqlalchemy import update
+from sqlalchemy import delete, update
 from sqlalchemy.orm import Session
 
 import rebase_core.campaigns.outcome as outcome_module
@@ -34,6 +34,7 @@ from rebase_core.models import (
     Login,
     Note,
     User,
+    WorkProfile,
 )
 
 NO_PAUSE = lambda _seconds: None  # noqa: E731
@@ -122,6 +123,61 @@ def test_a_card_that_became_complete_is_stamped_at_the_tick_that_saw_it(clean: S
     seen = clock.at + timedelta(days=1)
     stamp_outcomes(clean, now=seen)
     assert only_row(clean, campaign).action_at == seen
+
+
+def test_a_work_profile_sent_after_the_mail_is_stamped_and_survives_its_deletion(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    clock = Clock(NOW)
+    card = person(clean, "ada@studio.it")
+    campaign = sent(clean, clock, journey_status="complete", action="work_profile_sent")
+    at = clock.at + timedelta(hours=3)
+    clean.add(
+        WorkProfile(
+            freelancer_id=card.id,
+            payload={},
+            groundedness=90,
+            unsupported_anchors=[],
+            submitted_at=at,
+            expires_at=datetime.now(UTC) + timedelta(days=30),
+        )
+    )
+    clean.commit()
+    stamp_outcomes(clean, now=at + timedelta(minutes=5))
+    assert only_row(clean, campaign).action_at == at
+    clean.execute(delete(WorkProfile))
+    clean.commit()
+    stamp_outcomes(clean, now=at + timedelta(days=1))
+    assert only_row(clean, campaign).action_at == at
+
+
+def test_a_resubmitted_work_profile_counts_once(clean: Session) -> None:  # noqa: F811  (fixture)
+    clock = Clock(NOW)
+    card = person(clean, "ada@studio.it")
+    campaign = sent(clean, clock, journey_status="complete", action="work_profile_sent")
+    first = clock.at + timedelta(hours=1)
+    clean.add(
+        WorkProfile(
+            freelancer_id=card.id,
+            payload={},
+            groundedness=90,
+            unsupported_anchors=[],
+            submitted_at=first,
+            expires_at=datetime.now(UTC) + timedelta(days=30),
+        )
+    )
+    clean.commit()
+    stamp_outcomes(clean, now=first + timedelta(minutes=5))
+    # A resubmission replaces the row (one per freelancer) with a later `submitted_at`.
+    clean.execute(
+        update(WorkProfile)
+        .where(WorkProfile.freelancer_id == card.id)
+        .values(submitted_at=first + timedelta(days=2))
+    )
+    clean.commit()
+    stamp_outcomes(clean, now=first + timedelta(days=3))
+    assert only_row(clean, campaign).action_at == first
+    assert clean.query(WorkProfile).filter_by(freelancer_id=card.id).count() == 1
 
 
 def test_a_card_created_after_the_mail_is_stamped_at_its_creation(clean: Session) -> None:  # noqa: F811  (fixture)

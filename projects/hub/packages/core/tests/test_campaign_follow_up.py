@@ -1,7 +1,7 @@
 """«Riscrivi a chi non ha fatto niente» (spec § 4.3): a `list` draft that follows a sent
 campaign, and its list."""
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from campaign_fixtures import (  # noqa: F401  (fixture)
@@ -18,9 +18,9 @@ from campaign_fixtures import (  # noqa: F401  (fixture)
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
-from rebase_core.campaigns.audience import REASON_DISCARDED, waiting_rows
+from rebase_core.campaigns.audience import REASON_DISCARDED, REASON_DONE, waiting_rows
 from rebase_core.campaigns.schemas import CampaignPatch, ScheduleRequest
-from rebase_core.campaigns.sender import RecordingCampaignSender
+from rebase_core.campaigns.sender import RecordingCampaignSender, SendOutcome
 from rebase_core.campaigns.service import (
     LIST_IS_FIXED,
     NOTHING_TO_FOLLOW,
@@ -29,7 +29,15 @@ from rebase_core.campaigns.service import (
 )
 from rebase_core.campaigns.tick import run_tick
 from rebase_core.errors import InvalidState, ValidationFailed
-from rebase_core.models import Campaign, CampaignRecipient, Company, Freelancer, Login, User
+from rebase_core.models import (
+    Campaign,
+    CampaignRecipient,
+    Company,
+    Freelancer,
+    Login,
+    User,
+    WorkProfile,
+)
 
 NO_PAUSE = lambda _seconds: None  # noqa: E731
 GAP = timedelta(days=SETTINGS.campaign_gap_days, hours=1)
@@ -258,3 +266,54 @@ def test_a_follow_up_draft_can_be_deleted_and_its_parent_stays(clean: Session) -
     clean.expire_all()
     assert clean.get(Campaign, follow.id) is None
     assert clean.get(Campaign, parent.id) is not None
+
+
+def _send_profile(session: Session, email: str, submitted: datetime) -> None:
+    user = session.query(User).filter(User.email == email).one()
+    card = session.query(Freelancer).filter(Freelancer.user_id == user.id).one()
+    session.add(
+        WorkProfile(
+            freelancer_id=card.id,
+            payload={},
+            groundedness=90,
+            unsupported_anchors=[],
+            submitted_at=submitted,
+            expires_at=datetime.now(UTC) + timedelta(days=30),
+        )
+    )
+    session.commit()
+
+
+def test_a_follow_up_of_a_work_profile_campaign_lists_who_has_not_sent_one(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    clock = Clock(NOW)
+    parent = sent_to(clean, clock, "ada@studio.it", "bob@studio.it", action="work_profile_sent")
+    _send_profile(clean, "ada@studio.it", clock.at + timedelta(hours=1))
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    follow = service.follow_up(parent.id, admin(clean).id)
+    assert follow.action == "work_profile_sent"
+    assert [r.email for r in service.audience(follow.id).lines] == ["bob@studio.it"]
+
+
+def test_a_work_profile_sent_after_scheduling_skips_the_row_at_send_time(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    clock = Clock(NOW)
+    parent = sent_to(clean, clock, "ada@studio.it", "bob@studio.it", action="work_profile_sent")
+    clock.at += GAP
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    who = admin(clean)
+    follow = service.follow_up(parent.id, who.id)
+    clock.at += timedelta(minutes=1)
+    service.send_test(follow.id, as_admin(who), RecordingCampaignSender())
+    service.schedule(follow.id, ScheduleRequest())
+    _send_profile(clean, "ada@studio.it", clock.at + timedelta(seconds=30))
+    clock.at += timedelta(minutes=1)
+    recording = RecordingCampaignSender([SendOutcome("accepted", "rec-follow")])
+    result = run_tick(clean, recording, SETTINGS, clock=clock, pause=NO_PAUSE)
+    assert (result.sent, result.skipped) == (1, 1)
+    clean.expire_all()
+    rows = {r.email: r for r in clean.query(CampaignRecipient).filter_by(campaign_id=follow.id)}
+    assert (rows["ada@studio.it"].status, rows["ada@studio.it"].reason) == ("skipped", REASON_DONE)
+    assert rows["bob@studio.it"].status == "sent"

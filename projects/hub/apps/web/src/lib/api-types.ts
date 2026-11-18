@@ -2779,7 +2779,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "signed_in" | "cv" | "card_complete" | "profile_created" | "request_updated" | "pigro_customer" | "click";
+            action: "signed_in" | "cv" | "card_complete" | "profile_created" | "request_updated" | "pigro_customer" | "work_profile_sent" | "click";
         };
         /** CampaignList */
         CampaignList: {
@@ -2827,7 +2827,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "signed_in" | "cv" | "card_complete" | "profile_created" | "request_updated" | "pigro_customer" | "click";
+            action: "signed_in" | "cv" | "card_complete" | "profile_created" | "request_updated" | "pigro_customer" | "work_profile_sent" | "click";
             /**
              * Status
              * @enum {string}
@@ -2881,7 +2881,7 @@ export interface components {
             /** Button Url */
             button_url?: string | null;
             /** Action */
-            action?: ("signed_in" | "cv" | "card_complete" | "profile_created" | "request_updated" | "pigro_customer" | "click") | null;
+            action?: ("signed_in" | "cv" | "card_complete" | "profile_created" | "request_updated" | "pigro_customer" | "work_profile_sent" | "click") | null;
         };
         /** CampaignRead */
         CampaignRead: {
@@ -2922,7 +2922,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "signed_in" | "cv" | "card_complete" | "profile_created" | "request_updated" | "pigro_customer" | "click";
+            action: "signed_in" | "cv" | "card_complete" | "profile_created" | "request_updated" | "pigro_customer" | "work_profile_sent" | "click";
             /**
              * Status
              * @enum {string}
@@ -5715,6 +5715,8 @@ export interface components {
             has_cv?: boolean | null;
             /** With Logins */
             with_logins?: boolean | null;
+            /** Work Profile */
+            work_profile?: string | null;
             /** Created From */
             created_from?: string | null;
             /** Created To */
@@ -5753,6 +5755,8 @@ export interface components {
             has_cv: boolean | null;
             /** With Logins */
             with_logins: boolean | null;
+            /** Work Profile */
+            work_profile: string | null;
             /** Created From */
             created_from: string | null;
             /** Created To */
@@ -6227,7 +6231,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "signed_in" | "cv" | "card_complete" | "profile_created" | "request_updated" | "pigro_customer" | "click";
+            action: "signed_in" | "cv" | "card_complete" | "profile_created" | "request_updated" | "pigro_customer" | "work_profile_sent" | "click";
         };
         /** TestRead */
         TestRead: {

@@ -15,6 +15,7 @@ export const ACTION_LABELS: Record<CampaignAction, string> = {
   profile_created: 'Ha creato il profilo',
   request_updated: 'Ha aggiornato la richiesta',
   pigro_customer: 'Primo cliente in Pigro',
+  work_profile_sent: 'Ha inviato un profilo di lavoro',
   click: 'Ha cliccato il link',
 }
 
@@ -178,6 +179,7 @@ export const ACTION_DONE_LABELS: Record<CampaignAction, string> = {
   profile_created: 'Hanno creato il profilo',
   request_updated: 'Hanno aggiornato la richiesta',
   pigro_customer: 'Primo cliente in Pigro',
+  work_profile_sent: 'Hanno inviato un profilo di lavoro',
   click: 'Hanno cliccato il link',
 }
 
@@ -188,6 +190,7 @@ const ACTION_SHORT: Record<CampaignAction, string> = {
   profile_created: 'profili creati',
   request_updated: 'richieste aggiornate',
   pigro_customer: 'primi clienti',
+  work_profile_sent: 'profili di lavoro inviati',
   click: 'clic sul link',
 }
 

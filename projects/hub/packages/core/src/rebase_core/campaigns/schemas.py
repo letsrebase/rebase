@@ -27,6 +27,7 @@ from rebase_core.models import (
 )
 from rebase_core.schema_common import ResponseModel
 from rebase_core.search import SEARCH_MAX_LENGTH
+from rebase_core.talents import WORK_PROFILE_FILTERS
 from rebase_core.vocabulary import (
     CampaignAction,
     CampaignDestination,
@@ -60,8 +61,16 @@ class TalentsFilters(ResponseModel):
     utm_source: str | None = Field(default=None, max_length=200)
     has_cv: bool | None = None
     with_logins: bool | None = None
+    work_profile: str | None = Field(default=None, max_length=10)
     created_from: datetime | None = None
     created_to: datetime | None = None
+
+    @field_validator("work_profile")
+    @classmethod
+    def _known_work_profile(cls, value: str | None) -> str | None:
+        if value is not None and value not in WORK_PROFILE_FILTERS:
+            raise ValueError(f"expected one of {', '.join(WORK_PROFILE_FILTERS)}")
+        return value
 
 
 class CompaniesFilters(ResponseModel):
@@ -112,6 +121,7 @@ Action = Literal[
     "profile_created",
     "request_updated",
     "pigro_customer",
+    "work_profile_sent",
     "click",
 ]
 Meta = Literal["area", "wizard", "pigro", "request", "link"]
