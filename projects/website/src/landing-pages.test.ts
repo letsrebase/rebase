@@ -560,6 +560,34 @@ describe('company.html', () => {
 describe('privacy.html', () => {
   const page = html['privacy.html']
 
+  it('discloses the work profile: what comes in, who sees it, how long, on what basis', () => {
+    // REB-1139. Facts, not markup: the section has to say each of these.
+    const start = page.indexOf('Il profilo di lavoro</h2>')
+    expect(start).toBeGreaterThan(-1)
+    const text = page
+      .slice(start, page.indexOf('<h2>', start + 1))
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+    for (const fact of [
+      'facoltativo',
+      'work-profile',
+      'anonimo',
+      'niente log',
+      'niente codice',
+      'nomi di clienti, prodotti, persone o repository',
+      'una persona di rebase',
+      '«Verificato da rebase»',
+      'le aziende con cui lavoriamo possono vedere il riassunto, gli ambiti e i domini dei progetti',
+      'fornitore di intelligenza artificiale',
+      'al massimo 12 mesi',
+      'dalla tua area',
+      'consenso',
+    ]) {
+      expect(text.toLowerCase()).toContain(fact.toLowerCase())
+    }
+    expect(page).toContain('https://github.com/letsrebase/work-profile/blob/main/PRIVACY.md')
+  })
+
   it('names both restricted Gmail scopes, in full', () => {
     // Spec 13, criterion 26. Not pedantry: Google's review of a restricted scope
     // checks that the privacy policy states what the application does with the
