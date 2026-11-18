@@ -18,6 +18,7 @@ export function PracticeRows({ practices, labelledBy }: { practices: WorkProfile
       {practices.map((practice) => (
         <li key={practice.id}>
           <span className="font-medium">{practice.label}</span>
+          {/* The final full stop separates the counts from the mark for a screen reader. */}
           <span className="block text-muted-foreground">
             {`in ${plural(practice.seen, 'sessione', 'sessioni')} su ${practice.of}, ${plural(practice.products, 'prodotto', 'prodotti')}, ${plural(practice.months, 'mese', 'mesi')}.`}
           </span>

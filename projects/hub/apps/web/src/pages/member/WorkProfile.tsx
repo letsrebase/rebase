@@ -12,6 +12,7 @@ type Profile = NonNullable<Me['work_profile']>
 
 const README_URL = 'https://github.com/letsrebase/rebase-verify#readme'
 const PRIVACY_URL = 'https://letsrebase.com/privacy'
+const PRACTICES_URL = 'https://github.com/letsrebase/rebase-verify/blob/main/README.md#work-practices'
 
 /** The three commands a person runs, in order: the first two once, the third in the agent. */
 const COMMANDS = ['git clone https://github.com/letsrebase/rebase-verify', 'cd rebase-verify', 'claude'] as const
@@ -43,8 +44,6 @@ function Steps() {
     </ol>
   )
 }
-
-const PRACTICES_URL = 'https://github.com/letsrebase/rebase-verify/blob/main/README.md#work-practices'
 
 function Links() {
   return (
@@ -208,13 +207,13 @@ export function MemberWorkProfile({ profile, vetted }: { profile: Me['work_profi
               <UsageBadges technologies={profile.technologies} />
             </div>
           )}
-          {profile.practices.length > 0 && profile.state !== 'rejected' && !profile.expired && (
+          {profile.practices.length > 0 && (
             <div className="space-y-2 border-t pt-3">
               <h3 id="member-practices" className="text-sm font-medium">
-                Come lavori
+                Come lavora
               </h3>
               <p className="text-sm text-muted-foreground">
-                Le leggiamo noi di rebase. Come le contiamo, lo trovi in{' '}
+                Per sapere come le contiamo, apri{' '}
                 <a
                   className="underline underline-offset-2"
                   href={PRACTICES_URL}

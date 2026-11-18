@@ -102,8 +102,8 @@ describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
   it('shows the person the same practice rows and marks, with a link to the published list', () => {
     show({ ...BASE, state: 'approved', practices: PRACTICES })
     const section = screen.getByRole('region', { name: 'Profilo di lavoro' })
-    expect(within(section).getByRole('heading', { name: 'Come lavori' })).toBeInTheDocument()
-    const list = within(section).getByRole('list', { name: 'Come lavori' })
+    expect(within(section).getByRole('heading', { name: 'Come lavora' })).toBeInTheDocument()
+    const list = within(section).getByRole('list', { name: 'Come lavora' })
     expect(within(list).getByText('Verifica prima del commit')).toBeInTheDocument()
     expect(within(list).getByText(/in 18 sessioni su 25/)).toBeInTheDocument()
     expect(within(list).getByText('contato dal codice')).toBeInTheDocument()
@@ -116,16 +116,16 @@ describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
 
   it('shows no practices block when there are none', () => {
     show({ ...BASE, state: 'approved' })
-    expect(screen.queryByRole('heading', { name: 'Come lavori' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Come lavora' })).toBeNull()
     expect(screen.queryByRole('link', { name: "l'elenco delle pratiche" })).toBeNull()
   })
 
   it.each([
     ['expired', { state: 'approved', expired: true }],
     ['rejected', { state: 'rejected' }],
-  ] as const)('shows no practices when the profile is %s', (_n, over) => {
-    show({ ...BASE, ...over, practices: PRACTICES })
-    expect(screen.queryByRole('heading', { name: 'Come lavori' })).toBeNull()
+  ] as const)('shows no practices when the profile is %s (the API sends an empty list)', (_n, over) => {
+    show({ ...BASE, ...over, practices: [] })
+    expect(screen.queryByRole('heading', { name: 'Come lavora' })).toBeNull()
     expect(screen.queryByText('Verifica prima del commit')).toBeNull()
   })
 
