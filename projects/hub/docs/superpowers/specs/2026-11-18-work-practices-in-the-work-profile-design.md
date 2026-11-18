@@ -76,8 +76,9 @@ Lorenzo chose on 2026-11-18 between three.
 
 ## 2. The list, version `rebase-practices/v1`
 
-The unit is the session (a session as the adapters already define it, sub-agent side chains
-folded into their parent). Each practice has a **denominator**: the sessions where the
+The unit is the session as the adapters already emit it (opencode and Kimi fold sub-agent side
+chains into their parent, Claude Code groups by session id), filtered like `volume.sessions` so
+that `of` can never exceed it. Each practice has a **denominator**: the sessions where the
 practice was possible. «Seen in 18 of 25» means 25 sessions could have shown it and 18 did.
 
 ### 2a. Counted by code
