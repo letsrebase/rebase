@@ -7,7 +7,7 @@ This assessment covers what the hub does with the work profiles freelancers send
 `rebase-verify` (the CLI called `work-profile` until REB-1140; spec
 `docs/superpowers/specs/2026-11-17-work-profile-intake-and-review-design.md`), the
 per-technology usage bands added in REB-1130, the practices block added in REB-1142 (counts of
-twelve ways of working, seven by code and five by the person's model), and two things we chose not to build: a
+eleven ways of working, seven by code and four by the person's model), and two things we chose not to build: a
 numeric score per technology, and a rating of higher-level skills. It is a living document:
 change it in the same pull request as any change to what the processing does, and keep the
 previous text in git history. Where it says "planned", the measure is a condition for shipping
@@ -47,7 +47,7 @@ products, months), the detected stack per project from a fixed vocabulary, abstr
 domains, prose written by the person's own model and reread by them, and (since REB-1129)
 per-technology usage bands with their counts (a technology name outside the fixed vocabulary is
 dropped before storage and only the count of dropped rows is kept, as data minimisation), and
-(since REB-1142) `practices`: counts of twelve work practices (seven by code, five classified by the person's model), each as sessions seen out of the
+(since REB-1142) `practices`: counts of eleven work practices (seven by code, four classified by the person's model), each as sessions seen out of the
 sessions it could have happened in, with product and month counts (see the section on practices
 below). The tool is meant to leave out session logs,
 code, and client, product, person and repository names; the hub cannot verify the tool's
@@ -270,7 +270,7 @@ the projects themselves.
 
 ## 8. Practices (REB-1142)
 
-The profile gains a `practices` block: twelve ways of working (seven counted by code, five
+The profile gains a `practices` block: eleven ways of working (seven counted by code, four
 classified by the person's own model), each shown as «in N sessioni su M»
 with the number of products and months it spans. Definitions and rules are published in the
 fork's README («Work practices») and in `share/practices.json`, which the hub vendors.
@@ -287,8 +287,8 @@ plain `submit` preview does not list them.
 **Method.** The seven above are counted by code, with no model: the case § 7 scopes in
 («without a model», counts of something the person did).
 
-**The model method (REB-1146).** Five practices are classified by a model: `asks_for_alternatives`,
-`pushes_back_with_reason`, `states_done_criteria`, `raises_risks` and `limits_scope`. § 7 admits
+**The model method (REB-1146).** Four practices are classified by a model: `asks_for_alternatives`,
+`pushes_back_with_reason`, `states_done_criteria` and `limits_scope`. § 7 admits
 them under the conditions it lists.
 
 - What is read: at most 60 sampled sessions, and in each at most 12 of the person's own messages,
@@ -301,19 +301,25 @@ them under the conditions it lists.
   claude-opus-4-7 through the API-path prompt, so the figures hold for that model and prompt, not
   for the model a person runs or the slash-command path. Agreement on a written set of 224 sessions (240 written, 10 + 10 per
   practice and language, read blind by a second reader; 6 rewritten and read blind again, 16
-  dropped, 224 kept, at least 8 + 8 per practice and language): `asks_for_alternatives` 224/224, `pushes_back_with_reason` 220/224,
-  `states_done_criteria` 223/224, `raises_risks` 218/224, `limits_scope` 220/224, and
-  `gives_context_and_constraints` 196/224, which failed. Stability, two runs on 40 real sessions
-  of the developer's own (client paths excluded; some were dispatched by an agent): 39/40, 37/40,
-  40/40, 39/40 and 36/40 for the five, and 40/40 for the one left out.
+  dropped, 224 kept, at least 8 + 8 per practice and language), with the model in batches of 10.
+  For each practice: its own positives, its own near misses, false positives elsewhere, pooled
+  agreement, and stability (two runs on 40 real sessions of the developer's own, client work
+  excluded). `asks_for_alternatives`: 20/20, 20/20, 1, 223/224, 39/40.
+  `pushes_back_with_reason`: 16/16, 20/20, 5 false positives and 1 missed secondary positive,
+  218/224, 38/40. `states_done_criteria`: 20/20, 20/20, 1, 223/224, 38/40. `limits_scope`: 18/18,
+  15/16, 4, 219/224, 39/40. Not published: `gives_context_and_constraints` 20/20, 14/20, 22,
+  196/224, 35/40; `raises_risks` 17/17, 16/17, 3, 220/224, 35/40 (it failed on stability). An
+  always-false classifier would score 202 to 207 of 224 pooled, so the pooled figure alone says
+  little; the misses are almost all false positives; and stability rests on few true answers (3 to
+  10 per run).
 - What the gate does not show: a written set shows that the rubric is understood as its writers
   understood it, not how messy real sessions are classified. Nobody outside the build checked the
   set, by Lorenzo's choice.
-- `gives_context_and_constraints` is left out: it is not published, has no label, and a profile
-  that carries it has it dropped and counted as an unknown id.
-- What the hub can do: bound the counts' consistency: `0 <= seen <= of`, `of <= 60` for a model
-  practice, and `of` no more than the profile's sessions, products and months against seen and the
-  profile. It cannot re-derive them. It never re-derives a count,
+- `gives_context_and_constraints` and `raises_risks` are left out: they are not published, have no
+  label, and a profile that carries either has it dropped and counted as an unknown id.
+- What the hub can do: check the counts against each other and the profile: `0 <= seen <= of`;
+  `of <= 60` for a model practice and no more than the profile's sessions; products no more than the
+  profile's products and than `seen`; months no more than `seen`. It never re-derives a count,
   since the messages go only to the person's own model provider and never to rebase.
 - What the person can do: steer their agent while it classifies, or edit the file before sending.
 - Every model row is marked «dal modello della persona, non ricontrollato».
@@ -342,8 +348,8 @@ near a month boundary can land in the neighbouring month.
 - `rebase-verify` reads each command up to its first 240 characters (its adapters cut it when
   reading the log), so a check at the end of a long chained command can be missed. A count can
   be too low; the rules do not guess the rest.
-- Sub-agent briefs, task notifications and compaction summaries are skipped, but a session
-  another agent drove (a dispatched or headless run) can be read as if the person typed it.
+- Claude Code sub-agent briefs, task notifications, compaction summaries and opencode child
+  sessions are skipped; other tools' dispatched sessions can still be read as typed by the person.
 - A chain such as `npm test && git push` counts as its first check, because the exit status
   cannot say which part failed.
 

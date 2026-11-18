@@ -392,9 +392,9 @@ def test_a_model_practice_seen_11_of_60_is_accepted_and_carries_the_model_mark()
 
 
 def test_a_model_practice_of_61_is_refused_naming_the_practice_and_the_rule() -> None:
-    item = _item("raises_risks", method="model", seen=11, of=61, products=2, months=3)
+    item = _item("limits_scope", method="model", seen=11, of=61, products=2, months=3)
     [found] = issues(_profile(item))
-    assert "practices.raises_risks" in found
+    assert "practices.limits_scope" in found
     assert "60" in found
     assert "una pratica letta dal modello guarda al massimo" in found
 
@@ -402,9 +402,12 @@ def test_a_model_practice_of_61_is_refused_naming_the_practice_and_the_rule() ->
 def test_the_unpublished_practice_is_an_unknown_id() -> None:
     assert "gives_context_and_constraints" not in practice_methods()
     assert "gives_context_and_constraints" not in PRACTICE_LABELS
+    assert "raises_risks" not in practice_methods()
+    assert "raises_risks" not in PRACTICE_LABELS
     profile = _profile(
         _item("gives_context_and_constraints", method="model", seen=5, of=10),
+        _item("raises_risks", method="model", seen=5, of=10),
         _item("checks_before_commit"),
     )
-    assert drop_unknown(profile) == 1
+    assert drop_unknown(profile) == 2
     assert [i["id"] for i in profile["practices"]["items"]] == ["checks_before_commit"]

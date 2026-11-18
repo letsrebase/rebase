@@ -20,7 +20,7 @@ file because the lexicon above holds tokens, with generic words dropped, and can
 that every label's words are in the lexicon.
 
 practices.json is vendored verbatim from letsrebase/rebase-verify (share/practices.json) at commit
-cadd2e57b444609d62ca7418f60bc0edeab9bb00 (the fork's REB-1146 branch; to be re-pointed at the merge commit before merge). It is the list
+56a47ed (the fork's REB-1146 branch; to be re-pointed at the merge commit before merge). It is the list
 of the practices of the rubric rebase-practices/v1 with the method that counts each, which
 practices.py holds a received block to.
 An id that is not in it is dropped before storage and counted, not refused. To refresh it: copy
