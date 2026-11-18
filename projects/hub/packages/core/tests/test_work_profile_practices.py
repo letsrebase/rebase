@@ -2,7 +2,9 @@
 vendored list it is held to and the intake that refuses a bad one."""
 
 import json
+import re
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -258,7 +260,7 @@ def test_rows_follow_the_list_order_not_the_counts() -> None:
     assert (rows[0].seen, rows[0].of, rows[0].products, rows[0].months) == (1, 5, 1, 1)
 
 
-def test_a_row_the_intake_would_refuse_or_a_duplicate_is_left_out_and_nothing_raises() -> None:
+def test_a_refused_row_is_left_out_and_a_repeated_id_keeps_its_first_valid_row() -> None:
     assert (
         practice_rows([_item("checks_before_commit", seen=9, of=5), _item("nope"), "x", None]) == []
     )
@@ -316,14 +318,55 @@ def test_practices_are_nowhere_a_company_or_the_card_reads() -> None:
     assert render_profile(with_block).practices and not render_profile(plain).practices
 
 
-def test_no_query_orders_or_filters_by_a_practice() -> None:
-    from pathlib import Path
+NEVER_READ_PRACTICES = (
+    "talents.py",
+    "talent_schemas.py",
+    "talent_availability.py",
+    "team_schemas.py",
+    "cloud.py",
+    "hub_facts.py",
+    "card_prompt.py",
+    "card_draft.py",
+    "work_profiles/source.py",
+)
 
+
+def _offending(root: Path, names: tuple[str, ...]) -> list[str]:
+    return [n for n in names if "practices" in (root / n).read_text(encoding="utf-8")]
+
+
+def test_no_query_orders_or_filters_by_a_practice(tmp_path: Path) -> None:
     root = Path(practices_module.__file__).parents[1]
-    for path in [*(root / "work_profiles").glob("*.py"), root / "talents.py", root / "members.py"]:
-        text = path.read_text(encoding="utf-8")
-        for line in text.splitlines():
-            if "practices" in line:
-                assert "order_by" not in line and ".where(" not in line, (path.name, line)
-    assert "practices" not in (root / "talent_schemas.py").read_text(encoding="utf-8")
-    assert "practices" not in (root / "work_profiles" / "source.py").read_text(encoding="utf-8")
+    # The word is absent from every module that builds the talent list, the cloud, the card's
+    # source or the narrative input, so no `ORDER BY`/`WHERE` (one line, several, or raw SQL
+    # such as `payload -> 'practices'`) can read a practice there.
+    assert _offending(root, NEVER_READ_PRACTICES) == []
+    # The intake only drops what the list does not know and imports the module.
+    lines = [
+        line.strip()
+        for line in (root / "work_profiles" / "intake.py").read_text(encoding="utf-8").splitlines()
+        if re.search(r"\bpractices\b", line)
+    ]
+    assert lines == [
+        "from rebase_core.work_profiles import practices",
+        "unknown_practices = practices.drop_unknown(stored)",
+    ]
+    # The check itself catches a multi-line `.where(` and raw SQL.
+    (tmp_path / "a.py").write_text("select(X).where(\n    X.payload['practices'] > 1\n)\n")
+    (tmp_path / "b.py").write_text("text(\"payload -> 'practices' -> 'items'\")\n")
+    assert _offending(tmp_path, ("a.py", "b.py")) == ["a.py", "b.py"]
+
+
+def test_a_model_row_has_its_shape_in_the_view(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(practices_module, "practice_methods", lambda: {"read_by_model": "model"})
+    monkeypatch.setattr(practices_module, "PRACTICE_LABELS", {"read_by_model": "Letta dal modello"})
+    [row] = practice_rows([_item("read_by_model", method="model", seen=10, of=40)])
+    assert row.model_dump() == {
+        "id": "read_by_model",
+        "label": "Letta dal modello",
+        "method": "model",
+        "seen": 10,
+        "of": 40,
+        "products": 3,
+        "months": 4,
+    }

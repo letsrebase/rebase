@@ -374,7 +374,8 @@ def practice_rows(rows: Any) -> list[WorkProfilePractice]:
     """The `practices.items` rows of a stored profile that the intake would still accept, in the
     order of the vendored list (never by the counts). A row that is no object, names a practice
     the list does not know, fails the intake's own per-item rules (only a payload stored before
-    a rule changed has one) or repeats an id is left out, never a 500."""
+    a rule changed has one) is left out, never a 500; an id listed twice keeps its first valid
+    row."""
     by_id: dict[str, dict[str, Any]] = {}
     if isinstance(rows, list):
         for row in rows:

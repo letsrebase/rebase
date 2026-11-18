@@ -667,9 +667,9 @@ it, those that could have, the products and months) is checked and dropped-and-c
 `work_profiles/practices.py`. `view.practices` reads the rows in the order of the vendored list, never
 sorted by the counts, into `WorkProfileView.practices` (the admin's panel) and
 `MemberWorkProfile.practices` (the person's own, empty once the profile expired or was rejected). A
-stored row the intake would refuse, a duplicate or a non-object is left out, never a 500. **Practices
+stored row the intake would refuse or a non-object is left out, never a 500, and an id listed twice keeps its first valid row. **Practices
 are nowhere a company reads**: not in `CloudTalentRead` or `CloudWorkProfile`, not in
-`talent_schemas`, not in the card's source text (`work_profiles/source.py`), not in the talent list,
+`talent_schemas`, not in the card's source text (`work_profiles/source.py`) or the narrative input, not in the talent list,
 and no `ORDER BY` or `WHERE` reads one. The support pool of `groundedness.py` holds `seen`, `of`,
 `products` and `months`, as the fork's `groundedness.mjs` does.
 
