@@ -8,11 +8,11 @@ import { ME_KEY } from '@/lib/me'
 
 type Profile = NonNullable<Me['work_profile']>
 
-const README_URL = 'https://github.com/letsrebase/work-profile#readme'
+const README_URL = 'https://github.com/letsrebase/rebase-verify#readme'
 const PRIVACY_URL = 'https://letsrebase.com/privacy'
 
 /** The three commands a person runs, in order: the first two once, the third in the agent. */
-const COMMANDS = ['git clone https://github.com/letsrebase/work-profile', 'cd work-profile', 'claude'] as const
+const COMMANDS = ['git clone https://github.com/letsrebase/rebase-verify', 'cd rebase-verify', 'claude'] as const
 
 function Command({ children }: { children: string }) {
   // A short command stays whole; a long one (the clone URL) breaks where the line ends.
@@ -32,7 +32,7 @@ function Steps() {
             {command === 'claude' && (
               <>
                 {' '}
-                e poi scrivi <Command>/work-profile</Command>
+                e poi scrivi <Command>/rebase-verify</Command>
               </>
             )}
           </span>
@@ -63,7 +63,7 @@ function Explanation() {
     <div className="space-y-3 text-sm">
       <p>
         Un CV dice cosa hai fatto, non come lavori con gli agenti di coding, che è quello che le aziende ci chiedono
-        più spesso. Il comando <Command>work-profile</Command>, un fork di <Command>apply-new</Command> di Play New
+        più spesso. Il comando <Command>rebase-verify</Command>, un fork di <Command>apply-new</Command> di Play New
         (licenza MIT), lo legge dai log delle tue sessioni, sul tuo computer, e ne scrive un profilo di come lavori.
       </p>
       <p>

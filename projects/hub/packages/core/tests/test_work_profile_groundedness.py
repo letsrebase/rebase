@@ -1,5 +1,5 @@
 """The groundedness port against upstream's own test vectors (`test/groundedness.test.mjs`,
-`domains.test.mjs`, `orchestration-followups.test.mjs` of letsrebase/work-profile). A change
+`domains.test.mjs`, `orchestration-followups.test.mjs` of letsrebase/rebase-verify). A change
 upstream that moves a score shows up here when the fork merges it, and the vendored lexicon must
 equal the fork's generated artifact."""
 

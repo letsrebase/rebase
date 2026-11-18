@@ -1,7 +1,7 @@
 """The CLI's sign-in from the browser: a device authorization, RFC 8628 kept as small as the one
 use needs (REB-1133, spec 2026-11-17 § 2).
 
-`work-profile submit` asks for a code (`start`), the signed-in person approves it on `/hub/cli`
+`rebase-verify submit` asks for a code (`start`), the signed-in person approves it on `/hub/cli`
 (`approve`, `deny`), and the CLI polls (`poll`) until it holds an access token. The token can send
 one work profile (`WorkProfileService.submit` spends it), is never written to disk by the CLI, and
 lives 15 minutes, so there is nothing to revoke. Only the sha256 of the device code and of the
