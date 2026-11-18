@@ -162,7 +162,7 @@ def test_the_authorize_url_carries_state_and_an_s256_challenge_of_the_verifier(
     assert query["code_challenge"] == base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
     assert query["redirect_uri"].startswith("https://preview.letsrebase.com/api/hub/")
     assert "client_secret" not in query
-    assert query["scope"] == ("user:email" if provider == "github" else "openid email profile")
+    assert query["scope"] == ("user:email" if provider == "github" else "openid email")
     assert len(begun.attempt.state) >= 43 and len(begun.attempt.verifier) >= 43
 
 

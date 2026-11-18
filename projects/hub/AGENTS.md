@@ -713,7 +713,7 @@ buttons sit above the magic link on `/hub/login`; nothing about the link changed
 
 **The rule, which is the whole point.** A provider only proves an address. `UserService.enter_with_provider`
 compares each address the provider *verified* (GitHub: every `verified: true` entry of `/user/emails`,
-scope `user:email`; Google: userinfo with `email_verified`, scopes `openid email profile`) with `users.email`
+scope `user:email`; Google: userinfo with `email_verified`, scopes `openid email`) with `users.email`
 through `by_email` and a merge's `survivor`, exactly as the magic link does. Extra contact points never
 match, no row is ever created, a person `is_removed` (not an admin, no live card or request, at least
 one deleted) is unknown, and two different people behind one provider account refuse the sign-in. Admins

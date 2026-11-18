@@ -105,7 +105,7 @@ verified and decides, in this order:
   and the freelancer's hub address is often not the primary. `…@users.noreply.github.com` is
   dropped, since no hub user holds one and it is never an address to show a person. The primary
   verified address, then the others, are the order the page names them in.
-- **Google** (OpenID Connect, scopes `openid email profile`): the access token reads the
+- **Google** (OpenID Connect, scopes `openid email`): the access token reads the
   userinfo endpoint and `email_verified` must be true (Google has answered it as a boolean and,
   on some paths, as the string `"true"`; both mean verified).
 
@@ -114,9 +114,9 @@ TLS, which OpenID Connect Core § 3.1.3.7 lets a client trust without checking t
 `iss`, `aud` and `exp` are then ours to check by hand on a JWT we would have to parse. The
 userinfo endpoint, called with the access token this client has just obtained, answers `email`
 and `email_verified` from the same host with no parsing and no key. It costs one more request
-in a flow that already makes two and has nothing to cache. `profile` is requested as decided and
-not read: the name, the picture and the Google account id never reach the hub's logic, and
-dropping the scope is a one-line change if Lorenzo prefers the smaller request (§ 10).
+in a flow that already makes two and has nothing to cache. The scopes are `openid email` and
+nothing more (Lorenzo, 2026-11-18, dropping `profile`, which nothing reads): the name, the
+picture and the Google account id are never requested, and the privacy paragraph of § 9 can say so.
 
 **What never decides.** An extra address (`user_contact_points`) is unverified and never a way
 in, whichever door asks (spec 2026-11-04 § 4, `promote` and `set_role` already refuse to create a
@@ -318,16 +318,16 @@ the two OAuth consent screens link to the notice (Google's verification asks for
 - No new table: the attempt lives in a ten-minute cookie, which is what Lorenzo asked for, at
   the price of single use being the cookie's drop plus the provider's own single-use code.
 - No provider mark on the buttons (§ 5).
+- Google is asked for `openid email` only; `profile` was in the first decision and was dropped on 2026-11-18 because nothing reads it (§ 2).
 - Every failure of the two navigations is a redirect to the login with a reason, never a JSON error (§ 3); an exception from the HTTP seam (a timeout, a reset) is one of them.
 
 Questions that are Lorenzo's:
 
-1. **`profile` scope.** Asked as decided, not read. Drop it?
-2. **The magic link and a deleted person.** Leave it, or refuse them there too?
-3. **The privacy paragraph** of § 9, and the line for «Cookie e misurazione».
+1. **The magic link and a deleted person.** Leave it (Lorenzo, 2026-11-18: leave it as it is), or refuse them there too?
+2. **The privacy paragraph** of § 9, and the line for «Cookie e misurazione».
 
 ## 11. Cards
 
 REB-1137 (this card: the design and the build). Neighbours that are not touched: REB-1130
 (usage bands, owns migration 0059), REB-1131 (the invitation campaign). A card for the privacy
-text follows Lorenzo's answer to question 3.
+text follows Lorenzo's answer to question 2.

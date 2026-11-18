@@ -12,7 +12,7 @@ it is never stored and never logged.
 
 - **GitHub** (scope `user:email`): the token endpoint, then `GET /user/emails`, keeping the
   `verified: true` entries. A GitHub account may hold several, and any of them may match.
-- **Google** (scopes `openid email profile`): the token endpoint, then the userinfo endpoint,
+- **Google** (scopes `openid email`): the token endpoint, then the userinfo endpoint,
   requiring `email_verified`. The ID token is not read. It would be safe to read without a
   signature check, since it comes straight from Google over TLS (OpenID Connect Core 3.1.3.7),
   but then `iss`, `aud` and `exp` are ours to check by hand; userinfo, called with the access
@@ -260,7 +260,7 @@ class OAuthService:
                     {
                         **query,
                         "response_type": "code",
-                        "scope": "openid email profile",
+                        "scope": "openid email",
                         "prompt": "select_account",
                     }
                 )

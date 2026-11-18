@@ -192,7 +192,7 @@ def test_the_redirect_uri_follows_the_configuration_and_never_the_host_header(
     assert query["redirect_uri"] == [
         "https://preview.letsrebase.com/api/hub/auth/oauth/google/callback"
     ]
-    assert query["scope"] == ["openid email profile"]
+    assert query["scope"] == ["openid email"]
 
 
 # ---- a known person -------------------------------------------------------------------
