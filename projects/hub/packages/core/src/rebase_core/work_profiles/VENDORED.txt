@@ -18,3 +18,13 @@ file because the lexicon above holds tokens, with generic words dropped, and can
 0d36e8e4679eed2ebfc0ff9beb48a0880d4e7a9a (letsrebase/rebase-verify#4), and run
 `uv run pytest projects/hub/packages/core/tests/test_work_profile_tech_usage.py`, which also checks
 that every label's words are in the lexicon.
+
+practices.json is vendored verbatim from letsrebase/rebase-verify (share/practices.json) at commit
+d5051b63c7, on branch fiorelorenzo/reb-1143-count-seven-work-practices-from-tool (pull request
+letsrebase/rebase-verify#5, not merged yet: it waits for the approval of its texts, and this copy is
+refreshed from the merged commit before release). It is the list of the practices of the rubric
+rebase-practices/v1 with the method that counts each, which practices.py holds a received block to.
+An id that is not in it is dropped before storage and counted, not refused. To refresh it: copy
+share/practices.json from the fork over practices.json, update the commit above, and run
+`uv run pytest projects/hub/packages/core/tests/test_work_profile_practices.py`, which also checks
+that every id has an Italian label in PRACTICE_LABELS.
