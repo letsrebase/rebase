@@ -6,7 +6,8 @@ lawyer; nothing here is legal advice, and the sign-off at the end is still open.
 This assessment covers what the hub does with the work profiles freelancers send with
 `rebase-verify` (the CLI called `work-profile` until REB-1140; spec
 `docs/superpowers/specs/2026-11-17-work-profile-intake-and-review-design.md`), the
-per-technology usage bands added in REB-1130, and two things we chose not to build: a
+per-technology usage bands added in REB-1130, the practices block added in REB-1142 (counts of
+seven ways of working), and two things we chose not to build: a
 numeric score per technology, and a rating of higher-level skills. It is a living document:
 change it in the same pull request as any change to what the processing does, and keep the
 previous text in git history. Where it says "planned", the measure is a condition for shipping
@@ -46,7 +47,7 @@ products, months), the detected stack per project from a fixed vocabulary, abstr
 domains, prose written by the person's own model and reread by them, and (since REB-1129)
 per-technology usage bands with their counts (a technology name outside the fixed vocabulary is
 dropped before storage and only the count of dropped rows is kept, as data minimisation), and
-(since REB-1142) `practices`: counts of seven work practices, each as sessions seen out of
+(since REB-1142) `practices`: counts of seven work practices, each as sessions seen out of the
 sessions it could have happened in, with product and month counts (see the section on practices
 below). The tool is meant to leave out session logs,
 code, and client, product, person and repository names; the hub cannot verify the tool's
@@ -240,7 +241,7 @@ the tool already does, is in scope and could grow, under this assessment; rating
 organisation or soft skills from the logs is out. Those belong to interviews, references and
 the projects themselves.
 
-## Practices (REB-1142)
+## 8. Practices (REB-1142)
 
 The profile gains a `practices` block: seven ways of working, each shown as «in N sessioni su M»
 with the number of products and months it spans. Definitions and rules are published in the
@@ -251,8 +252,9 @@ and file paths the coding agents' logs already hold (a command that ran and whet
 which files were edited, plan mode, task lists, a diff shown). The seven are `checks_before_commit`,
 `tests_with_changes`, `failure_reproduced_before_fix`, `plan_before_edit`, `reviews_changes`,
 `design_documents` and `security_checks`. No new data is read. Only counts leave: never a
-command, a path or a file name. The person sees the counts in `out/profile.md` and in the
-`submit` preview before sending.
+command, a path or a file name. Before sending, the person can read the counts in `out/profile.md`
+(the section «How the work is done») and in the payload that `submit --dry-run` writes; the
+plain `submit` preview does not list them.
 
 **Method.** All seven are counted by code, with no model. That is the case § 7 already scopes
 in («without a model», counts of something the person did), so § 7 stands as written for them.
@@ -272,30 +274,40 @@ and shown as seen out of that number, never as a percentage or a total:
 **What is left out of a denominator.** A session whose adapter cannot give a field a practice
 needs is left out of that practice, not counted as «not seen». Pi and Cursor sessions are left
 out of `failure_reproduced_before_fix` altogether, because their logs cannot show a failure
-reliably. Cursor's timestamps are coarse, so a session near a month boundary can land in the
-neighbouring month; the month counts can be off by one there.
+reliably. A session counts in the month of its first message that has a time, and Cursor's
+message times come from a per-turn tag in its log, not a precise clock, so a Cursor session
+near a month boundary can land in the neighbouring month.
 
 **Limits of what a count means.**
 
 - `reviews_changes` means a diff appeared in the session before a commit or a pull request,
   whoever asked for it. It does not mean anyone read it.
-- The coding agent records each command capped at 240 characters, so a check at the end of a
-  long chained command can be missed. A count can be too low; the rules do not guess the rest.
+- `rebase-verify` reads each command up to its first 240 characters (its adapters cut it when
+  reading the log), so a check at the end of a long chained command can be missed. A count can
+  be too low; the rules do not guess the rest.
 - A chain such as `npm test && git push` counts as its first check, because the exit status
   cannot say which part failed.
 
 **What the hub checks.** The hub rechecks structure only: the rubric is one it knows, each
 practice id is on the vendored list, `0 ≤ seen ≤ of`, `of` does not exceed the profile's session
 count, products and months do not exceed what the profile itself shows, and no id appears twice.
-It can bound the counts; it cannot re-derive them, since the commands and paths stay on the
-person's machine. A practice id outside the list is dropped before storage and only the count of
-dropped ones is kept, as with technologies. As in § 2, the tool's output is the person's to
-check before sending and an admin's to read.
+The groundedness check also reads the counts as numbers a narrative may cite. The hub can bound
+the counts; it cannot re-derive them, since the commands and paths stay on the person's machine.
+A practice id outside the list is dropped before storage and only the count of dropped ones is
+kept, as with technologies.
 
-**Where the counts are shown.** To the reviewing admin, in the review panel under «Come lavora»,
-and to the person, in their own area, in the same rows. Every row is marked «contato dal codice».
-They are not in the talent cloud, not in the anonymous card or its source text, not in the
-narrative, and no sort, filter or ordering reads them. They carry no bar, colour scale or total.
+**Where the counts are shown.** Three routes, all of them to the person or to rebase's admins:
+
+- an admin sees them on the talent's page, in the work profile section, in any state the panel
+  shows (not only the reviewing admin);
+- the person sees them in their own area while the profile counts;
+- an admin's AI assistant can read them through the hub's MCP tool `get_work_profile`, which
+  returns the rendered profile; Anthropic is then the processor, as § 2 (Recipients) says, and
+  each such read is logged as `work_profile_read`.
+
+Every row is marked «contato dal codice». The counts are not shown anywhere else: not in the
+talent cloud, not in the anonymous card or its source text, not in the narrative, and no sort,
+filter or ordering reads them. They carry no bar, colour scale or total.
 
 **Residual risk.** A count can be read as a judgement about the person, such as «seldom plans, so
 careless» or «never reviews», which is the «usage read as competence» risk of § 4 again, with
@@ -306,7 +318,7 @@ by code and shows its denominator; there is no total and no score (the rule in D
 the rules are public, so anyone can check what a row means. Review the marks and the list when
 a practice is added or its rule changes.
 
-## 8. Sign-off
+## 9. Sign-off
 
 - [ ] Reviewed by Lorenzo Fiore for Rebase S.r.l.
 - [ ] Reviewed by a lawyer: Annex III scope of the current flow, the consent-under-pressure
