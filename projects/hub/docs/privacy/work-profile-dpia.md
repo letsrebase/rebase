@@ -7,7 +7,7 @@ This assessment covers what the hub does with the work profiles freelancers send
 `rebase-verify` (the CLI called `work-profile` until REB-1140; spec
 `docs/superpowers/specs/2026-11-17-work-profile-intake-and-review-design.md`), the
 per-technology usage bands added in REB-1130, the practices block added in REB-1142 (counts of
-seven ways of working), and two things we chose not to build: a
+eleven ways of working, seven by code and four by the person's model), and two things we chose not to build: a
 numeric score per technology, and a rating of higher-level skills. It is a living document:
 change it in the same pull request as any change to what the processing does, and keep the
 previous text in git history. Where it says "planned", the measure is a condition for shipping
@@ -47,7 +47,7 @@ products, months), the detected stack per project from a fixed vocabulary, abstr
 domains, prose written by the person's own model and reread by them, and (since REB-1129)
 per-technology usage bands with their counts (a technology name outside the fixed vocabulary is
 dropped before storage and only the count of dropped rows is kept, as data minimisation), and
-(since REB-1142) `practices`: counts of seven work practices, each as sessions seen out of the
+(since REB-1142) `practices`: counts of eleven work practices (seven by code, four classified by the person's model), each as sessions seen out of the
 sessions it could have happened in, with product and month counts (see the section on practices
 below). The tool is meant to leave out session logs,
 code, and client, product, person and repository names; the hub cannot verify the tool's
@@ -147,8 +147,10 @@ processing stands. Rebase S.r.l. has no DPO, and the people concerned were not c
 
 In place:
 
-- The person runs everything locally, previews the payload, and nothing leaves without
-  `submit --yes`.
+- The person runs everything locally, previews the payload, and nothing leaves for rebase
+  without `submit --yes`. With the person's API key, the narrative input and the practices sample
+  go to the person's own provider (Anthropic) before that; in the slash-command path the sample
+  goes to the provider of the agent the person already uses.
 - A person decides; there is no approve or reject tool over MCP (spec § 12). The only ordering
   is by the vetted flag, which a person set.
 - Companies see only an approved profile's summary, domains with their counts and project
@@ -228,6 +230,31 @@ The AI-relationship axis is the closest to the line: it reads the shape of promp
 steps, file paths, questions), never their tone or sentiment, and reports a position on one
 axis with the counts behind it.
 
+**Model-classified counts (REB-1146).** The first version of this section admitted only counts
+made without a model. It now also admits counts of moves that the person's own model classifies,
+under these conditions:
+
+- the model is the person's own (their coding agent through the slash command, or their own API
+  key), reading the person's own messages to their own agent;
+- it classifies against a published closed list, each practice with a definition and examples, and
+  answers yes or no per session; only the counts per practice reach rebase. The sampled, redacted messages go to the person's own
+  model provider, chosen and paid by the person and not a rebase processor, and rebase never
+  receives them;
+- tone, feelings, politeness and the quality of the wording are never grounds for a yes (the
+  Art. 5(1)(f) line on emotions below stays as it is);
+- a count of moves in a conversation (for example «asked for alternatives in 11 of 60 sessions»)
+  is a description of what happened; that it is not a rating of the person is the premise of
+  Lorenzo's reading still to be confirmed (see below);
+- every such row is marked as coming from the person's model and not rechecked, and a practice
+  enters the list only after passing the quality gate in § 8.
+
+**What stays out, for the model as for code.** Whether an architecture was good, how well work
+is organised, soft skills and character. Nothing the model reads is turned into a trait.
+
+**Open, not settled here.** Whether counts of moves in a conversation stay outside Annex III
+point 4(a) is Lorenzo's reading, to be confirmed by him, and a lawyer's to review at sign-off
+(§ 9). The model practices reach production only after both.
+
 **What the logs cannot show.** Whether an architecture was right needs the outcome and the
 context, which the logs do not hold. Organisation beyond one person's sessions (estimates kept,
 coordination with a team or a client) is mostly outside them. Soft skills are interpersonal,
@@ -243,7 +270,8 @@ the projects themselves.
 
 ## 8. Practices (REB-1142)
 
-The profile gains a `practices` block: seven ways of working, each shown as «in N sessioni su M»
+The profile gains a `practices` block: eleven ways of working (seven counted by code, four
+classified by the person's own model), each shown as «in N sessioni su M»
 with the number of products and months it spans. Definitions and rules are published in the
 fork's README («Work practices») and in `share/practices.json`, which the hub vendors.
 
@@ -256,15 +284,50 @@ command, a path or a file name. Before sending, the person can read the counts i
 (the section «How the work is done») and in the payload that `submit --dry-run` writes; the
 plain `submit` preview does not list them.
 
-**Method.** All seven are counted by code, with no model. That is the case § 7 already scopes
-in («without a model», counts of something the person did), so § 7 stands as written for them.
-The six practices that would be classified by a model are a separate, future section: they go
-past § 7, which calls anything inferred from wording a guess about character, and shipping them
-needs § 7 rewritten first. Nothing in this section covers them.
+**Method.** The seven above are counted by code, with no model: the case § 7 scopes in
+(«without a model», counts of something the person did).
+
+**The model method (REB-1146).** Four practices are classified by a model: `asks_for_alternatives`,
+`pushes_back_with_reason`, `states_done_criteria` and `limits_scope`. § 7 admits
+them under the conditions it lists.
+
+- What is read: at most 60 sampled sessions, and in each at most 12 of the person's own messages,
+  redacted on their machine, never the agent's replies.
+- Who answers: the person's own model, either their agent through the slash command or their own
+  API key. rebase runs no model on this data.
+- The quality gate: a practice is published only if the model's answers agree with a written
+  reference at 90% or more, and are stable across two runs, also at 90% or more. The reference set was written by an agent and read
+  blind by a separate agent given only the messages and the rubric. The measured model was
+  claude-opus-4-7 through the API-path prompt, so the figures hold for that model and prompt, not
+  for the model a person runs or the slash-command path. Agreement on a written set of 224 sessions (240 written, 10 + 10 per
+  practice and language, read blind by a second reader; 6 rewritten and read blind again, 16
+  dropped, 224 kept, at least 8 + 8 per practice and language), with the model in batches of 10.
+  For each practice: its own positives, its own near misses, false positives elsewhere, pooled
+  agreement, and stability (two runs on 40 real sessions of the developer's own, client work
+  excluded). `asks_for_alternatives`: 20/20, 20/20, 1, 223/224, 39/40.
+  `pushes_back_with_reason`: 16/16, 20/20, 5 false positives and 1 missed secondary positive,
+  218/224, 38/40. `states_done_criteria`: 20/20, 20/20, 1, 223/224, 38/40. `limits_scope`: 18/18,
+  15/16, 4, 219/224, 39/40. Not published: `gives_context_and_constraints` 20/20, 14/20, 22,
+  196/224, 35/40; `raises_risks` 17/17, 16/17, 3, 220/224, 35/40 (it failed on stability). An
+  always-false classifier would score 202 to 207 of 224 pooled, so the pooled figure alone says
+  little; the misses are almost all false positives; and stability rests on few true answers (3 to
+  10 per run for the four published practices).
+- What the gate does not show: a written set shows that the rubric is understood as its writers
+  understood it, not how messy real sessions are classified. Nobody outside the build checked the
+  set, by Lorenzo's choice.
+- `gives_context_and_constraints` and `raises_risks` are left out: they are not published, have no
+  label, and a profile that carries either has it dropped and counted as an unknown id.
+- What the hub can do: check the counts against each other and the profile: `0 <= seen <= of`;
+  `of <= 60` for a model practice and no more than the profile's sessions; products no more than the
+  profile's products and than `seen`; months no more than `seen`. It never re-derives a count,
+  since the messages go only to the person's own model provider and never to rebase.
+- What the person can do: steer their agent while it classifies, or edit the file before sending.
+- Every model row is marked «dal modello della persona, non ricontrollato».
 
 **Denominators.** Each practice is counted against the sessions where it could have happened,
 and shown as seen out of that number, never as a percentage or a total:
 
+- the model practices: the number of sessions classified, at most 60;
 - sessions with a commit: `checks_before_commit`;
 - sessions with a commit or a pull request: `reviews_changes`;
 - sessions with an edit: `plan_before_edit`, `design_documents`, `security_checks`;
@@ -285,6 +348,8 @@ near a month boundary can land in the neighbouring month.
 - `rebase-verify` reads each command up to its first 240 characters (its adapters cut it when
   reading the log), so a check at the end of a long chained command can be missed. A count can
   be too low; the rules do not guess the rest.
+- Claude Code sub-agent briefs, task notifications, compaction summaries and opencode child
+  sessions are skipped; other tools' dispatched sessions can still be read as typed by the person.
 - A chain such as `npm test && git push` counts as its first check, because the exit status
   cannot say which part failed.
 
@@ -306,15 +371,15 @@ kept, as with technologies.
   when the assistant is Claude), see § 4 (risks), and each such read is logged as
   `work_profile_read`.
 
-Every row is marked «contato dal codice». The counts are not shown anywhere else: not in the
+Every row is marked «contato dal codice» or «dal modello della persona, non ricontrollato». The counts are not shown anywhere else: not in the
 talent cloud, not in the anonymous card or its source text, not in the narrative, and no sort,
 filter or ordering reads them. They carry no bar, colour scale or total.
 
 **Residual risk.** A count can be read as a judgement about the person, such as «seldom plans, so
 careless» or «never reviews», which is the «usage read as competence» risk of § 4 again, with
 the same medium rating. Several practices also depend on how a person's agent records things,
-so a low count may say more about the tool than the work. Measures: each row says it was counted
-by code and shows its denominator; there is no total and no score (the rule in DECISIONS.md,
+so a low count may say more about the tool than the work. A model row can also be wrong in ways
+the gate did not test. Measures: each row says how it was counted and shows its denominator; there is no total and no score (the rule in DECISIONS.md,
 2026-11-18, and § 6); admins and the person see the rows, companies do not; and the list and
 the rules are public, so anyone can check what a row means. Review the marks and the list when
 a practice is added or its rule changes.
@@ -324,6 +389,9 @@ a practice is added or its rule changes.
 - [ ] Reviewed by Lorenzo Fiore for Rebase S.r.l.
 - [ ] Reviewed by a lawyer: Annex III scope of the current flow, the consent-under-pressure
       risk, the vetted flag outliving withdrawal
+- [ ] Lorenzo's reading, and the lawyer's review, that counts of moves classified by the person's
+      own model (§ 7, § 8) stay outside Annex III point 4(a); the model practices reach production
+      only after both
 - [ ] Questions for Play New (REB-1125): would they accept band and practice counts upstream,
       and do they read ADR-001 as ruling out per-person scores in their own intake too?
 
