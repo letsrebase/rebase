@@ -147,8 +147,10 @@ processing stands. Rebase S.r.l. has no DPO, and the people concerned were not c
 
 In place:
 
-- The person runs everything locally, previews the payload, and nothing leaves without
-  `submit --yes`.
+- The person runs everything locally, previews the payload, and nothing leaves for rebase
+  without `submit --yes`. With the person's API key, the narrative input and the practices sample
+  go to the person's own provider (Anthropic) before that; in the slash-command path the sample
+  goes to the provider of the agent the person already uses.
 - A person decides; there is no approve or reject tool over MCP (spec § 12). The only ordering
   is by the vetted flag, which a person set.
 - Companies see only an approved profile's summary, domains with their counts and project
@@ -294,8 +296,10 @@ them under the conditions it lists.
 - Who answers: the person's own model, either their agent through the slash command or their own
   API key. rebase runs no model on this data.
 - The quality gate: a practice is published only if the model's answers agree with a written
-  reference at 90% or more, and are stable across two runs, also at 90% or more. The model was
-  claude-opus-4-7 through the Claude Code CLI. Agreement on a written set of 224 sessions (240 written, 10 + 10 per
+  reference at 90% or more, and are stable across two runs, also at 90% or more. The reference set was written by an agent and read
+  blind by a separate agent given only the messages and the rubric. The measured model was
+  claude-opus-4-7 through the API-path prompt, so the figures hold for that model and prompt, not
+  for the model a person runs or the slash-command path. Agreement on a written set of 224 sessions (240 written, 10 + 10 per
   practice and language, read blind by a second reader; 6 rewritten and read blind again, 16
   dropped, 224 kept, at least 8 + 8 per practice and language): `asks_for_alternatives` 224/224, `pushes_back_with_reason` 220/224,
   `states_done_criteria` 223/224, `raises_risks` 218/224, `limits_scope` 220/224, and
@@ -307,7 +311,9 @@ them under the conditions it lists.
   set, by Lorenzo's choice.
 - `gives_context_and_constraints` is left out: it is not published, has no label, and a profile
   that carries it has it dropped and counted as an unknown id.
-- What the hub can do: bound `seen <= of <= 60`, and nothing more. It never re-derives a count,
+- What the hub can do: bound the counts' consistency: `0 <= seen <= of`, `of <= 60` for a model
+  practice, and `of` no more than the profile's sessions, products and months against seen and the
+  profile. It cannot re-derive them. It never re-derives a count,
   since the messages go only to the person's own model provider and never to rebase.
 - What the person can do: steer their agent while it classifies, or edit the file before sending.
 - Every model row is marked «dal modello della persona, non ricontrollato».
@@ -336,6 +342,8 @@ near a month boundary can land in the neighbouring month.
 - `rebase-verify` reads each command up to its first 240 characters (its adapters cut it when
   reading the log), so a check at the end of a long chained command can be missed. A count can
   be too low; the rules do not guess the rest.
+- Sub-agent briefs, task notifications and compaction summaries are skipped, but a session
+  another agent drove (a dispatched or headless run) can be read as if the person typed it.
 - A chain such as `npm test && git push` counts as its first check, because the exit status
   cannot say which part failed.
 

@@ -402,3 +402,9 @@ def test_a_model_practice_of_61_is_refused_naming_the_practice_and_the_rule() ->
 def test_the_unpublished_practice_is_an_unknown_id() -> None:
     assert "gives_context_and_constraints" not in practice_methods()
     assert "gives_context_and_constraints" not in PRACTICE_LABELS
+    profile = _profile(
+        _item("gives_context_and_constraints", method="model", seen=5, of=10),
+        _item("checks_before_commit"),
+    )
+    assert drop_unknown(profile) == 1
+    assert [i["id"] for i in profile["practices"]["items"]] == ["checks_before_commit"]
