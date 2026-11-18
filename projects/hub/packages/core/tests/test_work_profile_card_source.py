@@ -246,3 +246,25 @@ def test_a_read_of_the_facts_costs_the_same_statements_with_the_switch_on_or_off
     off = statements()
     enable_sources(clean, "work_profile")
     assert statements() == off
+
+
+def test_a_practices_block_does_not_change_the_cards_source_text() -> None:
+    plain = sample()
+    with_block = plain | {
+        "practices": {
+            "rubric": "rebase-practices/v1",
+            "timezone": "UTC",
+            "items": [
+                {
+                    "id": "checks_before_commit",
+                    "method": "code",
+                    "seen": 18,
+                    "of": 25,
+                    "products": 3,
+                    "months": 4,
+                }
+            ],
+        }
+    }
+    known = KnownIdentifiers.empty("Rossi")
+    assert source_text(with_block, known) == source_text(plain, known)

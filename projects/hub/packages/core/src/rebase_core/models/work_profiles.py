@@ -33,6 +33,9 @@ WORK_PROFILE_STATES = ("draft", "approved", "rejected")
 # months it appears in and nothing else, lowest first. A plain-language label for counts, never a
 # score and never a measure of skill (upstream ADR-001).
 TECH_USAGE_BANDS = ("occasional", "recurring", "continuous")
+# How a practice is counted (REB-1144): `code` from the session logs alone, `model` by the
+# person's own model reading a sample of sessions.
+PRACTICE_METHODS = ("code", "model")
 # The sha256 hex of a device code or an access token, like `TOKEN_HASH_LENGTH`.
 CLI_HASH_LENGTH = 64
 # `XXXX-XXXX`.

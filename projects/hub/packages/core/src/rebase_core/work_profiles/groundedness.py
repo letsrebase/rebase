@@ -378,6 +378,13 @@ def collect_support_pool(profile: dict[str, Any]) -> _Pool:
         pool.add_text(usage.get("firstMonth"))
         pool.add_text(usage.get("lastMonth"))
 
+    # Practice counts (the prose may cite "in 18 of 25 sessions, over 4 months", REB-1144).
+    for item in _dicts(_dict(profile.get("practices")).get("items")):
+        pool.add_number(item.get("seen"))
+        pool.add_number(item.get("of"))
+        pool.add_number(item.get("products"))
+        pool.add_number(item.get("months"))
+
     # Trajectory. A percent-format shift holds fractions the prose cites as percents; the
     # others (prompt words, research:mutation) are cited as plain numbers.
     trajectory = _dict(profile.get("trajectory"))

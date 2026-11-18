@@ -2,13 +2,17 @@
 vendored list it is held to and the intake that refuses a bad one."""
 
 import json
+from datetime import timedelta
 from typing import Any
 
 import pytest
 from sqlalchemy.orm import Session
 from work_profile_helpers import Clock, person, sample, settings, sign_in
 
+from rebase_core.card_guard import KnownIdentifiers
+from rebase_core.members import MemberService
 from rebase_core.models import WorkProfile
+from rebase_core.team_schemas import CloudTalentRead, CloudWorkProfile
 from rebase_core.work_profiles import practices as practices_module
 from rebase_core.work_profiles.intake import WorkProfileRefused, WorkProfileService
 from rebase_core.work_profiles.practices import (
@@ -19,7 +23,9 @@ from rebase_core.work_profiles.practices import (
     practice_methods,
     reads_true,
 )
+from rebase_core.work_profiles.source import source_text
 from rebase_core.work_profiles.structure import structure
+from rebase_core.work_profiles.view import practice_rows, practices, render_profile
 
 
 def _item(ident: str, **more: Any) -> dict[str, Any]:
@@ -238,3 +244,86 @@ def test_a_resubmission_without_unknowns_resets_the_count(hub_session: Session) 
 
     row = hub_session.query(WorkProfile).filter_by(freelancer_id=freelancer_id).one()
     assert row.unknown_practices == 0
+
+
+def test_rows_follow_the_list_order_not_the_counts() -> None:
+    rows = practice_rows(
+        [
+            _item("security_checks", seen=20, of=20),
+            _item("checks_before_commit", seen=1, of=5, products=1, months=1),
+        ]
+    )
+    assert [r.id for r in rows] == ["checks_before_commit", "security_checks"]
+    assert rows[0].label == "Verifica prima del commit" and rows[0].method == "code"
+    assert (rows[0].seen, rows[0].of, rows[0].products, rows[0].months) == (1, 5, 1, 1)
+
+
+def test_a_row_the_intake_would_refuse_or_a_duplicate_is_left_out_and_nothing_raises() -> None:
+    assert (
+        practice_rows([_item("checks_before_commit", seen=9, of=5), _item("nope"), "x", None]) == []
+    )
+    assert practices({"practices": "x"}) == [] and practices({}) == []
+    assert practices({"practices": None}) == []
+    assert practices({"practices": {"items": "x"}}) == []
+    twice = practice_rows([_item("checks_before_commit", seen=5), _item("checks_before_commit")])
+    assert [(r.id, r.seen) for r in twice] == [("checks_before_commit", 5)]
+
+
+def _submit_two(session: Session, clock: Clock, email: str) -> tuple[Any, Any]:
+    user_id, freelancer_id = person(session, email)
+    assert freelancer_id is not None
+    token = sign_in(session, clock, user_id)
+    payload = _profile(_item("security_checks"), _item("checks_before_commit"))
+    WorkProfileService(session, settings(), clock).submit(token, json.dumps(payload).encode())
+    return user_id, freelancer_id
+
+
+def test_admin_read_and_member_read_carry_the_rows(hub_session: Session) -> None:
+    clock = Clock()
+    user_id, freelancer_id = _submit_two(hub_session, clock, "ada@studio.it")
+    expected = ["checks_before_commit", "security_checks"]
+
+    admin = WorkProfileService(hub_session, settings(), clock).admin_read(freelancer_id)
+    assert [r.id for r in admin.profile.practices] == expected
+    member = MemberService(hub_session).me_read(user_id).work_profile
+    assert member is not None and [r.id for r in member.practices] == expected
+
+
+def test_member_read_has_no_rows_when_expired_or_rejected(hub_session: Session) -> None:
+    clock = Clock()
+    user_id, freelancer_id = _submit_two(hub_session, clock, "ada@studio.it")
+    row = hub_session.query(WorkProfile).filter_by(freelancer_id=freelancer_id).one()
+
+    row.expires_at = row.submitted_at - timedelta(days=1)
+    hub_session.commit()
+    member = MemberService(hub_session).me_read(user_id).work_profile
+    assert member is not None and member.expired and member.practices == []
+
+    row.expires_at = row.submitted_at + timedelta(days=100)
+    row.state = "rejected"
+    hub_session.commit()
+    member = MemberService(hub_session).me_read(user_id).work_profile
+    assert member is not None and member.practices == []
+
+
+def test_practices_are_nowhere_a_company_or_the_card_reads() -> None:
+    assert "practices" not in CloudTalentRead.model_fields
+    assert "practices" not in CloudWorkProfile.model_fields
+    with_block = _profile(_item("checks_before_commit"))
+    plain = {k: v for k, v in with_block.items() if k != "practices"}
+    known = KnownIdentifiers.empty("Rossi")
+    assert source_text(with_block, known) == source_text(plain, known)
+    assert render_profile(with_block).practices and not render_profile(plain).practices
+
+
+def test_no_query_orders_or_filters_by_a_practice() -> None:
+    from pathlib import Path
+
+    root = Path(practices_module.__file__).parents[1]
+    for path in [*(root / "work_profiles").glob("*.py"), root / "talents.py", root / "members.py"]:
+        text = path.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            if "practices" in line:
+                assert "order_by" not in line and ".where(" not in line, (path.name, line)
+    assert "practices" not in (root / "talent_schemas.py").read_text(encoding="utf-8")
+    assert "practices" not in (root / "work_profiles" / "source.py").read_text(encoding="utf-8")
