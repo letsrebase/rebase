@@ -302,8 +302,9 @@ kept, as with technologies.
   shows (not only the reviewing admin);
 - the person sees them in their own area while the profile counts;
 - an admin's AI assistant can read them through the hub's MCP tool `get_work_profile`, which
-  returns the rendered profile; Anthropic is then the processor, as § 2 (Recipients) says, and
-  each such read is logged as `work_profile_read`.
+  returns the rendered profile; the admin's assistant provider is then a processor (Anthropic
+  when the assistant is Claude), see § 4 (risks), and each such read is logged as
+  `work_profile_read`.
 
 Every row is marked «contato dal codice». The counts are not shown anywhere else: not in the
 talent cloud, not in the anonymous card or its source text, not in the narrative, and no sort,
