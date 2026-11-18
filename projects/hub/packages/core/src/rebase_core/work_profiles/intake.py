@@ -8,6 +8,7 @@ replaces the previous one and goes back to `draft`.
 """
 
 import calendar
+import copy
 import json
 import math
 from collections.abc import Callable
@@ -57,6 +58,7 @@ from rebase_core.work_profiles.schemas import (
     WorkProfileGuardHit,
 )
 from rebase_core.work_profiles.structure import forbidden, shape, structure
+from rebase_core.work_profiles.tech_usage import drop_unknown
 from rebase_core.work_profiles.view import render_profile
 
 MAX_BYTES = 512 * 1024
@@ -177,7 +179,8 @@ class WorkProfileService:
             .with_for_update()
             .execution_options(populate_existing=True)
         )
-        stored = {key: value for key, value in payload.items() if key != "contact"}
+        stored = copy.deepcopy({key: value for key, value in payload.items() if key != "contact"})
+        unknown = drop_unknown(stored)
         now = self._now()
         version = payload.get("toolVersion")
         if not isinstance(version, str):
@@ -195,6 +198,7 @@ class WorkProfileService:
         row.groundedness = score.score or 0
         row.unsupported_anchors = score.anomalies
         row.guard_hits = hits
+        row.unknown_technologies = unknown
         row.state = "draft"
         row.submitted_at = now
         row.expires_at = add_months(now, RETENTION_MONTHS)
@@ -299,6 +303,7 @@ class WorkProfileService:
                 f"{decider.first_name} {decider.last_name}".strip() if decider else None
             ),
             decision_note=row.decision_note,
+            unknown_technologies=row.unknown_technologies,
             guard_hits=[
                 WorkProfileGuardHit(field=str(h.get("field", "")), rule=str(h.get("rule", "")))
                 for h in row.guard_hits

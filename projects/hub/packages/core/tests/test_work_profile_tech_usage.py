@@ -22,7 +22,13 @@ from rebase_core.team_schemas import CloudTalentQuery
 from rebase_core.work_profiles.groundedness import split_tech, tech_lexicon
 from rebase_core.work_profiles.intake import WorkProfileRefused, WorkProfileService
 from rebase_core.work_profiles.structure import structure
-from rebase_core.work_profiles.tech_usage import band_for, month_span, technology_labels
+from rebase_core.work_profiles.tech_usage import (
+    band_for,
+    drop_unknown,
+    issues,
+    month_span,
+    technology_labels,
+)
 from rebase_core.work_profiles.view import render_profile
 
 # The tokens the lexicon drops from a label (`LEXICON_STOP` in the fork's groundedness.mjs).
@@ -135,9 +141,9 @@ def test_every_band_is_re_derived_not_just_the_top_one() -> None:
 @pytest.mark.parametrize(
     ("change", "sentence"),
     [
-        (lambda r: r.update(name="Acme Billing"), "non è una tecnologia"),
-        (lambda r: r.update(name=None), "non è una tecnologia"),
-        (lambda r: r.update(name="python"), "non è una tecnologia"),  # the label, not a token
+        (lambda r: r.update(name=None), "non è un nome di tecnologia"),
+        (lambda r: r.update(name=""), "non è un nome di tecnologia"),
+        (lambda r: r.update(name="Acme Billing", months=7), "non stanno fra"),  # still checked
         (lambda r: r.update(firstMonth="2026-13"), "intervallo valido"),
         (lambda r: r.update(firstMonth="2026-07"), "intervallo valido"),  # after the last
         (lambda r: r.update(months=7), "non stanno fra"),  # more than the span holds
@@ -228,6 +234,31 @@ def test_the_intake_refuses_a_mismatched_band_and_keeps_a_matching_block(
     kept = _submit(hub_session, clock, good, "grace@studio.it")
     row = hub_session.query(WorkProfile).filter_by(freelancer_id=kept).one()
     assert row.payload["techUsage"] == good["techUsage"]
+
+
+def test_an_unknown_name_is_no_issue_and_drop_unknown_removes_it_and_counts() -> None:
+    profile = _with(_row(), _row("Acme Billing"), _row("python"))
+
+    assert issues(profile) == []
+    assert drop_unknown(profile) == 2
+    assert [r["name"] for r in profile["techUsage"]["technologies"]] == ["Python"]
+    assert drop_unknown(profile) == 0
+    assert drop_unknown({}) == 0
+
+
+def test_a_profile_with_an_unknown_technology_is_accepted_and_the_name_is_never_stored(
+    hub_session: Session,
+) -> None:
+    clock = Clock()
+    profile = _with(_row(), _row("Acme Billing"))
+    freelancer_id = _submit(hub_session, clock, profile, "alan@studio.it")
+
+    row = hub_session.query(WorkProfile).filter_by(freelancer_id=freelancer_id).one()
+    assert [r["name"] for r in row.payload["techUsage"]["technologies"]] == ["Python"]
+    assert "Acme Billing" not in json.dumps(row.payload)
+    assert row.unknown_technologies == 1
+    read = WorkProfileService(hub_session, settings(), clock).admin_read(freelancer_id)
+    assert read.unknown_technologies == 1
 
 
 # ---- what reads them ----------------------------------------------------------------------------

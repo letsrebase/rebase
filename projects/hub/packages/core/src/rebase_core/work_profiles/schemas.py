@@ -162,5 +162,7 @@ class WorkProfileAdminRead(ResponseModel):
     decided_at: datetime | None
     decided_by_name: str | None
     decision_note: str | None
+    # How many techUsage rows were dropped at intake because this hub did not know the name.
+    unknown_technologies: int
     guard_hits: list[WorkProfileGuardHit]
     profile: WorkProfileView

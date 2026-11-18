@@ -6477,6 +6477,8 @@ export interface components {
             decided_by_name: string | null;
             /** Decision Note */
             decision_note: string | null;
+            /** Unknown Technologies */
+            unknown_technologies: number;
             /** Guard Hits */
             guard_hits: components["schemas"]["WorkProfileGuardHit"][];
             profile: components["schemas"]["WorkProfileView"];

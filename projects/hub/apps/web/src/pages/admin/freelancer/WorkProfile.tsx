@@ -459,6 +459,13 @@ export function WorkProfile({ freelancerId, vettedAt }: { freelancerId: string; 
           ))}
         </ul>
       )}
+      {profile.unknown_technologies > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {profile.unknown_technologies === 1
+            ? '1 tecnologia non riconosciuta da questa versione del hub è stata tolta dal profilo.'
+            : `${profile.unknown_technologies} tecnologie non riconosciute da questa versione del hub sono state tolte dal profilo.`}
+        </p>
+      )}
       <CloudPanel profile={profile} />
       <ProfileBody profile={profile.profile} anchors={anchors} />
       {profile.state === 'draft' && !profile.expired && <Decision profile={profile} freelancerId={freelancerId} vettedAt={vettedAt} />}

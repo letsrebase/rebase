@@ -116,6 +116,10 @@ class WorkProfile(Base, PrimaryKeyMixin):
     guard_hits: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
     )
+    # Rows of techUsage dropped at intake for a name this hub's labels do not have (REB-1141).
+    unknown_technologies: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     state: Mapped[str] = mapped_column(String(10), nullable=False, default="draft")
     submitted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
