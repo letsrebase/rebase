@@ -443,6 +443,8 @@ def test_classified_by_absent_is_fine() -> None:
         {"agent": "omp", "model": "m" * 121},
         {"agent": "omp", "model": "bad\nname"},
         {"agent": "omp", "model": 5},
+        {"agent": "omp", "model": " "},
+        {"agent": "omp", "model": ""},
     ],
 )
 def test_classified_by_other_shapes_are_refused(value: Any) -> None:

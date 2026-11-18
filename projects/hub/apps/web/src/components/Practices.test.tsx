@@ -11,6 +11,7 @@ const row = (id: string, seen: number, of: number, products: number, months: num
   of,
   products,
   months,
+  classified_by: null,
 })
 
 describe('PracticeRows', () => {

@@ -111,7 +111,8 @@ def read_classified_by(value: Any) -> dict[str, Any] | None:
         return None
     if model is not None and (
         not isinstance(model, str)
-        or not 0 < len(model) <= MAX_MODEL_NAME
+        or not model.strip()
+        or len(model) > MAX_MODEL_NAME
         or not model.isprintable()
     ):
         return None
