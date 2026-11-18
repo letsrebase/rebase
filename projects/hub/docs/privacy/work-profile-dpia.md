@@ -44,7 +44,8 @@ also be given by an admin without a profile («Segna come verificato», `set_vet
 `rebase-verify` from their Claude Code, Codex, opencode and similar logs: counts (sessions,
 products, months), the detected stack per project from a fixed vocabulary, abstract project
 domains, prose written by the person's own model and reread by them, and (since REB-1129)
-per-technology usage bands with their counts. The tool is meant to leave out session logs,
+per-technology usage bands with their counts (a technology name outside the fixed vocabulary is
+dropped before storage and only the count of dropped rows is kept, as data minimisation). The tool is meant to leave out session logs,
 code, and client, product, person and repository names; the hub cannot verify the tool's
 redaction, so it refuses file artifacts and a `repoLabel`, drops `contact`, and runs its own
 checks (below). The person's identity comes from the hub sign-in, not from the profile.

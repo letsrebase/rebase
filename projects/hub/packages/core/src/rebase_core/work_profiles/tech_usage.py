@@ -12,10 +12,12 @@ not match its own counts is refused here the way the fork refuses it before send
 windows against the logs are the fork's alone: the hub has no logs.
 
 The names are held to `tech-labels.json`, the labels the fork's stack detection can emit
-(`labelVocabulary()`), so a name that reaches the hub is always a public technology label, never a
-repository, a client or a private package. It is a second vendored file beside `tech-lexicon.json`
-because that one is tokenised and stop-worded for prose matching, which drops «Go» and «Shell»:
-see `VENDORED.txt`.
+(`labelVocabulary()`), by dropping, not refusing: a label the fork learns before the hub's copy is
+refreshed must not cost the person the whole profile. `drop_unknown` removes such rows before the
+payload is stored and only counts them, so a name that is stored is always a public technology
+label and a repository, a client or a private package name never reaches the hub's tables. The
+file is a second vendored one beside `tech-lexicon.json` because that one is tokenised and
+stop-worded for prose matching, which drops «Go» and «Shell»: see `VENDORED.txt`.
 """
 
 import json
@@ -113,8 +115,8 @@ def issues(payload: dict[str, Any]) -> list[str]:
     for row in rows:
         row = row if isinstance(row, dict) else {}
         name = row.get("name")
-        if not isinstance(name, str) or name not in technology_labels():
-            found.append(f"techUsage: «{name}» non è una tecnologia che il rilevamento riconosce")
+        if not isinstance(name, str) or not name:
+            found.append(f"techUsage: «{name}» non è un nome di tecnologia")
             continue
         where = f"techUsage.{name}"
         if name in seen:
@@ -144,6 +146,19 @@ def issues(payload: dict[str, Any]) -> list[str]:
         if products > sessions:
             found.append(f"{where}: {products} prodotti ma solo {sessions} sessioni")
     return found
+
+
+def drop_unknown(payload: dict[str, Any]) -> int:
+    """Remove from `payload["techUsage"]["technologies"]`, in place, every row whose name is not a
+    known label; how many were removed, 0 when the block is absent."""
+    block = payload.get("techUsage")
+    rows = block.get("technologies") if isinstance(block, dict) else None
+    if not isinstance(rows, list):
+        return 0
+    labels = technology_labels()
+    kept = [r for r in rows if isinstance(r, dict) and r.get("name") in labels]
+    block["technologies"] = kept
+    return len(rows) - len(kept)
 
 
 def reads_true(name: Any, band: Any, months: Any, first: Any, last: Any) -> bool:

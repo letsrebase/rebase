@@ -1,5 +1,5 @@
 {
-  "$comment": "Vendored from letsrebase/rebase-verify at commit 8914d0b0395af77371251107883f3425c14f2b92: the output of labelVocabulary() in src/digest.mjs, every technology label the stack detection can emit, sorted. The intake accepts a technology name in techUsage only if it is one of these, as the fork own consistency check does. To refresh: run node -e \"import(\\\"./src/digest.mjs\\\").then(d=>console.log(JSON.stringify([...d.labelVocabulary()].sort((a,b)=>a.localeCompare(b)))))\" in the fork and paste the list into labels.",
+  "$comment": "GENERATED — do not edit by hand. Source: src/digest.mjs labelVocabulary(), every technology label the stack detection can emit, sorted. Regenerate with `npm run lexicon`. Vendored verbatim by the rebase hub (projects/hub/packages/core/src/rebase_core/work_profiles/tech-labels.json), whose intake keeps a techUsage row only when its name is one of these.",
   "labels": [
     "Anthropic SDK",
     "Cloudflare",

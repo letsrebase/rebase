@@ -18,6 +18,7 @@ const PROFILE = {
     { where: 'p1.did', anchor: 'Kafka', kind: 'tech' },
     { where: 'p9.did', anchor: 'Redis', kind: 'tech' },
   ],
+  unknown_technologies: 0,
   guard_hits: [],
   decided_at: null,
   decided_by_name: null,
@@ -187,6 +188,20 @@ describe('the usage bands in the review panel (REB-1130)', () => {
     const companies = within(section).getByRole('group', { name: 'Cosa leggono le aziende' })
     expect(within(companies).queryByText('Python')).toBeNull()
     expect(within(section).getByText(/Le aziende non le vedono/)).toBeInTheDocument()
+  })
+
+  it('says how many unknown technologies were dropped, and nothing when none were', async () => {
+    open({ ...PROFILE, unknown_technologies: 2 })
+    const section = await screen.findByRole('region', { name: 'Profilo di lavoro' })
+    expect(
+      within(section).getByText('2 tecnologie non riconosciute da questa versione del hub sono state tolte dal profilo.'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows no dropped-technologies line when none were dropped', async () => {
+    open(PROFILE)
+    const section = await screen.findByRole('region', { name: 'Profilo di lavoro' })
+    expect(within(section).queryByText(/non riconosciut/)).toBeNull()
   })
 
   it('shows no block for a profile that sent none', async () => {
