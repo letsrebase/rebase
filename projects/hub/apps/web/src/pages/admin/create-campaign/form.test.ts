@@ -12,6 +12,7 @@ import {
   punycodeDecode,
   payloadOf,
   withMeta,
+  withProfileProposal,
   withTemplate,
   type CampaignForm,
 } from './form'
@@ -84,6 +85,32 @@ describe('an `xn--` label, decoded as the server decodes it (Greptile on #476)',
     expect(punycodeDecode('a')).toBe('\u0080')
     expect(punycodeDecode('ab-cd9')).toBeNull()
     expect(punycodeDecode('ab!')).toBeNull()
+  })
+})
+
+describe('the work-profile proposal (REB-1131)', () => {
+  const FILTERED: CampaignForm = { ...STATUS, journeyStatus: null, source: 'filters', list: 'talents', buttonMeta: 'wizard', action: 'signed_in' }
+  const none = { ...FILTERED, talents: { ...FILTERED.talents, work_profile: 'none' } }
+
+  it('proposes the action and the area the moment the filter turns to «Nessuno», once', () => {
+    const proposed = withProfileProposal(FILTERED, none)
+    expect([proposed.action, proposed.buttonMeta]).toEqual(['work_profile_sent', 'area'])
+    const chosen = { ...proposed, action: 'cv' as const }
+    expect(withProfileProposal(none, { ...chosen, subject: 'x' }).action).toBe('cv')
+  })
+
+  it('leaves another filter, a link and a state alone', () => {
+    const approved = { ...FILTERED, talents: { ...FILTERED.talents, work_profile: 'approved' } }
+    expect(withProfileProposal(FILTERED, approved)).toBe(approved)
+    const linked = { ...none, buttonMeta: 'link' as const, action: 'click' as const }
+    expect(withProfileProposal(FILTERED, linked)).toBe(linked)
+    const state = { ...none, source: 'status' as const }
+    expect(withProfileProposal(FILTERED, state)).toBe(state)
+  })
+
+  it('sends and reads back the filter under the server\'s name', () => {
+    const sent = payloadOf(none)
+    expect(sent.filters).toMatchObject({ list: 'talents', work_profile: 'none' })
   })
 })
 

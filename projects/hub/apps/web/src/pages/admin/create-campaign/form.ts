@@ -25,6 +25,7 @@ export interface TalentsFiltersForm {
   utm_source: string
   has_cv: string
   with_logins: string
+  work_profile: string
   created_from: string
   created_to: string
 }
@@ -52,6 +53,7 @@ export const TalentsFiltersEmpty: TalentsFiltersForm = {
   utm_source: '',
   has_cv: ANY,
   with_logins: ANY,
+  work_profile: ANY,
   created_from: '',
   created_to: '',
 }
@@ -67,7 +69,7 @@ export const CompaniesFiltersEmpty: CompaniesFiltersForm = {
 }
 
 /** The filters that stay on screen; the rest sit behind «Altri filtri». */
-export const TalentsMain: readonly (keyof TalentsFiltersForm)[] = ['status', 'q', 'has_cv', 'with_logins']
+export const TalentsMain: readonly (keyof TalentsFiltersForm)[] = ['status', 'q', 'has_cv', 'with_logins', 'work_profile']
 export const CompaniesMain: readonly (keyof CompaniesFiltersForm)[] = ['status', 'q']
 
 /** Whether any filter outside the main ones holds a value: the edit route opens
@@ -173,6 +175,7 @@ function filtersOf(form: CampaignForm): Record<string, unknown> | null {
       utm_source: typed(t.utm_source),
       has_cv: selectToBool(t.has_cv),
       with_logins: selectToBool(t.with_logins),
+      work_profile: picked(t.work_profile),
       created_from: typed(t.created_from),
       created_to: typed(t.created_to),
     }
@@ -275,6 +278,7 @@ export function formFromCampaign(c: Campaign): CampaignForm {
         utm_source: stored(f.utm_source),
         has_cv: boolToSelect(f.has_cv as boolean | undefined),
         with_logins: boolToSelect(f.with_logins as boolean | undefined),
+        work_profile: stored(f.work_profile) || ANY,
         created_from: stored(f.created_from, { day: true }),
         created_to: stored(f.created_to, { day: true }),
       },
@@ -324,6 +328,16 @@ export function withTemplate(
     text: template.text,
     buttonText: template.button_text,
   }
+}
+
+/** «Chi non ha un profilo di lavoro» (REB-1131): a list filtered on `work_profile = none`
+ *  is written to people who have not sent one, so the form proposes measuring that they do,
+ *  with the button to their area. Only the moment the filter turns to `none` proposes, so
+ *  the admin's later choice of action or destination stays; «Un link» stays a link. */
+export function withProfileProposal(before: CampaignForm, after: CampaignForm): CampaignForm {
+  const turned = after.source === 'filters' && after.list === 'talents' && after.talents.work_profile === 'none'
+  if (!turned || before.talents.work_profile === 'none' || after.buttonMeta === 'link') return after
+  return { ...after, action: 'work_profile_sent', buttonMeta: 'area' }
 }
 
 /** What decides who is on the list: the list is reloaded when this changes and never

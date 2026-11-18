@@ -601,6 +601,25 @@ describe('filters (REB-472, carried over)', () => {
     await vi.waitFor(() => expect(lastSaved(calls).filters).toEqual(TALENTS_SENT), SAVED)
   })
 
+  it('proposes measuring a work profile sent, with the button to the area, when the filter is «Nessuno» (REB-1131)', async () => {
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns': () => json({ ...DRAFT, source: 'filters', journey_status: null, filters: { list: 'talents' } }, 201),
+      'PATCH /api/hub/campaigns/c1': () => json({ ...DRAFT, source: 'filters', journey_status: null, filters: { list: 'talents' } }),
+    })
+    mount()
+    await userEvent.click(await screen.findByRole('button', { name: 'Filtri' }))
+    await pick('Profilo di lavoro', 'Nessuno')
+    expect(await screen.findByRole('combobox', { name: 'Cosa misuriamo' })).toHaveTextContent('Ha inviato un profilo di lavoro')
+    await vi.waitFor(() => {
+      const saved = lastSaved(calls)
+      expect(saved.filters).toEqual({ list: 'talents', work_profile: 'none' })
+      expect([saved.action, saved.button_meta]).toEqual(['work_profile_sent', 'area'])
+    }, SAVED)
+  })
+
   it('sends every company filter under the server\'s own name and type', async () => {
     const calls = api({
       'GET /api/hub/me': () => json(ME),

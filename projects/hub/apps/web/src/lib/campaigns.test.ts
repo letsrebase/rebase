@@ -102,6 +102,7 @@ describe('labels', () => {
     expect(ACTION_LABELS.profile_created).toBe('Ha creato il profilo')
     expect(ACTION_LABELS.request_updated).toBe('Ha aggiornato la richiesta')
     expect(ACTION_LABELS.pigro_customer).toBe('Primo cliente in Pigro')
+    expect(ACTION_LABELS.work_profile_sent).toBe('Ha inviato un profilo di lavoro')
   })
 
   it('offers only the three phase-1 button destinations', () => {
@@ -237,6 +238,7 @@ describe('the outcome in words', () => {
   it('says what left and what it led to, and what went wrong only when something did', () => {
     const counts = { recipients: 10, queued: 0, sent: 8, skipped: 1, failed: 0, delivered: 8, bounced: 0, clicked: 4, entered: 3, actions: 2 }
     expect(outcomeLine(counts, 'cv')).toBe('8 inviate · 8 consegnate · 4 clic · 3 entrati · 2 CV caricati · 1 saltate')
+    expect(outcomeLine(counts, 'work_profile_sent')).toContain('2 profili di lavoro inviati')
     expect(outcomeLine({ ...counts, skipped: 0 }, 'signed_in')).toBe('8 inviate · 8 consegnate · 4 clic · 3 entrati')
   })
 })

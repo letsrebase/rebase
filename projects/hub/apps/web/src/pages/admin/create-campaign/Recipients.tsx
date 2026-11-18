@@ -26,6 +26,12 @@ const YES_NO: [string, string][] = [
   ['no', 'No'],
 ]
 
+const WORK_PROFILE_OPTIONS: [string, string][] = [
+  ['draft', 'Da rivedere'],
+  ['approved', 'Approvato'],
+  ['none', 'Nessuno'],
+]
+
 function SelectFilter({
   id,
   label,
@@ -126,6 +132,13 @@ function TalentsFilters({
           value={value.with_logins}
           options={YES_NO}
           onChange={(with_logins) => onChange({ with_logins })}
+        />
+        <SelectFilter
+          id="campaign-talents-work-profile"
+          label="Profilo di lavoro"
+          value={value.work_profile}
+          options={WORK_PROFILE_OPTIONS}
+          onChange={(work_profile) => onChange({ work_profile })}
         />
       </div>
       {other && (

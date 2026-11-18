@@ -738,11 +738,24 @@ spend the reserve until the 429 stops it. A bare 429 is still a retry that count
 For every row sent in the last 30 days and still missing a stamp, it writes `signed_in_at`
 (the first login after the mail) and `action_at` (the campaign's action, from the table
 that records it: the CV note, the card's `created_at`, the request's `updated_at`,
-the tick itself for a card that became complete, or the first click for «Un link»,
-whose page the hub never sees, REB-530). A stamp is written once. The log line
+the tick itself for a card that became complete, the freelancer's `work_profiles.submitted_at`
+for `work_profile_sent`, or the first click for «Un link», whose page the hub never sees, REB-530). A stamp is written once. The log line
 ends with `N esiti registrati`. The preview's `campaigns` loop runs, since it has a
 Resend key; it is the missing webhook secret that keeps «Mandami una prova» and «Invia»
 refused there, so the preview never has a sent row to stamp.
+
+**Seven actions are measured** (`CAMPAIGN_ACTIONS`, `ck_campaigns_action`): `signed_in`, `cv`,
+`card_complete`, `profile_created`, `request_updated`, `pigro_customer` (never done until the
+CRM reports usage, so a campaign cannot choose it) and `click`. REB-1131 added
+`work_profile_sent`, «ha inviato un profilo di lavoro» (migration 0057, the check only): the recipient's
+card has a `work_profiles` row whose `submitted_at` follows the mail (the list's snapshot at the
+send-time check, `sent_at` when the tick stamps). Any state counts, a draft or a rejected one was sent
+all the same; the row is replaced on resubmission, so it is the latest send. The tick stamps `action_at`
+once, so a profile the 12-month sweep deletes later still counts. Its button goes to the member area
+(`area`), and the create form proposes both the moment the campaign's talents filter `work_profile`
+(`draft`, `approved`, `none`, the Talenti list's own, now a campaign filter too) turns to `none`
+(`withProfileProposal`, `create-campaign/form.ts`). `list_campaigns` and `get_campaign` read the
+action and the filter back.
 
 **«Riscrivi a chi non ha fatto niente»** (`POST /api/hub/campaigns/{id}/follow-up`) makes a
 `draft` with `source = list` and `follows_id`. It keeps the earlier campaign's action and a
