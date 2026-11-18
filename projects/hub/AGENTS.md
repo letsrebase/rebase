@@ -643,6 +643,24 @@ non-goals). MCP is read only: `get_talent` carries `work_profile_state`, and `ge
 `work_profile_read` (entity `freelancer`, payload the tool name and the door, no value). **There is no
 approve or reject tool on purpose**: the decision is a person's, made in the app.
 
+**Usage bands (REB-1130, decision row of 2026-11-18).** The fork's `techUsage` (per technology the
+sessions, products and distinct months, with a `band`, `occasional` / `recurring` / `continuous`,
+which is a label for the months and never a score or a measure of skill, upstream ADR-001) is checked
+at the intake by `work_profiles/tech_usage.py`: `band_for` ports the fork's `bandFor` constant for
+constant (6 months, 75% coverage, 3 months), `structure` refuses a profile whose claimed band does
+not match its own counts, and a name must be one of the labels in `work_profiles/tech-labels.json`
+(the fork's `labelVocabulary()`, vendored beside the lexicon: see `VENDORED.txt`), the same fence
+against client and private names the fork keeps. `view.technologies` reads the rows, strongest band
+first, into `WorkProfileView.technologies` (the admin's review panel), `MemberWorkProfile.technologies`
+(the person's own, while the profile counts) and `TalentRead.technologies` (an **approved**,
+unexpired profile's, read in the same list query from `payload -> techUsage -> technologies` only,
+never a draft's). **The talent cloud carries none**: `cloud_work_profile` still reads the three
+fields the person approved, and showing a band to a company is a privacy change for Lorenzo to
+approve. No sort or filter reads a band. On screen each technology is a `UsageBadge`
+(`components/TechUsage.tsx`) over `@rebase/ui`'s `Badge variant="meter"`, filled a third, two thirds
+or all of it by band and by nothing finer, with the band and the counts on hover and focus and in its
+accessible name, and the legend under the group.
+
 **What an approved profile changes outside the admin (REB-1127, spec §§ 5 and 7).**
 `CloudTalentRead.work_profile` (`CloudWorkProfile | null`, `team_schemas.py`) carries the summary,
 the domains' labels with their counts and the representative projects' abstract domains of a
