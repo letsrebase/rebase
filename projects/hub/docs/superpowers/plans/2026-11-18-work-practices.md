@@ -12,12 +12,17 @@
 
 ## Repos, branches, release order
 
-| Repo | Path | Branch | Commit style |
-|---|---|---|---|
-| Fork | `/home/dev/projects/letsrebase/rebase-verify` | `fiorelorenzo/reb-1142-<slug>` cut from the fork's `main` (`upstream/main` has no `src/tech-usage.mjs`, which the block follows) | Conventional Commits, last line `REB-1142.` (or the card of the task) |
-| Monorepo | `/home/dev/.cache/tmp/wt-1142` | `fiorelorenzo/reb-1142-design-the-practices-block-of-the-work` (existing) | Conventional Commits, scope `hub`, card id as the footer |
+| Part | Card | Repo | Branch (from the card) | Commit style |
+|---|---|---|---|---|
+| A (tasks A1 to A4) | REB-1143 | Fork `/home/dev/projects/letsrebase/rebase-verify`, a worktree cut from the fork's `main` (`upstream/main` has no `src/tech-usage.mjs`, which the block follows) | `fiorelorenzo/reb-1143-count-seven-work-practices-from-tool` | Conventional Commits, last line `REB-1143.` |
+| B (B0 to B5) | REB-1144 | Monorepo, a worktree cut from `origin/main` | `fiorelorenzo/reb-1144-recheck-and-show-the-practices-block` | Conventional Commits, scope `hub`, `REB-1144.` as the footer |
+| C (C1) | REB-1145 | Monorepo, on the REB-1144 branch so the texts ship with the views | same as B | `REB-1145.` as the footer |
+| D (D1 to D6) | REB-1146 | Fork, then monorepo | `fiorelorenzo/reb-1146-classify-six-practices-with-the` | `REB-1146.` |
+| E (E1) | REB-1147 | `Play-New/apply-new` issue | none | upstream's style |
 
-Order: Part A (fork, code practices), Part B (hub), Part C (texts, Lorenzo's approval), then the release (**the hub tag needs Lorenzo's explicit ok**), then Part D (model practices, **waiting for Lorenzo's choice of reference**), then the upstream issue. Part D can follow in a later release; Parts A to C never depend on it.
+Wherever a later task's commit block says `REB-1142.`, use the card of its part from this table.
+
+Order: Part A (fork, code practices), Part B (hub), Part C (texts, Lorenzo's approval), then the release (**the hub tag needs Lorenzo's explicit ok**), then Part D (model practices, gated on a written reference set, Lorenzo's choice of 2026-11-18), then the upstream issue. Part D can follow in a later release; Parts A to C never depend on it.
 
 ## Global Constraints
 
@@ -41,7 +46,7 @@ Order: Part A (fork, code practices), Part B (hub), Part C (texts, Lorenzo's app
 - Model classification (Part D): up to 60 sessions, only sessions with >= 2 messages from the person, round-robin across products then months; person's messages only; at most 12 per session (the first, then evenly spaced); each cut to 600 characters; through `redactText` and `scrubProperNouns`; written to `out/practices-input.json`; output per session six booleans, nothing else; per-session answers to `out/practices-detail.json` (never sent).
 - Hub recheck: rubric known; `method` equals the vendored one; `0 <= seen <= of`; `of <= volume.sessions`, and `of <= 60` for a model practice; `products <= volume.products` and `products <= seen`; `months <= seen`, `months >= 1` when `seen >= 1`, months no more than the window spans; no id twice; refusals name the practice and the rule, in Italian. Unknown id: dropped and counted in `work_profiles.unknown_practices` (migration 0060), one muted line to the admin.
 - Marks, verbatim: «contato dal codice» (code), «dal modello della persona, non ricontrollato» (model). View copy: «in 18 sessioni su 25», products, months; section title «Come lavora». No bar, no colour scale, no total. Existing tokens and components only.
-- Quality gate thresholds (Part D): stability >= 90% per practice (two runs, same 40 real sessions, never committed); reference by Lorenzo's choice, open: (1) 20 labelled real sessions, agreement >= 80%; (2) written set, >= 8 positive and >= 8 near-miss sessions per practice, Italian and English, drafted by the builder and approved by Lorenzo, agreement >= 90%; (3) neither, so the six do not ship. A practice failing its checks is left out of v1.
+- Quality gate thresholds (Part D): stability >= 90% per practice (two runs, same 40 real sessions, never committed); agreement >= 90% per practice with a written reference set (>= 8 positive and >= 8 near-miss sessions per practice, Italian and English, expected answers fixed when written, checked by a blind second reader; Lorenzo chose this on 2026-11-18 and does not review the set). A practice failing its checks is left out of v1.
 - The frozen fixture test (`test/fixture.test.mjs`) passes unmodified. The block is optional and nullable like `techUsage`.
 - Fork texts, the privacy page and the DPIA section need Lorenzo's approval before merge. The hub tag needs his explicit ok.
 
@@ -510,7 +515,7 @@ git commit -m "docs(hub): say what the practices block counts, in the privacy pa
 
 ---
 
-# Part D: Model practices (card 2, with their texts), waiting for Lorenzo's choice of reference
+# Part D: Model practices (card 2, with their texts), gated on the written reference set
 
 Parts A to C ship without Part D. Task D1 to D3 build the machinery and can be written now; the gate (D4) decides whether the six ids enter the published list, and D5 and D6 only run for the practices that pass. Branch: `fiorelorenzo/reb-1142-model-practices`, cut from the fork's `main` after A3.
 
@@ -602,18 +607,18 @@ git add src bin .claude test
 git commit -m "feat(practices): classify the six model practices with the person's own model" -m "REB-1142."
 ```
 
-### Task D4: The quality gate, **waiting for Lorenzo's choice of reference**
+### Task D4: The quality gate (reference: a written set, Lorenzo's choice of 2026-11-18)
 
-The six model practices ship only if their checks pass. The stability check is in every option; the reference is Lorenzo's choice (option 1, 2 or 3). No step of option 1 or 2 starts before he chooses; do not draft as if one was chosen.
+The six model practices ship only if their checks pass: stability and agreement with a written reference set the builder writes and checks with a blind second reader (spec § 3). Lorenzo does not review the set.
 
 **Files:**
 - Create: `scripts/practices-gate.mjs`, `test/practices-gate.test.mjs`
-- Create (option 1): `scripts/practices-labelling.mjs`; (option 2): `test/fixtures/practices-reference/<id>.<it|en>.json` and `test/practices-reference.test.mjs`
+- Create: `test/fixtures/practices-reference/<id>.<it|en>.json` and `test/practices-reference.test.mjs`
 - Never committed: the 40 real sessions, the labels, `out/`
 
 **Interfaces:**
 - Consumes: `classifyPractices` (D3), `sampleSessions` (D1).
-- Produces: `export function agreement(answers, expected, id): { matched: number, of: number, rate: number }`; `export function stability(runA, runB, id): { same: number, of: number, rate: number }`; `export const STABILITY_MIN = 0.9`; `export const AGREEMENT_MIN = { labelled: 0.8, written: 0.9 }`; `export function gateReport(...)` returning per-practice `{ id, stability, agreement, pass }` as numbers; `node scripts/practices-gate.mjs stability` (two runs on the 40 most recent real sessions of the developer's own logs, prints numbers, writes nothing to the repo).
+- Produces: `export function agreement(answers, expected, id): { matched: number, of: number, rate: number }`; `export function stability(runA, runB, id): { same: number, of: number, rate: number }`; `export const STABILITY_MIN = 0.9`; `export const AGREEMENT_MIN = 0.9`; `export function gateReport(...)` returning per-practice `{ id, stability, agreement, pass }` as numbers; `node scripts/practices-gate.mjs stability` (two runs on the 40 most recent real sessions of the developer's own logs, prints numbers, writes nothing to the repo); `node scripts/practices-gate.mjs agreement` (runs the classification on the written set, prints numbers).
 
 - [ ] **Step 1: Write the failing tests** (unit tests of the pure functions, no model): `agreement` counts matches per practice; `stability` 36 of 40 is `0.9` and passes, 35 of 40 fails; `pass` requires stability >= 0.9 **and** agreement >= the option's threshold; a practice missing a reference is `pass: false`.
 - [ ] **Step 2: Run** `node --test test/practices-gate.test.mjs`. Expected: FAIL.
@@ -626,9 +631,9 @@ git add scripts/practices-gate.mjs test/practices-gate.test.mjs
 git commit -m "feat(practices): measure the model practices before they ship" -m "REB-1142."
 ```
 
-- [ ] **Step 6 (waiting, option 1: a person labels 20 real sessions).** `scripts/practices-labelling.mjs` writes `out/practices-labelling.md` from 20 sessions (their messages and six yes/no boxes, no ids of the person's repos), the person fills it, `node scripts/practices-gate.mjs agreement --labels out/practices-labelling.md` reads it. Test with a synthetic file. A practice ships at agreement >= 80% and stability >= 90%. The labels stay out of git.
-- [ ] **Step 7 (waiting, option 2: a written set Lorenzo approves).** The builder drafts, per practice, >= 8 positive and >= 8 near-miss short sessions, Italian and English, with expected answers, in `test/fixtures/practices-reference/`; **Lorenzo reads and corrects the set before it counts**; `test/practices-reference.test.mjs` asserts the counts per practice and language (>= 8 + >= 8 each) and runs the classification against the set only when `RUN_PRACTICES_GATE=1` (the classification needs a model). A practice ships at agreement >= 90% and stability >= 90%. The set becomes the regression test for any change to the rubric or prompt.
-- [ ] **Step 8 (waiting, option 3: neither).** Stop here. v1 is the seven code practices; D5 and D6 do not run; record that on the card.
+- [ ] **Step 6: Write the reference set.** Per practice, >= 8 positive and >= 8 near-miss short sessions, Italian and English, each written with its expected answers for all six practices, in `test/fixtures/practices-reference/`. `test/practices-reference.test.mjs` asserts the counts per practice and language (>= 8 + >= 8 each) and that every session carries six booleans; it runs the classification against the set only when `RUN_PRACTICES_GATE=1` (the classification needs a model).
+- [ ] **Step 7: Blind second reading.** A second reader (a fresh agent that is given the rubric and the sessions with the expected answers stripped) labels every session; any session where its labels differ from the expected answers is rewritten until both agree, or dropped, and the test still finds >= 8 + >= 8 per practice. Record the number rewritten and dropped on the card.
+- [ ] **Step 8: Run the gate**: `RUN_PRACTICES_GATE=1 node scripts/practices-gate.mjs agreement` and the stability check. A practice ships at agreement >= 90% and stability >= 90%; one that fails is left out of v1, and if all six fail, D5 and D6 do not run.
 - [ ] **Step 9: Report** the numbers per practice on the card (REB-1142), as numbers, with the reference used.
 
 ### Task D5: Publish the practices that passed (runs only for those)

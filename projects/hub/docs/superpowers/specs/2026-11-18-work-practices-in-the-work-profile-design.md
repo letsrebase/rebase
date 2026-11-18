@@ -175,28 +175,28 @@ weight.
 
 **Quality gate before release.** A number nobody has checked against a known answer cannot be
 shown to an admin who decides about people, so each model practice is measured before it
-ships against answers a person stands behind; a model's own answers are never the reference.
-Every option keeps one check that needs no labels:
+ships, against expected answers fixed before the classification runs, never taken from it.
+Two checks:
 
 - **Stability**: the classification run twice on the same 40 real sessions (the developer's own
   logs, never committed) gives the same answer on at least 90% of them, per practice. It shows
   the answers repeat, not that they are right.
+- **Agreement with a written reference set** (Lorenzo's choice, 2026-11-18): for each practice at
+  least eight short sessions where it happens and eight where it nearly does but does not (a
+  «no» that is only a disagreement, a question that is not about alternatives), in Italian and
+  in English, committed to the fork as a fixture. Each session is written to carry its expected
+  answers, which are fixed when it is written. A second reader, who never sees those answers,
+  then labels every session blind; a session where the two disagree is rewritten until both
+  agree or dropped. A practice ships when the classification matches at least 90% of the
+  remaining set. Lorenzo asked the builder to write and check the set rather than review it
+  himself, so nobody outside the build checks it: the set shows the rubric is understood by
+  the model as its writers understood it, not how messy real sessions are classified. The DPIA
+  section says both. The set doubles as the regression test for any change to the rubric.
 
-The reference itself is Lorenzo's choice, open as of 2026-11-18:
-
-1. **A person labels real sessions**: 20 sessions of their own logs, six yes/no each, from a
-   labelling file the tool writes; a practice ships when the classification agrees with the
-   labels on at least 80% of them. The strongest reference, and the labels are never committed.
-2. **A written set a person approves**: for each practice at least eight short sessions where it
-   happens and eight where it nearly does but does not, in Italian and in English, with expected
-   answers, drafted by the builder and read and corrected by Lorenzo before it counts; a
-   practice ships when the classification matches at least 90% of them. It shows the rubric is
-   understood, not how messy real sessions are classified, and it doubles as the regression test.
-3. **Neither**: the six model practices do not ship, and v1 is the seven code practices.
-
-A practice that fails its checks is left out of v1, and the «dal modello della persona, non
-ricontrollato» mark stays on every surface whatever the reference. The results are reported on
-the card as numbers.
+The options he did not take were labels by a person on 20 real sessions, the stronger
+reference, and shipping the code practices alone. A practice that fails its checks is left out
+of v1, and the «dal modello della persona, non ricontrollato» mark stays on every surface. The
+results are reported on the card as numbers.
 
 ## 4. The payload
 
@@ -307,8 +307,8 @@ Calls (mine, for Lorenzo to check):
   its failure flag.
 - The design-document and plan-file path rules in § 2a.
 
-Open, Lorenzo's: the quality gate's reference (§ 3), labels on real sessions, a written set he
-approves, or the code practices alone.
+Lorenzo's, 2026-11-18: the quality gate's reference is a written set the builder writes and
+checks with a blind second reader (§ 3).
 
 ## 10. Left to the builder
 
