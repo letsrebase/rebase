@@ -22,6 +22,7 @@ import { AmountFilter, Empty, FilterField, Header, LoadingState, LoadMore, State
 import { useTalentAvailability } from '@/lib/availability'
 import { AvailabilityFailure } from './Availability'
 import { TalentRow } from './TalentRow'
+import { USAGE_LEGEND } from '@/lib/techUsage'
 
 /** What `sort` can be, in the words the screen shows (the keys are the service's own). */
 const SORT_LABELS: Record<string, string> = {
@@ -369,6 +370,13 @@ export function AdminTalents() {
                 </TableBody>
               </Table>
             </div>
+            {/* What the fill of a technology's badge means, said once for the page: only when a
+               row of it has bands, which is an approved work profile's (REB-1130). */}
+            {items.some((item) => item.technologies.length > 0) && (
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">Tecnologie.</span> {USAGE_LEGEND}
+              </p>
+            )}
           </div>
           {list.hasNextPage && (
             <LoadMore

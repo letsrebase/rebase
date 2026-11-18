@@ -14,6 +14,7 @@ const BASE: Profile = {
   expires_at: '2027-11-12T10:00:00Z',
   expired: false,
   decision_note: null,
+  technologies: [],
 }
 
 function show(profile: Me['work_profile'], vetted = true) {
@@ -69,6 +70,27 @@ describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
     expect(screen.getByText('Non approvato')).toBeInTheDocument()
     expect(screen.getByText('Manca un progetto con un link.')).toBeInTheDocument()
     expect(screen.getByText('cd rebase-verify')).toBeInTheDocument()
+  })
+
+  it('shows the person their own technologies, filled by band, and says companies do not see them', () => {
+    show({
+      ...BASE,
+      technologies: [
+        { name: 'Zod', band: 'recurring', sessions: 9, products: 2, months: 4, first_month: '2026-01', last_month: '2026-05' },
+        { name: 'Python', band: 'continuous', sessions: 40, products: 6, months: 6, first_month: '2026-01', last_month: '2026-06' },
+      ],
+    })
+    const section = screen.getByRole('region', { name: 'Profilo di lavoro' })
+    expect(within(section).getByRole('heading', { name: 'Le tecnologie nel tuo lavoro' })).toBeInTheDocument()
+    expect(within(section).getByText(/Le aziende non le vedono/)).toBeInTheDocument()
+    expect(within(section).getByText('Python')).toHaveAttribute('data-fill', 'full')
+    expect(within(section).getByText('Zod')).toHaveAttribute('data-fill', 'two-thirds')
+    expect(within(section).getByText(/non quanto la si conosce/)).toBeInTheDocument()
+  })
+
+  it('shows no technologies block when the profile has none', () => {
+    show(BASE)
+    expect(screen.queryByRole('heading', { name: 'Le tecnologie nel tuo lavoro' })).toBeNull()
   })
 
   it('says an expired profile no longer counts', () => {

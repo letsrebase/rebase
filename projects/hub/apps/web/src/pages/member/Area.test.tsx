@@ -464,6 +464,7 @@ describe('/me, one column in a fixed order (REB-641), the referral panel first (
         expires_at: '2027-11-12T10:00:00Z',
         expired: false,
         decision_note: 'Manca un progetto con un link.',
+        technologies: [],
       },
     })
     mount()

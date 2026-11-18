@@ -126,6 +126,16 @@ export const CARD_TALENT = {
   location: null,
   // REB-800: the other live cards that may be the same person; empty for almost everyone.
   duplicate_possible_of: [],
+  // REB-1130: the usage bands of an approved work profile; empty for a draft, none and a lead.
+  technologies: [] as Array<{
+    name: string
+    band: 'occasional' | 'recurring' | 'continuous'
+    sessions: number
+    products: number
+    months: number
+    first_month: string
+    last_month: string
+  }>,
 }
 
 /** A bare sign-up in `talents` (ORB-163): `status` `lead`, no card behind it yet, so
@@ -149,6 +159,7 @@ export const LEAD_TALENT = {
   skills: [] as string[],
   location: null,
   duplicate_possible_of: [],
+  technologies: [],
 }
 
 /** A company request in `GET /api/hub/companies` (REB-286's own new coverage: the

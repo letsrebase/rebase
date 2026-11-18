@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
+import { UsageBadges } from '@/components/TechUsage'
 import { ApiError, member, type Me } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { ME_KEY } from '@/lib/me'
@@ -195,6 +196,15 @@ export function MemberWorkProfile({ profile, vetted }: { profile: Me['work_profi
             <Standing profile={profile} vetted={vetted} />
           </div>
           <p className="text-sm text-muted-foreground">Inviato il {formatDate(profile.submitted_at)}.</p>
+          {profile.technologies.length > 0 && (
+            <div className="space-y-2 border-t pt-3">
+              <h3 className="text-sm font-medium">Le tecnologie nel tuo lavoro</h3>
+              <p className="text-sm text-muted-foreground">
+                Le leggiamo noi di rebase. Le aziende non le vedono.
+              </p>
+              <UsageBadges technologies={profile.technologies} />
+            </div>
+          )}
           {(profile.state === 'rejected' || profile.expired) && (
             <>
               <Steps />

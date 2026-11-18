@@ -4,6 +4,7 @@ import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Label } from '@rebase/ui/label'
 import { Textarea } from '@rebase/ui/textarea'
+import { UsageBadges } from '@/components/TechUsage'
 import { WebLink } from '@/components/WebLink'
 import { admin, ApiError, type WorkProfileAdmin } from '@/lib/api'
 import { failureMessage } from '@/lib/adminList'
@@ -216,6 +217,15 @@ function ProfileBody({ profile, anchors }: { profile: Profile; anchors: Map<stri
               </li>
             ))}
           </ul>
+        </div>
+      )}
+      {profile.technologies.length > 0 && (
+        <div className="space-y-2 border-t py-3">
+          <h4 className="font-medium">Tecnologie</h4>
+          <p className="text-muted-foreground">
+            Le vedono gli admin e la persona. Le aziende non le vedono, nemmeno a profilo approvato.
+          </p>
+          <UsageBadges technologies={profile.technologies} />
         </div>
       )}
       {profile.lenses.map((lens) => (
