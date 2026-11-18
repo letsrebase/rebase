@@ -146,7 +146,8 @@ def _profile(session: Session, card: Freelancer, submitted: datetime, **fields: 
             groundedness=90,
             unsupported_anchors=[],
             submitted_at=submitted,
-            expires_at=submitted + timedelta(days=365),
+            # Relative to the real clock: the filter reads «not expired» against it.
+            expires_at=datetime.now(UTC) + timedelta(days=30),
             **fields,
         )
     )
@@ -177,6 +178,18 @@ def test_a_work_profile_from_before_the_mail_is_not_the_action(
     assert done_at(clean, row, "work_profile_sent", since=T0 - timedelta(days=3)) == (
         T0 - timedelta(days=2)
     )
+
+
+def test_a_soft_deleted_card_has_never_sent_a_work_profile(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    card = person(clean, "ada@studio.it")
+    candidate = candidates_for_state(clean, "complete")[0]
+    row = recipient_for(clean, candidate, snapshot(clean, candidate, T0))
+    _profile(clean, card, T0 + timedelta(hours=1))
+    card.deleted_at = datetime.now(UTC)
+    clean.commit()
+    assert done_at(clean, row, "work_profile_sent") is None
 
 
 def test_a_lead_or_a_card_with_no_work_profile_has_not_sent_one(

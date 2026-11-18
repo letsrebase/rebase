@@ -110,7 +110,8 @@ describe('the work-profile proposal (REB-1131)', () => {
 
   it('sends and reads back the filter under the server\'s name', () => {
     const sent = payloadOf(none)
-    expect(sent.filters).toMatchObject({ list: 'talents', work_profile: 'none' })
+    expect(sent).not.toBeNull()
+    expect(sent && 'filters' in sent ? sent.filters : undefined).toMatchObject({ list: 'talents', work_profile: 'none' })
   })
 })
 
