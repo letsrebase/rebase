@@ -16,6 +16,10 @@ from rebase_core.models.profiles import UtmMixin
 # ---- the member area: how anyone gets back in -------------------------------------------
 
 TOKEN_HASH_LENGTH = 64  # sha256, hex
+# How a person got in (`Login.method`, migration 0058, REB-1137): the magic link, or the
+# provider that vouched for an address of theirs.
+LOGIN_METHODS = ("link", "github", "google")
+LOGIN_METHOD_MAX_LENGTH = 10
 
 
 class MagicLinkToken(Base, PrimaryKeyMixin, UtmMixin):
@@ -79,6 +83,16 @@ class Login(Base, PrimaryKeyMixin, UtmMixin):
     )
     logged_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # `link` for the magic link, which is every row written before migration 0058, `github`
+    # or `google` for a sign-in a provider vouched for (REB-1137). Nothing else about the
+    # provider is kept: no account id, no token, no address.
+    method: Mapped[str] = mapped_column(
+        String(LOGIN_METHOD_MAX_LENGTH), nullable=False, default="link", server_default="link"
+    )
+
+    __table_args__ = (
+        CheckConstraint("method IN ('link', 'github', 'google')", name="ck_logins_method"),
     )
 
 
