@@ -201,3 +201,40 @@ def test_structure_refuses_a_bad_block(hub_session: Session) -> None:
     assert "checks_before_commit" in refused.value.message
     assert "seen" in refused.value.message
     assert hub_session.query(WorkProfile).filter_by(freelancer_id=freelancer_id).count() == 0
+
+
+def _submit(session: Session, clock: Clock, profile: dict[str, Any], email: str) -> Any:
+    user_id, freelancer_id = person(session, email)
+    assert freelancer_id is not None
+    WorkProfileService(session, settings(), clock).submit(
+        sign_in(session, clock, user_id), json.dumps(profile).encode()
+    )
+    return freelancer_id
+
+
+def test_a_profile_with_an_unknown_practice_is_accepted_and_the_id_is_never_stored(
+    hub_session: Session,
+) -> None:
+    clock = Clock()
+    profile = _profile(_item("checks_before_commit"), _item("acme_secret"))
+    freelancer_id = _submit(hub_session, clock, profile, "ada@studio.it")
+
+    row = hub_session.query(WorkProfile).filter_by(freelancer_id=freelancer_id).one()
+    assert [i["id"] for i in row.payload["practices"]["items"]] == ["checks_before_commit"]
+    assert "acme_secret" not in json.dumps(row.payload)
+    assert row.unknown_practices == 1
+    read = WorkProfileService(hub_session, settings(), clock).admin_read(freelancer_id)
+    assert read.unknown_practices == 1
+
+
+def test_a_resubmission_without_unknowns_resets_the_count(hub_session: Session) -> None:
+    clock = Clock()
+    user_id, freelancer_id = person(hub_session, "grace@studio.it")
+    service = WorkProfileService(hub_session, settings(), clock)
+    first = _profile(_item("checks_before_commit"), _item("acme_secret"))
+    service.submit(sign_in(hub_session, clock, user_id), json.dumps(first).encode())
+    second = _profile(_item("checks_before_commit"))
+    service.submit(sign_in(hub_session, clock, user_id), json.dumps(second).encode())
+
+    row = hub_session.query(WorkProfile).filter_by(freelancer_id=freelancer_id).one()
+    assert row.unknown_practices == 0

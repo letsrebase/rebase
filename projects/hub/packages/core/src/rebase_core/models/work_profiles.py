@@ -120,6 +120,10 @@ class WorkProfile(Base, PrimaryKeyMixin):
     unknown_technologies: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
     )
+    # Practices items dropped at intake for an id this hub does not list (REB-1144).
+    unknown_practices: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
     state: Mapped[str] = mapped_column(String(10), nullable=False, default="draft")
     submitted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
