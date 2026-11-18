@@ -1,6 +1,6 @@
 {
   "notes": [
-    "Commands are read as recorded by the coding agent, which caps each at 240 characters, so a check at the end of a long chained command can be missed.",
+    "rebase-verify reads each command up to its first 240 characters, so a check at the end of a long chained command can be missed.",
     "Paths are compared lower-cased, with a backslash read as a forward slash.",
     "Leading environment assignments and runner wrappers such as npx, uv run, python -m and pnpm exec are skipped before a command is matched.",
     "Two runs count as the same check when their command words match: the words before the first flag or path, wrappers dropped, so a narrower run of the same check (pytest tests/a.py after pytest) is the same command.",
