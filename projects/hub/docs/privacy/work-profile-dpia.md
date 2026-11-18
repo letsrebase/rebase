@@ -311,7 +311,7 @@ them under the conditions it lists.
   196/224, 35/40; `raises_risks` 17/17, 16/17, 3, 220/224, 35/40 (it failed on stability). An
   always-false classifier would score 202 to 207 of 224 pooled, so the pooled figure alone says
   little; the misses are almost all false positives; and stability rests on few true answers (3 to
-  10 per run).
+  10 per run for the four published practices).
 - What the gate does not show: a written set shows that the rubric is understood as its writers
   understood it, not how messy real sessions are classified. Nobody outside the build checked the
   set, by Lorenzo's choice.
