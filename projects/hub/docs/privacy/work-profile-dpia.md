@@ -45,7 +45,10 @@ also be given by an admin without a profile («Segna come verificato», `set_vet
 products, months), the detected stack per project from a fixed vocabulary, abstract project
 domains, prose written by the person's own model and reread by them, and (since REB-1129)
 per-technology usage bands with their counts (a technology name outside the fixed vocabulary is
-dropped before storage and only the count of dropped rows is kept, as data minimisation). The tool is meant to leave out session logs,
+dropped before storage and only the count of dropped rows is kept, as data minimisation), and
+(since REB-1142) `practices`: counts of seven work practices, each as sessions seen out of
+sessions it could have happened in, with product and month counts (see the section on practices
+below). The tool is meant to leave out session logs,
 code, and client, product, person and repository names; the hub cannot verify the tool's
 redaction, so it refuses file artifacts and a `repoLabel`, drops `contact`, and runs its own
 checks (below). The person's identity comes from the hub sign-in, not from the profile.
@@ -236,6 +239,72 @@ the basis of personal traits is in Annex III point 4. So: describing practices w
 the tool already does, is in scope and could grow, under this assessment; rating architecture,
 organisation or soft skills from the logs is out. Those belong to interviews, references and
 the projects themselves.
+
+## Practices (REB-1142)
+
+The profile gains a `practices` block: seven ways of working, each shown as «in N sessioni su M»
+with the number of products and months it spans. Definitions and rules are published in the
+fork's README («Work practices») and in `share/practices.json`, which the hub vendors.
+
+**The processing.** `rebase-verify` counts them on the person's machine, from the tool calls
+and file paths the coding agents' logs already hold (a command that ran and whether it failed,
+which files were edited, plan mode, task lists, a diff shown). The seven are `checks_before_commit`,
+`tests_with_changes`, `failure_reproduced_before_fix`, `plan_before_edit`, `reviews_changes`,
+`design_documents` and `security_checks`. No new data is read. Only counts leave: never a
+command, a path or a file name. The person sees the counts in `out/profile.md` and in the
+`submit` preview before sending.
+
+**Method.** All seven are counted by code, with no model. That is the case § 7 already scopes
+in («without a model», counts of something the person did), so § 7 stands as written for them.
+The six practices that would be classified by a model are a separate, future section: they go
+past § 7, which calls anything inferred from wording a guess about character, and shipping them
+needs § 7 rewritten first. Nothing in this section covers them.
+
+**Denominators.** Each practice is counted against the sessions where it could have happened,
+and shown as seen out of that number, never as a percentage or a total:
+
+- sessions with a commit: `checks_before_commit`;
+- sessions with a commit or a pull request: `reviews_changes`;
+- sessions with an edit: `plan_before_edit`, `design_documents`, `security_checks`;
+- sessions that edited a source file: `tests_with_changes`;
+- sessions where a check command failed: `failure_reproduced_before_fix`.
+
+**What is left out of a denominator.** A session whose adapter cannot give a field a practice
+needs is left out of that practice, not counted as «not seen». Pi and Cursor sessions are left
+out of `failure_reproduced_before_fix` altogether, because their logs cannot show a failure
+reliably. Cursor's timestamps are coarse, so a session near a month boundary can land in the
+neighbouring month; the month counts can be off by one there.
+
+**Limits of what a count means.**
+
+- `reviews_changes` means a diff appeared in the session before a commit or a pull request,
+  whoever asked for it. It does not mean anyone read it.
+- The coding agent records each command capped at 240 characters, so a check at the end of a
+  long chained command can be missed. A count can be too low; the rules do not guess the rest.
+- A chain such as `npm test && git push` counts as its first check, because the exit status
+  cannot say which part failed.
+
+**What the hub checks.** The hub rechecks structure only: the rubric is one it knows, each
+practice id is on the vendored list, `0 ≤ seen ≤ of`, `of` does not exceed the profile's session
+count, products and months do not exceed what the profile itself shows, and no id appears twice.
+It can bound the counts; it cannot re-derive them, since the commands and paths stay on the
+person's machine. A practice id outside the list is dropped before storage and only the count of
+dropped ones is kept, as with technologies. As in § 2, the tool's output is the person's to
+check before sending and an admin's to read.
+
+**Where the counts are shown.** To the reviewing admin, in the review panel under «Come lavora»,
+and to the person, in their own area, in the same rows. Every row is marked «contato dal codice».
+They are not in the talent cloud, not in the anonymous card or its source text, not in the
+narrative, and no sort, filter or ordering reads them. They carry no bar, colour scale or total.
+
+**Residual risk.** A count can be read as a judgement about the person, such as «seldom plans, so
+careless» or «never reviews», which is the «usage read as competence» risk of § 4 again, with
+the same medium rating. Several practices also depend on how a person's agent records things,
+so a low count may say more about the tool than the work. Measures: each row says it was counted
+by code and shows its denominator; there is no total and no score (the rule in DECISIONS.md,
+2026-11-18, and § 6); admins and the person see the rows, companies do not; and the list and
+the rules are public, so anyone can check what a row means. Review the marks and the list when
+a practice is added or its rule changes.
 
 ## 8. Sign-off
 
