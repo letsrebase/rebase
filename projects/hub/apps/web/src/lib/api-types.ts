@@ -4974,6 +4974,16 @@ export interface components {
             /** Next Cursor */
             next_cursor: string | null;
         };
+        /**
+         * PracticeClassifier
+         * @description The coding agent and model the person had classify the model practices (REB-1149).
+         */
+        PracticeClassifier: {
+            /** Agent */
+            agent: string;
+            /** Model */
+            model: string | null;
+        };
         /** PriceBody */
         PriceBody: {
             /** Provider */
@@ -6602,6 +6612,7 @@ export interface components {
             products: number;
             /** Months */
             months: number;
+            classified_by: components["schemas"]["PracticeClassifier"] | null;
         };
         /** WorkProfilePrinciple */
         WorkProfilePrinciple: {

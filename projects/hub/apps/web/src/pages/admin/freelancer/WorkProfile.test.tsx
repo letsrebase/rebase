@@ -215,6 +215,22 @@ describe('the usage bands in the review panel (REB-1130)', () => {
     expect(within(section).getAllByText(/Le vedono gli admin e la persona/).length).toBeGreaterThan(1)
   })
 
+  it('names the agent and model on model rows only', async () => {
+    open({
+      ...PROFILE,
+      profile: {
+        ...PROFILE.profile,
+        practices: [
+          { id: 'checks_before_commit', label: 'Verifica prima del commit', method: 'code', seen: 1, of: 5, products: 1, months: 4 },
+          { id: 'asks_for_alternatives', label: 'Chiede alternative', method: 'model', seen: 11, of: 60, products: 4, months: 5, classified_by: { agent: 'omp', model: 'claude-opus-4' } },
+        ],
+      },
+    })
+    const section = await screen.findByRole('region', { name: 'Profilo di lavoro' })
+    expect(within(section).getByText('dal modello della persona, non ricontrollato · oh-my-pi, claude-opus-4')).toBeInTheDocument()
+    expect(within(section).getByText('contato dal codice')).toBeInTheDocument()
+  })
+
   it('hides «Come lavora» when there are no practices', async () => {
     open(PROFILE)
     const section = await screen.findByRole('region', { name: 'Profilo di lavoro' })

@@ -114,6 +114,17 @@ describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
     )
   })
 
+  it('names the agent and model on model rows only', () => {
+    show({
+      ...BASE,
+      state: 'approved',
+      practices: PRACTICES.map((p) => (p.method === 'model' ? { ...p, classified_by: { agent: 'codex', model: null } } : p)),
+    })
+    const list = screen.getByRole('list', { name: 'Come lavora' })
+    expect(within(list).getByText('dal modello della persona, non ricontrollato · Codex')).toBeInTheDocument()
+    expect(within(list).getByText('contato dal codice')).toBeInTheDocument()
+  })
+
   it('shows no practices block when there are none', () => {
     show({ ...BASE, state: 'approved' })
     expect(screen.queryByRole('heading', { name: 'Come lavora' })).toBeNull()

@@ -55,4 +55,16 @@ describe('PracticeRows', () => {
     const { container } = render(<PracticeRows labelledBy="h" practices={[]} />)
     expect(container).toBeEmptyDOMElement()
   })
+
+  it('appends the agent and model to the mark of model rows only', () => {
+    const by = { agent: 'claude-code', model: 'claude-opus-4' }
+    render(<PracticeRows labelledBy="h" practices={[{ ...row('checks_before_commit', 18, 25, 3, 4, 'code'), classified_by: null }, { ...row('asks_for_alternatives', 11, 60, 4, 5, 'model'), classified_by: by }]} />)
+    expect(screen.getByText('dal modello della persona, non ricontrollato · Claude Code, claude-opus-4')).toBeInTheDocument()
+    expect(screen.getByText('contato dal codice')).toBeInTheDocument()
+  })
+
+  it('shows only the agent when the model is null, and an unknown agent as it is', () => {
+    render(<PracticeRows labelledBy="h" practices={[{ ...row('asks_for_alternatives', 11, 60, 4, 5, 'model'), classified_by: { agent: 'newagent', model: null } }]} />)
+    expect(screen.getByText('dal modello della persona, non ricontrollato · newagent')).toBeInTheDocument()
+  })
 })

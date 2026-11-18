@@ -138,6 +138,13 @@ class WorkProfileTechnology(ResponseModel):
     last_month: str
 
 
+class PracticeClassifier(ResponseModel):
+    """The coding agent and model the person had classify the model practices (REB-1149)."""
+
+    agent: str
+    model: str | None
+
+
 class WorkProfilePractice(ResponseModel):
     """What the person's sessions show of one working practice (REB-1144): in how many sessions it
     showed (`seen`) out of those that could have (`of`), and over how many products and months.
@@ -150,6 +157,8 @@ class WorkProfilePractice(ResponseModel):
     of: int
     products: int
     months: int
+    # Model rows only: who classified them, when the profile says so.
+    classified_by: PracticeClassifier | None = None
 
 
 class WorkProfileView(ResponseModel):
@@ -370,7 +379,7 @@ def technologies(payload: dict[str, Any]) -> list[WorkProfileTechnology]:
     return technology_rows(_dict(payload.get("techUsage")).get("technologies"))
 
 
-def practice_rows(rows: Any) -> list[WorkProfilePractice]:
+def practice_rows(rows: Any, classified_by: Any = None) -> list[WorkProfilePractice]:
     """The `practices.items` rows of a stored profile that the intake would still accept, in the
     order of the vendored list (never by the counts). A row that is no object, names a practice
     the list does not know, fails the intake's own per-item rules (only a payload stored before
@@ -381,6 +390,7 @@ def practice_rows(rows: Any) -> list[WorkProfilePractice]:
         for row in rows:
             if practices_module.reads_true(row) and row["id"] not in by_id:
                 by_id[row["id"]] = row
+    classifier = practices_module.read_classified_by(classified_by)
     found = []
     for ident, method in practices_module.practice_methods().items():
         row = by_id.get(ident)
@@ -395,13 +405,17 @@ def practice_rows(rows: Any) -> list[WorkProfilePractice]:
                 of=row["of"],
                 products=row["products"],
                 months=row["months"],
+                classified_by=PracticeClassifier(**classifier)
+                if classifier and method == "model"
+                else None,
             )
         )
     return found
 
 
 def practices(payload: dict[str, Any]) -> list[WorkProfilePractice]:
-    return practice_rows(_dict(payload.get("practices")).get("items"))
+    block = _dict(payload.get("practices"))
+    return practice_rows(block.get("items"), block.get("classifiedBy"))
 
 
 def render_profile(payload: dict[str, Any]) -> WorkProfileView:

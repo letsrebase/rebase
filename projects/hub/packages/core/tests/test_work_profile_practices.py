@@ -379,6 +379,7 @@ def test_a_model_row_has_its_shape_in_the_view(monkeypatch: pytest.MonkeyPatch) 
         "of": 40,
         "products": 3,
         "months": 4,
+        "classified_by": None,
     }
 
 
@@ -411,3 +412,60 @@ def test_the_unpublished_practice_is_an_unknown_id() -> None:
     )
     assert drop_unknown(profile) == 2
     assert [i["id"] for i in profile["practices"]["items"]] == ["checks_before_commit"]
+
+
+_CLASSIFIER = {"agent": "claude-code", "model": "claude-opus-4"}
+
+
+@pytest.mark.parametrize(
+    "value",
+    [_CLASSIFIER, {"agent": "omp", "model": None}, {"agent": "a" * 40, "model": "m" * 120}],
+)
+def test_classified_by_accepted_shapes(value: dict[str, Any]) -> None:
+    assert issues(_profile(_item("checks_before_commit"), classifiedBy=value)) == []
+
+
+def test_classified_by_absent_is_fine() -> None:
+    assert issues(_profile(_item("checks_before_commit"))) == []
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "omp",
+        None,
+        {"agent": "omp"},
+        {"agent": "omp", "model": None, "x": 1},
+        {"agent": "", "model": None},
+        {"agent": "a" * 41, "model": None},
+        {"agent": "Claude Code", "model": None},
+        {"agent": 3, "model": None},
+        {"agent": "omp", "model": "m" * 121},
+        {"agent": "omp", "model": "bad\nname"},
+        {"agent": "omp", "model": 5},
+    ],
+)
+def test_classified_by_other_shapes_are_refused(value: Any) -> None:
+    [message] = issues(_profile(_item("checks_before_commit"), classifiedBy=value))
+    assert message.startswith("practices.classifiedBy:") and "[a-z0-9-]" in message
+
+
+def test_classified_by_reaches_model_rows_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        practices_module,
+        "practice_methods",
+        lambda: {"read_by_model": "model", "checks_before_commit": "code"},
+    )
+    block = {
+        "items": [
+            _item("read_by_model", method="model", seen=10, of=40),
+            _item("checks_before_commit"),
+        ],
+        "classifiedBy": _CLASSIFIER,
+    }
+    rows = {r.id: r for r in practices({"practices": block})}
+    assert rows["read_by_model"].classified_by is not None
+    assert rows["read_by_model"].classified_by.model_dump() == _CLASSIFIER
+    assert rows["checks_before_commit"].classified_by is None
+    block["classifiedBy"] = "junk"
+    assert all(r.classified_by is None for r in practices({"practices": block}))
