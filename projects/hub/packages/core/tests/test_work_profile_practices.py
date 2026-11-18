@@ -58,25 +58,26 @@ def test_absent_or_null_block_is_no_issue() -> None:
 @pytest.mark.parametrize(
     ("change", "rule"),
     [
-        ({"seen": 26}, "seen"),
-        ({"seen": -1}, "seen"),
-        ({"seen": True}, "seen"),
-        ({"seen": 1.5}, "seen"),
-        ({"of": 237}, "of"),
-        ({"products": 31}, "prodotti"),
-        ({"products": 19}, "prodotti"),
-        ({"months": 19}, "mesi"),
-        ({"months": 0}, "mesi"),
-        ({"months": 6}, "mesi"),
+        ({"seen": 26}, "seen è 26"),  # of 25
+        ({"seen": -1}, "numeri interi"),
+        ({"seen": True}, "numeri interi"),
+        ({"seen": 1.5}, "numeri interi"),
+        ({"of": 101, "seen": 25}, "of è 101"),  # volume.sessions 100
+        ({"seen": 31, "of": 40, "products": 31}, "31 prodotti ma il profilo"),  # volume.products 30
+        ({"products": 19}, "19 prodotti ma visto"),  # seen 18
+        ({"seen": 4, "products": 1, "months": 5}, "5 mesi ma visto"),  # window spans 12
+        ({"months": 0}, "mesi sono 0"),
+        ({"months": 13, "seen": 20}, "finestra"),  # window spans 12
         ({"method": "model"}, "metodo"),
     ],
 )
-def test_each_rule_names_the_practice_and_the_rule_in_italian(
+def test_each_rule_alone_names_the_practice_and_the_rule_in_italian(
     change: dict[str, Any], rule: str
 ) -> None:
-    item = _item("checks_before_commit", seen=18, of=25, products=18, months=4) | change
-    found = issues(_profile(item))
-    assert found
+    profile = _profile(_item("checks_before_commit", **change))
+    profile["window"] = {"from": "2026-01", "to": "2026-12"}
+    found = issues(profile)
+    assert len(found) == 1, found
     assert "checks_before_commit" in found[0]
     assert rule in found[0]
 
@@ -125,6 +126,42 @@ def test_a_model_practice_is_capped_at_60(monkeypatch: pytest.MonkeyPatch) -> No
     found = issues(_profile(sound | {"of": 61}))
     assert len(found) == 1
     assert "60" in found[0]
+
+
+def test_the_method_is_the_one_the_list_gives_in_both_directions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(practices_module, "practice_methods", lambda: {"read_by_model": "model"})
+    found = issues(_profile(_item("read_by_model", method="code")))
+    assert len(found) == 1
+    assert "metodo" in found[0]
+    assert "model" in found[0]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        None,
+        3,
+        "checks_before_commit",
+        [],
+        {"id": None},
+        {"id": ""},
+        {"id": 7},
+        {"id": []},
+        {"id": {}},
+    ],
+)
+def test_a_malformed_item_is_refused_by_position(bad: Any) -> None:
+    found = issues(_profile(_item("checks_before_commit"), bad))
+    assert len(found) == 1
+    assert "practices.items[2]" in found[0]
+
+
+def test_drop_unknown_survives_hostile_items() -> None:
+    profile = _profile(_item("checks_before_commit"), {"id": []}, {"id": {}}, None, 3, {"id": 7})
+    assert drop_unknown(profile) == 5
+    assert [i["id"] for i in profile["practices"]["items"]] == ["checks_before_commit"]
 
 
 def test_an_unknown_id_is_no_issue_and_drop_unknown_removes_it_and_counts() -> None:

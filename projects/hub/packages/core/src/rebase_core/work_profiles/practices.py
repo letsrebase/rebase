@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from rebase_core.work_profiles import tech_usage
-from rebase_core.work_profiles.tech_usage import _count, _timezone
+from rebase_core.work_profiles.tech_usage import is_count, is_month, is_timezone
 
 PRACTICES_PATH = Path(__file__).with_name("practices.json")
 RUBRIC = "rebase-practices/v1"
@@ -49,7 +49,7 @@ def _window_months(payload: dict[str, Any]) -> int | None:
     if not isinstance(window, dict):
         return None
     first, last = window.get("from"), window.get("to")
-    if not tech_usage._month(first) or not tech_usage._month(last) or first > last:
+    if not is_month(first) or not is_month(last) or first > last:
         return None
     return tech_usage.month_span(first, last)
 
@@ -63,14 +63,14 @@ def _item_issues(
     where = f"practices.{item.get('id')}"
     if item.get("method") != method:
         return [f"{where}: il metodo è «{item.get('method')}» ma la lista lo conta con «{method}»"]
-    if not all(_count(item.get(key)) for key in _KEYS):
+    if not all(is_count(item.get(key)) for key in _KEYS):
         return [f"{where}: seen, of, products e months sono numeri interi da zero in su"]
     seen, of, products, months = (item[key] for key in _KEYS)
     found: list[str] = []
     if seen > of:
         found.append(f"{where}: seen è {seen} ma solo {of} sessioni potevano mostrarlo (of)")
     total = volume.get("sessions")
-    if _count(total) and of > total:
+    if is_count(total) and of > total:
         found.append(f"{where}: of è {of} sessioni ma il profilo ne ha {total}")
     if method == "model" and of > MAX_MODEL_SAMPLE:
         found.append(
@@ -78,7 +78,7 @@ def _item_issues(
             f"{MAX_MODEL_SAMPLE} sessioni"
         )
     total = volume.get("products")
-    if _count(total) and products > total:
+    if is_count(total) and products > total:
         found.append(f"{where}: {products} prodotti ma il profilo ne ha {total}")
     if products > seen:
         found.append(f"{where}: {products} prodotti ma visto in sole {seen} sessioni")
@@ -93,7 +93,8 @@ def _item_issues(
 
 def issues(payload: dict[str, Any]) -> list[str]:
     """What is wrong with the `practices` block of `payload`, as sentences; nothing when the
-    block is absent (it is optional) or sound. Ids the vendored list does not know are skipped."""
+    block is absent (it is optional) or sound. An item that is no object or has no id is refused;
+    a well-formed item with an unknown id is skipped (see `drop_unknown`)."""
     block = payload.get("practices")
     if block is None:
         return []
@@ -105,7 +106,7 @@ def issues(payload: dict[str, Any]) -> list[str]:
             f"practices.rubric: è «{block.get('rubric')}» ma questo hub conta secondo «{RUBRIC}»"
         )
     zone = block.get("timezone")
-    if not _timezone(zone):
+    if not is_timezone(zone):
         found.append(f"practices.timezone: «{zone}» non è un fuso orario IANA")
     else:
         intensity = payload.get("intensity")
@@ -124,11 +125,14 @@ def issues(payload: dict[str, Any]) -> list[str]:
     window_months = _window_months(payload)
     methods = practice_methods()
     listed: set[str] = set()
-    for item in items:
-        if not isinstance(item, dict):
+    for position, item in enumerate(items, start=1):
+        ident = item.get("id") if isinstance(item, dict) else None
+        if not isinstance(item, dict) or not isinstance(ident, str) or not ident:
+            found.append(
+                f"practices.items[{position}]: non è una pratica (serve un oggetto con un id)"
+            )
             continue
-        ident = item.get("id")
-        if not isinstance(ident, str) or ident not in methods:
+        if ident not in methods:
             continue
         if ident in listed:
             found.append(f"practices.{ident}: compare più di una volta")
@@ -147,15 +151,21 @@ def drop_unknown(payload: dict[str, Any]) -> int:
     if not isinstance(items, list):
         return 0
     methods = practice_methods()
-    kept = [i for i in items if isinstance(i, dict) and i.get("id") in methods]
+    kept = [
+        i
+        for i in items
+        if isinstance(i, dict) and isinstance(i.get("id"), str) and i["id"] in methods
+    ]
     block["items"] = kept
     return len(items) - len(kept)
 
 
 def reads_true(item: Any) -> bool:
     """Whether a stored item is one the intake would have accepted on its own points: a known id,
-    the method the list gives it and counts that hold together. The view applies it so a profile
-    stored before a rule changed never shows a row the rules refuse."""
+    the method the list gives it and counts that hold together. It rechecks the item alone, not
+    the profile's totals or window, which the intake enforced when the profile was stored. The
+    view applies it so a profile stored before a rule changed never shows a row the rules
+    refuse."""
     if not isinstance(item, dict):
         return False
     ident = item.get("id")
