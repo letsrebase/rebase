@@ -662,6 +662,17 @@ approve. No sort or filter reads a band. On screen each technology is a `UsageBa
 or all of it by band and by nothing finer, with the band and the counts on hover and focus and in its
 accessible name, and the legend under the group.
 
+**Practices (REB-1144).** The fork's `practices` block (per working practice the sessions that showed
+it, those that could have, the products and months) is checked and dropped-and-counted at the intake by
+`work_profiles/practices.py`. `view.practices` reads the rows in the order of the vendored list, never
+sorted by the counts, into `WorkProfileView.practices` (the admin's panel) and
+`MemberWorkProfile.practices` (the person's own, empty once the profile expired or was rejected). A
+stored row the intake would refuse, a duplicate or a non-object is left out, never a 500. **Practices
+are nowhere a company reads**: not in `CloudTalentRead` or `CloudWorkProfile`, not in
+`talent_schemas`, not in the card's source text (`work_profiles/source.py`), not in the talent list,
+and no `ORDER BY` or `WHERE` reads one. The support pool of `groundedness.py` holds `seen`, `of`,
+`products` and `months`, as the fork's `groundedness.mjs` does.
+
 **What an approved profile changes outside the admin (REB-1127, spec §§ 5 and 7).**
 `CloudTalentRead.work_profile` (`CloudWorkProfile | null`, `team_schemas.py`) carries the summary,
 the domains' labels with their counts and the representative projects' abstract domains of a
