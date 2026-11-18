@@ -295,6 +295,13 @@ them under the conditions it lists.
   redacted on their machine, never the agent's replies.
 - Who answers: the person's own model, either their agent through the slash command or their own
   API key. rebase runs no model on this data.
+- Which agent and model: the person chooses them, both for the classification and for the
+  narrative. The processor is the person's own agent provider, chosen and paid by the person,
+  never rebase. The profile records the choice as `practices.classifiedBy` (`{ agent, model }`);
+  the hub bounds it (agent id up to 40 characters, model up to 120 printable characters) and
+  shows it next to the «dal modello della persona, non ricontrollato» mark.
+- The gate figures below hold for claude-opus-4-7 through the API prompt. Any other model is
+  recorded and shown, not measured.
 - The quality gate: a practice is published only if the model's answers agree with a written
   reference at 90% or more, and are stable across two runs, also at 90% or more. The reference set was written by an agent and read
   blind by a separate agent given only the messages and the rubric. The measured model was
@@ -383,6 +390,10 @@ the gate did not test. Measures: each row says how it was counted and shows its 
 2026-11-18, and § 6); admins and the person see the rows, companies do not; and the list and
 the rules are public, so anyone can check what a row means. Review the marks and the list when
 a practice is added or its rule changes.
+
+**Residual risk of the model choice (REB-1149).** An admin may read figures from an unmeasured
+model as comparable to measured ones. Measure: the mark, plus the agent and model, on every
+model row.
 
 ## 9. Sign-off
 
