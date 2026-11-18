@@ -177,6 +177,16 @@ class Settings(BaseSettings):
     secrets_key: str = Field(default="", repr=False)
     github_token: str = Field(default="", repr=False)
 
+    # --- signing in with GitHub or Google (REB-1137) -----------------------------------
+    # One OAuth app per provider, registered under letsrebase's accounts with the callback
+    # `{origin of hub_url}/api/hub/auth/oauth/<provider>/callback`. A provider whose id and
+    # secret are not both set is off: its button is not shown and its routes redirect to the
+    # login. The secrets are `repr=False`, so neither shows in a logged `Settings()`.
+    github_oauth_client_id: str = ""
+    github_oauth_client_secret: str = Field(default="", repr=False)
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = Field(default="", repr=False)
+
     @model_validator(mode="after")
     def _reserve_leaves_room(self) -> "Settings":
         # A reserve that eats the whole quota would hold every campaign for good while

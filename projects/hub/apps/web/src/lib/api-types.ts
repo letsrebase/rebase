@@ -723,8 +723,8 @@ export interface paths {
          * @description Who entered the hub and when (ORB-158): every login through a magic link, the
          *     distinct members behind them, the last week -- unchanged aggregate counters. REB-313
          *     adds `q` (nome/cognome/email, trigram-ordered once searching) and `cursor` to
-         *     `recent`, no longer a hardcoded top 20. Written by `POST /auth/enter` and by
-         *     nothing else.
+         *     `recent`, no longer a hardcoded top 20. Written by `POST /auth/enter`, by the provider
+         *     callbacks (REB-1137) and by nothing else.
          */
         get: operations["login_stats_api_hub_logins_get"];
         put?: never;
@@ -1505,6 +1505,87 @@ export interface paths {
         put?: never;
         /** Logout */
         post: operations["logout_api_hub_me_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/auth/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Providers
+         * @description Which sign-in buttons the login page shows: a provider is on only when its OAuth
+         *     app's id and secret are both configured here. Public, and it says nothing else.
+         */
+        get: operations["providers_api_hub_auth_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/auth/oauth/{provider}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Start
+         * @description Sends the browser to the provider. `next` is the page of the hub to come back to (the
+         *     CLI's `/cli?code=...` is the one that matters) and is kept only when it is one; the
+         *     campaign keys of the login page ride along so the login says where it came from.
+         */
+        get: operations["start_api_hub_auth_oauth__provider__start_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/auth/oauth/{provider}/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Callback */
+        get: operations["callback_api_hub_auth_oauth__provider__callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/auth/oauth/no-account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * No Account
+         * @description The provider and the address the no-account page names, from the cookie the callback
+         *     left in this browser; 404 when there is none (a page opened by hand, or an expired one).
+         */
+        get: operations["no_account_api_hub_auth_oauth_no_account_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2622,6 +2703,17 @@ export interface components {
             kind: "freelancer" | "lead" | "company" | "owner";
             /** Excluded */
             excluded: string | null;
+        };
+        /**
+         * AuthProviders
+         * @description Which providers the login page offers a button for: the ones whose OAuth app is
+         *     configured on this deployment.
+         */
+        AuthProviders: {
+            /** Github */
+            github: boolean;
+            /** Google */
+            google: boolean;
         };
         /**
          * Band
@@ -4302,6 +4394,11 @@ export interface components {
              * Format: date-time
              */
             logged_at: string;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "link" | "github" | "google";
             /** Origin */
             origin: string | null;
             /** Utm Source */
@@ -4706,6 +4803,17 @@ export interface components {
              * Format: uuid
              */
             da: string;
+        };
+        /**
+         * MissedAccount
+         * @description What the no-account page shows: which provider spoke and the address it vouched for,
+         *     read from a ten-minute cookie of the person's own browser. It is stored nowhere else.
+         */
+        MissedAccount: {
+            /** Provider */
+            provider: string;
+            /** Email */
+            email: string;
         };
         /** NeverWriteRequest */
         NeverWriteRequest: {
@@ -9209,6 +9317,104 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    providers_api_hub_auth_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthProviders"];
+                };
+            };
+        };
+    };
+    start_api_hub_auth_oauth__provider__start_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "github" | "google";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    callback_api_hub_auth_oauth__provider__callback_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "github" | "google";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    no_account_api_hub_auth_oauth_no_account_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissedAccount"];
+                };
             };
         };
     };

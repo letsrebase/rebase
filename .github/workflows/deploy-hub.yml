@@ -103,9 +103,14 @@ jobs:
       url: https://preview.letsrebase.com/hub/
       # The CRM's notices about engagements and its question about referrers (REB-1106),
       # equal to PIGROCRM_HUB_NOTICES_TOKEN. Optional: before the secret exists the two
-      # routes simply do not exist.
+      # routes simply do not exist. The four OAuth values of «Accedi con GitHub / Google»
+      # (REB-1137) are optional the same way: a provider without its pair is off.
       optional-env-secrets: |
         REBASE_PIGRO_NOTICES_TOKEN
+        REBASE_GITHUB_OAUTH_CLIENT_ID
+        REBASE_GITHUB_OAUTH_CLIENT_SECRET
+        REBASE_GOOGLE_OAUTH_CLIENT_ID
+        REBASE_GOOGLE_OAUTH_CLIENT_SECRET
     secrets: inherit
 
   production:
@@ -138,4 +143,8 @@ jobs:
         DOCUMENSO_BACKUP_PING_URL
       optional-env-secrets: |
         REBASE_PIGRO_NOTICES_TOKEN
+        REBASE_GITHUB_OAUTH_CLIENT_ID
+        REBASE_GITHUB_OAUTH_CLIENT_SECRET
+        REBASE_GOOGLE_OAUTH_CLIENT_ID
+        REBASE_GOOGLE_OAUTH_CLIENT_SECRET
     secrets: inherit

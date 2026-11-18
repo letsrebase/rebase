@@ -16,6 +16,10 @@ from rebase_core.models.profiles import UtmMixin
 # ---- the member area: how anyone gets back in -------------------------------------------
 
 TOKEN_HASH_LENGTH = 64  # sha256, hex
+# How a person got in (`Login.method`, migration 0058, REB-1137): the magic link, or the
+# provider that vouched for an address of theirs.
+LOGIN_METHODS = ("link", "github", "google")
+LOGIN_METHOD_MAX_LENGTH = 10
 
 
 class MagicLinkToken(Base, PrimaryKeyMixin, UtmMixin):
@@ -58,13 +62,15 @@ class MagicLinkToken(Base, PrimaryKeyMixin, UtmMixin):
 
 
 class Login(Base, PrimaryKeyMixin, UtmMixin):
-    """One row per time somebody entered through a magic link (ORB-158): who, when, and
+    """One row per time somebody entered, by magic link or since REB-1137 with GitHub or Google
+    (`method`) (ORB-158): who, when, and
     since REB-426 the campaign the login page was opened from (`UtmMixin`, copied off the
     token), so an outreach mail's link says who came in from it without a cookie. Nothing
     else -- no address, no user agent. A log rather than the session table,
     which forgets a session on logout and on expiry, so the admin can read who came in
-    and when a week later. Written by `UserService.enter` in the commit that opens the
-    session. Hangs on the person with `ON DELETE CASCADE`, like the sessions.
+    and when a week later. Written by `UserService._open_session` (the magic link's `enter` and the
+    provider sign-in) in the commit that opens the session. Hangs on the person with
+    `ON DELETE CASCADE`, like the sessions.
 
     Renamed from `member_logins`/`MemberLogin` in migration B (REB-281), the same
     reasoning as `UserSession` below: `user_id` is the owner for anyone who signs in,
@@ -79,6 +85,16 @@ class Login(Base, PrimaryKeyMixin, UtmMixin):
     )
     logged_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # `link` for the magic link, which is every row written before migration 0058, `github`
+    # or `google` for a sign-in a provider vouched for (REB-1137). Nothing else about the
+    # provider is kept: no account id, no token, no address.
+    method: Mapped[str] = mapped_column(
+        String(LOGIN_METHOD_MAX_LENGTH), nullable=False, default="link", server_default="link"
+    )
+
+    __table_args__ = (
+        CheckConstraint("method IN ('link', 'github', 'google')", name="ck_logins_method"),
     )
 
 

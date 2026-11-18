@@ -297,11 +297,12 @@ Non-goals    no chart of the counts, no comparison with other people, no editing
 ## 11. Signing in to the hub with GitHub or Google (not here)
 
 Lorenzo wants «Accedi con GitHub / Google» on the hub, with the magic link left as the
-alternative. It changes how anybody signs in, admins included, so it gets its own design
-under its own card in this project: account linking only on an address the provider
-says is verified and that matches a login address (spec 2026-09-17, one hub one identity),
-what happens to a person with no card, and the two OAuth clients, which Lorenzo creates
-under letsrebase's accounts. `/hub/cli` works with whichever sign-in the hub has.
+alternative. It changes how anybody signs in, admins included, so it has its own design,
+`2026-11-18-sign-in-with-github-or-google-design.md` (REB-1137): account linking only on an
+address the provider says is verified and that is a login address (spec 2026-09-17, one hub
+one identity), no account created for an address nobody here has, and the two OAuth clients,
+which Lorenzo creates under letsrebase's accounts. `/hub/cli` works with whichever sign-in
+the hub has.
 
 ## 12. Calls made in this design, confirmed by Lorenzo on 2026-11-17
 
@@ -318,4 +319,4 @@ under letsrebase's accounts. `/hub/cli` works with whichever sign-in the hub has
 Existing, reworded to this design: REB-1123 (the fork sends with the browser sign-in),
 REB-1124 (the intake of § 3), REB-1126 (the review of § 4, approval vets), REB-1127 (§ 5
 and § 7). New: the CLI sign-in in the hub (§ 2), the profile as a card source (§ 6), and
-the design for social sign-in (§ 11).
+the design for social sign-in (§ 11, `2026-11-18-sign-in-with-github-or-google-design.md`).

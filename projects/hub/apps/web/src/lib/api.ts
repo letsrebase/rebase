@@ -1001,6 +1001,10 @@ export type AiAuditAction = Schemas['AdminActionRead']
 
 export type MemberRequest = Schemas['MemberRequest']
 export type Me = Schemas['MeRead']
+/** Which sign-in buttons the login page shows (REB-1137). */
+export type AuthProviders = Schemas['AuthProviders']
+/** The provider and the address the no-account page names (REB-1137). */
+export type MissedAccount = Schemas['MissedAccount']
 export type MemberUpdate = Schemas['MemberUpdate']
 export type CompanyUpdate = Schemas['CompanyUpdate']
 export type MemberReferral = Schemas['MemberReferral']
@@ -1030,6 +1034,16 @@ export const member = {
       }),
     ),
   enter: (token: string) => unwrap(client.POST('/api/hub/auth/enter', { body: { token } }), reading<Me>()),
+  /** Which of «Accedi con GitHub» and «Accedi con Google» this deployment has configured. */
+  authProviders: () => unwrap(client.GET('/api/hub/auth/providers'), reading<AuthProviders>()),
+  /** Where a sign-in with a provider starts: a plain navigation, not a fetch, since the answer
+   *  is a redirect to the provider. `extra` is the campaign and the page to come back to. */
+  oauthStartUrl: (provider: 'github' | 'google', extra: Record<string, string> = {}) => {
+    const query = new URLSearchParams(extra).toString()
+    return `/api/hub/auth/oauth/${provider}/start${query ? `?${query}` : ''}`
+  },
+  /** The address a provider vouched for that no account uses; 404 when this browser holds none. */
+  noAccount: () => unwrap(client.GET('/api/hub/auth/oauth/no-account'), reading<MissedAccount>()),
   me: () => unwrap(client.GET('/api/hub/me'), reading<Me>()),
   update: (body: MemberUpdate) => unwrap(client.PATCH('/api/hub/me', { body }), reading<Me>()),
   /** The caller's whole list of extra contact points, replaced (REB-944). The sign-in address

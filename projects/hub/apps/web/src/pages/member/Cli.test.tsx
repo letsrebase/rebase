@@ -10,6 +10,7 @@ import {
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { rememberCliCode } from '@/lib/returnTo'
 import { Cli } from './Cli'
 
 const PENDING = {
@@ -48,7 +49,10 @@ function mount(path: string) {
   )
 }
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  window.localStorage.clear()
+})
 
 describe('/hub/cli', () => {
   it('shows the code and what the CLI will be able to do, and nothing about a device', async () => {
@@ -60,6 +64,14 @@ describe('/hub/cli', () => {
     expect(screen.getByRole('button', { name: 'Autorizza' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Annulla' })).toBeEnabled()
     expect(document.body.textContent).not.toMatch(/dispositivo|indirizzo IP/i)
+  })
+
+  it('forgets the code the login kept for it once the page is open (REB-1137)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, PENDING))
+    rememberCliCode('ABCD-EFGH')
+    mount('/cli?code=ABCD-EFGH')
+    await screen.findByLabelText('Codice')
+    expect(window.localStorage.getItem('rebase.returnTo')).toBeNull()
   })
 
   it('asks for the code with the one in the address', async () => {

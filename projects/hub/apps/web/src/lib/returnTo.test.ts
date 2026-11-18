@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { rememberCliCode, takeCliCode } from './returnTo'
+import { peekCliCode, rememberCliCode, takeCliCode } from './returnTo'
 
 afterEach(() => window.localStorage.clear())
 
@@ -31,5 +31,22 @@ describe('the code kept across the sign-in', () => {
     expect(takeCliCode(2)).toBeNull()
     window.localStorage.setItem('rebase.returnTo', 'not json')
     expect(takeCliCode(2)).toBeNull()
+  })
+})
+
+describe('peeking at the code', () => {
+  it('reads it without forgetting it, for the provider buttons', () => {
+    rememberCliCode('ABCD-EFGH', 1000)
+    expect(peekCliCode(2000)).toBe('ABCD-EFGH')
+    expect(peekCliCode(2000)).toBe('ABCD-EFGH')
+    expect(takeCliCode(2000)).toBe('ABCD-EFGH')
+    expect(peekCliCode(2000)).toBeNull()
+  })
+
+  it('applies the same rules as taking it', () => {
+    rememberCliCode('ABCD-EFGH', 0)
+    expect(peekCliCode(31 * 60 * 1000)).toBeNull()
+    window.localStorage.setItem('rebase.returnTo', '{"code":"//evil","at":1}')
+    expect(peekCliCode(2)).toBeNull()
   })
 })

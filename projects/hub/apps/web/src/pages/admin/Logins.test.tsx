@@ -11,7 +11,7 @@ function stats(overrides: Partial<Record<string, unknown>> = {}) {
     total_members: 4,
     last_7_days: 3,
     recent: [
-      { id: 'l-1', user_id: 'u-1', first_name: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it', logged_at: '2026-09-11T12:04:00Z' },
+      { id: 'l-1', user_id: 'u-1', first_name: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it', logged_at: '2026-09-11T12:04:00Z', method: 'link' },
     ],
     next_cursor: null,
     ...overrides,
@@ -48,6 +48,26 @@ describe('the Accessi page', () => {
     expect(row).toHaveTextContent(/11 set 2026/)
   })
 
+  it('says how each person got in: the link, GitHub or Google (REB-1137)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(
+        200,
+        stats({
+          recent: [
+            { id: 'l-1', user_id: 'u-1', first_name: 'Ada', last_name: 'Lovelace', email: 'ada@studio.it', logged_at: '2026-09-11T12:04:00Z', method: 'link' },
+            { id: 'l-2', user_id: 'u-2', first_name: 'Bob', last_name: 'Smith', email: 'bob@otherco.it', logged_at: '2026-09-11T13:00:00Z', method: 'github' },
+            { id: 'l-3', user_id: 'u-3', first_name: 'Eve', last_name: 'Jones', email: 'eve@otherco.it', logged_at: '2026-09-11T14:00:00Z', method: 'google' },
+          ],
+        }),
+      ),
+    )
+    mount()
+    await screen.findByText('ada@studio.it')
+    expect(screen.getByText('ada@studio.it').closest('tr')).toHaveTextContent('Link via mail')
+    expect(screen.getByText('bob@otherco.it').closest('tr')).toHaveTextContent('GitHub')
+    expect(screen.getByText('eve@otherco.it').closest('tr')).toHaveTextContent('Google')
+  })
+
   it('says when nobody has come in yet', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, stats({ total: 0, members: 0, last_7_days: 0, recent: [] })))
     mount()
@@ -69,7 +89,7 @@ describe('the Accessi page', () => {
         200,
         stats({
           recent: [
-            { id: 'l-2', user_id: 'u-2', first_name: 'Bob', last_name: 'Smith', email: 'bob@otherco.it', logged_at: '2026-09-11T13:00:00Z' },
+            { id: 'l-2', user_id: 'u-2', first_name: 'Bob', last_name: 'Smith', email: 'bob@otherco.it', logged_at: '2026-09-11T13:00:00Z', method: 'github' },
           ],
         }),
       ),
@@ -96,7 +116,7 @@ describe('the Accessi page', () => {
         200,
         stats({
           recent: [
-            { id: 'l-2', user_id: 'u-2', first_name: 'Bob', last_name: 'Smith', email: 'bob@otherco.it', logged_at: '2026-09-11T13:00:00Z' },
+            { id: 'l-2', user_id: 'u-2', first_name: 'Bob', last_name: 'Smith', email: 'bob@otherco.it', logged_at: '2026-09-11T13:00:00Z', method: 'github' },
           ],
         }),
       ),

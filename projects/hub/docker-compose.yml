@@ -79,6 +79,12 @@ x-hub-api-only: &hub-api-only
   # referred somebody. The value the CRM's `.env` carries as PIGROCRM_HUB_NOTICES_TOKEN. Empty:
   # neither route exists.
   REBASE_PIGRO_NOTICES_TOKEN: ${REBASE_PIGRO_NOTICES_TOKEN:-}
+  # «Accedi con GitHub» and «Accedi con Google» (REB-1137): one OAuth app per provider, registered
+  # under letsrebase's accounts. A provider with either value empty is off: no button, no route.
+  REBASE_GITHUB_OAUTH_CLIENT_ID: ${REBASE_GITHUB_OAUTH_CLIENT_ID:-}
+  REBASE_GITHUB_OAUTH_CLIENT_SECRET: ${REBASE_GITHUB_OAUTH_CLIENT_SECRET:-}
+  REBASE_GOOGLE_OAUTH_CLIENT_ID: ${REBASE_GOOGLE_OAUTH_CLIENT_ID:-}
+  REBASE_GOOGLE_OAUTH_CLIENT_SECRET: ${REBASE_GOOGLE_OAUTH_CLIENT_SECRET:-}
   # ChatGPT Ads, the server half of the signup conversion. Empty defaults: a site that runs no
   # campaigns is the ordinary case, not a start-up failure.
   REBASE_OPENAI_PIXEL_ID: ${REBASE_OPENAI_PIXEL_ID:-}

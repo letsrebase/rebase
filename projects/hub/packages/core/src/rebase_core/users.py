@@ -11,8 +11,10 @@ everything else that means the person.
 import hashlib
 import logging
 import secrets
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import delete, func, or_, select, update
@@ -30,6 +32,7 @@ from rebase_core.mail_member import magic_link_mail
 from rebase_core.models import (
     ATTRIBUTION_COLUMNS,
     USER_ROLES,
+    Company,
     Freelancer,
     Login,
     MagicLinkToken,
@@ -76,6 +79,18 @@ def refuse_linkedin_conflict(session: Session, exc: IntegrityError) -> None:
 
 def _hash(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
+
+
+@dataclass(frozen=True)
+class ProviderEntry:
+    """What a provider's verified addresses came to (`UserService.enter_with_provider`):
+    `entered` with the person and the raw session token for the cookie, `no_account` when
+    none of the addresses is a login address of a live person, `ambiguous` when they name
+    more than one person and none is chosen."""
+
+    outcome: Literal["entered", "no_account", "ambiguous"]
+    user: User | None = None
+    raw_session: str | None = None
 
 
 class UserService:
@@ -495,6 +510,19 @@ class UserService:
         if len(spent.scalars().all()) != 1:
             self.session.rollback()
             return None
+        # It carries the campaign the link was asked from, off the token (REB-426).
+        raw_session = self._open_session(
+            row, now, "link", {column: getattr(token, column) for column in ATTRIBUTION_COLUMNS}
+        )
+        self.session.commit()
+        return row, raw_session
+
+    def _open_session(
+        self, row: User, now: datetime, method: str, attribution: dict[str, Any]
+    ) -> str:
+        """The one place a sign-in becomes a session, whatever opened it: the session, the
+        login that outlives it and the referral proof, added to the caller's transaction (the
+        caller commits). `method` is how the person got in (`Login.method`)."""
         raw_session = secrets.token_urlsafe(32)
         self.session.add(
             UserSession(
@@ -503,19 +531,58 @@ class UserService:
         )
         # The login itself, kept after the session is gone (ORB-158): same commit, so a
         # session never exists without its login and a login never without its session.
-        # It carries the campaign the link was asked from, off the token (REB-426).
-        self.session.add(
-            Login(
-                user_id=row.id,
-                logged_at=now,
-                **{column: getattr(token, column) for column in ATTRIBUTION_COLUMNS},
-            )
-        )
-        # The same proof for the referrals that name this person (REB-658): they just
-        # spent a link mailed to their address, and this is the commit that records it.
+        self.session.add(Login(user_id=row.id, logged_at=now, method=method, **attribution))
+        # The same proof for the referrals that name this person (REB-658): they just proved
+        # the address, by a link mailed to it or by a provider that verified it (REB-1137),
+        # and this is the commit that records it.
         ReferralService(self.session).verify_on_login(row.id, now)
+        return raw_session
+
+    # ---- signing in with GitHub or Google (REB-1137) -----------------------------------
+
+    def is_removed(self, user: User) -> bool:
+        """A person an admin took down: not an admin, no live card and no live request,
+        and at least one card or request that was deleted. Nothing is hard-deleted in this
+        hub, so this is what «deleted» means for a `users` row."""
+        if user.role == "admin":
+            return False
+        deleted = False
+        for owned in (Freelancer, Company):
+            stamps = self.session.scalars(select(owned.deleted_at).where(owned.user_id == user.id))
+            for stamp in stamps:
+                if stamp is None:
+                    return False
+                deleted = True
+        return deleted
+
+    def enter_with_provider(
+        self, addresses: Sequence[str], method: str, utm: SignupUtm | None = None
+    ) -> ProviderEntry:
+        """Opens a session for the person whose login address the provider has verified.
+
+        `addresses` are the ones the provider vouched for. Each is compared with the login
+        address of a `users` row only (`by_email`, followed through a merge as the magic
+        link follows it): an extra contact point never decides who somebody is (REB-943),
+        and no row is ever created here. A deleted person is as unknown as no row. Two
+        different people behind one provider account are refused, not chosen between.
+        The session and the login are exactly the magic link's (`_open_session`)."""
+        people: dict[UUID, User] = {}
+        for address in addresses:
+            typed = self.by_email(address)
+            if typed is None:
+                continue
+            person = self.survivor(typed)
+            if not self.is_removed(person):
+                people[person.id] = person
+        if not people:
+            return ProviderEntry("no_account")
+        if len(people) > 1:
+            return ProviderEntry("ambiguous")
+        (row,) = people.values()
+        attribution = utm.model_dump() if utm is not None and not utm.is_empty() else {}
+        raw_session = self._open_session(row, datetime.now(UTC), method, attribution)
         self.session.commit()
-        return row, raw_session
+        return ProviderEntry("entered", row, raw_session)
 
     def resolve(self, raw: str | None) -> User | None:
         """The person behind a cookie, or `None`. Slides the expiry forward on use, but

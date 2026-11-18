@@ -122,6 +122,7 @@ from rebase_core.models.referrals import (
     ReferralSettings,
 )
 from rebase_core.models.sessions import (
+    LOGIN_METHODS,
     TOKEN_HASH_LENGTH,
     GuideDownload,
     Login,
@@ -201,6 +202,7 @@ __all__ = [
     "CLI_AUTHORIZATION_STATES",
     "CLI_HASH_LENGTH",
     "CLI_SCOPES",
+    "LOGIN_METHODS",
     "CliAuthorization",
     "COMPANY_STATES",
     "FILLED_BY",

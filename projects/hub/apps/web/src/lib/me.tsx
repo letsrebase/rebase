@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ApiError,
   member,
+  type AuthProviders,
   type CompanyRequest,
   type CompanyUpdate,
   type ContactPointWrite,
@@ -37,6 +38,22 @@ export function useMe() {
     },
     retry: false,
     staleTime: 60_000,
+  })
+}
+
+/** The providers the login page offers (REB-1137). A failed read is no provider: the page
+ *  keeps the magic link, which is the way in that always works. */
+export function useAuthProviders() {
+  return useQuery({
+    queryKey: ['auth-providers'] as const,
+    queryFn: async (): Promise<AuthProviders> => {
+      try {
+        return await member.authProviders()
+      } catch {
+        return { github: false, google: false }
+      }
+    },
+    staleTime: 5 * 60_000,
   })
 }
 

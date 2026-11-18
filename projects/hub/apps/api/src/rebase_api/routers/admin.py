@@ -663,8 +663,8 @@ def login_stats(
     """Who entered the hub and when (ORB-158): every login through a magic link, the
     distinct members behind them, the last week -- unchanged aggregate counters. REB-313
     adds `q` (nome/cognome/email, trigram-ordered once searching) and `cursor` to
-    `recent`, no longer a hardcoded top 20. Written by `POST /auth/enter` and by
-    nothing else."""
+    `recent`, no longer a hardcoded top 20. Written by `POST /auth/enter`, by the provider
+    callbacks (REB-1137) and by nothing else."""
     return LoginService(session).stats(limit=limit, q=q, cursor=cursor)
 
 
