@@ -255,7 +255,7 @@ const GUARD_RULES: Record<string, string> = {
   name_account_site_or_client: 'il nome, un account, un sito o un cliente della persona',
 }
 
-/** «Cosa leggono le aziende»: exactly the three fields the talent cloud shows once the profile is
+/** «Cosa leggono le aziende»: exactly the three fields companies see once the profile is
  *  approved, each with the anonymity guards' hits (the field and the rule, never the text). */
 function Hits({ profile, field }: { profile: WorkProfileAdmin; field: string }) {
   return (
