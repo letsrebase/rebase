@@ -61,7 +61,7 @@ describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
   it('says «Verificato» only for a person who is verified', () => {
     show({ ...BASE, state: 'approved' }, false)
     expect(screen.queryByText(/Sei «Verificato da rebase»/)).toBeNull()
-    expect(screen.getByText(/leggono il riassunto del tuo profilo/)).toBeInTheDocument()
+    expect(screen.getByText(/aziende con cui lavoriamo possono vedere il riassunto/)).toBeInTheDocument()
   })
 
   it('shows the note of a rejected profile and how to send another', () => {

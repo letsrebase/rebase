@@ -560,6 +560,35 @@ describe('company.html', () => {
 describe('privacy.html', () => {
   const page = html['privacy.html']
 
+  it('discloses the work profile: what comes in, who sees it, how long, on what basis', () => {
+    // REB-1139. Facts, not markup: the section has to say each of these.
+    const start = page.indexOf('Il profilo di lavoro</h2>')
+    expect(start).toBeGreaterThan(-1)
+    const text = page
+      .slice(start, page.indexOf('<h2>', start + 1))
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+    for (const fact of [
+      'facoltativo',
+      'work-profile',
+      'non arriva niente a rebase',
+      'profilo in formato json, senza nomi di clienti, prodotti, persone o repository',
+      'niente log',
+      'niente codice',
+      'una persona di rebase',
+      '«Verificato da rebase»',
+      'le aziende con cui lavoriamo possono vedere il riassunto, gli ambiti di lavoro e i settori dei progetti rappresentativi del tuo profilo, insieme al tuo nome e alla tua scheda',
+      'fornitore di intelligenza artificiale',
+      'al massimo 12 mesi dall\'invio',
+      'puoi cancellarlo prima dalla tua area, oppure scrivendoci',
+      'resta il «Verificato da rebase»: per toglierlo scrivici',
+      'consenso',
+    ]) {
+      expect(text.toLowerCase()).toContain(fact.toLowerCase())
+    }
+    expect(page).toContain('https://github.com/letsrebase/work-profile/blob/main/PRIVACY.md')
+  })
+
   it('names both restricted Gmail scopes, in full', () => {
     // Spec 13, criterion 26. Not pedantry: Google's review of a restricted scope
     // checks that the privacy policy states what the application does with the

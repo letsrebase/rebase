@@ -7,6 +7,7 @@ the JSON and the failure classification run for real.
 import base64
 import json
 import logging
+from datetime import date
 
 import pytest
 
@@ -19,7 +20,12 @@ from rebase_core.mail import (
     ResendSender,
     sender_from_settings,
 )
-from rebase_core.mail_member import CardSummary, magic_link_mail, welcome_mail
+from rebase_core.mail_member import (
+    CardSummary,
+    magic_link_mail,
+    welcome_mail,
+    work_profile_approved_mail,
+)
 from rebase_core.mail_team import talent_cloud_opened_mail
 
 KEY = "re_non_una_chiave_vera"
@@ -335,3 +341,15 @@ def test_the_talent_cloud_mail_names_the_company_and_links_to_the_cloud() -> Non
     assert hostile.html is not None
     for raw in ("<script>", "<b>Wile", "<i>Acme"):
         assert raw not in hostile.html
+
+
+def test_the_approval_mail_says_companies_we_work_with_see_the_profile() -> None:
+    """REB-1139: the mail does not limit who sees the summary to the talent cloud."""
+    mail = work_profile_approved_mail(
+        "ada@studio.it", first_name="Ada", expires_on=date(2027, 11, 18), url="https://x.it/me"
+    )
+    assert "aziende con cui lavoriamo possono vedere il riassunto" in mail.text
+    assert "gli ambiti di lavoro e i settori dei progetti rappresentativi" in mail.text
+    assert "insieme al tuo nome e alla tua scheda" in mail.text
+    assert "quando ti proponiamo per un progetto" in mail.text
+    assert "«Verificato da rebase»" in mail.text

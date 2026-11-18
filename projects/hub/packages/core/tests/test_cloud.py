@@ -898,3 +898,11 @@ def test_the_builder_files_its_own_cloud_proposal_at_once(
     with pytest.raises(InvalidState):
         hire(own)
     assert talents.scalars(select(TeamRequestTalent.request_id)).all() == [read.id]
+
+
+def test_a_company_reads_exactly_the_three_advertised_work_profile_fields() -> None:
+    """REB-1139: the member-facing copy promises the summary, the domains and the project
+    domains; a new field on this model must change the copy first."""
+    from rebase_core.team_schemas import CloudWorkProfile
+
+    assert set(CloudWorkProfile.model_fields) == {"summary", "domains", "project_domains"}
