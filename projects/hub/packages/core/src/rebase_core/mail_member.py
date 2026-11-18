@@ -164,8 +164,9 @@ def work_profile_approved_mail(
         [
             "abbiamo letto il tuo profilo di lavoro e l'abbiamo approvato. Da ora sei "
             "«Verificato da rebase» e le aziende con cui lavoriamo possono vedere il "
-            "riassunto, gli ambiti e i domini dei progetti del tuo profilo, per esempio nel "
-            "talent cloud o quando ti proponiamo per un progetto.",
+            "riassunto, gli ambiti di lavoro e i settori dei progetti rappresentativi del tuo "
+            "profilo, insieme al tuo nome e alla tua scheda, per esempio nel talent cloud o "
+            "quando ti proponiamo per un progetto.",
             f"Vale fino al {italian_date(expires_on)}. Lo trovi nella tua area, dove puoi "
             "eliminarlo quando vuoi.",
         ],

@@ -571,16 +571,17 @@ describe('privacy.html', () => {
     for (const fact of [
       'facoltativo',
       'work-profile',
-      'anonimo',
+      'non arriva niente a rebase',
+      'profilo in formato json, senza nomi di clienti, prodotti, persone o repository',
       'niente log',
       'niente codice',
-      'nomi di clienti, prodotti, persone o repository',
       'una persona di rebase',
       '«Verificato da rebase»',
-      'le aziende con cui lavoriamo possono vedere il riassunto, gli ambiti e i domini dei progetti',
+      'le aziende con cui lavoriamo possono vedere il riassunto, gli ambiti di lavoro e i settori dei progetti rappresentativi del tuo profilo, insieme al tuo nome e alla tua scheda',
       'fornitore di intelligenza artificiale',
-      'al massimo 12 mesi',
-      'dalla tua area',
+      'al massimo 12 mesi dall\'invio',
+      'puoi cancellarlo prima dalla tua area, oppure scrivendoci',
+      'resta il «Verificato da rebase»: per toglierlo scrivici',
       'consenso',
     ]) {
       expect(text.toLowerCase()).toContain(fact.toLowerCase())

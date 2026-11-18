@@ -72,9 +72,9 @@ function Explanation() {
       </p>
       <p>
         Una persona di rebase lo legge prima che conti qualcosa. Se lo approva, diventi «Verificato da rebase» e le
-        aziende con cui lavoriamo possono vedere il riassunto, gli ambiti e i domini dei progetti del tuo profilo, per
-        esempio nel talent cloud o quando ti proponiamo per un progetto. Lo teniamo al massimo 12
-        mesi e lo puoi eliminare quando vuoi.
+        aziende con cui lavoriamo possono vedere il riassunto, gli ambiti di lavoro e i settori dei progetti
+        rappresentativi del tuo profilo, insieme al tuo nome e alla tua scheda, per esempio nel talent cloud o quando
+        ti proponiamo per un progetto. Lo teniamo al massimo 12 mesi e lo puoi eliminare quando vuoi.
       </p>
     </div>
   )
@@ -101,8 +101,8 @@ function Standing({ profile, vetted }: { profile: Profile; vetted: boolean }) {
         </Badge>
         <p className="text-sm">
           {vetted ? 'Sei «Verificato da rebase» e le' : 'Le'} aziende con cui lavoriamo possono vedere il riassunto,
-          gli ambiti e i domini dei progetti del tuo profilo, per esempio nel talent cloud o quando ti proponiamo per
-          un progetto.
+          gli ambiti di lavoro e i settori dei progetti rappresentativi del tuo profilo, insieme al tuo nome e alla tua
+          scheda, per esempio nel talent cloud o quando ti proponiamo per un progetto.
         </p>
       </>
     )
