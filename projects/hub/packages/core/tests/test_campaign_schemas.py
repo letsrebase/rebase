@@ -31,6 +31,7 @@ TALENTS_FILTERS = {
     "utm_source": "linkedin",
     "has_cv": True,
     "with_logins": False,
+    "work_profile": "none",
     "created_from": "2026-01-01",
     "created_to": "2026-09-01",
 }

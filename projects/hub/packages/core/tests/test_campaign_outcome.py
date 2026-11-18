@@ -16,7 +16,7 @@ from campaign_fixtures import (  # noqa: F401  (fixture)
     lead,
     person,
 )
-from sqlalchemy import update
+from sqlalchemy import delete, update
 from sqlalchemy.orm import Session
 
 import rebase_core.campaigns.outcome as outcome_module
@@ -34,6 +34,7 @@ from rebase_core.models import (
     Login,
     Note,
     User,
+    WorkProfile,
 )
 
 NO_PAUSE = lambda _seconds: None  # noqa: E731
@@ -122,6 +123,32 @@ def test_a_card_that_became_complete_is_stamped_at_the_tick_that_saw_it(clean: S
     seen = clock.at + timedelta(days=1)
     stamp_outcomes(clean, now=seen)
     assert only_row(clean, campaign).action_at == seen
+
+
+def test_a_work_profile_sent_after_the_mail_is_stamped_and_survives_its_deletion(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    clock = Clock(NOW)
+    card = person(clean, "ada@studio.it")
+    campaign = sent(clean, clock, journey_status="complete", action="work_profile_sent")
+    at = clock.at + timedelta(hours=3)
+    clean.add(
+        WorkProfile(
+            freelancer_id=card.id,
+            payload={},
+            groundedness=90,
+            unsupported_anchors=[],
+            submitted_at=at,
+            expires_at=at + timedelta(days=365),
+        )
+    )
+    clean.commit()
+    stamp_outcomes(clean, now=at + timedelta(minutes=5))
+    assert only_row(clean, campaign).action_at == at
+    clean.execute(delete(WorkProfile))
+    clean.commit()
+    stamp_outcomes(clean, now=at + timedelta(days=1))
+    assert only_row(clean, campaign).action_at == at
 
 
 def test_a_card_created_after_the_mail_is_stamped_at_its_creation(clean: Session) -> None:  # noqa: F811  (fixture)

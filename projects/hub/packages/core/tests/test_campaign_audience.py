@@ -50,9 +50,11 @@ from rebase_core.models import (
     CampaignOptout,
     CampaignRecipient,
     Company,
+    Freelancer,
     Login,
     Note,
     User,
+    WorkProfile,
 )
 from rebase_core.notes import NoteService
 
@@ -134,6 +136,72 @@ def test_the_pigro_action_is_never_done_in_phase_one(clean: Session) -> None:  #
     candidate = candidates_for_state(clean, "complete")[0]
     row = recipient_for(clean, candidate, snapshot(clean, candidate, T0))
     assert done_at(clean, row, "pigro_customer") is None
+
+
+def _profile(session: Session, card: Freelancer, submitted: datetime, **fields: Any) -> None:
+    session.add(
+        WorkProfile(
+            freelancer_id=card.id,
+            payload={},
+            groundedness=90,
+            unsupported_anchors=[],
+            submitted_at=submitted,
+            expires_at=submitted + timedelta(days=365),
+            **fields,
+        )
+    )
+    session.commit()
+
+
+@pytest.mark.parametrize("state", ["draft", "approved", "rejected"])
+def test_a_work_profile_submitted_after_the_snapshot_counts_in_any_state(
+    clean: Session,  # noqa: F811  (fixture)
+    state: str,
+) -> None:
+    card = person(clean, "ada@studio.it")
+    candidate = candidates_for_state(clean, "complete")[0]
+    row = recipient_for(clean, candidate, snapshot(clean, candidate, T0))
+    assert done_at(clean, row, "work_profile_sent") is None
+    _profile(clean, card, T0 + timedelta(hours=1), state=state)
+    assert done_at(clean, row, "work_profile_sent") == T0 + timedelta(hours=1)
+
+
+def test_a_work_profile_from_before_the_mail_is_not_the_action(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    card = person(clean, "ada@studio.it")
+    _profile(clean, card, T0 - timedelta(days=2))
+    candidate = candidates_for_state(clean, "complete")[0]
+    row = recipient_for(clean, candidate, snapshot(clean, candidate, T0))
+    assert done_at(clean, row, "work_profile_sent") is None
+    assert done_at(clean, row, "work_profile_sent", since=T0 - timedelta(days=3)) == (
+        T0 - timedelta(days=2)
+    )
+
+
+def test_a_lead_or_a_card_with_no_work_profile_has_not_sent_one(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    lead(clean, "giulia@studio.it")
+    person(clean, "ada@studio.it")
+    found = (*candidates_for_state(clean, "lead"), *candidates_for_state(clean, "complete"))
+    for candidate in found:
+        row = recipient_for(clean, candidate, snapshot(clean, candidate, T0))
+        assert done_at(clean, row, "work_profile_sent") is None
+
+
+def test_the_work_profile_filter_picks_who_has_none(clean: Session) -> None:  # noqa: F811  (fixture)
+    with_one = person(clean, "ada@studio.it")
+    person(clean, "bruno@studio.it")
+    _profile(clean, with_one, T0)
+    campaign = campaign_row(
+        clean,
+        source="filters",
+        journey_status=None,
+        action="work_profile_sent",
+        filters={"list": "talents", "work_profile": "none"},
+    )
+    assert [c.email for c in candidates(clean, campaign)] == ["bruno@studio.it"]
 
 
 def test_an_address_with_no_card_never_has_done_cv_or_card_complete(

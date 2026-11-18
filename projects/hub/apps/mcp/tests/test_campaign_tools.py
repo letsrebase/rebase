@@ -174,6 +174,50 @@ async def test_a_link_campaign_shows_where_its_button_leads(
         )
 
 
+async def test_a_work_profile_campaign_reads_back_with_its_action_and_filter(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-1131: the seventh action and the work-profile filter read back as stored."""
+    session = factory()
+    try:
+        owner = User(
+            email="campagne-profilo-mcp@rebase.it", first_name="Ivan", last_name="S", role="admin"
+        )
+        session.add(owner)
+        session.flush()
+        campaign = Campaign(
+            created_by=owner.id,
+            name="Profilo",
+            slug="c-mcp-profilo",
+            source="filters",
+            filters={"list": "talents", "work_profile": "none"},
+            subject="o",
+            text="t",
+            button_text="Invia",
+            button_meta="area",
+            action="work_profile_sent",
+            status="draft",
+            content_at=SENT,
+        )
+        session.add(campaign)
+        session.commit()
+        campaign_id, owner_id = campaign.id, owner.id
+    finally:
+        session.close()
+    try:
+        async with Client(build_server(factory, lambda: IVAN)) as client:
+            listed = _payload(await client.call_tool("list_campaigns", {}))
+            one = _payload(
+                await client.call_tool("get_campaign", {"campaign_id": str(campaign_id)})
+            )
+    finally:
+        _drop(factory, campaign_id, owner_id)
+    item = next(i for i in listed["items"] if i["id"] == str(campaign_id))
+    for shown in (item, one["campaign"]):
+        assert shown["action"] == "work_profile_sent"
+    assert one["campaign"]["filters"]["work_profile"] == "none"
+
+
 def _add_recipients(factory: sessionmaker[Session], campaign_id: UUID, count: int) -> list[str]:
     session = factory()
     try:

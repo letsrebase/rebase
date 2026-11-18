@@ -31,8 +31,9 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         - if sending is halted, since when and why (`stalled_at`, `stalled_reason`), until
           the next email goes out (also when the daily email limit halts
           the rest of the list: `stalled_reason` gives the day it resumes);
-        - the action it measures: `signed_in`, `cv`, `card_complete`, `profile_created` or
-          `request_updated`, or `click` when the button leads to a link;
+        - the action it measures: `signed_in`, `cv`, `card_complete`, `profile_created`,
+          `request_updated` or `work_profile_sent` (a work profile submitted after the email),
+          or `click` when the button leads to a link;
         - in `counts` how many were sent, skipped, failed, delivered,
           bounced and clicked, how many people entered their area after the email
           (`entered`) and how many took the action (`actions`);

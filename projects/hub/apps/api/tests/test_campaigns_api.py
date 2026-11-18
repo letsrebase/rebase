@@ -174,6 +174,33 @@ def a_draft(client: TestClient) -> str:
     return str(created.json()["id"])
 
 
+def test_a_campaign_measures_a_work_profile_sent_and_filters_on_work_profile(
+    client: TestClient,
+    tidy: Session,  # noqa: F811  (fixture)
+    sender: RecordingSender,
+) -> None:
+    login_admin(client, sender, tidy)
+    body = {
+        "name": "Profilo",
+        "source": "filters",
+        "filters": {"list": "talents", "work_profile": "none"},
+        "subject": "o",
+        "text": "t",
+        "button_text": "b",
+        "button_meta": "area",
+        "action": "work_profile_sent",
+    }
+    created = client.post("/api/hub/campaigns", json=body)
+    assert created.status_code == 201, created.text
+    assert created.json()["action"] == "work_profile_sent"
+    assert created.json()["filters"]["work_profile"] == "none"
+    bad = client.post(
+        "/api/hub/campaigns",
+        json={**body, "filters": {"list": "talents", "work_profile": "rejected"}},
+    )
+    assert bad.status_code == 422
+
+
 def test_every_campaign_route_wants_an_admin(
     client: TestClient,
     tidy: Session,  # noqa: F811  (fixture)

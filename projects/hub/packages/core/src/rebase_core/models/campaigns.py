@@ -29,6 +29,7 @@ CAMPAIGN_ACTIONS = (
     "profile_created",
     "request_updated",
     "pigro_customer",
+    "work_profile_sent",
     "click",
 )
 CAMPAIGN_DESTINATIONS = ("area", "wizard", "pigro", "request", "link")
@@ -102,7 +103,7 @@ class Campaign(Base, PrimaryKeyMixin, TimestampMixin):
         ),
         CheckConstraint(
             "action IN ('signed_in', 'cv', 'card_complete', 'profile_created', "
-            "'request_updated', 'pigro_customer', 'click')",
+            "'request_updated', 'pigro_customer', 'work_profile_sent', 'click')",
             name="ck_campaigns_action",
         ),
         CheckConstraint(
