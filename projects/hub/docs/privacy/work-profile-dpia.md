@@ -7,7 +7,7 @@ This assessment covers what the hub does with the work profiles freelancers send
 `rebase-verify` (the CLI called `work-profile` until REB-1140; spec
 `docs/superpowers/specs/2026-11-17-work-profile-intake-and-review-design.md`), the
 per-technology usage bands added in REB-1130, the practices block added in REB-1142 (counts of
-seven ways of working), and two things we chose not to build: a
+twelve ways of working, seven by code and five by the person's model), and two things we chose not to build: a
 numeric score per technology, and a rating of higher-level skills. It is a living document:
 change it in the same pull request as any change to what the processing does, and keep the
 previous text in git history. Where it says "planned", the measure is a condition for shipping
@@ -47,7 +47,7 @@ products, months), the detected stack per project from a fixed vocabulary, abstr
 domains, prose written by the person's own model and reread by them, and (since REB-1129)
 per-technology usage bands with their counts (a technology name outside the fixed vocabulary is
 dropped before storage and only the count of dropped rows is kept, as data minimisation), and
-(since REB-1142) `practices`: counts of seven work practices, each as sessions seen out of the
+(since REB-1142) `practices`: counts of twelve work practices (seven by code, five classified by the person's model), each as sessions seen out of the
 sessions it could have happened in, with product and month counts (see the section on practices
 below). The tool is meant to leave out session logs,
 code, and client, product, person and repository names; the hub cannot verify the tool's
@@ -235,11 +235,14 @@ under these conditions:
 - the model is the person's own (their coding agent through the slash command, or their own API
   key), reading the person's own messages to their own agent;
 - it classifies against a published closed list, each practice with a definition and examples, and
-  answers yes or no per session; only the counts per practice leave the machine, never a message;
+  answers yes or no per session; only the counts per practice reach rebase. The sampled, redacted messages go to the person's own
+  model provider, chosen and paid by the person and not a rebase processor, and rebase never
+  receives them;
 - tone, feelings, politeness and the quality of the wording are never grounds for a yes (the
   Art. 5(1)(f) line on emotions below stays as it is);
 - a count of moves in a conversation (for example «asked for alternatives in 11 of 60 sessions»)
-  is a description of what happened, not a rating of the person;
+  is a description of what happened; that it is not a rating of the person is the premise of
+  Lorenzo's reading still to be confirmed (see below);
 - every such row is marked as coming from the person's model and not rechecked, and a practice
   enters the list only after passing the quality gate in § 8.
 
@@ -292,9 +295,9 @@ them under the conditions it lists.
   API key. rebase runs no model on this data.
 - The quality gate: a practice is published only if the model's answers agree with a written
   reference at 90% or more, and are stable across two runs, also at 90% or more. The model was
-  claude-opus-4-7 through the Claude Code CLI. Agreement on a written set of 224 sessions (10 yes
-  and 10 no per practice and language, written for the purpose, read blind by a second reader,
-  6 rewritten, 16 dropped): `asks_for_alternatives` 224/224, `pushes_back_with_reason` 220/224,
+  claude-opus-4-7 through the Claude Code CLI. Agreement on a written set of 224 sessions (240 written, 10 + 10 per
+  practice and language, read blind by a second reader; 6 rewritten and read blind again, 16
+  dropped, 224 kept, at least 8 + 8 per practice and language): `asks_for_alternatives` 224/224, `pushes_back_with_reason` 220/224,
   `states_done_criteria` 223/224, `raises_risks` 218/224, `limits_scope` 220/224, and
   `gives_context_and_constraints` 196/224, which failed. Stability, two runs on 40 real sessions
   of the developer's own (client paths excluded; some were dispatched by an agent): 39/40, 37/40,
@@ -305,13 +308,14 @@ them under the conditions it lists.
 - `gives_context_and_constraints` is left out: it is not published, has no label, and a profile
   that carries it has it dropped and counted as an unknown id.
 - What the hub can do: bound `seen <= of <= 60`, and nothing more. It never re-derives a count,
-  since the messages stay on the person's machine.
+  since the messages go only to the person's own model provider and never to rebase.
 - What the person can do: steer their agent while it classifies, or edit the file before sending.
 - Every model row is marked «dal modello della persona, non ricontrollato».
 
 **Denominators.** Each practice is counted against the sessions where it could have happened,
 and shown as seen out of that number, never as a percentage or a total:
 
+- the model practices: the number of sessions classified, at most 60;
 - sessions with a commit: `checks_before_commit`;
 - sessions with a commit or a pull request: `reviews_changes`;
 - sessions with an edit: `plan_before_edit`, `design_documents`, `security_checks`;
