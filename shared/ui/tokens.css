@@ -101,6 +101,21 @@
   --line: 1px;
   --line-strong: 2px;
 
+  /* The meter badge (`variant="meter"` of badge.tsx, REB-1130): a badge whose own
+     background fills from the left like a progress bar, in three steps and no others, so
+     it can say «a little», «a good deal» or «all of it» and never a number. The fill is
+     Royal Gold under the ink text (12.9:1) and the unfilled part is the white card (ink
+     on it 16.8:1), so the label clears AA over both halves. Gold on white is only 1.36:1,
+     which is too faint to carry the level on its own, so the badge also draws a 2px ink
+     rail along its bottom edge for as far as the fill goes: that rail, not the hue, is
+     what a reader with low vision or no colour reads the level by, and it crosses no
+     letter (`tokens.test.ts`, «the meter badge»). */
+  --meter-fill: var(--color-royal-gold);
+  --meter-ground: var(--card);
+  --meter-third: 33.333%;
+  --meter-two-thirds: 66.667%;
+  --meter-full: 100%;
+
   /* The step: an ink offset, never a blur, moved by this many pixels in the colour of
      the ink. Half the site's 8px (`projects/website/src/landing.css`), which is what
      "the same system, one weight lighter" means on a dense screen. */

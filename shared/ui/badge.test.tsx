@@ -77,4 +77,55 @@ describe('Badge', () => {
     expect(badge.className).toContain('[a]:hover:underline')
     expect(badge.className).not.toMatch(/hover:bg-destructive/)
   })
+
+  describe('the meter variant', () => {
+    it('is a bordered ink-on-white badge whose gradients read the meter tokens and the strong line', () => {
+      render(<Badge variant="meter">Python</Badge>)
+      const badge = screen.getByText('Python')
+      expect(badge).toHaveAttribute('data-variant', 'meter')
+      expect(badge).not.toHaveAttribute('data-fill')
+      expect(badge.className).toContain('border-border')
+      expect(badge.className).toContain('text-foreground')
+      expect(badge.className).toContain('bg-(--meter-ground)')
+      // The ink rail along the bottom and the fill behind the label, both through tokens: no
+      // hex and no px.
+      expect(badge.className).toContain('var(--meter-fill)')
+      expect(badge.className).toContain('var(--foreground)')
+      expect(badge.className).toContain('var(--meter-ground)')
+      expect(badge.className).toContain('bg-size-[100%_var(--line-strong),100%_100%]')
+      expect(badge.className).not.toMatch(/#[0-9a-f]{3,8}\b/i)
+      const paint = badge.className.split(' ').filter((name) => name.startsWith('bg-'))
+      expect(paint.join(' ')).not.toMatch(/\d(px|rem)/)
+    })
+
+    it.each([
+      ['third', '--meter-third'],
+      ['two-thirds', '--meter-two-thirds'],
+      ['full', '--meter-full'],
+    ] as const)('fills %s of the way from the left through %s', (fill, token) => {
+      render(
+        <Badge variant="meter" fill={fill}>
+          Python
+        </Badge>,
+      )
+      const badge = screen.getByText('Python')
+      expect(badge).toHaveAttribute('data-fill', fill)
+      expect(badge.className).toContain(`[--meter-level:var(${token})]`)
+    })
+
+    it('has exactly three fills, so no finer level can be asked for', () => {
+      const fills = ['third', 'two-thirds', 'full'] as const
+      for (const fill of fills) {
+        const { container, unmount } = render(<Badge variant="meter" fill={fill} />)
+        const levels = container.querySelector('[data-slot="badge"]')!.className.match(/\[--meter-level:/g)
+        expect(levels).toHaveLength(1)
+        unmount()
+      }
+    })
+
+    it('puts no fill on a badge that does not ask for one', () => {
+      render(<Badge variant="outline">Bozza</Badge>)
+      expect(screen.getByText('Bozza').className).not.toContain('--meter-level')
+    })
+  })
 })
