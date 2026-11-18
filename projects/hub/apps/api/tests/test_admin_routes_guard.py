@@ -56,6 +56,20 @@ NOT_ADMIN: dict[Route, tuple[str, str]] = {
     # --- signing in
     ("POST", "/api/hub/auth/link"): (PUBLIC, "asks a magic link, behind spend_one"),
     ("POST", "/api/hub/auth/enter"): (PUBLIC, "spends a magic link, behind spend_one"),
+    ("GET", "/api/hub/auth/providers"): (PUBLIC, "which sign-in buttons are on; says nothing else"),
+    ("GET", "/api/hub/auth/oauth/{provider}/start"): (
+        PUBLIC,
+        "sends the browser to GitHub or Google, behind spend_one (REB-1137)",
+    ),
+    ("GET", "/api/hub/auth/oauth/{provider}/callback"): (
+        PUBLIC,
+        "the provider's redirect: state and PKCE checked, opens a person only on a verified "
+        "login address, behind spend_one (REB-1137)",
+    ),
+    ("GET", "/api/hub/auth/oauth/no-account"): (
+        PUBLIC,
+        "reads the browser's own ten-minute cookie, nothing from the database",
+    ),
     ("POST", "/api/hub/members/lookup"): (PUBLIC, "the wizards' «sei già dei nostri?» check"),
     ("POST", "/api/hub/engagement-notices"): (
         PUBLIC,
