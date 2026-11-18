@@ -92,6 +92,7 @@ from rebase_core.search import (
     string_field_matches,
 )
 from rebase_core.talent_schemas import TalentList, TalentOrigin, TalentRead
+from rebase_core.work_profiles.view import technology_rows
 
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
@@ -224,12 +225,19 @@ def card_fields(
 
 
 def _card_read(
-    row: Freelancer, user: User, card: object, work_profile_state: str | None = None
+    row: Freelancer,
+    user: User,
+    card: object,
+    work_profile_state: str | None = None,
+    usage: object = None,
 ) -> TalentRead:
     """One freelancer as a row: the columns every card row carries (`card_row_fields`),
-    then `card_fields` for what the anonymous `card` says."""
+    then `card_fields` for what the anonymous `card` says. `usage` is the `techUsage.technologies`
+    of the person's work profile, passed only when it is approved and has not expired
+    (REB-1130): the row never reads a draft's bands."""
     return TalentRead(
         work_profile_state=work_profile_state,
+        technologies=technology_rows(usage),
         **card_row_fields(row, user),
         origin=_ORIGIN_BY_FILLED_BY.get(row.filled_by, "wizard"),
         has_anonymous_card=isinstance(card, dict),
@@ -575,6 +583,22 @@ def work_profile_states(session: Session, freelancer_ids: Sequence[UUID]) -> dic
     return {freelancer_id: state for freelancer_id, state in rows}
 
 
+def approved_technologies(session: Session, freelancer_ids: Sequence[UUID]) -> dict[UUID, Any]:
+    """The `techUsage.technologies` of each person's approved work profile that has not
+    expired, by freelancer id (REB-1130). Only that part of the payload is read, in the
+    database, so a page of rows never carries whole profiles; a draft's bands are not here."""
+    if not freelancer_ids:
+        return {}
+    rows = session.execute(
+        select(WorkProfile.freelancer_id, WorkProfile.payload["techUsage"]["technologies"]).where(
+            WorkProfile.freelancer_id.in_(freelancer_ids),
+            WorkProfile.state == "approved",
+            WorkProfile.expires_at > utcnow(),
+        )
+    )
+    return {freelancer_id: technologies for freelancer_id, technologies in rows}
+
+
 class TalentsService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -597,6 +621,7 @@ class TalentsService:
             found[1],
             found.card,
             work_profile_states(self.session, [freelancer_id]).get(freelancer_id),
+            approved_technologies(self.session, [freelancer_id]).get(freelancer_id),
         )
         row.duplicate_possible_of = duplicates_of(self.session, [freelancer_id]).get(
             freelancer_id, []
@@ -756,7 +781,16 @@ class TalentsService:
                         WorkProfile.expires_at > utcnow(),
                     ),
                 )
-                .add_columns(WorkProfile.state.label("work_state"))
+                .add_columns(
+                    WorkProfile.state.label("work_state"),
+                    case(
+                        (
+                            WorkProfile.state == "approved",
+                            WorkProfile.payload["techUsage"]["technologies"],
+                        ),
+                        else_=None,
+                    ).label("work_usage"),
+                )
             )
             # A row reads `cv_size` and the file's name, never the PDF itself: a page of
             # 100 cards (or a campaign's whole list, P-REB-41) must not carry 100 CVs.
@@ -779,7 +813,7 @@ class TalentsService:
                     (
                         sort_value,
                         freelancer.id,
-                        _card_read(freelancer, user, row.card, row.work_state),
+                        _card_read(freelancer, user, row.card, row.work_state, row.work_usage),
                     )
                 )
 

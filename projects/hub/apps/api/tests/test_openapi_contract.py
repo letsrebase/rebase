@@ -36,6 +36,7 @@ from rebase_core.models import (
     TEAM_PROPOSAL_ORIGINS,
     TEAM_REQUEST_ORIGINS,
     TEAM_REQUEST_STATES,
+    TECH_USAGE_BANDS,
     USER_ROLES,
 )
 from rebase_core.referral_schemas import VERIFIED_VIA
@@ -140,6 +141,7 @@ def _enum(prop: dict[str, Any]) -> list[str] | None:
         ("MergeRead", "cv", CV_OUTCOMES),
         ("ContactPointRead", "kind", CONTACT_KINDS),
         ("ContactPointRead", "label", CONTACT_LABELS),
+        ("WorkProfileTechnology", "band", TECH_USAGE_BANDS),
     ],
 )
 def test_a_closed_vocabulary_is_an_enum_of_its_constant(

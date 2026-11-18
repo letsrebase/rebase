@@ -98,6 +98,7 @@ const ICON_SIZES = ['icon-xs', 'icon-sm', 'icon', 'icon-lg'] as const
 const SHEET_SIDES = ['right', 'left', 'top', 'bottom'] as const
 const BADGE_VARIANTS = ['default', 'secondary', 'destructive', 'outline', 'ghost', 'link', 'pill'] as const
 const DOT_TINTS = ['ink', 'muted', 'accent', 'gold', 'danger'] as const
+const METER_FILLS = ['third', 'two-thirds', 'full'] as const
 
 function Section({
   title,
@@ -183,7 +184,10 @@ export function Gallery() {
           </Row>
         </Section>
 
-        <Section title="Badge" note="Seven variants and the five dot tints, all on the page ground.">
+        <Section
+          title="Badge"
+          note="Seven variants, the five dot tints and the meter, which fills a third, two thirds or all of it."
+        >
           {BADGE_VARIANTS.map((variant) => (
             <Row key={variant} label={variant}>
               <Badge variant={variant}>Attiva</Badge>
@@ -193,6 +197,14 @@ export function Gallery() {
             {DOT_TINTS.map((dot) => (
               <Badge key={dot} variant="pill" dot={dot}>
                 {dot}
+              </Badge>
+            ))}
+          </Row>
+          <Row label="meter">
+            <Badge variant="meter">nessuno</Badge>
+            {METER_FILLS.map((fill) => (
+              <Badge key={fill} variant="meter" fill={fill}>
+                {fill}
               </Badge>
             ))}
           </Row>

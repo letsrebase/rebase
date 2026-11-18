@@ -515,3 +515,39 @@ describe('the chart hues', () => {
     }
   })
 })
+
+describe('the meter badge', () => {
+  // The fill of `variant="meter"` (REB-1130), measured through the slots it reads. The label
+  // is ink and sits over both the fill and the unfilled part, so both pairs have to clear AA;
+  // the fill against the ground does not (1.36:1), which is why the badge also draws an ink
+  // rail along its bottom edge for as far as the fill goes and why that rail is asserted here.
+  const ink = () => tokenHex('prussian-blue')
+
+  it('fills with Royal Gold on the white card, the palette and the slot, never a hex of its own', () => {
+    expect(declaration(':root', '--meter-fill')).toBe('var(--color-royal-gold)')
+    expect(declaration(':root', '--meter-ground')).toBe('var(--card)')
+    expect(declaration(':root', '--card')).toBe('#ffffff')
+  })
+
+  it('reads the label in ink at AA over the filled part and over the unfilled part', () => {
+    expect(contrastRatio(ink(), tokenHex('royal-gold'))).toBeGreaterThanOrEqual(AA_TEXT)
+    expect(contrastRatio(ink(), '#ffffff')).toBeGreaterThanOrEqual(AA_TEXT)
+  })
+
+  it('draws the level with an ink rail, because the fill alone is too faint against the ground', () => {
+    // Recorded so a change of fill that clears or fails the faint pair is noticed: the edge
+    // is for the day somebody makes the fill lighter still.
+    expect(contrastRatio(tokenHex('royal-gold'), '#ffffff')).toBeLessThan(AA_NON_TEXT)
+    // The rail is ink on the fill's side and on the ground's side.
+    expect(contrastRatio(ink(), tokenHex('royal-gold'))).toBeGreaterThanOrEqual(AA_NON_TEXT)
+    expect(contrastRatio(ink(), '#ffffff')).toBeGreaterThanOrEqual(AA_NON_TEXT)
+  })
+
+  it('has three steps, a third, two thirds and all of it', () => {
+    expect(declaration(':root', '--meter-third')).toBe('33.333%')
+    expect(declaration(':root', '--meter-two-thirds')).toBe('66.667%')
+    expect(declaration(':root', '--meter-full')).toBe('100%')
+    // The rail is the record's strong width, never a number typed into the badge.
+    expect(declaration(':root', '--line-strong')).toBe('2px')
+  })
+})

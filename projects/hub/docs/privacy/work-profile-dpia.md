@@ -6,7 +6,7 @@ lawyer; nothing here is legal advice, and the sign-off at the end is still open.
 This assessment covers what the hub does with the work profiles freelancers send with
 `rebase-verify` (the CLI called `work-profile` until REB-1140; spec
 `docs/superpowers/specs/2026-11-17-work-profile-intake-and-review-design.md`), the
-per-technology usage bands being built in REB-1130, and two things we chose not to build: a
+per-technology usage bands added in REB-1130, and two things we chose not to build: a
 numeric score per technology, and a rating of higher-level skills. It is a living document:
 change it in the same pull request as any change to what the processing does, and keep the
 previous text in git history. Where it says "planned", the measure is a condition for shipping
@@ -67,7 +67,7 @@ checks (below). The person's identity comes from the hub sign-in, not from the p
   the clients of their engagements), not third parties in general. The prose only admins read
   (narratives, trajectory, principles, URL artifacts) relies on the tool's redaction and the
   admin's reading.
-- Planned in REB-1130: bands shown to the freelancer and to admins, never to companies.
+- In place (REB-1130): bands shown to the freelancer and to admins, never to companies.
 
 **Recipients.**
 
@@ -152,12 +152,16 @@ In place:
 - 12-month retention, deletion from the member area, the rejection note visible to the person.
 - The card-source switch stays off until Lorenzo turns it on.
 - The rule in DECISIONS.md (2026-11-18): no numeric score or ranking about a person.
+- REB-1130: bands are derived by the intake from month counts alone, with the fork's own rule, and
+  a profile whose claim does not match its counts is refused. They are shown with their counts; the
+  badge fill shows the band and nothing finer; a legend says it measures how often and how
+  steadily a technology appears in the work, not how well the person knows it. No sort or filter
+  reads a band. Admins see an approved profile's bands on «Talenti» and on the talent's page, the
+  reviewing admin a draft's in the review panel only, the person their own in the member area,
+  and the talent cloud carries none.
 
 Planned, and conditions for shipping the part they belong to:
 
-- REB-1130: bands derived only from month counts, shown with their counts; the badge fill shows
-  the band and nothing finer; a legend says it measures how often and how steadily a
-  technology appears in the work, not how well the person knows it; companies do not see bands.
 - The member area says how to have the vetted flag removed.
 
 Open, for Lorenzo:

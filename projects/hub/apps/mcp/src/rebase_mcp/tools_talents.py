@@ -257,7 +257,10 @@ def register(mcp: MCPServer, deps: Deps) -> None:
         team builder, and `availability` as `list_talents` describes it, read from PigroCRM for
         this card alone (`availability_error` instead when PigroCRM cannot answer), and
         `work_profile_state` (`draft`, `approved`, `rejected`, `None` when the person sent none
-        or it expired): the profile itself is `get_work_profile`. Read-only."""
+        or it expired) and `technologies`, the usage bands of an approved profile's technologies
+        (`occasional`, `recurring` or `continuous`, with the sessions, products and months they
+        come from, strongest first, `[]` for any other state): the profile itself is
+        `get_work_profile`. Read-only."""
         key = to_uuid(talent_id, "talent_id")
 
         def call(session: Session) -> dict[str, Any]:

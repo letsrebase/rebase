@@ -8,3 +8,11 @@ To refresh it: copy share/tech-lexicon.json from the fork over tech-lexicon.json
 above, and run `uv run pytest projects/hub/packages/core/tests/test_work_profile_groundedness.py`.
 The fork's `npm run lexicon` regenerates it from its label maps; if groundedness.mjs changed, port
 the change to groundedness.py and the test vectors with it.
+
+tech-labels.json is the output of labelVocabulary() in the fork's src/digest.mjs at commit
+8914d0b0395af77371251107883f3425c14f2b92, sorted: every technology label the stack detection can
+emit, which is what a name in techUsage must be (tech_usage.py). It is a second file because the
+lexicon above holds tokens, with generic words dropped, and cannot say whether «Go» or «Shell» is a
+label. To refresh it, run the command in its own $comment in the fork, paste the list in, update the
+commit above, and run `uv run pytest projects/hub/packages/core/tests/test_work_profile_tech_usage.py`,
+which also checks that every label's words are in the lexicon.

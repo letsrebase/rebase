@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { TableCell, TableRow } from '@rebase/ui/table'
+import { UsageBadges } from '@/components/TechUsage'
 import { WebLink } from '@/components/WebLink'
 import { admin, type Talent, type TalentCommitments } from '@/lib/api'
 import { failureMessage } from '@/lib/adminList'
@@ -66,6 +67,8 @@ export function TalentRow({
           skills ran on over Tariffa and Modalità (REB-1119). */}
       <TableCell className="max-w-64 min-w-48 whitespace-normal text-muted-foreground">
         {item.skills.length > 0 ? item.skills.slice(0, FIRST_SKILLS).join(', ') : '—'}
+        {/* An approved profile's bands only: the API leaves the list empty for a draft (REB-1130). */}
+        <UsageBadges technologies={item.technologies} limit={FIRST_TECHNOLOGIES} className="mt-1.5" />
       </TableCell>
       <TableCell className="text-right text-muted-foreground">
         {item.daily_rate === null ? '—' : formatMoney(item.daily_rate)}
@@ -120,3 +123,6 @@ function remoteLabel(value: string | null): string {
   if (value === null) return '—'
   return (REMOTE_LABELS as Record<string, string>)[value] ?? '—'
 }
+
+/** The technologies a row shows before «+N»: the strongest bands first, the rest on the talent's page. */
+const FIRST_TECHNOLOGIES = 4

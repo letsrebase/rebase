@@ -51,6 +51,7 @@ from rebase_core.models import (
     TEAM_PROPOSAL_ORIGINS,
     TEAM_REQUEST_ORIGINS,
     TEAM_REQUEST_STATES,
+    TECH_USAGE_BANDS,
     USER_ROLES,
     WORK_PROFILE_STATES,
 )
@@ -103,5 +104,6 @@ ContactKind = Annotated[str, Field(json_schema_extra=enum_of(CONTACT_KINDS))]
 ContactLabel = Annotated[str, Field(json_schema_extra=enum_of(CONTACT_LABELS))]
 AiSourceKind = Annotated[str, Field(json_schema_extra=enum_of(AI_SOURCE_KINDS))]
 WorkProfileState = Annotated[str, Field(json_schema_extra=enum_of(WORK_PROFILE_STATES))]
+TechUsageBand = Annotated[str, Field(json_schema_extra=enum_of(TECH_USAGE_BANDS))]
 CliAuthorizationState = Annotated[str, Field(json_schema_extra=enum_of(CLI_AUTHORIZATION_STATES))]
 CliScope = Annotated[str, Field(json_schema_extra=enum_of(CLI_SCOPES))]

@@ -250,3 +250,90 @@ def test_approve_and_reject_are_closed_to_members_and_the_signed_out(
     login_as(client, sender, "ada@studio.it")
     assert client.post(f"{url}/approve", json=body).status_code == 403
     assert client.post(f"{url}/reject", json=body).status_code == 403
+
+
+_USAGE = {
+    "timezone": "Europe/Rome",
+    "technologies": [
+        {
+            "name": "Python",
+            "sessions": 12,
+            "products": 3,
+            "months": 6,
+            "firstMonth": "2026-01",
+            "lastMonth": "2026-06",
+            "band": "continuous",
+        },
+        {
+            "name": "Zod",
+            "sessions": 4,
+            "products": 1,
+            "months": 3,
+            "firstMonth": "2026-01",
+            "lastMonth": "2026-03",
+            "band": "recurring",
+        },
+    ],
+}
+
+
+def _with_usage(session: Session, freelancer_id: str) -> None:
+    row = session.scalars(
+        select(WorkProfile).where(WorkProfile.freelancer_id == UUID(freelancer_id))
+    ).one()
+    row.payload = {**row.payload, "techUsage": _USAGE}
+    session.commit()
+
+
+def test_the_usage_bands_are_the_reviewers_while_a_draft_and_the_talent_screens_once_approved(
+    client: TestClient, api_session: Session, admin: None
+) -> None:
+    draft = _seed(api_session, "draft@studio.it")
+    approved = _seed(api_session, "approved@studio.it")
+    for freelancer_id in (draft, approved):
+        _with_usage(api_session, freelancer_id)
+
+    # The reviewing admin reads a draft's bands, strongest first, with their counts.
+    read = client.get(f"/api/hub/freelancers/{draft}/work-profile").json()
+    assert [(t["name"], t["band"]) for t in read["profile"]["technologies"]] == [
+        ("Python", "continuous"),
+        ("Zod", "recurring"),
+    ]
+    assert read["profile"]["technologies"][0] == {
+        "name": "Python",
+        "band": "continuous",
+        "sessions": 12,
+        "products": 3,
+        "months": 6,
+        "first_month": "2026-01",
+        "last_month": "2026-06",
+    }
+
+    # The talent list shows none of a draft's, and an approved profile's once decided.
+    _decide(
+        client, f"/api/hub/freelancers/{approved}/work-profile", "approve", {}
+    ).raise_for_status()
+    listed = {i["id"]: i for i in client.get("/api/hub/talent").json()["items"]}
+    assert listed[draft]["technologies"] == []
+    assert [t["name"] for t in listed[approved]["technologies"]] == ["Python", "Zod"]
+
+
+def test_the_member_reads_their_own_bands_and_the_cloud_none(
+    client: TestClient, api_session: Session, sender: RecordingSender
+) -> None:
+    from rebase_core.team_schemas import CloudWorkProfile
+
+    # What a company reads of a profile has no band at all: the three approved fields.
+    assert set(CloudWorkProfile.model_fields) == {"summary", "domains", "project_domains"}
+    api_session.add(User(email=ADMIN_EMAIL, first_name="Ivan", last_name="", role="admin"))
+    api_session.commit()
+    freelancer_id = _seed(api_session, "grace@studio.it")
+    _with_usage(api_session, freelancer_id)
+
+    login_as(client, sender, "grace@studio.it")
+    mine = client.get("/api/hub/me").json()["work_profile"]
+
+    assert [(t["name"], t["band"]) for t in mine["technologies"]] == [
+        ("Python", "continuous"),
+        ("Zod", "recurring"),
+    ]

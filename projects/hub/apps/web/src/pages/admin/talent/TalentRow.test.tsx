@@ -118,3 +118,58 @@ describe('«Da rivedere» on Talenti (REB-1126)', () => {
     expect(await screen.findByLabelText('Profilo di lavoro')).toBeInTheDocument()
   })
 })
+
+describe('the usage bands on Talenti (REB-1130)', () => {
+  const PYTHON = { name: 'Python', band: 'continuous', sessions: 40, products: 6, months: 12, first_month: '2025-07', last_month: '2026-06' } as const
+  const ZOD = { name: 'Zod', band: 'recurring', sessions: 9, products: 2, months: 4, first_month: '2026-01', last_month: '2026-05' } as const
+  const GO = { name: 'Go', band: 'occasional', sessions: 3, products: 1, months: 1, first_month: '2026-04', last_month: '2026-04' } as const
+
+  it('shows an approved profile’s technologies in the skills cell, filled by band, with the legend once', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, {
+        total: 2,
+        items: [
+          { ...VETTED_TALENT, skills: ['Python'], work_profile_state: 'approved', technologies: [GO, PYTHON, ZOD] },
+          { ...CARD_TALENT, id: 'f9', email: 'grace@studio.it', work_profile_state: 'draft', technologies: [] },
+        ],
+        by_status: {},
+      }),
+    )
+    mount('/admin/talent')
+    const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
+    const cell = cellUnder(ada, 'Competenze')
+    const badges = within(cell).getAllByRole('listitem').map((item) => item.querySelector('[data-slot="badge"]') as HTMLElement)
+    expect(badges.map((b) => [b.firstChild?.textContent, b.getAttribute('data-fill')])).toEqual([
+      ['Python', 'full'],
+      ['Zod', 'two-thirds'],
+      ['Go', 'third'],
+    ])
+    // The band and the counts are on hover through the title, and in the accessible name.
+    expect(badges[1]).toHaveAttribute('title', 'Presenza ricorrente: 9 sessioni in 2 prodotti, 4 mesi, da gennaio 2026 a maggio 2026')
+    expect(screen.getAllByText(/Il riempimento indica quanto spesso/)).toHaveLength(1)
+    // A draft’s row, whose list the API leaves empty, shows none.
+    const grace = screen.getByText('grace@studio.it').closest('tr')!
+    expect(within(grace).queryByRole('list', { name: 'Tecnologie' })).toBeNull()
+  })
+
+  it('says «+N» for the technologies a row does not have room for', async () => {
+    const many = ['A', 'B', 'C', 'D', 'E', 'F'].map((name) => ({ ...ZOD, name }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, { total: 1, items: [{ ...VETTED_TALENT, work_profile_state: 'approved', technologies: many }], by_status: {} }),
+    )
+    mount('/admin/talent')
+    const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
+    expect(within(ada).getAllByRole('listitem')).toHaveLength(5)
+    expect(within(ada).getByText('+2')).toBeInTheDocument()
+  })
+
+  it('adds no legend and no list when no row has bands', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, { total: 2, items: [CARD_TALENT, LEAD_TALENT], by_status: {} }),
+    )
+    mount('/admin/talent')
+    await screen.findByText('ada@studio.it')
+    expect(screen.queryByText(/Il riempimento indica quanto spesso/)).toBeNull()
+    expect(screen.queryByRole('list', { name: 'Tecnologie' })).toBeNull()
+  })
+})

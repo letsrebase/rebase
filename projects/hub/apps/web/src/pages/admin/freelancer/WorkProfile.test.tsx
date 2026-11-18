@@ -49,6 +49,11 @@ const PROFILE = {
       new_vocabulary: [],
     },
     stack: ['Zod'],
+    technologies: [
+      { name: 'Zod', band: 'recurring', sessions: 9, products: 2, months: 4, first_month: '2026-01', last_month: '2026-05' },
+      { name: 'Python', band: 'continuous', sessions: 40, products: 6, months: 6, first_month: '2026-01', last_month: '2026-06' },
+      { name: 'Go', band: 'occasional', sessions: 3, products: 1, months: 1, first_month: '2026-04', last_month: '2026-04' },
+    ],
     projects: [
       {
         id: 'p1',
@@ -162,5 +167,32 @@ describe('«Profilo di lavoro» on the talent page (REB-1126)', () => {
     const section = await screen.findByRole('region', { name: 'Profilo di lavoro' })
     expect(within(section).getByText('Scaduto')).toBeInTheDocument()
     expect(within(section).queryByRole('button', { name: 'Approva' })).toBeNull()
+  })
+})
+
+describe('the usage bands in the review panel (REB-1130)', () => {
+  it('shows a draft’s technologies as filled badges, strongest band first, with the legend', async () => {
+    open()
+    const section = await screen.findByRole('region', { name: 'Profilo di lavoro' })
+    const list = within(section).getByRole('list', { name: 'Tecnologie' })
+    const badges = within(list).getAllByRole('listitem').map((item) => item.querySelector('[data-slot="badge"]') as HTMLElement)
+    expect(badges.map((badge) => [badge.firstChild?.textContent, badge.getAttribute('data-fill')])).toEqual([
+      ['Python', 'full'],
+      ['Zod', 'two-thirds'],
+      ['Go', 'third'],
+    ])
+    expect(badges[0]).toHaveTextContent('presenza continua: 40 sessioni in 6 prodotti, 6 mesi, da gennaio 2026 a giugno 2026')
+    expect(within(section).getByText(/Il riempimento indica quanto spesso e con che continuità/)).toBeInTheDocument()
+    // The companies' panel lists the three approved fields and no technology.
+    const companies = within(section).getByRole('group', { name: 'Cosa leggono le aziende' })
+    expect(within(companies).queryByText('Python')).toBeNull()
+    expect(within(section).getByText(/Le aziende non le vedono/)).toBeInTheDocument()
+  })
+
+  it('shows no block for a profile that sent none', async () => {
+    open({ ...PROFILE, profile: { ...PROFILE.profile, technologies: [] } })
+    const section = await screen.findByRole('region', { name: 'Profilo di lavoro' })
+    expect(within(section).queryByRole('list', { name: 'Tecnologie' })).toBeNull()
+    expect(within(section).queryByText('Tecnologie')).toBeNull()
   })
 })

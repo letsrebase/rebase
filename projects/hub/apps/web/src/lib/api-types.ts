@@ -4634,6 +4634,8 @@ export interface components {
          *     where it stands (`draft` is «In revisione»), when it was sent and when it stops counting,
          *     and the admin's note only when it was rejected: an approval's note stays with the admins.
          *     `expired` says `expires_at` has passed; the sweep deletes the row soon after.
+         *     `technologies` (REB-1130) are the person's own usage bands, shown to them while the profile
+         *     is a draft or approved and counts: empty once it expired or was rejected.
          */
         MemberWorkProfile: {
             /**
@@ -4655,6 +4657,8 @@ export interface components {
             expired: boolean;
             /** Decision Note */
             decision_note: string | null;
+            /** Technologies */
+            technologies: components["schemas"]["WorkProfileTechnology"][];
         };
         /**
          * MergeRead
@@ -5681,6 +5685,8 @@ export interface components {
             duplicate_possible_of: string[];
             /** Work Profile State */
             work_profile_state: ("draft" | "approved" | "rejected") | null;
+            /** Technologies */
+            technologies: components["schemas"]["WorkProfileTechnology"][];
         };
         /**
          * TalentsFilters
@@ -6512,6 +6518,31 @@ export interface components {
             /** Late */
             late: string;
         };
+        /**
+         * WorkProfileTechnology
+         * @description How often and how steadily one technology shows up in the person's work (REB-1130): the
+         *     band, which `tech_usage.band_for` derives from the months alone, with the counts it was read
+         *     from. A label for those counts, never a score and never how well the person knows it.
+         */
+        WorkProfileTechnology: {
+            /** Name */
+            name: string;
+            /**
+             * Band
+             * @enum {string}
+             */
+            band: "occasional" | "recurring" | "continuous";
+            /** Sessions */
+            sessions: number;
+            /** Products */
+            products: number;
+            /** Months */
+            months: number;
+            /** First Month */
+            first_month: string;
+            /** Last Month */
+            last_month: string;
+        };
         /** WorkProfileTopic */
         WorkProfileTopic: {
             /** Quarter */
@@ -6555,6 +6586,8 @@ export interface components {
             trajectory: components["schemas"]["WorkProfileTrajectory"] | null;
             /** Stack */
             stack: string[];
+            /** Technologies */
+            technologies: components["schemas"]["WorkProfileTechnology"][];
             /** Projects */
             projects: components["schemas"]["WorkProfileProject"][];
             /** Other Projects */

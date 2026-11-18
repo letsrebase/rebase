@@ -37,6 +37,7 @@ from rebase_core.member_schemas import (
 from rebase_core.models import Company, Freelancer, User, WorkProfile
 from rebase_core.notes import NoteService
 from rebase_core.users import UserService, refuse_linkedin_conflict
+from rebase_core.work_profiles.view import technologies
 
 ENTITY = "freelancer"
 # What the note calls each field, in the admin's language, in the wizard's order.
@@ -196,19 +197,22 @@ class MemberService:
         )
 
     def _work_profile(self, card: Freelancer | None) -> MemberWorkProfile | None:
-        """What the person sees of their own work profile: the state and the dates, and the
-        admin's note when it was rejected (the note of an approval stays with the admins)."""
+        """What the person sees of their own work profile: the state and the dates, the admin's
+        note when it was rejected (the note of an approval stays with the admins) and the usage
+        bands of the technologies while it counts."""
         if card is None:
             return None
         row = self.session.scalar(select(WorkProfile).where(WorkProfile.freelancer_id == card.id))
         if row is None:
             return None
+        expired = row.expires_at <= utcnow()
         return MemberWorkProfile(
             state=row.state,
             submitted_at=row.submitted_at,
             expires_at=row.expires_at,
-            expired=row.expires_at <= utcnow(),
+            expired=expired,
             decision_note=row.decision_note if row.state == "rejected" else None,
+            technologies=[] if expired or row.state == "rejected" else technologies(row.payload),
         )
 
     def delete_work_profile(self, user_id: UUID) -> MeRead:
