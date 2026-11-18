@@ -14,7 +14,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 export function PracticeRows({ practices, labelledBy }: { practices: WorkProfilePractice[]; labelledBy: string }) {
   if (practices.length === 0) return null
   return (
-    <ul aria-labelledby={labelledBy} className="space-y-2">
+    <ul aria-labelledby={labelledBy} className="space-y-2 text-sm">
       {practices.map((practice) => (
         <li key={practice.id}>
           <span className="font-medium">{practice.label}</span>

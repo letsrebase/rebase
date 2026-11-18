@@ -212,6 +212,7 @@ describe('the usage bands in the review panel (REB-1130)', () => {
     expect(within(section).getByRole('heading', { name: 'Come lavora' })).toBeInTheDocument()
     expect(within(section).getByText(/in 1 sessione su 5/)).toBeInTheDocument()
     expect(within(section).getByRole('list', { name: 'Come lavora' })).toBeInTheDocument()
+    expect(within(section).getAllByText(/Le vedono gli admin e la persona/).length).toBeGreaterThan(1)
   })
 
   it('hides «Come lavora» when there are no practices', async () => {

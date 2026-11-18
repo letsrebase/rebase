@@ -234,6 +234,9 @@ function ProfileBody({ profile, anchors }: { profile: Profile; anchors: Map<stri
           <h4 id="work-profile-practices" className="font-medium">
             Come lavora
           </h4>
+          <p className="text-muted-foreground">
+            Le vedono gli admin e la persona. Le aziende non le vedono, nemmeno a profilo approvato.
+          </p>
           <PracticeRows labelledBy="work-profile-practices" practices={profile.practices} />
         </div>
       )}
