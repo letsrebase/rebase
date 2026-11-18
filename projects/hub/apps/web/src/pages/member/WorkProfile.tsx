@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
+import { PracticeRows } from '@/components/Practices'
 import { UsageBadges } from '@/components/TechUsage'
 import { ApiError, member, type Me } from '@/lib/api'
 import { formatDate } from '@/lib/format'
@@ -42,6 +43,8 @@ function Steps() {
     </ol>
   )
 }
+
+const PRACTICES_URL = 'https://github.com/letsrebase/rebase-verify/blob/main/README.md#work-practices'
 
 function Links() {
   return (
@@ -203,6 +206,26 @@ export function MemberWorkProfile({ profile, vetted }: { profile: Me['work_profi
                 Le leggiamo noi di rebase. Le aziende non le vedono.
               </p>
               <UsageBadges technologies={profile.technologies} />
+            </div>
+          )}
+          {profile.practices.length > 0 && profile.state !== 'rejected' && !profile.expired && (
+            <div className="space-y-2 border-t pt-3">
+              <h3 id="member-practices" className="text-sm font-medium">
+                Come lavori
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Le leggiamo noi di rebase. Come le contiamo, lo trovi in{' '}
+                <a
+                  className="underline underline-offset-2"
+                  href={PRACTICES_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  l&apos;elenco delle pratiche
+                </a>
+                .
+              </p>
+              <PracticeRows labelledBy="member-practices" practices={profile.practices} />
             </div>
           )}
           {(profile.state === 'rejected' || profile.expired) && (

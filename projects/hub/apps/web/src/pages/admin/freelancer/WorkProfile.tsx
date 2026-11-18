@@ -231,8 +231,10 @@ function ProfileBody({ profile, anchors }: { profile: Profile; anchors: Map<stri
       )}
       {profile.practices.length > 0 && (
         <div className="space-y-2 border-t py-3">
-          <h4 className="font-medium">Come lavora</h4>
-          <PracticeRows practices={profile.practices} />
+          <h4 id="work-profile-practices" className="font-medium">
+            Come lavora
+          </h4>
+          <PracticeRows labelledBy="work-profile-practices" practices={profile.practices} />
         </div>
       )}
       {profile.lenses.map((lens) => (

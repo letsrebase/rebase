@@ -15,7 +15,7 @@ const row = (id: string, seen: number, of: number, products: number, months: num
 
 describe('PracticeRows', () => {
   it('renders one row per practice in list order, with the label, the counts and the mark', () => {
-    render(<PracticeRows practices={[row('checks_before_commit', 18, 25, 3, 4, 'code'), row('asks_for_alternatives', 11, 60, 4, 5, 'model')]} />)
+    render(<PracticeRows labelledBy="h" practices={[row('checks_before_commit', 18, 25, 3, 4, 'code'), row('asks_for_alternatives', 11, 60, 4, 5, 'model')]} />)
     expect(screen.getByText('Verifica prima del commit')).toBeInTheDocument()
     expect(screen.getByText(/in 18 sessioni su 25/)).toBeInTheDocument()
     expect(screen.getByText(/3 prodotti/)).toBeInTheDocument()
@@ -24,20 +24,35 @@ describe('PracticeRows', () => {
     expect(screen.getByText('dal modello della persona, non ricontrollato')).toBeInTheDocument()
   })
 
+  it('is named by the heading it sits under', () => {
+    render(
+      <>
+        <h4 id="h">Come lavora</h4>
+        <PracticeRows labelledBy="h" practices={[row('checks_before_commit', 18, 25, 3, 4, 'code')]} />
+      </>,
+    )
+    expect(screen.getByRole('list', { name: 'Come lavora' })).toBeInTheDocument()
+  })
+
+  it('ends the counts with a full stop so each part is read on its own', () => {
+    render(<PracticeRows labelledBy="h" practices={[row('checks_before_commit', 18, 25, 3, 4, 'code')]} />)
+    expect(screen.getByText(/4 mesi\.$/)).toBeInTheDocument()
+  })
+
   it('uses the singular for one', () => {
-    render(<PracticeRows practices={[row('checks_before_commit', 1, 5, 1, 1, 'code')]} />)
-    expect(screen.getByText(/in 1 sessione su 5, 1 prodotto, 1 mese$/)).toBeInTheDocument()
+    render(<PracticeRows labelledBy="h" practices={[row('checks_before_commit', 1, 5, 1, 1, 'code')]} />)
+    expect(screen.getByText(/in 1 sessione su 5, 1 prodotto, 1 mese\.$/)).toBeInTheDocument()
   })
 
   it('has no bar, no meter and no total', () => {
-    render(<PracticeRows practices={[row('checks_before_commit', 18, 25, 3, 4, 'code')]} />)
+    render(<PracticeRows labelledBy="h" practices={[row('checks_before_commit', 18, 25, 3, 4, 'code')]} />)
     expect(screen.queryByRole('progressbar')).toBeNull()
     expect(screen.queryByRole('meter')).toBeNull()
     expect(screen.queryByText(/totale/i)).toBeNull()
   })
 
   it('renders nothing for an empty list', () => {
-    const { container } = render(<PracticeRows practices={[]} />)
+    const { container } = render(<PracticeRows labelledBy="h" practices={[]} />)
     expect(container).toBeEmptyDOMElement()
   })
 })

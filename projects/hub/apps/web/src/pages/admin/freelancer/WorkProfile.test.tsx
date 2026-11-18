@@ -211,6 +211,7 @@ describe('the usage bands in the review panel (REB-1130)', () => {
     const section = await screen.findByRole('region', { name: 'Profilo di lavoro' })
     expect(within(section).getByRole('heading', { name: 'Come lavora' })).toBeInTheDocument()
     expect(within(section).getByText(/in 1 sessione su 5/)).toBeInTheDocument()
+    expect(within(section).getByRole('list', { name: 'Come lavora' })).toBeInTheDocument()
   })
 
   it('hides «Come lavora» when there are no practices', async () => {
