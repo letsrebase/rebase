@@ -238,8 +238,24 @@ hub's port), so a narrative that cites «18 of 25» is supported.
   and which by the person's model on their machine, and that only the counts reach us. Public
   text: Lorenzo approves it.
 - **The DPIA** gains a section «Practices (REB-1142)»: the processing, the two methods, the
-  denominators, the quality gate, why it stays a description under § 7, and the residual risk
-  that model counts are read as more reliable than they are, with the marks as the measure.
+  denominators, the quality gate, and the residual risk that model counts are read as more
+  reliable than they are, with the marks as the measure.
+
+**What approving this widens.** The two halves of the list do not sit in the same place against
+the DPIA as it stands. The seven code practices are what § 7 already scopes in: practices
+counted «without a model». The six model practices go past it: § 7 imagined counts from tool
+calls only, and it calls anything inferred from wording «a guess about character». They stay
+on this side of that line only because the model is asked whether a move happened (a question
+asked, a correction with a reason, a risk named), never how the person is, and because the
+quality gate drops any practice a person's labels do not confirm. Shipping them still needs
+three things the code practices do not: § 7 rewritten to admit model-classified counts and the
+reasoning above, Lorenzo's reading that counts of moves in a conversation are not an evaluation
+of the candidate under Annex III 4(a) (and the lawyer's, at the sign-off the DPIA already
+asks for), and the plain statement, here and in the DPIA, that the hub can only bound these
+numbers (`seen ≤ of ≤ 60`), never re-derive them. They are not scores in the sense of
+REB-1132 (no number about a person beyond a count of sessions), which is the line the fork's
+`AGENTS.md` draws for model-written numbers. If any of the three is not there at release, the
+code practices ship alone.
 
 ## 7. Upstream
 
