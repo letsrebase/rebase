@@ -22,6 +22,7 @@ from rebase_api.routers import (
     engagement_handoff,
     freelancers,
     members,
+    oauth,
     pigro,
     pigro_notices,
     referral_rates,
@@ -145,6 +146,7 @@ def create_app() -> FastAPI:
     app.include_router(ai.router)
     app.include_router(engagement_handoff.router)
     app.include_router(members.router)
+    app.include_router(oauth.router)
     app.include_router(referral_rates.router)
     app.include_router(campaigns.public)
     app.include_router(campaigns.legacy_public)

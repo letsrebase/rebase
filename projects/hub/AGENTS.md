@@ -706,6 +706,49 @@ rebase» is derived from. The card's years backstop counts the work profile as a
 (`card_provenance.provenance`); **the system prompt was not changed** to say so, because a prompt
 change means a new `PROMPT_VERSION` and marks every card stale: Lorenzo's call.
 
+## Signing in with GitHub or Google (REB-1137)
+
+Design record: `docs/superpowers/specs/2026-11-18-sign-in-with-github-or-google-design.md`. The
+buttons sit above the magic link on `/hub/login`; nothing about the link changed.
+
+**The rule, which is the whole point.** A provider only proves an address. `UserService.enter_with_provider`
+compares each address the provider *verified* (GitHub: every `verified: true` entry of `/user/emails`,
+scope `user:email`; Google: userinfo with `email_verified`, scopes `openid email profile`) with `users.email`
+through `by_email` and a merge's `survivor`, exactly as the magic link does. Extra contact points never
+match, no row is ever created, a person `is_removed` (not an admin, no live card or request, at least
+one deleted) is unknown, and two different people behind one provider account refuse the sign-in. Admins
+sign in the same way and land in `/admin`. `UserService._open_session` is the one place a magic link
+and a provider turn into a session, a `Login` (`logins.method`: `link`, `github`, `google`, migration
+0058) and the referral proof; `POST /auth/enter` and the callback cannot drift apart.
+
+**Where.** `rebase_core/oauth.py` (`OAuthService`: authorize URL with PKCE S256, the code exchange and
+the verified addresses through the `HttpCall` seam, `safe_next`, the cookie seals) and
+`routers/oauth.py`: `GET /api/hub/auth/providers`, `GET /api/hub/auth/oauth/{provider}/start`,
+`.../{provider}/callback`, `GET .../oauth/no-account`. Pages `pages/member/Login.tsx` and
+`NoAccount.tsx` (`/hub/login/no-account`).
+
+**Rules a change must keep.**
+
+- `redirect_uri` is the origin of `REBASE_HUB_URL` plus the callback path, never the request's `Host`.
+  A preview stack **must** set `REBASE_HUB_URL` to its own address, or its sign-ins go to the
+  production callback.
+- The attempt lives in the `rebase_oauth` cookie (`HttpOnly`, `SameSite=Lax`, `Path=/api/hub/auth/oauth`,
+  10 minutes), dropped by every callback answer after the budget check. The no-account address lives in
+  `rebase_oauth_miss` for 10 minutes and nowhere else: nothing about an unknown address is stored.
+- Every answer is a redirect, with `no-store` and `no-referrer`. A failure is `/hub/login?oauth=<reason>`
+  (`off`, `limited`, `expired`, `denied`, `unverified`, `failed`); the page words each one.
+- `next` goes through `safe_next` at the start and when the cookie is opened: hub paths of letters, digits,
+  `-`, `_`, `/`, and `/cli?code=XXXX-XXXX`. It is appended to `hub_url`.
+- `start` and `callback` spend `spend_one`, the budget `/auth/link` spends from.
+- Config: `REBASE_GITHUB_OAUTH_CLIENT_ID` and `_SECRET`, `REBASE_GOOGLE_OAUTH_CLIENT_ID` and `_SECRET`
+  (`x-hub-api-only` in the compose file, `optional-env-secrets` of both jobs of `deploy-hub.yml`, an
+  `S_` line in `_deploy-compose.yml`). A provider with either half empty is off. The two callbacks to
+  register at each provider are `https://letsrebase.com/api/hub/auth/oauth/<provider>/callback` and
+  the same on `https://preview.letsrebase.com`.
+- The tests are `apps/api/tests/test_oauth_api.py` (a fake provider behind `get_http_call`) and
+  `packages/core/tests/test_oauth.py`. There is no `httpx` or `respx` in the hub's runtime: outbound
+  calls go through `rebase_core.http`.
+
 ## Campaigns
 
 Since P-REB-41 «Invia una campagna» the `campaigns` service in `docker-compose.yml` runs

@@ -31,9 +31,17 @@ export function rememberCliCode(typed: string, now = Date.now()): void {
 /** The code kept by `rememberCliCode`, once: read, and forgotten. `null` when there is
  *  none, it is stale or it is not a code. */
 export function takeCliCode(now = Date.now()): string | null {
+  const code = peekCliCode(now)
+  forgetCliCode()
+  return code
+}
+
+/** The same code, left in place: the login page puts it in the link of «Accedi con GitHub»
+ *  and «Accedi con Google» (REB-1137), so the provider's redirect comes back to `/hub/cli`
+ *  with it; the click forgets it with `takeCliCode`. */
+export function peekCliCode(now = Date.now()): string | null {
   try {
     const raw = window.localStorage.getItem(KEY)
-    window.localStorage.removeItem(KEY)
     if (!raw) return null
     const kept = JSON.parse(raw) as Partial<Kept>
     if (typeof kept.code !== 'string' || typeof kept.at !== 'number') return null
@@ -41,5 +49,13 @@ export function takeCliCode(now = Date.now()): string | null {
     return kept.code
   } catch {
     return null
+  }
+}
+
+function forgetCliCode(): void {
+  try {
+    window.localStorage.removeItem(KEY)
+  } catch {
+    // no storage: nothing was kept
   }
 }

@@ -3,11 +3,26 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
-import { ApiError } from '@/lib/api'
-import { useMe, useRequestLink } from '@/lib/me'
+import { ApiError, member } from '@/lib/api'
+import { useAuthProviders, useMe, useRequestLink } from '@/lib/me'
+import { peekCliCode, takeCliCode } from '@/lib/returnTo'
 import { loginAttribution, rememberLoginAttribution } from '@/lib/utm'
 
-/** The way in: an address, a link by mail, no password. The page says the same thing
+/** What the sign-in with a provider says when it sends the visitor back here with
+ *  `?oauth=<reason>` (REB-1137). Every one ends with the way that always works. */
+const OAUTH_MESSAGES: Record<string, string> = {
+  denied: 'Hai annullato l’accesso. Puoi riprovare, oppure entrare con il link via mail.',
+  expired:
+    'L’accesso è scaduto, o è stato aperto in un altro browser. Riprova da qui, oppure entra con il link via mail.',
+  unverified:
+    'Non abbiamo ricevuto un indirizzo verificato. Verificalo dal tuo account, oppure entra con il link via mail.',
+  failed: 'Non siamo riusciti a completare l’accesso. Riprova, oppure entra con il link via mail.',
+  limited: 'Troppi tentativi ravvicinati. Aspetta un minuto e riprova.',
+  off: 'Questo accesso non è attivo. Entra con il link via mail.',
+}
+
+/** The way in: «Accedi con GitHub» and «Accedi con Google» when the deployment has them,
+ *  and always an address and a link by mail, no password. The page says the same thing
  *  whether the address is known or not, as the API does. The campaign in this page's own
  *  URL goes with the address, so the login it leads to says which mail brought the
  *  person back (REB-426), and the page remembers it for the tab, so a detour through the
@@ -26,6 +41,7 @@ export function Login() {
   const navigate = useNavigate()
   const requestLink = useRequestLink()
   const searchStr = useLocation({ select: (location) => location.searchStr })
+  const providers = useAuthProviders()
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -49,6 +65,20 @@ export function Login() {
             : 'Non siamo riusciti a mandarti il link. Riprova.',
         ),
     })
+  }
+
+  const oauthReason = new URLSearchParams(searchStr).get('oauth')
+  const oauthMessage = oauthReason ? (OAUTH_MESSAGES[oauthReason] ?? OAUTH_MESSAGES.failed) : null
+  const offered = (['github', 'google'] as const).filter((name) => providers.data?.[name])
+
+  /** The start link carries the campaign this page remembers and, for a visitor sent here by
+   *  `/hub/cli`, the code to come back to: the provider's redirect is a full navigation, so
+   *  the page's own state does not survive it. */
+  function startHref(name: 'github' | 'google') {
+    const extra: Record<string, string> = { ...loginAttribution(searchStr) }
+    const code = peekCliCode()
+    if (code) extra.next = `/cli?code=${code}`
+    return member.oauthStartUrl(name, extra)
   }
 
   // Nothing to show while the session is still resolving (the pending state every
@@ -81,40 +111,68 @@ export function Login() {
   }
 
   return (
-    <form onSubmit={submit} className="mx-auto max-w-md space-y-6">
+    <div className="mx-auto max-w-md space-y-6">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Entra nella tua area</h1>
         <p className="mt-2 text-muted-foreground">
-          L’indirizzo che ci hai dato: ti mandiamo un link, senza password.
+          {offered.length > 0
+            ? 'Con il tuo account GitHub o Google, oppure con un link per mail, senza password.'
+            : 'L’indirizzo che ci hai dato: ti mandiamo un link, senza password.'}
         </p>
       </div>
-      <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
-        <Input
-          id="email"
-          type="email"
-          required
-          autoComplete="email"
-          autoFocus
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-        />
-      </div>
-      {error && (
+      {oauthMessage && (
         <p role="alert" className="text-sm text-destructive">
-          {error}
+          {oauthMessage}
         </p>
       )}
-      <Button type="submit" className="w-full" disabled={requestLink.isPending}>
-        {requestLink.isPending ? 'Un attimo…' : 'Mandami il link'}
-      </Button>
-      <p className="text-sm text-muted-foreground">
-        Non sei ancora dentro?{' '}
-        <Link to="/freelance" className="underline underline-offset-2">
-          Raccontaci chi sei
-        </Link>
-        .
-      </p>
-    </form>
+      {offered.length > 0 && (
+        <div className="space-y-3">
+          {offered.map((name) => (
+            <Button key={name} asChild variant="outline" className="w-full">
+              <a href={startHref(name)} onClick={() => void takeCliCode()}>
+                {name === 'github' ? 'Accedi con GitHub' : 'Accedi con Google'}
+              </a>
+            </Button>
+          ))}
+          <p className="text-sm text-muted-foreground">
+            Funziona se l’indirizzo verificato del tuo account è quello che ci hai dato.
+          </p>
+          <div role="separator" className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="h-px flex-1 bg-border" />
+            oppure
+            <span className="h-px flex-1 bg-border" />
+          </div>
+        </div>
+      )}
+      <form onSubmit={submit} className="space-y-6">
+        <div className="space-y-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            required
+            autoComplete="email"
+            autoFocus={offered.length === 0}
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+          />
+        </div>
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        <Button type="submit" className="w-full" disabled={requestLink.isPending}>
+          {requestLink.isPending ? 'Un attimo…' : 'Mandami il link'}
+        </Button>
+        <p className="text-sm text-muted-foreground">
+          Non sei ancora dentro?{' '}
+          <Link to="/freelance" className="underline underline-offset-2">
+            Raccontaci chi sei
+          </Link>
+          .
+        </p>
+      </form>
+    </div>
   )
 }

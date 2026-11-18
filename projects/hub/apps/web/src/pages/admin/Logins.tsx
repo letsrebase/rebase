@@ -7,14 +7,17 @@ import { formatDateTime } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
 import { Empty, Figure, Header, LoadingState, LoadMore } from './list-kit'
 
+/** How the person got in, as the column says it: the three values of `logins.method`. */
+const METHODS: Record<string, string> = { link: 'Link via mail', github: 'GitHub', google: 'Google' }
+
 /** A login's own rows, `recent`, are what the page pages through. */
 const recentLogins = (page: LoginStats) => page.recent
 
 /**
- * Who comes back in (ORB-158): every login the magic link wrote down, the distinct
+ * Who comes back in (ORB-158): every login the magic link, or since REB-1137 GitHub or Google, wrote down, the distinct
  * members behind them against everybody on file, the last week, and the latest ones by
  * name. Read-only: the rows are written by `POST /api/hub/auth/enter` when a member
- * follows the link, and by nothing else.
+ * follows the link and by the provider callbacks, and by nothing else.
  *
  * REB-313: the four counters above stay a plain read of the whole table, unaffected by
  * search; «i più recenti» below them is what a debounced search box narrows and what
@@ -66,6 +69,7 @@ export function AdminLogins() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Chi</TableHead>
+                        <TableHead>Come</TableHead>
                         <TableHead className="text-right">Quando</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -77,6 +81,9 @@ export function AdminLogins() {
                               {login.first_name} {login.last_name}
                             </p>
                             <p className="text-xs text-muted-foreground">{login.email}</p>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {METHODS[login.method] ?? login.method}
                           </TableCell>
                           <TableCell className="text-right text-muted-foreground">
                             {formatDateTime(login.logged_at)}

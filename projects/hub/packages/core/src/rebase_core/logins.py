@@ -118,5 +118,6 @@ def _read(login: Login, person: User) -> LoginRead:
         last_name=person.last_name,
         email=person.email,
         logged_at=login.logged_at,
+        method=login.method,
         **{column: getattr(login, column) for column in ATTRIBUTION_COLUMNS},
     )

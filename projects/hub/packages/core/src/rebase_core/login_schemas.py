@@ -4,6 +4,7 @@ from datetime import datetime
 from uuid import UUID
 
 from rebase_core.schema_common import ResponseModel
+from rebase_core.vocabulary import LoginMethod
 
 
 class GuideDownloadRead(ResponseModel):
@@ -31,6 +32,8 @@ class LoginRead(ResponseModel):
     last_name: str
     email: str
     logged_at: datetime
+    # How the person got in (REB-1137): the magic link, or GitHub or Google.
+    method: LoginMethod
     origin: str | None = None
     utm_source: str | None = None
     utm_medium: str | None = None

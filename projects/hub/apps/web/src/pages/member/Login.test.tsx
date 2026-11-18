@@ -10,6 +10,7 @@ import {
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { rememberCliCode } from '@/lib/returnTo'
 import { Login } from './Login'
 
 function answer(status: number, body: unknown) {
@@ -24,14 +25,16 @@ function answer(status: number, body: unknown) {
  *  before the assertions get a look at the form. `linkAnswer` is a factory, not a
  *  fixed `Response`, since a `Response` body can only be read once and some tests
  *  drive the link request twice. */
-function fetchMock(linkAnswer: () => Response) {
+function fetchMock(linkAnswer: () => Response, providers = { github: false, google: false }) {
   return vi
     .spyOn(globalThis, 'fetch')
     .mockImplementation((input) =>
       Promise.resolve(
         String(input) === '/api/hub/me'
           ? answer(401, { detail: 'Autenticazione richiesta' })
-          : linkAnswer(),
+          : String(input) === '/api/hub/auth/providers'
+            ? answer(200, providers)
+            : linkAnswer(),
       ),
     )
 }
@@ -57,7 +60,10 @@ function mount(entry = '/login') {
 
 // The page remembers a campaign for the tab (`rememberUtm`), and jsdom keeps session
 // storage across the tests of one file: each test starts from a tab that saw nothing.
-beforeEach(() => window.sessionStorage.clear())
+beforeEach(() => {
+  window.sessionStorage.clear()
+  window.localStorage.clear()
+})
 afterEach(() => vi.restoreAllMocks())
 
 describe('/login', () => {
@@ -233,5 +239,65 @@ describe('an already signed-in visitor (REB-484)', () => {
     expect(screen.queryByLabelText('Email')).toBeNull()
     me.resolve(answer(200, { role: 'member' }))
     await screen.findByRole('heading', { name: 'La tua area' })
+  })
+
+  describe('with GitHub and Google', () => {
+    const both = { github: true, google: true }
+
+    it('shows no provider button when neither is configured', async () => {
+      fetchMock(() => answer(202, { ok: true }))
+      mount()
+      await screen.findByLabelText('Email')
+      expect(screen.queryByRole('link', { name: /Accedi con/ })).toBeNull()
+      expect(screen.getByText(/ti mandiamo un link, senza password/)).toBeTruthy()
+    })
+
+    it('shows only the providers that are on, above the form', async () => {
+      fetchMock(() => answer(202, { ok: true }), { github: false, google: true })
+      mount()
+      const google = await screen.findByRole('link', { name: 'Accedi con Google' })
+      expect(google.getAttribute('href')).toBe('/api/hub/auth/oauth/google/start')
+      expect(screen.queryByRole('link', { name: 'Accedi con GitHub' })).toBeNull()
+      expect(screen.getByRole('button', { name: 'Mandami il link' })).toBeTruthy()
+    })
+
+    it('starts with the campaign the page carries', async () => {
+      fetchMock(() => answer(202, { ok: true }), both)
+      mount('/login?utm_source=email&utm_campaign=wave-3&from=home')
+      const github = await screen.findByRole('link', { name: 'Accedi con GitHub' })
+      const query = new URLSearchParams(github.getAttribute('href')?.split('?')[1])
+      expect(github.getAttribute('href')).toMatch(/^\/api\/hub\/auth\/oauth\/github\/start\?/)
+      expect(query.get('utm_source')).toBe('email')
+      expect(query.get('utm_campaign')).toBe('wave-3')
+      expect(query.get('origin')).toBe('home')
+    })
+
+    it('carries the device code of /hub/cli through the provider, and forgets the stored copy on the click', async () => {
+      fetchMock(() => answer(202, { ok: true }), both)
+      rememberCliCode('ABCD-EFGH')
+      mount()
+      const google = await screen.findByRole('link', { name: 'Accedi con Google' })
+      expect(new URLSearchParams(google.getAttribute('href')?.split('?')[1]).get('next')).toBe(
+        '/cli?code=ABCD-EFGH',
+      )
+      google.addEventListener('click', (event) => event.preventDefault())
+      await userEvent.setup().click(google)
+      expect(window.localStorage.getItem('rebase.returnTo')).toBeNull()
+    })
+
+    it.each([
+      ['denied', /Hai annullato/],
+      ['expired', /scaduto/],
+      ['unverified', /indirizzo verificato/],
+      ['failed', /Non siamo riusciti/],
+      ['limited', /Troppi tentativi/],
+      ['off', /non è attivo/],
+      ['anything-else', /Non siamo riusciti/],
+    ])('says what happened when the provider sent the visitor back with %s', async (reason, sentence) => {
+      fetchMock(() => answer(202, { ok: true }), both)
+      mount(`/login?oauth=${reason}`)
+      expect((await screen.findByRole('alert')).textContent).toMatch(sentence)
+      expect(screen.getByRole('button', { name: 'Mandami il link' })).toBeTruthy()
+    })
   })
 })

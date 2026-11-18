@@ -52,6 +52,7 @@ const AdminTalents = lazyRouteComponent(() => import('@/pages/admin/talent/Talen
 const AdminTalentLead = lazyRouteComponent(() => import('@/pages/admin/talent/LeadForm'), 'AdminTalentLead')
 const Login = lazyRouteComponent(() => import('@/pages/member/Login'), 'Login')
 const Area = lazyRouteComponent(() => import('@/pages/member/Area'), 'Area')
+const NoAccount = lazyRouteComponent(() => import('@/pages/member/NoAccount'), 'NoAccount')
 const Cli = lazyRouteComponent(() => import('@/pages/member/Cli'), 'Cli')
 const Cloud = lazyRouteComponent(() => import('@/pages/member/Cloud'), 'Cloud')
 const Verify = lazyRouteComponent(() => import('@/pages/member/Verify'), 'Verify')
@@ -245,6 +246,8 @@ const thanksRedirect = createRoute({
   },
 })
 const login = createRoute({ getParentRoute: () => publicLayout, path: '/login', component: Login })
+// Where a sign-in with GitHub or Google ends for an address no account uses (REB-1137).
+const noAccount = createRoute({ getParentRoute: () => publicLayout, path: '/login/no-account', component: NoAccount })
 // Outreach mails link `/login?utm_...` (REB-426), and the login page sends that query
 // string with the address so the login records which mail it came from: the redirect
 // carries it across, the way `companiesRedirect` does for the wizard.
@@ -608,6 +611,7 @@ export const routeTree = root.addChildren([
     thanks,
     thanksRedirect,
     login,
+    noAccount,
     loginRedirect,
     verify,
     verifyRedirect,
