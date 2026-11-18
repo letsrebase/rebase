@@ -10,6 +10,7 @@ from pydantic import ConfigDict, Field
 from rebase_core.bands import Band
 from rebase_core.schema_common import ResponseModel
 from rebase_core.vocabulary import RemoteOption, Seniority, TalentStatus, WorkProfileState
+from rebase_core.work_profiles.view import WorkProfileTechnology
 
 TalentOrigin = Literal["form", "wizard", "admin"]
 
@@ -76,6 +77,11 @@ class TalentRead(ResponseModel):
     # (the «Da rivedere» pill), `approved`, `rejected`; `None` for none and for one past its
     # 12 months. The state of the review, never a number read off the profile.
     work_profile_state: WorkProfileState | None = None
+    # How often and how steadily each technology shows up in the person's work (REB-1130), read
+    # from an approved, unexpired work profile only: a draft's bands are the reviewing admin's,
+    # in `WorkProfileAdminRead`. Empty for a lead, for no profile and for any state but
+    # `approved`. Admins only: the talent cloud's `CloudWorkProfile` carries none of it.
+    technologies: list[WorkProfileTechnology] = Field(default_factory=list)
 
 
 class TalentList(ResponseModel):

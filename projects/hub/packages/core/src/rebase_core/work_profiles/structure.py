@@ -3,13 +3,16 @@
 
 Upstream checks structural invariants in Play New's private dashboard, so these are ours:
 counts are non-negative integers, the domains' sums do not exceed the totals, there are one to ten
-representative projects each with its own id, and the dates parse with the window's start not after
-its end. Each function answers sentences (Italian: the CLI prints them), empty when all is well.
+representative projects each with its own id, the dates parse with the window's start not after
+its end, and the optional technology usage block holds together (`tech_usage.py`). Each function
+answers sentences (Italian: the CLI prints them), empty when all is well.
 """
 
 import re
 from datetime import datetime
 from typing import Any
+
+from rebase_core.work_profiles import tech_usage
 
 MAX_PROJECTS = 10
 _MONTH = re.compile(r"\d{4}-(?:0[1-9]|1[0-2])\Z", re.ASCII)
@@ -152,4 +155,5 @@ def structure(payload: dict[str, Any]) -> list[str]:
             datetime.fromisoformat(str(generated))
         except ValueError:
             issues.append(f"generatedAt: «{generated}» non è una data")
+    issues.extend(tech_usage.issues(payload))
     return issues

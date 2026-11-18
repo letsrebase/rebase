@@ -14,8 +14,11 @@ came from.
 
 from typing import Any
 
+from rebase_core.models import TECH_USAGE_BANDS
 from rebase_core.schema_common import ResponseModel
 from rebase_core.team_schemas import CloudWorkDomain, CloudWorkProfile
+from rebase_core.vocabulary import TechUsageBand
+from rebase_core.work_profiles.tech_usage import reads_true
 
 SUMMARY_WHERE = "summary"
 DOMAINS_WHERE = "domains"
@@ -120,6 +123,20 @@ class WorkProfileTrajectory(ResponseModel):
     new_vocabulary: list[str]
 
 
+class WorkProfileTechnology(ResponseModel):
+    """How often and how steadily one technology shows up in the person's work (REB-1130): the
+    band, which `tech_usage.band_for` derives from the months alone, with the counts it was read
+    from. A label for those counts, never a score and never how well the person knows it."""
+
+    name: str
+    band: TechUsageBand
+    sessions: int
+    products: int
+    months: int
+    first_month: str
+    last_month: str
+
+
 class WorkProfileView(ResponseModel):
     window_from: str | None
     window_to: str | None
@@ -131,6 +148,10 @@ class WorkProfileView(ResponseModel):
     lenses: list[WorkProfileLens]
     trajectory: WorkProfileTrajectory | None
     stack: list[str]
+    # Strongest band first, then the more months (`technologies`). Admins and the person only:
+    # `cloud_work_profile` does not read them, because the wording the person approved lists the
+    # summary, the domains and the representative projects' sectors and nothing else.
+    technologies: list[WorkProfileTechnology]
     projects: list[WorkProfileProject]
     other_projects: int
 
@@ -288,6 +309,49 @@ def _project(source: dict[str, Any]) -> WorkProfileProject | None:
     )
 
 
+def technology_rows(rows: Any) -> list[WorkProfileTechnology]:
+    """The `techUsage.technologies` rows of a stored profile that read as a technology with a
+    band, strongest band first, then the more months, then the name. A row that does not,
+    or that the intake's own rules would refuse (only a payload stored before a rule changed has
+    one), or a name listed twice, is left out, never a 500."""
+    found = []
+    seen: set[str] = set()
+    for row in _dicts(rows):
+        name, band = _text(row.get("name")), row.get("band")
+        sessions, products, months = (
+            _int(row.get(key)) for key in ("sessions", "products", "months")
+        )
+        first, last = _text(row.get("firstMonth")), _text(row.get("lastMonth"))
+        if (
+            name
+            and name not in seen
+            and band in TECH_USAGE_BANDS
+            and sessions is not None
+            and products is not None
+            and months is not None
+            and first
+            and last
+            and reads_true(name, band, months, first, last)
+        ):
+            seen.add(name)
+            found.append(
+                WorkProfileTechnology(
+                    name=name,
+                    band=band,
+                    sessions=sessions,
+                    products=products,
+                    months=months,
+                    first_month=first,
+                    last_month=last,
+                )
+            )
+    return sorted(found, key=lambda t: (-TECH_USAGE_BANDS.index(t.band), -t.months, t.name))
+
+
+def technologies(payload: dict[str, Any]) -> list[WorkProfileTechnology]:
+    return technology_rows(_dict(payload.get("techUsage")).get("technologies"))
+
+
 def render_profile(payload: dict[str, Any]) -> WorkProfileView:
     """The payload of a stored profile as the admin reads it."""
     window, volume = _dict(payload.get("window")), _dict(payload.get("volume"))
@@ -337,6 +401,7 @@ def render_profile(payload: dict[str, Any]) -> WorkProfileView:
         lenses=[lens for lens in lenses if lens.narrative or lens.tags or lens.counts],
         trajectory=_trajectory(payload.get("trajectory")),
         stack=_texts(payload.get("stackAdopted")),
+        technologies=technologies(payload),
         projects=projects,
         other_projects=len(_dicts(payload.get("otherProjects"))),
     )

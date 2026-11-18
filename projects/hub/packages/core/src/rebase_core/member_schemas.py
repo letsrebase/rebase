@@ -18,6 +18,7 @@ from rebase_core.vocabulary import (
     UserRole,
     WorkProfileState,
 )
+from rebase_core.work_profiles.view import WorkProfileTechnology
 
 
 class MemberProfile(BaseModel):
@@ -85,13 +86,16 @@ class MemberWorkProfile(ResponseModel):
     """The work profile as its owner reads it in their area (REB-1127, spec 2026-11-17 § 7):
     where it stands (`draft` is «In revisione»), when it was sent and when it stops counting,
     and the admin's note only when it was rejected: an approval's note stays with the admins.
-    `expired` says `expires_at` has passed; the sweep deletes the row soon after."""
+    `expired` says `expires_at` has passed; the sweep deletes the row soon after.
+    `technologies` (REB-1130) are the person's own usage bands, shown to them while the profile
+    is a draft or approved and counts: empty once it expired or was rejected."""
 
     state: WorkProfileState
     submitted_at: datetime
     expires_at: datetime
     expired: bool
     decision_note: str | None
+    technologies: list[WorkProfileTechnology]
 
 
 class MeRead(ResponseModel):

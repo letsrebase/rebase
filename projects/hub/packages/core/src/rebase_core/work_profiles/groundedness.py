@@ -367,6 +367,17 @@ def collect_support_pool(profile: dict[str, Any]) -> _Pool:
         pool.add_ratio(distribution.get("multiMonthShare"))
         pool.add_percent_of(distribution.get("multiMonthShare"))
 
+    # Technology-usage counts (the prose may cite "Supabase in 7 months", REB-1130). Names already
+    # join the tech pool through the projects' stacks; names seen only in non-representative
+    # products are pooled here. Months pool as year-months too.
+    for usage in _dicts(_dict(profile.get("techUsage")).get("technologies")):
+        pool.tech.update(split_tech(usage.get("name")))
+        pool.add_number(usage.get("sessions"))
+        pool.add_number(usage.get("products"))
+        pool.add_number(usage.get("months"))
+        pool.add_text(usage.get("firstMonth"))
+        pool.add_text(usage.get("lastMonth"))
+
     # Trajectory. A percent-format shift holds fractions the prose cites as percents; the
     # others (prompt words, research:mutation) are cited as plain numbers.
     trajectory = _dict(profile.get("trajectory"))

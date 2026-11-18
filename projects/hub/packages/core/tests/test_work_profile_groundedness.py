@@ -288,3 +288,28 @@ def test_a_copy_of_the_profile_is_not_changed() -> None:
     before = copy.deepcopy(p)
     assess_groundedness(p)
     assert p == before
+
+
+def test_technology_usage_counts_and_names_ground_prose_as_the_fork_pools_them() -> None:
+    # REB-1130: a technology seen only in a non-representative product, and the months it spans,
+    # are support for prose that cites them, as the fork's groundedness.mjs pools `techUsage`.
+    p = base_profile()
+    p["cognitive"]["narrative"] = "Used Stripe for 7 months."
+    assert anomalies_of(p, where="cognitive.narrative", kind="tech")
+    assert anomalies_of(p, where="cognitive.narrative", kind="number")
+
+    p["techUsage"] = {
+        "timezone": "UTC",
+        "technologies": [
+            {
+                "name": "Stripe",
+                "sessions": 12,
+                "products": 3,
+                "months": 7,
+                "firstMonth": "2026-01",
+                "lastMonth": "2026-07",
+                "band": "continuous",
+            }
+        ],
+    }
+    assert anomalies_of(p, where="cognitive.narrative") == []

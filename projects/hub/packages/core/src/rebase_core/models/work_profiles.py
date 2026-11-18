@@ -29,6 +29,10 @@ CLI_SCOPES = ("work_profile",)
 CLI_AUTHORIZATION_STATES = ("pending", "approved", "denied", "spent", "expired")
 # The state of a received profile: nothing counts until an admin approves it.
 WORK_PROFILE_STATES = ("draft", "approved", "rejected")
+# How often and how steadily a technology shows up in a person's work (REB-1130), from the
+# months it appears in and nothing else, lowest first. A plain-language label for counts, never a
+# score and never a measure of skill (upstream ADR-001).
+TECH_USAGE_BANDS = ("occasional", "recurring", "continuous")
 # The sha256 hex of a device code or an access token, like `TOKEN_HASH_LENGTH`.
 CLI_HASH_LENGTH = 64
 # `XXXX-XXXX`.
