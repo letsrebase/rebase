@@ -148,9 +148,9 @@ processing stands. Rebase S.r.l. has no DPO, and the people concerned were not c
 In place:
 
 - The person runs everything locally, previews the payload, and nothing leaves for rebase
-  without `submit --yes`. With the person's API key, the narrative input and the practices sample
-  go to the person's own provider (Anthropic) before that; in the slash-command path the sample
-  goes to the provider of the agent the person already uses.
+  without `submit --yes`. The practices sample and the narrative input go to the provider of the
+  agent the person chooses (the npx wizard, `generate --agent`, or the slash command from a
+  clone), or to Anthropic with the person's own key, before that; rebase receives neither.
 - A person decides; there is no approve or reject tool over MCP (spec § 12). The only ordering
   is by the vetted flag, which a person set.
 - Companies see only an approved profile's summary, domains with their counts and project
@@ -234,8 +234,9 @@ axis with the counts behind it.
 made without a model. It now also admits counts of moves that the person's own model classifies,
 under these conditions:
 
-- the model is the person's own (their coding agent through the slash command, or their own API
-  key), reading the person's own messages to their own agent;
+- the model is the person's own (the agent they choose: the npx wizard, `generate --agent`, or
+  the slash command from a clone; or their own Anthropic key), reading the person's own messages
+  to their own agent;
 - it classifies against a published closed list, each practice with a definition and examples, and
   answers yes or no per session; only the counts per practice reach rebase. The sampled, redacted messages go to the person's own
   model provider, chosen and paid by the person and not a rebase processor, and rebase never
@@ -293,13 +294,15 @@ them under the conditions it lists.
 
 - What is read: at most 60 sampled sessions, and in each at most 12 of the person's own messages,
   redacted on their machine, never the agent's replies.
-- Who answers: the person's own model, either their agent through the slash command or their own
-  API key. rebase runs no model on this data.
+- Who answers: the person's own model, either the agent they choose (the npx wizard,
+  `generate --agent`, or the slash command from a clone) or their own Anthropic key. The
+  narrative input goes to that agent's provider too. rebase runs no model on this data.
 - Which agent and model: the person chooses them, both for the classification and for the
   narrative. The processor is the person's own agent provider, chosen and paid by the person,
   never rebase. The profile records the choice as `practices.classifiedBy` (`{ agent, model }`);
   the hub bounds it (agent id up to 40 characters, model up to 120 printable characters) and
-  shows it next to the «dal modello della persona, non ricontrollato» mark.
+  shows it next to the «dal modello della persona, non ricontrollato» mark. The hub also stores
+  `generatedBy` (the agent and model that wrote the narrative) as sent, and does not show it.
 - The gate figures below hold for claude-opus-4-7 through the API prompt. Any other model is
   recorded and shown, not measured.
 - The quality gate: a practice is published only if the model's answers agree with a written
