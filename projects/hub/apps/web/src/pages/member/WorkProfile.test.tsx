@@ -15,6 +15,7 @@ const BASE: Profile = {
   expired: false,
   decision_note: null,
   technologies: [],
+  practices: [],
 }
 
 function show(profile: Me['work_profile'], vetted = true) {

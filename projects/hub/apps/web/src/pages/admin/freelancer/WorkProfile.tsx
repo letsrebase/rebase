@@ -4,6 +4,7 @@ import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Label } from '@rebase/ui/label'
 import { Textarea } from '@rebase/ui/textarea'
+import { PracticeRows } from '@/components/Practices'
 import { UsageBadges } from '@/components/TechUsage'
 import { WebLink } from '@/components/WebLink'
 import { admin, ApiError, type WorkProfileAdmin } from '@/lib/api'
@@ -226,6 +227,12 @@ function ProfileBody({ profile, anchors }: { profile: Profile; anchors: Map<stri
             Le vedono gli admin e la persona. Le aziende non le vedono, nemmeno a profilo approvato.
           </p>
           <UsageBadges technologies={profile.technologies} />
+        </div>
+      )}
+      {profile.practices.length > 0 && (
+        <div className="space-y-2 border-t py-3">
+          <h4 className="font-medium">Come lavora</h4>
+          <PracticeRows practices={profile.practices} />
         </div>
       )}
       {profile.lenses.map((lens) => (
@@ -464,6 +471,13 @@ export function WorkProfile({ freelancerId, vettedAt }: { freelancerId: string; 
           {profile.unknown_technologies === 1
             ? '1 tecnologia non riconosciuta da questa versione del hub è stata tolta dal profilo.'
             : `${profile.unknown_technologies} tecnologie non riconosciute da questa versione del hub sono state tolte dal profilo.`}
+        </p>
+      )}
+      {profile.unknown_practices > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {profile.unknown_practices === 1
+            ? '1 pratica non riconosciuta da questa versione del hub è stata tolta dal profilo.'
+            : `${profile.unknown_practices} pratiche non riconosciute da questa versione del hub sono state tolte dal profilo.`}
         </p>
       )}
       <CloudPanel profile={profile} />

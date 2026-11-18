@@ -19,6 +19,7 @@ const PROFILE = {
     { where: 'p9.did', anchor: 'Redis', kind: 'tech' },
   ],
   unknown_technologies: 0,
+  unknown_practices: 0,
   guard_hits: [],
   decided_at: null,
   decided_by_name: null,
@@ -50,6 +51,7 @@ const PROFILE = {
       new_vocabulary: [],
     },
     stack: ['Zod'],
+    practices: [],
     technologies: [
       { name: 'Zod', band: 'recurring', sessions: 9, products: 2, months: 4, first_month: '2026-01', last_month: '2026-05' },
       { name: 'Python', band: 'continuous', sessions: 40, products: 6, months: 6, first_month: '2026-01', last_month: '2026-06' },
@@ -196,6 +198,37 @@ describe('the usage bands in the review panel (REB-1130)', () => {
     expect(
       within(section).getByText('2 tecnologie non riconosciute da questa versione del hub sono state tolte dal profilo.'),
     ).toBeInTheDocument()
+  })
+
+  it('shows the «Come lavora» section when the profile has practices and hides it when not', async () => {
+    open({
+      ...PROFILE,
+      profile: {
+        ...PROFILE.profile,
+        practices: [{ id: 'checks_before_commit', label: 'Verifica prima del commit', method: 'code', seen: 1, of: 5, products: 1, months: 4 }],
+      },
+    })
+    const section = await screen.findByRole('region', { name: 'Profilo di lavoro' })
+    expect(within(section).getByRole('heading', { name: 'Come lavora' })).toBeInTheDocument()
+    expect(within(section).getByText(/in 1 sessione su 5/)).toBeInTheDocument()
+  })
+
+  it('hides «Come lavora» when there are no practices', async () => {
+    open(PROFILE)
+    const section = await screen.findByRole('region', { name: 'Profilo di lavoro' })
+    expect(within(section).queryByText('Come lavora')).toBeNull()
+  })
+
+  it('shows one muted line for 1 and for 3 unknown practices, none for 0', async () => {
+    open({ ...PROFILE, unknown_practices: 1 })
+    const one = await screen.findByRole('region', { name: 'Profilo di lavoro' })
+    expect(within(one).getByText('1 pratica non riconosciuta da questa versione del hub è stata tolta dal profilo.')).toBeInTheDocument()
+  })
+
+  it('shows the plural line for 3 unknown practices', async () => {
+    open({ ...PROFILE, unknown_practices: 3 })
+    const three = await screen.findByRole('region', { name: 'Profilo di lavoro' })
+    expect(within(three).getByText('3 pratiche non riconosciute da questa versione del hub sono state tolte dal profilo.')).toBeInTheDocument()
   })
 
   it('shows no dropped-technologies line when none were dropped', async () => {
