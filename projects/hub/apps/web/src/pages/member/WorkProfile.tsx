@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
+import { PracticeRows } from '@/components/Practices'
 import { UsageBadges } from '@/components/TechUsage'
 import { ApiError, member, type Me } from '@/lib/api'
 import { formatDate } from '@/lib/format'
@@ -11,6 +12,7 @@ type Profile = NonNullable<Me['work_profile']>
 
 const README_URL = 'https://github.com/letsrebase/rebase-verify#readme'
 const PRIVACY_URL = 'https://letsrebase.com/privacy'
+const PRACTICES_URL = 'https://github.com/letsrebase/rebase-verify/blob/main/README.md#work-practices'
 
 /** The three commands a person runs, in order: the first two once, the third in the agent. */
 const COMMANDS = ['git clone https://github.com/letsrebase/rebase-verify', 'cd rebase-verify', 'claude'] as const
@@ -203,6 +205,26 @@ export function MemberWorkProfile({ profile, vetted }: { profile: Me['work_profi
                 Le leggiamo noi di rebase. Le aziende non le vedono.
               </p>
               <UsageBadges technologies={profile.technologies} />
+            </div>
+          )}
+          {profile.practices.length > 0 && (
+            <div className="space-y-2 border-t pt-3">
+              <h3 id="member-practices" className="text-sm font-medium">
+                Come lavora
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Per sapere come le contiamo, apri{' '}
+                <a
+                  className="underline underline-offset-2"
+                  href={PRACTICES_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  l&apos;elenco delle pratiche
+                </a>
+                .
+              </p>
+              <PracticeRows labelledBy="member-practices" practices={profile.practices} />
             </div>
           )}
           {(profile.state === 'rejected' || profile.expired) && (

@@ -15,6 +15,7 @@ const BASE: Profile = {
   expired: false,
   decision_note: null,
   technologies: [],
+  practices: [],
 }
 
 function show(profile: Me['work_profile'], vetted = true) {
@@ -91,6 +92,41 @@ describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
   it('shows no technologies block when the profile has none', () => {
     show(BASE)
     expect(screen.queryByRole('heading', { name: 'Le tecnologie nel tuo lavoro' })).toBeNull()
+  })
+
+  const PRACTICES: Profile['practices'] = [
+    { id: 'checks_before_commit', label: 'Verifica prima del commit', method: 'code', seen: 18, of: 25, products: 3, months: 4 },
+    { id: 'asks_for_alternatives', label: 'Chiede alternative', method: 'model', seen: 11, of: 60, products: 4, months: 5 },
+  ]
+
+  it('shows the person the same practice rows and marks, with a link to the published list', () => {
+    show({ ...BASE, state: 'approved', practices: PRACTICES })
+    const section = screen.getByRole('region', { name: 'Profilo di lavoro' })
+    expect(within(section).getByRole('heading', { name: 'Come lavora' })).toBeInTheDocument()
+    const list = within(section).getByRole('list', { name: 'Come lavora' })
+    expect(within(list).getByText('Verifica prima del commit')).toBeInTheDocument()
+    expect(within(list).getByText(/in 18 sessioni su 25/)).toBeInTheDocument()
+    expect(within(list).getByText('contato dal codice')).toBeInTheDocument()
+    expect(within(list).getByText('dal modello della persona, non ricontrollato')).toBeInTheDocument()
+    expect(within(section).getByRole('link', { name: "l'elenco delle pratiche" })).toHaveAttribute(
+      'href',
+      'https://github.com/letsrebase/rebase-verify/blob/main/README.md#work-practices',
+    )
+  })
+
+  it('shows no practices block when there are none', () => {
+    show({ ...BASE, state: 'approved' })
+    expect(screen.queryByRole('heading', { name: 'Come lavora' })).toBeNull()
+    expect(screen.queryByRole('link', { name: "l'elenco delle pratiche" })).toBeNull()
+  })
+
+  it.each([
+    ['expired', { state: 'approved', expired: true }],
+    ['rejected', { state: 'rejected' }],
+  ] as const)('shows no practices when the profile is %s (the API sends an empty list)', (_n, over) => {
+    show({ ...BASE, ...over, practices: [] })
+    expect(screen.queryByRole('heading', { name: 'Come lavora' })).toBeNull()
+    expect(screen.queryByText('Verifica prima del commit')).toBeNull()
   })
 
   it('says an expired profile no longer counts', () => {

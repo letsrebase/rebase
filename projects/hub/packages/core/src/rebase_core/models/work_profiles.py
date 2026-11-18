@@ -33,6 +33,9 @@ WORK_PROFILE_STATES = ("draft", "approved", "rejected")
 # months it appears in and nothing else, lowest first. A plain-language label for counts, never a
 # score and never a measure of skill (upstream ADR-001).
 TECH_USAGE_BANDS = ("occasional", "recurring", "continuous")
+# How a practice is counted (REB-1144): `code` from the session logs alone, `model` by the
+# person's own model reading a sample of sessions.
+PRACTICE_METHODS = ("code", "model")
 # The sha256 hex of a device code or an access token, like `TOKEN_HASH_LENGTH`.
 CLI_HASH_LENGTH = 64
 # `XXXX-XXXX`.
@@ -118,6 +121,10 @@ class WorkProfile(Base, PrimaryKeyMixin):
     )
     # Rows of techUsage dropped at intake for a name this hub's labels do not have (REB-1141).
     unknown_technologies: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    # Practices items dropped at intake for an id this hub does not list (REB-1144).
+    unknown_practices: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0")
     )
     state: Mapped[str] = mapped_column(String(10), nullable=False, default="draft")

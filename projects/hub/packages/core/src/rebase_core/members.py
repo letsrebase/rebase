@@ -37,7 +37,7 @@ from rebase_core.member_schemas import (
 from rebase_core.models import Company, Freelancer, User, WorkProfile
 from rebase_core.notes import NoteService
 from rebase_core.users import UserService, refuse_linkedin_conflict
-from rebase_core.work_profiles.view import technologies
+from rebase_core.work_profiles.view import practices, technologies
 
 ENTITY = "freelancer"
 # What the note calls each field, in the admin's language, in the wizard's order.
@@ -206,13 +206,15 @@ class MemberService:
         if row is None:
             return None
         expired = row.expires_at <= utcnow()
+        counts = not expired and row.state != "rejected"
         return MemberWorkProfile(
             state=row.state,
             submitted_at=row.submitted_at,
             expires_at=row.expires_at,
             expired=expired,
             decision_note=row.decision_note if row.state == "rejected" else None,
-            technologies=[] if expired or row.state == "rejected" else technologies(row.payload),
+            technologies=technologies(row.payload) if counts else [],
+            practices=practices(row.payload) if counts else [],
         )
 
     def delete_work_profile(self, user_id: UUID) -> MeRead:

@@ -24,6 +24,7 @@ from rebase_core.models import (
     FREELANCER_STATES,
     NOTE_SOURCES,
     PIGRO_STATES,
+    PRACTICE_METHODS,
     RECIPIENT_KINDS,
     RECIPIENT_STATES,
     REFERRAL_KINDS,
@@ -142,6 +143,7 @@ def _enum(prop: dict[str, Any]) -> list[str] | None:
         ("ContactPointRead", "kind", CONTACT_KINDS),
         ("ContactPointRead", "label", CONTACT_LABELS),
         ("WorkProfileTechnology", "band", TECH_USAGE_BANDS),
+        ("WorkProfilePractice", "method", PRACTICE_METHODS),
     ],
 )
 def test_a_closed_vocabulary_is_an_enum_of_its_constant(

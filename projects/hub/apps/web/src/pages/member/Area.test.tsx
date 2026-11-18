@@ -465,6 +465,7 @@ describe('/me, one column in a fixed order (REB-641), the referral panel first (
         expired: false,
         decision_note: 'Manca un progetto con un link.',
         technologies: [],
+        practices: [],
       },
     })
     mount()

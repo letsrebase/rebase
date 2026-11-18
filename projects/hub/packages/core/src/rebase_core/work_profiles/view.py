@@ -17,7 +17,8 @@ from typing import Any
 from rebase_core.models import TECH_USAGE_BANDS
 from rebase_core.schema_common import ResponseModel
 from rebase_core.team_schemas import CloudWorkDomain, CloudWorkProfile
-from rebase_core.vocabulary import TechUsageBand
+from rebase_core.vocabulary import PracticeMethod, TechUsageBand
+from rebase_core.work_profiles import practices as practices_module
 from rebase_core.work_profiles.tech_usage import reads_true
 
 SUMMARY_WHERE = "summary"
@@ -137,6 +138,20 @@ class WorkProfileTechnology(ResponseModel):
     last_month: str
 
 
+class WorkProfilePractice(ResponseModel):
+    """What the person's sessions show of one working practice (REB-1144): in how many sessions it
+    showed (`seen`) out of those that could have (`of`), and over how many products and months.
+    Counts only, never how well the person works. Admins and the person only."""
+
+    id: str
+    label: str
+    method: PracticeMethod
+    seen: int
+    of: int
+    products: int
+    months: int
+
+
 class WorkProfileView(ResponseModel):
     window_from: str | None
     window_to: str | None
@@ -152,6 +167,9 @@ class WorkProfileView(ResponseModel):
     # `cloud_work_profile` does not read them, because the wording the person approved lists the
     # summary, the domains and the representative projects' sectors and nothing else.
     technologies: list[WorkProfileTechnology]
+    # In the order of the vendored list, never sorted by the counts. Admins and the person only,
+    # for the same reason as `technologies`.
+    practices: list[WorkProfilePractice]
     projects: list[WorkProfileProject]
     other_projects: int
 
@@ -352,6 +370,40 @@ def technologies(payload: dict[str, Any]) -> list[WorkProfileTechnology]:
     return technology_rows(_dict(payload.get("techUsage")).get("technologies"))
 
 
+def practice_rows(rows: Any) -> list[WorkProfilePractice]:
+    """The `practices.items` rows of a stored profile that the intake would still accept, in the
+    order of the vendored list (never by the counts). A row that is no object, names a practice
+    the list does not know, fails the intake's own per-item rules (only a payload stored before
+    a rule changed has one) is left out, never a 500; an id listed twice keeps its first valid
+    row."""
+    by_id: dict[str, dict[str, Any]] = {}
+    if isinstance(rows, list):
+        for row in rows:
+            if practices_module.reads_true(row) and row["id"] not in by_id:
+                by_id[row["id"]] = row
+    found = []
+    for ident, method in practices_module.practice_methods().items():
+        row = by_id.get(ident)
+        if row is None:
+            continue
+        found.append(
+            WorkProfilePractice(
+                id=ident,
+                label=practices_module.PRACTICE_LABELS.get(ident, ident),
+                method=method,
+                seen=row["seen"],
+                of=row["of"],
+                products=row["products"],
+                months=row["months"],
+            )
+        )
+    return found
+
+
+def practices(payload: dict[str, Any]) -> list[WorkProfilePractice]:
+    return practice_rows(_dict(payload.get("practices")).get("items"))
+
+
 def render_profile(payload: dict[str, Any]) -> WorkProfileView:
     """The payload of a stored profile as the admin reads it."""
     window, volume = _dict(payload.get("window")), _dict(payload.get("volume"))
@@ -402,6 +454,7 @@ def render_profile(payload: dict[str, Any]) -> WorkProfileView:
         trajectory=_trajectory(payload.get("trajectory")),
         stack=_texts(payload.get("stackAdopted")),
         technologies=technologies(payload),
+        practices=practices(payload),
         projects=projects,
         other_projects=len(_dicts(payload.get("otherProjects"))),
     )

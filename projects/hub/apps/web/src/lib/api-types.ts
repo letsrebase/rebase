@@ -4732,7 +4732,8 @@ export interface components {
          *     and the admin's note only when it was rejected: an approval's note stays with the admins.
          *     `expired` says `expires_at` has passed; the sweep deletes the row soon after.
          *     `technologies` (REB-1130) are the person's own usage bands, shown to them while the profile
-         *     is a draft or approved and counts: empty once it expired or was rejected.
+         *     is a draft or approved and counts: empty once it expired or was rejected. `practices`
+         *     (REB-1144) follow the same rule.
          */
         MemberWorkProfile: {
             /**
@@ -4756,6 +4757,8 @@ export interface components {
             decision_note: string | null;
             /** Technologies */
             technologies: components["schemas"]["WorkProfileTechnology"][];
+            /** Practices */
+            practices: components["schemas"]["WorkProfilePractice"][];
         };
         /**
          * MergeRead
@@ -6479,6 +6482,8 @@ export interface components {
             decision_note: string | null;
             /** Unknown Technologies */
             unknown_technologies: number;
+            /** Unknown Practices */
+            unknown_practices: number;
             /** Guard Hits */
             guard_hits: components["schemas"]["WorkProfileGuardHit"][];
             profile: components["schemas"]["WorkProfileView"];
@@ -6572,6 +6577,31 @@ export interface components {
             tags: string[];
             /** Counts */
             counts: components["schemas"]["WorkProfileCount"][];
+        };
+        /**
+         * WorkProfilePractice
+         * @description What the person's sessions show of one working practice (REB-1144): in how many sessions it
+         *     showed (`seen`) out of those that could have (`of`), and over how many products and months.
+         *     Counts only, never how well the person works. Admins and the person only.
+         */
+        WorkProfilePractice: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "code" | "model";
+            /** Seen */
+            seen: number;
+            /** Of */
+            of: number;
+            /** Products */
+            products: number;
+            /** Months */
+            months: number;
         };
         /** WorkProfilePrinciple */
         WorkProfilePrinciple: {
@@ -6698,6 +6728,8 @@ export interface components {
             stack: string[];
             /** Technologies */
             technologies: components["schemas"]["WorkProfileTechnology"][];
+            /** Practices */
+            practices: components["schemas"]["WorkProfilePractice"][];
             /** Projects */
             projects: components["schemas"]["WorkProfileProject"][];
             /** Other Projects */

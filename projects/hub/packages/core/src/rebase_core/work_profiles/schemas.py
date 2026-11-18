@@ -164,5 +164,7 @@ class WorkProfileAdminRead(ResponseModel):
     decision_note: str | None
     # How many techUsage rows were dropped at intake because this hub did not know the name.
     unknown_technologies: int
+    # The same for practices items whose id this hub did not know (REB-1144).
+    unknown_practices: int
     guard_hits: list[WorkProfileGuardHit]
     profile: WorkProfileView

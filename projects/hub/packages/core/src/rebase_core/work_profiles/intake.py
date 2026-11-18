@@ -44,6 +44,7 @@ from rebase_core.models import (
     User,
     WorkProfile,
 )
+from rebase_core.work_profiles import practices
 from rebase_core.work_profiles.groundedness import (
     Groundedness,
     TooManyAnchors,
@@ -181,6 +182,7 @@ class WorkProfileService:
         )
         stored = copy.deepcopy({key: value for key, value in payload.items() if key != "contact"})
         unknown = drop_unknown(stored)
+        unknown_practices = practices.drop_unknown(stored)
         now = self._now()
         version = payload.get("toolVersion")
         if not isinstance(version, str):
@@ -199,6 +201,7 @@ class WorkProfileService:
         row.unsupported_anchors = score.anomalies
         row.guard_hits = hits
         row.unknown_technologies = unknown
+        row.unknown_practices = unknown_practices
         row.state = "draft"
         row.submitted_at = now
         row.expires_at = add_months(now, RETENTION_MONTHS)
@@ -304,6 +307,7 @@ class WorkProfileService:
             ),
             decision_note=row.decision_note,
             unknown_technologies=row.unknown_technologies,
+            unknown_practices=row.unknown_practices,
             guard_hits=[
                 WorkProfileGuardHit(field=str(h.get("field", "")), rule=str(h.get("rule", "")))
                 for h in row.guard_hits

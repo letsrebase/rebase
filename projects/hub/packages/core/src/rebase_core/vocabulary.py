@@ -40,6 +40,7 @@ from rebase_core.models import (
     LOGIN_METHODS,
     NOTE_SOURCES,
     PIGRO_STATES,
+    PRACTICE_METHODS,
     RECIPIENT_KINDS,
     RECIPIENT_STATES,
     REFERRAL_KINDS,
@@ -106,6 +107,7 @@ ContactLabel = Annotated[str, Field(json_schema_extra=enum_of(CONTACT_LABELS))]
 AiSourceKind = Annotated[str, Field(json_schema_extra=enum_of(AI_SOURCE_KINDS))]
 WorkProfileState = Annotated[str, Field(json_schema_extra=enum_of(WORK_PROFILE_STATES))]
 TechUsageBand = Annotated[str, Field(json_schema_extra=enum_of(TECH_USAGE_BANDS))]
+PracticeMethod = Annotated[str, Field(json_schema_extra=enum_of(PRACTICE_METHODS))]
 CliAuthorizationState = Annotated[str, Field(json_schema_extra=enum_of(CLI_AUTHORIZATION_STATES))]
 LoginMethod = Annotated[str, Field(json_schema_extra=enum_of(LOGIN_METHODS))]
 CliScope = Annotated[str, Field(json_schema_extra=enum_of(CLI_SCOPES))]

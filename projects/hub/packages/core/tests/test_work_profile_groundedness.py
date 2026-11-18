@@ -313,3 +313,27 @@ def test_technology_usage_counts_and_names_ground_prose_as_the_fork_pools_them()
         ],
     }
     assert anomalies_of(p, where="cognitive.narrative") == []
+
+
+def test_the_support_pool_holds_seen_of_products_months() -> None:
+    # REB-1144: the same numbers the fork's groundedness.mjs pools from `practices.items`.
+    p = base_profile()
+    p["cognitive"]["narrative"] = (
+        "Verifica prima del commit in 18 sessioni su 25, in 3 prodotti e 4 mesi."
+    )
+    assert anomalies_of(p, where="cognitive.narrative", kind="number")
+    p["practices"] = {
+        "rubric": "rebase-practices/v1",
+        "timezone": "UTC",
+        "items": [
+            {
+                "id": "checks_before_commit",
+                "method": "code",
+                "seen": 18,
+                "of": 25,
+                "products": 3,
+                "months": 4,
+            }
+        ],
+    }
+    assert anomalies_of(p, where="cognitive.narrative") == []

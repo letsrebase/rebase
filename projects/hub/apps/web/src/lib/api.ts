@@ -365,6 +365,7 @@ export type LoginStats = Schemas['LoginStats']
  *  types are regenerated this is the page's own reading. */
 export type GuideStats = Schemas['GuideStats']
 export type WorkProfileAdmin = Schemas['WorkProfileAdminRead']
+export type WorkProfilePractice = Schemas['WorkProfilePractice']
 export type Talent = Schemas['TalentRead']
 export type TalentList = Schemas['TalentList']
 /** Who is committed, as the CRM says (REB-1120): this week and its next change, by card. */

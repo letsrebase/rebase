@@ -66,15 +66,15 @@ def band_for(months: int, first_month: str, last_month: str) -> str:
     return "occasional"
 
 
-def _count(value: Any) -> TypeGuard[int]:
+def is_count(value: Any) -> TypeGuard[int]:
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
-def _month(value: Any) -> TypeGuard[str]:
+def is_month(value: Any) -> TypeGuard[str]:
     return isinstance(value, str) and _MONTH.match(value) is not None
 
 
-def _timezone(value: Any) -> bool:
+def is_timezone(value: Any) -> bool:
     if not isinstance(value, str) or not value:
         return False
     try:
@@ -95,7 +95,7 @@ def issues(payload: dict[str, Any]) -> list[str]:
         return ["techUsage: serve un oggetto"]
     found: list[str] = []
     zone = block.get("timezone")
-    if not _timezone(zone):
+    if not is_timezone(zone):
         found.append(f"techUsage.timezone: «{zone}» non è un fuso orario IANA")
     else:
         intensity = payload.get("intensity")
@@ -123,15 +123,15 @@ def issues(payload: dict[str, Any]) -> list[str]:
             found.append(f"{where}: compare più di una volta")
         seen.add(name)
         first, last = row.get("firstMonth"), row.get("lastMonth")
-        if not _month(first) or not _month(last) or first > last:
+        if not is_month(first) or not is_month(last) or first > last:
             found.append(f"{where}: i mesi {first}..{last} non sono un intervallo valido")
             continue
         months = row.get("months")
-        if not _count(months) or not 1 <= months <= month_span(first, last):
+        if not is_count(months) or not 1 <= months <= month_span(first, last):
             found.append(f"{where}: {months} mesi non stanno fra {first} e {last}")
             continue
         sessions, products = row.get("sessions"), row.get("products")
-        if not _count(sessions) or not _count(products):
+        if not is_count(sessions) or not is_count(products):
             found.append(f"{where}: sessioni e prodotti sono numeri interi da zero in su")
             continue
         derived = band_for(months, first, last)
@@ -141,7 +141,7 @@ def issues(payload: dict[str, Any]) -> list[str]:
             )
         for key, count in (("products", products), ("sessions", sessions)):
             total = volume.get(key)
-            if _count(total) and count > total:
+            if is_count(total) and count > total:
                 found.append(f"{where}: {count} {key} ma il profilo ne ha {total}")
         if products > sessions:
             found.append(f"{where}: {products} prodotti ma solo {sessions} sessioni")
@@ -171,10 +171,10 @@ def reads_true(name: Any, band: Any, months: Any, first: Any, last: Any) -> bool
     return (
         isinstance(name, str)
         and name in technology_labels()
-        and _month(first)
-        and _month(last)
+        and is_month(first)
+        and is_month(last)
         and first <= last
-        and _count(months)
+        and is_count(months)
         and 1 <= months <= month_span(first, last)
         and band == band_for(months, first, last)
     )

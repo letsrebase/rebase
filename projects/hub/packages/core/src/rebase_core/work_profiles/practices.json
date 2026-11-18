@@ -1,0 +1,168 @@
+{
+  "notes": [
+    "rebase-verify reads each command up to its first 240 characters, so a check at the end of a long chained command can be missed.",
+    "Paths are compared lower-cased, with a backslash read as a forward slash, and are read relative to the project folder of the session, so a folder above the project named test or specs changes nothing.",
+    "Sessions with no time are left out, as they cannot be placed in a month.",
+    "Leading environment assignments and runner wrappers such as npx, uv run, python -m and pnpm exec are skipped before a command is matched.",
+    "Two runs count as the same check when their command words match: the words before the first flag or path, wrappers dropped, so a narrower run of the same check (pytest tests/a.py after pytest) is the same command.",
+    "A failed command that holds a check counts as a failed check, and in a chain such as npm test && git push the exit status cannot say which part failed, so the chain counts as its first check.",
+    "Options that list files or statistics instead of the diff, such as git diff --stat and --name-only, and git show <rev>:<path>, are not read as a diff appearing."
+  ],
+  "practices": [
+    {
+      "definition": "After the last file edit before a git commit, a check ran in the session: tests, a linter, a type check or a build.",
+      "denominator": "Sessions with a commit.",
+      "id": "checks_before_commit",
+      "method": "code"
+    },
+    {
+      "definition": "Both a source file and a test file were edited in the session.",
+      "denominator": "Sessions that edited a source file.",
+      "id": "tests_with_changes",
+      "method": "code"
+    },
+    {
+      "definition": "A check command (tests, a linter, a type check or a build) failed, files were edited, and then the same check succeeded in the session.",
+      "denominator": "Sessions where a check command failed.",
+      "id": "failure_reproduced_before_fix",
+      "method": "code"
+    },
+    {
+      "definition": "A planning step came before the first file edit in the session: plan mode, a task list, or writing a plan or spec file.",
+      "denominator": "Sessions with an edit.",
+      "id": "plan_before_edit",
+      "method": "code"
+    },
+    {
+      "definition": "Before a commit or a pull request, the diff appeared in the session (git diff, git show or gh pr diff), whoever asked for it; the session cannot show whether anyone read it.",
+      "denominator": "Sessions with a commit or a pull request.",
+      "id": "reviews_changes",
+      "method": "code"
+    },
+    {
+      "definition": "A design document (an ADR, RFC, spec or design file, by path) was written or edited in the session.",
+      "denominator": "Sessions with an edit.",
+      "id": "design_documents",
+      "method": "code"
+    },
+    {
+      "definition": "A dependency audit or a security scanner ran in the session.",
+      "denominator": "Sessions with an edit.",
+      "id": "security_checks",
+      "method": "code"
+    }
+  ],
+  "rubric": "rebase-practices/v1",
+  "rules": {
+    "checks": [
+      "^(?:py\\.test|pytest)(?=\\s|$)",
+      "^ruff\\s+check(?=\\s|$)",
+      "^(?:mypy|pyright|flake8|pylint)(?=\\s|$)",
+      "^go\\s+(?:test|vet|build)(?=\\s|$)",
+      "^golangci-lint\\s+run(?=\\s|$)",
+      "^cargo\\s+(?:test|clippy|check|build|nextest)(?=\\s|$)",
+      "^(?:mvn|\\.\\/mvnw)\\s+(?:\\S+\\s+)*?(?:test|verify|package)(?=\\s|$)",
+      "^(?:gradle|\\.\\/gradlew)\\s+(?:\\S+\\s+)*?(?:test|check|build)(?=\\s|$)",
+      "^dotnet\\s+(?:test|build)(?=\\s|$)",
+      "^(?:\\.\\/)?(?:vendor\\/bin\\/)?(?:phpunit|phpstan|pest)(?=\\s|$)",
+      "^(?:bundle\\s+exec\\s+)?(?:rspec|rubocop)(?=\\s|$)",
+      "^tsc(?=\\s|$)",
+      "^(?:eslint|biome\\s+(?:check|lint|ci))(?=\\s|$)",
+      "^vitest(?=\\s|$)",
+      "^jest(?=\\s|$)",
+      "^(?:playwright|cypress)\\s+(?:test|run)(?=\\s|$)",
+      "^node\\s+(?:\\S+\\s+)*?--test(?=\\s|$)",
+      "^(?:npm|pnpm|yarn|bun)\\s+(?:run\\s+)?(?:test|tests|lint|typecheck|type-check|check|build|ci)(?=\\s|$)",
+      "^make\\s+(?:test|tests|check|lint|build|ci)(?=\\s|$)"
+    ],
+    "commit": [
+      "^git(?:\\s+(?:-C\\s+\\S+|-c\\s+\\S+|--no-pager))*\\s+commit(?=\\s|$)"
+    ],
+    "designPaths": [
+      "(?:^|\\/)adr\\/",
+      "(?:^|\\/)(?:rfcs\\/|docs\\/rfc\\/)",
+      "(?:^|\\/)docs\\/design\\/",
+      "(?:^|\\/)specs\\/",
+      "(?:^|\\/)(?:adr-[^/]*|[^/]*-adr\\.md)$",
+      "(?:^|\\/)rfc[^/]*$",
+      "(?:^|\\/)(?:[^/]*-design|design)\\.md$",
+      "(?:^|\\/)[^/]*-spec\\.md$"
+    ],
+    "diff": [
+      "^git(?:\\s+(?:-C\\s+\\S+|-c\\s+\\S+|--no-pager))*\\s+diff(?=\\s|$)(?!.*\\s--(?:stat|numstat|shortstat|name-only|name-status)\\b)",
+      "^git(?:\\s+(?:-C\\s+\\S+|-c\\s+\\S+|--no-pager))*\\s+show(?=\\s|$)(?!.*\\s--(?:stat|numstat|shortstat|name-only|name-status)\\b)(?!.*\\s[^\\s-]\\S*:\\S)",
+      "^gh\\s+pr\\s+diff(?=\\s|$)"
+    ],
+    "editTools": [
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "MultiEdit"
+    ],
+    "planPaths": [
+      "(?:^|\\/)plans\\/",
+      "(?:^|\\/)(?:[^/]*-plan|plan)\\.md$",
+      "(?:^|\\/)specs\\/",
+      "(?:^|\\/)[^/]*-spec\\.md$"
+    ],
+    "planningTools": [
+      "ExitPlanMode",
+      "TodoWrite"
+    ],
+    "pullRequest": [
+      "^gh\\s+pr\\s+create(?=\\s|$)"
+    ],
+    "security": [
+      "^(?:npm|pnpm|yarn|bun)\\s+audit(?=\\s|$)",
+      "^(?:pip-audit|safety\\s+check|bandit)(?=\\s|$)",
+      "^cargo\\s+(?:audit|deny)(?=\\s|$)",
+      "^(?:trivy|semgrep|gitleaks|trufflehog|snyk|grype|osv-scanner|brakeman|bundler-audit|govulncheck)(?=\\s|$)"
+    ],
+    "sourceExclusions": [
+      "\\.config\\.[^/]+$",
+      "\\.d\\.[cm]?ts$",
+      "(?:^|\\/)conftest\\.py$",
+      "(?:^|\\/)setup\\.py$",
+      "(?:^|\\/)docs\\/"
+    ],
+    "sourceExtensions": [
+      "js",
+      "mjs",
+      "cjs",
+      "jsx",
+      "ts",
+      "mts",
+      "cts",
+      "tsx",
+      "vue",
+      "svelte",
+      "py",
+      "go",
+      "rs",
+      "java",
+      "kt",
+      "kts",
+      "scala",
+      "rb",
+      "php",
+      "cs",
+      "c",
+      "cc",
+      "cpp",
+      "h",
+      "hpp",
+      "swift",
+      "m",
+      "dart",
+      "ex",
+      "exs",
+      "lua"
+    ],
+    "testPaths": [
+      "(?:^|\\/)(?:tests?|__tests__|spec)\\/",
+      "\\.(?:test|spec)\\.[^/]+$",
+      "_test\\.[^/]+$",
+      "(?:^|\\/)test_[^/]*\\.py$"
+    ]
+  }
+}
