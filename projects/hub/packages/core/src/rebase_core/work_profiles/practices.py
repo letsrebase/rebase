@@ -31,6 +31,11 @@ PRACTICE_LABELS: dict[str, str] = {
     "reviews_changes": "Rilettura delle modifiche prima del commit",
     "design_documents": "Scrive documenti di progetto",
     "security_checks": "Controlli di sicurezza",
+    "asks_for_alternatives": "Chiede alternative",
+    "pushes_back_with_reason": "Corregge l'agente motivando",
+    "states_done_criteria": "Dice quando il lavoro è finito",
+    "raises_risks": "Considera i rischi",
+    "limits_scope": "Delimita il lavoro",
 }
 
 _KEYS = ("seen", "of", "products", "months")

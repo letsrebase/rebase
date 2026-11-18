@@ -228,6 +228,28 @@ The AI-relationship axis is the closest to the line: it reads the shape of promp
 steps, file paths, questions), never their tone or sentiment, and reports a position on one
 axis with the counts behind it.
 
+**Model-classified counts (REB-1146).** The first version of this section admitted only counts
+made without a model. It now also admits counts of moves that the person's own model classifies,
+under these conditions:
+
+- the model is the person's own (their coding agent through the slash command, or their own API
+  key), reading the person's own messages to their own agent;
+- it classifies against a published closed list, each practice with a definition and examples, and
+  answers yes or no per session; only the counts per practice leave the machine, never a message;
+- tone, feelings, politeness and the quality of the wording are never grounds for a yes (the
+  Art. 5(1)(f) line on emotions below stays as it is);
+- a count of moves in a conversation (for example «asked for alternatives in 11 of 60 sessions»)
+  is a description of what happened, not a rating of the person;
+- every such row is marked as coming from the person's model and not rechecked, and a practice
+  enters the list only after passing the quality gate in § 8.
+
+**What stays out, for the model as for code.** Whether an architecture was good, how well work
+is organised, soft skills and character. Nothing the model reads is turned into a trait.
+
+**Open, not settled here.** Whether counts of moves in a conversation stay outside Annex III
+point 4(a) is Lorenzo's reading, to be confirmed by him, and a lawyer's to review at sign-off
+(§ 9). The model practices reach production only after both.
+
 **What the logs cannot show.** Whether an architecture was right needs the outcome and the
 context, which the logs do not hold. Organisation beyond one person's sessions (estimates kept,
 coordination with a team or a client) is mostly outside them. Soft skills are interpersonal,
@@ -243,7 +265,8 @@ the projects themselves.
 
 ## 8. Practices (REB-1142)
 
-The profile gains a `practices` block: seven ways of working, each shown as «in N sessioni su M»
+The profile gains a `practices` block: twelve ways of working (seven counted by code, five
+classified by the person's own model), each shown as «in N sessioni su M»
 with the number of products and months it spans. Definitions and rules are published in the
 fork's README («Work practices») and in `share/practices.json`, which the hub vendors.
 
@@ -256,11 +279,35 @@ command, a path or a file name. Before sending, the person can read the counts i
 (the section «How the work is done») and in the payload that `submit --dry-run` writes; the
 plain `submit` preview does not list them.
 
-**Method.** All seven are counted by code, with no model. That is the case § 7 already scopes
-in («without a model», counts of something the person did), so § 7 stands as written for them.
-The six practices that would be classified by a model are a separate, future section: they go
-past § 7, which calls anything inferred from wording a guess about character, and shipping them
-needs § 7 rewritten first. Nothing in this section covers them.
+**Method.** The seven above are counted by code, with no model: the case § 7 scopes in
+(«without a model», counts of something the person did).
+
+**The model method (REB-1146).** Five practices are classified by a model: `asks_for_alternatives`,
+`pushes_back_with_reason`, `states_done_criteria`, `raises_risks` and `limits_scope`. § 7 admits
+them under the conditions it lists.
+
+- What is read: at most 60 sampled sessions, and in each at most 12 of the person's own messages,
+  redacted on their machine, never the agent's replies.
+- Who answers: the person's own model, either their agent through the slash command or their own
+  API key. rebase runs no model on this data.
+- The quality gate: a practice is published only if the model's answers agree with a written
+  reference at 90% or more, and are stable across two runs, also at 90% or more. The model was
+  claude-opus-4-7 through the Claude Code CLI. Agreement on a written set of 224 sessions (10 yes
+  and 10 no per practice and language, written for the purpose, read blind by a second reader,
+  6 rewritten, 16 dropped): `asks_for_alternatives` 224/224, `pushes_back_with_reason` 220/224,
+  `states_done_criteria` 223/224, `raises_risks` 218/224, `limits_scope` 220/224, and
+  `gives_context_and_constraints` 196/224, which failed. Stability, two runs on 40 real sessions
+  of the developer's own (client paths excluded; some were dispatched by an agent): 39/40, 37/40,
+  40/40, 39/40 and 36/40 for the five, and 40/40 for the one left out.
+- What the gate does not show: a written set shows that the rubric is understood as its writers
+  understood it, not how messy real sessions are classified. Nobody outside the build checked the
+  set, by Lorenzo's choice.
+- `gives_context_and_constraints` is left out: it is not published, has no label, and a profile
+  that carries it has it dropped and counted as an unknown id.
+- What the hub can do: bound `seen <= of <= 60`, and nothing more. It never re-derives a count,
+  since the messages stay on the person's machine.
+- What the person can do: steer their agent while it classifies, or edit the file before sending.
+- Every model row is marked «dal modello della persona, non ricontrollato».
 
 **Denominators.** Each practice is counted against the sessions where it could have happened,
 and shown as seen out of that number, never as a percentage or a total:
@@ -306,15 +353,15 @@ kept, as with technologies.
   when the assistant is Claude), see § 4 (risks), and each such read is logged as
   `work_profile_read`.
 
-Every row is marked «contato dal codice». The counts are not shown anywhere else: not in the
+Every row is marked «contato dal codice» or «dal modello della persona, non ricontrollato». The counts are not shown anywhere else: not in the
 talent cloud, not in the anonymous card or its source text, not in the narrative, and no sort,
 filter or ordering reads them. They carry no bar, colour scale or total.
 
 **Residual risk.** A count can be read as a judgement about the person, such as «seldom plans, so
 careless» or «never reviews», which is the «usage read as competence» risk of § 4 again, with
 the same medium rating. Several practices also depend on how a person's agent records things,
-so a low count may say more about the tool than the work. Measures: each row says it was counted
-by code and shows its denominator; there is no total and no score (the rule in DECISIONS.md,
+so a low count may say more about the tool than the work. A model row can also be wrong in ways
+the gate did not test. Measures: each row says how it was counted and shows its denominator; there is no total and no score (the rule in DECISIONS.md,
 2026-11-18, and § 6); admins and the person see the rows, companies do not; and the list and
 the rules are public, so anyone can check what a row means. Review the marks and the list when
 a practice is added or its rule changes.
@@ -324,6 +371,9 @@ a practice is added or its rule changes.
 - [ ] Reviewed by Lorenzo Fiore for Rebase S.r.l.
 - [ ] Reviewed by a lawyer: Annex III scope of the current flow, the consent-under-pressure
       risk, the vetted flag outliving withdrawal
+- [ ] Lorenzo's reading, and the lawyer's review, that counts of moves classified by the person's
+      own model (§ 7, § 8) stay outside Annex III point 4(a); the model practices reach production
+      only after both
 - [ ] Questions for Play New (REB-1125): would they accept band and practice counts upstream,
       and do they read ADR-001 as ruling out per-person scores in their own intake too?
 

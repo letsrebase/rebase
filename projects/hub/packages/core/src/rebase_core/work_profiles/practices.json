@@ -50,6 +50,76 @@
       "denominator": "Sessions with an edit.",
       "id": "security_checks",
       "method": "code"
+    },
+    {
+      "definition": "asks for options or trade-offs before choosing one",
+      "id": "asks_for_alternatives",
+      "method": "model",
+      "negative": [
+        "Use Redis for the queue.",
+        "What does this function return when the list is empty?"
+      ],
+      "positive": [
+        "Before we pick a queue library, give me two or three options with their trade-offs.",
+        "Is there another way to do this besides a cron job? Compare them for me."
+      ],
+      "tone": "Tone, feelings, politeness and wording quality are never grounds for a yes."
+    },
+    {
+      "definition": "rejects or corrects what the agent proposed or did, and says why",
+      "id": "pushes_back_with_reason",
+      "method": "model",
+      "negative": [
+        "No, not like that.",
+        "Why did you choose a map here instead of a list?"
+      ],
+      "positive": [
+        "No, don't mock the database here: the bug was in the real query, so the test would hide it.",
+        "That rename breaks the public API for existing users, revert it."
+      ],
+      "tone": "Tone, feelings, politeness and wording quality are never grounds for a yes."
+    },
+    {
+      "definition": "states acceptance criteria, the expected behaviour, or the check that proves it",
+      "id": "states_done_criteria",
+      "method": "model",
+      "negative": [
+        "Make the export work.",
+        "Make sure it works properly when you are done."
+      ],
+      "positive": [
+        "Done when the export returns all rows and the integration test for empty results passes.",
+        "It should redirect to /login when the session expires; I'll check that by hand."
+      ],
+      "tone": "Tone, feelings, politeness and wording quality are never grounds for a yes."
+    },
+    {
+      "definition": "raises a risk: security, data loss, cost, performance, compatibility, rollout",
+      "id": "raises_risks",
+      "method": "model",
+      "negative": [
+        "Be careful with this change.",
+        "Make it fast."
+      ],
+      "positive": [
+        "This migration drops the column; what happens to rows written during the deploy?",
+        "Calling the API on every keystroke will blow our rate limit and the bill."
+      ],
+      "tone": "Tone, feelings, politeness and wording quality are never grounds for a yes."
+    },
+    {
+      "definition": "cuts, splits or defers part of the work explicitly",
+      "id": "limits_scope",
+      "method": "model",
+      "negative": [
+        "Do the backend and the UI and the docs.",
+        "Can you also look at the other files while you are there?"
+      ],
+      "positive": [
+        "Only do the backend for now; leave the UI for a separate change.",
+        "Skip the refactor, just fix the crash in this PR."
+      ],
+      "tone": "Tone, feelings, politeness and wording quality are never grounds for a yes."
     }
   ],
   "rubric": "rebase-practices/v1",
