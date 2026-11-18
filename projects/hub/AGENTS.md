@@ -565,6 +565,12 @@ freelancer runs `letsrebase/work-profile` (our MIT fork of Play New's `apply-new
 sign-in in the browser and the CLI sends a redacted work profile, which waits as a `draft` for an
 admin. Nothing counts before a person approves it.
 
+**The impact assessment.** `docs/privacy/work-profile-dpia.md` is the GDPR Art. 35 assessment of
+this processing (REB-1132). A change to what a work profile carries, who sees it, how long it is
+kept or what it feeds updates that file in the same pull request. No numeric score, rating or
+ranking about a person is computed from a profile; the usage bands and the groundedness check are
+the only computed outputs (`docs/design/DECISIONS.md`, 2026-11-18).
+
 **Where the code is.** Tables `cli_authorizations` and `work_profiles` (`models/work_profiles.py`,
 migration 0054; neither is in `WAREHOUSE_TABLES`). The sign-in is `cli_auth.py`
 (`CliAuthService`), the intake `work_profiles/intake.py` (`WorkProfileService`), its shape and checks
