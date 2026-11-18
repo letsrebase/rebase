@@ -1,8 +1,8 @@
 # Signing in to the hub with GitHub or Google
 
 Status: written and built on 2026-11-18. Lorenzo said on 2026-11-18 to go ahead without waiting
-for a review of the spec, so this is the record of what shipped; the privacy paragraph of § 9
-is a proposal and nothing public changes until he says yes to it. Card: REB-1137. Project:
+for a review of the spec, so this is the record of what shipped; he approved the privacy
+paragraph of § 9 the same day, and it is on the site's privacy page. Card: REB-1137. Project:
 «Let freelancers show how they work with a reviewed work profile» (P-REB-91), milestone «Sign in
 to the hub with GitHub or Google». Pointed to by § 11 of
 `2026-11-17-work-profile-intake-and-review-design.md`.
@@ -289,11 +289,11 @@ provider and that address. It creates no user, no contact point, no note and no 
 (a login is not an audit event today). It changes nothing for the magic link, `/auth/link`,
 `/auth/enter`, the CLI device flow or the MCP's tokens.
 
-## 9. Privacy: a paragraph for Lorenzo to approve
+## 9. Privacy: the paragraph Lorenzo approved
 
-`projects/website/src/privacy.html` says nothing about signing in with a provider, and a
-public text is Lorenzo's to approve; this change does not touch it. The proposal, a new section
-after «Il profilo di lavoro», in the page's own voice:
+`projects/website/src/privacy.html` said nothing about signing in with a provider. Lorenzo
+approved this text on 2026-11-18, and it is a new section after «Il profilo di lavoro», in the
+page's own voice:
 
 > **L'accesso con GitHub o Google.** Puoi entrare nella tua area con il tuo account GitHub o
 > Google, in alternativa al link che ti mandiamo per mail. Ti mandiamo da GitHub o da Google
@@ -306,8 +306,9 @@ after «Il profilo di lavoro», in the page's own voice:
 > tecnico che serve a completare l'accesso; GitHub e Google trattano i tuoi dati secondo le
 > loro informative, come titolari autonomi. Base giuridica: la tua richiesta di accedere.
 
-If Lorenzo agrees, it also earns a line in «Cookie e misurazione» for the technical cookie, and
-the two OAuth consent screens link to the notice (Google's verification asks for it).
+«Cookie e misurazione» also names the technical cookie (limited to the sign-in path, ten
+minutes). Google's consent screen links to the notice and the terms; GitHub's OAuth app has
+only a homepage field, which points at letsrebase.com.
 
 ## 10. Calls made in this design
 
@@ -321,13 +322,12 @@ the two OAuth consent screens link to the notice (Google's verification asks for
 - Google is asked for `openid email` only; `profile` was in the first decision and was dropped on 2026-11-18 because nothing reads it (§ 2).
 - Every failure of the two navigations is a redirect to the login with a reason, never a JSON error (§ 3); an exception from the HTTP seam (a timeout, a reset) is one of them.
 
-Questions that are Lorenzo's:
+Questions that were Lorenzo's, answered on 2026-11-18:
 
-1. **The magic link and a deleted person.** Leave it (Lorenzo, 2026-11-18: leave it as it is), or refuse them there too?
-2. **The privacy paragraph** of § 9, and the line for «Cookie e misurazione».
+1. **The magic link and a deleted person.** Leave it as it is.
+2. **The privacy paragraph** of § 9, and the line for «Cookie e misurazione»: approved as written.
 
 ## 11. Cards
 
-REB-1137 (this card: the design and the build). Neighbours that are not touched: REB-1130
-(usage bands, owns migration 0059), REB-1131 (the invitation campaign). A card for the privacy
-text follows Lorenzo's answer to question 2.
+REB-1137 (this card: the design, the build and the privacy text). Neighbours that are not
+touched: REB-1130 (usage bands), REB-1131 (the invitation campaign).
