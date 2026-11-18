@@ -1,11 +1,12 @@
 {
   "notes": [
     "rebase-verify reads each command up to its first 240 characters, so a check at the end of a long chained command can be missed.",
-    "Paths are compared lower-cased, with a backslash read as a forward slash.",
+    "Paths are compared lower-cased, with a backslash read as a forward slash, and are read relative to the project folder of the session, so a folder above the project named test or specs changes nothing.",
+    "Sessions with no time are left out, as they cannot be placed in a month.",
     "Leading environment assignments and runner wrappers such as npx, uv run, python -m and pnpm exec are skipped before a command is matched.",
     "Two runs count as the same check when their command words match: the words before the first flag or path, wrappers dropped, so a narrower run of the same check (pytest tests/a.py after pytest) is the same command.",
     "A failed command that holds a check counts as a failed check, and in a chain such as npm test && git push the exit status cannot say which part failed, so the chain counts as its first check.",
-    "git diff --stat, git diff --name-only and git show <rev>:<path> are not read as a diff appearing."
+    "Options that list files or statistics instead of the diff, such as git diff --stat and --name-only, and git show <rev>:<path>, are not read as a diff appearing."
   ],
   "practices": [
     {

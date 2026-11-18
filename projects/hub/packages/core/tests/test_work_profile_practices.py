@@ -75,7 +75,7 @@ def test_absent_or_null_block_is_no_issue() -> None:
         ({"products": 19}, "19 prodotti ma visto"),  # seen 18
         ({"seen": 4, "products": 1, "months": 5}, "5 mesi ma visto"),  # window spans 12
         ({"months": 0}, "mesi sono 0"),
-        ({"months": 13, "seen": 20}, "finestra"),  # window spans 12
+        ({"months": 14, "seen": 20}, "finestra"),  # window spans 12
         ({"method": "model"}, "metodo"),
     ],
 )
@@ -119,12 +119,22 @@ def test_an_id_twice_is_an_issue() -> None:
 
 
 def test_months_cannot_exceed_the_windows_span() -> None:
-    profile = _profile(_item("checks_before_commit", seen=18, months=4))
+    profile = _profile(_item("checks_before_commit", seen=18, months=5))
     profile["window"] = {"from": "2026-01", "to": "2026-03"}
     found = issues(profile)
     assert len(found) == 1
     assert "mesi" in found[0]
     assert "3" in found[0]
+
+
+def test_months_may_exceed_the_utc_window_by_one_for_the_profile_zone() -> None:
+    # Rome 2026-01-01T00:30Z and 2026-01-31T23:30Z fall in two Rome months, one UTC month.
+    profile = _profile(_item("checks_before_commit", seen=18, months=2), timezone="Europe/Rome")
+    profile["window"] = {"from": "2026-01", "to": "2026-01"}
+    assert issues(profile) == []
+    profile = _profile(_item("checks_before_commit", seen=18, months=3), timezone="Europe/Rome")
+    profile["window"] = {"from": "2026-01", "to": "2026-01"}
+    assert len(issues(profile)) == 1
 
 
 def test_a_model_practice_is_capped_at_60(monkeypatch: pytest.MonkeyPatch) -> None:

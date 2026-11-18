@@ -86,7 +86,9 @@ def _item_issues(
         found.append(f"{where}: {months} mesi ma visto in sole {seen} sessioni")
     if seen >= 1 and months < 1:
         found.append(f"{where}: visto in {seen} sessioni ma i mesi sono 0")
-    if window_months is not None and months > window_months:
+    # months are counted in the profile's zone, the window in UTC: an offset of at most 14 hours
+    # shifts a month key by at most one.
+    if window_months is not None and months > window_months + 1:
         found.append(f"{where}: {months} mesi ma la finestra del profilo ne copre {window_months}")
     return found
 

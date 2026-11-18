@@ -230,8 +230,9 @@ hub's port), so a narrative that cites «18 of 25» is supported.
 - **Recheck** (`work_profiles/practices.py`, called from `structure`): the rubric is one the hub
   knows; each item's `method` is the one its id has in the vendored list; `0 ≤ seen ≤ of`;
   `of ≤ volume.sessions`, and `of ≤ 60` for a model practice; `products ≤ volume.products` and
-  `products ≤ seen`; `months ≤ seen`, `months ≥ 1` when `seen ≥ 1`, and no more months than the
-  profile's window spans; no id twice. A refusal names the practice and the rule, in Italian.
+  `products ≤ seen`; `months ≤ seen`, `months ≥ 1` when `seen ≥ 1`, and at most one more month than the
+  profile's window spans (months are counted in the profile's zone, the window in UTC, and an
+  offset of at most 14 hours shifts a month key by at most one); no id twice. A refusal names the practice and the rule, in Italian.
 - **Unknown practices are dropped and counted**, never stored, exactly like unknown
   technologies since REB-1141 (`tech_usage.drop_unknown` and the `unknown_technologies` column,
   merged before this work starts): a column `unknown_practices` beside it, shown to the admin as
