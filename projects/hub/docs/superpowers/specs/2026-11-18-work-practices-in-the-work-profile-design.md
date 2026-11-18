@@ -87,7 +87,7 @@ practice was possible. «Seen in 18 of 25» means 25 sessions could have shown i
 |---|---|---|---|
 | `checks_before_commit` | Verifica prima del commit | after the last file edit before a `git commit`, a check ran: tests, linter, type check or build | sessions with a commit |
 | `tests_with_changes` | Test insieme al codice | both a source file and a test file were edited | sessions that edited a source file |
-| `failure_reproduced_before_fix` | Riproduce il problema prima di correggerlo | a command failed, files were edited, then the same command succeeded | sessions where a command failed |
+| `failure_reproduced_before_fix` | Riproduce il problema prima di correggerlo | a check command (tests, linter, type check or build) failed, files were edited, then the same check succeeded | sessions where a check command failed |
 | `plan_before_edit` | Piano prima delle modifiche | a plan move came before the first edit: plan mode, a task list, or writing a plan or spec file (path rule below) | sessions with an edit |
 | `reviews_changes` | Rilettura delle modifiche prima del commit | before a commit or a pull request, the diff was displayed in the session (`git diff`, `git show`, `gh pr diff`), whether the person or the agent asked for it | sessions with a commit or a pull request |
 | `design_documents` | Scrive documenti di progetto | a design document was written or edited (path rule below) | sessions with an edit |
@@ -103,9 +103,11 @@ Details the builder must respect:
 - **Test files** are recognised by path (`test/`, `tests/`, `__tests__/`, `spec/`, `*.test.*`,
   `*.spec.*`, `*_test.*`, `test_*.py`); source files are code files by extension that are not
   tests, documentation or configuration.
-- **«The same command»** for `failure_reproduced_before_fix` is the command with arguments
-  after the first file path dropped and whitespace normalised; a test runner invoked on a
-  narrower path still matches its broader form.
+- **«The same command»** for `failure_reproduced_before_fix` is the check's executable words
+  before its first flag or path, lower-cased, with environment assignments and the `npx`,
+  `uv run`, `python -m`, `pnpm exec` wrappers dropped; a check invoked on a narrower path or
+  with other flags still matches its broader form. Only a failed check puts a session in the
+  denominator (ruled during REB-1143: a failed `grep` or `git push` can never show the practice).
 - **Design documents and plan files are recognised by path**, and the rule is published with the
   list, since a freelancer consents to it. Design documents: anything under `adr/`, `docs/adr/`,
   `docs/design/`, `docs/specs/`, `docs/rfc/`, `rfcs/` or a `specs/` directory, and files named
