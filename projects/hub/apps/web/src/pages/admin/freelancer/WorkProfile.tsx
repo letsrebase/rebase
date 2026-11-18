@@ -377,7 +377,7 @@ function Decision({ profile, freelancerId, vettedAt }: { profile: WorkProfileAdm
 
 /**
  * «Profilo di lavoro» on the admin's talent page (REB-1126, spec 2026-11-17 § 4): what the
- * freelancer sent with the `work-profile` command, for an admin to read and decide on. The
+ * freelancer sent with the `rebase-verify` command, for an admin to read and decide on. The
  * state, the dates and the tool version; the hub's recheck, with each claim it could not find
  * in the data set right under the prose it came from; the profile rendered from the payload;
  * and «Approva» / «Rifiuta». Nothing is shown for a person who sent none. A profile past its

@@ -1,5 +1,6 @@
-tech-lexicon.json is vendored verbatim from letsrebase/work-profile (share/tech-lexicon.json at
-commit 6a9943a90f7ccb93c2f5da121f724943fdecfd8f), rebase's fork of Play-New/apply-new. The
+tech-lexicon.json is vendored verbatim from letsrebase/rebase-verify (share/tech-lexicon.json at
+commit 6a9943a90f7ccb93c2f5da121f724943fdecfd8f, when the repository was still called
+letsrebase/work-profile), rebase's fork of Play-New/apply-new. The
 lexicon, and groundedness.py, which ports src/groundedness.mjs, are Play New's work under the MIT
 licence in LICENSE-apply-new (Copyright (c) 2026 Cosmico Srl - Play New).
 

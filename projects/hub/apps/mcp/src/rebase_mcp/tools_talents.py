@@ -287,7 +287,7 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def get_work_profile(freelancer_id: str) -> dict[str, Any]:
-        """The work profile a freelancer sent with the `work-profile` command (REB-1126), as the
+        """The work profile a freelancer sent with the `rebase-verify` command (REB-1126), as the
         admin's «Profilo di lavoro» section reads it: `state` (`draft`, `approved`,
         `rejected`), the dates, `tool_version`, the hub's recheck (`groundedness`,
         `unsupported_anchors`, each with the field of the prose it came from), the admin's

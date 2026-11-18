@@ -34,13 +34,13 @@ describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
     const section = screen.getByRole('region', { name: 'Profilo di lavoro' })
     expect(within(section).getByText(/fork di/)).toHaveTextContent('apply-new')
     expect(within(section).getByText(/Verificato da rebase/)).toBeInTheDocument()
-    expect(within(section).getByText('git clone https://github.com/letsrebase/work-profile')).toBeInTheDocument()
-    expect(within(section).getByText('cd work-profile')).toBeInTheDocument()
+    expect(within(section).getByText('git clone https://github.com/letsrebase/rebase-verify')).toBeInTheDocument()
+    expect(within(section).getByText('cd rebase-verify')).toBeInTheDocument()
     expect(within(section).getByText('claude')).toBeInTheDocument()
-    expect(within(section).getByText('/work-profile')).toBeInTheDocument()
+    expect(within(section).getByText('/rebase-verify')).toBeInTheDocument()
     expect(within(section).getByRole('link', { name: /README/ })).toHaveAttribute(
       'href',
-      'https://github.com/letsrebase/work-profile#readme',
+      'https://github.com/letsrebase/rebase-verify#readme',
     )
     expect(within(section).getByRole('link', { name: /privacy/ })).toHaveAttribute('href', 'https://letsrebase.com/privacy')
     expect(within(section).queryByRole('button', { name: 'Elimina il profilo' })).toBeNull()
@@ -68,7 +68,7 @@ describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
     show({ ...BASE, state: 'rejected', decision_note: 'Manca un progetto con un link.' })
     expect(screen.getByText('Non approvato')).toBeInTheDocument()
     expect(screen.getByText('Manca un progetto con un link.')).toBeInTheDocument()
-    expect(screen.getByText('cd work-profile')).toBeInTheDocument()
+    expect(screen.getByText('cd rebase-verify')).toBeInTheDocument()
   })
 
   it('says an expired profile no longer counts', () => {

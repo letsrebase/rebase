@@ -570,7 +570,7 @@ describe('privacy.html', () => {
       .replace(/\s+/g, ' ')
     for (const fact of [
       'facoltativo',
-      'work-profile',
+      'rebase-verify',
       'non arriva niente a rebase',
       'profilo in formato json, senza nomi di clienti, prodotti, persone o repository',
       'niente log',
@@ -586,7 +586,7 @@ describe('privacy.html', () => {
     ]) {
       expect(text.toLowerCase()).toContain(fact.toLowerCase())
     }
-    expect(page).toContain('https://github.com/letsrebase/work-profile/blob/main/PRIVACY.md')
+    expect(page).toContain('https://github.com/letsrebase/rebase-verify/blob/main/PRIVACY.md')
   })
 
   it('names both restricted Gmail scopes, in full', () => {

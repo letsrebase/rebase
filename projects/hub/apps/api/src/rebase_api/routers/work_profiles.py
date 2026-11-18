@@ -30,7 +30,7 @@ router = APIRouter(prefix="/api/hub/work-profiles", tags=["hub"])
 _ENVELOPE_BYTES = 16 * 1024
 _MAX_PARTS = 10
 _SCHEME = "bearer "
-_TOOL = "work-profile/"
+_TOOL = "rebase-verify/"
 _TOO_BIG = "Il profilo supera i 512 KB."
 
 
@@ -67,7 +67,7 @@ def _bearer(authorization: str | None) -> str | None:
 
 
 def _tool_version(user_agent: str | None) -> str | None:
-    """`work-profile/1.2.3` in the `User-Agent`, if the CLI says so; its payload's
+    """`rebase-verify/1.2.3` in the `User-Agent`, if the CLI says so; its payload's
     `toolVersion` wins when it has one."""
     for part in (user_agent or "").split():
         if part.startswith(_TOOL):

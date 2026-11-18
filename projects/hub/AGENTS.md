@@ -561,7 +561,7 @@ service `sweep` runs it every ten minutes on production and the preview alike; r
 ## Work profiles and the CLI's sign-in (REB-1124, REB-1133)
 
 Design record: `docs/superpowers/specs/2026-11-17-work-profile-intake-and-review-design.md`. A
-freelancer runs `letsrebase/work-profile` (our MIT fork of Play New's `apply-new`), approves a
+freelancer runs `letsrebase/rebase-verify` (our MIT fork of Play New's `apply-new`, called `work-profile` until REB-1140), approves a
 sign-in in the browser and the CLI sends a redacted work profile, which waits as a `draft` for an
 admin. Nothing counts before a person approves it.
 
@@ -600,7 +600,7 @@ dropped; one row per freelancer, replaced on resubmission and back to `draft`; a
 but `profile` is a 422 with «gli allegati non sono accettati: indica un link»; 512 KB cap, enforced while the body streams. Hostile input (deep or non-finite JSON, NUL, counts over
 10^9, more than 2000 anchors) is a 422, never a 500. Approve and deny refuse a browser's
 `Sec-Fetch-Site` other than `same-origin`. The tool's
-version is the payload's `toolVersion` or the `User-Agent` token `work-profile/<version>`.
+version is the payload's `toolVersion` or the `User-Agent` token `rebase-verify/<version>`.
 
 **The groundedness port.** `groundedness.py` is the fork's `src/groundedness.mjs` line for line
 (JavaScript's rounding included), and `tests/test_work_profile_groundedness.py` carries upstream's

@@ -135,7 +135,7 @@ class MeRead(ResponseModel):
     # REB-518: whether any talent cloud grant of this person is live, which puts «Talent
     # cloud» in the member area's nav (`rebase_core.cloud.TalentCloudService.for_user`).
     talent_cloud: bool = False
-    # REB-1127: the work profile the person sent with the `work-profile` command, if any.
+    # REB-1127: the work profile the person sent with the `rebase-verify` command, if any.
     work_profile: MemberWorkProfile | None = None
     # Whether rebase verified the person (`freelancers.vetted_at`): what «Verificato da rebase»
     # in the member area is derived from, never from the state of the work profile.

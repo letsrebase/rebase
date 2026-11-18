@@ -39,7 +39,7 @@ team builder, and a reason for the freelancer to send one (a badge, more visibil
 
 ## Goals
 
-1. A freelancer runs `work-profile`, reviews the profile, approves the sign-in in their
+1. A freelancer runs `rebase-verify` (called `work-profile` until REB-1140), reviews the profile, approves the sign-in in their
    browser, and the profile is stored on their hub card as a draft.
 2. The hub rechecks what it received (schema, structure, groundedness) and refuses a
    profile whose numbers or prose do not hold, the way upstream's intake does.
