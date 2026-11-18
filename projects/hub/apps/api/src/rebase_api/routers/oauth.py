@@ -56,6 +56,24 @@ COOKIE_PATH = "/api/hub/auth/oauth"
 Provider = Literal["github", "google"]
 
 
+class HideOAuthQuery(logging.Filter):
+    """Keeps the provider's one-time `code` and `state` out of uvicorn's access log: the
+    callback's URL carries both, and a container log is read by more people and tools than the
+    request ever was. The path stays, the query becomes `?...`. nginx already logs no query."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str):
+            target = args[2]
+            if target.startswith(COOKIE_PATH + "/") and "?" in target:
+                record.args = (*args[:2], target.split("?", 1)[0] + "?...", *args[3:])
+        return True
+
+
+# Once, at import: the filter belongs to the logger uvicorn writes its access lines with.
+logging.getLogger("uvicorn.access").addFilter(HideOAuthQuery())
+
+
 def _set_short_cookie(response: Response, settings: Settings, name: str, value: str) -> None:
     response.set_cookie(
         name,
@@ -188,5 +206,9 @@ def no_account(request: Request, response: Response) -> MissedAccount:
     response.headers["Cache-Control"] = "no-store"
     miss = open_miss(request.cookies.get(MISS_COOKIE))
     if miss is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Nessun accesso in sospeso.")
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            "Nessun accesso in sospeso.",
+            headers={"Cache-Control": "no-store"},
+        )
     return miss

@@ -735,7 +735,7 @@ the verified addresses through the `HttpCall` seam, `safe_next`, the cookie seal
 - The attempt lives in the `rebase_oauth` cookie (`HttpOnly`, `SameSite=Lax`, `Path=/api/hub/auth/oauth`,
   10 minutes), dropped by every callback answer after the budget check. The no-account address lives in
   `rebase_oauth_miss` for 10 minutes and nowhere else: nothing about an unknown address is stored.
-- Every answer is a redirect, with `no-store` and `no-referrer`. A failure is `/hub/login?oauth=<reason>`
+- Every answer of `start` and `callback` is a redirect, with `no-store` and `no-referrer`, and an exception from the HTTP seam is `failed`. `HideOAuthQuery` (a filter on `uvicorn.access`) keeps the callback's `code` and `state` out of the container log. A failure is `/hub/login?oauth=<reason>`
   (`off`, `limited`, `expired`, `denied`, `unverified`, `failed`); the page words each one.
 - `next` goes through `safe_next` at the start and when the cookie is opened: hub paths of letters, digits,
   `-`, `_`, `/`, and `/cli?code=XXXX-XXXX`. It is appended to `hub_url`.

@@ -246,3 +246,25 @@ def test_a_network_failure_is_a_failure_too() -> None:
 
     with pytest.raises(OAuthUnavailable):
         OAuthService(_both(), down).verified_addresses(_attempt("google"), "code")
+
+
+@pytest.mark.parametrize(
+    "failure", [TimeoutError("slow"), ConnectionResetError("reset"), OSError("down")]
+)
+def test_an_exception_from_the_seam_is_a_failure_too(failure: Exception) -> None:
+    """The production seam raises (`URLError`, timeouts, resets) for anything that is not an HTTP
+    status; the fake above only models the status it turns a network error into."""
+
+    def raising(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
+        raise failure
+
+    with pytest.raises(OAuthUnavailable):
+        OAuthService(_both(), raising).verified_addresses(_attempt("github"), "code")
+
+
+def test_only_a_boolean_true_or_the_string_true_is_verified_at_google() -> None:
+    service = OAuthService(
+        _both(),
+        _answers((200, {"access_token": "t"}), (200, {"email": "a@b.it", "email_verified": 1})),
+    )
+    assert service.verified_addresses(_attempt("google"), "code") == []

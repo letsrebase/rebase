@@ -278,7 +278,11 @@ class OAuthService:
         return self._google_addresses(token)
 
     def _call(self, step: str, method: str, url: str, headers: dict[str, str], body: bytes) -> Any:
-        status, raw = self.http(method, url, headers, body)
+        try:
+            status, raw = self.http(method, url, headers, body)
+        except Exception as exc:  # noqa: BLE001 -- urllib raises URLError, timeouts and resets
+            logger.warning("oauth %s did not answer: %s", step, type(exc).__name__)
+            raise OAuthUnavailable(step) from exc
         if status != 200:
             logger.warning("oauth %s answered %s", step, status)
             raise OAuthUnavailable(step)
@@ -351,7 +355,7 @@ class OAuthService:
         email = info.get("email")
         # Google has answered `email_verified` as a JSON boolean and, on older paths, as the
         # string "true": both mean verified, anything else does not.
-        verified = info.get("email_verified") in (True, "true")
+        verified = info.get("email_verified") is True or info.get("email_verified") == "true"
         if not verified or not isinstance(email, str) or not email.strip():
             return []
         return [email.strip().lower()]

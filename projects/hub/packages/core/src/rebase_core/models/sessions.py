@@ -62,13 +62,15 @@ class MagicLinkToken(Base, PrimaryKeyMixin, UtmMixin):
 
 
 class Login(Base, PrimaryKeyMixin, UtmMixin):
-    """One row per time somebody entered through a magic link (ORB-158): who, when, and
+    """One row per time somebody entered, by magic link or since REB-1137 with GitHub or Google
+    (`method`) (ORB-158): who, when, and
     since REB-426 the campaign the login page was opened from (`UtmMixin`, copied off the
     token), so an outreach mail's link says who came in from it without a cookie. Nothing
     else -- no address, no user agent. A log rather than the session table,
     which forgets a session on logout and on expiry, so the admin can read who came in
-    and when a week later. Written by `UserService.enter` in the commit that opens the
-    session. Hangs on the person with `ON DELETE CASCADE`, like the sessions.
+    and when a week later. Written by `UserService._open_session` (the magic link's `enter` and the
+    provider sign-in) in the commit that opens the session. Hangs on the person with
+    `ON DELETE CASCADE`, like the sessions.
 
     Renamed from `member_logins`/`MemberLogin` in migration B (REB-281), the same
     reasoning as `UserSession` below: `user_id` is the owner for anyone who signs in,

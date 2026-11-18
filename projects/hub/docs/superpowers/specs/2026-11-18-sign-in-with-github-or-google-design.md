@@ -136,8 +136,9 @@ meaning of every login link already sent, so it is not made here; it is a questi
 
 ## 3. The flow
 
-All of it under `/api/hub/auth`, none of it authenticated by design, all of it redirects (the
-reader is a browser mid sign-in, and a JSON error would be a dead page).
+All of it under `/api/hub/auth`, none of it authenticated by design. The two navigations answer
+only with redirects (the reader is a browser mid sign-in, and a JSON error would be a dead page);
+a provider name that is neither `github` nor `google` is a 422 like any bad path parameter.
 
 1. **`GET /auth/providers`** answers `{ "github": bool, "google": bool }`: a provider is on
    when its OAuth client id and secret are both set. The login page reads it to decide which
@@ -191,8 +192,9 @@ the check runs again when the cookie is opened, so a forged cookie gains nothing
 
 **`/hub/cli`.** A signed-out visitor of `/hub/cli?code=…` is sent to the login, which already
 remembers the code (`lib/returnTo.ts`, 30 minutes). The two buttons carry it as
-`next=/cli?code=…` and the click forgets the stored copy, so the provider's redirect comes back
-to `/hub/cli?code=…` signed in. The magic link keeps working as before.
+`next=/cli?code=…`, so the provider's redirect comes back to `/hub/cli?code=…` signed in. The
+stored copy is left in place until `/hub/cli` itself opens and forgets it: a provider that says no
+or a retry still needs it, and so does the magic link, which brings the visitor to the same place.
 
 **Budget.** `start` and `callback` each spend one event from the public per-client limiter
 (`spend_one`, five a minute per `X-Real-IP`, an IPv6 address as its /64), the same budget
@@ -274,7 +276,7 @@ Lorenzo registered under letsrebase's accounts; their callbacks are in § 3.
 | An address that is not the person's any more (a left company's Google Workspace address, a released GitHub address) | The same exposure as a magic link mailed to that address: the hub trusts the mailbox; the session is no stronger or weaker than the link's. An admin who leaves is demoted as today |
 | Open redirect through `next` | `safe_next` at the start and again when the cookie is opened; the path is appended to `hub_url`; tests with five hostile shapes |
 | `redirect_uri` steered by a header | Built from `REBASE_HUB_URL`; a test sends a hostile `Host` and `X-Forwarded-Host` |
-| A provider's token or code in a log, a cookie or the database | The token is a local of one call and never stored; log lines name the step and the status, never a value; the redirects set `no-store` and `no-referrer` |
+| A provider's token or code in a log, a cookie or the database | The token is a local of one call and never stored; log lines name the step and the status, never a value; the redirects set `no-store` and `no-referrer`, and a log filter on `uvicorn.access` replaces the callback's query with `?...` (nginx already logs no query) |
 | Enumerating which addresses have an account | The no-account page names the address the provider vouched for, which the visitor already holds; it says nothing about any other address |
 | Flooding the callback | The public budget of § 3 and nginx's zone |
 | Two people behind one provider account | Refused, not chosen between |
@@ -316,7 +318,7 @@ the two OAuth consent screens link to the notice (Google's verification asks for
 - No new table: the attempt lives in a ten-minute cookie, which is what Lorenzo asked for, at
   the price of single use being the cookie's drop plus the provider's own single-use code.
 - No provider mark on the buttons (§ 5).
-- Every failure is a redirect to the login with a reason, never a JSON error (§ 3).
+- Every failure of the two navigations is a redirect to the login with a reason, never a JSON error (§ 3); an exception from the HTTP seam (a timeout, a reset) is one of them.
 
 Questions that are Lorenzo's:
 

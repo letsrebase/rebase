@@ -1,9 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect } from 'react'
 import { Link, useSearch } from '@tanstack/react-router'
 import { Button } from '@rebase/ui/button'
 import { Loader } from '@rebase/ui/loader'
 import { ApiError, cli, type CliAuthorization } from '@/lib/api'
 import { keys } from '@/lib/query-keys'
+import { takeCliCode } from '@/lib/returnTo'
 
 /** `/hub/cli` (REB-1133, spec 2026-11-17 § 2 and § 10): the page a freelancer lands on from
  *  the terminal, signed in, to say yes or no to one CLI. It shows the code to compare with the
@@ -15,6 +17,9 @@ import { keys } from '@/lib/query-keys'
 export function Cli() {
   const { code } = useSearch({ strict: false }) as { code?: string }
   const client = useQueryClient()
+  // The page is open, so the code the login kept for it has done its job: forget it, or a magic
+  // link asked for later would bring somebody back here with a spent code.
+  useEffect(() => void takeCliCode(), [])
   const authorization = useQuery({
     queryKey: keys.cliAuthorization(code ?? ''),
     queryFn: () => cli.authorization(code ?? ''),

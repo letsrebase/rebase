@@ -5,8 +5,10 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { ApiError, member } from '@/lib/api'
 import { useAuthProviders, useMe, useRequestLink } from '@/lib/me'
-import { peekCliCode, takeCliCode } from '@/lib/returnTo'
+import { peekCliCode } from '@/lib/returnTo'
 import { loginAttribution, rememberLoginAttribution } from '@/lib/utm'
+
+const PROVIDER_NAMES = { github: 'GitHub', google: 'Google' } as const
 
 /** What the sign-in with a provider says when it sends the visitor back here with
  *  `?oauth=<reason>` (REB-1137). Every one ends with the way that always works. */
@@ -73,7 +75,8 @@ export function Login() {
 
   /** The start link carries the campaign this page remembers and, for a visitor sent here by
    *  `/hub/cli`, the code to come back to: the provider's redirect is a full navigation, so
-   *  the page's own state does not survive it. */
+   *  the page's own state does not survive it. The stored code is left where it is: a provider
+   *  that says no, or a retry, still needs it, and `/hub/cli` forgets it once it has opened. */
   function startHref(name: 'github' | 'google') {
     const extra: Record<string, string> = { ...loginAttribution(searchStr) }
     const code = peekCliCode()
@@ -86,7 +89,9 @@ export function Login() {
   // already cached) or once one is found: the effect above either has not decided yet
   // or is already navigating away. Rendering the form in between would flash it at an
   // already-signed-in visitor for exactly as long as `GET /api/hub/me` takes.
-  if (me.isPending || me.data) return null
+  // The providers are read in parallel with `/me`, so the buttons do not push the form down
+  // when they arrive and the email field takes the focus only when it is the first thing.
+  if (me.isPending || me.data || providers.isPending) return null
 
   if (sent) {
     return (
@@ -116,7 +121,7 @@ export function Login() {
         <h1 className="text-3xl font-semibold tracking-tight">Entra nella tua area</h1>
         <p className="mt-2 text-muted-foreground">
           {offered.length > 0
-            ? 'Con il tuo account GitHub o Google, oppure con un link per mail, senza password.'
+            ? `Con il tuo account ${offered.map((name) => PROVIDER_NAMES[name]).join(' o ')}, oppure con un link per mail, senza password.`
             : 'L’indirizzo che ci hai dato: ti mandiamo un link, senza password.'}
         </p>
       </div>
@@ -129,18 +134,18 @@ export function Login() {
         <div className="space-y-3">
           {offered.map((name) => (
             <Button key={name} asChild variant="outline" className="w-full">
-              <a href={startHref(name)} onClick={() => void takeCliCode()}>
-                {name === 'github' ? 'Accedi con GitHub' : 'Accedi con Google'}
+              <a href={startHref(name)}>
+                Accedi con {PROVIDER_NAMES[name]}
               </a>
             </Button>
           ))}
           <p className="text-sm text-muted-foreground">
             Funziona se l’indirizzo verificato del tuo account è quello che ci hai dato.
           </p>
-          <div role="separator" className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className="h-px flex-1 bg-border" />
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span aria-hidden className="h-px flex-1 bg-border" />
             oppure
-            <span className="h-px flex-1 bg-border" />
+            <span aria-hidden className="h-px flex-1 bg-border" />
           </div>
         </div>
       )}

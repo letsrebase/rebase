@@ -3,6 +3,7 @@ callback and the no-account read, against a provider that is a fake HTTP seam.""
 
 import base64
 import json
+import logging
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlsplit
 
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session
 from work_profile_api_helpers import CARD_EMAIL, apply_card
 
 from rebase_api.deps import get_http_call
+from rebase_api.routers.oauth import HideOAuthQuery
 from rebase_core.config import Settings, get_settings
 from rebase_core.mail import RecordingSender
 from rebase_core.models import Freelancer, Login, User
@@ -324,7 +326,9 @@ def test_an_unknown_verified_address_gets_the_no_account_page_and_creates_nothin
 def test_the_no_account_page_has_nothing_to_show_a_browser_that_never_came_from_a_sign_in(
     client: TestClient, configured: None
 ) -> None:
-    assert client.get("/api/hub/auth/oauth/no-account").status_code == 404
+    nothing = client.get("/api/hub/auth/oauth/no-account")
+    assert nothing.status_code == 404
+    assert nothing.headers["cache-control"] == "no-store"
 
 
 def test_an_unverified_address_never_matches_even_when_it_is_a_login_address(
@@ -396,6 +400,56 @@ def test_two_people_behind_one_provider_account_open_nobody(
     ]
     assert _sign_in(client).headers["location"].endswith("/login?oauth=failed")
     assert client.get("/api/hub/me").status_code == 401
+
+
+def test_a_provider_that_cannot_be_reached_is_a_failure_and_spends_the_attempt(
+    client: TestClient, provider: FakeProviders, configured: None
+) -> None:
+    apply_card(client)
+    state = _begin(client, "github")
+
+    def down(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
+        raise TimeoutError("the provider did not answer")
+
+    client.app.dependency_overrides[get_http_call] = lambda: down  # type: ignore[attr-defined]
+    answer = _finish(client, "github", state)
+    assert answer.status_code == 302
+    assert answer.headers["location"].endswith("/login?oauth=failed")
+    assert any("rebase_oauth=" in line and "max-age=0" in line for line in _cookies(answer))
+    assert client.get("/api/hub/me").status_code == 401
+
+
+def test_the_access_log_never_carries_the_providers_code_or_state() -> None:
+    record = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s HTTP/%s" %d',
+        (
+            "10.0.0.1:5000",
+            "GET",
+            "/api/hub/auth/oauth/github/callback?code=secret&state=s",
+            "1.1",
+            302,
+        ),
+        None,
+    )
+    assert HideOAuthQuery().filter(record) is True
+    assert "secret" not in record.getMessage()
+    assert "/api/hub/auth/oauth/github/callback?..." in record.getMessage()
+    other = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s HTTP/%s" %d',
+        ("10.0.0.1:5000", "GET", "/api/hub/freelancers?q=ada", "1.1", 200),
+        None,
+    )
+    HideOAuthQuery().filter(other)
+    assert "q=ada" in other.getMessage()
+    assert any(isinstance(f, HideOAuthQuery) for f in logging.getLogger("uvicorn.access").filters)
 
 
 # ---- state ----------------------------------------------------------------------------
