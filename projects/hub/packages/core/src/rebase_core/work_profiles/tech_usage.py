@@ -152,7 +152,9 @@ def drop_unknown(payload: dict[str, Any]) -> int:
     """Remove from `payload["techUsage"]["technologies"]`, in place, every row whose name is not a
     known label; how many were removed, 0 when the block is absent."""
     block = payload.get("techUsage")
-    rows = block.get("technologies") if isinstance(block, dict) else None
+    if not isinstance(block, dict):
+        return 0
+    rows = block.get("technologies")
     if not isinstance(rows, list):
         return 0
     labels = technology_labels()
