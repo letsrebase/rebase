@@ -2,7 +2,7 @@
 
 Card: REB-1142, project «Read how a freelancer works from conversations, git and GitHub»
 (P-REB-92), milestone «Count work practices from the conversations». Status: approved by
-Lorenzo on 2026-11-18.
+Lorenzo on 2026-11-18, except the quality gate's reference in § 3, which waits for his choice.
 
 ## Why
 
@@ -174,25 +174,28 @@ weight.
 
 **Quality gate before release.** A number nobody has checked against a known answer cannot be
 shown to an admin who decides about people, so each model practice is measured before it
-ships, and the known answers are written by people, never produced by a model. Lorenzo did not
-want anyone hand-labelling real sessions (2026-11-18), so the reference is a set of written
-sessions instead: for each of the six practices, at least eight short sessions where it
-happens and eight where it nearly does but does not (a «no» that is only a disagreement, a
-question that is not about alternatives), in Italian and in English, each with its expected
-answers, committed to the fork as a fixture. Two checks, both run locally by whoever changes the
-rubric or its prompt:
+ships against answers a person stands behind; a model's own answers are never the reference.
+Every option keeps one check that needs no labels:
 
-- **Agreement**: the classification run on the written set matches the expected answers on at
-  least 90% of the sessions, per practice.
 - **Stability**: the classification run twice on the same 40 real sessions (the developer's own
-  logs, never committed) gives the same answer on at least 90% of them, per practice. This one
-  needs no labels.
+  logs, never committed) gives the same answer on at least 90% of them, per practice. It shows
+  the answers repeat, not that they are right.
 
-A practice that fails either is left out of v1. The written set measures whether the rubric is
-understood, not how real sessions are classified, which is weaker than hand labels on real logs
-and is said in the DPIA section; the «dal modello della persona, non ricontrollato» mark stays on
-every surface either way. The results are reported on the card as numbers, and the set becomes
-the regression test for any change to the rubric.
+The reference itself is Lorenzo's choice, open as of 2026-11-18:
+
+1. **A person labels real sessions**: 20 sessions of their own logs, six yes/no each, from a
+   labelling file the tool writes; a practice ships when the classification agrees with the
+   labels on at least 80% of them. The strongest reference, and the labels are never committed.
+2. **A written set a person approves**: for each practice at least eight short sessions where it
+   happens and eight where it nearly does but does not, in Italian and in English, with expected
+   answers, drafted by the builder and read and corrected by Lorenzo before it counts; a
+   practice ships when the classification matches at least 90% of them. It shows the rubric is
+   understood, not how messy real sessions are classified, and it doubles as the regression test.
+3. **Neither**: the six model practices do not ship, and v1 is the seven code practices.
+
+A practice that fails its checks is left out of v1, and the «dal modello della persona, non
+ricontrollato» mark stays on every surface whatever the reference. The results are reported on
+the card as numbers.
 
 ## 4. The payload
 
@@ -260,7 +263,7 @@ counted «without a model». The six model practices go past it: § 7 imagined c
 calls only, and it calls anything inferred from wording «a guess about character». They stay
 on this side of that line only because the model is asked whether a move happened (a question
 asked, a correction with a reason, a risk named), never how the person is, and because the
-quality gate drops any practice that misses its written answers or does not repeat itself.
+quality gate drops any practice a person's reference does not confirm or that does not repeat.
 Shipping them still needs
 three things the code practices do not: § 7 rewritten to admit model-classified counts and the
 reasoning above, Lorenzo's reading that counts of moves in a conversation are not an evaluation
@@ -302,8 +305,9 @@ Calls (mine, for Lorenzo to check):
 - Cursor sessions are left out of `failure_reproduced_before_fix` until a real Cursor log proves
   its failure flag.
 - The design-document and plan-file path rules in § 2a.
-- The quality gate's reference is a written set of sessions with known answers plus a stability
-  check on real logs, since Lorenzo ruled out hand-labelling real sessions (2026-11-18).
+
+Open, Lorenzo's: the quality gate's reference (§ 3), labels on real sessions, a written set he
+approves, or the code practices alone.
 
 ## 10. Left to the builder
 
