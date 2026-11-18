@@ -5,9 +5,9 @@ the JSON and the failure classification run for real.
 """
 
 import base64
-from datetime import date
 import json
 import logging
+from datetime import date
 
 import pytest
 
