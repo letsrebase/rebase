@@ -36,7 +36,7 @@ describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
     const section = screen.getByRole('region', { name: 'Profilo di lavoro' })
     expect(within(section).getByText(/fork di/)).toHaveTextContent('apply-new')
     expect(within(section).getByText(/Verificato da rebase/)).toBeInTheDocument()
-    expect(within(section).getByText('npx rebase-verify')).toBeInTheDocument()
+    expect(within(section).getByText('npx @letsrebase/verify')).toBeInTheDocument()
     expect(within(section).getByText(/Node 20.12 o più recente/)).toBeInTheDocument()
     expect(within(section).getByRole('link', { name: /README/ })).toHaveAttribute(
       'href',
@@ -68,7 +68,7 @@ describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
     show({ ...BASE, state: 'rejected', decision_note: 'Manca un progetto con un link.' })
     expect(screen.getByText('Non approvato')).toBeInTheDocument()
     expect(screen.getByText('Manca un progetto con un link.')).toBeInTheDocument()
-    expect(screen.getByText('npx rebase-verify')).toBeInTheDocument()
+    expect(screen.getByText('npx @letsrebase/verify')).toBeInTheDocument()
   })
 
   it('shows the person their own technologies, filled by band, and says companies do not see them', () => {

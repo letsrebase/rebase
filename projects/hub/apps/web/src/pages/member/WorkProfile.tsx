@@ -15,7 +15,7 @@ const PRIVACY_URL = 'https://letsrebase.com/privacy'
 const PRACTICES_URL = 'https://github.com/letsrebase/rebase-verify/blob/main/README.md#work-practices'
 
 /** The one command a person runs, in a terminal: the tool asks the rest. */
-const COMMAND = 'npx rebase-verify'
+const COMMAND = 'npx @letsrebase/verify'
 
 function Command({ children }: { children: string }) {
   return <code className="whitespace-nowrap border bg-muted px-1.5 py-0.5 font-mono text-sm">{children}</code>
