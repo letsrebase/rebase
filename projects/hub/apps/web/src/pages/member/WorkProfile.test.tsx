@@ -31,18 +31,16 @@ function show(profile: Me['work_profile'], vetted = true) {
 afterEach(() => vi.restoreAllMocks())
 
 describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
-  it('before any submission explains the tool and gives the three commands and the two links', () => {
+  it('before any submission explains the tool and gives the command and the two links', () => {
     show(null)
     const section = screen.getByRole('region', { name: 'Profilo di lavoro' })
     expect(within(section).getByText(/fork di/)).toHaveTextContent('apply-new')
     expect(within(section).getByText(/Verificato da rebase/)).toBeInTheDocument()
-    expect(within(section).getByText('git clone https://github.com/letsrebase/rebase-verify')).toBeInTheDocument()
-    expect(within(section).getByText('cd rebase-verify')).toBeInTheDocument()
-    expect(within(section).getByText('claude')).toBeInTheDocument()
-    expect(within(section).getByText('/rebase-verify')).toBeInTheDocument()
+    expect(within(section).getByText('npx @letsrebase/verify')).toBeInTheDocument()
+    expect(within(section).getByText(/Node 20.12 o più recente/)).toBeInTheDocument()
     expect(within(section).getByRole('link', { name: /README/ })).toHaveAttribute(
       'href',
-      'https://github.com/letsrebase/rebase-verify#readme',
+      'https://github.com/letsrebase/verify#readme',
     )
     expect(within(section).getByRole('link', { name: /privacy/ })).toHaveAttribute('href', 'https://letsrebase.com/privacy')
     expect(within(section).queryByRole('button', { name: 'Elimina il profilo' })).toBeNull()
@@ -70,7 +68,7 @@ describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
     show({ ...BASE, state: 'rejected', decision_note: 'Manca un progetto con un link.' })
     expect(screen.getByText('Non approvato')).toBeInTheDocument()
     expect(screen.getByText('Manca un progetto con un link.')).toBeInTheDocument()
-    expect(screen.getByText('cd rebase-verify')).toBeInTheDocument()
+    expect(screen.getByText('npx @letsrebase/verify')).toBeInTheDocument()
   })
 
   it('shows the person their own technologies, filled by band, and says companies do not see them', () => {
@@ -110,7 +108,7 @@ describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
     expect(within(list).getByText('dal modello della persona, non ricontrollato')).toBeInTheDocument()
     expect(within(section).getByRole('link', { name: "l'elenco delle pratiche" })).toHaveAttribute(
       'href',
-      'https://github.com/letsrebase/rebase-verify/blob/main/README.md#work-practices',
+      'https://github.com/letsrebase/verify/blob/main/README.md#work-practices',
     )
   })
 

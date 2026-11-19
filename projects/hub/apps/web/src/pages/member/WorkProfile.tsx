@@ -10,38 +10,30 @@ import { ME_KEY } from '@/lib/me'
 
 type Profile = NonNullable<Me['work_profile']>
 
-const README_URL = 'https://github.com/letsrebase/rebase-verify#readme'
+const README_URL = 'https://github.com/letsrebase/verify#readme'
 const PRIVACY_URL = 'https://letsrebase.com/privacy'
-const PRACTICES_URL = 'https://github.com/letsrebase/rebase-verify/blob/main/README.md#work-practices'
+const PRACTICES_URL = 'https://github.com/letsrebase/verify/blob/main/README.md#work-practices'
 
-/** The three commands a person runs, in order: the first two once, the third in the agent. */
-const COMMANDS = ['git clone https://github.com/letsrebase/rebase-verify', 'cd rebase-verify', 'claude'] as const
+/** The one command a person runs, in a terminal: the tool asks the rest. */
+const COMMAND = 'npx @letsrebase/verify'
 
 function Command({ children }: { children: string }) {
-  // A short command stays whole; a long one (the clone URL) breaks where the line ends.
-  const wrap = children.length > 24 ? 'break-all' : 'whitespace-nowrap'
-  return <code className={`${wrap} border bg-muted px-1.5 py-0.5 font-mono text-sm`}>{children}</code>
+  return <code className="whitespace-nowrap border bg-muted px-1.5 py-0.5 font-mono text-sm">{children}</code>
 }
 
-/** The commands as the steps of a list, ruled like the rows of «La tua scheda». */
+/** The command and what it needs, ruled like the rows of «La tua scheda». */
 function Steps() {
   return (
-    <ol className="divide-y border bg-card text-sm">
-      {COMMANDS.map((command, index) => (
-        <li key={command} className="flex items-baseline gap-3 px-4 py-2.5">
-          <span className="w-4 shrink-0 text-muted-foreground tabular-nums">{index + 1}</span>
-          <span className="min-w-0">
-            <Command>{command}</Command>
-            {command === 'claude' && (
-              <>
-                {' '}
-                e poi scrivi <Command>/rebase-verify</Command>
-              </>
-            )}
-          </span>
-        </li>
-      ))}
-    </ol>
+    <div className="divide-y border bg-card text-sm">
+      <p className="px-4 py-2.5">
+        In un terminale scrivi <Command>{COMMAND}</Command>
+      </p>
+      <p className="px-4 py-2.5 text-muted-foreground">
+        Ti servono Node 20.12 o più recente e un agente di coding con cui hai già fatto l&apos;accesso, per esempio
+        oh-my-pi, Claude Code o Codex. Il comando ti chiede quale usare e con quale modello, e ti dice cosa invia prima
+        di farlo.
+      </p>
+    </div>
   )
 }
 
