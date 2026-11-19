@@ -10,9 +10,9 @@ import { ME_KEY } from '@/lib/me'
 
 type Profile = NonNullable<Me['work_profile']>
 
-const README_URL = 'https://github.com/letsrebase/rebase-verify#readme'
+const README_URL = 'https://github.com/letsrebase/verify#readme'
 const PRIVACY_URL = 'https://letsrebase.com/privacy'
-const PRACTICES_URL = 'https://github.com/letsrebase/rebase-verify/blob/main/README.md#work-practices'
+const PRACTICES_URL = 'https://github.com/letsrebase/verify/blob/main/README.md#work-practices'
 
 /** The one command a person runs, in a terminal: the tool asks the rest. */
 const COMMAND = 'npx @letsrebase/verify'

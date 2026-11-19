@@ -40,7 +40,7 @@ describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
     expect(within(section).getByText(/Node 20.12 o più recente/)).toBeInTheDocument()
     expect(within(section).getByRole('link', { name: /README/ })).toHaveAttribute(
       'href',
-      'https://github.com/letsrebase/rebase-verify#readme',
+      'https://github.com/letsrebase/verify#readme',
     )
     expect(within(section).getByRole('link', { name: /privacy/ })).toHaveAttribute('href', 'https://letsrebase.com/privacy')
     expect(within(section).queryByRole('button', { name: 'Elimina il profilo' })).toBeNull()
@@ -108,7 +108,7 @@ describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
     expect(within(list).getByText('dal modello della persona, non ricontrollato')).toBeInTheDocument()
     expect(within(section).getByRole('link', { name: "l'elenco delle pratiche" })).toHaveAttribute(
       'href',
-      'https://github.com/letsrebase/rebase-verify/blob/main/README.md#work-practices',
+      'https://github.com/letsrebase/verify/blob/main/README.md#work-practices',
     )
   })
 

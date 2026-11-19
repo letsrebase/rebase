@@ -586,7 +586,7 @@ describe('privacy.html', () => {
     ]) {
       expect(text.toLowerCase()).toContain(fact.toLowerCase())
     }
-    expect(page).toContain('https://github.com/letsrebase/rebase-verify/blob/main/PRIVACY.md')
+    expect(page).toContain('https://github.com/letsrebase/verify/blob/main/PRIVACY.md')
   })
 
   it('names both restricted Gmail scopes, in full', () => {

@@ -561,7 +561,7 @@ service `sweep` runs it every ten minutes on production and the preview alike; r
 ## Work profiles and the CLI's sign-in (REB-1124, REB-1133)
 
 Design record: `docs/superpowers/specs/2026-11-17-work-profile-intake-and-review-design.md`. A
-freelancer runs `letsrebase/rebase-verify` (our MIT fork of Play New's `apply-new`, called `work-profile` until REB-1140), approves a
+freelancer runs `rebase-verify` (repository `letsrebase/verify`, package `@letsrebase/verify`; our MIT fork of Play New's `apply-new`, called `work-profile` until REB-1140), approves a
 sign-in in the browser and the CLI sends a redacted work profile, which waits as a `draft` for an
 admin. Nothing counts before a person approves it.
 

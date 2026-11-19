@@ -1,6 +1,6 @@
-tech-lexicon.json is vendored verbatim from letsrebase/rebase-verify (share/tech-lexicon.json at
+tech-lexicon.json is vendored verbatim from letsrebase/verify (share/tech-lexicon.json at
 commit 6a9943a90f7ccb93c2f5da121f724943fdecfd8f, when the repository was still called
-letsrebase/work-profile), rebase's fork of Play-New/apply-new. The
+letsrebase/work-profile; it was letsrebase/rebase-verify in between), rebase's fork of Play-New/apply-new. The
 lexicon, and groundedness.py, which ports src/groundedness.mjs, are Play New's work under the MIT
 licence in LICENSE-apply-new (Copyright (c) 2026 Cosmico Srl - Play New).
 
@@ -15,12 +15,12 @@ detection can emit, which is what a name in techUsage must be to be kept (tech_u
 with a name that is not in it is dropped before storage and counted, not refused. It is a second
 file because the lexicon above holds tokens, with generic words dropped, and cannot say whether
 «Go» or «Shell» is a label. Refresh it by copying it from the fork like the lexicon, at commit
-0d36e8e4679eed2ebfc0ff9beb48a0880d4e7a9a (letsrebase/rebase-verify#4), and run
+0d36e8e4679eed2ebfc0ff9beb48a0880d4e7a9a (letsrebase/verify#4), and run
 `uv run pytest projects/hub/packages/core/tests/test_work_profile_tech_usage.py`, which also checks
 that every label's words are in the lexicon.
 
-practices.json is vendored verbatim from letsrebase/rebase-verify (share/practices.json) at commit
-496c853e7d81c44e42a436c9f0efc9ac363635fe (letsrebase/rebase-verify#6). It is the list
+practices.json is vendored verbatim from letsrebase/verify (share/practices.json) at commit
+496c853e7d81c44e42a436c9f0efc9ac363635fe (letsrebase/verify#6). It is the list
 of the practices of the rubric rebase-practices/v1 with the method that counts each, which
 practices.py holds a received block to.
 An id that is not in it is dropped before storage and counted, not refused. To refresh it: copy
