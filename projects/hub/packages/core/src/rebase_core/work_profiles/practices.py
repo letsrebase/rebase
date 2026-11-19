@@ -12,6 +12,7 @@ counts them.
 """
 
 import json
+import re
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,9 @@ PRACTICE_LABELS: dict[str, str] = {
     "states_done_criteria": "Dice quando il lavoro è finito",
     "limits_scope": "Delimita il lavoro",
 }
+
+_AGENT_ID = re.compile(r"[a-z0-9-]{1,40}")
+MAX_MODEL_NAME = 120
 
 _KEYS = ("seen", "of", "products", "months")
 
@@ -97,6 +101,24 @@ def _item_issues(
     return found
 
 
+def read_classified_by(value: Any) -> dict[str, Any] | None:
+    """`{agent, model}` when `value` is a sound `classifiedBy` (the agent id, the model name or
+    null), else None."""
+    if not isinstance(value, dict) or set(value) != {"agent", "model"}:
+        return None
+    agent, model = value["agent"], value["model"]
+    if not isinstance(agent, str) or not _AGENT_ID.fullmatch(agent):
+        return None
+    if model is not None and (
+        not isinstance(model, str)
+        or not model.strip()
+        or len(model) > MAX_MODEL_NAME
+        or not model.isprintable()
+    ):
+        return None
+    return {"agent": agent, "model": model}
+
+
 def issues(payload: dict[str, Any]) -> list[str]:
     """What is wrong with the `practices` block of `payload`, as sentences; nothing when the
     block is absent (it is optional) or sound. An item that is no object or has no id is refused;
@@ -122,6 +144,11 @@ def issues(payload: dict[str, Any]) -> list[str]:
                 f"practices.timezone è {zone} ma intensity.timezone è {other}: "
                 "una generazione usa un solo fuso"
             )
+    if "classifiedBy" in block and read_classified_by(block["classifiedBy"]) is None:
+        found.append(
+            "practices.classifiedBy: serve un oggetto {agent, model}, con agent di 1-40 caratteri "
+            f"[a-z0-9-] e model una stringa di al più {MAX_MODEL_NAME} caratteri stampabili o null"
+        )
     items = block.get("items")
     if not isinstance(items, list):
         found.append("practices.items: serve una lista")

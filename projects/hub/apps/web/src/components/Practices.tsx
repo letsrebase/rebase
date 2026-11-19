@@ -3,6 +3,27 @@ import type { WorkProfilePractice } from '@/lib/api'
 export const MARK_CODE = 'contato dal codice'
 export const MARK_MODEL = 'dal modello della persona, non ricontrollato'
 
+const AGENT_LABELS: Record<string, string> = {
+  omp: 'oh-my-pi',
+  'claude-code': 'Claude Code',
+  codex: 'Codex',
+  opencode: 'OpenCode',
+  gemini: 'Gemini CLI',
+  cursor: 'Cursor',
+  copilot: 'Copilot CLI',
+  kimi: 'Kimi',
+  qwen: 'Qwen Code',
+  'anthropic-api': 'API Anthropic',
+  'slash-command': 'comando /rebase-verify',
+}
+
+const mark = (practice: WorkProfilePractice) => {
+  if (practice.method === 'code') return MARK_CODE
+  const by = practice.classified_by
+  if (!by) return MARK_MODEL
+  return `${MARK_MODEL} · ${AGENT_LABELS[by.agent] ?? by.agent}${by.model ? `, ${by.model}` : ''}`
+}
+
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
 /**
@@ -22,7 +43,7 @@ export function PracticeRows({ practices, labelledBy }: { practices: WorkProfile
           <span className="block text-muted-foreground">
             {`in ${plural(practice.seen, 'sessione', 'sessioni')} su ${practice.of}, ${plural(practice.products, 'prodotto', 'prodotti')}, ${plural(practice.months, 'mese', 'mesi')}.`}
           </span>
-          <span className="block text-xs text-muted-foreground">{practice.method === 'code' ? MARK_CODE : MARK_MODEL}</span>
+          <span className="block text-xs text-muted-foreground">{mark(practice)}</span>
         </li>
       ))}
     </ul>

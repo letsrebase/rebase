@@ -95,8 +95,8 @@ describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
   })
 
   const PRACTICES: Profile['practices'] = [
-    { id: 'checks_before_commit', label: 'Verifica prima del commit', method: 'code', seen: 18, of: 25, products: 3, months: 4 },
-    { id: 'asks_for_alternatives', label: 'Chiede alternative', method: 'model', seen: 11, of: 60, products: 4, months: 5 },
+    { id: 'checks_before_commit', label: 'Verifica prima del commit', method: 'code', seen: 18, of: 25, products: 3, months: 4, classified_by: null },
+    { id: 'asks_for_alternatives', label: 'Chiede alternative', method: 'model', seen: 11, of: 60, products: 4, months: 5, classified_by: null },
   ]
 
   it('shows the person the same practice rows and marks, with a link to the published list', () => {
@@ -112,6 +112,17 @@ describe('«Profilo di lavoro» in the member area (REB-1127)', () => {
       'href',
       'https://github.com/letsrebase/rebase-verify/blob/main/README.md#work-practices',
     )
+  })
+
+  it('names the agent and model on model rows only', () => {
+    show({
+      ...BASE,
+      state: 'approved',
+      practices: PRACTICES.map((p) => (p.method === 'model' ? { ...p, classified_by: { agent: 'codex', model: null } } : p)),
+    })
+    const list = screen.getByRole('list', { name: 'Come lavora' })
+    expect(within(list).getByText('dal modello della persona, non ricontrollato · Codex')).toBeInTheDocument()
+    expect(within(list).getByText('contato dal codice')).toBeInTheDocument()
   })
 
   it('shows no practices block when there are none', () => {
