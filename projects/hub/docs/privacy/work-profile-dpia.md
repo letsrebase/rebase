@@ -253,8 +253,10 @@ under these conditions:
 is organised, soft skills and character. Nothing the model reads is turned into a trait.
 
 **Open, not settled here.** Whether counts of moves in a conversation stay outside Annex III
-point 4(a) is Lorenzo's reading, to be confirmed by him, and a lawyer's to review at sign-off
-(§ 9). The model practices reach production only after both.
+point 4(a) is Lorenzo's reading, and a lawyer's to review at sign-off (§ 9). The model practices
+were meant to reach production only after both; Lorenzo released them on 2026-11-19 with
+hub-v0.104.0, before the lawyer's review (`docs/design/DECISIONS.md`, REB-1150). That review is
+still owed.
 
 **What the logs cannot show.** Whether an architecture was right needs the outcome and the
 context, which the logs do not hold. Organisation beyond one person's sessions (estimates kept,
@@ -404,8 +406,8 @@ model row.
 - [ ] Reviewed by a lawyer: Annex III scope of the current flow, the consent-under-pressure
       risk, the vetted flag outliving withdrawal
 - [ ] Lorenzo's reading, and the lawyer's review, that counts of moves classified by the person's
-      own model (§ 7, § 8) stay outside Annex III point 4(a); the model practices reach production
-      only after both
+      own model (§ 7, § 8) stay outside Annex III point 4(a). The model practices are already in
+      production since 2026-11-19 (hub-v0.104.0), released by Lorenzo ahead of this review
 - [ ] Questions for Play New (REB-1125): would they accept band and practice counts upstream,
       and do they read ADR-001 as ruling out per-person scores in their own intake too?
 
