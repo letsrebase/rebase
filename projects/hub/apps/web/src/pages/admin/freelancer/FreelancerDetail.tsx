@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
-import { ArrowLeft, Download, Ellipsis } from 'lucide-react'
+import { ArrowLeft, BadgeCheck, CircleAlert, CircleX, Clock, Download, Ellipsis } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
@@ -29,13 +29,18 @@ import { WorkProfileTab } from './WorkProfile'
  *  a bar at the foot of the page and «Stato» and «Note» sit in «Storico». */
 const RAIL = '(min-width: 1024px)'
 
+/** Below this the header keeps the CV and one overflow menu; «Crea match» and «Modifica scheda» move into it. */
+const WIDE = '(min-width: 640px)'
+
 type TabName = 'profile' | 'card' | 'contacts' | 'history'
 
 /** «Profilo da rivedere», «Profilo approvato»…: the profile's standing in the header, so the
  *  decision that waits is seen before any tab is opened. */
 function ProfilePill({ profile }: { profile: Parameters<typeof profileStandingWord>[0] }) {
+  const Icon = profile.expired ? Clock : { draft: CircleAlert, approved: BadgeCheck, rejected: CircleX }[profile.state]
   return (
-    <Badge variant="pill" dot={profile.state === 'draft' && !profile.expired ? 'accent' : undefined}>
+    <Badge variant="pill" className="gap-1">
+      <Icon aria-hidden="true" />
       Profilo {profileStandingWord(profile).toLowerCase()}
     </Badge>
   )
@@ -124,6 +129,7 @@ export function AdminFreelancerDetail() {
   const workProfile = useWorkProfile(id)
   const withRail = useMediaQuery(RAIL)
   const [chosen, setChosen] = useState<TabName | null>(null)
+  const wide = useMediaQuery(WIDE)
   if (row.isError) return <Empty>Scheda non trovata.</Empty>
   if (row.isPending) return <LoadingState />
   const f = row.data
@@ -176,14 +182,14 @@ export function AdminFreelancerDetail() {
               </a>
             </Button>
           )}
-          {live && (
+          {live && wide && (
             <Button asChild variant="outline" size="sm">
               <Link to="/admin/freelance/$id/match/new" params={{ id: f.id }}>
                 Crea match
               </Link>
             </Button>
           )}
-          {live && (
+          {live && wide && (
             <Button type="button" variant="outline" size="sm" onClick={() => setOverrideOpen(true)}>
               Modifica scheda
             </Button>
@@ -201,6 +207,16 @@ export function AdminFreelancerDetail() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
+                {!wide && (
+                  <>
+                    <DropdownMenuItem asChild>
+                      <Link to="/admin/freelance/$id/match/new" params={{ id: f.id }}>
+                        Crea match
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => setOverrideOpen(true)}>Modifica scheda</DropdownMenuItem>
+                  </>
+                )}
                 {hasCv && (
                   <DropdownMenuItem disabled={clearCv.isPending} onSelect={() => clearCv.mutate()}>
                     {clearCv.isPending ? 'Rimuovo…' : 'Rimuovi CV'}
@@ -229,7 +245,8 @@ export function AdminFreelancerDetail() {
                 <TabsTrigger value="profile" className="whitespace-nowrap">
                   Profilo di lavoro
                   {profile?.state === 'draft' && !profile.expired && (
-                    <Badge variant="pill" dot="accent" className="ml-2">
+                    <Badge variant="pill" className="ml-2 gap-1">
+                      <CircleAlert aria-hidden="true" />
                       Da rivedere
                     </Badge>
                   )}

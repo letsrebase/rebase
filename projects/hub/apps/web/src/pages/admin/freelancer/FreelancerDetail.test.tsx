@@ -175,6 +175,41 @@ describe('the tabs (REB-1158)', () => {
     expect(screen.getByRole('region', { name: 'Note' })).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Registro delle modifiche' })).toBeInTheDocument()
   })
+
+  it('keeps only the CV and the overflow menu in the header on a phone, the rest inside the menu', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f2': COMPLETE,
+      'GET /api/hub/freelancers/f2/audit': [],
+      'GET /api/hub/freelancers/f2/card': noCard('f2'),
+    })
+    mount('/admin/freelance/f2', undefined, undefined, undefined, false)
+    const banner = await screen.findByRole('banner')
+    expect(within(banner).getByRole('link', { name: /CV/ })).toBeInTheDocument()
+    expect(within(banner).queryByRole('link', { name: 'Crea match' })).toBeNull()
+    expect(within(banner).queryByRole('button', { name: 'Modifica scheda' })).toBeNull()
+    await userEvent.click(within(banner).getByRole('button', { name: 'Altre azioni' }))
+    expect(await screen.findByRole('menuitem', { name: 'Crea match' })).toHaveAttribute('href', '/admin/freelance/f2/match/new')
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Modifica scheda' }))
+    expect(await screen.findByLabelText('Posizione')).toBeInTheDocument()
+  })
+
+  it('gives each badge in the header an icon beside its text: «Verificato» and the profile’s state', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f2': { ...COMPLETE, vetted_at: '2026-09-25T09:00:00Z' },
+      'GET /api/hub/freelancers/f2/audit': [],
+      'GET /api/hub/freelancers/f2/card': noCard('f2'),
+    })
+    mount('/admin/freelance/f2', undefined, undefined, {
+      freelancer_id: 'f2', state: 'rejected', submitted_at: '2026-11-12T10:00:00Z', expires_at: '2027-11-12T10:00:00Z', expired: false,
+      tool_version: null, groundedness: 90, unsupported_anchors: [], unknown_technologies: 0, unknown_practices: 0, guard_hits: [],
+      decided_at: null, decided_by_name: null, decision_note: 'No.',
+      profile: { window_from: null, window_to: null, products: null, sessions: null, instructions: null, summary: null, domains: [], lenses: [], trajectory: null, stack: [], technologies: [], practices: [], projects: [], other_projects: 0 },
+    })
+    const banner = await screen.findByRole('banner')
+    const rejected = await within(banner).findByText('Profilo rifiutato')
+    expect(rejected.querySelector('svg')).not.toBeNull()
+    expect(within(banner).getByText('Verificato').querySelector('svg')).not.toBeNull()
+  })
 })
 
 describe('the anonymous card on the freelancer detail (REB-514)', () => {

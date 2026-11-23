@@ -1,3 +1,4 @@
+import { BadgeCheck } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
@@ -33,7 +34,8 @@ export function StatePill({ status }: { status: string }) {
  *  talent cloud shows as its badge. */
 export function VettedPill() {
   return (
-    <Badge variant="pill" dot="accent">
+    <Badge variant="pill" className="gap-1">
+      <BadgeCheck aria-hidden="true" />
       {VETTED_LABEL}
     </Badge>
   )
