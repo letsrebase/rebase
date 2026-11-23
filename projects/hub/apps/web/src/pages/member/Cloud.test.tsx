@@ -226,6 +226,7 @@ describe('Talent cloud, the cards', () => {
         {
           ...ADA,
           work_profile: {
+            language: 'it',
             summary: 'Lavora con gli agenti in modo orchestrato.',
             domains: [{ label: 'Pagamenti', products: 4, sessions: 1 }],
             project_domains: ['Piattaforma di pagamenti per marketplace.'],

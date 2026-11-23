@@ -12,7 +12,7 @@ under (`groundedness.classify_text_fields`), so the page can set each anchor bes
 came from.
 """
 
-from typing import Any
+from typing import Any, Literal
 
 from rebase_core.models import TECH_USAGE_BANDS
 from rebase_core.schema_common import ResponseModel
@@ -20,6 +20,53 @@ from rebase_core.team_schemas import CloudWorkDomain, CloudWorkProfile
 from rebase_core.vocabulary import PracticeMethod, TechUsageBand
 from rebase_core.work_profiles import practices as practices_module
 from rebase_core.work_profiles.tech_usage import reads_true
+
+# The languages rebase supports for a work profile, as the fork (`@letsrebase/verify`) lists them.
+# A profile that names none was written before the field existed, and all of those are English.
+WORK_PROFILE_LANGUAGES = ("it", "en")
+WorkProfileLanguage = Literal["it", "en"]
+DEFAULT_LANGUAGE: WorkProfileLanguage = "en"
+
+# The payload's closed vocabularies are English codes whatever the profile's language; the page
+# shows them through these Italian labels. A code not listed shows as itself.
+CODE_LABELS = {
+    # intensity.cadence
+    "daily driver": "uso quotidiano",
+    "heavy regular": "uso regolare e intenso",
+    "weekly": "uso settimanale",
+    "occasional": "uso occasionale",
+    # intensity.sessionShape
+    "short bursts": "sessioni brevi",
+    "focused sessions": "sessioni mirate",
+    "deep sessions": "sessioni profonde",
+    "marathon sessions": "sessioni maratona",
+    # distribution.shape
+    "portfolio": "portafoglio",
+    "balanced": "equilibrata",
+    "deep focus": "focus profondo",
+    # aiRelationship.mode
+    "directing-leaning": "tende a dirigere",
+    "co-thinking-leaning": "tende a ragionare insieme",
+    # trajectory.shifts.deltas[].metric
+    "median prompt words": "Parole mediane per richiesta",
+    "delegation rate": "Quota di deleghe",
+    "research:mutation": "Rapporto lettura:modifica",
+    "verification rate": "Quota di verifiche",
+    # trajectory.topics[].themes[].name
+    "agent architecture": "architettura degli agenti",
+    "design & UI": "design e interfaccia",
+    "security & auth": "sicurezza e accesso",
+    "dev tooling": "strumenti di sviluppo",
+    "data & schema": "dati e schema",
+    "AI patterns": "schemi d'uso dell'IA",
+    "business & domain": "business e dominio",
+}
+# `balanced` names a distribution shape and a relationship mode: one label serves both.
+
+
+def code_label(code: str) -> str:
+    return CODE_LABELS.get(code, code)
+
 
 SUMMARY_WHERE = "summary"
 DOMAINS_WHERE = "domains"
@@ -162,6 +209,8 @@ class WorkProfilePractice(ResponseModel):
 
 
 class WorkProfileView(ResponseModel):
+    # The language the prose is written in; a profile that names none reads as English.
+    language: WorkProfileLanguage
     window_from: str | None
     window_to: str | None
     products: int | None
@@ -261,7 +310,7 @@ def _agentic_counts(literacy: dict[str, Any]) -> list[WorkProfileCount]:
 def _co_thinking_counts(relationship: dict[str, Any]) -> list[WorkProfileCount]:
     counts = []
     if mode := _text(relationship.get("mode")):
-        counts.append(WorkProfileCount(label="Modo", value=mode))
+        counts.append(WorkProfileCount(label="Modo", value=code_label(mode)))
     for key, label in (("directing", "Dirige"), ("coThinking", "Ragiona insieme")):
         if (value := _shown(relationship.get(key))) is not None:
             counts.append(WorkProfileCount(label=label, value=f"{value}%"))
@@ -272,8 +321,13 @@ def _intensity_counts(intensity: dict[str, Any]) -> list[WorkProfileCount]:
     counts = _counts(intensity, _INTENSITY)
     for key, label in (("cadence", "Cadenza"), ("sessionShape", "Forma delle sessioni")):
         if value := _text(intensity.get(key)):
-            counts.append(WorkProfileCount(label=label, value=value))
+            counts.append(WorkProfileCount(label=label, value=code_label(value)))
     return counts
+
+
+def _distribution_counts(distribution: dict[str, Any]) -> list[WorkProfileCount]:
+    shape = _text(distribution.get("shape"))
+    return [WorkProfileCount(label="Forma", value=code_label(shape))] if shape else []
 
 
 def _trajectory(source: Any) -> WorkProfileTrajectory | None:
@@ -288,13 +342,13 @@ def _trajectory(source: Any) -> WorkProfileTrajectory | None:
             _shown(delta.get("late")),
         )
         if metric and early is not None and late is not None:
-            shifts.append(WorkProfileShift(metric=metric, early=early, late=late))
+            shifts.append(WorkProfileShift(metric=code_label(metric), early=early, late=late))
     topics = []
     for topic in _dicts(trajectory.get("topics")):
         quarter = _text(topic.get("quarter"))
         if quarter:
             themes = [
-                WorkProfileCount(label=name, value=count)
+                WorkProfileCount(label=code_label(name), value=count)
                 for theme in _dicts(topic.get("themes"))
                 if (name := _text(theme.get("name"))) and (count := _shown(theme.get("count")))
             ]
@@ -418,6 +472,11 @@ def practices(payload: dict[str, Any]) -> list[WorkProfilePractice]:
     return practice_rows(block.get("items"), block.get("classifiedBy"))
 
 
+def language_of(payload: dict[str, Any]) -> WorkProfileLanguage:
+    language = payload.get("language")
+    return language if language in WORK_PROFILE_LANGUAGES else DEFAULT_LANGUAGE
+
+
 def render_profile(payload: dict[str, Any]) -> WorkProfileView:
     """The payload of a stored profile as the admin reads it."""
     window, volume = _dict(payload.get("window")), _dict(payload.get("volume"))
@@ -453,10 +512,16 @@ def render_profile(payload: dict[str, Any]) -> WorkProfileView:
             payload.get("intensity"),
             _intensity_counts(_dict(payload.get("intensity"))),
         ),
-        _lens("distribution", "Come è distribuita", payload.get("distribution"), []),
+        _lens(
+            "distribution",
+            "Come è distribuita",
+            payload.get("distribution"),
+            _distribution_counts(_dict(payload.get("distribution"))),
+        ),
     ]
     projects = [item for source in _dicts(payload.get("projects")) if (item := _project(source))]
     return WorkProfileView(
+        language=language_of(payload),
         window_from=_text(window.get("from")),
         window_to=_text(window.get("to")),
         products=_int(volume.get("products")),
@@ -509,6 +574,7 @@ def cloud_work_profile(
             seen.setdefault(domain.strip(), None)
     summary = _text(payload.get("summary")) if "summary" not in flagged else None
     return CloudWorkProfile(
+        language=language_of(payload),
         summary=_cut(summary, SUMMARY_CLOUD_MAX) if summary else None,
         domains=domains,
         project_domains=list(seen),

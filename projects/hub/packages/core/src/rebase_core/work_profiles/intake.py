@@ -60,6 +60,7 @@ from rebase_core.work_profiles.schemas import (
 )
 from rebase_core.work_profiles.structure import forbidden, shape, structure
 from rebase_core.work_profiles.tech_usage import drop_unknown
+from rebase_core.work_profiles.view import WORK_PROFILE_LANGUAGES as LANGUAGES
 from rebase_core.work_profiles.view import render_profile
 
 MAX_BYTES = 512 * 1024
@@ -227,6 +228,11 @@ class WorkProfileService:
             raise WorkProfileRefused("Il file non è un profilo: serve un oggetto JSON.")
         if issues := shape(payload):
             raise WorkProfileRefused(_sentence(issues))
+        if (language := payload.get("language")) is not None and language not in LANGUAGES:
+            raise WorkProfileRefused(
+                "language: la lingua del profilo non è supportata, "
+                f"le lingue supportate sono {', '.join(LANGUAGES)}."
+            )
         try:  # 2. the schema
             CandidateProfile.model_validate(payload)
         except ValidationError as error:

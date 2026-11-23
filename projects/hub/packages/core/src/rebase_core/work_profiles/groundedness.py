@@ -92,8 +92,14 @@ _COGNITIVE_TAGS = (
 # JavaScript's `\s` (ECMAScript WhiteSpace and LineTerminator), which `re.ASCII` does not give.
 _JS_SPACE = "\\t\\n\\v\\f\\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
 _PERIOD = r"\b20\d{2}-(?:Q[1-4]|0?[1-9]|1[0-2])\b"
-_NUMBER_RE = re.compile(r"\b\d{1,5}(?:[.,]\d+)?\b", re.ASCII)
-_PERCENT_RE = re.compile(rf"(\d{{1,3}})[{_JS_SPACE}]*%", re.ASCII)
+_NUMBER_RE = re.compile(r"\b\d{1,5}(?:[.,]\d+)*\b", re.ASCII)
+_PERCENT_RE = re.compile(rf"(?<![\d.,])(\d{{1,3}}(?:[.,]\d+)?)[{_JS_SPACE}]*%", re.ASCII)
+_DECIMAL_RE = re.compile(r"\d+(?:\.\d+)?", re.ASCII)
+
+# How a language writes numbers: the thousands separator and the decimal mark. A profile with no
+# `language` predates the field and was written in English.
+_NUMBER_FORMATS = {"it": (".", ","), "en": (",", ".")}
+_DEFAULT_NUMBER_LANGUAGE = "en"
 _PERIOD_RE = re.compile(_PERIOD, re.ASCII)
 # What `splitTech` splits on, and what it keeps.
 _SPLIT_RE = re.compile(rf"[{_JS_SPACE}/(),]+")
@@ -220,18 +226,36 @@ def split_tech(label: Any) -> list[str]:
     return [kept for part in parts if len(kept := _UNKEPT_RE.sub("", part)) >= 3]
 
 
-def extract_anchors(text: Any) -> list[Anchor]:
+def parse_number(raw: str, language: Any) -> float:
+    """One numeric token ("1.168", "12,5") read the way `language` writes it; NaN for a token
+    that is not a number in that language."""
+    group, decimal = _NUMBER_FORMATS.get(
+        language if isinstance(language, str) else "", _NUMBER_FORMATS[_DEFAULT_NUMBER_LANGUAGE]
+    )
+    grouped = re.compile(
+        rf"\d{{1,3}}(?:{re.escape(group)}\d{{3}})+(?:{re.escape(decimal)}\d+)?", re.ASCII
+    )
+    token = raw
+    if grouped.fullmatch(token):
+        token = token.replace(group, "")
+    token = token.replace(decimal, ".", 1)
+    return float(token) if _DECIMAL_RE.fullmatch(token) else math.nan
+
+
+def extract_anchors(text: Any, language: Any = _DEFAULT_NUMBER_LANGUAGE) -> list[Anchor]:
     """The verifiable anchors of a chunk of prose."""
     if not text or not isinstance(text, str):
         return []
     anchors: list[Anchor] = []
     # Numbers that look meaningful (two or more).
     for match in _NUMBER_RE.finditer(text):
-        value = float(match.group(0).replace(",", "."))
+        value = parse_number(match.group(0), language)
         if math.isfinite(value) and value >= 2:
             anchors.append(Anchor("number", value, match.group(0)))
     for match in _PERCENT_RE.finditer(text):
-        anchors.append(Anchor("percent", int(match.group(1)) / 100, match.group(0)))
+        value = parse_number(match.group(1), language)
+        if math.isfinite(value):
+            anchors.append(Anchor("percent", value / 100, match.group(0)))
     for match in _PERIOD_RE.finditer(text):
         anchors.append(Anchor("period", match.group(0), match.group(0)))
     for token, pattern in _tech_patterns():
@@ -494,13 +518,16 @@ def assess_groundedness(profile: dict[str, Any], max_anchors: int | None = None)
     past that many anchors: a person's profile has a few dozen, and the intake must not spend
     its time on a payload made of them."""
     pool = collect_support_pool(profile)
+    language = profile.get("language")
+    if language is None:
+        language = _DEFAULT_NUMBER_LANGUAGE
     numbers, ratios = _Matcher(pool.numbers), _Matcher(pool.ratios)
     total = 0
     supported = 0
     anomalies: list[dict[str, str]] = []
 
     for where, text in classify_text_fields(profile):
-        for anchor in extract_anchors(text):
+        for anchor in extract_anchors(text, language):
             total += 1
             if max_anchors is not None and total > max_anchors:
                 raise TooManyAnchors

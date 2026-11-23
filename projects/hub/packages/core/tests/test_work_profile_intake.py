@@ -159,6 +159,11 @@ def _refusals() -> list[tuple[str, Any, str]]:
             "non regge",
         ),
         (
+            "a language rebase does not write",
+            with_(lambda p: p.update(language="fr")),
+            "non è supportata",
+        ),
+        (
             "nothing to check",
             with_(
                 lambda p: p.update(

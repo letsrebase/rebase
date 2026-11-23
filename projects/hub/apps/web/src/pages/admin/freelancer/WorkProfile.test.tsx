@@ -25,6 +25,7 @@ const PROFILE = {
   decided_by_name: null,
   decision_note: null,
   profile: {
+    language: 'it',
     window_from: '2026-04',
     window_to: '2026-05',
     products: 23,

@@ -621,6 +621,8 @@ class CloudWorkProfile(ResponseModel):
     their counts and the abstract domain of each representative project. Not the narratives,
     the trajectory, the agentic-literacy counts nor the artifacts: they stay in the admin."""
 
+    # The language the summary is written in (a profile that names none is English).
+    language: Literal["it", "en"]
     summary: str | None
     domains: list[CloudWorkDomain]
     project_domains: list[str]

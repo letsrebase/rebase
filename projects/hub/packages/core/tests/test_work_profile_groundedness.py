@@ -337,3 +337,54 @@ def test_the_support_pool_holds_seen_of_products_months() -> None:
         ],
     }
     assert anomalies_of(p, where="cognitive.narrative") == []
+
+
+# Number anchors follow the payload's language (REB-1156); ported from the fork's
+# `test/groundedness.test.mjs`. A profile with no `language` predates the field: English.
+def with_volume(sessions: int, language: str | None = None) -> dict[str, Any]:
+    p = base_profile()
+    p["volume"]["sessions"] = sessions
+    if language:
+        p["language"] = language
+    return p
+
+
+def number_anomalies(profile: dict[str, Any]) -> list[dict[str, str]]:
+    found = assess_groundedness(profile).anomalies
+    return [a for a in found if a["kind"] in ("number", "percent")]
+
+
+def test_it_a_dot_groups_thousands_and_a_comma_is_the_decimal_mark() -> None:
+    p = with_volume(2500, "it")
+    p["summary"] = "Circa 2.500 sessioni."
+    assert number_anomalies(p) == []
+    q = with_volume(1168, "it")
+    q["intensity"] = {"medianSessionToolCalls": 1.13}
+    q["summary"] = (
+        "Ci sono 1.168 deleghe e una mediana di 2,13 chiamate."  # 2,13 is not in the data
+    )
+    assert [a["anchor"] for a in number_anomalies(q)] == ["2,13"]
+    q["summary"] = "Ci sono 1.168 deleghe."
+    assert number_anomalies(q) == []
+
+
+def test_it_a_decimal_percent_anchors_whole() -> None:
+    p = with_volume(300, "it")
+    p["intensity"] = {"activeDaysRatio": 0.125}
+    p["summary"] = "Attivo nel 12,5% dei giorni."
+    assert anomalies_of(p, kind="percent") == []
+    p["summary"] = "Attivo nel 5% dei giorni."
+    assert len(anomalies_of(p, kind="percent")) == 1
+
+
+def test_en_a_comma_groups_thousands_and_a_dot_is_the_decimal_mark() -> None:
+    for language in ("en", None):
+        p = with_volume(1168, language)
+        p["summary"] = "There are 1,168 delegations."
+        assert number_anomalies(p) == [], language
+    p = with_volume(2500, "en")
+    p["summary"] = "About 2.500 sessions."  # read as 2.5, which is not in the data
+    assert len(number_anomalies(p)) == 1
+    p["intensity"] = {"activeDaysRatio": 0.125}
+    p["summary"] = "Active on 12.5% of days."
+    assert anomalies_of(p, kind="percent") == []

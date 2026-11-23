@@ -14,7 +14,10 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validat
 
 from rebase_core.schema_common import ResponseModel, clean_multiline
 from rebase_core.vocabulary import WorkProfileState
-from rebase_core.work_profiles.view import WorkProfileView
+from rebase_core.work_profiles.view import (
+    WorkProfileLanguage,
+    WorkProfileView,
+)
 
 SCHEMA_ID = "playnew-profile/v1"
 
@@ -73,6 +76,7 @@ class OtherProject(_Open):
 class CandidateProfile(_Open):
     schema_id: Literal["playnew-profile/v1"] = Field(alias="schema")
     generatedAt: str | None = None  # noqa: N815
+    language: WorkProfileLanguage | None = None
     contact: dict[str, Any] | None = None
     window: Span
     volume: Volume

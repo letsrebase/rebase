@@ -3289,6 +3289,11 @@ export interface components {
          *     the trajectory, the agentic-literacy counts nor the artifacts: they stay in the admin.
          */
         CloudWorkProfile: {
+            /**
+             * Language
+             * @enum {string}
+             */
+            language: "it" | "en";
             /** Summary */
             summary: string | null;
             /** Domains */
@@ -6718,6 +6723,11 @@ export interface components {
         };
         /** WorkProfileView */
         WorkProfileView: {
+            /**
+             * Language
+             * @enum {string}
+             */
+            language: "it" | "en";
             /** Window From */
             window_from: string | null;
             /** Window To */
