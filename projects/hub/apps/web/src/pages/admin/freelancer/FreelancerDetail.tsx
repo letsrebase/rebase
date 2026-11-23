@@ -1,50 +1,64 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
-import { ArrowLeft, Download } from 'lucide-react'
+import { ArrowLeft, Download, Ellipsis } from 'lucide-react'
 import { useState } from 'react'
+import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
-import { ContactPointsList } from '@/components/ContactPointsList'
-import { WebLink } from '@/components/WebLink'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@rebase/ui/dropdown-menu'
+import { formatMoney } from '@rebase/ui/format'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rebase/ui/tabs'
+import { useMediaQuery } from '@rebase/ui/use-media-query'
 import { useFreelancerCard } from '@/hooks/use-freelancer-card'
 import { admin, type Freelancer, type FreelancerOverride, type Note } from '@/lib/api'
 import { failureMessage } from '@/lib/adminList'
-import { extraPoints } from '@/lib/contactPoints'
-import {
-  FREELANCER_STATES,
-  REMOTE_LABELS,
-  VETTED_LABEL,
-  formatBytes,
-  formatDate,
-  formatDateTime,
-} from '@/lib/format'
-import { formatMoney } from '@rebase/ui/format'
+import { FREELANCER_STATES, REMOTE_LABELS, SENIORITY_LABELS, formatBytes, formatDate, formatExperience } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
+import { AnonymousCard } from '../AnonymousCard'
 import { AuditTrail } from '../AuditTrail'
 import { DuplicateOf } from '../DuplicateMarks'
-import { Empty, Header, IncompletePill, LoadingState, Row, StatePill, StatusEditor, VettedPill } from '../list-kit'
+import { Empty, IncompletePill, LoadingState, StatePill, StatusEditor, VettedPill } from '../list-kit'
 import { Notes } from '../Notes'
-import { FreelancerOverrideDialog, RecordLifecycle } from '../Override'
-import { AnonymousCard } from '../AnonymousCard'
-import {
-  CvCityRow,
-  CvCompaniesRow,
-  CvDifferences,
-  CvEmailRow,
-  CvLinksRow,
-  CvMark,
-  CvPhoneRows,
-} from './CvRows'
-import { FreelancerSignup, RecentEvents } from './Subscription'
-import { WorkProfile } from './WorkProfile'
+import { FreelancerOverrideDialog } from '../Override'
+import { ContactsTab } from './ContactsTab'
+import { ProfileDecisionBar, ProfileRailCard } from './ProfileDecision'
+import { profileStandingWord, useWorkProfile } from './profileState'
+import { RecentEvents } from './Subscription'
+import { WorkProfileTab } from './WorkProfile'
 
-/** What REB-284 adds to the freelancer detail beyond `Freelancer`: everywhere else in
- *  the hub that already knows this address, fetched server-side in the same call so
- *  the page does not fan out four requests of its own. */
+/** The page keeps its right rail from this width up; below it the rail is gone, the decision is
+ *  a bar at the foot of the page and «Stato» and «Note» sit in «Storico». */
+const RAIL = '(min-width: 1024px)'
 
-/** Who the answers on a card come from, as the detail's «Scheda» row says it. */
-function ownership(f: Freelancer): string {
-  if (f.filled_by === 'person') return 'compilata dalla persona'
-  return f.complete ? 'scritta dall’admin' : 'scritta dall’admin, da completare'
+type TabName = 'profile' | 'card' | 'contacts' | 'history'
+
+/** «Profilo da rivedere», «Profilo approvato»…: the profile's standing in the header, so the
+ *  decision that waits is seen before any tab is opened. */
+function ProfilePill({ profile }: { profile: Parameters<typeof profileStandingWord>[0] }) {
+  return (
+    <Badge variant="pill" dot={profile.state === 'draft' && !profile.expired ? 'accent' : undefined}>
+      Profilo {profileStandingWord(profile).toLowerCase()}
+    </Badge>
+  )
+}
+
+/** The person's one line of facts: role, level, rate, how and where they work, how to reach them. */
+function Facts({ f, role, level, city }: { f: Freelancer; role: string | null; level: string | null; city: string | null }) {
+  const facts = [
+    role ? <span key="role">{role}</span> : null,
+    level ? <span key="level">{level}</span> : null,
+    f.daily_rate !== null ? <span key="rate" className="tabular-nums">{`${formatMoney(f.daily_rate)} al giorno`}</span> : null,
+    f.remote ? <span key="mode">{REMOTE_LABELS[f.remote]}</span> : null,
+    city ? <span key="city">{city}</span> : null,
+    <a key="email" className="underline underline-offset-2" href={`mailto:${f.email}`}>
+      {f.email}
+    </a>,
+    f.phone ? <span key="phone" className="tabular-nums">{f.phone}</span> : null,
+  ].filter((fact) => fact !== null)
+  return (
+    <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+      {facts}
+    </p>
+  )
 }
 
 export function AdminFreelancerDetail() {
@@ -107,166 +121,198 @@ export function AdminFreelancerDetail() {
   // parallel with the profile, not after it. A deleted card's route answers a 404, which
   // leaves the CV rows out.
   const cvCard = useFreelancerCard(id).data
+  const workProfile = useWorkProfile(id)
+  const withRail = useMediaQuery(RAIL)
+  const [chosen, setChosen] = useState<TabName | null>(null)
   if (row.isError) return <Empty>Scheda non trovata.</Empty>
   if (row.isPending) return <LoadingState />
   const f = row.data
+  const live = f.deleted_at === null
+  const profile = live ? workProfile.profile : null
+  // The profile first when there is one, the anonymous card when there is not: the tab the
+  // admin most likely came for. A deleted card has neither.
+  const tab: TabName = chosen ?? (!live ? 'contacts' : profile ? 'profile' : 'card')
   const person = cvCard?.person ?? null
+  const card = cvCard?.card ?? null
+  const level = card
+    ? `${SENIORITY_LABELS[card.seniority] ?? card.seniority} · ${formatExperience(card.experience_years)}`
+    : null
+  const flags = cvCard?.flags.length ?? 0
   const overrideFailure = failureMessage(override.error, 'Non riesco a salvare la scheda.')
   const clearCvFailure = failureMessage(clearCv.error, 'Non riesco a rimuovere il CV.')
   const lifecycleFailure = failureMessage(del.error ?? restore.error, 'Non riesco a completare l’operazione.')
+  const hasCv = f.cv_filename !== null && f.cv_size !== null && live
+  const status = live && (
+    <StatusEditor
+      states={FREELANCER_STATES}
+      status={f.status}
+      saving={move.isPending}
+      onSave={(next) => move.mutate(next)}
+      error={failureMessage(move.error, 'Non riesco a salvare lo stato.')}
+    />
+  )
+  const notes = <Notes kind="freelancers" id={f.id} notes={f.note} onChange={onNotesChange} />
   return (
     <>
-      <Header title={`${f.first_name} ${f.last_name}`}>
+      <header className="space-y-3 border-b px-6 py-5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className="text-2xl font-semibold tracking-tight">{`${f.first_name} ${f.last_name}`}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatePill status={f.status} />
+            {f.vetted_at && <VettedPill />}
+            {live && <DuplicateOf freelancerId={f.id} />}
+            {!f.complete && <IncompletePill />}
+            {profile && <ProfilePill profile={profile} />}
+            {!live && <Badge variant="pill">Eliminata il {formatDate(f.deleted_at!)}</Badge>}
+          </div>
+        </div>
+        <Facts f={f} role={card?.role ?? f.job_title} level={level} city={person?.city ?? null} />
         <div className="flex flex-wrap items-center gap-2">
-          <StatePill status={f.status} />
-          {f.vetted_at && <VettedPill />}
-          {f.deleted_at === null && <DuplicateOf freelancerId={f.id} />}
-          {!f.complete && <IncompletePill />}
-          {f.cv_filename !== null && f.cv_size !== null && f.deleted_at === null && (
-            <>
-              <Button asChild variant="outline" size="sm">
-                <a href={admin.cvUrl(f.id)}>
-                  <Download className="mr-2 size-4" />
-                  CV · {formatBytes(f.cv_size)}
-                </a>
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => clearCv.mutate()}
-                disabled={clearCv.isPending}
-              >
-                {clearCv.isPending ? 'Rimuovo…' : 'Rimuovi CV'}
-              </Button>
-            </>
+          {hasCv && (
+            <Button asChild variant="outline" size="sm">
+              <a href={admin.cvUrl(f.id)}>
+                <Download className="mr-2 size-4" />
+                CV · {formatBytes(f.cv_size!)}
+              </a>
+            </Button>
           )}
-          {f.deleted_at === null && (
+          {live && (
             <Button asChild variant="outline" size="sm">
               <Link to="/admin/freelance/$id/match/new" params={{ id: f.id }}>
                 Crea match
               </Link>
             </Button>
           )}
-          {f.deleted_at === null && (
+          {live && (
             <Button type="button" variant="outline" size="sm" onClick={() => setOverrideOpen(true)}>
               Modifica scheda
             </Button>
           )}
-          <RecordLifecycle
-            deletedAt={f.deleted_at}
-            deleting={del.isPending}
-            restoring={restore.isPending}
-            onDelete={() => del.mutate()}
-            onRestore={() => restore.mutate()}
-            error={lifecycleFailure}
-          />
+          {!live && (
+            <Button type="button" variant="outline" size="sm" onClick={() => restore.mutate()} disabled={restore.isPending}>
+              {restore.isPending ? 'Ripristino…' : 'Ripristina'}
+            </Button>
+          )}
+          {live && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" size="icon-sm" aria-label="Altre azioni">
+                  <Ellipsis />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                {hasCv && (
+                  <DropdownMenuItem disabled={clearCv.isPending} onSelect={() => clearCv.mutate()}>
+                    {clearCv.isPending ? 'Rimuovo…' : 'Rimuovi CV'}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem variant="destructive" disabled={del.isPending} onSelect={() => del.mutate()}>
+                  {del.isPending ? 'Elimino…' : 'Elimina'}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
-      </Header>
-      {clearCvFailure && (
-        <p role="alert" className="px-6 text-sm text-destructive">
-          {clearCvFailure}
-        </p>
-      )}
-      <div className="grid gap-6 p-6 lg:grid-cols-3">
-        <div className="space-y-3 lg:col-span-2">
-          {person && <CvDifferences differences={cvCard?.differences ?? []} />}
-          <dl className="space-y-3 text-sm">
-            <Row label="Email"><a className="underline underline-offset-2" href={`mailto:${f.email}`}>{f.email}</a></Row>
-            <CvPhoneRows phone={f.phone ?? null} person={person} />
-            {extraPoints(f.contact_points).length > 0 && (
-              <Row label="Altri recapiti">
-                <ContactPointsList points={extraPoints(f.contact_points)} />
-              </Row>
-            )}
-            <CvEmailRow email={f.email} person={person} />
-            <CvCityRow person={person} />
-            <Row label="Posizione">{f.job_title ?? '—'}</Row>
-            <Row label="Tariffa a giornata">
-              {f.daily_rate === null ? '—' : formatMoney(f.daily_rate)}
-            </Row>
-            <Row label="Modalità">{f.remote ? REMOTE_LABELS[f.remote] : '—'}</Row>
-            <Row label="LinkedIn">
-              {f.linkedin_url ? (
-                <WebLink href={f.linkedin_url} />
-              ) : person?.linkedin_url ? (
-                <>
-                  <WebLink href={person.linkedin_url} />
-                  <CvMark />
-                </>
-              ) : (
-                '—'
+        {(clearCvFailure || lifecycleFailure) && (
+          <p role="alert" className="text-sm text-destructive">
+            {clearCvFailure ?? lifecycleFailure}
+          </p>
+        )}
+      </header>
+      {workProfile.pending && live ? (
+        <LoadingState />
+      ) : (
+        <div className={withRail ? 'grid grid-cols-[minmax(0,1fr)_17rem] items-start gap-6 p-6' : 'p-6'}>
+          <Tabs value={tab} onValueChange={(next) => setChosen(next as TabName)} className="min-w-0">
+            <TabsList className="max-w-full justify-start overflow-x-auto">
+              {live && (
+                <TabsTrigger value="profile" className="whitespace-nowrap">
+                  Profilo di lavoro
+                  {profile?.state === 'draft' && !profile.expired && (
+                    <Badge variant="pill" dot="accent" className="ml-2">
+                      Da rivedere
+                    </Badge>
+                  )}
+                </TabsTrigger>
               )}
-            </Row>
-            <CvLinksRow links={f.links} person={person} />
-            <CvCompaniesRow person={person} />
-            <Row label="Arrivato">{formatDate(f.created_at)}{f.utm_source ? ` · da ${f.utm_source}` : ''}{f.origin ? ` · pagina ${f.origin}` : ''}</Row>
-            <Row label="Provenienza">{f.provenance}</Row>
-            <Row label="Accessi">
-              {f.logins === 0 || f.last_access === null
-                ? 'Mai entrato'
-                : `${f.logins} · ultimo ${formatDateTime(f.last_access)}`}
-            </Row>
-            <Row label="Scheda">{ownership(f)}</Row>
-            <Row label="Verifica">
-              {f.vetted_at ? `${VETTED_LABEL} il ${formatDate(f.vetted_at)}` : 'Non verificato'}
-            </Row>
-          </dl>
-          {!person && f.cv_filename !== null && f.deleted_at === null && cvCard && (
-            <p className="text-sm text-muted-foreground">
-              Dati dal CV non ancora letti: «Rigenera scheda» li legge.
-            </p>
+              {live && (
+                <TabsTrigger value="card" className="whitespace-nowrap">
+                  Scheda anonima
+                  {flags > 0 && (
+                    <Badge variant="pill" className="ml-2">
+                      <span className="sr-only">Da verificare: </span>
+                      {flags}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+              )}
+              <TabsTrigger value="contacts" className="whitespace-nowrap">
+                Contatti e dati
+              </TabsTrigger>
+              <TabsTrigger value="history" className="whitespace-nowrap">
+                Storico
+              </TabsTrigger>
+            </TabsList>
+            {live && (
+              <TabsContent value="profile" className="pt-4">
+                <section aria-label="Profilo di lavoro">
+                  <WorkProfileTab freelancer={f} profile={profile} failed={workProfile.failed} />
+                </section>
+              </TabsContent>
+            )}
+            {live && (
+              <TabsContent value="card" className="pt-4">
+                <AnonymousCard freelancerId={f.id} hasCv={f.cv_filename !== null} />
+              </TabsContent>
+            )}
+            <TabsContent value="contacts" className="pt-4">
+              <ContactsTab f={f} cvCard={cvCard} />
+            </TabsContent>
+            <TabsContent value="history" className="space-y-6 pt-4">
+              {!withRail && (
+                <div className="space-y-4">
+                  {status}
+                  {notes}
+                </div>
+              )}
+              <RecentEvents
+                title="Ultimi accessi"
+                empty="Non è mai entrata."
+                items={f.last_logins.map((login) => ({ id: login.id, when: login.logged_at }))}
+              />
+              <RecentEvents
+                title="Download della guida"
+                empty="Non ha scaricato la guida."
+                items={f.last_download_guide.map((download) => ({
+                  id: download.id,
+                  when: download.downloaded_at,
+                }))}
+              />
+              <AuditTrail
+                kind="freelancers"
+                id={f.id}
+                canRevert={live}
+                className=""
+                onReverted={() => {
+                  void client.invalidateQueries({ queryKey: keys.freelancer(id) })
+                  // A reverted override can put back the work mode or the rate, which the
+                  // «Scheda anonima» section reads beside the card, as `mergeAndRefresh` says.
+                  void client.invalidateQueries({ queryKey: keys.freelancerCard(id) })
+                  void client.invalidateQueries({ queryKey: keys.talents() })
+                }}
+              />
+            </TabsContent>
+          </Tabs>
+          {withRail && (
+            <aside aria-label="Decisione, stato e note" className="sticky top-4 min-w-0 space-y-4">
+              {profile && <ProfileRailCard profile={profile} freelancerId={f.id} vettedAt={f.vetted_at} />}
+              {status}
+              {notes}
+            </aside>
           )}
         </div>
-        <div className="min-w-0 space-y-6">
-          {f.deleted_at === null && (
-            <StatusEditor
-              states={FREELANCER_STATES}
-              status={f.status}
-              saving={move.isPending}
-              onSave={(status) => move.mutate(status)}
-              error={failureMessage(move.error, 'Non riesco a salvare lo stato.')}
-            />
-          )}
-          <Notes kind="freelancers" id={f.id} notes={f.note} onChange={onNotesChange} />
-        </div>
-      </div>
-      {f.deleted_at === null && (
-        <AnonymousCard freelancerId={f.id} hasCv={f.cv_filename !== null} />
       )}
-      {f.deleted_at === null && <WorkProfile freelancerId={f.id} vettedAt={f.vetted_at} />}
-      <FreelancerSignup utm={f.signup_utm} />
-      <RecentEvents
-        title="Ultimi accessi"
-        empty="Non è mai entrata."
-        items={f.last_logins.map((login) => ({ id: login.id, when: login.logged_at }))}
-      />
-      <RecentEvents
-        title="Download della guida"
-        empty="Non ha scaricato la guida."
-        items={f.last_download_guide.map((download) => ({
-          id: download.id,
-          when: download.downloaded_at,
-        }))}
-      />
-      {f.pigro_slug && (
-        <section className="space-y-2 px-6 pb-6">
-          <h2 className="text-sm font-medium">Spazio PigroCRM</h2>
-          <p className="text-sm"><code className="border bg-muted px-1.5 py-0.5">{f.pigro_slug}</code></p>
-        </section>
-      )}
-      <AuditTrail
-        kind="freelancers"
-        id={f.id}
-        canRevert={f.deleted_at === null}
-        onReverted={() => {
-          void client.invalidateQueries({ queryKey: keys.freelancer(id) })
-          // A reverted override can put back the work mode or the rate, which the
-          // «Scheda anonima» section reads beside the card, as `mergeAndRefresh` says.
-          void client.invalidateQueries({ queryKey: keys.freelancerCard(id) })
-          void client.invalidateQueries({ queryKey: keys.talents() })
-        }}
-      />
+      {!withRail && profile && <ProfileDecisionBar profile={profile} freelancerId={f.id} vettedAt={f.vetted_at} />}
       <p className="px-6 pb-6">
         <Link to="/admin/talent" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
           <ArrowLeft className="size-4" /> Tutti i talenti

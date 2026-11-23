@@ -148,7 +148,10 @@ export function AuditTrail({
   id,
   canRevert,
   onReverted,
+  className = 'px-6 pb-6',
 }: {
+  /** The section's own spacing: the default is for a page that lays it out itself; a tab passes none. */
+  className?: string
   kind: ThreadKind
   id: string
   /** `false` while the record is soft-deleted: the server refuses a revert on it until
@@ -174,7 +177,7 @@ export function AuditTrail({
         : null
 
   return (
-    <section aria-label="Registro delle modifiche" className="space-y-4 px-6 pb-6">
+    <section aria-label="Registro delle modifiche" className={`space-y-4 ${className}`}>
       <h2 className="text-sm font-medium">
         Registro delle modifiche
         {!!trail.data?.length && (

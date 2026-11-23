@@ -1,9 +1,31 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { COMPLETE, INCOMPLETE, LINKED_PAIR, answer, mount, noCard, person, resetMocks, routeFetch, settle } from '../list-test-kit'
+import { COMPLETE, INCOMPLETE, LINKED_PAIR, answer, mount, noCard, openTab, person, resetMocks, routeFetch, settle } from '../list-test-kit'
 
 afterEach(resetMocks)
+
+/** `fetch` for the writes of this page: the reads (the card, the trail) answered as they are
+ *  when nothing is wrong, the writes by `write`, and anything else with the freelancer. */
+function serve(
+  freelancer: Record<string, unknown> & { id: string },
+  write: (url: string, init: RequestInit | undefined) => Response | undefined = () => undefined,
+) {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const url = String(input)
+    const written = write(url, init)
+    if (written) return written
+    if (url === `/api/hub/freelancers/${freelancer.id}/audit`) return answer(200, [])
+    if (url === `/api/hub/freelancers/${freelancer.id}/card`) return answer(200, noCard(freelancer.id))
+    return answer(200, freelancer)
+  })
+}
+
+/** The overflow menu's item: «Elimina», «Rimuovi CV». */
+async function chooseFromMenu(name: string) {
+  await userEvent.click(await screen.findByRole('button', { name: 'Altre azioni' }))
+  await userEvent.click(await screen.findByRole('menuitem', { name }))
+}
 
 describe('the freelancer detail', () => {
   it('shows an incomplete card without a CV link and says the admin wrote it', async () => {
@@ -17,6 +39,7 @@ describe('the freelancer detail', () => {
     expect(spy).toHaveBeenCalledWith('/api/hub/freelancers/f1', expect.anything())
     expect(screen.queryByRole('link', { name: /CV/ })).toBeNull()
     expect(screen.getByText('Da completare')).toBeInTheDocument()
+    await openTab('Contatti e dati')
     expect(screen.getByText('scritta dall’admin, da completare')).toBeInTheDocument()
     expect(screen.getByText('Mai entrato')).toBeInTheDocument()
     // The three answers the person has not given yet read as dashes, not as a crash.
@@ -34,9 +57,123 @@ describe('the freelancer detail', () => {
     await screen.findByRole('heading', { name: 'Grace Hopper' })
     expect(screen.getByRole('link', { name: /CV/ })).toHaveAttribute('href', '/api/hub/freelancers/f2/cv')
     expect(screen.queryByText('Da completare')).toBeNull()
-    expect(screen.getByText('compilata dalla persona')).toBeInTheDocument()
+    // The header's one line of facts: the work mode is there without opening a tab.
     expect(screen.getByText('Da remoto')).toBeInTheDocument()
+    await openTab('Contatti e dati')
+    expect(screen.getByText('compilata dalla persona')).toBeInTheDocument()
     expect(screen.getByText(/^3 · ultimo 11 set 2026/)).toBeInTheDocument()
+  })
+})
+
+describe('the tabs (REB-1158)', () => {
+  const PROFILE_READ = {
+    freelancer_id: 'f2',
+    state: 'draft',
+    submitted_at: '2026-11-12T10:00:00Z',
+    expires_at: '2027-11-12T10:00:00Z',
+    expired: false,
+    tool_version: '1.0.0',
+    groundedness: 90,
+    unsupported_anchors: [],
+    unknown_technologies: 0,
+    unknown_practices: 0,
+    guard_hits: [],
+    decided_at: null,
+    decided_by_name: null,
+    decision_note: null,
+    profile: {
+      window_from: '2026-04',
+      window_to: '2026-05',
+      products: 3,
+      sessions: 44,
+      instructions: 2701,
+      summary: 'Lavora con l’AI in modo orchestrato.',
+      domains: [],
+      lenses: [],
+      trajectory: null,
+      stack: [],
+      technologies: [],
+      practices: [],
+      projects: [],
+      other_projects: 0,
+    },
+  }
+
+  it('opens on the work profile when the person sent one, and on the anonymous card when not', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f2': COMPLETE,
+      'GET /api/hub/freelancers/f2/audit': [],
+      'GET /api/hub/freelancers/f2/card': noCard('f2'),
+    })
+    mount('/admin/freelance/f2', undefined, undefined, PROFILE_READ)
+    await screen.findByRole('heading', { name: 'Grace Hopper' })
+    expect(await screen.findByRole('tab', { name: /^Profilo di lavoro/, selected: true })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /^Scheda anonima/, selected: false })).toBeInTheDocument()
+    // The state shows in the header and on the tab before the tab is opened.
+    expect(within(screen.getByRole('banner')).getByText('Profilo da rivedere')).toBeInTheDocument()
+  })
+
+  it('opens on the anonymous card for a person with no profile', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f2': COMPLETE,
+      'GET /api/hub/freelancers/f2/audit': [],
+      'GET /api/hub/freelancers/f2/card': noCard('f2'),
+    })
+    mount('/admin/freelance/f2')
+    await screen.findByRole('heading', { name: 'Grace Hopper' })
+    expect(await screen.findByRole('tab', { name: /^Scheda anonima/, selected: true })).toBeInTheDocument()
+    // «Profilo di lavoro» is still a tab: it says how the person sends one.
+    await openTab('Profilo di lavoro')
+    expect(await screen.findByText(/npx @letsrebase\/verify/)).toBeInTheDocument()
+  })
+
+  it('counts the flags on the anonymous card’s tab', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f2': COMPLETE,
+      'GET /api/hub/freelancers/f2/audit': [],
+      'GET /api/hub/freelancers/f2/card': {
+        ...noCard('f2'),
+        flags: [{ field: 'skills', verdict: 'unsupported', reason: 'Nessuna fonte.' }],
+      },
+    })
+    mount('/admin/freelance/f2')
+    const tab = await screen.findByRole('tab', { name: /^Scheda anonima/ })
+    expect(tab).toHaveTextContent('Da verificare: 1')
+  })
+
+  it('offers the four states and no «Tutti»: that is a list’s filter, not a state', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f2': COMPLETE,
+      'GET /api/hub/freelancers/f2/audit': [],
+      'GET /api/hub/freelancers/f2/card': noCard('f2'),
+    })
+    mount('/admin/freelance/f2')
+    await screen.findByRole('heading', { name: 'Grace Hopper' })
+    const states = await screen.findByRole('group', { name: 'Stato' })
+    expect(within(states).getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Nuovo',
+      'Contattato',
+      'Attivo',
+      'Scartato',
+    ])
+    expect(within(states).queryByRole('button', { name: 'Tutti' })).toBeNull()
+  })
+
+  it('moves «Stato» and «Note» into «Storico» on a phone, where the rail is gone', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f2': COMPLETE,
+      'GET /api/hub/freelancers/f2/audit': [],
+      'GET /api/hub/freelancers/f2/card': noCard('f2'),
+    })
+    mount('/admin/freelance/f2', undefined, undefined, undefined, false)
+    await screen.findByRole('heading', { name: 'Grace Hopper' })
+    await screen.findByRole('tab', { name: /^Scheda anonima/ })
+    expect(screen.queryByRole('complementary')).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Stato' })).toBeNull()
+    await openTab('Storico')
+    expect(await screen.findByRole('group', { name: 'Stato' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Note' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Registro delle modifiche' })).toBeInTheDocument()
   })
 })
 
@@ -66,6 +203,8 @@ describe('the anonymous card on the freelancer detail (REB-514)', () => {
     const section = await screen.findByRole('region', { name: 'Scheda anonima' })
     expect(await within(section).findByText('Guida team di prodotto da quindici anni.')).toBeInTheDocument()
     expect(within(section).getByRole('button', { name: 'Rigenera scheda' })).toBeInTheDocument()
+    // The header's line of facts reads the card's role and level.
+    expect(within(screen.getByRole('banner')).getByText('Lead · 15 anni di esperienza')).toBeInTheDocument()
   })
 
   it('leaves the section off a deleted card, whose card the API no longer reads', async () => {
@@ -76,6 +215,7 @@ describe('the anonymous card on the freelancer detail (REB-514)', () => {
     mount('/admin/freelance/f2')
     await screen.findByRole('heading', { name: 'Grace Hopper' })
     expect(screen.queryByRole('region', { name: 'Scheda anonima' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: /^Scheda anonima/ })).toBeNull()
   })
 })
 
@@ -87,17 +227,13 @@ describe('REB-355: override, delete/restore and the audit trail on the freelance
         { id: 'c1', text: 'Ha risposto alla call.', author: 'Ivan', author_id: null, source: 'web', created_at: '2026-09-12T10:00:00Z', edited_at: null, edited_by: null, editable: true },
       ],
     }
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-      const url = String(input)
-      if (url === '/api/hub/freelancers/f1/audit') return answer(200, [])
-      if (url === '/api/hub/freelancers/f1/override' && init?.method === 'PATCH') {
-        const body = JSON.parse(init.body as string)
-        expect(body.job_title).toBe('Staff engineer')
-        // The override response's own `note` is always `[]` (only `get` fills it):
-        // a merge that took it verbatim would wipe the existing thread from view.
-        return answer(200, { ...withComment, job_title: 'Staff engineer', note: [] })
-      }
-      return answer(200, withComment)
+    serve(withComment, (url, init) => {
+      if (url !== '/api/hub/freelancers/f1/override' || init?.method !== 'PATCH') return undefined
+      const body = JSON.parse(init.body as string)
+      expect(body.job_title).toBe('Staff engineer')
+      // The override response's own `note` is always `[]` (only `get` fills it):
+      // a merge that took it verbatim would wipe the existing thread from view.
+      return answer(200, { ...withComment, job_title: 'Staff engineer', note: [] })
     })
     mount('/admin/freelance/f1')
     await screen.findByRole('heading', { name: 'Ada Lovelace' })
@@ -106,30 +242,28 @@ describe('REB-355: override, delete/restore and the audit trail on the freelance
     const jobTitle = await screen.findByLabelText('Posizione')
     await userEvent.type(jobTitle, 'Staff engineer')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
-    await waitFor(() => expect(screen.getByText('Staff engineer')).toBeInTheDocument())
+    await waitFor(() => expect(within(screen.getByRole('banner')).getByText('Staff engineer')).toBeInTheDocument())
     expect(screen.getByText('Ha risposto alla call.')).toBeInTheDocument()
   })
 
-  it('deletes the card, hides the CV/edit actions, then restores it', async () => {
-    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-      const url = String(input)
-      if (url === '/api/hub/freelancers/f2/audit') return answer(200, [])
+  it('deletes the card from the overflow menu, hides the CV/edit actions, then restores it', async () => {
+    const spy = serve(COMPLETE, (url, init) => {
       if (url === '/api/hub/freelancers/f2' && init?.method === 'DELETE') {
         return answer(200, { ...COMPLETE, deleted_at: '2026-09-23T10:00:00Z' })
       }
       if (url === '/api/hub/freelancers/f2/restore' && init?.method === 'POST') {
         return answer(200, { ...COMPLETE, deleted_at: null })
       }
-      return answer(200, COMPLETE)
+      return undefined
     })
     mount('/admin/freelance/f2')
     await screen.findByRole('heading', { name: 'Grace Hopper' })
     expect(screen.getByRole('button', { name: 'Modifica scheda' })).toBeInTheDocument()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Elimina' }))
+    await chooseFromMenu('Elimina')
     await screen.findByText(/Eliminata il/)
     expect(screen.queryByRole('button', { name: 'Modifica scheda' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Rimuovi CV' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Altre azioni' })).toBeNull()
     // `set_status` 404s on a deleted row (`FreelancerService._require`'s own default):
     // the note/state editor must not offer an action the backend will refuse.
     expect(screen.queryByRole('button', { name: 'Contattato' })).toBeNull()
@@ -140,20 +274,19 @@ describe('REB-355: override, delete/restore and the audit trail on the freelance
     expect(spy).toHaveBeenCalledWith('/api/hub/freelancers/f2', expect.objectContaining({ method: 'DELETE' }))
   })
 
-  it('clears the CV and drops its download link and button', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-      const url = String(input)
-      if (url === '/api/hub/freelancers/f2/audit') return answer(200, [])
-      if (url === '/api/hub/freelancers/f2/cv' && init?.method === 'DELETE') {
-        return answer(200, { ...COMPLETE, cv_filename: null, cv_size: null })
-      }
-      return answer(200, COMPLETE)
-    })
+  it('clears the CV from the overflow menu and drops its download link and menu item', async () => {
+    serve(COMPLETE, (url, init) =>
+      url === '/api/hub/freelancers/f2/cv' && init?.method === 'DELETE'
+        ? answer(200, { ...COMPLETE, cv_filename: null, cv_size: null })
+        : undefined,
+    )
     mount('/admin/freelance/f2')
     await screen.findByRole('heading', { name: 'Grace Hopper' })
-    await userEvent.click(screen.getByRole('button', { name: 'Rimuovi CV' }))
+    await chooseFromMenu('Rimuovi CV')
     await waitFor(() => expect(screen.queryByRole('link', { name: /CV/ })).toBeNull())
-    expect(screen.queryByRole('button', { name: 'Rimuovi CV' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Altre azioni' }))
+    expect(await screen.findByRole('menuitem', { name: 'Elimina' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Rimuovi CV' })).toBeNull()
   })
 })
 
@@ -165,17 +298,13 @@ describe('REB-356: the state-change mutations keep the notes thread visible', ()
         { id: 'c1', text: 'Ha risposto alla call.', author: 'Ivan', author_id: null, source: 'web', created_at: '2026-09-12T10:00:00Z', edited_at: null, edited_by: null, editable: true },
       ],
     }
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-      const url = String(input)
-      if (url === '/api/hub/freelancers/f1/audit') return answer(200, [])
-      if (url === '/api/hub/freelancers/f1' && init?.method === 'PATCH') {
-        const body = JSON.parse(init.body as string)
-        expect(body.status).toBe('contacted')
-        // The move response's own `note` is always `[]` (only `get` fills it):
-        // a replace that took it verbatim would wipe the existing thread from view.
-        return answer(200, { ...withComment, status: 'contacted', note: [] })
-      }
-      return answer(200, withComment)
+    serve(withComment, (url, init) => {
+      if (url !== '/api/hub/freelancers/f1' || init?.method !== 'PATCH') return undefined
+      const body = JSON.parse(init.body as string)
+      expect(body.status).toBe('contacted')
+      // The move response's own `note` is always `[]` (only `get` fills it):
+      // a replace that took it verbatim would wipe the existing thread from view.
+      return answer(200, { ...withComment, status: 'contacted', note: [] })
     })
     mount('/admin/freelance/f1')
     await screen.findByRole('heading', { name: 'Ada Lovelace' })
@@ -191,14 +320,11 @@ describe('REB-356: the state-change mutations keep the notes thread visible', ()
 
 describe('a state change that is refused', () => {
   it('says so under the state editor and keeps the old state on the freelancer detail', async () => {
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-      const url = String(input)
-      if (url === '/api/hub/freelancers/f1/audit') return answer(200, [])
-      if (url === '/api/hub/freelancers/f1' && init?.method === 'PATCH') {
-        return answer(409, { detail: 'Lo stato non può cambiare.' })
-      }
-      return answer(200, INCOMPLETE)
-    })
+    serve(INCOMPLETE, (url, init) =>
+      url === '/api/hub/freelancers/f1' && init?.method === 'PATCH'
+        ? answer(409, { detail: 'Lo stato non può cambiare.' })
+        : undefined,
+    )
     mount('/admin/freelance/f1')
     await screen.findByRole('heading', { name: 'Ada Lovelace' })
 
@@ -233,6 +359,7 @@ describe('«Verificato» on Talenti and on the talent (REB-518)', () => {
     mount('/admin/freelance/f2')
     const banner = await screen.findByRole('banner')
     expect(within(banner).getByText('Verificato')).toBeInTheDocument()
+    await openTab('Contatti e dati')
     expect(screen.getByText('Verificato il 25 set 2026')).toBeInTheDocument()
   })
 
@@ -245,6 +372,7 @@ describe('«Verificato» on Talenti and on the talent (REB-518)', () => {
     mount('/admin/freelance/f2')
     const banner = await screen.findByRole('banner')
     expect(within(banner).queryByText('Verificato')).toBeNull()
+    await openTab('Contatti e dati')
     expect(screen.getByText('Non verificato')).toBeInTheDocument()
   })
 })
