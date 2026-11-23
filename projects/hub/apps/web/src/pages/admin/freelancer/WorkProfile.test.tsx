@@ -198,6 +198,18 @@ describe('«Profilo di lavoro» on the talent page (REB-1126, REB-1158)', () => 
     expect(within(preview).getByRole('button', { name: 'Richiedi Grace Hopper' })).toBeDisabled()
   })
 
+  it('opens the admin’s CV from the preview’s panel, not the company’s route', async () => {
+    open(PROFILE, {}, true, { ...noCard('f2'), card: CARD, mode: 'remote' })
+    const section = await profileTab()
+    const preview = within(section).getByRole('heading', { name: "Come lo legge un'azienda" }).parentElement as HTMLElement
+    await userEvent.click(await within(preview).findByRole('button', { name: 'Grace Hopper' }))
+    const panel = await screen.findByRole('dialog', { name: 'Grace Hopper' })
+    expect(within(panel).getByRole('link', { name: 'Apri il CV di Grace Hopper' })).toHaveAttribute(
+      'href',
+      '/api/hub/freelancers/f2/cv',
+    )
+  })
+
   it('leaves out of that card what an anonymity check named', async () => {
     open(
       { ...PROFILE, guard_hits: [{ field: 'summary', rule: 'name_account_site_or_client' }, { field: 'domains[1].label', rule: 'link_or_email' }] },

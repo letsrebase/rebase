@@ -309,6 +309,25 @@ describe('REB-355: override, delete/restore and the audit trail on the freelance
     expect(spy).toHaveBeenCalledWith('/api/hub/freelancers/f2', expect.objectContaining({ method: 'DELETE' }))
   })
 
+  it('falls back to a tab that still exists when the card is deleted from a tab that goes with it', async () => {
+    serve(COMPLETE, (url, init) =>
+      url === '/api/hub/freelancers/f2' && init?.method === 'DELETE'
+        ? answer(200, { ...COMPLETE, deleted_at: '2026-09-23T10:00:00Z' })
+        : undefined,
+    )
+    mount('/admin/freelance/f2')
+    await screen.findByRole('heading', { name: 'Grace Hopper' })
+    await openTab('Scheda anonima')
+    expect(await screen.findByRole('region', { name: 'Scheda anonima' })).toBeInTheDocument()
+
+    await chooseFromMenu('Elimina')
+    await screen.findByText(/Eliminata il/)
+    // The card's tab is gone with the card: the page shows another one, not an empty body.
+    const panel = await screen.findByRole('tabpanel')
+    expect(panel).not.toBeEmptyDOMElement()
+    expect(screen.getByRole('tab', { name: /^Contatti e dati/, selected: true })).toBeInTheDocument()
+  })
+
   it('clears the CV from the overflow menu and drops its download link and menu item', async () => {
     serve(COMPLETE, (url, init) =>
       url === '/api/hub/freelancers/f2/cv' && init?.method === 'DELETE'

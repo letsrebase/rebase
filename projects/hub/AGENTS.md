@@ -709,8 +709,10 @@ when an admin approves (a client may have come since), and again every time the 
 JSON paths, and the summary is cut at a word within 600 characters). While a hit stands «Approva» is a
 422 (`WorkProfileGuardBlocked`, Italian sentence) unless the body says `override` with a note, which
 is written into the `work_profile_decided` entry (`override`, `override_note`). The admin section has a
-«Cosa leggono le aziende» panel with exactly those fields and their hits beside the groundedness
-anchors. A client is matched by its whole name without the legal form («Initech Italia»), as the card
+«Come lo legge un'azienda» block (REB-1158): the talent cloud's own card (`TalentCloudCard` in
+preview, drawn from `lib/cloudProfile.ts`, which derives the same three fields as `cloud_work_profile`)
+with the anonymity result under it, and the decision's checks in the page's rail beside the groundedness
+anchors, which sit right under the prose they came from. A client is matched by its whole name without the legal form («Initech Italia»), as the card
 guard reads employers.
 
 **A decision names the version read.** Approve and reject bodies carry `submitted_at`, compared under

@@ -136,8 +136,10 @@ export function AdminFreelancerDetail() {
   const live = f.deleted_at === null
   const profile = live ? workProfile.profile : null
   // The profile first when there is one, the anonymous card when there is not: the tab the
-  // admin most likely came for. A deleted card has neither.
-  const tab: TabName = chosen ?? (!live ? 'contacts' : profile ? 'profile' : 'card')
+  // admin most likely came for. A deleted card has neither, and a tab chosen before the
+  // delete is not honoured once its content is gone.
+  const chosenHere = chosen === 'contacts' || chosen === 'history' || live ? chosen : null
+  const tab: TabName = chosenHere ?? (!live ? 'contacts' : profile ? 'profile' : 'card')
   const person = cvCard?.person ?? null
   const card = cvCard?.card ?? null
   const level = card
