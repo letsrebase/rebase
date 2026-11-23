@@ -314,7 +314,10 @@ describe('Talent cloud, the talent panel (REB-1159)', () => {
     await user.click(within(panel).getByRole('button', { name: 'Chiudi il profilo di Ada Lovelace' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await user.click(screen.getByRole('button', { name: 'Grace Hopper' }))
-    expect(await screen.findByRole('dialog', { name: 'Grace Hopper' })).toBeInTheDocument()
+    const grace = await screen.findByRole('dialog', { name: 'Grace Hopper' })
+    // A talent without a CV has no «Apri il CV» in the panel, and Grace has no sector list either.
+    expect(within(grace).queryByRole('link', { name: /Apri il CV/ })).toBeNull()
+    expect(within(grace).queryByRole('list', { name: 'Settori' })).toBeNull()
   })
 
   it('shows only what the cloud read returns: never a rate, a state, a note, an address or a phone', async () => {

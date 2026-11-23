@@ -7,7 +7,7 @@ import { cn } from '@rebase/ui/cn'
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@rebase/ui/sheet'
 import { toast } from '@rebase/ui/sonner'
 import { useMediaQuery } from '@rebase/ui/use-media-query'
-import { ApiError, cloud, type CloudTalent } from '@/lib/api'
+import { admin, ApiError, cloud, type CloudTalent } from '@/lib/api'
 import { bandLabel } from '@/lib/bands'
 import { CLOUD_VETTED_LABEL, REMOTE_LABELS, SENIORITY_LABELS } from '@/lib/format'
 
@@ -212,7 +212,7 @@ export function TalentCloudCard({ talent, preview = false }: { talent: CloudTale
           {askButton()}
         </div>
       </CardContent>
-      <TalentPanel talent={talent} open={open} onOpenChange={setOpen} ask={askButton} />
+      <TalentPanel talent={talent} open={open} onOpenChange={setOpen} ask={askButton} preview={preview} />
     </Card>
   )
 }
@@ -222,8 +222,8 @@ function DomainBars({ domains }: { domains: Domain[] }) {
   const most = Math.max(1, ...domains.map((domain) => domain.sessions ?? 0))
   return (
     <ul aria-label="Ambiti di lavoro" className="space-y-2.5">
-      {domains.map((domain) => (
-        <li key={domain.label} className="space-y-1">
+      {domains.map((domain, index) => (
+        <li key={`${index}-${domain.label}`} className="space-y-1">
           <p className="flex items-baseline justify-between gap-3">
             <span className="min-w-0 break-words font-medium">{domain.label}</span>
             <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
@@ -265,11 +265,14 @@ function TalentPanel({
   open,
   onOpenChange,
   ask,
+  preview,
 }: {
   talent: CloudTalent
   open: boolean
   onOpenChange: (open: boolean) => void
   ask: (className?: string) => ReactNode
+  /** The admin's preview: the CV link goes to the admin's route, the company's would refuse an admin. */
+  preview: boolean
 }) {
   const wide = useMediaQuery(WIDE)
   const { card, work_profile: profile } = talent
@@ -334,7 +337,7 @@ function TalentPanel({
                 {talent.has_cv && (
                   <li>
                     <a
-                      href={cloud.cvUrl(talent.freelancer_id)}
+                      href={preview ? admin.cvUrl(talent.freelancer_id) : cloud.cvUrl(talent.freelancer_id)}
                       target="_blank"
                       rel="noopener noreferrer"
                       aria-label={`Apri il CV di ${name}`}
