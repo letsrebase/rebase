@@ -242,36 +242,41 @@ export function AdminFreelancerDetail() {
       ) : (
         <div className={withRail ? 'grid grid-cols-[minmax(0,1fr)_17rem] items-start gap-6 p-6' : 'p-6'}>
           <Tabs value={tab} onValueChange={(next) => setChosen(next as TabName)} className="min-w-0">
-            <TabsList className="max-w-full justify-start overflow-x-auto">
-              {live && (
-                <TabsTrigger value="profile" className="whitespace-nowrap">
-                  Profilo di lavoro
-                  {profile?.state === 'draft' && !profile.expired && (
-                    <Badge variant="pill" className="ml-2 gap-1">
-                      <CircleAlert aria-hidden="true" />
-                      Da rivedere
-                    </Badge>
-                  )}
+            <div className="border-b border-border">
+              <TabsList
+                variant="line"
+                className="max-w-full justify-start overflow-x-auto overflow-y-hidden pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              >
+                {live && (
+                  <TabsTrigger value="profile" className="whitespace-nowrap">
+                    Profilo di lavoro
+                    {profile?.state === 'draft' && !profile.expired && (
+                      <Badge variant="pill" className="ml-2 gap-1">
+                        <CircleAlert aria-hidden="true" />
+                        Da rivedere
+                      </Badge>
+                    )}
+                  </TabsTrigger>
+                )}
+                {live && (
+                  <TabsTrigger value="card" className="whitespace-nowrap">
+                    Scheda anonima
+                    {flags > 0 && (
+                      <Badge variant="pill" className="ml-2">
+                        <span className="sr-only">Da verificare: </span>
+                        {flags}
+                      </Badge>
+                    )}
+                  </TabsTrigger>
+                )}
+                <TabsTrigger value="contacts" className="whitespace-nowrap">
+                  Contatti e dati
                 </TabsTrigger>
-              )}
-              {live && (
-                <TabsTrigger value="card" className="whitespace-nowrap">
-                  Scheda anonima
-                  {flags > 0 && (
-                    <Badge variant="pill" className="ml-2">
-                      <span className="sr-only">Da verificare: </span>
-                      {flags}
-                    </Badge>
-                  )}
+                <TabsTrigger value="history" className="whitespace-nowrap">
+                  Storico
                 </TabsTrigger>
-              )}
-              <TabsTrigger value="contacts" className="whitespace-nowrap">
-                Contatti e dati
-              </TabsTrigger>
-              <TabsTrigger value="history" className="whitespace-nowrap">
-                Storico
-              </TabsTrigger>
-            </TabsList>
+              </TabsList>
+            </div>
             {live && (
               <TabsContent value="profile" className="pt-4">
                 <section aria-label="Profilo di lavoro">
