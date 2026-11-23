@@ -79,18 +79,19 @@ function Tags({
   return (
     <ul aria-label={label} className="flex min-w-0 flex-wrap gap-1.5">
       {shown.map((item, index) => (
-        <li key={`${index}-${item}`} className="min-w-0 max-w-full">
+        <li key={`${index}-${item}`} className="flex min-w-0 max-w-full items-center gap-1.5">
           <Badge variant={variant} className={WRAPPING}>
             {item}
           </Badge>
+          {/* «+N» belongs to the last tag's item, so it wraps with it and never stands alone. */}
+          {rest > 0 && index === shown.length - 1 && (
+            <span className="shrink-0 text-xs text-muted-foreground">
+              <span aria-hidden="true">+{rest}</span>
+              <span className="sr-only">{`e altre ${rest}`}</span>
+            </span>
+          )}
         </li>
       ))}
-      {rest > 0 && (
-        <li className="self-center text-xs text-muted-foreground">
-          <span aria-hidden="true">+{rest}</span>
-          <span className="sr-only">{`e altre ${rest}`}</span>
-        </li>
-      )}
     </ul>
   )
 }
@@ -98,7 +99,7 @@ function Tags({
 /** The three things a card says of a talent's rate: how they work and the band. */
 function ModeAndBand({ talent }: { talent: CloudTalent }) {
   return (
-    <p className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 tabular-nums">
+    <p className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 tabular-nums">
       {talent.mode && <span className="text-muted-foreground">{REMOTE_LABELS[talent.mode]}</span>}
       <span className="font-medium">{talent.band ? bandLabel(talent.band) : 'Tariffa da definire'}</span>
     </p>
@@ -206,7 +207,7 @@ export function TalentCloudCard({ talent, preview = false }: { talent: CloudTale
             </Button>
           </section>
         )}
-        <div className="mt-auto flex flex-wrap items-end justify-between gap-x-3 gap-y-2 border-t pt-3">
+        <div className="mt-auto flex items-end justify-between gap-3 border-t pt-3">
           <ModeAndBand talent={talent} />
           {askButton()}
         </div>

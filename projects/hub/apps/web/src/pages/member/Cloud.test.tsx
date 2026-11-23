@@ -278,8 +278,8 @@ describe('Talent cloud, the cards', () => {
     expect(tags.map((tag) => tag.textContent)).toEqual([
       'Pagamenti · 1 sessione',
       'Marketplace · 12 sessioni',
-      'Identità · 3 sessioni',
-      '+1e altre 1',
+      // The «+N» sits in the last tag's own item: it wraps with it and never stands alone.
+      'Identità · 3 sessioni+1e altre 1',
     ])
     expect(within(ada).getByRole('button', { name: 'Leggi il profilo di Ada Lovelace' })).toBeInTheDocument()
     // The summary is not on the card.
