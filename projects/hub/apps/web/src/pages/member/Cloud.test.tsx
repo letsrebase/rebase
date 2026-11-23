@@ -217,70 +217,132 @@ describe('Talent cloud, its states', () => {
   })
 })
 
-describe('Talent cloud, the cards', () => {
-  it('shows the summary of an approved work profile on the card that has one, and nothing on the others (REB-1127)', async () => {
-    serve({
-      '/api/hub/me/cloud/talents': () =>
-        answer(200, {
-      items: [
-        {
-          ...ADA,
-          work_profile: {
-            summary: 'Lavora con gli agenti in modo orchestrato.',
-            domains: [{ label: 'Pagamenti', products: 4, sessions: 1 }],
-            project_domains: ['Piattaforma di pagamenti per marketplace.'],
-          },
-        },
-        { ...GRACE, work_profile: null },
-      ],
-      roles: [],
-      capped: false,
-        }),
-    })
-    mount()
-    const ada = await screen.findByRole('region', { name: 'Profilo di lavoro di Ada Lovelace' })
-    expect(within(ada).getByText('Lavora con gli agenti in modo orchestrato.')).toBeInTheDocument()
-    expect(within(ada).getByText('Pagamenti · 4 prodotti, 1 sessione')).toBeInTheDocument()
-    expect(within(ada).getByText('Piattaforma di pagamenti per marketplace.')).toBeInTheDocument()
-    expect(screen.queryByRole('region', { name: 'Profilo di lavoro di Grace Hopper' })).toBeNull()
-  })
+/** The profile of Ada as the cloud read carries it: three fields and nothing else. */
+const ADA_PROFILE = {
+  summary: 'Lavora con gli agenti in modo orchestrato.',
+  domains: [
+    { label: 'Pagamenti', products: 4, sessions: 1 },
+    { label: 'Marketplace', products: 2, sessions: 12 },
+    { label: 'Identità', products: null, sessions: 3 },
+    { label: 'Logistica', products: 1, sessions: 2 },
+  ],
+  project_domains: ['Piattaforma di pagamenti per marketplace.'],
+}
 
-  it('shows each talent by name with the links, the CV, the card, the mode, the band and the vetted badge', async () => {
+function withProfiles() {
+  serve({
+    '/api/hub/me/cloud/talents': () =>
+      answer(200, {
+        items: [
+          { ...ADA, work_profile: ADA_PROFILE },
+          { ...GRACE, work_profile: null },
+        ],
+        roles: [],
+        capped: false,
+      }),
+  })
+}
+
+describe('Talent cloud, the cards', () => {
+  it('keeps the card short: the level, a clamped summary, a few skills and the footer (REB-1159)', async () => {
     serve()
     mount()
     await screen.findByRole('heading', { name: 'Ada Lovelace' })
 
     const ada = within(card('Ada Lovelace'))
-    expect(ada.getByText('Backend developer, Senior, 9 anni di esperienza')).toBeInTheDocument()
+    expect(ada.getByText('Backend developer · Senior · 9 anni')).toBeInTheDocument()
     expect(ada.getByText('Verificato da rebase')).toBeInTheDocument()
-    expect(ada.getByText(ADA.card.profile_summary)).toBeInTheDocument()
+    expect(ada.getByText(ADA.card.profile_summary)).toHaveClass('line-clamp-3')
     expect(within(ada.getByRole('list', { name: 'Competenze' })).getAllByRole('listitem').map((item) => item.textContent)).toEqual(['Python', 'FastAPI'])
-    expect(within(ada.getByRole('list', { name: 'Settori' })).getByText('fintech')).toBeInTheDocument()
-    expect(within(ada.getByRole('list', { name: 'Lingue' })).getByText('inglese')).toBeInTheDocument()
+    // Sectors, languages, links and the CV are in the panel, not on the card.
+    expect(ada.queryByRole('list', { name: 'Settori' })).toBeNull()
+    expect(ada.queryByRole('link', { name: /CV/ })).toBeNull()
     expect(ada.getByText('Da remoto')).toBeInTheDocument()
     expect(ada.getByText((_, element) => element?.textContent === `500${DASH}650${NBSP}€ al giorno`)).toBeInTheDocument()
-    expect(ada.getByRole('link', { name: 'Apri il CV di Ada Lovelace' })).toHaveAttribute(
-      'href',
-      `/api/hub/me/cloud/talents/${ADA_ID}/cv`,
-    )
-    expect(ada.getByRole('link', { name: 'LinkedIn' })).toHaveAttribute('href', ADA.linkedin_url)
-    expect(ada.getByRole('link', { name: 'github.com' })).toHaveAttribute('href', 'https://github.com/ada')
-    // A link that is not http(s) is not one this page opens.
-    expect(ada.queryByRole('link', { name: /alert/ })).toBeNull()
 
     const grace = within(card('Grace Hopper'))
     expect(grace.queryByText('Verificato da rebase')).toBeNull()
     expect(grace.getByText('Tariffa da definire')).toBeInTheDocument()
-    expect(grace.queryByRole('link', { name: /Apri il CV/ })).toBeNull()
-    expect(grace.queryByRole('list', { name: 'Settori' })).toBeNull()
 
-    // Vetted first, as the API ordered them, and never the rate, the state or the notes.
+    // Vetted first, as the API ordered them.
     const names = screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)
     expect(names.slice(-2)).toEqual(['Ada Lovelace', 'Grace Hopper'])
-    const page = document.body.textContent ?? ''
+  })
+
+  it('shows the fields of work of a verified profile as wrapping tags, three and «+N», and «Leggi il profilo» (REB-1127)', async () => {
+    withProfiles()
+    mount()
+    const ada = await screen.findByRole('region', { name: 'Profilo di lavoro di Ada Lovelace' })
+    expect(within(ada).getByText('Profilo di lavoro verificato')).toBeInTheDocument()
+    const tags = within(within(ada).getByRole('list', { name: 'Ambiti di lavoro' })).getAllByRole('listitem')
+    expect(tags.map((tag) => tag.textContent)).toEqual([
+      'Pagamenti · 1 sessione',
+      'Marketplace · 12 sessioni',
+      'Identità · 3 sessioni',
+      '+1e altre 1',
+    ])
+    expect(within(ada).getByRole('button', { name: 'Leggi il profilo di Ada Lovelace' })).toBeInTheDocument()
+    // The summary is not on the card.
+    expect(within(card('Ada Lovelace')).queryByText(ADA_PROFILE.summary)).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Profilo di lavoro di Grace Hopper' })).toBeNull()
+  })
+})
+
+describe('Talent cloud, the talent panel (REB-1159)', () => {
+  it('opens from «Leggi il profilo» with the profile in full, and from the name', async () => {
+    withProfiles()
+    const user = userEvent.setup()
+    mount()
+    await user.click(await screen.findByRole('button', { name: 'Leggi il profilo di Ada Lovelace' }))
+
+    const panel = await screen.findByRole('dialog', { name: 'Ada Lovelace' })
+    expect(within(panel).getByText(ADA.card.profile_summary)).toBeInTheDocument()
+    expect(within(panel).getByText(ADA_PROFILE.summary)).toBeInTheDocument()
+    expect(within(within(panel).getByRole('list', { name: 'Ambiti di lavoro' })).getAllByRole('listitem')).toHaveLength(4)
+    expect(within(panel).getByText('Piattaforma di pagamenti per marketplace.')).toBeInTheDocument()
+    expect(within(panel).getByRole('list', { name: 'Settori' })).toHaveTextContent('fintech')
+    expect(within(panel).getByRole('list', { name: 'Lingue' })).toHaveTextContent('inglese')
+    expect(within(panel).getByRole('link', { name: 'Apri il CV di Ada Lovelace' })).toHaveAttribute(
+      'href',
+      `/api/hub/me/cloud/talents/${ADA_ID}/cv`,
+    )
+    expect(within(panel).getByRole('link', { name: 'LinkedIn' })).toHaveAttribute('href', ADA.linkedin_url)
+    expect(within(panel).getByRole('link', { name: 'github.com' })).toHaveAttribute('href', 'https://github.com/ada')
+    // A link that is not http(s) is not one this page opens.
+    expect(within(panel).queryByRole('link', { name: /alert/ })).toBeNull()
+
+    await user.click(within(panel).getByRole('button', { name: 'Chiudi il profilo di Ada Lovelace' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await user.click(screen.getByRole('button', { name: 'Grace Hopper' }))
+    expect(await screen.findByRole('dialog', { name: 'Grace Hopper' })).toBeInTheDocument()
+  })
+
+  it('shows only what the cloud read returns: never a rate, a state, a note, an address or a phone', async () => {
+    withProfiles()
+    const user = userEvent.setup()
+    mount()
+    await user.click(await screen.findByRole('button', { name: 'Ada Lovelace' }))
+    const panel = await screen.findByRole('dialog', { name: 'Ada Lovelace' })
+    const text = panel.textContent ?? ''
     for (const secret of ['463', 'active', 'Nota riservata', 'ada@studio.it', '+39', 'Torino']) {
-      expect(page).not.toContain(secret)
+      expect(text).not.toContain(secret)
     }
+  })
+
+  it('asks for the talent from the panel too, once', async () => {
+    const spy = serve({
+      '/api/hub/me/cloud/talents': () =>
+        answer(200, { items: [{ ...ADA, work_profile: ADA_PROFILE }], roles: [], capped: false }),
+      '/api/hub/me/cloud/requests': () => answer(201, { id: 'r1' }),
+    })
+    const user = userEvent.setup()
+    mount()
+    await user.click(await screen.findByRole('button', { name: 'Ada Lovelace' }))
+    const panel = await screen.findByRole('dialog', { name: 'Ada Lovelace' })
+    await user.click(within(panel).getByRole('button', { name: 'Richiedi Ada Lovelace' }))
+    expect(await screen.findByText(THANKS)).toBeInTheDocument()
+    expect(posted(spy, '/api/hub/me/cloud/requests')).toEqual([{ freelancer_id: ADA_ID }])
+    expect(within(panel).getByRole('button', { name: 'Richiesta inviata per Ada Lovelace' })).toBeDisabled()
   })
 })
 

@@ -1,26 +1,20 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { BadgeCheck, FileText } from 'lucide-react'
 import { useId, useState, type ReactNode } from 'react'
-import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@rebase/ui/card'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Loader } from '@rebase/ui/loader'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
-import { Toaster, toast } from '@rebase/ui/sonner'
+import { Toaster } from '@rebase/ui/sonner'
+import { TalentCloudCard } from '@/components/TalentCloudCard'
 import { TeamBuilder } from '@/components/TeamBuilder'
 import { ANY, SEARCH_DEBOUNCE_MS, useDebounce } from '@/lib/adminList'
-import { ApiError, cloud, type Band, type CloudFilters, type CloudTalent } from '@/lib/api'
+import { ApiError, cloud, type Band, type CloudFilters } from '@/lib/api'
 import { DAY_BANDS, bandLabel } from '@/lib/bands'
-import { CLOUD_VETTED_LABEL, REMOTE_LABELS, SENIORITY_LABELS, formatLevel } from '@/lib/format'
+import { REMOTE_LABELS, SENIORITY_LABELS } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
-import { isHttpUrl } from '@/lib/url'
 
-/** The builder's own thanks (`TeamBuilder.tsx`): a request from a card is the same
- *  request, and the same people write back. */
-const THANKS = 'Grazie: ti scriviamo entro due giorni lavorativi.'
 /** Core's `cloud.CLOUD_LIST_CAP`: the one page the cloud has, until a later card
  *  paginates it (spec § 4.2). */
 const CAP = 200
@@ -54,13 +48,6 @@ function toFilters(choices: Choices, skill: string): CloudFilters {
 /** The API's own sentence whenever it gave one; ours only when nothing answered. */
 function sentence(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback
-}
-
-/** A link the freelancer gave, as its host («github.com/ada» reads as «github.com»);
- *  anything that is not http(s) is not a link this page opens. */
-function linkLabel(url: string): string | null {
-  if (!isHttpUrl(url)) return null
-  return new URL(url).hostname.replace(/^www\./, '')
 }
 
 /**
@@ -247,8 +234,8 @@ export function Cloud() {
         ) : (
           <ul aria-label="Profili" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {items.map((talent) => (
-              <li key={talent.freelancer_id}>
-                <TalentCard talent={talent} />
+              <li key={talent.freelancer_id} className="min-w-0">
+                <TalentCloudCard talent={talent} />
               </li>
             ))}
           </ul>
@@ -278,156 +265,5 @@ function Closed({ message }: { message: string }) {
         <Link to="/me">Torna alla tua area</Link>
       </Button>
     </div>
-  )
-}
-
-/** One talent: who, the role and the experience the card gives, «Verificato da rebase»
- *  when rebase vetted them, the anonymous description, the skills, sectors and
- *  languages, the work mode and the band, the links and the CV, and «Richiedi». */
-function TalentCard({ talent }: { talent: CloudTalent }) {
-  const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle')
-  const { card } = talent
-  const name = `${talent.first_name} ${talent.last_name}`
-  const links = talent.links
-    .map((url) => ({ url, label: linkLabel(url) }))
-    .filter((link): link is { url: string; label: string } => link.label !== null)
-  const linkedin = talent.linkedin_url && linkLabel(talent.linkedin_url) ? talent.linkedin_url : null
-
-  async function ask() {
-    setState('sending')
-    try {
-      await cloud.ask(talent.freelancer_id)
-      setState('sent')
-      toast.success(THANKS)
-    } catch (error) {
-      setState('idle')
-      toast.error(sentence(error, 'Non siamo riusciti a inviare la richiesta. Riprova.'))
-    }
-  }
-
-  return (
-    <Card className="h-full">
-      <CardHeader>
-        <CardTitle>
-          <h3>{name}</h3>
-        </CardTitle>
-        <CardDescription>{`${card.role}, ${formatLevel(card)}`}</CardDescription>
-        {talent.vetted && (
-          <Badge variant="pill" className="mt-1">
-            <BadgeCheck aria-hidden="true" />
-            {CLOUD_VETTED_LABEL}
-          </Badge>
-        )}
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col gap-3">
-        <p className="text-muted-foreground">{card.profile_summary}</p>
-        {talent.work_profile && <WorkProfileSummary profile={talent.work_profile} name={name} />}
-        <Badges label="Competenze" items={card.skills} variant="outline" />
-        <Badges label="Settori" items={card.industries} variant="secondary" />
-        <Badges label="Lingue" items={card.languages} variant="secondary" />
-        <p className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          {talent.mode && <span className="text-muted-foreground">{REMOTE_LABELS[talent.mode]}</span>}
-          <span className="font-medium">{talent.band ? bandLabel(talent.band) : 'Tariffa da definire'}</span>
-        </p>
-        {(linkedin || links.length > 0 || talent.has_cv) && (
-          <ul aria-label={`Link di ${name}`} className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-            {talent.has_cv && (
-              <li>
-                <a
-                  href={cloud.cvUrl(talent.freelancer_id)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`Apri il CV di ${name}`}
-                  className="inline-flex items-center gap-1 font-medium underline underline-offset-4"
-                >
-                  <FileText className="size-4" aria-hidden="true" />
-                  Apri il CV
-                </a>
-              </li>
-            )}
-            {linkedin && (
-              <li>
-                <a href={linkedin} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">
-                  LinkedIn
-                </a>
-              </li>
-            )}
-            {links.map((link) => (
-              <li key={link.url}>
-                <a href={link.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">
-                  {link.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="mt-auto pt-2">
-          <Button
-            type="button"
-            aria-label={state === 'sent' ? `Richiesta inviata per ${name}` : `Richiedi ${name}`}
-            disabled={state !== 'idle'}
-            onClick={() => void ask()}
-          >
-            {state === 'sent' ? 'Richiesta inviata' : state === 'sending' ? 'Invio…' : 'Richiedi'}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-/** The summary of an approved work profile (REB-1127, spec 2026-11-17 § 5): how the person
- *  works with agents in a few lines, the fields of work with their counts and the kind of
- *  project they build. Nothing of the profile beyond these three reaches a company. */
-function WorkProfileSummary({ profile, name }: { profile: NonNullable<CloudTalent['work_profile']>; name: string }) {
-  return (
-    <section aria-label={`Profilo di lavoro di ${name}`} className="space-y-2 border-t pt-3">
-      <h4 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Profilo di lavoro</h4>
-      {profile.summary && <p className="text-sm">{profile.summary}</p>}
-      <Badges
-        label="Ambiti di lavoro"
-        items={profile.domains.map((domain) => domainLabel(domain))}
-        variant="secondary"
-      />
-      {profile.project_domains.length > 0 && (
-        <ul aria-label="Progetti rappresentativi" className="space-y-1 text-sm text-muted-foreground">
-          {profile.project_domains.map((domain) => (
-            <li key={domain} className="line-clamp-2">
-              {domain}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  )
-}
-
-/** «Fintech · 4 prodotti, 9 sessioni», what of the counts the profile gave. */
-function domainLabel(domain: NonNullable<CloudTalent['work_profile']>['domains'][number]): string {
-  const counts = [
-    domain.products === null ? null : domain.products === 1 ? '1 prodotto' : `${domain.products} prodotti`,
-    domain.sessions === null ? null : domain.sessions === 1 ? '1 sessione' : `${domain.sessions} sessioni`,
-  ].filter(Boolean)
-  return counts.length > 0 ? `${domain.label} · ${counts.join(', ')}` : domain.label
-}
-
-function Badges({
-  label,
-  items,
-  variant,
-}: {
-  label: string
-  items: string[]
-  variant: 'outline' | 'secondary'
-}) {
-  if (items.length === 0) return null
-  return (
-    <ul aria-label={label} className="flex flex-wrap gap-1.5">
-      {items.map((item, index) => (
-        <li key={`${index}-${item}`}>
-          <Badge variant={variant}>{item}</Badge>
-        </li>
-      ))}
-    </ul>
   )
 }
