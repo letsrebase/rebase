@@ -233,7 +233,8 @@ export function ProfileRailCard({
     <RailCard
       title="Decisione sul profilo"
       aside={
-        <Badge variant="pill" dot="accent">
+        <Badge variant="pill" className="gap-1">
+          <CircleAlert aria-hidden="true" />
           {profileStandingWord(profile)}
         </Badge>
       }
