@@ -8,6 +8,7 @@ import {
   createRouter,
 } from '@tanstack/react-router'
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { expect, vi } from 'vitest'
 import { parseSearch } from '@/lib/search'
 import { validateCompaniesSearch, validateTalentsSearch } from '@/router'
@@ -230,7 +231,16 @@ export function mount(
   duplicates: Record<string, unknown> | (() => Response) = NO_DUPLICATES,
   availability: Record<string, unknown> | (() => Response) = NO_COMMITMENTS,
   workProfile: Record<string, unknown> | (() => Response) | null = null,
+  /** The talent page keeps its right rail on a wide screen and loses it on a phone; a test on
+   *  the phone's layout passes `false`. jsdom answers `matchMedia` with nothing, which reads as a phone. */
+  desktop = true,
 ) {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: desktop && query.includes('min-width'),
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }))
   // REB-800: Talenti and a card's page read the duplicate pairs too, beside what the
   // test mocked for the page itself. They are answered here, apart, so a test that hands
   // one `Response` to every call (which can be read once) and its call counts stay as
@@ -344,6 +354,12 @@ export async function mountDetail(profile: Record<string, unknown>, card: Record
   })
   mount('/admin/freelance/f2')
   await screen.findByRole('heading', { name: 'Grace Hopper' })
+  await openTab('Contatti e dati')
+}
+
+/** Opens a tab of the talent's page by its name (the badge it may carry is not part of the match). */
+export async function openTab(name: string) {
+  await userEvent.click(await screen.findByRole('tab', { name: new RegExp(`^${name}`) }))
 }
 
 /** A card an admin marked «Verificato» (REB-518). */

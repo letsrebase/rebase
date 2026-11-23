@@ -23,7 +23,7 @@ const SIGNUP_UTM_LABELS: [key: keyof SignupAttribution, label: string][] = [
 export function FreelancerSignup({ utm }: { utm: SignupAttribution | null | undefined }) {
   const known = utm ? SIGNUP_UTM_LABELS.filter(([key]) => utm[key] != null) : []
   return (
-    <section className="space-y-3 px-6 pb-6">
+    <section className="space-y-3">
       <h2 className="text-sm font-medium">Iscrizione alla newsletter</h2>
       {known.length ? (
         <dl className="space-y-2 text-sm">
@@ -52,7 +52,7 @@ export function RecentEvents({
   items: { id: string; when: string }[]
 }) {
   return (
-    <section className="space-y-3 px-6 pb-6">
+    <section className="space-y-3">
       <h2 className="text-sm font-medium">{title}</h2>
       {items.length ? (
         <ul className="space-y-1 text-sm">

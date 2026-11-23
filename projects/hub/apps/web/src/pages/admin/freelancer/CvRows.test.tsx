@@ -1,6 +1,6 @@
 import { cleanup, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { CV_PERSON, mountDetail, resetMocks, valueOf } from '../list-test-kit'
+import { CV_PERSON, mountDetail, openTab, resetMocks, valueOf } from '../list-test-kit'
 
 afterEach(resetMocks)
 
@@ -112,6 +112,7 @@ describe('the CV’s data in the profile card (REB-855)', () => {
     expect(screen.queryByText('Aziende e clienti')).toBeNull()
     cleanup()
     await mountDetail({ cv_filename: null, cv_size: null }, { person: null })
+    await openTab('Scheda anonima')
     await screen.findByText('Nessuna scheda: manca il CV.')
     expect(screen.queryByText(/Dati dal CV non ancora letti/)).toBeNull()
   })
@@ -135,6 +136,21 @@ describe('the extra contact points on the profile card (REB-944)', () => {
     expect(extra).toHaveTextContent('(personale: solo per le fatture)')
     expect(extra).toHaveTextContent('(amministrazione)')
     expect(within(extra).queryByText('grace@studio.it')).toBeNull()
+  })
+
+  it('does not list a contact point already shown in its own row, the primary phone first of all (REB-1158)', async () => {
+    await mountDetail({ phone: '02 5550199', contact_points: EXTRA }, { person: null, differences: [] })
+    expect(valueOf('Telefono')).toHaveTextContent(/^02 5550199$/)
+    const extra = valueOf('Altri recapiti')
+    expect(extra).toHaveTextContent('grace.casa@gmail.com')
+    // The phone the «Telefono» row says is not said again, however it is spaced.
+    expect(extra).not.toHaveTextContent('5550199')
+  })
+
+  it('shows no «Altri recapiti» row when every extra point is already in a row', async () => {
+    await mountDetail({ phone: '025550199', contact_points: [EXTRA[1]] }, { person: null, differences: [] })
+    expect(valueOf('Telefono')).toHaveTextContent('025550199')
+    expect(screen.queryByText('Altri recapiti')).toBeNull()
   })
 
   it('shows no such row for a person with only the sign-in address', async () => {

@@ -122,3 +122,18 @@ export function pointSuffix(point: ContactPoint): string {
 export function contactsChanged(drafts: readonly PointDraft[], stored: readonly ContactPoint[]): boolean {
   return JSON.stringify(toWrite(drafts)) !== JSON.stringify(toWrite(draftsFrom(stored)))
 }
+
+const digitsOf = (value: string) => value.replace(/\D/g, '')
+
+/** Whether two contact values are the same point: phones by their digits, anything else by
+ *  its lowercased text. */
+function sameValue(a: ContactPoint, value: string): boolean {
+  return a.kind === 'phone' ? digitsOf(a.value) !== '' && digitsOf(a.value) === digitsOf(value) : a.value.trim().toLowerCase() === value.trim().toLowerCase()
+}
+
+/** The extra points that are not one already shown in its own row («Telefono», «Email»): a
+ *  page must not list the primary phone a second time under «Altri recapiti». */
+export function distinctExtraPoints(points: readonly ContactPoint[], shown: readonly (string | null)[]): ContactPoint[] {
+  const values = shown.filter((value): value is string => !!value)
+  return extraPoints(points).filter((point) => !values.some((value) => sameValue(point, value)))
+}

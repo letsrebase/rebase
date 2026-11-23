@@ -1,3 +1,4 @@
+import { BadgeCheck } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
@@ -33,7 +34,8 @@ export function StatePill({ status }: { status: string }) {
  *  talent cloud shows as its badge. */
 export function VettedPill() {
   return (
-    <Badge variant="pill" dot="accent">
+    <Badge variant="pill" className="gap-1">
+      <BadgeCheck aria-hidden="true" />
       {VETTED_LABEL}
     </Badge>
   )
@@ -252,6 +254,38 @@ export function Row({ label, children }: { label: string; children: React.ReactN
   )
 }
 
+/** The states a record can be in as one segmented control: exactly the states, never a
+ *  «Tutti» (that is a list's filter, not a state a record has). */
+export function Segmented({
+  states,
+  value,
+  onChange,
+  labels = STATE_LABELS,
+}: {
+  states: readonly string[]
+  value: string
+  onChange: (value: string) => void
+  labels?: Record<string, string>
+}) {
+  return (
+    <div role="group" aria-label="Stato" className="grid grid-cols-2 gap-px border bg-border">
+      {states.map((state) => (
+        <Button
+          key={state}
+          type="button"
+          size="sm"
+          variant={value === state ? 'default' : 'ghost'}
+          aria-pressed={value === state}
+          className={cn('rounded-none', value !== state && 'bg-background')}
+          onClick={() => onChange(state)}
+        >
+          {labels[state] ?? state}
+        </Button>
+      ))}
+    </div>
+  )
+}
+
 /** The state of a card or a request. A remark about it is a note (`Notes`, REB-856), never
  *  a field here; the change lands in the record's trail with the admin who made it. A
  *  refused save is said under the button. */
@@ -272,7 +306,7 @@ export function StatusEditor({
   return (
     <div className="space-y-3 border p-4">
       <p className="text-sm font-medium">Stato</p>
-      <StateFilter states={states} value={draftState} onChange={(value) => value && setDraftState(value)} />
+      <Segmented states={states} value={draftState} onChange={setDraftState} />
       <Button size="sm" onClick={() => onSave(draftState)} disabled={saving || draftState === status}>
         {saving ? 'Salvo…' : 'Salva'}
       </Button>

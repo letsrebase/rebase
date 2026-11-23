@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useId, useState, type FormEvent, type ReactNode } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
+import { cn } from '@rebase/ui/cn'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
@@ -19,11 +20,15 @@ import { useFreelancerCard } from '@/hooks/use-freelancer-card'
 import { bandLabel } from '@/lib/bands'
 import { REMOTE_LABELS, SENIORITY_LABELS, formatDateTime, formatExperience } from '@/lib/format'
 
-export function Field({ label, children }: { label: string; children: ReactNode }) {
+/** One labelled row of a card's `<dl>`. A `flagged` field (the card's sources do not support
+ *  it, REB-1128) is set on a gold rule, so the eye finds it before the list of reasons. */
+export function Field({ label, children, flagged = false }: { label: string; children: ReactNode; flagged?: boolean }) {
   return (
     <>
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words">{children}</dd>
+      <dd className={cn('min-w-0 break-words', flagged && 'border-l-(length:--line-strong) border-accent bg-accent/15 pl-2')}>
+        {children}
+      </dd>
     </>
   )
 }
@@ -185,7 +190,7 @@ const FLAG_VERDICTS: Record<CardFlag['verdict'], string> = {
 function Flags({ flags }: { flags: CardFlag[] }) {
   if (flags.length === 0) return null
   return (
-    <div className="space-y-1 rounded-md border border-destructive/40 p-3 text-sm">
+    <div className="space-y-1 border-l-(length:--line-strong) border-accent bg-accent/15 p-3 text-sm">
       <p className="font-medium">Da verificare</p>
       <ul>
         {flags.map((flag) => (
@@ -206,7 +211,7 @@ function Provenance({ provenance }: { provenance: CardProvenance }) {
     <div className="space-y-2 rounded-md border p-3 text-sm">
       <p className="font-medium">Da dove viene la scheda</p>
       {provenance.stale && <p className="text-muted-foreground">{STALE_SENTENCES[provenance.stale]}</p>}
-      <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-[10rem_1fr]">
+      <dl className="grid gap-x-4 gap-y-2 @sm:grid-cols-[8rem_1fr]">
         <Field label="Scritta da">
           {provenance.provider ? (PROVIDER_LABELS[provenance.provider] ?? provenance.provider) : 'modello non registrato'}{' '}
           · Prompt v{provenance.prompt_version}
@@ -256,27 +261,29 @@ function Provenance({ provenance }: { provenance: CardProvenance }) {
   )
 }
 
-/** The card's role, seniority, years and skills rows. */
-function CardRows({ read }: { read: FreelancerCard }) {
+/** The card's role, seniority, years and skills rows; a flagged field stands out. */
+function CardRows({ read, flagged }: { read: FreelancerCard; flagged: ReadonlySet<string> }) {
   const { card } = read
   if (!card) return null
   return (
     <>
-      <Field label="Ruolo">{card.role}</Field>
-      <Field label="Seniority">
+      <Field label="Ruolo" flagged={flagged.has('role')}>
+        {card.role}
+      </Field>
+      <Field label="Seniority" flagged={flagged.has('seniority')}>
         <span className="flex flex-wrap items-center gap-1.5">
           {SENIORITY_LABELS[card.seniority] ?? card.seniority}
           {card.seniority_uncertain && <Badge variant="outline">Da verificare</Badge>}
           {read.seniority_admin != null && <Badge variant="outline">Corretta dall’admin</Badge>}
         </span>
       </Field>
-      <Field label="Esperienza">
+      <Field label="Esperienza" flagged={flagged.has('experience_years')}>
         <span className="flex flex-wrap items-center gap-1.5">
           {formatExperience(card.experience_years)}
           {read.experience_years_admin != null && <Badge variant="outline">Corretta dall’admin</Badge>}
         </span>
       </Field>
-      <Field label="Competenze">
+      <Field label="Competenze" flagged={flagged.has('skills')}>
         {card.skills.length ? (
           <span className="flex flex-wrap gap-1.5">
             {card.skills.map((skill, index) => (
@@ -293,16 +300,26 @@ function CardRows({ read }: { read: FreelancerCard }) {
   )
 }
 
+/** What the card says, field by field, with the fields the sources do not back marked. */
 function Written({ read }: { read: FreelancerCard }) {
   const { card } = read
   if (!card) return null
+  const flagged = new Set(read.flags.map((flag) => flag.field))
   return (
-    <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[10rem_1fr]">
-      <CardRows read={read} />
-      <Field label="Settori">{words(card.industries)}</Field>
-      <Field label="Lingue">{words(card.languages)}</Field>
-      <Field label="Luogo">{card.location ?? '—'}</Field>
-      <Field label="Sintesi">{card.profile_summary}</Field>
+    <dl className="grid gap-x-4 gap-y-3 text-sm @sm:grid-cols-[8rem_1fr]">
+      <CardRows read={read} flagged={flagged} />
+      <Field label="Settori" flagged={flagged.has('industries')}>
+        {words(card.industries)}
+      </Field>
+      <Field label="Lingue" flagged={flagged.has('languages')}>
+        {words(card.languages)}
+      </Field>
+      <Field label="Luogo" flagged={flagged.has('location')}>
+        {card.location ?? '—'}
+      </Field>
+      <Field label="Sintesi" flagged={flagged.has('profile_summary')}>
+        {card.profile_summary}
+      </Field>
       <Field label="Modalità">{read.mode ? (REMOTE_LABELS[read.mode] ?? read.mode) : '—'}</Field>
       <Field label="Fascia cliente">{read.band ? bandLabel(read.band) : 'Tariffa da definire'}</Field>
       <Field label="Scritta">
@@ -360,11 +377,15 @@ export function AnonymousCard({ freelancerId, hasCv }: { freelancerId: string; h
   else if (read.isPending) body = <LoadingState label="Caricamento…" className="justify-start p-0" />
   else if (read.data.card) {
     body = (
-      <div className="space-y-4">
-        <Written read={read.data} />
-        <Flags flags={read.data.flags} />
-        {read.data.provenance && <Provenance provenance={read.data.provenance} />}
-        <LevelEditor key={`${read.data.seniority_admin}-${read.data.experience_years_admin}`} freelancerId={freelancerId} read={read.data} />
+      <div className="grid items-start gap-6 @3xl:grid-cols-2">
+        <div className="@container min-w-0 border p-4">
+          <Written read={read.data} />
+        </div>
+        <div className="@container min-w-0 space-y-4">
+          <Flags flags={read.data.flags} />
+          <LevelEditor key={`${read.data.seniority_admin}-${read.data.experience_years_admin}`} freelancerId={freelancerId} read={read.data} />
+          {read.data.provenance && <Provenance provenance={read.data.provenance} />}
+        </div>
       </div>
     )
   }
@@ -375,7 +396,7 @@ export function AnonymousCard({ freelancerId, hasCv }: { freelancerId: string; h
     )
   }
   return (
-    <section aria-labelledby={headingId} className="space-y-3 px-6 pb-6">
+    <section aria-labelledby={headingId} className="@container space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id={headingId} className="text-sm font-medium">
           Scheda anonima

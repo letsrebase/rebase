@@ -1,3 +1,4 @@
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import type { WorkProfilePractice } from '@/lib/api'
 
 export const MARK_CODE = 'contato dal codice'
@@ -47,5 +48,50 @@ export function PracticeRows({ practices, labelledBy }: { practices: WorkProfile
         </li>
       ))}
     </ul>
+  )
+}
+
+/**
+ * The working practices of a profile as a grid, in the order given: the practice, in how
+ * many sessions out of those that could have shown it (`N su M`), over how many products
+ * and months, and how it was found. Counts only: no bar, no meter, no total. The practices
+ * never seen are one muted row under the others, named, so a long closed list does not
+ * read as a long list of nothing. `labelledBy` is the id of the heading the table sits
+ * under. Nothing at all for an empty list.
+ */
+export function PracticeTable({ practices, labelledBy }: { practices: WorkProfilePractice[]; labelledBy: string }) {
+  if (practices.length === 0) return null
+  const seen = practices.filter((practice) => practice.seen > 0)
+  const unseen = practices.filter((practice) => practice.seen === 0)
+  return (
+    <Table aria-labelledby={labelledBy} scrollLabel="Pratiche" className="text-sm">
+      <TableHeader>
+        <TableRow>
+          <TableHead scope="col">Pratica</TableHead>
+          <TableHead scope="col">Sessioni</TableHead>
+          <TableHead scope="col">Prodotti</TableHead>
+          <TableHead scope="col">Mesi</TableHead>
+          <TableHead scope="col">Contata da</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {seen.map((practice) => (
+          <TableRow key={practice.id} className="h-auto">
+            <TableCell className="font-medium whitespace-normal">{practice.label}</TableCell>
+            <TableCell className="tabular-nums">{`${practice.seen} su ${practice.of}`}</TableCell>
+            <TableCell className="tabular-nums">{practice.products}</TableCell>
+            <TableCell className="tabular-nums">{practice.months}</TableCell>
+            <TableCell className="text-xs whitespace-normal text-muted-foreground">{mark(practice)}</TableCell>
+          </TableRow>
+        ))}
+        {unseen.length > 0 && (
+          <TableRow className="h-auto">
+            <TableCell colSpan={5} className="text-xs whitespace-normal text-muted-foreground">
+              {`Mai viste: ${unseen.map((practice) => practice.label).join(', ')}.`}
+            </TableCell>
+          </TableRow>
+        )}
+      </TableBody>
+    </Table>
   )
 }

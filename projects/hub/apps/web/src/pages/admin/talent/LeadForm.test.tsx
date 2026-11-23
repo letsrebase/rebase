@@ -1,7 +1,7 @@
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { INCOMPLETE, LEAD_TALENT, answer, mount, resetMocks } from '../list-test-kit'
+import { INCOMPLETE, LEAD_TALENT, answer, mount, noCard, openTab, resetMocks } from '../list-test-kit'
 
 afterEach(resetMocks)
 
@@ -26,6 +26,7 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
       if (url === '/api/hub/freelancers/f9/audit') {
         return answer(200, [])
       }
+      if (url === '/api/hub/freelancers/f9/card') return answer(200, noCard('f9'))
       return answer(200, LEAD_TALENT)
     })
     mount('/admin/talent/s2')
@@ -40,6 +41,7 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
     // Landing on the existing freelancer detail (not rewritten here, REB-284's job):
     // its own ownership sentence for a card an admin wrote is proof the redirect worked,
     // and the GET above proves the redirect's $id is the card the POST actually created.
+    await openTab('Contatti e dati')
     expect(await screen.findByText('scritta dall’admin, da completare')).toBeInTheDocument()
     expect(spy).toHaveBeenCalled()
   })
@@ -52,6 +54,7 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
         return answer(200, { ...INCOMPLETE, id: 'f9', first_name: 'Bob', last_name: 'Ross' })
       }
       if (url === '/api/hub/freelancers/f9/audit') return answer(200, [])
+      if (url === '/api/hub/freelancers/f9/card') return answer(200, noCard('f9'))
       return answer(200, LEAD_TALENT)
     })
     mount('/admin/talent/s2')
@@ -61,6 +64,7 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
     await userEvent.type(screen.getByLabelText('Fonti'), 'https://bob.dev')
     await userEvent.click(screen.getByRole('button', { name: 'Crea scheda' }))
 
+    await openTab('Contatti e dati')
     await screen.findByText('scritta dall’admin, da completare')
     const post = spy.mock.calls.find(([, init]) => init?.method === 'POST')!
     expect(post[0]).toBe('/api/hub/signups/s2/card')

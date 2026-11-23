@@ -1,7 +1,7 @@
 import { screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { COMPLETE, INCOMPLETE, answer, mount, noCard, resetMocks, routeFetch } from '../list-test-kit'
+import { COMPLETE, INCOMPLETE, answer, mount, noCard, openTab, resetMocks, routeFetch } from '../list-test-kit'
 
 afterEach(resetMocks)
 
@@ -24,8 +24,7 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
     pigro_slug: 'studio-grace',
   }
 
-
-  it('shows the sign-up utm, the recent logins and downloads, and the Pigro slug, in order', async () => {
+  it('shows the sign-up utm and the Pigro slug under «Contatti e dati», the logins and downloads under «Storico»', async () => {
     routeFetch({
       'GET /api/hub/freelancers/f2': ENRICHED,
       'GET /api/hub/freelancers/f2/audit': [],
@@ -33,20 +32,25 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
     })
     mount('/admin/freelance/f2')
     await screen.findByRole('heading', { name: 'Grace Hopper' })
-    const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
-    expect(headings).toEqual([
-      'Note',
-      'Scheda anonima',
+    await openTab('Contatti e dati')
+    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
       'Iscrizione alla newsletter',
-      'Ultimi accessi',
-      'Download della guida',
       'Spazio PigroCRM',
-      'Registro delle modifiche',
+      'Note',
     ])
     expect(screen.getByText('newsletter')).toBeInTheDocument()
     expect(screen.getByText('email')).toBeInTheDocument()
     expect(screen.getByText('autunno-2026')).toBeInTheDocument()
     expect(screen.getByText('studio-grace')).toBeInTheDocument()
+
+    await openTab('Storico')
+    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual([
+      'Ultimi accessi',
+      'Download della guida',
+      'Registro delle modifiche',
+      'Note',
+    ])
+    expect(screen.getAllByRole('listitem').filter((item) => /\d{4}/.test(item.textContent ?? '')).length).toBeGreaterThanOrEqual(3)
   })
 
   it('shows sensible empty values with none of the four sources, not a crash', async () => {
@@ -63,11 +67,13 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
     })
     mount('/admin/freelance/f1')
     await screen.findByRole('heading', { name: 'Ada Lovelace' })
+    await openTab('Contatti e dati')
     expect(screen.getByText('Nessuna iscrizione con questo indirizzo.')).toBeInTheDocument()
-    expect(screen.getByText('Non è mai entrata.')).toBeInTheDocument()
-    expect(screen.getByText('Non ha scaricato la guida.')).toBeInTheDocument()
     // No slug at all: the section does not render rather than showing an empty one.
     expect(screen.queryByText('Spazio PigroCRM')).toBeNull()
+    await openTab('Storico')
+    expect(screen.getByText('Non è mai entrata.')).toBeInTheDocument()
+    expect(screen.getByText('Non ha scaricato la guida.')).toBeInTheDocument()
   })
 
   it('keeps the enriched sections after saving a state change from the plain PATCH response', async () => {
@@ -81,12 +87,12 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
       if (url === '/api/hub/freelancers/f2/audit') return answer(200, [])
+      if (url === '/api/hub/freelancers/f2/card') return answer(200, noCard('f2'))
       if (init?.method === 'PATCH') return answer(200, plainCard)
       return answer(200, ENRICHED)
     })
     mount('/admin/freelance/f2')
     await screen.findByRole('heading', { name: 'Grace Hopper' })
-    expect(screen.getByText('studio-grace')).toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: 'Contattato' }))
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
@@ -94,6 +100,7 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
     await within(banner).findByText('Contattato')
     // The save must merge onto the cached detail, not replace it: the Pigro slug and
     // the other REB-284 sections the PATCH never answers stay on the page.
+    await openTab('Contatti e dati')
     expect(screen.getByText('studio-grace')).toBeInTheDocument()
     expect(screen.getByText('newsletter')).toBeInTheDocument()
   })
