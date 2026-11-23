@@ -3289,11 +3289,6 @@ export interface components {
          *     the trajectory, the agentic-literacy counts nor the artifacts: they stay in the admin.
          */
         CloudWorkProfile: {
-            /**
-             * Language
-             * @enum {string}
-             */
-            language: "it" | "en";
             /** Summary */
             summary: string | null;
             /** Domains */

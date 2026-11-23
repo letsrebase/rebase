@@ -416,14 +416,8 @@ def test_the_talent_cloud_never_carries_the_bands(hub_session: Session) -> None:
             return {k for item in node for k in keys(item)}
         return set()
 
-    # The shape is the privacy decision: the three fields the person approved, and the language
-    # the summary is written in, nothing else.
-    assert set(read.work_profile.model_dump()) == {
-        "language",
-        "summary",
-        "domains",
-        "project_domains",
-    }
+    # The shape is the privacy decision: the three fields the person approved, nothing else.
+    assert set(read.work_profile.model_dump()) == {"summary", "domains", "project_domains"}
     # (`band` on the talent is the client's price band, REB-511, not a usage band.)
     assert not keys(read.model_dump()) & {"technologies", "months", "first_month", "last_month"}
     assert not keys(read.work_profile.model_dump()) & {"band", "technologies", "months"}

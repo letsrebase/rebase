@@ -574,7 +574,6 @@ def cloud_work_profile(
             seen.setdefault(domain.strip(), None)
     summary = _text(payload.get("summary")) if "summary" not in flagged else None
     return CloudWorkProfile(
-        language=language_of(payload),
         summary=_cut(summary, SUMMARY_CLOUD_MAX) if summary else None,
         domains=domains,
         project_domains=list(seen),
