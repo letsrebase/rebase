@@ -48,18 +48,37 @@ CODE_LABELS = {
     "directing-leaning": "tende a dirigere",
     "co-thinking-leaning": "tende a ragionare insieme",
     # trajectory.shifts.deltas[].metric
-    "median prompt words": "Parole mediane per richiesta",
-    "delegation rate": "Quota di deleghe",
+    "median prompt words": "Parole mediane per prompt",
+    "delegation rate": "Tasso di delega",
     "research:mutation": "Rapporto lettura:modifica",
-    "verification rate": "Quota di verifiche",
+    "verification rate": "Tasso di verifica",
     # trajectory.topics[].themes[].name
     "agent architecture": "architettura degli agenti",
     "design & UI": "design e interfaccia",
     "security & auth": "sicurezza e accesso",
     "dev tooling": "strumenti di sviluppo",
     "data & schema": "dati e schema",
-    "AI patterns": "schemi d'uso dell'IA",
+    "AI patterns": "pattern di AI",
     "business & domain": "business e dominio",
+    # projects[].type
+    "product-build": "sviluppo di prodotto",
+    "audit-research": "audit e ricerca",
+    "agent-tooling": "strumenti per agenti",
+    "static-site": "sito statico",
+    "ai-platform": "piattaforma AI",
+    "data-migration": "migrazione dati",
+    "feature-work": "lavoro su funzionalità",
+    "testing": "test",
+    "quality-gating": "controllo di qualità",
+    "orchestrated": "orchestrato",
+    "design-research": "ricerca di design",
+    "exploration": "esplorazione",
+    # cognitive.tags
+    "research-first": "prima la ricerca",
+    "decomposer": "scompone i problemi",
+    "orchestrator": "orchestra",
+    "verification-heavy": "verifica molto",
+    "risk-calibrated": "rischio calibrato",
 }
 # `balanced` names a distribution shape and a relationship mode: one label serves both.
 
@@ -283,7 +302,7 @@ def _lens(key: str, label: str, source: Any, counts: list[WorkProfileCount]) -> 
         label=label,
         narrative=_text(lens.get("narrative")),
         where=f"{key}.narrative",
-        tags=_texts(lens.get("tags")),
+        tags=[code_label(tag) for tag in _texts(lens.get("tags"))],
         counts=counts,
     )
 
@@ -380,7 +399,7 @@ def _project(source: dict[str, Any]) -> WorkProfileProject | None:
         did=_text(source.get("did")),
         why_representative=_text(source.get("whyRepresentative")),
         tech=_texts(source.get("tech")),
-        types=_texts(source.get("type")),
+        types=[code_label(kind) for kind in _texts(source.get("type"))],
         sessions=_int(source.get("sessions")),
         span_from=_text(span.get("from")),
         span_to=_text(span.get("to")),

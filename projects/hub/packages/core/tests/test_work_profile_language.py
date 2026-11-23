@@ -31,7 +31,7 @@ def test_the_enum_codes_of_an_italian_profile_show_as_italian_labels() -> None:
     assert _counts(profile, "aiRelationship")["Modo"] == "tende a ragionare insieme"
     assert _counts(profile, "distribution")["Forma"] == "focus profondo"
     assert view.trajectory is not None
-    assert view.trajectory.shifts[0].metric == "Quota di deleghe"
+    assert view.trajectory.shifts[0].metric == "Tasso di delega"
     assert view.trajectory.topics[0].themes[0].label == "strumenti di sviluppo"
 
 
