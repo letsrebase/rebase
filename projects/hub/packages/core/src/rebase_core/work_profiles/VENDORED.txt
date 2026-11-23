@@ -27,3 +27,8 @@ An id that is not in it is dropped before storage and counted, not refused. To r
 share/practices.json from the fork over practices.json, update the commit above, and run
 `uv run pytest projects/hub/packages/core/tests/test_work_profile_practices.py`, which also checks
 that every id has an Italian label in PRACTICE_LABELS.
+
+groundedness.py also follows the fork's number reading by the payload's `language` (it: "." groups
+thousands and "," is the decimal mark; en: the reverse; no language reads as en) and anchors a
+decimal percent whole, as src/groundedness.mjs does at commit
+5ee954bb6befa2453ab940a4aaf7b4ad23c9fa4c (letsrebase/verify, REB-1156).

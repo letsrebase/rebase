@@ -6718,6 +6718,11 @@ export interface components {
         };
         /** WorkProfileView */
         WorkProfileView: {
+            /**
+             * Language
+             * @enum {string}
+             */
+            language: "it" | "en";
             /** Window From */
             window_from: string | null;
             /** Window To */
