@@ -27,6 +27,9 @@ class FakeGithub:
         self.granted = "read:user"
         self.graphql_errors = False
         self.rest: dict[str, tuple[int, Any]] = {}
+        # What a REST url answers a call with no token, when it differs (an organisation that
+        # forbids fine-grained tokens answers them 403 and anybody else 200).
+        self.anonymous: dict[str, tuple[int, Any]] = {}
         self._spent: set[str] = set()
 
     def __call__(
@@ -42,6 +45,9 @@ class FakeGithub:
             return 200, json.dumps(answer).encode()
         if url == "https://api.github.com/graphql":
             return self._graphql(headers, json.loads(body))
+        if "Authorization" not in headers and url in self.anonymous:
+            status, answer = self.anonymous[url]
+            return status, json.dumps(answer).encode()
         if url in self.rest:
             status, answer = self.rest[url]
             return status, json.dumps(answer).encode()

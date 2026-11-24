@@ -174,7 +174,19 @@ def test_a_pull_request_is_checked_for_its_author_and_who_merged_it(
     fake.rest[pull("acme", "api", 12)] = answer
 
     assert _reader(fake).check_artifact("https://github.com/acme/api/pull/12", GITHUB_ID) == outcome
-    assert fake.token_of(fake.calls[-1][2]) == HUB_TOKEN
+    assert fake.token_of(fake.calls[0][2]) == HUB_TOKEN
+
+
+def test_an_organisation_that_refuses_the_hubs_token_is_read_anonymously() -> None:
+    """Measured on letsrebase, 2026-11-24: an organisation may forbid fine-grained tokens."""
+    fake = FakeGithub()
+    fake.rest[pull("acme", "api", 12)] = (403, {"message": "forbids fine-grained tokens"})
+    fake.anonymous[pull("acme", "api", 12)] = (200, pull_answer(GITHUB_ID, merged_by=7))
+
+    outcome = _reader(fake).check_artifact("https://github.com/acme/api/pull/12", GITHUB_ID)
+
+    assert outcome == "merged_by_other"
+    assert [fake.token_of(headers) for _m, _u, headers, _b in fake.calls] == [HUB_TOKEN, ""]
 
 
 def test_a_commit_is_the_accounts_or_somebody_elses() -> None:

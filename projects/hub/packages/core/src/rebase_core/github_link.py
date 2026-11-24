@@ -260,21 +260,27 @@ class GithubReader:
         parsed = parse_artifact(url)
         if parsed is None:
             return "not_checkable"
-        if not self.hub_token:
-            return "unavailable"
         owner, repo, kind, ref = parsed
         path = f"{API}/repos/{quote(owner, safe='')}/{quote(repo, safe='')}"
         path += f"/pulls/{ref}" if kind == "pull" else f"/commits/{ref}"
-        headers = {
-            "Authorization": f"Bearer {self.hub_token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
-        try:
-            status, raw = self.http("GET", path, headers, b"")
-        except Exception as exc:  # noqa: BLE001 -- as `_call`
-            logger.warning("github artifact did not answer: %s", type(exc).__name__)
-            return "unavailable"
+        # The hub's token first; an organisation may forbid fine-grained tokens (measured on
+        # letsrebase, 2026-11-24: 403 with the token, 200 without), so a 403 is asked again
+        # anonymously, which public data allows at GitHub's lower rate limit.
+        status, raw = 0, b""
+        for token in [self.hub_token, ""] if self.hub_token else [""]:
+            headers = {
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            try:
+                status, raw = self.http("GET", path, headers, b"")
+            except Exception as exc:  # noqa: BLE001 -- as `_call`
+                logger.warning("github artifact did not answer: %s", type(exc).__name__)
+                return "unavailable"
+            if status != 403:
+                break
         # 301: the repository was renamed or moved, and the seam follows no redirect.
         if status in (301, 404, 410, 422):
             return "not_found"
