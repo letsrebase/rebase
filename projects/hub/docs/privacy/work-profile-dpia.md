@@ -476,4 +476,7 @@ A GitHub link among the person's links is no longer read as theirs, since anybod
 somebody else's.
 
 **Legal basis.** Consent (Art. 6(1)(a)), given by linking; withdrawal is «Scollega», which deletes
-the account row, the snapshot and the artifact checks at once.
+the account row, the snapshot, the artifact checks and the card's stored GitHub source at once.
+The hub cannot revoke the grant on GitHub's side, which the member area tells the person to do
+in GitHub's settings. The hub's own token sees no private repository (checked 2026-11-24), so a
+public snapshot holds nothing private two accounts might share.

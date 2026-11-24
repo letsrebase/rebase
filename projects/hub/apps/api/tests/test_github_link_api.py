@@ -106,6 +106,21 @@ def test_a_scope_unticked_on_githubs_page_links_as_public(
     assert github.snapshot_tokens() == [HUB_TOKEN]
 
 
+@pytest.mark.parametrize("site", ["cross-site", "same-site"])
+def test_a_link_another_site_starts_goes_nowhere(
+    client: TestClient, github: FakeGithub, ada: None, site: str
+) -> None:
+    started = client.get(
+        f"{LINK}?scope=private", headers={"Sec-Fetch-Site": site}, follow_redirects=False
+    )
+
+    assert started.status_code == 302
+    assert started.headers["location"] == f"{HUB}/me?github=expired"
+    assert "rebase_oauth" not in started.headers.get("set-cookie", "")
+    own = client.get(LINK, headers={"Sec-Fetch-Site": "same-origin"}, follow_redirects=False)
+    assert own.headers["location"].startswith("https://github.com/login/oauth/authorize")
+
+
 def test_the_link_needs_a_session_and_a_card(
     client: TestClient, api_session: Session, sender: RecordingSender, github: FakeGithub
 ) -> None:

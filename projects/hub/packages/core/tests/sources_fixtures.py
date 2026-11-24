@@ -9,7 +9,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from fakes_cards import text_pdf
-from freelancer_fixtures import enable_sources, link_github
+from freelancer_fixtures import GITHUB_LOGINS, enable_sources, link_github
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -45,9 +45,15 @@ class FakeGithub(GithubSource):
         super().__init__(lambda *args: (500, {}, b""))
         self.snapshot = snapshot
         self.calls: list[str] = []
+        self.ids: list[int | None] = []
+        # What GitHub calls an account id today: a test renames an account here.
+        self.renamed: dict[int, str] = {}
 
-    def fetch(self, login: str) -> GithubSnapshot:
+    def fetch(self, login: str, github_id: int | None = None) -> GithubSnapshot:
         self.calls.append(login)
+        self.ids.append(github_id)
+        if github_id is not None and github_id in self.renamed:
+            login = self.renamed[github_id]
         return self.snapshot or snapshot_of(login)
 
 
@@ -122,7 +128,7 @@ LINKS = ["https://github.com/ada", "https://ada.example/", "https://www.linkedin
 class _Flaky(FakeGithub):
     """GitHub that dies for one account, the way `urllib_call` does: with an exception."""
 
-    def fetch(self, login: str) -> GithubSnapshot:
+    def fetch(self, login: str, github_id: int | None = None) -> GithubSnapshot:
         self.calls.append(login)
         if login == "boom":
             raise TimeoutError("timed out")
@@ -157,12 +163,21 @@ class GithubApi:
             return 403, {**window, "x-ratelimit-remaining": "0"}, b'{"message": "rate limit"}'
         self.remaining -= 1
         answered = {**window, "x-ratelimit-remaining": str(self.remaining)}
-        login = url.removeprefix("https://api.github.com/users/").split("/")[0]
+        path = url.removeprefix("https://api.github.com")
+        by_id = path.startswith("/user/")
+        # A linked account is read by its id (REB-1166); `link_github` remembers whose it is.
+        github_id = int(path.removeprefix("/user/")) if by_id else None
+        login = (
+            GITHUB_LOGINS.get(github_id, "")
+            if github_id is not None
+            else path.removeprefix("/users/").split("/")[0]
+        )
         if login in self.broken:
             return 502, answered, b"{}"
         if url.endswith("/repos?type=owner&per_page=100&sort=pushed"):
             return 200, answered, b"[]"
-        return 200, answered, json.dumps({"login": login, "type": "User", "bio": login}).encode()
+        profile = {"login": login, "type": "User", "bio": login, "id": github_id}
+        return 200, answered, json.dumps(profile).encode()
 
 
 class Clock:

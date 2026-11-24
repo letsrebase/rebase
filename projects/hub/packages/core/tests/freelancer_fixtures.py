@@ -100,6 +100,11 @@ def apply_freelancer(
     return read.id
 
 
+# The login of each account `link_github` linked, by GitHub id: the fake GitHub APIs answer
+# an id read (`/user/{id}`) from it, as GitHub would.
+GITHUB_LOGINS: dict[int, str] = {}
+
+
 def link_github(session: Session, freelancer_id: UUID, login: str) -> None:
     """The account linked as if the person had proved it in the member area (REB-1166). The
     card and source tests name the account by a link, as people did before: what they test is
@@ -107,6 +112,7 @@ def link_github(session: Session, freelancer_id: UUID, login: str) -> None:
     that). The id is per card, so two people of a test may name one login as before."""
     seed = f"{freelancer_id}:{login}".encode()
     github_id = int.from_bytes(hashlib.sha256(seed).digest()[:6], "big")
+    GITHUB_LOGINS[github_id] = login
     session.add(
         GithubAccount(freelancer_id=freelancer_id, github_id=github_id, login=login, scope="public")
     )

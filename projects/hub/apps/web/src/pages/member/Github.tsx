@@ -70,7 +70,10 @@ function Unlink() {
   }
   return (
     <div className="space-y-2">
-      <p className="text-sm">Scolleghiamo l’account e cancelliamo subito quello che abbiamo letto.</p>
+      <p className="text-sm">
+        Scolleghiamo l’account e cancelliamo subito quello che abbiamo letto. L’autorizzazione che hai dato a rebase
+        su GitHub la togli dalle impostazioni di GitHub, alla voce Applications.
+      </p>
       <div className="flex flex-wrap gap-2">
         <Button type="button" size="sm" disabled={unlink.isPending} onClick={() => unlink.mutate()}>
           {unlink.isPending ? 'Scollego…' : 'Sì, scollega'}
@@ -121,7 +124,8 @@ function Linked({ github }: { github: NonNullable<Me['github']> }) {
  * `github` query parameter the server comes back with.
  */
 export function MemberGithub({ github, notice }: { github: Me['github']; notice: string | null }) {
-  const message = notice ? NOTICES[notice] : undefined
+  // `?github=linked` stays in the address after an unlink or a reload: it says nothing then.
+  const message = notice && !(notice === 'linked' && !github) ? NOTICES[notice] : undefined
   return (
     <section aria-labelledby="me-github" className="space-y-3">
       <h2 id="me-github" className="text-lg font-semibold tracking-tight">

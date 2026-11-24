@@ -427,7 +427,7 @@ const ARTIFACT_LABELS: Record<CrossCheck['artifacts'][number]['outcome'], string
   unmerged: 'Sua, non unita',
   commit: 'Commit suo',
   other_author: 'Di un’altra persona',
-  not_found: 'Non trovata: rimossa o privata',
+  not_found: 'Non trovata: rimossa, spostata o privata',
   not_checkable: 'Non è una pull request o un commit GitHub',
   unavailable: 'GitHub non ha risposto',
 }

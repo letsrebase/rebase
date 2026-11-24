@@ -32,7 +32,7 @@ from rebase_core.github_link import (
     month_windows,
     parse_artifact,
 )
-from rebase_core.models import GithubAccount, WorkProfile
+from rebase_core.models import FreelancerSource, GithubAccount, WorkProfile
 
 NOW = datetime(2026, 11, 24, 12, 0, tzinfo=UTC)
 IDENTITY = Identity(GITHUB_ID, LOGIN)
@@ -162,6 +162,7 @@ def test_no_snapshot_without_the_hubs_token_errors_or_another_account() -> None:
         ((200, pull_answer(GITHUB_ID)), "unmerged"),
         ((200, pull_answer(7, merged_by=8)), "other_author"),
         ((404, {}), "not_found"),
+        ((301, {}), "not_found"),
         ((502, {}), "unavailable"),
         ((403, {}), "unavailable"),
     ],
@@ -259,6 +260,68 @@ def test_artifacts_are_checked_against_the_account_and_cleared_by_the_unlink(
     assert clean_hub.scalars(select(GithubAccount)).all() == []
     assert profile.artifact_checks == [] and profile.artifacts_checked_at is None
     service.unlink(card)  # asking twice is not an error
+
+
+def test_an_unlink_while_github_answers_leaves_no_checks_behind(clean_hub: Session) -> None:
+    _, card = person(clean_hub)
+    assert card is not None
+    _profile(clean_hub, card, _with_artifacts("https://github.com/acme/api/pull/12"))
+    service = GithubLinkService(clean_hub, _reader(FakeGithub()), lambda: NOW)
+    service.link(card, PERSON_TOKEN, "public")
+
+    class UnlinkingReader(GithubReader):
+        def check_artifact(self, url: str, github_id: int) -> str:
+            GithubLinkService(clean_hub, _reader(FakeGithub())).unlink(card)
+            return "merged"
+
+    GithubLinkService(clean_hub, UnlinkingReader(FakeGithub(), HUB_TOKEN)).refresh_artifacts(card)
+
+    profile = clean_hub.scalars(select(WorkProfile)).one()
+    assert profile.artifact_checks == [] and profile.artifacts_checked_at is None
+
+
+def test_the_unlink_drops_the_cards_stored_github_source(clean_hub: Session) -> None:
+    _, card = person(clean_hub)
+    assert card is not None
+    service = GithubLinkService(clean_hub, _reader(FakeGithub()), lambda: NOW)
+    service.link(card, PERSON_TOKEN, "public")
+    clean_hub.add(
+        FreelancerSource(
+            freelancer_id=card,
+            kind="github",
+            ref=LOGIN,
+            position=1,
+            text="FONTE: GitHub",
+            content_sha256="0" * 64,
+            status="ok",
+            fetched_at=NOW,
+        )
+    )
+    clean_hub.commit()
+
+    service.unlink(card)
+
+    assert clean_hub.scalars(select(FreelancerSource)).all() == []
+
+
+def test_relinking_another_account_clears_the_checks_made_against_the_first(
+    clean_hub: Session,
+) -> None:
+    _, card = person(clean_hub)
+    assert card is not None
+    profile = _profile(clean_hub, card, sample())
+    fake = FakeGithub()
+    service = GithubLinkService(clean_hub, _reader(fake), lambda: NOW)
+    service.link(card, PERSON_TOKEN, "public")
+    profile.artifact_checks = [{"project": "p1", "outcome": "merged"}]
+    profile.artifacts_checked_at = NOW
+    clean_hub.commit()
+
+    fake.identity = {"databaseId": GITHUB_ID + 1, "login": "ada-two"}
+    service.link(card, PERSON_TOKEN, "public")
+
+    clean_hub.refresh(profile)
+    assert profile.artifact_checks == [] and profile.artifacts_checked_at is None
 
 
 # ---- what the admin's panel reads --------------------------------------------------------

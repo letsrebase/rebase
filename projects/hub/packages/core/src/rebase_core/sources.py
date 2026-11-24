@@ -51,7 +51,7 @@ from datetime import datetime, timedelta
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import Insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import CursorResult
@@ -222,6 +222,9 @@ class _Wanted:
     kind: str
     ref: str
     position: int
+    # The linked account's id (REB-1166): GitHub is read by it, so a login given up and taken
+    # by somebody else is never read as the person's.
+    github_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -350,10 +353,13 @@ class SourceService:
             self.delete_all(freelancer_id)
             self.session.commit()
             return SourceSet([])
-        login = self.session.scalar(
-            select(GithubAccount.login).where(GithubAccount.freelancer_id == freelancer_id)
-        )
-        reads = [self._read(wanted) for wanted in self._wanted(row.links, login)]
+        account = self.session.execute(
+            select(GithubAccount.login, GithubAccount.github_id).where(
+                GithubAccount.freelancer_id == freelancer_id
+            )
+        ).first()
+        linked = (account[0], account[1]) if account is not None else None
+        reads = [self._read(wanted) for wanted in self._wanted(row.links, linked)]
         fetched_at = self.now()
         locked = self.session.scalar(
             select(Freelancer.deleted_at)
@@ -388,6 +394,14 @@ class SourceService:
                     previous.attempts = attempts
                     continue
             self.session.execute(self._upsert(freelancer_id, read, fetched_at, attempts))
+        for read in reads:
+            # The account was renamed on GitHub: the stored login follows the id.
+            if read.kind == "github" and read.status == "ok" and linked and read.ref != linked[0]:
+                self.session.execute(
+                    update(GithubAccount)
+                    .where(GithubAccount.freelancer_id == freelancer_id)
+                    .values(login=read.ref)
+                )
         self.session.commit()
         return self.current(freelancer_id)
 
@@ -450,10 +464,10 @@ class SourceService:
             .order_by(Freelancer.created_at)
         ).all()
         tried = 0
-        logins: dict[UUID, str] = {
-            owner: login
-            for owner, login in self.session.execute(
-                select(GithubAccount.freelancer_id, GithubAccount.login)
+        logins: dict[UUID, tuple[str, int]] = {
+            owner: (login, github_id)
+            for owner, login, github_id in self.session.execute(
+                select(GithubAccount.freelancer_id, GithubAccount.login, GithubAccount.github_id)
             )
         }
         skipped = 0  # due only for GitHub while its limit is spent: not visited
@@ -524,15 +538,18 @@ class SourceService:
         )
 
     def _wanted(
-        self, links: list[str], github_login: str | None, enabled: set[str] | None = None
+        self,
+        links: list[str],
+        github: tuple[str, int] | None,
+        enabled: set[str] | None = None,
     ) -> list[_Wanted]:
         """The sources a person's links name that are switched on, before any fetch. GitHub is
-        the account the person linked and proved theirs (REB-1166), never one a link names:
-        anybody can paste somebody else's profile."""
+        the account the person linked and proved theirs (REB-1166), `(login, id)`, never one a
+        link names: anybody can paste somebody else's profile."""
         on = self.enabled_kinds() if enabled is None else enabled
         wanted: list[_Wanted] = []
-        if "github" in on and github_login is not None:
-            wanted.append(_Wanted("github", github_login, 1))
+        if "github" in on and github is not None:
+            wanted.append(_Wanted("github", github[0], 1, github[1]))
         if "links" in on:
             wanted.extend(
                 _Wanted("link", url, n) for n, url in enumerate(candidate_links(links), start=1)
@@ -541,12 +558,12 @@ class SourceService:
 
     def _read(self, wanted: _Wanted) -> _Read:
         if wanted.kind == "github":
-            snapshot = self.github.fetch(wanted.ref)
+            snapshot = self.github.fetch(wanted.ref, wanted.github_id)
             if snapshot.status != "ok":  # including `limited`, which `refetch` never stores
                 return _Read("github", wanted.ref, wanted.position, "", "", snapshot.status)
             return _Read(
                 "github",
-                wanted.ref,
+                snapshot.login,  # the login the account has today, which an id read follows
                 wanted.position,
                 snapshot.normalised_text(),
                 _sha(snapshot.hash_material()),

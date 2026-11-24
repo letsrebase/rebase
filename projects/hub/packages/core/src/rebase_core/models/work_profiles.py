@@ -39,8 +39,8 @@ PRACTICE_METHODS = ("code", "model")
 # What checking a project's URL artifact against the linked GitHub account found (REB-1168):
 # a pull request by the account merged by somebody else in a repository the account does not own,
 # merged otherwise, not merged; a commit by the account; somebody else's pull request or commit;
-# not found (gone, or private to the hub); not a GitHub pull request or commit; GitHub did not
-# answer.
+# not found (gone, moved to another repository, or private to the hub); not a GitHub pull request
+# or commit; GitHub did not answer.
 ARTIFACT_OUTCOMES = (
     "merged_by_other",
     "merged",

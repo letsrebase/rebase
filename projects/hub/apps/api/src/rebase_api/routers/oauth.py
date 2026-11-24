@@ -174,6 +174,11 @@ def start_link(
     (`read:user`: private contributions in the monthly totals). The way back is the sign-in's
     callback, which tells the two apart by the attempt it opens."""
     service = OAuthService(settings, http)
+    # Only a click in the hub's own page (or an address typed by hand) starts a link: GitHub
+    # skips its consent page for scopes the person granted before, so a foreign page sending a
+    # signed-in person here could relink their account without them doing anything.
+    if request.headers.get("sec-fetch-site", "none") not in ("same-origin", "none"):
+        return _to_me(service, "expired")
     raw = session_token(request)
     user = UserService(session, settings).resolve(raw) if raw else None
     if user is None:

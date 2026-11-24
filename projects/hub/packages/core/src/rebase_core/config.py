@@ -172,7 +172,10 @@ class Settings(BaseSettings):
     # save or use a provider key and says so, never a plain-text fallback. It lives in
     # the server's `.env`, outside the database, so a backup does not carry a key that
     # opens it. `github_token`: a read-only token for the GitHub source of the card
-    # (public data only); empty means unauthenticated calls with the lower rate limit.
+    # (public data only); empty means unauthenticated calls with the lower rate limit. The
+    # linked account's public snapshot and the work profile's artifact checks (REB-1166 to
+    # REB-1168) need it: without it a public link fails. It must see no private repository,
+    # or GitHub may count work the two accounts share in another person's totals.
     # `repr=False`, so neither shows in a logged `Settings()` or a stack trace.
     secrets_key: str = Field(default="", repr=False)
     github_token: str = Field(default="", repr=False)

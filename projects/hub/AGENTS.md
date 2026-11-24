@@ -801,17 +801,27 @@ the sign-in's own callback, `DELETE /api/hub/me/github`, and the admin's
   carry `read:user` and count private work. Without the hub token a public link fails
   (`?github=failed`). A **private** snapshot is read as the person (`viewer`), and only when the
   token answer's `scope` really holds `read:user` or `user`; otherwise the link is stored public.
+  The hub token must belong to an account that sees no private repository, or GitHub may count
+  work the two accounts share in another person's totals: checked on 2026-11-24 on both stacks
+  (a fine-grained token, no private repository visible).
+- The start of a link refuses a cross-site navigation (`Sec-Fetch-Site` other than
+  `same-origin` or `none`): GitHub skips its consent page for scopes already granted, so a
+  foreign page could otherwise relink a signed-in person's account, private counts included.
 - Artifacts are checked with the hub token after the response (`refresh_artifacts_after`, a
   session of its own) on a new submission when an account is linked and after every link; the
   admin's «Ricontrolla su GitHub» runs it in the request. No transaction stays open across
-  GitHub, and a check for a profile replaced meanwhile is dropped.
+  GitHub, and a check for a profile replaced, or for an account unlinked or replaced, meanwhile
+  is dropped; a link of a different account clears the old checks at once.
 - The cross-check computes nothing about the person and nothing reads it: no sort, filter,
   threshold or approval (decision row of 2026-11-24). Approval works exactly as before.
-- The card's GitHub source (`SourceService._wanted`) reads only the linked account; a GitHub URL
-  among `freelancers.links` is a link and nothing more. The test fixtures
-  (`freelancer_fixtures.link_github`) link the account a test's links name, so the source tests
-  still read it.
-- A merge deletes the absorbed card's account and clears the survivor profile's artifact checks
+- The card's GitHub source (`SourceService._wanted`) reads only the linked account, **by its id**
+  (`/user/{id}`), so a login given up and registered by somebody else is never read as the
+  person's; the stored login follows a rename. A GitHub URL among `freelancers.links` is a link
+  and nothing more. The test fixtures (`freelancer_fixtures.link_github`) link the account a
+  test's links name and remember its id in `GITHUB_LOGINS` for the fake APIs.
+- An unlink deletes the account, the artifact checks and the card's stored GitHub source at
+  once; it cannot revoke the grant on GitHub, which the member area tells the person to do.
+  A merge deletes the absorbed card's account and clears the survivor profile's artifact checks
   (`drop_absorbed_account`); a soft delete deletes the account.
 - Tests: `packages/core/tests/test_github_link.py` and `apps/api/tests/test_github_link_api.py`,
   over `github_fakes.FakeGithub`, which answers the token exchange, GraphQL and the REST reads and

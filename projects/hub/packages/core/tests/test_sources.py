@@ -34,7 +34,7 @@ from rebase_core.audit import AdminActionService
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.freelancers import FreelancerService
 from rebase_core.github_source import GithubSnapshot
-from rebase_core.models import AiSource, Freelancer
+from rebase_core.models import AiSource, Freelancer, GithubAccount
 from rebase_core.sources import (
     SourceService,
     candidate_links,
@@ -178,6 +178,24 @@ def test_github_is_read_from_the_linked_account_never_from_a_link(clean_hub: Ses
         ("github", "grace-h"),
         ("link", "https://ada.example/"),
     ]
+
+
+def test_a_linked_account_is_read_by_its_id_and_follows_a_rename(clean_hub: Session) -> None:
+    """A login can be given up and registered by somebody else: the card reads the account
+    by the id the person proved, and the stored login follows GitHub's (REB-1166 review)."""
+    person = _person(clean_hub, ["https://github.com/ada"])
+    account = clean_hub.scalars(select(GithubAccount)).one()
+    github = FakeGithub()
+    github.renamed[account.github_id] = "ada-renamed"
+
+    _service(clean_hub, github=github).refetch(person)
+
+    assert github.ids == [account.github_id]
+    assert [(r.kind, r.ref) for r in _rows(clean_hub, person) if r.kind == "github"] == [
+        ("github", "ada-renamed")
+    ]
+    clean_hub.refresh(account)
+    assert account.login == "ada-renamed"
 
 
 def test_linkedin_link_never_stored_even_if_in_links(clean_hub: Session) -> None:

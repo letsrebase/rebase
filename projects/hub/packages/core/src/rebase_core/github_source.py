@@ -274,26 +274,36 @@ class GithubSource:
         self._silent_until = max(until, now + LEAST_SILENCE)
         return True
 
-    def fetch(self, login: str) -> GithubSnapshot:
+    def fetch(self, login: str, github_id: int | None = None) -> GithubSnapshot:
         """The public profile and repositories of `login`. Never raises for GitHub's
         answer: a missing user, an organisation (a person's account is a `User`) and a page
         GitHub says is gone are `unreadable`; a refusal, a network or server failure are
         `error`, which keeps the text read before; a spent rate limit, before the call or
-        in the middle of it, is `limited` and keeps everything as it was."""
-        if not _LOGIN.match(login):
+        in the middle of it, is `limited` and keeps everything as it was.
+
+        With `github_id` (a linked account, REB-1166) the account is found by its id, which
+        survives a rename, and the snapshot carries the login it has today: a login given up
+        and taken by somebody else is never read as the person's."""
+        if github_id is None and not _LOGIN.match(login):
             return GithubSnapshot(login, status="unreadable")
         try:
-            return self._read(login)
+            return self._read(login, github_id)
         except _Limited:
             return GithubSnapshot(login, status="limited")
 
-    def _read(self, login: str) -> GithubSnapshot:
-        who = quote(login, safe="")
-        status, profile = self._get(f"/users/{who}")
+    def _read(self, login: str, github_id: int | None = None) -> GithubSnapshot:
+        path = f"/users/{quote(login, safe='')}" if github_id is None else f"/user/{github_id}"
+        status, profile = self._get(path)
         if not isinstance(profile, dict):
             return GithubSnapshot(login, status=_failure(status))
         if profile.get("type") != "User":
             return GithubSnapshot(login, status="unreadable")
+        if github_id is not None:
+            current = profile.get("login")
+            if profile.get("id") != github_id or not isinstance(current, str):
+                return GithubSnapshot(login, status="unreadable")
+            login = current
+        who = quote(login, safe="")
         status, listing = self._get(f"/users/{who}/repos?type=owner&per_page=100&sort=pushed")
         if not isinstance(listing, list):
             return GithubSnapshot(login, status=_failure(status))

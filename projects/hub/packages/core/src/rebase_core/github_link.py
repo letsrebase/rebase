@@ -37,7 +37,7 @@ from typing import Any
 from urllib.parse import quote, urlsplit
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -45,7 +45,7 @@ from rebase_core.audit import utcnow
 from rebase_core.db import SessionOpener
 from rebase_core.errors import DomainError
 from rebase_core.http import HttpCall
-from rebase_core.models import ARTIFACT_OUTCOMES, GithubAccount, WorkProfile
+from rebase_core.models import ARTIFACT_OUTCOMES, FreelancerSource, GithubAccount, WorkProfile
 from rebase_core.work_profiles.schemas import (
     WorkProfileCrossCheck,
     WorkProfileCrossCheckArtifact,
@@ -275,7 +275,8 @@ class GithubReader:
         except Exception as exc:  # noqa: BLE001 -- as `_call`
             logger.warning("github artifact did not answer: %s", type(exc).__name__)
             return "unavailable"
-        if status in (404, 410, 422):
+        # 301: the repository was renamed or moved, and the seam follows no redirect.
+        if status in (301, 404, 410, 422):
             return "not_found"
         if status != 200:
             return "unavailable"
@@ -458,6 +459,8 @@ class GithubLinkService:
         if row is None:
             row = GithubAccount(freelancer_id=freelancer_id)
             self.session.add(row)
+        elif row.github_id != identity.github_id:
+            self._clear_checks(freelancer_id)  # made against the account being replaced
         row.github_id = identity.github_id
         row.login = identity.login
         row.scope = scope
@@ -474,16 +477,24 @@ class GithubLinkService:
         return row
 
     def unlink(self, freelancer_id: UUID) -> None:
-        """The account and what was read of it go at once, and so do the artifact checks made
-        against it. Asking twice is not an error."""
+        """The account and what was read of it go at once: the snapshot, the artifact checks
+        made against it and the card's stored GitHub source. Asking twice is not an error."""
         row = self.account(freelancer_id)
         if row is not None:
             self.session.delete(row)
+        self.session.execute(
+            delete(FreelancerSource).where(
+                FreelancerSource.freelancer_id == freelancer_id, FreelancerSource.kind == "github"
+            )
+        )
+        self._clear_checks(freelancer_id)
+        self.session.commit()
+
+    def _clear_checks(self, freelancer_id: UUID) -> None:
         profile = self._profile(freelancer_id)
         if profile is not None:
             profile.artifact_checks = []
             profile.artifacts_checked_at = None
-        self.session.commit()
 
     def _profile(self, freelancer_id: UUID) -> WorkProfile | None:
         return self.session.scalar(
@@ -498,21 +509,24 @@ class GithubLinkService:
             return
         account = self.account(freelancer_id)
         submitted_at = profile.submitted_at
-        if account is None:
+        checked_for = account.github_id if account is not None else None
+        if checked_for is None:
             checks: list[dict[str, str]] = []
             checked_at = None
         else:
-            github_id = account.github_id
             urls = _artifact_urls(profile.payload)
             self.session.rollback()  # no transaction held open across the network
             checks = [
-                {"project": project, "outcome": self.reader.check_artifact(url, github_id)}
+                {"project": project, "outcome": self.reader.check_artifact(url, checked_for)}
                 for project, url in urls
             ]
             checked_at = self._now()
         current = self._profile(freelancer_id)
         if current is None or current.submitted_at != submitted_at:
             return  # replaced or deleted meanwhile: its own check runs after its intake
+        now_linked = self.account(freelancer_id)
+        if (now_linked.github_id if now_linked is not None else None) != checked_for:
+            return  # unlinked or relinked meanwhile: the outcomes are about another account
         current.artifact_checks = checks
         current.artifacts_checked_at = checked_at
         self.session.commit()
