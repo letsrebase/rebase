@@ -235,6 +235,9 @@ class KnownIdentifiers:
     last_name: str
     first_name: str = ""
     github_login: str | None = None
+    # The account the person linked and proved theirs (REB-1166), the one the GitHub source
+    # reads. Kept beside `github_login`, which a link or the CV names, so both are blocked.
+    linked_github_login: str | None = None
     repo_names: list[str] = field(default_factory=list)
     hostnames: list[str] = field(default_factory=list)
     employers: list[str] = field(default_factory=list)
@@ -350,6 +353,7 @@ def identifying(card: Card, known: KnownIdentifiers) -> list[str]:
         phrase
         for phrase in (
             _phrase(known.github_login) if known.github_login else None,
+            _phrase(known.linked_github_login) if known.linked_github_login else None,
             *(p for host in known.hostnames for p in _hostname_phrases(host)),
         )
         if phrase is not None and phrase not in skills

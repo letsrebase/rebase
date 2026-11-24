@@ -157,7 +157,8 @@ def known_identifiers(
     return KnownIdentifiers(
         last_name=last_name,
         first_name=first_name,
-        github_login=verified or github_login_of(links),
+        github_login=github_login_of(links),
+        linked_github_login=verified,
         repo_names=repos,
         hostnames=link_hostnames(links),
         employers=list(facts.clients),

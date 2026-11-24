@@ -37,6 +37,19 @@ def test_github_login_in_summary_fails() -> None:
     ]
 
 
+def test_both_the_linked_login_and_the_one_a_link_names_are_blocked() -> None:
+    """REB-1166: the GitHub source reads the linked account, but a link or the CV may name
+    another handle of the person's; the card names neither."""
+    known = KnownIdentifiers(
+        last_name="Lovelace", github_login="ada-codes", linked_github_login="lovelace-dev"
+    )
+
+    assert identifying(_card(profile_summary="Su GitHub come lovelace-dev."), known) == [
+        "profile_summary"
+    ]
+    assert identifying(_card(profile_summary="Mantiene ada-codes."), known) == ["profile_summary"]
+
+
 def test_repo_name_in_summary_fails() -> None:
     assert identifying(_card(profile_summary="Autore di my-lib, una libreria."), KNOWN) == [
         "profile_summary"
