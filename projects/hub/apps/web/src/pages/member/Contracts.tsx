@@ -149,7 +149,7 @@ export function MemberContracts() {
     : false
   return (
     <section aria-labelledby="me-contracts" className="space-y-3">
-      <h2 id="me-contracts" className="text-lg font-semibold tracking-tight">
+      <h2 id="me-contracts" className="sr-only">
         Contratti
       </h2>
       {contracts.isError ? (

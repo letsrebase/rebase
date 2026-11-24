@@ -693,7 +693,7 @@ nothing else filters it, so a client name in a summary is a reason to reject.
 
 `MeRead.work_profile` (`MemberWorkProfile | null`) is the person's own view: the state, the dates,
 `expired`, and the admin's note **only for a rejected profile** (an approval's note stays with the
-admins). The member area (`pages/member/WorkProfile.tsx`, below «La tua scheda», for a person with a
+admins). The member area (`pages/member/WorkProfile.tsx`, its own "Profilo di lavoro" tab, for a person with a
 card) explains the tool and gives the three commands before any submission, and after one shows
 «In revisione», «Approvato fino al <data>», «Non approvato» with the note, or «Scaduto», with
 «Elimina il profilo» behind a second click. `DELETE /api/hub/me/work-profile` deletes the row at

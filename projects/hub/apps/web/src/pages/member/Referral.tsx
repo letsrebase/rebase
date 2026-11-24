@@ -117,14 +117,15 @@ function Earnings({ rates }: { rates: Pick<MemberReferralData, 'rate_freelancer'
  *  rates and a popover with an invented worked example, REB-610), and who has signed up
  *  under it so far. Percentages are shown; a euro figure of a real engagement never is
  *  -- rebase's own margin on it is an admin-only number, computed and shown only on the
- *  admin's ledger. */
+ *  admin's ledger. It is the first card of the page's right rail (REB-1171), so it is drawn
+ *  as the talent page's rail cards are: one bordered box, its title at the body size. */
 export function MemberReferral() {
   const referral = useQuery({ queryKey: keys.memberReferral, queryFn: () => member.referral() })
   const data = referral.data
 
   return (
-    <section aria-labelledby="me-referral" className="space-y-3">
-      <h2 id="me-referral" className="text-lg font-semibold tracking-tight">
+    <section aria-labelledby="me-referral" className="space-y-3 border bg-card p-4">
+      <h2 id="me-referral" className="text-sm font-medium">
         Il tuo link di segnalazione
       </h2>
       {referral.isError ? (
@@ -132,35 +133,35 @@ export function MemberReferral() {
       ) : !data ? (
         <p className="text-sm text-muted-foreground">Caricamento…</p>
       ) : (
-        <div className="space-y-3 border bg-card p-4">
+        <>
           <Earnings rates={data} />
           <p className="text-sm text-muted-foreground">
             Segnala rebase a un freelance o a un&apos;azienda con questo link: lo vedi qui sotto appena
             si iscrive.
           </p>
-          <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="flex gap-2">
             <Input readOnly value={referralLink(data.code)} aria-label="Link di segnalazione da copiare" />
             <CopyLinkButton link={referralLink(data.code)} />
           </div>
           {data.referred.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nessuna segnalazione ancora.</p>
           ) : (
-            <ul className="divide-y border-t pt-3">
+            <ul className="divide-y border-t">
               {data.referred.map((item, index) => (
                 <li
                   key={`${item.kind}-${item.first_name}-${index}`}
                   className="flex items-center justify-between gap-4 py-2 text-sm"
                 >
-                  <div>
-                    <p className="font-medium">{item.first_name}</p>
+                  <div className="min-w-0">
+                    <p className="break-words font-medium">{item.first_name}</p>
                     <p className="text-xs text-muted-foreground">{KIND_LABELS[item.kind] ?? item.kind}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground">{formatDate(item.created_at)}</p>
+                  <p className="shrink-0 text-xs text-muted-foreground">{formatDate(item.created_at)}</p>
                 </li>
               ))}
             </ul>
           )}
-        </div>
+        </>
       )}
     </section>
   )

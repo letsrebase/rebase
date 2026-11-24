@@ -1,20 +1,24 @@
 import { capture } from '@rebase/analytics/browser'
+import { useQuery } from '@tanstack/react-query'
 import { Link, useSearch } from '@tanstack/react-router'
-import { ArrowUpRight, Download, Pencil, Plus } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { ArrowUpRight, BadgeCheck, CircleX, Clock, Download, Pencil, Plus } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
-import { member, type MemberRequest } from '@/lib/api'
-import { formatBytes, formatDate, formatDay } from '@/lib/format'
 import { formatMoney } from '@rebase/ui/format'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rebase/ui/tabs'
+import { member, type Me, type MemberRequest } from '@/lib/api'
+import { REMOTE_LABELS, formatBytes, formatDate, formatDay } from '@/lib/format'
 import { toApplication, toCompanyApplication, useMe } from '@/lib/me'
 import { GUIDE } from '@/lib/perks'
+import { keys } from '@/lib/query-keys'
 import { COMPANY_FIELDS } from '@/pages/CompanyWizard'
+import { LoadingState } from '@/pages/admin/list-kit'
 import { FREELANCER_FIELDS } from '@/pages/FreelancerWizard'
 import { MemberContacts } from '@/pages/member/Contacts'
 import { MemberContracts } from '@/pages/member/Contracts'
-import { MemberReferral } from '@/pages/member/Referral'
 import { MemberGithub } from '@/pages/member/Github'
+import { MemberReferral } from '@/pages/member/Referral'
 import { MemberWorkProfile } from '@/pages/member/WorkProfile'
 
 // `/app/login`, not `/app/register`: PigroCRM's own login already knows what to do with
@@ -27,17 +31,8 @@ import { MemberWorkProfile } from '@/pages/member/WorkProfile'
 const PIGROCRM_URL = 'https://pigro.letsrebase.com/app/login'
 const ROLE_LABELS: Record<string, string> = { admin: 'Amministratore', member: 'Membro' }
 
-/** One label and its answer, drawn as a row of a ledger: side by side from `sm`, the
- *  answer under its label on a phone, where a 160px label column would leave the answer
- *  a sliver. */
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="grid gap-1 px-4 py-2.5 text-sm sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] sm:gap-4">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words font-medium">{children}</dd>
-    </div>
-  )
-}
+type TabName = 'card' | 'profile' | 'requests' | 'contracts' | 'contacts'
+type WorkProfile = NonNullable<Me['work_profile']>
 
 /** What the wizard's own field says about one answer of a request (the hybrid option
  *  with its on-site days, the headcount with its noun), so the list and the edit form use
@@ -95,61 +90,167 @@ function RequestCard({ request, position, total }: { request: MemberRequest; pos
   )
 }
 
-/** What the person sent, under the wizard's own questions, and the perks. The email is
- *  shown but cannot be edited: it is the address the link proved.
+/** «Profilo di lavoro in revisione», «… approvato»…: where the profile stands, in the
+ *  header, with an icon beside the word, so it is read before any tab is opened. The words
+ *  are the ones «Profilo di lavoro» itself uses. */
+function ProfilePill({ profile }: { profile: WorkProfile }) {
+  const [Icon, word] = profile.expired
+    ? [Clock, 'scaduto']
+    : ({ draft: [Clock, 'in revisione'], approved: [BadgeCheck, 'approvato'], rejected: [CircleX, 'non approvato'] } as const)[
+        profile.state
+      ]
+  return (
+    <Badge variant="pill" className="gap-1">
+      <Icon aria-hidden="true" />
+      Profilo di lavoro {word}
+    </Badge>
+  )
+}
+
+/** The tab strip, which scrolls sideways on a phone. The page may open on a tab past the
+ *  strip's right edge (a document to sign opens «Contratti», the fourth), so the active
+ *  tab is scrolled into the strip whenever it changes; only the strip moves, never the page. */
+function TabBar({ active, children }: { active: string; children: ReactNode }) {
+  const list = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const strip = list.current
+    const tab = strip?.querySelector<HTMLElement>('[data-state="active"]')
+    if (!strip || !tab) return
+    const left = tab.getBoundingClientRect().left - strip.getBoundingClientRect().left + strip.scrollLeft
+    if (left < strip.scrollLeft || left + tab.offsetWidth > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = left
+  }, [active])
+  return (
+    <div className="border-b border-border">
+      <TabsList
+        ref={list}
+        variant="line"
+        className="max-w-full justify-start overflow-x-auto overflow-y-hidden pb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {children}
+      </TabsList>
+    </div>
+  )
+}
+
+/** One perk of the rail's «Per chi è dentro», a hairline above every one but the first. */
+function Perk({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="space-y-2 border-t pt-3 first-of-type:border-t-0 first-of-type:pt-0">
+      <h3 className="font-semibold">{title}</h3>
+      {children}
+    </div>
+  )
+}
+
+/** «La tua area» (REB-1171): a header with who this is, the facts a company searches by and
+ *  the two actions on the card, then tabs on the left and a rail on the right, the shape of
+ *  the admin's talent page (REB-1158), so the two pages that describe a person read alike.
  *
- *  `useMe()` answers member and admin alike (REB-279): a `users` row is no longer
- *  guaranteed to carry a freelancer card, so the card section renders only when
- *  `has_card` is true, and the company section only when `has_company` is true
- *  (REB-314); a person with neither sees their name, email and role instead of a
- *  wizard-shaped section reading from fields that are all `null`. A person can carry
- *  both, and both render together. The two perks render only for a freelancer or an
- *  admin (`value` truthy or `profile.role === 'admin'`), never for a company-only
- *  contact person: PigroCRM and the guide are pitched at a solo freelancer, and neither
- *  means anything to a company that came here to find people (REB-385, Lorenzo
- *  2026-09-23). A person who is both a freelancer and a company contact person still
- *  qualifies through the freelancer card, so both perks keep showing.
+ *  The tabs are only the ones this person has: «La tua scheda» (the card's answers, the CV
+ *  and GitHub) and «Profilo di lavoro» with a card, «Richieste» with a company request,
+ *  «Contratti» with a card, «Recapiti» for everyone. With one tab there is no bar. The page
+ *  opens on the tab that waits for the person: a document to sign, then an incomplete card,
+ *  then a work profile to send (none, rejected or expired); otherwise the first tab. A
+ *  return from GitHub (`?github=`) opens the card, where its notice is. That choice is made
+ *  once, after the contracts have answered, and then kept: a signature or a profile sent
+ *  while the page is open refetches the data, and the open tab must not move under the
+ *  person. Every panel stays mounted and only the active one shows, so a half-written
+ *  contact or a GitHub confirmation survives a look at another tab.
  *
- *  A card also gets the contracts section (REB-392), which reads its own route and renders
- *  nothing wizard-shaped.
+ *  The rail holds what rebase gives back, on every tab: the referral link (REB-610) and,
+ *  for a freelancer or an admin, the two perks (REB-385: never for a company-only contact,
+ *  for whom PigroCRM and the guide mean nothing). Under `lg` it follows the tabs.
  *
- *  A company sees every request it filed, newest first, each with its own edit button
- *  (REB-602), and a button to ask for a new role as the section's action.
- *
- *  One column at every viewport, one section per row (REB-641): the referral link, the
- *  feature to highlight (REB-610), opens the page; then the card, the requests, the role
- *  (a role row, only for a non-admin with neither a card nor a request), «I tuoi recapiti»
- *  (REB-944, for everyone: it is the person's own list, whatever they are here), the perks,
- *  and the contracts last. Under the name, the header holds one badge per role the person
- *  holds: freelancer (a card), company (a request), administrator (REB-601).
- *  It was two columns from `lg` between REB-602 and REB-641, the referral, the card and
- *  the contracts on the left and the rest on the right, and the two stacks never lined
- *  up: a reader scanned both to find one thing. The column is `max-w-3xl`: wider than
- *  the edit forms' `max-w-2xl`, because a request card's four cells and the referral
- *  input with its «Copia link» want the room, and narrower than the `max-w-6xl` the two
- *  columns had, which in one column put a ledger row's answer a screen away from its
- *  label.
+ *  `useMe()` answers member and admin alike (REB-279), so a person may hold none, one or
+ *  all of a card, a request and the admin role; the header names each with a badge
+ *  (REB-601), «Membro» when none applies. This replaces the one-column stack of REB-641,
+ *  which put up to nine sections in a 768 px column in the middle of a 1,270 px area.
  *
  *  The `denied` flag is set by `AdminGuard` when a signed-in non-admin is bounced off
  *  `/admin/*`: this is where they land, with a sentence saying why instead of a blank
- *  screen or a raw 403 (REB-279's own access rule). Logout lives in the signed-in
- *  shell's sidebar now, not here, so there is one button for it instead of two. */
+ *  screen or a raw 403 (REB-279's own access rule). */
 export function Area() {
   const me = useMe()
   const { denied, github: githubNotice } = useSearch({ strict: false }) as {
     denied?: boolean
     github?: string
   }
+  // The same query «Contratti» reads, so it is fetched once: the header needs to know
+  // whether something waits for a signature before that tab is opened.
+  const contracts = useQuery({
+    queryKey: keys.memberContracts,
+    queryFn: () => member.contracts(),
+    enabled: me.data?.has_card ?? false,
+  })
+  const [chosen, setChosen] = useState<TabName | null>(null)
   if (!me.data) return null
   const profile = me.data
   const value = profile.has_card ? toApplication(profile) : null
-  const fields = FREELANCER_FIELDS.filter((field) => field.id !== 'email' && field.id !== 'cv')
   const requests = profile.requests
   const showPerks = value !== null || profile.role === 'admin'
+  const work = profile.work_profile ?? null
+  const signable = contracts.data
+    ? [
+        contracts.data.framework,
+        contracts.data.occasional_framework,
+        ...contracts.data.previous_frameworks,
+        ...contracts.data.letters,
+      ]
+    : []
+  const toSign = signable.some((document) => !!document?.signing_url)
+  const hasCv = profile.cv_filename !== null && profile.cv_size !== null
+  const answer = (id: string) => (value && FREELANCER_FIELDS.find((field) => field.id === id)?.summary(value)) || '—'
+  const rate = profile.daily_rate ? `${formatMoney(profile.daily_rate)} al giorno` : null
 
-  const cardSection = value && (
-    <section aria-labelledby="me-card" className="space-y-3">
-      <h2 id="me-card" className="text-lg font-semibold tracking-tight">
+  const tabs: TabName[] = [
+    ...(value ? (['card', 'profile'] as const) : []),
+    ...(requests.length > 0 ? (['requests'] as const) : []),
+    ...(value ? (['contracts'] as const) : []),
+    'contacts',
+  ]
+  // The tab that waits for the person, decided once and stored as if they had chosen it.
+  // Setting state while rendering is React's own pattern for a value derived once.
+  const settled = !value || !contracts.isPending
+  if (chosen === null && settled) {
+    let waiting: TabName = tabs[0]!
+    if (value) {
+      if (githubNotice) waiting = 'card'
+      else if (toSign) waiting = 'contracts'
+      else if (!profile.complete) waiting = 'card'
+      else if (work === null || work.state === 'rejected' || work.expired) waiting = 'profile'
+    }
+    setChosen(waiting)
+  }
+  const tab: TabName = chosen !== null && tabs.includes(chosen) ? chosen : tabs[0]!
+
+  // What this person is: the singular forms of the admin sidebar's "Talenti", "Aziende" and
+  // "Amministratori", with "Freelance" as the member area calls a talent, and «Membro» for
+  // somebody who is none of them, so every header names something (REB-601).
+  const held = [
+    profile.has_card && 'Freelance',
+    profile.has_company && 'Azienda',
+    profile.role === 'admin' && ROLE_LABELS.admin,
+  ].filter((label): label is string => typeof label === 'string')
+  const roles = held.length > 0 ? held : [ROLE_LABELS[profile.role] ?? profile.role]
+
+  const facts = [
+    value && profile.job_title ? (
+      <span key="role" className="font-medium text-foreground">
+        {profile.job_title}
+      </span>
+    ) : null,
+    value && rate ? (
+      <span key="rate" className="tabular-nums">
+        {rate}
+      </span>
+    ) : null,
+    value && profile.remote ? <span key="mode">{REMOTE_LABELS[profile.remote]}</span> : null,
+    <span key="email">{profile.email}</span>,
+  ].filter((fact) => fact !== null)
+
+  const cardPanel = value && (
+    <section aria-labelledby="me-card" className="space-y-4">
+      <h2 id="me-card" className="sr-only">
         La tua scheda
       </h2>
       {!profile.complete && (
@@ -167,36 +268,42 @@ export function Area() {
           </Button>
         </div>
       )}
-      <dl className="divide-y border bg-card">
-        {fields.map((field) => (
-          <Row key={field.id} label={field.label}>
-            {field.summary(value) || '—'}
-          </Row>
-        ))}
-        <Row label="Il tuo CV">
-          {profile.cv_filename === null || profile.cv_size === null ? (
-            <span className="font-normal text-muted-foreground">Nessun CV</span>
-          ) : (
-            <a href={member.cvUrl} className="inline-flex items-center gap-1.5 underline-offset-2 hover:underline">
-              <Download className="size-4 shrink-0" aria-hidden="true" />
-              {profile.cv_filename}
-              <span className="font-normal text-muted-foreground">({formatBytes(profile.cv_size)})</span>
-            </a>
-          )}
-        </Row>
-      </dl>
-      <p className="text-sm text-muted-foreground">
-        {profile.cv_filename === null || profile.cv_size === null
-          ? 'La tua scheda anonima nasce dal CV: senza, non possiamo scriverla.'
-          : 'La tua scheda anonima nasce da questo CV. Se lo aggiorni, la riscriviamo da qui.'}
-      </p>
+      <div className="space-y-2">
+        <dl className="grid gap-(--line) border bg-border sm:grid-cols-2 xl:grid-cols-3">
+          <Cell label="Cosa fai">{answer('job_title')}</Cell>
+          <Cell label="Tariffa">{rate ?? '—'}</Cell>
+          <Cell label="Come preferisci lavorare">{answer('remote')}</Cell>
+          {/* The stored profile is always `https://www.linkedin.com/in/<name>`: the cell shows the part a person reads. */}
+          <Cell label="LinkedIn">{answer('linkedin_url').replace(/^https:\/\/www\./, '')}</Cell>
+          <Cell label="Altri link">{answer('links')}</Cell>
+          <Cell label="CV">
+            {hasCv ? (
+              // Text, not a flex row: in a third of the width a long file name wraps with its
+              // size after it, instead of splitting into columns.
+              <a href={member.cvUrl} className="underline-offset-2 [overflow-wrap:anywhere] hover:underline">
+                <Download className="mr-1.5 inline size-4 align-text-bottom" aria-hidden="true" />
+                {profile.cv_filename}{' '}
+                <span className="font-normal text-muted-foreground">({formatBytes(profile.cv_size!)})</span>
+              </a>
+            ) : (
+              <span className="font-normal text-muted-foreground">Nessun CV</span>
+            )}
+          </Cell>
+        </dl>
+        <p className="text-sm text-muted-foreground">
+          {hasCv
+            ? 'La tua scheda anonima nasce da questo CV. Se lo aggiorni, la riscriviamo da qui.'
+            : 'La tua scheda anonima nasce dal CV: senza, non possiamo scriverla.'}
+        </p>
+      </div>
+      <MemberGithub github={profile.github} notice={githubNotice ?? null} />
     </section>
   )
 
-  const requestsSection = requests.length > 0 && (
+  const requestsPanel = requests.length > 0 && (
     <section aria-labelledby="me-requests" className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="me-requests" className="text-lg font-semibold tracking-tight">
+      <div className="flex items-center justify-end">
+        <h2 id="me-requests" className="sr-only">
           {requests.length === 1 ? 'La tua richiesta' : 'Le tue richieste'}
         </h2>
         <Button asChild variant="outline" size="sm">
@@ -206,7 +313,7 @@ export function Area() {
           </Link>
         </Button>
       </div>
-      <ul className="space-y-3">
+      <ul className="grid gap-3 xl:grid-cols-2">
         {requests.map((request, index) => (
           <RequestCard key={request.id} request={request} position={index + 1} total={requests.length} />
         ))}
@@ -214,51 +321,59 @@ export function Area() {
     </section>
   )
 
-  // What this person is: the singular forms of the admin sidebar's "Talenti", "Aziende" and
-  // "Amministratori", with "Freelance" as the member area calls a talent. A member with none of them gets no line and
-  // keeps the "Ruolo" row below; an admin with nothing else is already named here, so
-  // that row would only say it twice (REB-601).
-  const roles = [
-    profile.has_card && 'Freelance',
-    profile.has_company && 'Azienda',
-    profile.role === 'admin' && ROLE_LABELS.admin,
-  ].filter((label): label is string => typeof label === 'string')
+  const panels: Record<TabName, ReactNode> = {
+    card: cardPanel,
+    profile: value && <MemberWorkProfile profile={work} vetted={profile.vetted} />,
+    requests: requestsPanel,
+    contracts: value && <MemberContracts />,
+    contacts: <MemberContacts />,
+  }
+  const labels: Record<TabName, ReactNode> = {
+    card: 'La tua scheda',
+    profile: 'Profilo di lavoro',
+    requests: (
+      <>
+        Richieste
+        <Badge variant="pill" className="ml-2 tabular-nums">
+          {requests.length}
+        </Badge>
+      </>
+    ),
+    contracts: (
+      <>
+        Contratti
+        {toSign && (
+          <Badge variant="pill" dot="gold" className="ml-2">
+            Da firmare
+          </Badge>
+        )}
+      </>
+    ),
+    contacts: 'Recapiti',
+  }
 
-  const roleSection = !value && requests.length === 0 && profile.role !== 'admin' && (
-    <section aria-label="Chi sei">
-      <dl className="divide-y border bg-card">
-        <Row label="Ruolo">{ROLE_LABELS[profile.role] ?? profile.role}</Row>
-      </dl>
-    </section>
-  )
-
-  const perksSection = showPerks && (
-    <section aria-label="I tuoi vantaggi" className="space-y-4">
-      <div className="flex flex-col gap-3 border-(length:--line-strong) border-foreground bg-card p-5">
-        <div className="space-y-2">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Per chi è dentro</p>
-          <h2 className="text-lg font-semibold">PigroCRM è tuo, gratis</h2>
-          <p className="text-sm text-muted-foreground">
-            Preventivo, contratto, fattura, ore: fatturare e farti pagare, con i dati fiscali già giusti.
-          </p>
-        </div>
-        <Button asChild className="self-start">
+  const perks = showPerks && (
+    <section aria-labelledby="me-perks" className="space-y-3 border bg-card p-4 text-sm">
+      <h2 id="me-perks" className="font-medium">
+        Per chi è dentro
+      </h2>
+      <Perk title="PigroCRM è tuo, gratis">
+        <p className="text-muted-foreground">
+          Preventivo, contratto, fattura, ore: fatturare e farti pagare, con i dati fiscali già giusti.
+        </p>
+        <Button asChild variant="outline" size="sm">
           <a href={PIGROCRM_URL} target="_blank" rel="noopener noreferrer">
             Apri PigroCRM
             <ArrowUpRight className="ml-2 size-4" />
           </a>
         </Button>
-      </div>
-      <div className="flex flex-col gap-3 border-(length:--line-strong) border-foreground bg-card p-5">
-        <div className="space-y-2">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Per chi è dentro</p>
-          <h2 className="text-lg font-semibold">I primi passi da freelance</h2>
-          <p className="text-sm text-muted-foreground">
-            La parte che nessuno ti spiega prima della prima fattura: come dirti in una frase,
-            come arrivare a un numero e difenderlo, cosa scrivere prima di iniziare. Venti minuti.
-          </p>
-        </div>
-        <Button asChild className="self-start">
+      </Perk>
+      <Perk title="I primi passi da freelance">
+        <p className="text-muted-foreground">
+          La parte che nessuno ti spiega prima della prima fattura: come dirti in una frase, come arrivare a un
+          numero e difenderlo, cosa scrivere prima di iniziare. Venti minuti.
+        </p>
+        <Button asChild variant="outline" size="sm">
           <a href={member.guideUrl} onClick={() => capture('guide_downloaded')}>
             <Download className="mr-2 size-4" />
             Scarica la guida
@@ -267,59 +382,80 @@ export function Area() {
         <p className="text-xs text-muted-foreground">
           PDF, {GUIDE.pages} pagine, {GUIDE.kilobytes} KB.
         </p>
-      </div>
+      </Perk>
     </section>
   )
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 p-6">
+    <>
       {denied && (
-        <p role="status" className="border-(length:--line-strong) border-accent bg-card p-4 text-sm">
+        <p role="status" className="mx-6 mt-6 border-(length:--line-strong) border-accent bg-card p-4 text-sm">
           Quella sezione è riservata a chi amministra l’hub: eccoti nella tua area.
         </p>
       )}
-
-      <header className="flex flex-wrap items-start justify-between gap-4">
+      <header className="space-y-3 border-b px-6 py-5">
         <div>
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">La tua area</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            {profile.first_name} {profile.last_name}
-          </h1>
-          {roles.length > 0 && (
-            <div role="group" aria-label="Ruoli" className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {profile.first_name} {profile.last_name}
+            </h1>
+            <div role="group" aria-label="Ruoli" className="flex flex-wrap gap-2">
               {roles.map((label) => (
                 <Badge key={label} variant="pill">
                   {label}
                 </Badge>
               ))}
             </div>
-          )}
-          <p className="mt-1 text-sm text-muted-foreground">
-            Ti scriviamo a <span className="font-medium text-foreground">{profile.email}</span>.
-            {profile.has_card && ' Per cambiare indirizzo, rifai la candidatura con quello nuovo.'}
-          </p>
+            {value && work && <ProfilePill profile={work} />}
+          </div>
         </div>
-        {profile.has_card && (
-          <Button asChild variant="outline" size="sm">
-            <Link to="/me/edit">
-              <Pencil className="mr-2 size-4" />
-              Modifica
-            </Link>
-          </Button>
+        <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">{facts}</p>
+        {value && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link to="/me/edit">
+                <Pencil className="mr-2 size-4" />
+                Modifica scheda
+              </Link>
+            </Button>
+            {hasCv && (
+              <Button asChild variant="outline" size="sm">
+                <a href={member.cvUrl}>
+                  <Download className="mr-2 size-4" />
+                  CV · {formatBytes(profile.cv_size!)}
+                </a>
+              </Button>
+            )}
+          </div>
         )}
       </header>
-
-      <div className="space-y-8">
-        <MemberReferral />
-        {cardSection}
-        {profile.has_card && <MemberWorkProfile profile={profile.work_profile} vetted={profile.vetted} />}
-        {profile.has_card && <MemberGithub github={profile.github} notice={githubNotice ?? null} />}
-        {requestsSection}
-        {roleSection}
-        <MemberContacts />
-        {perksSection}
-        {value && <MemberContracts />}
+      <div className="grid items-start gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        {!settled ? (
+          <LoadingState className="min-w-0" />
+        ) : tabs.length === 1 ? (
+          <div className="min-w-0">{panels[tab]}</div>
+        ) : (
+          <Tabs value={tab} onValueChange={(next) => setChosen(next as TabName)} className="min-w-0">
+            <TabBar active={tab}>
+              {tabs.map((name) => (
+                <TabsTrigger key={name} value={name} className="whitespace-nowrap">
+                  {labels[name]}
+                </TabsTrigger>
+              ))}
+            </TabBar>
+            {tabs.map((name) => (
+              <TabsContent key={name} value={name} forceMount className="pt-4 data-[state=inactive]:hidden">
+                {panels[name]}
+              </TabsContent>
+            ))}
+          </Tabs>
+        )}
+        <aside aria-label="Segnalazioni e vantaggi" className="min-w-0 space-y-4">
+          <MemberReferral />
+          {perks}
+        </aside>
       </div>
-    </div>
+    </>
   )
 }
