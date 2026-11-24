@@ -512,6 +512,10 @@ class FreelancerService:
         if changes.get("linkedin_url") is not None:
             UserService(self.session).require_free_linkedin(user.id, changes["linkedin_url"])
         reject_cleared_columns(ENTITY, Freelancer, row_changes)
+        # The type only documents the states; a revert of an entry written before REB-1164
+        # replays `contacted` or `active`, which the check constraint would answer as a 500.
+        if "status" in row_changes and row_changes["status"] not in FREELANCER_STATES:
+            raise ValidationFailed(ENTITY, "status", f"uno fra {', '.join(FREELANCER_STATES)}")
         before = {
             **{field: getattr(user, field) for field in identity_changes},
             **{field: getattr(row, field) for field in row_changes},

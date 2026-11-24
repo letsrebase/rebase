@@ -50,22 +50,35 @@ def _card(connection: Any, status: str) -> Any:
     return card_id, user_id
 
 
-def _campaign(connection: Any, user_id: Any, filters: str) -> Any:
+def _campaign(connection: Any, user_id: Any, filters: str, status: str = "draft") -> Any:
     campaign_id = uuid4()
     connection.execute(
         text(
             "INSERT INTO campaigns (id, created_by, name, slug, source, filters, subject, text, "
-            "button_text, button_meta, action, status, content_at) "
-            "VALUES (:id, :u, 'n', :slug, 'filters', CAST(:f AS jsonb), 's', 't', 'b', "
-            "'area', 'signed_in', 'draft', now())"
+            "button_text, button_meta, action, status, content_at, scheduled_for) "
+            "VALUES (:id, :u, :slug, :slug, 'filters', CAST(:f AS jsonb), 's', 't', 'b', "
+            "'area', 'signed_in', :status, now(), now())"
         ),
-        {"id": campaign_id, "u": user_id, "slug": str(campaign_id), "f": filters},
+        {"id": campaign_id, "u": user_id, "slug": str(campaign_id), "f": filters, "status": status},
     )
     return campaign_id
 
 
-def test_revision_follows_the_unknown_practices_count() -> None:
-    assert _parent(Config(str(INI_PATH))) == "0060"
+def test_a_campaign_about_to_send_to_a_removed_state_stops_the_upgrade(hub_postgres: Any) -> None:
+    """Its audience is rebuilt at send time: folded to `new`, it would mail every card in play."""
+    with hub_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _config(url)
+        command.upgrade(config, _parent(config))
+        engine = create_engine(url, future=True)
+        with engine.begin() as c:
+            _, owner = _card(c, "contacted")
+            scheduled = _campaign(c, owner, '{"list": "talents", "status": "active"}', "scheduled")
+        with pytest.raises(RuntimeError, match=str(scheduled)):
+            command.upgrade(config, REVISION)
+        with engine.connect() as c:
+            assert c.execute(text("SELECT status FROM freelancers")).scalar() == "contacted"
+        engine.dispose()
 
 
 def test_old_states_fold_into_new_and_stored_filters_follow(hub_postgres: Any) -> None:

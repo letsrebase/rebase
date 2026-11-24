@@ -166,14 +166,7 @@ export function AdminTeamProposals() {
 
   return (
     <>
-      <Header
-        title="Proposte"
-        back={
-          <BackLink to="/admin/team" activeOptions={{ exact: true }}>
-            Tutte le richieste
-          </BackLink>
-        }
-      >
+      <Header title="Proposte" back={<BackLink to="/admin/team">Tutte le richieste</BackLink>}>
         <OutcomeFilter value={search.outcome} onChange={setOutcome} />
       </Header>
       {list.isError ? (

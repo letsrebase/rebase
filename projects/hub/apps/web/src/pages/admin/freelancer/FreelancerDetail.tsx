@@ -221,10 +221,24 @@ export function AdminFreelancerDetail() {
                     {clearCv.isPending ? 'Rimuovo…' : 'Rimuovi CV'}
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem disabled={move.isPending} onSelect={() => move.mutate(discarded ? 'new' : 'discarded')}>
+                {/* Each action clears the other's refusal, so the alert names the last one tried. */}
+                <DropdownMenuItem
+                  disabled={move.isPending}
+                  onSelect={() => {
+                    del.reset()
+                    move.mutate(discarded ? 'new' : 'discarded')
+                  }}
+                >
                   {move.isPending ? 'Salvo…' : discarded ? 'Riprendi' : 'Scarta'}
                 </DropdownMenuItem>
-                <DropdownMenuItem variant="destructive" disabled={del.isPending} onSelect={() => del.mutate()}>
+                <DropdownMenuItem
+                  variant="destructive"
+                  disabled={del.isPending}
+                  onSelect={() => {
+                    move.reset()
+                    del.mutate()
+                  }}
+                >
                   {del.isPending ? 'Elimino…' : 'Elimina'}
                 </DropdownMenuItem>
               </DropdownMenuContent>
