@@ -246,6 +246,10 @@ LEFT_IN_PLACE: dict[str, str] = {
         "a sign-in lives minutes: the absorbed person's are deleted by the merge "
         "(`work_profiles.merge`)"
     ),
+    "github_accounts.freelancer_id": (
+        "the absorbed card's verified GitHub account is deleted by the merge, like its sources; "
+        "the survivor keeps its own (`github_link.drop_absorbed_account`)"
+    ),
 }
 
 

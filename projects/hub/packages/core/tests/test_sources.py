@@ -22,9 +22,10 @@ from sources_fixtures import (
     _person,
     _rows,
     _service,
+    link_github,
     snapshot_of,
 )
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
 import rebase_core.sources as sources_module
@@ -143,14 +144,40 @@ def test_removed_link_row_deleted_at_next_refetch(clean_hub: Session) -> None:
     assert row is not None
     row.links = ["https://b.example/"]
     clean_hub.commit()
-    # Until the refetch the text is still stored, then it is gone, github's with it.
+    # Until the refetch the text is still stored, then the removed links' is gone. GitHub's
+    # stays: it is the account the person linked and proved (REB-1166), not one of the links.
     assert len(_rows(clean_hub, person)) == 3
     result = service.refetch(person)
 
     assert [(r.kind, r.ref, r.position) for r in _rows(clean_hub, person)] == [
-        ("link", "https://b.example/", 1)
+        ("github", "ada", 1),
+        ("link", "https://b.example/", 1),
     ]
-    assert set(result.hashes()) == {"link:1"}
+    assert set(result.hashes()) == {"github", "link:1"}
+
+
+def test_github_is_read_from_the_linked_account_never_from_a_link(clean_hub: Session) -> None:
+    """Anybody can paste somebody else's GitHub profile among their links: the card reads the
+    account the person proved is theirs, and nothing when they linked none (REB-1166)."""
+    unlinked = _person(clean_hub, ["https://ada.example/"])
+    clean_hub.execute(
+        update(Freelancer)
+        .where(Freelancer.id == unlinked)
+        .values(links=["https://github.com/torvalds"])
+    )
+    clean_hub.commit()
+    linked = _person(clean_hub, ["https://ada.example/"], email="grace@studio.it")
+    link_github(clean_hub, linked, "grace-h")
+    service = _service(clean_hub)
+
+    service.refetch(unlinked)
+    service.refetch(linked)
+
+    assert [(r.kind, r.ref) for r in _rows(clean_hub, unlinked)] == []
+    assert [(r.kind, r.ref) for r in _rows(clean_hub, linked)] == [
+        ("github", "grace-h"),
+        ("link", "https://ada.example/"),
+    ]
 
 
 def test_linkedin_link_never_stored_even_if_in_links(clean_hub: Session) -> None:

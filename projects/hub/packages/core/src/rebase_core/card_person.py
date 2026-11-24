@@ -149,13 +149,15 @@ def known_identifiers(
     the hub's engagements were for. The employers the model reports are added by the
     caller for the one call."""
     repos: list[str] = []
+    verified: str | None = None
     for item in sources.readable():
         if item.kind == "github":
             repos.extend(owned_repo_names(item.text))
+            verified = item.ref  # the account the person linked (REB-1166)
     return KnownIdentifiers(
         last_name=last_name,
         first_name=first_name,
-        github_login=github_login_of(links),
+        github_login=verified or github_login_of(links),
         repo_names=repos,
         hostnames=link_hostnames(links),
         employers=list(facts.clients),

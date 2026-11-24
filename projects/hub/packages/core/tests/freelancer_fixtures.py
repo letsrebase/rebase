@@ -29,8 +29,8 @@ from rebase_core.llm import (
     RecordingCall,
     _parameters,
 )
-from rebase_core.models import FreelancerCard, User, UserContactPoint
-from rebase_core.sources import SourceService
+from rebase_core.models import FreelancerCard, GithubAccount, User, UserContactPoint
+from rebase_core.sources import SourceService, github_login_of
 from rebase_core.team_schemas import Card
 
 CV = text_pdf("Ada Lovelace, backend developer a Torino da nove anni: Python, FastAPI, AWS.")
@@ -95,7 +95,22 @@ def apply_freelancer(
     if phone is not None:
         user_id = session.scalar(select(User.id).where(User.email == email))
         give_phone(session, user_id, phone)
+    if (login := github_login_of(links or [])) is not None:
+        link_github(session, read.id, login)
     return read.id
+
+
+def link_github(session: Session, freelancer_id: UUID, login: str) -> None:
+    """The account linked as if the person had proved it in the member area (REB-1166). The
+    card and source tests name the account by a link, as people did before: what they test is
+    reading and storing it, not where the account comes from (`test_github_link.py` does
+    that). The id is per card, so two people of a test may name one login as before."""
+    seed = f"{freelancer_id}:{login}".encode()
+    github_id = int.from_bytes(hashlib.sha256(seed).digest()[:6], "big")
+    session.add(
+        GithubAccount(freelancer_id=freelancer_id, github_id=github_id, login=login, scope="public")
+    )
+    session.commit()
 
 
 def give_phone(session: Session, user_id: UUID | None, phone: str) -> None:

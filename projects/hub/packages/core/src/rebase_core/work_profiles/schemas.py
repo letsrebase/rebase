@@ -13,7 +13,12 @@ from uuid import UUID
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
 from rebase_core.schema_common import ResponseModel, clean_multiline
-from rebase_core.vocabulary import WorkProfileState
+from rebase_core.vocabulary import (
+    ArtifactOutcome,
+    GithubScope,
+    GithubTechStatus,
+    WorkProfileState,
+)
 from rebase_core.work_profiles.view import (
     WorkProfileLanguage,
     WorkProfileView,
@@ -149,6 +154,51 @@ class WorkProfileGuardHit(ResponseModel):
     rule: str
 
 
+class WorkProfileGithub(ResponseModel):
+    """The GitHub account the person linked from their area (REB-1166): the login at the time
+    of the link, the scope they chose and when."""
+
+    login: str
+    scope: GithubScope
+    linked_at: datetime
+
+
+class WorkProfileCrossCheckMonth(ResponseModel):
+    """A month the profile claims, inside the 24 the snapshot read: what GitHub dated in it
+    (`server_dated`: pull requests, reviews and issues) and the commits, which their author
+    dated."""
+
+    month: str
+    server_dated: int
+    commits: int
+
+
+class WorkProfileCrossCheckTechnology(ResponseModel):
+    name: str
+    status: GithubTechStatus
+
+
+class WorkProfileCrossCheckArtifact(ResponseModel):
+    project: str
+    outcome: ArtifactOutcome
+
+
+class WorkProfileCrossCheck(ResponseModel):
+    """The profile beside the person's verified GitHub account (REB-1169): counts and matches
+    for the admin, no score, read by no decision. Everything empty and `github` null when no
+    account is linked. `months_outside` counts claimed months before the snapshot's 24."""
+
+    github: WorkProfileGithub | None
+    months: list[WorkProfileCrossCheckMonth]
+    months_outside: int
+    with_server_activity: int
+    with_commits_only: int
+    without_activity: int
+    technologies: list[WorkProfileCrossCheckTechnology]
+    artifacts: list[WorkProfileCrossCheckArtifact]
+    artifacts_checked_at: datetime | None
+
+
 class WorkProfileAdminRead(ResponseModel):
     """What the admin's «Profilo di lavoro» section reads: the review state, the dates, the
     tool version, the hub's recheck (`groundedness`, `unsupported_anchors`) and the profile
@@ -172,3 +222,5 @@ class WorkProfileAdminRead(ResponseModel):
     unknown_practices: int
     guard_hits: list[WorkProfileGuardHit]
     profile: WorkProfileView
+    # The profile beside the person's verified GitHub account (REB-1169).
+    cross_check: WorkProfileCrossCheck

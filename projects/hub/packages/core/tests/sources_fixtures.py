@@ -9,7 +9,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from fakes_cards import text_pdf
-from freelancer_fixtures import enable_sources
+from freelancer_fixtures import enable_sources, link_github
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -19,6 +19,7 @@ from rebase_core.github_source import GithubSnapshot, GithubSource, Repo
 from rebase_core.models import FreelancerSource
 from rebase_core.sources import (
     SourceService,
+    github_login_of,
 )
 from rebase_core.web_fetch import FetchResult, SafeFetcher
 
@@ -83,6 +84,9 @@ def _person(
         if cv
         else service.apply(data)
     )
+    login = github_login_of(links)
+    if login is not None:
+        link_github(session, read.id, login)
     return read.id
 
 

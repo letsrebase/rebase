@@ -34,6 +34,7 @@ from rebase_core.errors import (
 )
 from rebase_core.freelancers import ENTITY as FREELANCER
 from rebase_core.freelancers import FreelancerService
+from rebase_core.github_link import cross_check
 from rebase_core.mail import Mail
 from rebase_core.mail_member import work_profile_approved_mail, work_profile_rejected_mail
 from rebase_core.members import MemberService
@@ -41,6 +42,7 @@ from rebase_core.models import (
     TOOL_VERSION_MAX_LENGTH,
     CliAuthorization,
     Freelancer,
+    GithubAccount,
     User,
     WorkProfile,
 )
@@ -161,7 +163,9 @@ class WorkProfileService:
 
     def submit(
         self, raw_token: str | None, body: bytes, tool_version: str | None = None
-    ) -> WorkProfileAccepted:
+    ) -> tuple[WorkProfileAccepted, UUID]:
+        """The stored profile's answer, and the card it hangs on: the caller checks its
+        artifacts against the linked GitHub account after the response (REB-1168)."""
         auth = self.live_token(raw_token, lock=True)  # 1. the token
         try:
             payload, score = self._checked(body)  # 2 to 5
@@ -209,11 +213,15 @@ class WorkProfileService:
         row.decided_at = None
         row.decided_by = None
         row.decision_note = None
+        # Checked against the linked account after the commit, by the caller (REB-1168).
+        row.artifact_checks = []
+        row.artifacts_checked_at = None
         self._mark_spent(auth)
         self.session.commit()
-        return WorkProfileAccepted(
+        accepted = WorkProfileAccepted(
             state="draft", review_url=f"{self.settings.hub_url.rstrip('/')}/me"
         )
+        return accepted, card.id
 
     def _checked(self, body: bytes) -> tuple[dict[str, Any], Groundedness]:
         if len(body) > MAX_BYTES:
@@ -319,6 +327,12 @@ class WorkProfileService:
                 for h in row.guard_hits
             ],
             profile=render_profile(row.payload),
+            cross_check=cross_check(
+                self.session.scalar(
+                    select(GithubAccount).where(GithubAccount.freelancer_id == freelancer_id)
+                ),
+                row,
+            ),
         )
 
     def decision_mail(self, freelancer_id: UUID) -> Mail | None:

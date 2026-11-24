@@ -47,6 +47,7 @@ from rebase_core.audit import utcnow
 from rebase_core.contact_points import ContactPointService
 from rebase_core.door_schemas import CrmMergeCheck
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
+from rebase_core.github_link import drop_absorbed_account
 from rebase_core.merge_relations import (
     USER,
     Context,
@@ -156,6 +157,8 @@ class PersonMergeService:
         delete_sources(self.session, absorbed.id)
         # One work profile per card: the newer submission stays, on the survivor (spec § 8).
         keep_newest_work_profile(self.session, survivor.id, absorbed.id)
+        # The absorbed card's verified GitHub account goes, like its sources (REB-1166).
+        drop_absorbed_account(self.session, survivor.id, absorbed.id)
         drop_cli_authorizations(self.session, a_user.id)
         self.session.flush()
         flagged = self.steps.needs_card(survivor)

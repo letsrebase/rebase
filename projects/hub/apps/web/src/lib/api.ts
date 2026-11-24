@@ -609,6 +609,14 @@ export const admin = {
         body: { note, submitted_at: submittedAt },
       }),
     ),
+  /** «Ricontrolla su GitHub»: the pull requests the profile names read again, answering the
+   *  profile with the fresh outcomes. */
+  recheckWorkProfile: (id: string) =>
+    unwrap(
+      client.POST('/api/hub/freelancers/{freelancer_id}/work-profile/cross-check', {
+        params: { path: { freelancer_id: id } },
+      }),
+    ),
   /** The anonymous card Claude wrote from the CV (REB-510), with the last failure. */
   freelancerCard: (id: string) =>
     unwrap(
@@ -1043,6 +1051,10 @@ export const member = {
     const query = new URLSearchParams(extra).toString()
     return `/api/hub/auth/oauth/${provider}/start${query ? `?${query}` : ''}`
   },
+  /** «Collega GitHub» (REB-1166): a full-page navigation, like the sign-in; the server comes back
+   *  to `/hub/me?github=<reason>`. */
+  githubLinkUrl: (scope: 'public' | 'private') =>
+    `/api/hub/auth/oauth/github/link?${new URLSearchParams({ scope }).toString()}`,
   /** The address a provider vouched for that no account uses; 404 when this browser holds none. */
   noAccount: () => unwrap(client.GET('/api/hub/auth/oauth/no-account'), reading<MissedAccount>()),
   me: () => unwrap(client.GET('/api/hub/me'), reading<Me>()),
@@ -1082,6 +1094,8 @@ export const member = {
   /** «Elimina il profilo» (REB-1127): the person's work profile, deleted at once whatever its
    *  state; answers the person's read without it. The verified flag stays. */
   deleteWorkProfile: () => unwrap(client.DELETE('/api/hub/me/work-profile'), reading<Me>()),
+  /** «Scollega» (REB-1166): the linked GitHub account and what was read from it, gone at once. */
+  unlinkGithub: () => unwrap(client.DELETE('/api/hub/me/github'), reading<Me>()),
   logout: () => unwrap(client.POST('/api/hub/me/logout')),
 }
 

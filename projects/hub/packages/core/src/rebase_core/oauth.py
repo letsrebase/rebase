@@ -35,7 +35,7 @@ from urllib.parse import urlencode, urlsplit
 
 from rebase_core.config import Settings
 from rebase_core.http import HttpCall
-from rebase_core.models import ORIGIN_MAX_LENGTH, UTM_MAX_LENGTH
+from rebase_core.models import GITHUB_SCOPES, ORIGIN_MAX_LENGTH, UTM_MAX_LENGTH
 from rebase_core.schema_common import ResponseModel
 from rebase_core.signup_schemas import SignupUtm
 
@@ -46,6 +46,8 @@ CALLBACK_PATH = "/api/hub/auth/oauth/{provider}/callback"
 # How long the cookie that carries `state` and the PKCE verifier lives: long enough for a
 # person to pick an account and type a password, short enough that a forgotten tab is dead.
 ATTEMPT_MINUTES = 10
+# What a person may choose to share when linking their GitHub account (`GITHUB_SCOPES`).
+LINK_SCOPES = GITHUB_SCOPES
 
 GITHUB_AUTHORIZE = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN = "https://github.com/login/oauth/access_token"
@@ -73,13 +75,21 @@ class OAuthUnavailable(Exception):
 
 @dataclass(frozen=True)
 class Attempt:
-    """What the browser holds between the redirect to the provider and its callback."""
+    """What the browser holds between the redirect to the provider and its callback.
+
+    `purpose` is `signin`, or `link` when a signed-in freelancer links their GitHub account from
+    the member area (REB-1166): then `user_id` is who started it, which the callback compares
+    with whoever its session cookie names, and `scope` what the person chose to share
+    (`public` or `private`)."""
 
     provider: str
     state: str
     verifier: str
     next_path: str | None
     utm: SignupUtm
+    purpose: str = "signin"
+    user_id: str | None = None
+    scope: str | None = None
 
 
 @dataclass(frozen=True)
@@ -160,6 +170,8 @@ def seal_attempt(attempt: Attempt) -> str:
         "n": attempt.next_path,
         "u": attempt.utm.model_dump(exclude_none=True),
     }
+    if attempt.purpose == "link":
+        body |= {"k": "link", "i": attempt.user_id, "c": attempt.scope}
     return _b64(json.dumps(body, separators=(",", ":")).encode())
 
 
@@ -174,6 +186,11 @@ def open_attempt(value: str | None) -> Attempt | None:
             return None
         next_path = safe_next(body.get("n"))
         utm = SignupUtm(**{k: v for k, v in body.get("u", {}).items() if isinstance(v, str)})
+        if body.get("k") == "link":
+            user_id, scope = body["i"], body["c"]
+            if provider != "github" or not isinstance(user_id, str) or scope not in LINK_SCOPES:
+                return None
+            return Attempt(provider, state, verifier, None, utm, "link", user_id, scope)
     except (ValueError, KeyError, TypeError, AttributeError):
         return None
     return Attempt(provider, state, verifier, next_path, utm)
@@ -238,16 +255,7 @@ class OAuthService:
 
     def begin(self, provider: str, next_path: str | None, utm: SignupUtm) -> Begun:
         client_id, _ = self._pair(provider)
-        state = secrets.token_urlsafe(32)
-        verifier = secrets.token_urlsafe(48)
-        challenge = _b64(hashlib.sha256(verifier.encode()).digest())
-        query = {
-            "client_id": client_id,
-            "redirect_uri": self.redirect_uri(provider),
-            "state": state,
-            "code_challenge": challenge,
-            "code_challenge_method": "S256",
-        }
+        state, verifier, query = self._pkce(provider, client_id)
         if provider == "github":
             # `allow_signup=false`: a person with no GitHub account is not offered one here.
             github = {**query, "scope": "user:email", "allow_signup": "false"}
@@ -266,6 +274,33 @@ class OAuthService:
                 )
             )
         return Begun(url, Attempt(provider, state, verifier, next_path, utm))
+
+    def begin_link(self, user_id: str, scope: str) -> Begun:
+        """The way to GitHub for linking the account (REB-1166). `private` asks for `read:user`,
+        which adds private contributions to the counts; `public` asks for nothing, and GitHub
+        then grants what the person already granted this app before, so a public snapshot is
+        never read with the person's token (`github_link.GithubReader.snapshot`)."""
+        client_id, _ = self._pair("github")
+        state, verifier, query = self._pkce("github", client_id)
+        github = {**query, "allow_signup": "false"}
+        if scope == "private":
+            github["scope"] = "read:user"
+        url = GITHUB_AUTHORIZE + "?" + urlencode(github)
+        attempt = Attempt("github", state, verifier, None, SignupUtm(), "link", user_id, scope)
+        return Begun(url, attempt)
+
+    def _pkce(self, provider: str, client_id: str) -> tuple[str, str, dict[str, str]]:
+        state = secrets.token_urlsafe(32)
+        verifier = secrets.token_urlsafe(48)
+        challenge = _b64(hashlib.sha256(verifier.encode()).digest())
+        query = {
+            "client_id": client_id,
+            "redirect_uri": self.redirect_uri(provider),
+            "state": state,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+        }
+        return state, verifier, query
 
     # ---- the way back -----------------------------------------------------------------
 
@@ -291,7 +326,15 @@ class OAuthService:
         except ValueError as exc:
             raise OAuthUnavailable(step) from exc
 
+    def link_token(self, attempt: Attempt, code: str) -> tuple[str, frozenset[str]]:
+        """The token of a link and the scopes GitHub granted it (the person may have removed
+        one on GitHub's page). Used for the link's reads and dropped by the caller."""
+        return self._exchange_with_scopes(attempt, code)
+
     def _exchange(self, attempt: Attempt, code: str) -> str:
+        return self._exchange_with_scopes(attempt, code)[0]
+
+    def _exchange_with_scopes(self, attempt: Attempt, code: str) -> tuple[str, frozenset[str]]:
         client_id, secret = self._pair(attempt.provider)
         form = urlencode(
             {
@@ -316,7 +359,13 @@ class OAuthService:
         if not isinstance(token, str) or not token:
             logger.warning("oauth token answer carried no access token")
             raise OAuthUnavailable("token")
-        return token
+        granted = answer.get("scope")
+        scopes = frozenset(
+            part.strip()
+            for part in (granted.replace(" ", ",").split(",") if isinstance(granted, str) else [])
+            if part.strip()
+        )
+        return token, scopes
 
     def _github_addresses(self, token: str) -> list[str]:
         rows = self._call(

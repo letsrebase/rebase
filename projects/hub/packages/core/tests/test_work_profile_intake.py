@@ -23,7 +23,8 @@ def _body(profile: dict[str, Any]) -> bytes:
 
 def _submit(session: Session, clock: Clock, token: str, profile: dict[str, Any] | bytes) -> Any:
     body = profile if isinstance(profile, bytes) else _body(profile)
-    return WorkProfileService(session, settings(), clock).submit(token, body)
+    accepted, _card = WorkProfileService(session, settings(), clock).submit(token, body)
+    return accepted
 
 
 def test_a_good_profile_is_stored_as_a_draft_without_contact_and_spends_the_token(

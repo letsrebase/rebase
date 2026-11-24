@@ -1,20 +1,25 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { CircleAlert, Lock } from 'lucide-react'
 import { useId, useState, type ReactNode } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { PracticeTable } from '@/components/Practices'
 import { TalentCloudCard } from '@/components/TalentCloudCard'
 import { UsageBadges } from '@/components/TechUsage'
 import { WebLink } from '@/components/WebLink'
 import { useFreelancerCard } from '@/hooks/use-freelancer-card'
-import { type Freelancer, type WorkProfileAdmin } from '@/lib/api'
+import { admin, type Freelancer, type WorkProfileAdmin } from '@/lib/api'
 import { cloudTalent } from '@/lib/cloudProfile'
+import { formatDate } from '@/lib/format'
+import { keys } from '@/lib/query-keys'
 import { LoadingState } from '../list-kit'
 import { AnonymityResult } from './ProfileDecision'
 
 type Anchor = WorkProfileAdmin['unsupported_anchors'][number]
 type Profile = WorkProfileAdmin['profile']
+type CrossCheck = WorkProfileAdmin['cross_check']
 type Anchors = Map<string, Anchor[]>
 
 /** The sentence a person sends a profile with, so the empty state says how to get one. */
@@ -410,6 +415,132 @@ function Notices({ profile, orphans }: { profile: WorkProfileAdmin; orphans: Anc
   )
 }
 
+const TECH_LABELS: Record<CrossCheck['technologies'][number]['status'], string> = {
+  seen: 'nei repository pubblici',
+  not_seen: 'non nei repository pubblici',
+  not_visible: 'GitHub non lo mostra',
+}
+
+const ARTIFACT_LABELS: Record<CrossCheck['artifacts'][number]['outcome'], string> = {
+  merged_by_other: 'Sua, unita da altri in un repository non suo',
+  merged: 'Sua, unita',
+  unmerged: 'Sua, non unita',
+  commit: 'Commit suo',
+  other_author: 'Di un’altra persona',
+  not_found: 'Non trovata: rimossa o privata',
+  not_checkable: 'Non è una pull request o un commit GitHub',
+  unavailable: 'GitHub non ha risposto',
+}
+
+/**
+ * «Riscontri esterni» (REB-1167..1169): what GitHub recorded, beside what the profile claims.
+ * Informative only: no score, no scale, nothing sorts or filters on it.
+ */
+function CrossCheckBlock({ freelancerId, profile }: { freelancerId: string; profile: WorkProfileAdmin }) {
+  const client = useQueryClient()
+  const check = profile.cross_check
+  const recheck = useMutation({
+    mutationFn: () => admin.recheckWorkProfile(freelancerId),
+    onSuccess: (read) => client.setQueryData(keys.workProfile(freelancerId), read),
+  })
+  // By position, as the projects are listed above: a project's domain is a sentence, too long for a row.
+  const projectName = (id: string) => {
+    const index = profile.profile.projects.findIndex((project) => project.id === id)
+    return index >= 0 ? `Progetto ${index + 1}` : id
+  }
+  const github = check.github
+  return (
+    <Block title="Riscontri esterni">
+      {github === null ? (
+        <p className="text-muted-foreground">La persona non ha collegato GitHub.</p>
+      ) : (
+        <>
+          <p>
+            GitHub <span className="font-medium">{github.login}</span>, collegato il {formatDate(github.linked_at)}
+            {' · '}
+            {github.scope === 'private' ? 'anche i conteggi privati' : 'solo attività pubblica'}
+          </p>
+          <div className="space-y-1">
+            <p>Mesi dichiarati nel profilo negli ultimi 24 mesi: {check.months.length}</p>
+            <ul className="space-y-0.5 text-muted-foreground tabular-nums">
+              <li>con attività datata da GitHub (pull request, revisioni, issue): {check.with_server_activity}</li>
+              <li>solo commit, datati da chi li scrive: {check.with_commits_only}</li>
+              <li>senza attività: {check.without_activity}</li>
+              {check.months_outside > 0 && <li>e {check.months_outside} prima del periodo letto</li>}
+            </ul>
+          </div>
+          {check.months.length > 0 && (
+            <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
+              <Table scrollLabel="Mesi dichiarati e attività su GitHub">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Mese</TableHead>
+                    <TableHead className="text-right">Datate da GitHub</TableHead>
+                    <TableHead className="text-right">Commit</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {check.months.map((row) => (
+                    <TableRow key={row.month}>
+                      <TableCell>{row.month}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.server_dated}</TableCell>
+                      <TableCell className="text-right tabular-nums">{row.commits}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          {check.technologies.length > 0 && (
+            <div className="space-y-1">
+              <h3 className="font-medium">Tecnologie</h3>
+              <ul className="space-y-0.5">
+                {check.technologies.map((tech) => (
+                  <li key={tech.name}>
+                    <span className="font-medium">{tech.name}</span>
+                    <span className="text-muted-foreground">: {TECH_LABELS[tech.status]}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {check.artifacts.length > 0 && (
+            <div className="space-y-1">
+              <h3 className="font-medium">Pull request e commit indicati</h3>
+              <ul className="space-y-0.5">
+                {check.artifacts.map((artifact) => (
+                  <li key={artifact.project}>
+                    <span className="font-medium">{projectName(artifact.project)}</span>
+                    <span className="text-muted-foreground">: {ARTIFACT_LABELS[artifact.outcome]}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-3">
+            {check.artifacts_checked_at && (
+              <p className="text-muted-foreground">Controllate il {formatDate(check.artifacts_checked_at)}</p>
+            )}
+            <Button type="button" variant="outline" size="sm" disabled={recheck.isPending} onClick={() => recheck.mutate()}>
+              {recheck.isPending ? 'Ricontrollo…' : 'Ricontrolla su GitHub'}
+            </Button>
+          </div>
+          {recheck.isError && (
+            <p role="alert" className="text-destructive">
+              Non siamo riusciti a ricontrollare. Riprova.
+            </p>
+          )}
+        </>
+      )}
+      <p className="text-xs text-muted-foreground">
+        Sono riscontri, non un giudizio: nessun riscontro non vuol dire falso. GitHub non vede il lavoro su altre
+        piattaforme, quello fatto con l’indirizzo di un cliente, né i repository privati che la persona non ha
+        condiviso.
+      </p>
+    </Block>
+  )
+}
+
 /** The tab of a talent who sent no work profile: one sentence and how they send one. */
 function NoProfile() {
   return (
@@ -512,6 +643,7 @@ export function WorkProfileTab({
           {view.other_projects === 1 ? 'Altro progetto: 1, senza testo.' : `Altri ${view.other_projects} progetti, senza testo.`}
         </p>
       )}
+      <CrossCheckBlock freelancerId={freelancer.id} profile={profile} />
     </div>
   )
 }

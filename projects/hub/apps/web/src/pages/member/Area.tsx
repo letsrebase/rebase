@@ -14,6 +14,7 @@ import { FREELANCER_FIELDS } from '@/pages/FreelancerWizard'
 import { MemberContacts } from '@/pages/member/Contacts'
 import { MemberContracts } from '@/pages/member/Contracts'
 import { MemberReferral } from '@/pages/member/Referral'
+import { MemberGithub } from '@/pages/member/Github'
 import { MemberWorkProfile } from '@/pages/member/WorkProfile'
 
 // `/app/login`, not `/app/register`: PigroCRM's own login already knows what to do with
@@ -135,7 +136,10 @@ function RequestCard({ request, position, total }: { request: MemberRequest; pos
  *  shell's sidebar now, not here, so there is one button for it instead of two. */
 export function Area() {
   const me = useMe()
-  const { denied } = useSearch({ strict: false }) as { denied?: boolean }
+  const { denied, github: githubNotice } = useSearch({ strict: false }) as {
+    denied?: boolean
+    github?: string
+  }
   if (!me.data) return null
   const profile = me.data
   const value = profile.has_card ? toApplication(profile) : null
@@ -309,6 +313,7 @@ export function Area() {
         <MemberReferral />
         {cardSection}
         {profile.has_card && <MemberWorkProfile profile={profile.work_profile} vetted={profile.vetted} />}
+        {profile.has_card && <MemberGithub github={profile.github} notice={githubNotice ?? null} />}
         {requestsSection}
         {roleSection}
         <MemberContacts />

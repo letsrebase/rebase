@@ -325,6 +325,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub/freelancers/{freelancer_id}/work-profile/cross-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recheck Work Profile
+         * @description «Ricontrolla su GitHub» (REB-1169): the profile's artifacts checked again against the
+         *     person's linked account, for when GitHub did not answer the first time. Nothing is decided
+         *     by it. 404 when the person sent no profile.
+         */
+        post: operations["recheck_work_profile_api_hub_freelancers__freelancer_id__work_profile_cross_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub/freelancers/{freelancer_id}/card": {
         parameters: {
             query?: never;
@@ -1354,6 +1376,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/hub/me/github": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Unlink My Github
+         * @description «Scollega GitHub» (REB-1166): the account and everything read of it go at once, the
+         *     checks of the work profile's artifacts with them. Asking twice is not an error; 404 for
+         *     somebody with no card.
+         */
+        delete: operations["unlink_my_github_api_hub_me_github_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/hub/me/cv": {
         parameters: {
             query?: never;
@@ -1546,6 +1590,29 @@ export interface paths {
          *     campaign keys of the login page ride along so the login says where it came from.
          */
         get: operations["start_api_hub_auth_oauth__provider__start_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/hub/auth/oauth/github/link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Start Link
+         * @description «Collega GitHub» in the member area (REB-1166): a signed-in freelancer goes to GitHub to
+         *     prove the account is theirs. `scope` is their choice, `public` (the default) or `private`
+         *     (`read:user`: private contributions in the monthly totals). The way back is the sign-in's
+         *     callback, which tells the two apart by the attempt it opens.
+         */
+        get: operations["start_link_api_hub_auth_oauth_github_link_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4510,6 +4577,7 @@ export interface components {
              */
             talent_cloud: boolean;
             work_profile: components["schemas"]["MemberWorkProfile"] | null;
+            github: components["schemas"]["MemberGithub"] | null;
             /**
              * Vetted
              * @default false
@@ -4592,6 +4660,25 @@ export interface components {
             previous_frameworks: components["schemas"]["MemberContract"][];
             /** Letters */
             letters: components["schemas"]["MemberContract"][];
+        };
+        /**
+         * MemberGithub
+         * @description The GitHub account the person linked from their area (REB-1166): the login, what they
+         *     chose to share (`public` or `private`) and when. What was read of it stays with the admins.
+         */
+        MemberGithub: {
+            /** Login */
+            login: string;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "public" | "private";
+            /**
+             * Linked At
+             * Format: date-time
+             */
+            linked_at: string;
         };
         /**
          * MemberLookup
@@ -6497,6 +6584,7 @@ export interface components {
             /** Guard Hits */
             guard_hits: components["schemas"]["WorkProfileGuardHit"][];
             profile: components["schemas"]["WorkProfileView"];
+            cross_check: components["schemas"]["WorkProfileCrossCheck"];
         };
         /**
          * WorkProfileAnchor
@@ -6546,6 +6634,65 @@ export interface components {
             /** Value */
             value: string;
         };
+        /**
+         * WorkProfileCrossCheck
+         * @description The profile beside the person's verified GitHub account (REB-1169): counts and matches
+         *     for the admin, no score, read by no decision. Everything empty and `github` null when no
+         *     account is linked. `months_outside` counts claimed months before the snapshot's 24.
+         */
+        WorkProfileCrossCheck: {
+            github: components["schemas"]["WorkProfileGithub"] | null;
+            /** Months */
+            months: components["schemas"]["WorkProfileCrossCheckMonth"][];
+            /** Months Outside */
+            months_outside: number;
+            /** With Server Activity */
+            with_server_activity: number;
+            /** With Commits Only */
+            with_commits_only: number;
+            /** Without Activity */
+            without_activity: number;
+            /** Technologies */
+            technologies: components["schemas"]["WorkProfileCrossCheckTechnology"][];
+            /** Artifacts */
+            artifacts: components["schemas"]["WorkProfileCrossCheckArtifact"][];
+            /** Artifacts Checked At */
+            artifacts_checked_at: string | null;
+        };
+        /** WorkProfileCrossCheckArtifact */
+        WorkProfileCrossCheckArtifact: {
+            /** Project */
+            project: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "merged_by_other" | "merged" | "unmerged" | "commit" | "other_author" | "not_found" | "not_checkable" | "unavailable";
+        };
+        /**
+         * WorkProfileCrossCheckMonth
+         * @description A month the profile claims, inside the 24 the snapshot read: what GitHub dated in it
+         *     (`server_dated`: pull requests, reviews and issues) and the commits, which their author
+         *     dated.
+         */
+        WorkProfileCrossCheckMonth: {
+            /** Month */
+            month: string;
+            /** Server Dated */
+            server_dated: number;
+            /** Commits */
+            commits: number;
+        };
+        /** WorkProfileCrossCheckTechnology */
+        WorkProfileCrossCheckTechnology: {
+            /** Name */
+            name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "seen" | "not_seen" | "not_visible";
+        };
         /** WorkProfileDomain */
         WorkProfileDomain: {
             /** Where */
@@ -6558,6 +6705,25 @@ export interface components {
             sessions: number | null;
             /** Note */
             note: string | null;
+        };
+        /**
+         * WorkProfileGithub
+         * @description The GitHub account the person linked from their area (REB-1166): the login at the time
+         *     of the link, the scope they chose and when.
+         */
+        WorkProfileGithub: {
+            /** Login */
+            login: string;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "public" | "private";
+            /**
+             * Linked At
+             * Format: date-time
+             */
+            linked_at: string;
         };
         /**
          * WorkProfileGuardHit
@@ -7368,6 +7534,37 @@ export interface operations {
                 "application/json": components["schemas"]["WorkProfileRejection"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkProfileAdminRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recheck_work_profile_api_hub_freelancers__freelancer_id__work_profile_cross_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                freelancer_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -9173,6 +9370,26 @@ export interface operations {
             };
         };
     };
+    unlink_my_github_api_hub_me_github_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeRead"];
+                };
+            };
+        };
+    };
     my_cv_api_hub_me_cv_get: {
         parameters: {
             query?: never;
@@ -9416,6 +9633,24 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    start_link_api_hub_auth_oauth_github_link_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            302: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

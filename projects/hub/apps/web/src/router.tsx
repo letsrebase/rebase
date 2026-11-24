@@ -324,9 +324,11 @@ const meIndex = createRoute({
   component: Area,
   // Set by `AdminGuard` when a signed-in non-admin is bounced off `/admin/*`
   // (REB-279's own access rule): `Area` reads it to say why, rather than a blank
-  // screen or a raw 403.
-  validateSearch: (search: Record<string, unknown>): { denied?: true } => ({
+  // screen or a raw 403. `github` is where a GitHub link ends (REB-1166): the server
+  // redirects to `/me?github=<reason>` and the GitHub section words it.
+  validateSearch: (search: Record<string, unknown>): { denied?: true; github?: string } => ({
     denied: search.denied === true || search.denied === 'true' ? true : undefined,
+    github: typeof search.github === 'string' && /^[a-z_]{1,20}$/.test(search.github) ? search.github : undefined,
   }),
 })
 const meEdit = createRoute({ getParentRoute: () => me, path: '/edit', component: Edit })

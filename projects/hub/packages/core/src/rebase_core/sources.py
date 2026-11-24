@@ -63,7 +63,13 @@ from rebase_core.config import get_settings
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.github_source import GithubSource, github_login_from_links
 from rebase_core.http import urllib_headers_call
-from rebase_core.models import AI_SOURCE_KINDS, AiSource, Freelancer, FreelancerSource
+from rebase_core.models import (
+    AI_SOURCE_KINDS,
+    AiSource,
+    Freelancer,
+    FreelancerSource,
+    GithubAccount,
+)
 from rebase_core.web_fetch import (
     MAX_LINKS_PER_PERSON,
     SafeFetcher,
@@ -344,7 +350,10 @@ class SourceService:
             self.delete_all(freelancer_id)
             self.session.commit()
             return SourceSet([])
-        reads = [self._read(wanted) for wanted in self._wanted(row.links)]
+        login = self.session.scalar(
+            select(GithubAccount.login).where(GithubAccount.freelancer_id == freelancer_id)
+        )
+        reads = [self._read(wanted) for wanted in self._wanted(row.links, login)]
         fetched_at = self.now()
         locked = self.session.scalar(
             select(Freelancer.deleted_at)
@@ -435,18 +444,25 @@ class SourceService:
                 or_(
                     func.jsonb_array_length(Freelancer.links) > 0,
                     Freelancer.id.in_(select(FreelancerSource.freelancer_id)),
+                    Freelancer.id.in_(select(GithubAccount.freelancer_id)),
                 ),
             )
             .order_by(Freelancer.created_at)
         ).all()
         tried = 0
+        logins: dict[UUID, str] = {
+            owner: login
+            for owner, login in self.session.execute(
+                select(GithubAccount.freelancer_id, GithubAccount.login)
+            )
+        }
         skipped = 0  # due only for GitHub while its limit is spent: not visited
         deferred = 0  # visited, and GitHub's limit ran out before their account
         for person_id, links in people:
             if tried >= limit:
                 break
             rows = stored.get(person_id, [])
-            wanted = {(w.kind, w.ref) for w in self._wanted(links, enabled)}
+            wanted = {(w.kind, w.ref) for w in self._wanted(links, logins.get(person_id), enabled)}
             held = {(kind, ref) for kind, ref, _, _ in rows}
             # What needs a read: a source not stored yet, or one whose time has come.
             due = {kind for kind, _ in wanted - held}
@@ -507,15 +523,16 @@ class SourceService:
             ]
         )
 
-    def _wanted(self, links: list[str], enabled: set[str] | None = None) -> list[_Wanted]:
-        """The sources a person's links name that are switched on, before any fetch."""
+    def _wanted(
+        self, links: list[str], github_login: str | None, enabled: set[str] | None = None
+    ) -> list[_Wanted]:
+        """The sources a person's links name that are switched on, before any fetch. GitHub is
+        the account the person linked and proved theirs (REB-1166), never one a link names:
+        anybody can paste somebody else's profile."""
         on = self.enabled_kinds() if enabled is None else enabled
         wanted: list[_Wanted] = []
-        if "github" in on:
-            normalised = [url for link in links if (url := _normalise(link)) is not None]
-            login = github_login_from_links(normalised)
-            if login is not None:
-                wanted.append(_Wanted("github", login, 1))
+        if "github" in on and github_login is not None:
+            wanted.append(_Wanted("github", github_login, 1))
         if "links" in on:
             wanted.extend(
                 _Wanted("link", url, n) for n, url in enumerate(candidate_links(links), start=1)
