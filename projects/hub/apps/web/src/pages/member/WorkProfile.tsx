@@ -175,7 +175,7 @@ function Delete() {
 export function MemberWorkProfile({ profile, vetted }: { profile: Me['work_profile']; vetted: boolean }) {
   return (
     <section aria-labelledby="me-work-profile" className="space-y-3">
-      <h2 id="me-work-profile" className="text-lg font-semibold tracking-tight">
+      <h2 id="me-work-profile" className="sr-only">
         Profilo di lavoro
       </h2>
       {profile === null || profile === undefined ? (

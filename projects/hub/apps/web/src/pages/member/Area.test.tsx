@@ -171,8 +171,9 @@ function mount(path = '/me') {
     getParentRoute: () => me,
     path: '/',
     component: Area,
-    validateSearch: (search: Record<string, unknown>): { denied?: true } => ({
+    validateSearch: (search: Record<string, unknown>): { denied?: true; github?: string } => ({
       denied: search.denied === true || search.denied === 'true' ? true : undefined,
+      github: typeof search.github === 'string' ? search.github : undefined,
     }),
   })
   const edit = createRoute({ getParentRoute: () => me, path: '/edit', component: () => <h1>Modifica</h1> })
@@ -211,51 +212,57 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
+/** Opens one tab of the page by its name, the way a person clicks it. */
+async function openTab(name: RegExp | string) {
+  await userEvent.setup().click(await screen.findByRole('tab', { name }))
+}
+
 describe('/me, a card (REB-279: reads the merged `useMe`, gated on `ha_scheda`)', () => {
-  it('shows the answers under the wizard’s questions, the CV and the two perks', async () => {
+  it('shows the card’s answers in its tab, the facts in the header and the two perks in the rail', async () => {
     meFetch(PROFILE)
     mount()
-    // The name is both the heading and the answer to the first question.
-    expect(await screen.findAllByText('Ada Lovelace')).not.toHaveLength(0)
-    expect(screen.getByText('Come ti chiami?')).toBeInTheDocument()
-    expect(screen.getByText('450.00 € / giorno')).toBeInTheDocument()
-    expect(screen.getByText('Ibrido')).toBeInTheDocument()
-    expect(screen.getByText('ada@studio.it')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Ada CV\.pdf/ })).toHaveAttribute('href', '/api/hub/me/cv')
-    expect(screen.getByRole('link', { name: /Apri PigroCRM/ })).toHaveAttribute(
+    expect(await screen.findByRole('heading', { level: 1, name: 'Ada Lovelace' })).toBeInTheDocument()
+    const header = screen.getByRole('banner')
+    expect(within(header).getByText('Backend developer')).toBeInTheDocument()
+    // The rate goes through the money format, never the raw decimal the API answers.
+    expect(within(header).getByText(/^450,00\s€ al giorno$/)).toBeInTheDocument()
+    expect(within(header).getByText('Ibrido')).toBeInTheDocument()
+    expect(within(header).getByText('ada@studio.it')).toBeInTheDocument()
+    expect(within(header).getByRole('link', { name: 'Modifica scheda' })).toHaveAttribute('href', '/me/edit')
+    expect(within(header).getByRole('link', { name: /^CV · / })).toHaveAttribute('href', '/api/hub/me/cv')
+    await openTab('La tua scheda')
+    const card = screen.getByRole('region', { name: 'La tua scheda' })
+    expect(within(card).getByText('Cosa fai')).toBeInTheDocument()
+    expect(within(card).getByText(/^450,00\s€ al giorno$/)).toBeInTheDocument()
+    expect(within(card).getByRole('link', { name: /Ada CV\.pdf/ })).toHaveAttribute('href', '/api/hub/me/cv')
+    const rail = screen.getByRole('complementary', { name: 'Segnalazioni e vantaggi' })
+    expect(within(rail).getByRole('link', { name: /Apri PigroCRM/ })).toHaveAttribute(
       'href',
       'https://pigro.letsrebase.com/app/login',
     )
-    expect(screen.getByRole('link', { name: /Scarica la guida/ })).toHaveAttribute(
-      'href',
-      '/api/hub/me/guide',
-    )
-    expect(screen.getByText('PDF, 6 pagine, 48 KB.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Modifica' })).toHaveAttribute('href', '/me/edit')
+    expect(within(rail).getByRole('link', { name: /Scarica la guida/ })).toHaveAttribute('href', '/api/hub/me/guide')
+    expect(within(rail).getByText('PDF, 6 pagine, 48 KB.')).toBeInTheDocument()
     // A complete card gets no reminder, and no access-rule banner either.
     expect(screen.queryByRole('status')).toBeNull()
     expect(screen.queryByText('Nessun CV')).toBeNull()
   })
 
-  it('says the guide\'s size under its button, and gives the PigroCRM card no filler footer', async () => {
+  it('keeps the referral link and the perks in the rail whichever tab is open', async () => {
     meFetch(PROFILE)
     mount()
-    const pigrocrmButton = await screen.findByRole('link', { name: /Apri PigroCRM/ })
-    const guideButton = screen.getByRole('link', { name: /Scarica la guida/ })
-    const pigrocrmCard = pigrocrmButton.parentElement
-    const guideCard = guideButton.parentElement
-    // The two boxes stack one per row (REB-641), so the invisible footer REB-312 kept on
-    // the PigroCRM card to level its button with the guide's is gone: a filler line
-    // under a button that has nothing beside it is only an empty row.
-    expect(pigrocrmCard?.lastElementChild).toBe(pigrocrmButton)
-    const guideFooter = guideCard?.querySelector(':scope > p:last-child')
-    expect(guideFooter).toHaveTextContent('PDF, 6 pagine, 48 KB.')
+    const rail = await screen.findByRole('complementary', { name: 'Segnalazioni e vantaggi' })
+    for (const name of ['La tua scheda', 'Contratti', 'Recapiti']) {
+      await openTab(name)
+      expect(within(rail).getByRole('heading', { name: 'Il tuo link di segnalazione' })).toBeInTheDocument()
+      expect(within(rail).getByRole('link', { name: /Apri PigroCRM/ })).toBeInTheDocument()
+    }
   })
 
   it('asks the person to complete a card the admin wrote, and shows no CV link', async () => {
     meFetch(INCOMPLETE)
     mount()
-    const notice = await screen.findByRole('status')
+    await screen.findByRole('tablist')
+    const notice = screen.getByRole('status')
     expect(notice).toHaveTextContent('La tua scheda è incompleta.')
     expect(within(notice).getByRole('link', { name: 'Completa la scheda' })).toHaveAttribute('href', '/me/edit')
     expect(screen.getByText('Nessun CV')).toBeInTheDocument()
@@ -277,17 +284,17 @@ describe('/me, a card (REB-279: reads the merged `useMe`, gated on `ha_scheda`)'
 })
 
 describe('/me, no card (REB-279: a card-less admin reads name, email and role, not null fields)', () => {
-  it('shows no wizard-shaped section, no Modifica link, and the role instead', async () => {
+  it('shows no card, no «Modifica scheda» and no card tabs, and names the role in the header', async () => {
     meFetch(CARDLESS_ADMIN)
     mount()
     expect(await screen.findByRole('heading', { name: 'Ivan Fiore' })).toBeInTheDocument()
     expect(screen.getByText('ivan@rebase.it')).toBeInTheDocument()
     expect(screen.getByText('Amministratore')).toBeInTheDocument()
-    expect(screen.queryByText('Come ti chiami?')).toBeNull()
-    expect(screen.queryByRole('link', { name: 'Modifica' })).toBeNull()
+    expect(screen.queryByText('Cosa fai')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Modifica scheda' })).toBeNull()
     expect(screen.queryByText('Nessun CV')).toBeNull()
-    // No company request either: neither section replaces the bare identity one.
-    expect(screen.queryByRole('heading', { name: /^(La tua richiesta|Le tue richieste)$/ })).toBeNull()
+    // No company request either, and one tab only, so no tab bar.
+    expect(screen.queryByRole('tablist')).toBeNull()
     expect(screen.queryByRole('link', { name: /^Modifica la richiesta/ })).toBeNull()
     expect(screen.queryByRole('link', { name: /Richiedi una nuova figura/ })).toBeNull()
     // The perks stay visible with no card, because this fixture is an admin
@@ -296,22 +303,16 @@ describe('/me, no card (REB-279: a card-less admin reads name, email and role, n
     expect(screen.getByRole('link', { name: /Scarica la guida/ })).toBeInTheDocument()
   })
 
-  it('shows the "Chi sei" fallback and no perks for a member with neither a card nor a request (REB-385)', async () => {
+  it('names a member with neither a card nor a request «Membro», with no perks (REB-385)', async () => {
     meFetch(NOBODY)
     mount()
-    expect(await screen.findByLabelText('Chi sei')).toBeInTheDocument()
-    expect(screen.getByText('Membro')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Nessuno Speciale' })).toBeInTheDocument()
+    expect(within(screen.getByRole('group', { name: 'Ruoli' })).getByText('Membro')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'I tuoi recapiti' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /Apri PigroCRM/ })).toBeNull()
     expect(screen.queryByRole('link', { name: /Scarica la guida/ })).toBeNull()
   })
 })
-
-/** The stack below the header (REB-641): one column, and each of its children is one
- *  section, so no two share a row. */
-function stack(): HTMLElement {
-  const header = screen.getByRole('heading', { level: 1 }).closest('header')
-  return header?.nextElementSibling as HTMLElement
-}
 
 describe('/me, a company request (REB-314: reads `ha_azienda` independently of `ha_scheda`)', () => {
   it('shows the one request with its answers and its own edit link', async () => {
@@ -383,12 +384,14 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
     ])
   })
 
-  it('renders alongside the freelancer card when a person has both (REB-314)', async () => {
+  it('gives a person with a card and a request both, each in its own tab (REB-314)', async () => {
     meFetch(BOTH)
     mount()
-    expect(await screen.findByText('Come ti chiami?')).toBeInTheDocument()
+    await openTab('La tua scheda')
+    expect(screen.getByText('Cosa fai')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Modifica scheda' })).toHaveAttribute('href', '/me/edit')
+    await openTab(/^Richieste/)
     expect(screen.getByRole('heading', { name: 'La tua richiesta' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Modifica' })).toHaveAttribute('href', '/me/edit')
     expect(screen.getByRole('link', { name: /^Modifica la richiesta/ })).toHaveAttribute(
       'href',
       '/me/edit-company/r1',
@@ -404,61 +407,64 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
   })
 })
 
-describe('/me, one column in a fixed order (REB-641), the referral panel first (REB-610)', () => {
-  const PERKS = ['PigroCRM è tuo, gratis', 'I primi passi da freelance']
-  const CONTACTS = 'I tuoi recapiti'
-  const WORK_PROFILE = 'Profilo di lavoro'
-  const GITHUB = 'GitHub'
-  const cases: [string, unknown, string[]][] = [
-    ['a card only', PROFILE, ['La tua scheda', WORK_PROFILE, GITHUB, CONTACTS, ...PERKS, 'Contratti']],
-    ['a company only', COMPANY_ONLY, ['La tua richiesta', CONTACTS]],
-    ['a company with two requests', COMPANY_TWO_REQUESTS, ['Le tue richieste', CONTACTS]],
-    ['a card and a company', BOTH, ['La tua scheda', WORK_PROFILE, GITHUB, 'La tua richiesta', CONTACTS, ...PERKS, 'Contratti']],
-    ['a card-less admin', CARDLESS_ADMIN, [CONTACTS, ...PERKS]],
-    ['a plain member with nothing else', NOBODY, [CONTACTS]],
+describe('/me, tabs for what the person has and the tab that waits for them (REB-1171)', () => {
+  const APPROVED = {
+    state: 'approved',
+    submitted_at: '2026-11-12T10:00:00Z',
+    expires_at: '2027-11-12T10:00:00Z',
+    expired: false,
+    decision_note: null,
+    technologies: [],
+    practices: [],
+  }
+  const cases: [string, unknown, string[] | null][] = [
+    ['a card only', PROFILE, ['La tua scheda', 'Profilo di lavoro', 'Contratti', 'Recapiti']],
+    ['a company only', COMPANY_ONLY, ['Richieste1', 'Recapiti']],
+    ['a company with two requests', COMPANY_TWO_REQUESTS, ['Richieste2', 'Recapiti']],
+    ['a card and a company', BOTH, ['La tua scheda', 'Profilo di lavoro', 'Richieste1', 'Contratti', 'Recapiti']],
+    ['a card-less admin', CARDLESS_ADMIN, null],
+    ['a plain member with nothing else', NOBODY, null],
   ]
 
-  it.each(cases)('reads referral, card, requests, contacts, perks, contracts for %s', async (_name, profile, after) => {
+  it.each(cases)('shows only the tabs that apply to %s', async (_name, profile, tabs) => {
     meFetch(profile)
     mount()
     await screen.findByRole('heading', { level: 1 })
-    // The referral panel reads its own route: wait for it, so the page is settled.
     await screen.findByText('Nessuna segnalazione ancora.')
-    const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)
-    expect(headings).toEqual(['Il tuo link di segnalazione', ...after])
+    if (tabs === null) {
+      expect(screen.queryByRole('tablist')).toBeNull()
+      expect(screen.getByRole('heading', { name: 'I tuoi recapiti' })).toBeInTheDocument()
+    } else {
+      expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(tabs)
+    }
   })
 
-  it('puts every section in a row of its own, the two perks included', async () => {
-    meFetch(BOTH)
+  it('opens on the work profile while there is none to read', async () => {
+    meFetch(PROFILE)
     mount()
-    await screen.findByText('Nessuna segnalazione ancora.')
-    const rows = Array.from(stack().children) as HTMLElement[]
-    // Eight sections, one per row: referral, card, work profile, GitHub, request, contacts, perks,
-    // contracts.
-    expect(rows.map((row) => row.tagName)).toEqual([
-      'SECTION',
-      'SECTION',
-      'SECTION',
-      'SECTION',
-      'SECTION',
-      'SECTION',
-      'SECTION',
-      'SECTION',
-    ])
-    expect(rows[0]).toContainElement(screen.getByRole('heading', { name: 'Il tuo link di segnalazione' }))
-    expect(rows[2]).toContainElement(screen.getByRole('heading', { name: 'Profilo di lavoro' }))
-    expect(rows[3]).toContainElement(screen.getByRole('heading', { name: 'GitHub' }))
-    expect(rows[5]).toContainElement(screen.getByRole('heading', { name: 'I tuoi recapiti' }))
-    expect(rows[7]).toContainElement(screen.getByRole('heading', { name: 'Contratti' }))
-    // The perks are two boxes in one section, stacked at every viewport: no column
-    // class and no responsive variant on the section or on the stack.
-    const perks = screen.getByLabelText('I tuoi vantaggi')
-    expect(perks).toBe(rows[6])
-    expect(perks.className).not.toMatch(/grid-cols-|\b(sm|md|lg|xl|2xl):/)
-    expect(stack().className).not.toMatch(/grid-cols-|\b(sm|md|lg|xl|2xl):/)
+    expect(await screen.findByRole('tab', { name: 'Profilo di lavoro' })).toHaveAttribute('aria-selected', 'true')
   })
 
-  it('shows a rejected work profile with the admin\'s note under the card (REB-1127)', async () => {
+  it('opens on the card once the profile is approved, and says so in the header', async () => {
+    meFetch({ ...PROFILE, work_profile: APPROVED })
+    mount()
+    expect(await screen.findByRole('tab', { name: 'La tua scheda' })).toHaveAttribute('aria-selected', 'true')
+    expect(within(screen.getByRole('banner')).getByText('Profilo di lavoro approvato')).toBeInTheDocument()
+  })
+
+  it('opens on an incomplete card before the work profile', async () => {
+    meFetch(INCOMPLETE)
+    mount()
+    expect(await screen.findByRole('tab', { name: 'La tua scheda' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('opens on the requests for a company contact', async () => {
+    meFetch(COMPANY_ONLY)
+    mount()
+    expect(await screen.findByRole('tab', { name: /^Richieste/ })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('opens on a rejected work profile, with the admin\'s note (REB-1127)', async () => {
     meFetch({
       ...PROFILE,
       work_profile: {
@@ -472,20 +478,61 @@ describe('/me, one column in a fixed order (REB-641), the referral panel first (
       },
     })
     mount()
-    await screen.findByText('Nessuna segnalazione ancora.')
+    expect(await screen.findByRole('tab', { name: 'Profilo di lavoro' })).toHaveAttribute('aria-selected', 'true')
     const section = screen.getByRole('region', { name: 'Profilo di lavoro' })
     expect(within(section).getByText('Non approvato')).toBeInTheDocument()
     expect(within(section).getByText('Manca un progetto con un link.')).toBeInTheDocument()
   })
 
-  it('shows the «Chi sei» fallback in the requests\' place, and only the contacts after it', async () => {
-    meFetch(NOBODY)
+  it('keeps the tab a person chose over the one that waits for them', async () => {
+    meFetch(PROFILE)
     mount()
-    await screen.findByText('Nessuna segnalazione ancora.')
-    const rows = Array.from(stack().children) as HTMLElement[]
-    expect(rows).toHaveLength(3)
-    expect(rows[1]).toBe(screen.getByLabelText('Chi sei'))
-    expect(rows[2]).toContainElement(screen.getByRole('heading', { name: 'I tuoi recapiti' }))
+    await openTab('Recapiti')
+    expect(screen.getByRole('tab', { name: 'Recapiti' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('heading', { name: 'I tuoi recapiti' })).toBeInTheDocument()
+  })
+
+  it('waits for the contracts before choosing, and does not move when they change afterwards', async () => {
+    const TO_SIGN = {
+      ...NO_CONTRACTS,
+      framework: { id: 'd1', kind: 'framework', label: 'Contratto quadro', number: null, status: 'sent', signed_at: null, signing_url: 'https://firma.letsrebase.com/sign/abc', has_pdf_signed: false, active: false },
+    }
+    let release: (value: Response) => void = () => {}
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const path = String(input)
+      if (path === '/api/hub/me/contracts') return new Promise<Response>((resolve) => { release = resolve })
+      if (path === '/api/hub/me/referral') return answer(200, NO_REFERRAL)
+      return answer(200, { ...PROFILE, work_profile: null })
+    })
+    const client = mount()
+    await screen.findByRole('heading', { level: 1 })
+    // Until the contracts answer, no tab is picked: the profile to send must not flash first.
+    expect(screen.queryByRole('tablist')).toBeNull()
+    release(answer(200, TO_SIGN))
+    expect(await screen.findByRole('tab', { name: /^Contratti/ })).toHaveAttribute('aria-selected', 'true')
+    // Signed in another tab: the data refreshes, the open tab stays.
+    client.setQueryData(['me', 'contracts'], NO_CONTRACTS)
+    expect(await screen.findByRole('tab', { name: 'Contratti' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('opens on the card with GitHub\'s notice after a return from GitHub', async () => {
+    meFetch({ ...PROFILE, github: { login: 'ada', scope: 'public', linked_at: '2026-11-24T10:00:00Z' } })
+    mount('/me?github=linked')
+    expect(await screen.findByRole('tab', { name: 'La tua scheda' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('Account GitHub collegato.')).toBeInTheDocument()
+  })
+
+  it('keeps a contact being written when the person looks at another tab', async () => {
+    meFetch(PROFILE)
+    mount()
+    await openTab('Recapiti')
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: 'Modifica recapiti' }))
+    await user.click(screen.getByRole('button', { name: 'Aggiungi recapito' }))
+    await user.type(screen.getByRole('textbox', { name: 'Valore del recapito 1' }), 'ada.casa@gmail.com')
+    await openTab('La tua scheda')
+    await openTab('Recapiti')
+    expect(screen.getByRole('textbox', { name: 'Valore del recapito 1' })).toHaveValue('ada.casa@gmail.com')
   })
 })
 
@@ -506,14 +553,14 @@ describe('/me?denied=true (REB-279: AdminGuard bounces a signed-in non-admin her
   it('shows a sentence instead of a blank screen or a raw refusal', async () => {
     meFetch(PROFILE)
     mount('/me?denied=true')
-    const notice = await screen.findByRole('status')
-    expect(notice).toHaveTextContent('riservata a chi amministra')
+    await screen.findByRole('tablist')
+    expect(screen.getByRole('status')).toHaveTextContent('riservata a chi amministra')
   })
 
   it('says nothing extra without the flag', async () => {
     meFetch(PROFILE)
     mount('/me')
-    await screen.findAllByText('Ada Lovelace')
+    await screen.findByRole('tablist')
     expect(screen.queryByRole('status')).toBeNull()
   })
 })
@@ -542,6 +589,11 @@ describe('/me, «Contratti» (REB-392: on a card, never on a company-only profil
     })
     mount()
     expect(await screen.findByRole('heading', { name: 'Contratti' })).toBeInTheDocument()
+    // Something to sign opens «Contratti» and marks its tab.
+    expect(await screen.findByRole('tab', { name: /^Contratti\s*Da firmare$/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
     expect(await screen.findByRole('link', { name: 'Firma il contratto quadro' })).toHaveAttribute(
       'href',
       'https://firma.letsrebase.com/sign/abc',
@@ -582,13 +634,11 @@ describe('/me, the roles in the header (REB-601)', () => {
     expect(await roles(PROFILE)).toEqual(['Freelance'])
   })
 
-  it('names nothing for a member with neither, and keeps the «Ruolo» row', async () => {
-    expect(await roles(NOBODY)).toEqual([])
-    expect(screen.getByText('Ruolo')).toBeInTheDocument()
-    expect(screen.getByText('Membro')).toBeInTheDocument()
+  it('names a member with neither «Membro»', async () => {
+    expect(await roles(NOBODY)).toEqual(['Membro'])
   })
 
-  it('names a card-less admin once, without a second «Ruolo» row', async () => {
+  it('names a card-less admin once', async () => {
     expect(await roles(CARDLESS_ADMIN)).toEqual(['Amministratore'])
     expect(screen.queryByText('Ruolo')).toBeNull()
   })

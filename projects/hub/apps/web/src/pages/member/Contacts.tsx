@@ -36,8 +36,8 @@ export function MemberContacts() {
 
   return (
     <section aria-labelledby="member-contacts" className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <h2 id="member-contacts" className="text-lg font-semibold tracking-tight">
+      <div className="flex items-center justify-end gap-3">
+        <h2 id="member-contacts" className="sr-only">
           I tuoi recapiti
         </h2>
         {drafts === null && (
