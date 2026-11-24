@@ -66,6 +66,11 @@ NOT_ADMIN: dict[Route, tuple[str, str]] = {
         "the provider's redirect: state and PKCE checked, opens a person only on a verified "
         "login address, behind spend_one (REB-1137)",
     ),
+    ("GET", "/api/hub/auth/oauth/github/link"): (
+        PUBLIC,
+        "a navigation: sends a signed-in freelancer to GitHub to link their account, a visitor "
+        "with no session back to the login, behind spend_one (REB-1166)",
+    ),
     ("GET", "/api/hub/auth/oauth/no-account"): (
         PUBLIC,
         "reads the browser's own ten-minute cookie, nothing from the database",
@@ -102,6 +107,7 @@ NOT_ADMIN: dict[Route, tuple[str, str]] = {
     ("GET", "/api/hub/me/contracts/{document_id}/pdf"): (MEMBER, "one of their own contracts"),
     ("GET", "/api/hub/me/referral"): (MEMBER, "the member's own referral page"),
     ("DELETE", "/api/hub/me/work-profile"): (MEMBER, "the member deletes their own work profile"),
+    ("DELETE", "/api/hub/me/github"): (MEMBER, "the member unlinks their own GitHub account"),
     # --- the CLI's sign-in and the work-profile intake (REB-1133, REB-1124)
     ("POST", "/api/hub/cli/device"): (
         PUBLIC,

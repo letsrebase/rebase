@@ -10,12 +10,13 @@ after the token was accepted spends the token.
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request, status
 from fastapi.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
-from rebase_api.deps import SessionDep, SettingsDep
+from rebase_api.deps import GithubReaderDep, SessionDep, SessionOpenerDep, SettingsDep
 from rebase_core.errors import WorkProfileRefused
+from rebase_core.github_link import GithubLinkService, refresh_artifacts_after
 from rebase_core.schema_common import ResponseModel
 from rebase_core.work_profiles.intake import (
     ATTACHMENTS_REFUSED,
@@ -126,6 +127,9 @@ async def submit(
     request: Request,
     session: SessionDep,
     settings: SettingsDep,
+    background: BackgroundTasks,
+    reader: GithubReaderDep,
+    opener: SessionOpenerDep,
     authorization: Annotated[str | None, Header()] = None,
     user_agent: Annotated[str | None, Header()] = None,
 ) -> WorkProfileAccepted:
@@ -137,4 +141,12 @@ async def submit(
     except (WorkProfileRefused, HTTPException):
         await run_in_threadpool(service.spend, token)
         raise
-    return await run_in_threadpool(service.submit, token, body, _tool_version(user_agent))
+    accepted, card_id = await run_in_threadpool(
+        service.submit, token, body, _tool_version(user_agent)
+    )
+    # Checked against the person's linked GitHub account after the answer (REB-1168); with no
+    # account there is nothing to check, and the submission already cleared the old checks.
+    links = GithubLinkService(session, reader)
+    if await run_in_threadpool(links.account, card_id) is not None:
+        background.add_task(refresh_artifacts_after, opener, reader, card_id)
+    return accepted

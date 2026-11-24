@@ -28,13 +28,14 @@ from rebase_core.errors import NotFound
 from rebase_core.freelancer_schemas import CvFile, MemberUpdate
 from rebase_core.freelancers import check_cv, cv_of
 from rebase_core.member_schemas import (
+    MemberGithub,
     MemberLookup,
     MemberProfile,
     MemberRequest,
     MemberWorkProfile,
     MeRead,
 )
-from rebase_core.models import Company, Freelancer, User, WorkProfile
+from rebase_core.models import Company, Freelancer, GithubAccount, User, WorkProfile
 from rebase_core.notes import NoteService
 from rebase_core.users import UserService, refuse_linkedin_conflict
 from rebase_core.work_profiles.view import practices, technologies
@@ -193,8 +194,21 @@ class MemberService:
             requests=[MemberRequest.model_validate(row) for row in self.requests_for_user(user_id)],
             talent_cloud=TalentCloudService(self.session).for_user(user_id) is not None,
             work_profile=self._work_profile(card),
+            github=self._github(card),
             vetted=card is not None and card.vetted_at is not None,
         )
+
+    def _github(self, card: Freelancer | None) -> MemberGithub | None:
+        """The GitHub account the person linked (REB-1166): who, what they chose to share and
+        when. The counts read of it are the admins'."""
+        if card is None:
+            return None
+        row = self.session.scalar(
+            select(GithubAccount).where(GithubAccount.freelancer_id == card.id)
+        )
+        if row is None:
+            return None
+        return MemberGithub(login=row.login, scope=row.scope, linked_at=row.linked_at)
 
     def _work_profile(self, card: Freelancer | None) -> MemberWorkProfile | None:
         """What the person sees of their own work profile: the state and the dates, the admin's

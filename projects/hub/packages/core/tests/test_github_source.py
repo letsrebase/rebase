@@ -65,7 +65,7 @@ class FakeGithub:
         path = url.removeprefix("https://api.github.com")
         if path.startswith("/users/ada/repos"):
             return 200, self.answered, json.dumps(self.repos).encode()
-        if path == "/users/ada":
+        if path == "/users/ada" or path == f"/user/{self.profile.get('id')}":
             return 200, self.answered, json.dumps(self.profile).encode()
         if path.startswith("/repos/ada/") and path.endswith("/languages"):
             name = path.split("/")[3]
@@ -75,6 +75,19 @@ class FakeGithub:
 
 def source(fake: FakeGithub, token: str = "") -> GithubSource:
     return GithubSource(fake, token, now=lambda: NOW)
+
+
+def test_a_linked_account_is_read_by_id_under_the_login_it_has_today() -> None:
+    """REB-1166: the stored login may be stale or taken by somebody else; the id is not."""
+    fake = FakeGithub(profile={"id": 77}, repos=[repo("ledger")])
+
+    renamed = source(fake).fetch("old-name", 77)
+    gone = source(fake).fetch("ada", 78)
+
+    assert (renamed.status, renamed.login) == ("ok", "ada")
+    assert [r.name for r in renamed.repos] == ["ledger"]
+    assert fake.calls[0][1] == "https://api.github.com/user/77"
+    assert gone.status == "unreadable"
 
 
 @pytest.mark.parametrize(

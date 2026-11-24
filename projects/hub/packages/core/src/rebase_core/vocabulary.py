@@ -22,6 +22,7 @@ from rebase_core.models import (
     ADMIN_ACTION_ENTITY_TYPES,
     ADMIN_ACTION_KINDS,
     AI_SOURCE_KINDS,
+    ARTIFACT_OUTCOMES,
     CAMPAIGN_ACTIONS,
     CAMPAIGN_DESTINATIONS,
     CAMPAIGN_SOURCES,
@@ -37,6 +38,8 @@ from rebase_core.models import (
     CONTRACT_STATES,
     FILLED_BY,
     FREELANCER_STATES,
+    GITHUB_SCOPES,
+    GITHUB_TECH_STATUSES,
     LOGIN_METHODS,
     NOTE_SOURCES,
     PIGRO_STATES,
@@ -110,4 +113,7 @@ TechUsageBand = Annotated[str, Field(json_schema_extra=enum_of(TECH_USAGE_BANDS)
 PracticeMethod = Annotated[str, Field(json_schema_extra=enum_of(PRACTICE_METHODS))]
 CliAuthorizationState = Annotated[str, Field(json_schema_extra=enum_of(CLI_AUTHORIZATION_STATES))]
 LoginMethod = Annotated[str, Field(json_schema_extra=enum_of(LOGIN_METHODS))]
+GithubScope = Annotated[str, Field(json_schema_extra=enum_of(GITHUB_SCOPES))]
+GithubTechStatus = Annotated[str, Field(json_schema_extra=enum_of(GITHUB_TECH_STATUSES))]
+ArtifactOutcome = Annotated[str, Field(json_schema_extra=enum_of(ARTIFACT_OUTCOMES))]
 CliScope = Annotated[str, Field(json_schema_extra=enum_of(CLI_SCOPES))]

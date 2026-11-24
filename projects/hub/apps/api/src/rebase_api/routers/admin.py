@@ -32,6 +32,7 @@ from rebase_api.deps import (
     CvLlmDep,
     CvRendererDep,
     FreelancerDoorDep,
+    GithubReaderDep,
     HttpCallDep,
     SenderDep,
     SessionDep,
@@ -68,6 +69,7 @@ from rebase_core.freelancer_schemas import (
 )
 from rebase_core.freelancers import ENTITY as FREELANCER
 from rebase_core.freelancers import FreelancerService
+from rebase_core.github_link import GithubLinkService
 from rebase_core.login_schemas import GuideStats, LoginStats
 from rebase_core.logins import LoginService
 from rebase_core.mail import EmailSender, send_after_response
@@ -335,6 +337,25 @@ def reject_work_profile(
     read = service.reject(freelancer_id, admin.id, decision.note, decision.submitted_at)
     _mail_decision(service, sender, freelancer_id)
     return read
+
+
+@router.post(
+    "/freelancers/{freelancer_id}/work-profile/cross-check", response_model=WorkProfileAdminRead
+)
+def recheck_work_profile(
+    _: AdminDep,
+    session: SessionDep,
+    settings: SettingsDep,
+    reader: GithubReaderDep,
+    freelancer_id: UUID,
+) -> WorkProfileAdminRead:
+    """«Ricontrolla su GitHub» (REB-1169): the profile's artifacts checked again against the
+    person's linked account, for when GitHub did not answer the first time. Nothing is decided
+    by it. 404 when the person sent no profile."""
+    service = WorkProfileService(session, settings)
+    service.admin_read(freelancer_id)  # 404 before GitHub is called
+    GithubLinkService(session, reader).refresh_artifacts(freelancer_id)
+    return service.admin_read(freelancer_id)
 
 
 @router.get("/freelancers/{freelancer_id}/card", response_model=FreelancerCardAdminRead)

@@ -51,7 +51,7 @@ describe('the privacy page on the team builder', () => {
   it('says what is stored, for how long, and how to object', () => {
     expect(text).toContain('un\'impronta (hash)')
     expect(text).toContain('una volta a settimana')
-    expect(text).toContain('quando lo togli')
+    expect(text).toContain('quando togli il link o scolleghi l\'account')
     expect(text).toContain('quando cancelli il profilo')
     expect(text).toContain('Ti puoi opporre in ogni momento')
     expect(text).toContain('ciao@letsrebase.com')

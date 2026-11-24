@@ -74,6 +74,7 @@ describe('the tabs (REB-1158)', () => {
     expired: false,
     tool_version: '1.0.0',
     groundedness: 90,
+    cross_check: { github: null, months: [], months_outside: 0, with_server_activity: 0, with_commits_only: 0, without_activity: 0, technologies: [], artifacts: [], artifacts_checked_at: null },
     unsupported_anchors: [],
     unknown_technologies: 0,
     unknown_practices: 0,
@@ -207,7 +208,7 @@ describe('the tabs (REB-1158)', () => {
     })
     mount('/admin/freelance/f2', undefined, undefined, {
       freelancer_id: 'f2', state: 'rejected', submitted_at: '2026-11-12T10:00:00Z', expires_at: '2027-11-12T10:00:00Z', expired: false,
-      tool_version: null, groundedness: 90, unsupported_anchors: [], unknown_technologies: 0, unknown_practices: 0, guard_hits: [],
+      tool_version: null, groundedness: 90, cross_check: { github: null, months: [], months_outside: 0, with_server_activity: 0, with_commits_only: 0, without_activity: 0, technologies: [], artifacts: [], artifacts_checked_at: null }, unsupported_anchors: [], unknown_technologies: 0, unknown_practices: 0, guard_hits: [],
       decided_at: null, decided_by_name: null, decision_note: 'No.',
       profile: { window_from: null, window_to: null, products: null, sessions: null, instructions: null, summary: null, domains: [], lenses: [], trajectory: null, stack: [], technologies: [], practices: [], projects: [], other_projects: 0 },
     })

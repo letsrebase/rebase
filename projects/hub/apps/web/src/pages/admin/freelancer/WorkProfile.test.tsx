@@ -24,6 +24,17 @@ const PROFILE = {
   decided_at: null,
   decided_by_name: null,
   decision_note: null,
+  cross_check: {
+    github: null,
+    months: [],
+    months_outside: 0,
+    with_server_activity: 0,
+    with_commits_only: 0,
+    without_activity: 0,
+    technologies: [],
+    artifacts: [],
+    artifacts_checked_at: null,
+  },
   profile: {
     language: 'it',
     window_from: '2026-04',
@@ -424,5 +435,66 @@ describe('the usage bands in the review panel (REB-1130)', () => {
     const section = await profileTab()
     expect(within(section).queryByRole('list', { name: 'Tecnologie' })).toBeNull()
     expect(within(section).queryByRole('heading', { name: 'Tecnologie' })).toBeNull()
+  })
+})
+
+describe('«Riscontri esterni» in the review panel (REB-1167)', () => {
+  const LINKED = {
+    ...PROFILE,
+    cross_check: {
+      github: { login: 'ada', scope: 'public', linked_at: '2026-11-20T10:00:00Z' },
+      months: [
+        { month: '2026-04', server_dated: 5, commits: 9 },
+        { month: '2026-05', server_dated: 0, commits: 4 },
+        { month: '2026-06', server_dated: 0, commits: 0 },
+      ],
+      months_outside: 2,
+      with_server_activity: 1,
+      with_commits_only: 1,
+      without_activity: 1,
+      technologies: [
+        { name: 'Python', status: 'seen' },
+        { name: 'Go', status: 'not_visible' },
+      ],
+      artifacts: [{ project: 'p1', outcome: 'merged_by_other' }],
+      artifacts_checked_at: '2026-11-21T10:00:00Z',
+    },
+  }
+
+  it('says when the person has not linked GitHub, with the legend', async () => {
+    open()
+    const block = (await screen.findByRole('heading', { name: 'Riscontri esterni' })).closest('section') as HTMLElement
+    expect(within(block).getByText('La persona non ha collegato GitHub.')).toBeInTheDocument()
+    expect(within(block).getByText(/Sono riscontri, non un giudizio/)).toBeInTheDocument()
+    expect(within(block).queryByRole('button', { name: 'Ricontrolla su GitHub' })).toBeNull()
+  })
+
+  it('shows the account, the months summary, the labels, and rechecks on GitHub', async () => {
+    const fresh = {
+      ...LINKED,
+      cross_check: {
+        ...LINKED.cross_check,
+        artifacts: [{ project: 'p1', outcome: 'unmerged' }],
+        artifacts_checked_at: '2026-11-24T10:00:00Z',
+      },
+    }
+    const spy = open(LINKED, { 'POST /api/hub/freelancers/f2/work-profile/cross-check': fresh })
+    const block = (await screen.findByRole('heading', { name: 'Riscontri esterni' })).closest('section') as HTMLElement
+    expect(within(block).getByText(/collegato il 20 nov 2026/)).toHaveTextContent('GitHub ada')
+    expect(within(block).getByText(/solo attività pubblica/)).toBeInTheDocument()
+    expect(within(block).getByText('Mesi dichiarati nel profilo negli ultimi 24 mesi: 3')).toBeInTheDocument()
+    expect(within(block).getByText(/con attività datata da GitHub \(pull request, revisioni, issue\): 1/)).toBeInTheDocument()
+    expect(within(block).getByText('solo commit, datati da chi li scrive: 1')).toBeInTheDocument()
+    expect(within(block).getByText('senza attività: 1')).toBeInTheDocument()
+    expect(within(block).getByText('e 2 prima del periodo letto')).toBeInTheDocument()
+    expect(within(block).getByRole('cell', { name: '2026-04' })).toBeInTheDocument()
+    expect(within(block).getByText(': nei repository pubblici')).toBeInTheDocument()
+    expect(within(block).getByText(': GitHub non lo mostra')).toBeInTheDocument()
+    expect(within(block).getByText(': Sua, unita da altri in un repository non suo')).toBeInTheDocument()
+    expect(within(block).getByText(/Controllate il 21 nov 2026/)).toBeInTheDocument()
+    await userEvent.click(within(block).getByRole('button', { name: 'Ricontrolla su GitHub' }))
+    expect(await within(block).findByText(': Sua, non unita')).toBeInTheDocument()
+    expect(within(block).getByText(/Controllate il 24 nov 2026/)).toBeInTheDocument()
+    expect(spy.mock.calls.some(([url, init]) => String(url).endsWith('/work-profile/cross-check') && init?.method === 'POST')).toBe(true)
   })
 })

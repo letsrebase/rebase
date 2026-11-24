@@ -21,6 +21,7 @@ from rebase_core.cloud import CLOUD_CLOSED, CloudCaller, CloudTalentService
 from rebase_core.config import Settings, get_settings
 from rebase_core.crm_link import CrmLeadService, link_after_response
 from rebase_core.db import SessionOpener, create_engine_from_settings, session_factory
+from rebase_core.github_link import GithubReader
 from rebase_core.http import HttpCall, urllib_call, urllib_engagements_call
 from rebase_core.llm import (
     AiCall,
@@ -193,6 +194,16 @@ def get_freelancer_door(settings: SettingsDep, http: HttpCallDep) -> FreelancerD
 
 
 FreelancerDoorDep = Annotated[FreelancerDoor, Depends(get_freelancer_door)]
+
+
+def get_github_reader(settings: SettingsDep, http: HttpCallDep) -> GithubReader:
+    """GitHub for the account link and the work profile's cross-check (REB-1166 to REB-1168),
+    with the hub's read-only token. The request's own `HttpCallDep`, so a test's override of
+    `get_http_call` reaches it too."""
+    return GithubReader(http, settings.github_token)
+
+
+GithubReaderDep = Annotated[GithubReader, Depends(get_github_reader)]
 
 
 def get_tracker(settings: SettingsDep) -> Tracker | None:

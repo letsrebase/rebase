@@ -14,6 +14,7 @@ from rebase_core.signup_schemas import SignupUtm
 from rebase_core.vocabulary import (
     ContractKind,
     ContractState,
+    GithubScope,
     RemoteOption,
     UserRole,
     WorkProfileState,
@@ -100,6 +101,15 @@ class MemberWorkProfile(ResponseModel):
     practices: list[WorkProfilePractice]
 
 
+class MemberGithub(ResponseModel):
+    """The GitHub account the person linked from their area (REB-1166): the login, what they
+    chose to share (`public` or `private`) and when. What was read of it stays with the admins."""
+
+    login: str
+    scope: GithubScope
+    linked_at: datetime
+
+
 class MeRead(ResponseModel):
     """Whoever `rebase_user` resolves to, member or admin, replacing `MemberProfile`
     on `GET /me` (REB-278): a `users` row is not necessarily an applicant with a card
@@ -143,6 +153,8 @@ class MeRead(ResponseModel):
     talent_cloud: bool = False
     # REB-1127: the work profile the person sent with the `rebase-verify` command, if any.
     work_profile: MemberWorkProfile | None = None
+    # REB-1166: the GitHub account the person proved is theirs, if any.
+    github: MemberGithub | None = None
     # Whether rebase verified the person (`freelancers.vetted_at`): what «Verificato da rebase»
     # in the member area is derived from, never from the state of the work profile.
     vetted: bool = False

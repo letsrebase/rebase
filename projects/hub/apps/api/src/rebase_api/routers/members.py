@@ -51,6 +51,7 @@ from rebase_api.deps import (
     CardLlmDep,
     CrmFilingDep,
     FreelancerDoorDep,
+    GithubReaderDep,
     MeDep,
     SenderDep,
     SessionDep,
@@ -66,6 +67,7 @@ from rebase_api.ratelimit import spend_one
 from rebase_core.card_writer import write_after_response
 from rebase_core.company_schemas import CompanyFields, CompanyUpdate
 from rebase_core.freelancer_schemas import MemberUpdate
+from rebase_core.github_link import GithubLinkService
 from rebase_core.mail import send_after_response
 from rebase_core.member_contracts import MemberContractService
 from rebase_core.member_schemas import (
@@ -191,6 +193,16 @@ def delete_my_work_profile(me: MeDep, session: SessionDep) -> MeRead:
     state. The card follows (it is rewritten without it) and the verified flag stays: that is
     the admins' judgement. 404 for somebody with no card."""
     return MemberService(session).delete_work_profile(me.id)
+
+
+@router.delete("/me/github", response_model=MeRead)
+def unlink_my_github(me: MeDep, session: SessionDep, reader: GithubReaderDep) -> MeRead:
+    """«Scollega GitHub» (REB-1166): the account and everything read of it go at once, the
+    checks of the work profile's artifacts with them. Asking twice is not an error; 404 for
+    somebody with no card."""
+    card = MemberService(session).require_card(me.id)
+    GithubLinkService(session, reader).unlink(card.id)
+    return MemberService(session).me_read(me.id)
 
 
 @router.put("/me/cv", response_model=MeRead)

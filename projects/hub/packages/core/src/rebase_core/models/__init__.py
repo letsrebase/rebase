@@ -59,6 +59,12 @@ from rebase_core.models.engagements import (
     PIGRO_STATES,
     HubEngagement,
 )
+from rebase_core.models.github import (
+    GITHUB_LOGIN_MAX_LENGTH,
+    GITHUB_SCOPES,
+    GITHUB_TECH_STATUSES,
+    GithubAccount,
+)
 from rebase_core.models.identity import (
     CONTACT_KINDS,
     CONTACT_LABELS,
@@ -145,6 +151,7 @@ from rebase_core.models.team import (
     TeamRequestTalent,
 )
 from rebase_core.models.work_profiles import (
+    ARTIFACT_OUTCOMES,
     CLI_AUTHORIZATION_STATES,
     CLI_HASH_LENGTH,
     CLI_SCOPES,
@@ -284,6 +291,11 @@ __all__ = [
     "TECH_USAGE_BANDS",
     "WORK_PROFILE_STATES",
     "WorkProfile",
+    "GITHUB_LOGIN_MAX_LENGTH",
+    "GITHUB_SCOPES",
+    "GITHUB_TECH_STATUSES",
+    "GithubAccount",
+    "ARTIFACT_OUTCOMES",
     "UTM_COLUMNS",
     "UTM_MAX_LENGTH",
     "User",

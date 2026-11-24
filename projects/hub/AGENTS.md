@@ -771,6 +771,62 @@ the verified addresses through the `HttpCall` seam, `safe_next`, the cookie seal
   `packages/core/tests/test_oauth.py`. There is no `httpx` or `respx` in the hub's runtime: outbound
   calls go through `rebase_core.http`.
 
+## The linked GitHub account and the work profile's cross-check (REB-1166 to REB-1169)
+
+Design: the Linear document "Cross-check work profiles against a verified GitHub account";
+decision row of 2026-11-24 in `docs/design/DECISIONS.md`; DPIA § 10. A work profile is built on
+the person's machine, so the intake can only test it against itself (REB-1165). The second
+witness is a GitHub account the freelancer links from the member area and proves theirs.
+
+**Where.** `rebase_core/github_link.py` (`GithubReader`: the identity, the snapshot, the artifact
+checks; `GithubLinkService`: link, unlink, `refresh_artifacts`; `cross_check`, what the admin's
+panel reads), table `github_accounts` (migration 0062, one per card and one card per GitHub id,
+both unique), and `work_profiles.artifact_checks` / `artifacts_checked_at`. Routes:
+`GET /api/hub/auth/oauth/github/link?scope=public|private` (a navigation from the member area),
+the sign-in's own callback, `DELETE /api/hub/me/github`, and the admin's
+`POST /api/hub/freelancers/{id}/work-profile/cross-check`. `MeRead.github` and
+`WorkProfileAdminRead.cross_check` carry the reads.
+
+**Rules a change must keep.**
+
+- The link reuses the sign-in's OAuth app, PKCE and callback: the attempt cookie carries
+  `purpose` `link`, the user who started it and the scope, and the callback refuses a session
+  that is not the one that started it (`?github=expired`). Every outcome is a redirect to
+  `/me?github=<reason>`, never JSON.
+- The token is used during the callback and dropped. Nothing but GitHub's id, the login, the
+  scope, the 24 monthly counts and the language labels is stored, and never a repository name.
+- A **public** snapshot is read with the hub's own `REBASE_GITHUB_TOKEN`, through `user(login:)`,
+  never with the person's token: GitHub grants an OAuth app the union of every scope a person
+  ever gave it (documented on "Authorizing OAuth apps"), so a token asked for no scope may still
+  carry `read:user` and count private work. Without the hub token a public link fails
+  (`?github=failed`). A **private** snapshot is read as the person (`viewer`), and only when the
+  token answer's `scope` really holds `read:user` or `user`; otherwise the link is stored public.
+  The hub token must belong to an account that sees no private repository, or GitHub may count
+  work the two accounts share in another person's totals: checked on 2026-11-24 on both stacks
+  (a fine-grained token, no private repository visible).
+- The start of a link refuses a cross-site navigation (`Sec-Fetch-Site` other than
+  `same-origin` or `none`): GitHub skips its consent page for scopes already granted, so a
+  foreign page could otherwise relink a signed-in person's account, private counts included.
+- Artifacts are checked with the hub token after the response (`refresh_artifacts_after`, a
+  session of its own) on a new submission when an account is linked and after every link; the
+  admin's «Ricontrolla su GitHub» runs it in the request. No transaction stays open across
+  GitHub, and a check for a profile replaced, or for an account unlinked or replaced, meanwhile
+  is dropped; a link of a different account clears the old checks at once.
+- The cross-check computes nothing about the person and nothing reads it: no sort, filter,
+  threshold or approval (decision row of 2026-11-24). Approval works exactly as before.
+- The card's GitHub source (`SourceService._wanted`) reads only the linked account, **by its id**
+  (`/user/{id}`), so a login given up and registered by somebody else is never read as the
+  person's; the stored login follows a rename. A GitHub URL among `freelancers.links` is a link
+  and nothing more. The test fixtures (`freelancer_fixtures.link_github`) link the account a
+  test's links name and remember its id in `GITHUB_LOGINS` for the fake APIs.
+- An unlink deletes the account, the artifact checks and the card's stored GitHub source at
+  once; it cannot revoke the grant on GitHub, which the member area tells the person to do.
+  A merge deletes the absorbed card's account and clears the survivor profile's artifact checks
+  (`drop_absorbed_account`); a soft delete deletes the account.
+- Tests: `packages/core/tests/test_github_link.py` and `apps/api/tests/test_github_link_api.py`,
+  over `github_fakes.FakeGithub`, which answers the token exchange, GraphQL and the REST reads and
+  keeps which token read what.
+
 ## Campaigns
 
 Since P-REB-41 «Invia una campagna» the `campaigns` service in `docker-compose.yml` runs

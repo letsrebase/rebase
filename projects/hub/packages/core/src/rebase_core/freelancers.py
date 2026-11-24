@@ -41,6 +41,7 @@ from rebase_core.models import (
     FREELANCER_STATES,
     UTM_COLUMNS,
     Freelancer,
+    GithubAccount,
     Login,
     Signup,
     User,
@@ -622,6 +623,8 @@ class FreelancerService:
         # A soft-deleted person's work profile goes with them, like their sources: it is the
         # person's, and a restored card starts without it (REB-1126).
         self.session.execute(delete(WorkProfile).where(WorkProfile.freelancer_id == row.id))
+        # And the GitHub account they linked, with what was read of it (REB-1166).
+        self.session.execute(delete(GithubAccount).where(GithubAccount.freelancer_id == row.id))
         self.session.commit()
         AdminActionService(self.session).record(ENTITY, row.id, "deleted", admin_id, {})
         user = self._owner(row)
