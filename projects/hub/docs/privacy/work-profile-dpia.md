@@ -59,7 +59,9 @@ checks (below). The person's identity comes from the hub sign-in, not from the p
 - At intake, deterministic gates refuse a profile that is malformed, whose structure does not
   add up, or whose prose is less than 60% supported by its own counts (groundedness). These
   are consistency checks on the document, with no effect beyond asking the person to
-  regenerate it.
+  regenerate it. They cannot tell whether the counts came from real logs: the whole document
+  is built on the person's machine, the CLI's recount of practices runs there too, and a
+  profile written by hand and posted without the CLI is consistent by construction (§ 4).
 - An admin reads the profile, the groundedness score and the claims it could not support, and
   approves or rejects it. Approval sets «Verificato da rebase», which lists the person first in
   the talent cloud, shows companies the summary, the domains with their counts and the
@@ -135,7 +137,8 @@ Likelihood and severity before the measures of § 5, then the residual risk afte
 | Client confidentiality: a freelancer describes work under an NDA. | Low | Medium | Low: abstract domains only, no repository names; the member area tells the person what leaves. |
 | Function creep into automated ranking or filtering on profile fields. | Medium | High | Low while the rule in DECISIONS.md (2026-11-18) holds; it is the main thing a reviewer must check in every change. |
 | Storage: the payload sits as plain JSONB in Postgres; anyone with database access reads it, and web-admin reads are not logged. | Low | Medium | Low: the database port is bound to the server's loopback only, admin access is a short list of named people, backups are encrypted. |
-| Forged or replayed submission. | Low | Medium | Low: single-use 15-minute token from a signed-in browser session, server-side recheck. |
+| Replayed or stolen submission token. | Low | Low | Low: single-use 15-minute token minted from a signed-in browser session and spent with the profile it carries. |
+| Fabricated profile: a person writes or edits the JSON by hand, or posts it without the CLI, claiming usage and practices they do not have. Honest freelancers are then listed after them and companies read invented counts. | Medium | Medium | Medium: the token proves who sends, not what, and every intake check tests the document against itself; only the admin's reading stands between such a profile and the vetted flag. Measures are open (§ 5). |
 | Transfer outside the EEA when the card writer or an admin's assistant reads the profile. | Low | Low | Low: Anthropic under SCCs; the card switch is off. |
 | A minor sends a profile. | Very low | Medium | Very low: the community is working freelancers with a VAT number; there is no age check. |
 
@@ -180,6 +183,10 @@ Open, for Lorenzo:
   and the note but not the groundedness flags or the audit entries; a full copy is on request
   to ciao@letsrebase.com, as for every other right on the privacy page. There is no edit path:
   rectification is deleting and sending again. Portability is the person's own `candidate.json`.
+- What the vetted flag rests on. Approval sets it from a document the person controls end to
+  end, so a fabricated profile reads like a real one (§ 4). Open: whether approval alone keeps
+  setting the flag, or the flag also needs evidence from outside the document, such as public
+  work tied to a verified GitHub account or a live run of the tool in a call with an admin.
 
 ## 6. Per-technology scores (REB-1132)
 
