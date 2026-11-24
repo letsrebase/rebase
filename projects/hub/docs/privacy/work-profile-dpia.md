@@ -75,6 +75,12 @@ checks (below). The person's identity comes from the hub sign-in, not from the p
   (narratives, trajectory, principles, URL artifacts) relies on the tool's redaction and the
   admin's reading.
 - In place (REB-1130): bands shown to the freelancer and to admins, never to companies.
+- The GitHub cross-check (REB-1166 to REB-1169, § 10): when the person has linked a GitHub
+  account they proved is theirs, the admin's review panel sets the profile beside what GitHub
+  recorded: the claimed months against 24 months of contribution counts, the technologies
+  against the languages of the person's public repositories, and each pull request or commit
+  the profile names against its author and who merged it. Counts and matches, no score, read by
+  no decision.
 
 **Recipients.**
 
@@ -86,6 +92,8 @@ checks (below). The person's identity comes from the hub sign-in, not from the p
   on (EU SCCs, disclosed on the privacy page).
 - Resend, which carries the decision mails, including an admin's rejection note.
 - Hetzner (Helsinki) for hosting, and Cloudflare R2 for the encrypted nightly database backups.
+- GitHub, as an independent controller, when the person links their account: the person
+  authorises the link on GitHub's page and GitHub answers the hub's reads (§ 10).
 
 **Retention.**
 
@@ -96,6 +104,9 @@ checks (below). The person's identity comes from the hub sign-in, not from the p
 - The vetted flag outlives the profile until the person asks us to remove it (spec § 7).
 - Audit entries (`work_profile_decided` with its notes, `work_profile_read`) have no purge yet.
 - A campaign recipient row keeps the fact that a profile was sent after the profile is gone.
+- The linked GitHub account and what was read of it (`github_accounts`): until the person
+  unlinks it or their card is deleted, then gone at once, and from the backups within 90 days.
+  The artifact checks go with it.
 
 **Legal basis.** Consent (Art. 6(1)(a)). `submit` first shows what will be sent and the
 destination, and sends only when run again with `--yes`; `submit --dry-run` writes the exact
@@ -138,7 +149,9 @@ Likelihood and severity before the measures of § 5, then the residual risk afte
 | Function creep into automated ranking or filtering on profile fields. | Medium | High | Low while the rule in DECISIONS.md (2026-11-18) holds; it is the main thing a reviewer must check in every change. |
 | Storage: the payload sits as plain JSONB in Postgres; anyone with database access reads it, and web-admin reads are not logged. | Low | Medium | Low: the database port is bound to the server's loopback only, admin access is a short list of named people, backups are encrypted. |
 | Replayed or stolen submission token. | Low | Low | Low: single-use 15-minute token minted from a signed-in browser session and spent with the profile it carries. |
-| Fabricated profile: a person writes or edits the JSON by hand, or posts it without the CLI, claiming usage and practices they do not have. Honest freelancers are then listed after them and companies read invented counts. | Medium | Medium | Medium: the token proves who sends, not what, and every intake check tests the document against itself; only the admin's reading stands between such a profile and the vetted flag. Measures are open (§ 5). |
+| Fabricated profile: a person writes or edits the JSON by hand, or posts it without the CLI, claiming usage and practices they do not have. Honest freelancers are then listed after them and companies read invented counts. | Medium | Medium | Medium: the token proves who sends, not what, and every intake check tests the document against itself. Where the person linked GitHub, the cross-check (§ 10) shows the admin whether the claimed months, the languages and the named pull requests match what GitHub recorded, which makes an invented past expensive; it sees nothing of the practices or of private work the person did not share, and it is informative only, so the admin's reading still decides. |
+| The GitHub cross-check read as a verdict: an admin takes "no activity on GitHub" to mean "invented". | Medium | Medium | Medium: the panel says that no match does not mean false, and why (other forges, client accounts, private work); nothing sorts, filters or decides on it. |
+| Exclusion by the cross-check: people whose work is private, on another forge or under a client's address show fewer matches than people with public work. | Medium | Medium | Medium: linking is optional, approval does not need it, and the legend above. |
 | Transfer outside the EEA when the card writer or an admin's assistant reads the profile. | Low | Low | Low: Anthropic under SCCs; the card switch is off. |
 | A minor sends a profile. | Very low | Medium | Very low: the community is working freelancers with a VAT number; there is no age check. |
 
@@ -184,9 +197,8 @@ Open, for Lorenzo:
   to ciao@letsrebase.com, as for every other right on the privacy page. There is no edit path:
   rectification is deleting and sending again. Portability is the person's own `candidate.json`.
 - What the vetted flag rests on. Approval sets it from a document the person controls end to
-  end, so a fabricated profile reads like a real one (§ 4). Open: whether approval alone keeps
-  setting the flag, or the flag also needs evidence from outside the document, such as public
-  work tied to a verified GitHub account or a live run of the tool in a call with an admin.
+  end (§ 4). Lorenzo, 2026-11-24: the GitHub cross-check (§ 10) is shown to the admin and is
+  informative only; approval alone keeps setting the flag, as before.
 
 ## 6. Per-technology scores (REB-1132)
 
@@ -420,3 +432,48 @@ model row.
 
 Review this assessment before the campaign is sent, when the card-source switch is turned on,
 and whenever the profile gains a field or a recipient.
+
+## 10. The GitHub cross-check (REB-1166 to REB-1169)
+
+Added on 2026-11-24 after REB-1165 rated a fabricated profile as an open risk. Design: the Linear
+document "Cross-check work profiles against a verified GitHub account"; Lorenzo's decisions of
+that day are the row in `docs/design/DECISIONS.md`.
+
+**The processing.** From the member area a freelancer may link their GitHub account. The hub
+sends them to GitHub, where they authorise it, which proves the account is theirs. They choose
+what to share: public activity only (no scope), or private counts too (`read:user`). During the
+link, once, the hub reads GitHub's numeric id and the login, and per calendar month of the 24
+before the link the totals of commits, pull requests opened, reviews and issues that GitHub's
+contribution data counts, plus the languages of the person's own public repositories mapped to
+the fork's technology labels. A public link is read with the hub's own read-only token, never the
+person's: GitHub hands an OAuth app the union of the scopes a person ever granted it, so the
+person's token cannot promise public only. A private link is read with the person's token. No
+repository name, private or public, is stored; private repositories appear only inside the
+monthly totals. The token is used for that one request and dropped; refreshing means linking
+again. A URL artifact of the work profile that is a GitHub pull request or commit is read with
+the hub's token: its author, whether it merged, who merged it and who owns the repository. Only
+the outcome per project is stored.
+
+**What it can and cannot show.** Pull requests, reviews and issues are dated by GitHub when they
+happen and cannot be backdated through the ordinary API (GitHub's migration tooling for
+organisations can carry historical dates, which costs an organisation and a migration); commits
+carry the date their author wrote and can be. So the panel separates months with activity GitHub
+dated from months with commits only. It shows
+nothing of the practices, nothing of work on other forges or in client accounts under a client's
+address, and nothing of private work the person chose not to share.
+
+**Who sees it.** The admin reviewing the profile, on the talent page, and an admin's assistant
+through `get_work_profile` (logged as `work_profile_read`). The person sees which account is
+linked and the scope, and can unlink it. Companies see nothing of it.
+
+**No score.** Counts and matches only, beside the profile. No sort, filter, threshold or
+approval reads them (Lorenzo, 2026-11-24: informative only). This keeps the cross-check outside
+the rule of 2026-11-18 on computed outputs about a person: it compares the document with a
+second source and computes nothing about the person.
+
+**The card source.** The GitHub source of the anonymous card now reads only the linked account.
+A GitHub link among the person's links is no longer read as theirs, since anybody can paste
+somebody else's.
+
+**Legal basis.** Consent (Art. 6(1)(a)), given by linking; withdrawal is «Scollega», which deletes
+the account row, the snapshot and the artifact checks at once.
