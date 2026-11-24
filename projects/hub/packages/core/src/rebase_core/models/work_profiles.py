@@ -36,6 +36,21 @@ TECH_USAGE_BANDS = ("occasional", "recurring", "continuous")
 # How a practice is counted (REB-1144): `code` from the session logs alone, `model` by the
 # person's own model reading a sample of sessions.
 PRACTICE_METHODS = ("code", "model")
+# What checking a project's URL artifact against the linked GitHub account found (REB-1168):
+# a pull request by the account merged by somebody else in a repository the account does not own,
+# merged otherwise, not merged; a commit by the account; somebody else's pull request or commit;
+# not found (gone, or private to the hub); not a GitHub pull request or commit; GitHub did not
+# answer.
+ARTIFACT_OUTCOMES = (
+    "merged_by_other",
+    "merged",
+    "unmerged",
+    "commit",
+    "other_author",
+    "not_found",
+    "not_checkable",
+    "unavailable",
+)
 # The sha256 hex of a device code or an access token, like `TOKEN_HASH_LENGTH`.
 CLI_HASH_LENGTH = 64
 # `XXXX-XXXX`.
@@ -135,6 +150,16 @@ class WorkProfile(Base, PrimaryKeyMixin):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     decided_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
     decision_note: Mapped[str | None] = mapped_column(Text, default=None)
+    # The project artifacts checked against the person's linked GitHub account (REB-1168): one
+    # `{"project", "outcome"}` per URL artifact, `ARTIFACT_OUTCOMES`, never the URL a second time.
+    # Empty with `artifacts_checked_at` null until a check ran: no account linked, or a new
+    # submission whose check has not run yet. Shown to admins only, read by no decision.
+    artifact_checks: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
+    artifacts_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
 
     __table_args__ = (
         CheckConstraint(
