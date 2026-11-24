@@ -451,7 +451,8 @@ person's token cannot promise public only. A private link is read with the perso
 repository name, private or public, is stored; private repositories appear only inside the
 monthly totals. The token is used for that one request and dropped; refreshing means linking
 again. A URL artifact of the work profile that is a GitHub pull request or commit is read with
-the hub's token: its author, whether it merged, who merged it and who owns the repository. Only
+the hub's token, or anonymously when GitHub refuses that token or none is set (public data
+either way): its author, whether it merged, who merged it and who owns the repository. Only
 the outcome per project is stored.
 
 **What it can and cannot show.** Pull requests, reviews and issues are dated by GitHub when they
