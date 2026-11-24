@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
-import { ArrowLeft } from 'lucide-react'
 import { useId, useState, type FormEvent } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
@@ -28,7 +27,7 @@ import {
 } from '@/lib/format'
 import { formatMoney } from '@rebase/ui/format'
 import { keys } from '@/lib/query-keys'
-import { Empty, Header, LoadingState, Row } from './list-kit'
+import { BackLink, Empty, Header, LoadingState, Row } from './list-kit'
 import { useTalentAvailability } from '@/lib/availability'
 import { AvailabilityCell, AvailabilityFailure } from './talent/Availability'
 
@@ -128,7 +127,7 @@ function RequestPage({ request }: { request: TeamRequest }) {
   const availability = useTalentAvailability()
   return (
     <>
-      <Header title={request.company} />
+      <Header title={request.company} back={<BackLink to="/admin/team">Tutte le richieste</BackLink>} />
       <div className="grid gap-6 p-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <dl className="space-y-3 text-sm">
@@ -207,11 +206,6 @@ function RequestPage({ request }: { request: TeamRequest }) {
           </Row>
         </dl>
       </section>
-      <p className="px-6 pb-6">
-        <Link to="/admin/team" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
-          <ArrowLeft className="size-4" /> Tutte le richieste
-        </Link>
-      </p>
     </>
   )
 }

@@ -136,7 +136,7 @@ function preview() {
 /** Every Talenti filter filled, as the admin types it. */
 const TALENTS_FILTERS = {
   list: 'talents',
-  status: 'active',
+  status: 'discarded',
   q: 'react',
   job_title: 'Frontend',
   remote: 'hybrid',
@@ -514,7 +514,7 @@ describe('filters (REB-472, carried over)', () => {
     })
     mount()
     await userEvent.click(await screen.findByRole('button', { name: 'Filtri' }))
-    await pick('Stato', 'Nuovo')
+    await pick('Stato', 'Con scheda')
     await screen.findByText('riceverà la mail', { exact: false }, SAVED)
     await vi.waitFor(() => expect(lastSaved(calls).filters).toEqual({ list: 'talents', status: 'new' }), SAVED)
     expect(lastSaved(calls).name).toBe('Campagna da filtri')
@@ -583,7 +583,7 @@ describe('filters (REB-472, carried over)', () => {
     mount()
     await userEvent.click(await screen.findByRole('button', { name: 'Filtri' }))
     await userEvent.click(screen.getByRole('button', { name: 'Altri filtri' }))
-    await pick('Stato', 'Attivo')
+    await pick('Stato', 'Scartato')
     // Each field typed as one burst, so no save falls inside a word and the test spends no
     // turn of the event loop per keystroke; the wait below is for the save that carries it all.
     const burst = userEvent.setup({ delay: null })
@@ -702,7 +702,7 @@ describe('the edit route', () => {
     mountEdit('c1')
     // Talenti-only field: only present once the seeded `list` really reads 'talenti'.
     expect(await screen.findByLabelText('Ha un CV')).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Stato' })).toHaveTextContent('Nuovo')
+    expect(screen.getByRole('combobox', { name: 'Stato' })).toHaveTextContent('Con scheda')
   })
 
   it('puts every stored filter back, «Altri filtri» open, and sends them back unchanged', async () => {

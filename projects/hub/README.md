@@ -149,7 +149,7 @@ id, the admin's full detail where a card exists:
 | `create_freelancer_from_signup` | a card drafted from public sources, with its sources in the thread |
 | `get_freelancer` | a card by id, `FreelancerRead` with its notes and the account's phone, and what the CV says of the person (`cv_contacts`, `cv_differences`), for admins only |
 | `read_freelancer_cv` | the CV's text, not its bytes |
-| `set_freelancer_status` | move a candidacy (nuovo / contattato / attivo / scartato) |
+| `set_freelancer_status` | move a candidacy between `new` and `discarded` |
 | `add_freelancer_note` | a note on a card's thread, signed by the token's admin and marked `mcp` |
 | `update_note`, `delete_note` | edit or soft-delete a note an admin wrote, by id; the person's and the system's notes are refused |
 | `list_companies` | the «Aziende» screen, with search, filters, cursor |

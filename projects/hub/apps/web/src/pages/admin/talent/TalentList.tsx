@@ -15,7 +15,7 @@ import {
   useDebounce,
 } from '@/lib/adminList'
 import { amountFilter } from '@/lib/amount'
-import { FREELANCER_LIST_STATES, REMOTE_LABELS, SENIORITY_LABELS } from '@/lib/format'
+import { FREELANCER_LIST_STATES, REMOTE_LABELS, SENIORITY_LABELS, TALENT_STATE_LABELS } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
 import { DuplicatesLink } from '../DuplicateMarks'
 import { AmountFilter, Empty, FilterField, Header, LoadingState, LoadMore, StateFilter } from '../list-kit'
@@ -117,6 +117,7 @@ export function AdminTalents() {
           <DuplicatesLink />
           <StateFilter
             states={FREELANCER_LIST_STATES}
+            labels={TALENT_STATE_LABELS}
             value={search.status}
             onChange={(value) => setFilter('status', value)}
           />

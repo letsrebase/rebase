@@ -97,9 +97,6 @@ class MergeSteps:
         if not survivor.links and absorbed.links:
             before["links"] = list(survivor.links)
             survivor.links = list(absorbed.links)
-        if survivor.status == "new" and absorbed.status in ("contacted", "active"):
-            before["status"] = survivor.status
-            survivor.status = absorbed.status
         older = absorbed if absorbed.created_at < survivor.created_at else survivor
         has_own = any(getattr(survivor, c) for c in ATTRIBUTION_COLUMNS)
         if (older is absorbed or not has_own) and any(

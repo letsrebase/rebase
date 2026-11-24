@@ -4013,7 +4013,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "new" | "contacted" | "active" | "discarded";
+            status: "new" | "discarded";
             /**
              * Filled By
              * @enum {string}
@@ -4157,7 +4157,7 @@ export interface components {
             /** Links */
             links?: string[] | null;
             /** Status */
-            status?: ("new" | "contacted" | "active" | "discarded") | null;
+            status?: ("new" | "discarded") | null;
             /** Filled By */
             filled_by?: ("person" | "admin") | null;
             /** Seniority Admin */
@@ -4211,7 +4211,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "new" | "contacted" | "active" | "discarded";
+            status: "new" | "discarded";
             /**
              * Filled By
              * @enum {string}
@@ -4657,7 +4657,7 @@ export interface components {
              */
             created_at: string;
             /** Status */
-            status: ("new" | "contacted" | "active" | "discarded" | "in_progress" | "closed") | null;
+            status: ("new" | "discarded" | "contacted" | "in_progress" | "closed") | null;
         };
         /**
          * MemberRequest
@@ -5754,7 +5754,7 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "new" | "contacted" | "active" | "discarded" | "lead";
+            status: "new" | "discarded" | "lead";
             /**
              * Origin
              * @enum {string}

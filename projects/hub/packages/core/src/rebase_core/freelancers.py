@@ -364,6 +364,10 @@ class FreelancerService:
         self, limit: int = LIST_LIMIT_DEFAULT, status: str | None = None
     ) -> FreelancerList:
         limit = max(1, min(limit, LIST_LIMIT_MAX))
+        if status is not None and status != LEAD_STATE and status not in FREELANCER_STATES:
+            raise ValidationFailed(
+                ENTITY, "status", f"uno fra {', '.join((*FREELANCER_STATES, LEAD_STATE))}"
+            )
         if status == LEAD_STATE:
             lead, total_lead = self._leads(limit)
             return FreelancerList(total=0, items=[], total_lead=total_lead, lead=lead)
@@ -508,6 +512,10 @@ class FreelancerService:
         if changes.get("linkedin_url") is not None:
             UserService(self.session).require_free_linkedin(user.id, changes["linkedin_url"])
         reject_cleared_columns(ENTITY, Freelancer, row_changes)
+        # The type only documents the states; a revert of an entry written before REB-1164
+        # replays `contacted` or `active`, which the check constraint would answer as a 500.
+        if "status" in row_changes and row_changes["status"] not in FREELANCER_STATES:
+            raise ValidationFailed(ENTITY, "status", f"uno fra {', '.join(FREELANCER_STATES)}")
         before = {
             **{field: getattr(user, field) for field in identity_changes},
             **{field: getattr(row, field) for field in row_changes},

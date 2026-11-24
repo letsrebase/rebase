@@ -127,7 +127,7 @@ function open(profile: unknown = PROFILE, more: Record<string, unknown> = {}, de
 
 /** The tab's own region, the profile read out of it; the rail is beside it, not in it. */
 const profileTab = () => screen.findByRole('region', { name: 'Profilo di lavoro' })
-const rail = () => screen.findByRole('complementary', { name: 'Decisione, stato e note' })
+const rail = () => screen.findByRole('complementary', { name: 'Decisione e note' })
 
 describe('«Profilo di lavoro» on the talent page (REB-1126, REB-1158)', () => {
   it('says how the person sends one when there is none', async () => {
@@ -142,7 +142,7 @@ describe('«Profilo di lavoro» on the talent page (REB-1126, REB-1158)', () => 
     const section = await profileTab()
     expect(within(section).getByText('Nessun profilo di lavoro')).toBeInTheDocument()
     expect(within(section).getByText('npx @letsrebase/verify')).toBeInTheDocument()
-    expect(screen.queryByRole('complementary', { name: 'Decisione, stato e note' })).not.toHaveTextContent('Decisione sul profilo')
+    expect(screen.queryByRole('complementary', { name: 'Decisione e note' })).not.toHaveTextContent('Decisione sul profilo')
   })
 
   it('reads the figures, the recheck and the profile, each anchor beside its own prose', async () => {

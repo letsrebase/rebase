@@ -351,6 +351,27 @@ def test_revert_refuses_on_a_delete_or_restore_entry(clean: Session) -> None:
         service.revert(row.id, delete_action.id, admin_id)
 
 
+def test_revert_to_a_state_reb_1164_removed_is_refused_not_a_500(clean: Session) -> None:
+    """An override written while `contacted` existed still carries it as `before`."""
+    service = FreelancerService(clean)
+    row, _ = service.apply(_application())
+    admin_id = an_admin(clean)
+    service.override(row.id, FreelancerOverride(status="discarded"), admin_id)
+    action_id = service.audit_timeline(row.id)[0].id
+    clean.execute(
+        text(
+            "UPDATE admin_actions SET payload = jsonb_set(payload, '{before,status}', "
+            "'\"contacted\"') WHERE id = :id"
+        ),
+        {"id": action_id},
+    )
+
+    with pytest.raises(ValidationFailed):
+        service.revert(row.id, action_id, admin_id)
+    kept = clean.get(Freelancer, row.id)
+    assert kept is not None and kept.status == "discarded"
+
+
 def test_revert_refuses_an_action_that_belongs_to_a_different_entity(clean: Session) -> None:
     service = FreelancerService(clean)
     row, _ = service.apply(_application())

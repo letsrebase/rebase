@@ -1,12 +1,11 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Link, useParams } from '@tanstack/react-router'
-import { ArrowLeft } from 'lucide-react'
+import { useParams } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 import { Button } from '@rebase/ui/button'
 import { admin, ApiError, type Company } from '@/lib/api'
 import { keys } from '@/lib/query-keys'
 import { CompanyPicker } from './CompanyPicker'
-import { Header } from './list-kit'
+import { BackLink, Header } from './list-kit'
 
 /** «Crea match» (REB-1105): the engagement is the CRM's, so this page only pairs the card with a
  *  company request and hands over. «Apri nel CRM» has the hub ask the CRM for the freelancer's
@@ -45,16 +44,15 @@ export function AdminOpenEngagement() {
 
   return (
     <>
-      <Header title={name ? `Crea match · ${name}` : 'Crea match'} />
+      <Header
+        title={name ? `Crea match · ${name}` : 'Crea match'}
+        back={
+          <BackLink to="/admin/freelance/$id" params={{ id }}>
+            Scheda del freelance
+          </BackLink>
+        }
+      />
       <div className="max-w-3xl space-y-4 p-6">
-        <Link
-          to="/admin/freelance/$id"
-          params={{ id }}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" aria-hidden="true" />
-          Scheda del freelance
-        </Link>
         <p className="text-sm text-muted-foreground">
           L’incarico si scrive nel CRM: scegli la richiesta dell’azienda e ti porto al modulo, già compilato con il suo
           deal e questo freelance.

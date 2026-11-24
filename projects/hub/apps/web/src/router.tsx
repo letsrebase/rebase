@@ -19,6 +19,7 @@ import { Chooser } from '@/pages/Chooser'
 import { SignedInLayout } from '@/pages/SignedInLayout'
 import { modernSearch, searchParam } from '@/lib/legacy'
 import { Thanks } from '@/pages/Thanks'
+import { FREELANCER_LIST_STATES } from '@/lib/format'
 
 // Every page but the chooser and the two frames is its own chunk: an anonymous visitor on
 // the wizard does not download the admin area (REB-890).
@@ -86,7 +87,9 @@ export function strParam(value: unknown): string | undefined {
  *  every new filter would have to join (REB-983). */
 export function validateTalentsSearch(search: Record<string, unknown>): TalentsFilters {
   return {
-    status: strParam(search.status),
+    // A bookmark from before REB-1164 may still say `contacted` or `active`: the list opens
+    // unfiltered rather than refused.
+    status: (FREELANCER_LIST_STATES as readonly string[]).find((state) => state === search.status),
     q: strParam(search.q),
     job_title: strParam(search.job_title),
     remote:

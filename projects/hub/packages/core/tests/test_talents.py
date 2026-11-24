@@ -117,12 +117,12 @@ def test_counts_per_state_include_the_leads_and_are_not_bounded_by_the_limit(
         for i in range(3)
     ]
     service.set_status(
-        ids[0], StatusChange(status="contacted"), admin_id=an_admin(clean_hub), source="web"
+        ids[0], StatusChange(status="discarded"), admin_id=an_admin(clean_hub), source="web"
     )
     _signup(clean_hub, "lead1@studio.it")
     _signup(clean_hub, "lead2@studio.it")
     listed = TalentsService(clean_hub).list_recent(limit=1)
-    assert listed.by_status == {"new": 2, "contacted": 1, "active": 0, "discarded": 0, "lead": 2}
+    assert listed.by_status == {"new": 2, "discarded": 1, "lead": 2}
     assert len(listed.items) == 1  # the page is bounded, the counts are not
     # and the merge kept the newest row across both sources
     assert [item.email for item in listed.items] == ["lead2@studio.it"]
@@ -154,17 +154,17 @@ def test_the_status_filter_selects_leads_or_to_single_freelancer_state(clean_hub
     assert [item.email for item in only_new.items] == ["ada@studio.it"]
     assert only_new.total == 1
 
-    # A filter that never lands in the database is simply empty, like
-    # `FreelancerService.list_recent`'s own pass-through filter.
-    unknown = TalentsService(clean_hub).list_recent(status="forse")
-    assert unknown.items == [] and unknown.total == 0
+    # A state the list does not know is refused with the field's name (REB-1164), not
+    # answered as an empty list that reads like "nobody".
+    with pytest.raises(ValidationFailed):
+        TalentsService(clean_hub).list_recent(status="contacted")
 
 
 def test_an_empty_hub_answers_zero_of_everything(clean_hub: Session) -> None:
     listed = TalentsService(clean_hub).list_recent()
     assert listed.total == 0
     assert listed.items == []
-    assert listed.by_status == {"new": 0, "contacted": 0, "active": 0, "discarded": 0, "lead": 0}
+    assert listed.by_status == {"new": 0, "discarded": 0, "lead": 0}
 
 
 # ---- search and cursor pagination (REB-285) -------------------------------------------
@@ -325,8 +325,6 @@ def test_by_status_respects_an_active_search(clean_hub: Session) -> None:
     filtered = TalentsService(clean_hub).list_recent(q="Rossi")
     assert filtered.by_status == {
         "new": 1,
-        "contacted": 0,
-        "active": 0,
         "discarded": 0,
         "lead": 0,
     }

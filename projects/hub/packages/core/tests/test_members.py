@@ -156,7 +156,7 @@ def test_an_update_changes_the_row_and_leaves_one_note_naming_what_moved(
     freelancer_id = _apply(hub_session)
     FreelancerService(hub_session).set_status(
         freelancer_id,
-        StatusChange(status="contacted"),
+        StatusChange(status="discarded"),
         admin_id=an_admin(hub_session),
         source="web",
     )
@@ -180,7 +180,7 @@ def test_an_update_changes_the_row_and_leaves_one_note_naming_what_moved(
     )
 
     admin_view = FreelancerService(hub_session).get(freelancer_id)
-    assert admin_view.status == "contacted"
+    assert admin_view.status == "discarded"
 
 
 def test_a_name_change_is_also_written_onto_the_linked_user(

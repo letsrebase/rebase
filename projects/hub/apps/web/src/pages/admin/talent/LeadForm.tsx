@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate, useParams } from '@tanstack/react-router'
-import { ArrowLeft } from 'lucide-react'
+import { useNavigate, useParams } from '@tanstack/react-router'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
@@ -11,7 +10,7 @@ import { admin, ApiError, type FreelancerDraft, type Remote } from '@/lib/api'
 import { AMOUNT_PROBLEM, acceptedAmount, sentAmount } from '@/lib/amount'
 import { REMOTE_LABELS, formatDate } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
-import { Empty, Header, LoadingState, Row, StatePill } from '../list-kit'
+import { BackLink, Empty, Header, LoadingState, Row, StatePill } from '../list-kit'
 
 interface LeadDraft {
   first_name: string
@@ -99,7 +98,10 @@ export function AdminTalentLead() {
   if (!lead) return <LoadingState />
   return (
     <>
-      <Header title={[lead.first_name, lead.last_name].filter(Boolean).join(' ') || lead.email}>
+      <Header
+        title={[lead.first_name, lead.last_name].filter(Boolean).join(' ') || lead.email}
+        back={<BackLink to="/admin/talent">Tutti i talenti</BackLink>}
+      >
         <StatePill status="lead" />
       </Header>
       <div className="grid gap-6 p-6 lg:grid-cols-3">
@@ -228,11 +230,6 @@ export function AdminTalentLead() {
           )}
         </form>
       </div>
-      <p className="px-6 pb-6">
-        <Link to="/admin/talent" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
-          <ArrowLeft className="size-4" /> Tutti i talenti
-        </Link>
-      </p>
     </>
   )
 }

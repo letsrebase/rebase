@@ -21,7 +21,7 @@ from rebase_core.campaigns.schemas import (
 # renamed or retyped on either side fails one of the two tests.
 TALENTS_FILTERS = {
     "list": "talents",
-    "status": "active",
+    "status": "discarded",
     "q": "react",
     "job_title": "Frontend",
     "remote": "hybrid",

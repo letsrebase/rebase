@@ -17,7 +17,7 @@ import {
 } from '@/lib/campaigns'
 import { formatDateTime } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
-import { Empty, Figure, Header, LoadingState } from './list-kit'
+import { BackLink, Empty, Figure, Header, LoadingState } from './list-kit'
 
 /** An action behind an inline second click, in place of a browser `confirm()`: the
  *  first click swaps the button for the question, the second one runs it. «Annulla»,
@@ -240,7 +240,7 @@ export function AdminCampaign() {
 
   return (
     <>
-      <Header title={campaign.name}>
+      <Header title={campaign.name} back={<BackLink to="/admin/campaigns">Tutte le campagne</BackLink>}>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="pill" dot={isStalled(campaign) ? 'danger' : undefined}>
             {campaignStateLabel(campaign)}

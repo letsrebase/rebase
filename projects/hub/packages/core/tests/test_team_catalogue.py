@@ -149,7 +149,7 @@ def test_catalogue_is_every_live_freelancer_with_a_card(clean_hub: Session) -> N
     a_talent(clean_hub, 4, card=None)  # no card row at all
     sql_null = a_talent(clean_hub, 5, card=null())  # a row with no card yet, only an error
     json_null = a_talent(clean_hub, 6, card=JSON.NULL)  # a card retired to JSON `null`
-    contacted = a_talent(clean_hub, 7, status="contacted")
+    another = a_talent(clean_hub, 7)
     kinds: dict[UUID, str | None] = {
         freelancer_id: kind
         for freelancer_id, kind in clean_hub.execute(
@@ -159,10 +159,10 @@ def test_catalogue_is_every_live_freelancer_with_a_card(clean_hub: Session) -> N
     assert (kinds[sql_null], kinds[json_null]) == (None, "null")
 
     assert sorted(clean_hub.scalars(cloud_visible(select(Freelancer.id)))) == sorted(
-        [visible, contacted]
+        [visible, another]
     )
     _, positions = catalogue_lines(clean_hub)
-    assert positions == sorted([visible, contacted])
+    assert positions == sorted([visible, another])
 
 
 def test_proposal_prompt_is_byte_identical_in_substance_to_before() -> None:

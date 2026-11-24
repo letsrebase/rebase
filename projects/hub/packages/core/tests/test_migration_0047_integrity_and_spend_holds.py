@@ -87,7 +87,7 @@ def test_a_value_outside_its_closed_set_is_refused(hub_postgres: Any) -> None:
         upgrade_to_head(url)
         engine = create_engine(url, future=True)
         with engine.begin() as connection:
-            _freelancer(connection, status="active")
+            _freelancer(connection, status="discarded")
         with pytest.raises(IntegrityError, match="ck_freelancers_status"), engine.begin() as c:
             _freelancer(c, status="altro")
         engine.dispose()

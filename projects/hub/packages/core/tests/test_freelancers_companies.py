@@ -84,7 +84,7 @@ def test_a_second_application_from_the_same_address_leaves_the_card_unchanged(
     service = FreelancerService(clean)
     first, _ = service.apply(_application(), PDF, "cv.pdf", "application/pdf")
     service.set_status(
-        first.id, StatusChange(status="contacted"), admin_id=an_admin(clean), source="web"
+        first.id, StatusChange(status="discarded"), admin_id=an_admin(clean), source="web"
     )
     again, created_again = service.apply(
         _application(email="ADA@studio.it", job_title="Tech lead", daily_rate=Decimal("600")),
@@ -99,7 +99,7 @@ def test_a_second_application_from_the_same_address_leaves_the_card_unchanged(
         Decimal("450.00"),
         "cv.pdf",
     )
-    assert again.status == "contacted"
+    assert again.status == "discarded"
     assert service.cv(again.id).content == PDF
     assert clean.execute(text("SELECT count(*) FROM freelancers")).scalar() == 1
 
@@ -325,13 +325,13 @@ def test_a_second_research_replaces_the_researched_fields_and_leaves_the_admins(
     signup_id = _signup(clean)
     first = service.draft_from_signup(signup_id, _draft(), an_admin(clean), "web")
     admin = an_admin(clean)
-    service.set_status(first.id, StatusChange(status="contacted"), admin_id=admin, source="web")
+    service.set_status(first.id, StatusChange(status="discarded"), admin_id=admin, source="web")
     again = service.draft_from_signup(
         signup_id, _draft(job_title="CTO", sources=["https://ada.dev/about"]), admin, "mcp"
     )
     assert again.id == first.id
     assert again.job_title == "CTO"
-    assert again.status == "contacted"
+    assert again.status == "discarded"
     assert again.note[0].text.startswith("Scheda aggiornata dalla ricerca.")
     assert (again.note[0].source, len(again.note)) == ("mcp", 2)
 

@@ -7,6 +7,8 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ to, params, children, ...rest }: { to: string; params?: Record<string, string>; children: React.ReactNode }) => (
     <a href={params ? to.replace('$id', params.id!) : to} {...rest}>{children}</a>
   ),
+  // `list-kit`'s `BackLink`; these pages never render it.
+  createLink: (Comp: unknown) => Comp,
 }))
 
 function answer(status: number, body: unknown) {

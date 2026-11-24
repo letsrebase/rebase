@@ -59,15 +59,15 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
         moved = _payload(
             await client.call_tool(
                 "set_freelancer_status",
-                {"freelancer_id": str(row.id), "status": "contacted"},
+                {"freelancer_id": str(row.id), "status": "discarded"},
             )
         )
-        assert moved["status"] == "contacted"
+        assert moved["status"] == "discarded"
         audit = await client.call_tool("get_freelancer_audit", {"freelancer_id": str(row.id)})
         assert audit.structured_content is not None
         [entry] = audit.structured_content["result"]
         assert entry["kind"] == "status_changed"
-        assert entry["payload"] == {"before": "new", "after": "contacted", "source": "mcp"}
+        assert entry["payload"] == {"before": "new", "after": "discarded", "source": "mcp"}
 
         refused = await client.call_tool(
             "set_freelancer_status", {"freelancer_id": str(row.id), "status": "forse"}

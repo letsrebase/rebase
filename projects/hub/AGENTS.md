@@ -482,6 +482,11 @@ trail. `StatusChange` is the state alone (a stale client sending `note` gets a 4
 - MCP (source `mcp`, the actor is the token's admin): `add_freelancer_note`, `add_company_note`,
   `update_note(note_id, text)`, `delete_note(note_id)`; `set_freelancer_status` and
   `set_company_status` take the state alone, and none of them has an `author` argument.
+- A freelancer card has two states (REB-1164, migration 0061): `new`, the card in play, and
+  `discarded`, which takes it out of campaigns, the team catalogue, the talent cloud and card
+  regeneration. `contacted` and `active` were labels nobody used: the relationship is tracked in
+  the CRM and in notes. The Talenti list adds `lead` for a bare sign-up. Company requests keep
+  `new`, `contacted`, `in_progress`, `closed`.
 - A revert of an old `overridden` entry on the field `note` is refused with a sentence: a note
   is edited in the thread. A merge moves the notes by id (`RELATIONS["notes"]`; an undo of a
   merge made before the rename still finds its rows under the old key `comments`).

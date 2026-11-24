@@ -467,11 +467,12 @@ def test_the_cloud_shows_every_visible_talent_by_name_vetted_first(talents: Sess
 
 
 def test_the_read_carries_no_rate_state_or_note(talents: Session) -> None:
+    # The card's state is `new` and a word the read could carry anyway: the model's own
+    # fields are what prove it stays out.
     _talent(
         talents,
         "Rossi",
         rate=Decimal("463.21"),
-        status="active",
         note="Nota riservata: vuole 463,21 e non un euro meno.",
     )
 
@@ -481,7 +482,7 @@ def test_the_read_carries_no_rate_state_or_note(talents: Session) -> None:
         {"daily_rate", "status", "note", "commenti", "email", "phone", "cv_filename"}
     )
     dumped = read.model_dump_json()
-    for secret in ("463.21", "463,21", "active", "Nota riservata", "@studio.it", "+39"):
+    for secret in ("463.21", "463,21", "Nota riservata", "@studio.it", "+39"):
         assert secret not in dumped, secret
     assert json.loads(dumped)["band"] == {"min": 500, "max": 650}  # 463.21 x 1.4 = 648.49
 

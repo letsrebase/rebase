@@ -24,6 +24,7 @@ from rebase_core.models import (
     CAMPAIGN_NAME_MAX_LENGTH,
     CAMPAIGN_SUBJECT_MAX_LENGTH,
     CAMPAIGN_TEXT_MAX_LENGTH,
+    TALENT_STATES,
 )
 from rebase_core.schema_common import ResponseModel
 from rebase_core.search import SEARCH_MAX_LENGTH
@@ -64,6 +65,13 @@ class TalentsFilters(ResponseModel):
     work_profile: str | None = Field(default=None, max_length=10)
     created_from: datetime | None = None
     created_to: datetime | None = None
+
+    @field_validator("status")
+    @classmethod
+    def _known_status(cls, value: str | None) -> str | None:
+        if value is not None and value not in TALENT_STATES:
+            raise ValueError(f"expected one of {', '.join(TALENT_STATES)}")
+        return value
 
     @field_validator("work_profile")
     @classmethod

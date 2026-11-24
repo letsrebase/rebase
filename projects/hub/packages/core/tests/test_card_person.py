@@ -345,7 +345,7 @@ def test_no_other_reader_of_a_card_carries_the_contacts(clean_hub: Session) -> N
         clean_hub, RecordingCall([card_response(person=PERSON, employers=["Initech Labs"])])
     ).write(person)
     clean_hub.execute(
-        text("UPDATE freelancers SET vetted_at = now(), status = 'active' WHERE id = :f"),
+        text("UPDATE freelancers SET vetted_at = now() WHERE id = :f"),
         {"f": person},
     )
     clean_hub.commit()

@@ -56,7 +56,7 @@ async def test_a_malformed_id_is_an_italian_sentence_naming_the_parameter(
     English text reached the agent."""
     arguments = {field: NOT_AN_ID}
     if tool == "set_freelancer_status":
-        arguments["status"] = "active"
+        arguments["status"] = "discarded"
     async with Client(build_server(factory, lambda: IVAN)) as client:
         result = await client.call_tool(tool, arguments)
     assert result.is_error

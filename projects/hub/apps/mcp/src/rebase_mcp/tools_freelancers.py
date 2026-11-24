@@ -114,10 +114,11 @@ def register(mcp: MCPServer, deps: Deps) -> None:
 
     @mcp.tool()
     def set_freelancer_status(freelancer_id: str, status: str) -> dict[str, Any]:
-        """Moves an application between `new`, `contacted`, `active` and `discarded`. It does
-        not touch what the person wrote. The change is written to the log of
-        `get_freelancer_audit` (`status_changed`, with before and after): for the reason use
-        `add_freelancer_note`."""
+        """Moves an application between `new` (in play, the default) and `discarded`. A
+        discarded card is out of campaigns, the team catalogue, the talent cloud and card
+        regeneration; `new` puts it back. It does not touch what the person wrote. The change
+        is written to the log of `get_freelancer_audit` (`status_changed`, with before and
+        after): for the reason use `add_freelancer_note`."""
         return deps.run(
             lambda s: FreelancerService(s).set_status(
                 to_uuid(freelancer_id, "freelancer_id"),
