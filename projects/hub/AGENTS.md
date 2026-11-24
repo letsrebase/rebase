@@ -807,7 +807,9 @@ the sign-in's own callback, `DELETE /api/hub/me/github`, and the admin's
 - The start of a link refuses a cross-site navigation (`Sec-Fetch-Site` other than
   `same-origin` or `none`): GitHub skips its consent page for scopes already granted, so a
   foreign page could otherwise relink a signed-in person's account, private counts included.
-- Artifacts are checked with the hub token after the response (`refresh_artifacts_after`, a
+- Artifacts are checked with the hub token, and anonymously when GitHub answers it 403 (an
+  organisation may forbid fine-grained tokens: `letsrebase` does, measured 2026-11-24) or when
+  there is none, after the response (`refresh_artifacts_after`, a
   session of its own) on a new submission when an account is linked and after every link; the
   admin's «Ricontrolla su GitHub» runs it in the request. No transaction stays open across
   GitHub, and a check for a profile replaced, or for an account unlinked or replaced, meanwhile

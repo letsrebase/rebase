@@ -18,8 +18,9 @@ theirs by signing in to it from the member area. Three reads, all of counts and 
   only); `private` with the person's token and its `read:user`, which adds private contributions
   to the monthly totals and never names a private repository.
 - **The artifacts** (`GithubReader.check_artifact`). Each project's URL artifact that is a GitHub
-  pull request or commit is read with the hub's token: who wrote it, whether it merged, and who
-  merged it in whose repository.
+  pull request or commit is read with the hub's token, or anonymously when GitHub refuses that
+  token (401, 403) or none is set: who wrote it, whether it merged, and who merged it in whose
+  repository.
 
 `cross_check` puts the three beside the profile for the admin's review panel: counts and
 matches, no score, read by no decision (decision row of 2026-11-24 in `DECISIONS.md`). No match
@@ -260,21 +261,31 @@ class GithubReader:
         parsed = parse_artifact(url)
         if parsed is None:
             return "not_checkable"
-        if not self.hub_token:
-            return "unavailable"
         owner, repo, kind, ref = parsed
         path = f"{API}/repos/{quote(owner, safe='')}/{quote(repo, safe='')}"
         path += f"/pulls/{ref}" if kind == "pull" else f"/commits/{ref}"
-        headers = {
-            "Authorization": f"Bearer {self.hub_token}",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
-        try:
-            status, raw = self.http("GET", path, headers, b"")
-        except Exception as exc:  # noqa: BLE001 -- as `_call`
-            logger.warning("github artifact did not answer: %s", type(exc).__name__)
-            return "unavailable"
+        # The hub's token first; an organisation may forbid fine-grained tokens (measured on
+        # letsrebase, 2026-11-24: 403 with the token, 200 without), and a revoked token is a
+        # 401, so either is asked again anonymously, which public data allows at GitHub's lower
+        # rate limit.
+        status, raw = 0, b""
+        for token in [self.hub_token, ""] if self.hub_token else [""]:
+            headers = {
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            try:
+                status, raw = self.http("GET", path, headers, b"")
+            except Exception as exc:  # noqa: BLE001 -- as `_call`
+                logger.warning("github artifact did not answer: %s", type(exc).__name__)
+                return "unavailable"
+            if status not in (401, 403) or not token:
+                break
+            logger.info(
+                "github artifact: the hub token was refused (%s), asking anonymously", status
+            )
         # 301: the repository was renamed or moved, and the seam follows no redirect.
         if status in (301, 404, 410, 422):
             return "not_found"
