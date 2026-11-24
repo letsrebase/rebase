@@ -70,16 +70,22 @@ describe('the Italian addresses of the pages that were renamed (2026-11), kept f
   })
 
   it('carries a saved talent list through /admin/talenti, its filters under their new names', async () => {
-    const router = await land('/admin/talenti?stato=contattato&posizione=CTO&remoto=in_sede&tariffa_min=50&con_accessi=true&q=chiuso')
+    const router = await land('/admin/talenti?stato=scartato&posizione=CTO&remoto=in_sede&tariffa_min=50&con_accessi=true&q=chiuso')
     expect(router.state.location.pathname).toBe('/admin/talent')
     expect(router.state.location.search).toMatchObject({
-      status: 'contacted',
+      status: 'discarded',
       job_title: 'CTO',
       remote: 'on_site',
       min_rate: '50',
       with_logins: true,
       q: 'chiuso',
     })
+  })
+
+  it('opens a talent list bookmarked on a state REB-1164 removed unfiltered, not refused', async () => {
+    const router = await land('/admin/talenti?stato=contattato&posizione=CTO')
+    expect(router.state.location.search).toMatchObject({ job_title: 'CTO' })
+    expect(router.state.location.search).not.toHaveProperty('status')
   })
 
   it('carries a saved company list through /admin/aziende and the outcome through /admin/team/proposte', async () => {

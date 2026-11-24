@@ -364,6 +364,10 @@ class FreelancerService:
         self, limit: int = LIST_LIMIT_DEFAULT, status: str | None = None
     ) -> FreelancerList:
         limit = max(1, min(limit, LIST_LIMIT_MAX))
+        if status is not None and status != LEAD_STATE and status not in FREELANCER_STATES:
+            raise ValidationFailed(
+                ENTITY, "status", f"uno fra {', '.join((*FREELANCER_STATES, LEAD_STATE))}"
+            )
         if status == LEAD_STATE:
             lead, total_lead = self._leads(limit)
             return FreelancerList(total=0, items=[], total_lead=total_lead, lead=lead)

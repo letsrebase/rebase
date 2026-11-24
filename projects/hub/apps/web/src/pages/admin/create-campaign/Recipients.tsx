@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import type { AudiencePreview, CampaignTemplate } from '@/lib/api'
 import { ANY } from '@/lib/adminList'
-import { COMPANY_STATES, FREELANCER_LIST_STATES, REMOTE_LABELS, STATE_LABELS } from '@/lib/format'
+import { COMPANY_STATES, FREELANCER_LIST_STATES, REMOTE_LABELS, STATE_LABELS, TALENT_STATE_LABELS } from '@/lib/format'
 import { AmountFilter, FilterField } from '../list-kit'
 import {
   NONE,
@@ -102,8 +102,8 @@ function EuroFilter({ id, label, value, onChange }: { id: string; label: string;
   return <AmountFilter id={id} label={label} value={value || undefined} onChange={(typed) => onChange(typed ?? '')} />
 }
 
-const STATE_OPTIONS = (states: readonly string[]): [string, string][] =>
-  states.map((state) => [state, STATE_LABELS[state] ?? state])
+const STATE_OPTIONS = (states: readonly string[], labels = STATE_LABELS): [string, string][] =>
+  states.map((state) => [state, labels[state] ?? state])
 
 function TalentsFilters({
   value,
@@ -121,7 +121,7 @@ function TalentsFilters({
           id="campaign-talents-status"
           label="Stato"
           value={value.status}
-          options={STATE_OPTIONS(FREELANCER_LIST_STATES)}
+          options={STATE_OPTIONS(FREELANCER_LIST_STATES, TALENT_STATE_LABELS)}
           onChange={(status) => onChange({ status })}
         />
         <InputFilter id="campaign-talents-q" label="Cerca" maxLength={200} value={value.q} onChange={(q) => onChange({ q })} />

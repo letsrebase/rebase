@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams } from '@tanstack/react-router'
-import { ArrowLeft } from 'lucide-react'
+import { useParams } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Button } from '@rebase/ui/button'
 import { ContactPointsList } from '@/components/ContactPointsList'
@@ -12,7 +11,7 @@ import { formatMoney } from '@rebase/ui/format'
 import { keys } from '@/lib/query-keys'
 import { AuditTrail } from '../AuditTrail'
 import { CrmLink } from '../CrmLink'
-import { Empty, Header, LoadingState, Row, StatePill, StatusEditor, TeamBuilderPill } from '../list-kit'
+import { BackLink, Empty, Header, LoadingState, Row, StatePill, StatusEditor, TeamBuilderPill } from '../list-kit'
 import { Notes } from '../Notes'
 import { CompanyOverrideDialog, RecordLifecycle } from '../Override'
 import { TalentCloudDoor } from './TalentCloudDoor'
@@ -106,7 +105,7 @@ export function AdminCompanyDetail() {
   const lifecycleFailure = failureMessage(del.error ?? restore.error, 'Non riesco a completare l’operazione.')
   return (
     <>
-      <Header title={c.company_name}>
+      <Header title={c.company_name} back={<BackLink to="/admin/companies">Tutte le aziende</BackLink>}>
         <div className="flex flex-wrap items-center gap-2">
           <StatePill status={c.status} />
           {c.origin === TEAM_BUILDER_ORIGIN && <TeamBuilderPill />}
@@ -186,11 +185,6 @@ export function AdminCompanyDetail() {
         canRevert={c.deleted_at === null}
         onReverted={() => void client.invalidateQueries({ queryKey: keys.company(id) })}
       />
-      <p className="px-6 pb-6">
-        <Link to="/admin/companies" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
-          <ArrowLeft className="size-4" /> Tutte le aziende
-        </Link>
-      </p>
       <CompanyOverrideDialog
         company={c}
         open={overrideOpen}

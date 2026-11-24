@@ -19,6 +19,7 @@ from campaign_fixtures import (  # noqa: F401  (fixture)
     lead,
     person,
 )
+from pydantic import ValidationError
 from sqlalchemy import event, func, select
 from sqlalchemy.orm import Session
 
@@ -34,7 +35,7 @@ from rebase_core.campaigns.audience import (
     exclusions,
     waiting_rows,
 )
-from rebase_core.campaigns.schemas import ScheduleRequest
+from rebase_core.campaigns.schemas import ScheduleRequest, TalentsFilters
 from rebase_core.campaigns.sender import RecordingCampaignSender
 from rebase_core.campaigns.service import CampaignService
 from rebase_core.campaigns.states import (
@@ -254,6 +255,11 @@ def test_filters_reuse_talents_and_merge_one_person_across_cases(
     campaign.filters = {"list": "talents", "status": "lead"}
     clean.commit()
     assert [c.email for c in candidates(clean, campaign)] == ["giulia@studio.it"]
+
+
+def test_a_filter_on_a_removed_talent_state_is_refused() -> None:
+    with pytest.raises(ValidationError):
+        TalentsFilters(list="talents", status="contacted")
 
 
 def test_to_stored_origin_page_filter_is_the_marketing_page(
@@ -668,7 +674,7 @@ def test_to_card_marked_discarded_is_excluded_with_its_reason(
     campaign. The journey states ignore `Freelancer.status`, so the rule is one of the
     exclusions, shown on screen with its reason, checked again before each mail."""
     person(clean, "no@studio.it", status="discarded")
-    person(clean, "si@studio.it", status="active")
+    person(clean, "si@studio.it", status="new")
     current = campaign_row(clean, journey_status="complete")
     reasons = exclusions(
         clean, ["no@studio.it", "si@studio.it"], campaign_id=current.id, now=T0, gap_days=3

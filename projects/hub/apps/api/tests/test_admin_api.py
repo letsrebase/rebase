@@ -150,8 +150,10 @@ def test_an_admin_manages_a_freelancer_card_through_the_lists(
     assert cv.headers["content-type"].startswith("application/pdf")
     assert 'filename="Ada CV.pdf"' in cv.headers["content-disposition"]
 
-    moved = client.patch(f"/api/hub/freelancers/{item['id']}", json={"status": "contacted"})
-    assert moved.status_code == 200 and moved.json()["status"] == "contacted"
+    moved = client.patch(f"/api/hub/freelancers/{item['id']}", json={"status": "discarded"})
+    assert moved.status_code == 200 and moved.json()["status"] == "discarded"
+    gone = client.patch(f"/api/hub/freelancers/{item['id']}", json={"status": "contacted"})
+    assert gone.status_code == 422
     wrong = client.patch(f"/api/hub/freelancers/{item['id']}", json={"status": "forse"})
     assert wrong.status_code == 422
     assert wrong.json()["detail"][0]["loc"][-1] == "status"
@@ -181,8 +183,6 @@ def test_talents_merges_cards_and_leads_and_counts_by_state(
     assert by_email["lead@studio.it"]["id"] == signup_id
     assert listed["by_status"] == {
         "new": 1,
-        "contacted": 0,
-        "active": 0,
         "discarded": 0,
         "lead": 1,
     }
@@ -596,18 +596,18 @@ def test_a_status_change_is_in_the_trail_with_the_door(
     freelancer_id = client.get("/api/hub/freelancers").json()["items"][0]["id"]
     assert (
         client.patch(
-            f"/api/hub/freelancers/{freelancer_id}", json={"status": "contacted"}
+            f"/api/hub/freelancers/{freelancer_id}", json={"status": "discarded"}
         ).status_code
         == 200
     )
     # A stale client that still sends `note` is told, not silently dropped.
     stale = client.patch(
-        f"/api/hub/freelancers/{freelancer_id}", json={"status": "active", "note": "x"}
+        f"/api/hub/freelancers/{freelancer_id}", json={"status": "new", "note": "x"}
     )
     assert stale.status_code == 422
     [entry] = client.get(f"/api/hub/freelancers/{freelancer_id}/audit").json()
     assert entry["kind"] == "status_changed"
-    assert entry["payload"] == {"before": "new", "after": "contacted", "source": "web"}
+    assert entry["payload"] == {"before": "new", "after": "discarded", "source": "web"}
 
 
 def test_a_company_gets_its_own_thread(

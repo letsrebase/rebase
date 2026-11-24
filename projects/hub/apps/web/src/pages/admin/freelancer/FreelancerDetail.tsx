@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
-import { ArrowLeft, BadgeCheck, CircleAlert, CircleX, Clock, Download, Ellipsis } from 'lucide-react'
+import { BadgeCheck, CircleAlert, CircleX, Clock, Download, Ellipsis } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
@@ -11,12 +11,12 @@ import { useMediaQuery } from '@rebase/ui/use-media-query'
 import { useFreelancerCard } from '@/hooks/use-freelancer-card'
 import { admin, type Freelancer, type FreelancerOverride, type Note } from '@/lib/api'
 import { failureMessage } from '@/lib/adminList'
-import { FREELANCER_STATES, REMOTE_LABELS, SENIORITY_LABELS, formatBytes, formatDate, formatExperience } from '@/lib/format'
+import { REMOTE_LABELS, SENIORITY_LABELS, formatBytes, formatDate, formatExperience } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
 import { AnonymousCard } from '../AnonymousCard'
 import { AuditTrail } from '../AuditTrail'
 import { DuplicateOf } from '../DuplicateMarks'
-import { Empty, IncompletePill, LoadingState, StatePill, StatusEditor, VettedPill } from '../list-kit'
+import { BackLink, Empty, IncompletePill, LoadingState, StatePill, VettedPill } from '../list-kit'
 import { Notes } from '../Notes'
 import { FreelancerOverrideDialog } from '../Override'
 import { ContactsTab } from './ContactsTab'
@@ -26,7 +26,7 @@ import { RecentEvents } from './Subscription'
 import { WorkProfileTab } from './WorkProfile'
 
 /** The page keeps its right rail from this width up; below it the rail is gone, the decision is
- *  a bar at the foot of the page and «Stato» and «Note» sit in «Storico». */
+ *  a bar at the foot of the page and «Note» sit in «Storico». */
 const RAIL = '(min-width: 1024px)'
 
 /** Below this the header keeps the CV and one overflow menu; «Crea match» and «Modifica scheda» move into it. */
@@ -74,8 +74,9 @@ export function AdminFreelancerDetail() {
     queryKey: keys.freelancer(id),
     queryFn: () => admin.freelancer(id),
   })
+  // «Scarta» and «Riprendi» (REB-1164): the card's only two states, `discarded` and `new`.
   const move = useMutation({
-    mutationFn: (status: string) => admin.moveFreelancer(id, status),
+    mutationFn: (status: 'new' | 'discarded') => admin.moveFreelancer(id, status),
     // The PATCH answers the plain card, not the REB-284 sections, and its own `note` is
     // always `[]` (REB-356, same cause as REB-355's own mutations below): merged onto the
     // cached detail with `note` kept from the current cache, or a save would drop both
@@ -148,25 +149,21 @@ export function AdminFreelancerDetail() {
   const flags = cvCard?.flags.length ?? 0
   const overrideFailure = failureMessage(override.error, 'Non riesco a salvare la scheda.')
   const clearCvFailure = failureMessage(clearCv.error, 'Non riesco a rimuovere il CV.')
-  const lifecycleFailure = failureMessage(del.error ?? restore.error, 'Non riesco a completare l’operazione.')
-  const hasCv = f.cv_filename !== null && f.cv_size !== null && live
-  const status = live && (
-    <StatusEditor
-      states={FREELANCER_STATES}
-      status={f.status}
-      saving={move.isPending}
-      onSave={(next) => move.mutate(next)}
-      error={failureMessage(move.error, 'Non riesco a salvare lo stato.')}
-    />
+  const lifecycleFailure = failureMessage(
+    del.error ?? restore.error ?? move.error,
+    'Non riesco a completare l’operazione.',
   )
+  const hasCv = f.cv_filename !== null && f.cv_size !== null && live
+  const discarded = f.status === 'discarded'
   const notes = <Notes kind="freelancers" id={f.id} notes={f.note} onChange={onNotesChange} />
   return (
     <>
       <header className="space-y-3 border-b px-6 py-5">
+        <BackLink to="/admin/talent">Tutti i talenti</BackLink>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <h1 className="text-2xl font-semibold tracking-tight">{`${f.first_name} ${f.last_name}`}</h1>
           <div className="flex flex-wrap items-center gap-2">
-            <StatePill status={f.status} />
+            {discarded && <StatePill status="discarded" />}
             {f.vetted_at && <VettedPill />}
             {live && <DuplicateOf freelancerId={f.id} />}
             {!f.complete && <IncompletePill />}
@@ -224,6 +221,9 @@ export function AdminFreelancerDetail() {
                     {clearCv.isPending ? 'Rimuovo…' : 'Rimuovi CV'}
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuItem disabled={move.isPending} onSelect={() => move.mutate(discarded ? 'new' : 'discarded')}>
+                  {move.isPending ? 'Salvo…' : discarded ? 'Riprendi' : 'Scarta'}
+                </DropdownMenuItem>
                 <DropdownMenuItem variant="destructive" disabled={del.isPending} onSelect={() => del.mutate()}>
                   {del.isPending ? 'Elimino…' : 'Elimina'}
                 </DropdownMenuItem>
@@ -293,12 +293,7 @@ export function AdminFreelancerDetail() {
               <ContactsTab f={f} cvCard={cvCard} />
             </TabsContent>
             <TabsContent value="history" className="space-y-6 pt-4">
-              {!withRail && (
-                <div className="space-y-4">
-                  {status}
-                  {notes}
-                </div>
-              )}
+              {!withRail && notes}
               <RecentEvents
                 title="Ultimi accessi"
                 empty="Non è mai entrata."
@@ -328,20 +323,14 @@ export function AdminFreelancerDetail() {
             </TabsContent>
           </Tabs>
           {withRail && (
-            <aside aria-label="Decisione, stato e note" className="sticky top-4 min-w-0 space-y-4">
+            <aside aria-label="Decisione e note" className="sticky top-4 min-w-0 space-y-4">
               {profile && <ProfileRailCard profile={profile} freelancerId={f.id} vettedAt={f.vetted_at} />}
-              {status}
               {notes}
             </aside>
           )}
         </div>
       )}
       {!withRail && profile && <ProfileDecisionBar profile={profile} freelancerId={f.id} vettedAt={f.vetted_at} />}
-      <p className="px-6 pb-6">
-        <Link to="/admin/talent" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
-          <ArrowLeft className="size-4" /> Tutti i talenti
-        </Link>
-      </p>
       <FreelancerOverrideDialog
         freelancer={f}
         open={overrideOpen}

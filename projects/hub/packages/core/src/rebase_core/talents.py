@@ -76,6 +76,7 @@ from rebase_core.freelancers import LEAD_STATE
 from rebase_core.leads import card_by_linkedin
 from rebase_core.models import (
     FREELANCER_STATES,
+    TALENT_STATES,
     Freelancer,
     FreelancerCard,
     Login,
@@ -697,6 +698,8 @@ class TalentsService:
         sort = (sort or "").strip().lower() or None
         work_profile = (work_profile or "").strip().lower() or None
         order = _order(sort, term)
+        if status is not None and status not in TALENT_STATES:
+            raise ValidationFailed(_ENTITY, "status", f"atteso uno fra {', '.join(TALENT_STATES)}")
         if origin is not None and origin not in ORIGINS:
             raise ValidationFailed(_ENTITY, "origin", f"atteso uno fra {', '.join(ORIGINS)}")
         if card is not None and card not in CARD_STATES:

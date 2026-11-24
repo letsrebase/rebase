@@ -26,7 +26,7 @@ const FREELANCER: Freelancer = {
   job_title: 'CTO',
   remote: 'remote',
   links: ['https://github.com/ada', 'https://ada.dev'],
-  status: 'active',
+  status: 'new',
   origin: null,
   utm_source: null,
   utm_medium: null,

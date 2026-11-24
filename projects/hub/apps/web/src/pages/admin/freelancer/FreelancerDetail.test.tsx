@@ -141,7 +141,7 @@ describe('the tabs (REB-1158)', () => {
     expect(tab).toHaveTextContent('Da verificare: 1')
   })
 
-  it('offers the four states and no «Tutti»: that is a list’s filter, not a state', async () => {
+  it('opens with the way back to the list above the name, not at the foot of the page', async () => {
     routeFetch({
       'GET /api/hub/freelancers/f2': COMPLETE,
       'GET /api/hub/freelancers/f2/audit': [],
@@ -149,17 +149,24 @@ describe('the tabs (REB-1158)', () => {
     })
     mount('/admin/freelance/f2')
     await screen.findByRole('heading', { name: 'Grace Hopper' })
-    const states = await screen.findByRole('group', { name: 'Stato' })
-    expect(within(states).getAllByRole('button').map((button) => button.textContent)).toEqual([
-      'Nuovo',
-      'Contattato',
-      'Attivo',
-      'Scartato',
-    ])
-    expect(within(states).queryByRole('button', { name: 'Tutti' })).toBeNull()
+    const back = within(screen.getByRole('banner')).getByRole('link', { name: 'Tutti i talenti' })
+    expect(back).toHaveAttribute('href', '/admin/talent')
+    expect(screen.getAllByRole('link', { name: 'Tutti i talenti' })).toHaveLength(1)
   })
 
-  it('moves «Stato» and «Note» into «Storico» on a phone, where the rail is gone', async () => {
+  it('has no state editor: a card is in play until it is discarded', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f2': COMPLETE,
+      'GET /api/hub/freelancers/f2/audit': [],
+      'GET /api/hub/freelancers/f2/card': noCard('f2'),
+    })
+    mount('/admin/freelance/f2')
+    await screen.findByRole('heading', { name: 'Grace Hopper' })
+    expect(screen.queryByRole('group', { name: 'Stato' })).toBeNull()
+    expect(within(screen.getByRole('banner')).queryByText('Nuovo')).toBeNull()
+  })
+
+  it('moves «Note» into «Storico» on a phone, where the rail is gone', async () => {
     routeFetch({
       'GET /api/hub/freelancers/f2': COMPLETE,
       'GET /api/hub/freelancers/f2/audit': [],
@@ -169,10 +176,9 @@ describe('the tabs (REB-1158)', () => {
     await screen.findByRole('heading', { name: 'Grace Hopper' })
     await screen.findByRole('tab', { name: /^Scheda anonima/ })
     expect(screen.queryByRole('complementary')).toBeNull()
-    expect(screen.queryByRole('group', { name: 'Stato' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Note' })).toBeNull()
     await openTab('Storico')
-    expect(await screen.findByRole('group', { name: 'Stato' })).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Note' })).toBeInTheDocument()
+    expect(await screen.findByRole('region', { name: 'Note' })).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Registro delle modifiche' })).toBeInTheDocument()
   })
 
@@ -299,9 +305,6 @@ describe('REB-355: override, delete/restore and the audit trail on the freelance
     await screen.findByText(/Eliminata il/)
     expect(screen.queryByRole('button', { name: 'Modifica scheda' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Altre azioni' })).toBeNull()
-    // `set_status` 404s on a deleted row (`FreelancerService._require`'s own default):
-    // the note/state editor must not offer an action the backend will refuse.
-    expect(screen.queryByRole('button', { name: 'Contattato' })).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: 'Ripristina' }))
     await waitFor(() => expect(screen.queryByText(/Eliminata il/)).toBeNull())
@@ -344,36 +347,37 @@ describe('REB-355: override, delete/restore and the audit trail on the freelance
   })
 })
 
-describe('REB-356: the state-change mutations keep the notes thread visible', () => {
-  it('keeps the existing notes thread after a state change on the freelancer detail', async () => {
+describe('«Scarta» and «Riprendi» (REB-1164)', () => {
+  it('discards the card from the overflow menu, keeps the notes thread, then takes it back', async () => {
     const withComment = {
       ...INCOMPLETE,
       note: [
         { id: 'c1', text: 'Ha risposto alla call.', author: 'Ivan', author_id: null, source: 'web', created_at: '2026-09-12T10:00:00Z', edited_at: null, edited_by: null, editable: true },
       ],
     }
+    const sent: string[] = []
     serve(withComment, (url, init) => {
       if (url !== '/api/hub/freelancers/f1' || init?.method !== 'PATCH') return undefined
-      const body = JSON.parse(init.body as string)
-      expect(body.status).toBe('contacted')
-      // The move response's own `note` is always `[]` (only `get` fills it):
+      const { status } = JSON.parse(init.body as string)
+      sent.push(status)
+      // The move response's own `note` is always `[]` (only `get` fills it, REB-356):
       // a replace that took it verbatim would wipe the existing thread from view.
-      return answer(200, { ...withComment, status: 'contacted', note: [] })
+      return answer(200, { ...withComment, status, note: [] })
     })
     mount('/admin/freelance/f1')
     await screen.findByRole('heading', { name: 'Ada Lovelace' })
     await screen.findByText('Ha risposto alla call.')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Contattato' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
-    const banner = await screen.findByRole('banner')
-    await within(banner).findByText('Contattato')
+    await chooseFromMenu('Scarta')
+    await within(screen.getByRole('banner')).findByText('Scartato')
     expect(screen.getByText('Ha risposto alla call.')).toBeInTheDocument()
-  })
-})
 
-describe('a state change that is refused', () => {
-  it('says so under the state editor and keeps the old state on the freelancer detail', async () => {
+    await chooseFromMenu('Riprendi')
+    await waitFor(() => expect(within(screen.getByRole('banner')).queryByText('Scartato')).toBeNull())
+    expect(sent).toEqual(['discarded', 'new'])
+  })
+
+  it('says so in the header when the discard is refused and keeps the card in play', async () => {
     serve(INCOMPLETE, (url, init) =>
       url === '/api/hub/freelancers/f1' && init?.method === 'PATCH'
         ? answer(409, { detail: 'Lo stato non può cambiare.' })
@@ -382,11 +386,10 @@ describe('a state change that is refused', () => {
     mount('/admin/freelance/f1')
     await screen.findByRole('heading', { name: 'Ada Lovelace' })
 
-    await userEvent.click(screen.getByRole('button', { name: 'Contattato' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await chooseFromMenu('Scarta')
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Lo stato non può cambiare.')
-    expect(within(screen.getByRole('banner')).getByText('Nuovo')).toBeInTheDocument()
+    expect(within(screen.getByRole('banner')).queryByText('Scartato')).toBeNull()
   })
 })
 

@@ -1,4 +1,5 @@
-import { BadgeCheck } from 'lucide-react'
+import { createLink, type LinkComponent } from '@tanstack/react-router'
+import { ArrowLeft, BadgeCheck } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
@@ -15,7 +16,6 @@ const TONE: Record<string, string> = {
   new: 'bg-[var(--color-royal-gold)]',
   lead: 'bg-muted',
   contacted: 'bg-muted-foreground',
-  active: 'bg-foreground',
   in_progress: 'bg-foreground',
   discarded: 'bg-[var(--color-watermelon)]',
   closed: 'bg-muted-foreground',
@@ -64,16 +64,46 @@ export function IncompletePill() {
   return <Badge variant="pill">Da completare</Badge>
 }
 
-export function Header({ title, count, children }: { title: string; count?: number; children?: React.ReactNode }) {
+function BackAnchor({ children, ...anchor }: React.ComponentProps<'a'>) {
   return (
-    <header className="flex flex-wrap items-center justify-between gap-3 border-b px-6 py-5">
-      <h1 className="text-2xl font-semibold tracking-tight">
-        {title}
-        {count !== undefined && (
-          <span className="ml-2 text-base font-normal text-muted-foreground">{count}</span>
-        )}
-      </h1>
+    <a {...anchor} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+      <ArrowLeft className="size-4" aria-hidden="true" />
       {children}
+    </a>
+  )
+}
+
+const BackAnchorLink = createLink(BackAnchor)
+
+/** The way back to the list a detail page was opened from, above its title: at the foot
+ *  of a long page it was lost (REB-1164). Typed `to` and `params` like the router's `Link`;
+ *  the arrow is what fast refresh recognises as a component. */
+export const BackLink: LinkComponent<typeof BackAnchor> = (props) => <BackAnchorLink {...props} />
+
+export function Header({
+  title,
+  count,
+  back,
+  children,
+}: {
+  title: string
+  count?: number
+  /** A detail page's `BackLink`, shown above the title. */
+  back?: React.ReactNode
+  children?: React.ReactNode
+}) {
+  return (
+    <header className="space-y-3 border-b px-6 py-5">
+      {back}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {title}
+          {count !== undefined && (
+            <span className="ml-2 text-base font-normal text-muted-foreground">{count}</span>
+          )}
+        </h1>
+        {children}
+      </div>
     </header>
   )
 }

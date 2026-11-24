@@ -405,7 +405,6 @@ def test_the_profile_the_survivor_leaves_empty_is_filled_and_the_first_attributi
         job_title="Backend",
         daily_rate=Decimal("400"),
         utm_source="linkedin",
-        status="contacted",
     )
     clean.commit()
     _merges(clean).merge(a.id, b.id, admin.id)
@@ -413,7 +412,7 @@ def test_the_profile_the_survivor_leaves_empty_is_filled_and_the_first_attributi
     survivor = clean.get(Freelancer, a.id)
     assert survivor is not None
     assert (survivor.job_title, survivor.daily_rate) == ("Backend", Decimal("400.00"))
-    assert (survivor.utm_source, survivor.status) == ("linkedin", "contacted")
+    assert (survivor.utm_source, survivor.status) == ("linkedin", "new")
     user = clean.get(User, a_user.id)
     assert user is not None
     assert (user.linkedin_url, user.phone) == ("https://www.linkedin.com/in/ada", "333")

@@ -1,5 +1,4 @@
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { ArrowLeft } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
@@ -8,7 +7,7 @@ import { admin, type TeamProposalListItem, type TeamProposalListMember, type Tea
 import { isFilterActive, pageItems, useCursorList } from '@/lib/adminList'
 import { TEAM_ORIGIN_LABELS, formatDateTime } from '@/lib/format'
 import { keys } from '@/lib/query-keys'
-import { Empty, Header, LoadingState, LoadMore } from './list-kit'
+import { BackLink, Empty, Header, LoadingState, LoadMore } from './list-kit'
 
 /** The two outcomes the API filters by (`LIST_OUTCOMES` in core's `team_builder.py`),
  *  and the words the pills say. */
@@ -167,7 +166,14 @@ export function AdminTeamProposals() {
 
   return (
     <>
-      <Header title="Proposte">
+      <Header
+        title="Proposte"
+        back={
+          <BackLink to="/admin/team" activeOptions={{ exact: true }}>
+            Tutte le richieste
+          </BackLink>
+        }
+      >
         <OutcomeFilter value={search.outcome} onChange={setOutcome} />
       </Header>
       {list.isError ? (
@@ -207,15 +213,6 @@ export function AdminTeamProposals() {
           )}
         </>
       )}
-      <p className="px-6 pb-6">
-        <Link
-          to="/admin/team"
-          activeOptions={{ exact: true }}
-          className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline"
-        >
-          <ArrowLeft className="size-4" /> Tutte le richieste
-        </Link>
-      </p>
     </>
   )
 }

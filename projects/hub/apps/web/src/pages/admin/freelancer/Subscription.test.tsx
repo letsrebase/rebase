@@ -76,10 +76,10 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
     expect(screen.getByText('Non ha scaricato la guida.')).toBeInTheDocument()
   })
 
-  it('keeps the enriched sections after saving a state change from the plain PATCH response', async () => {
+  it('keeps the enriched sections after a discard from the plain PATCH response', async () => {
     // `PATCH /freelancers/{id}` answers a plain `FreelancerRead`: none of REB-284's
     // keys even exist on the body, since only `get`'s response model carries them.
-    const plainCard: Record<string, unknown> = { ...ENRICHED, status: 'contacted' }
+    const plainCard: Record<string, unknown> = { ...ENRICHED, status: 'discarded' }
     delete plainCard.signup_utm
     delete plainCard.last_logins
     delete plainCard.last_download_guide
@@ -94,10 +94,10 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
     mount('/admin/freelance/f2')
     await screen.findByRole('heading', { name: 'Grace Hopper' })
 
-    await userEvent.click(screen.getByRole('button', { name: 'Contattato' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Altre azioni' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Scarta' }))
     const banner = await screen.findByRole('banner')
-    await within(banner).findByText('Contattato')
+    await within(banner).findByText('Scartato')
     // The save must merge onto the cached detail, not replace it: the Pigro slug and
     // the other REB-284 sections the PATCH never answers stay on the page.
     await openTab('Contatti e dati')

@@ -1,6 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ArrowLeft } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
@@ -23,7 +22,7 @@ import {
 import { formatDate } from '@/lib/format'
 import { DUPLICATES_KEY, mergeResultLine, pairCount, useDuplicates } from '@/lib/duplicates'
 import { keys } from '@/lib/query-keys'
-import { Empty, Header, LoadingState } from './list-kit'
+import { BackLink, Empty, Header, LoadingState } from './list-kit'
 
 const SIGNAL_LABELS: Record<DuplicateSignal, string> = {
   linkedin: 'Stesso profilo LinkedIn',
@@ -54,7 +53,11 @@ export function AdminDuplicates() {
 
   return (
     <>
-      <Header title="Duplicati" count={list ? pairCount(list) : undefined} />
+      <Header
+        title="Duplicati"
+        count={list ? pairCount(list) : undefined}
+        back={<BackLink to="/admin/talent">Tutti i talenti</BackLink>}
+      />
       {done && (
         <div role="status" className="mx-6 mt-6 space-y-1 border bg-card px-4 py-3 text-sm">
           <p>{mergeResultLine(done)}</p>
@@ -99,11 +102,6 @@ export function AdminDuplicates() {
           : non ha una scheda da unire.
         </p>
       )}
-      <p className="px-6 pb-6">
-        <Link to="/admin/talent" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
-          <ArrowLeft className="size-4" /> Tutti i talenti
-        </Link>
-      </p>
       {pending && (
         <MergeDialog
           key={`${pending.pair.survivor.freelancer_id}:${pending.pair.absorbed.freelancer_id}`}

@@ -24,7 +24,9 @@ from rebase_core.models.identity import UTM_COLUMNS, UTM_MAX_LENGTH
 
 # ---- the hub proper: who wants to work, and who needs people --------------------------
 
-FREELANCER_STATES = ("new", "contacted", "active", "discarded")
+# `new` is the card in play until an admin discards it; `discarded` takes it out of every
+# mail and company-facing list (campaigns, team catalogue, talent cloud, card regeneration).
+FREELANCER_STATES = ("new", "discarded")
 # A row of the Talenti list: a card's own state, or `lead` for a bare sign-up with no card.
 TALENT_STATES = (*FREELANCER_STATES, "lead")
 # Who wrote the seven answers last (ORB-155): the person, through the wizard or the
@@ -137,9 +139,7 @@ class Freelancer(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
 
     __table_args__ = (
         Index("ix_freelancers_created_at", "created_at"),
-        CheckConstraint(
-            "status IN ('new', 'contacted', 'active', 'discarded')", name="ck_freelancers_status"
-        ),
+        CheckConstraint("status IN ('new', 'discarded')", name="ck_freelancers_status"),
         CheckConstraint("filled_by IN ('person', 'admin')", name="ck_freelancers_filled_by"),
         CheckConstraint(
             "remote IS NULL OR remote IN ('remote', 'hybrid', 'on_site')",

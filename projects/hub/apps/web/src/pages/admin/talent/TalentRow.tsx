@@ -50,7 +50,7 @@ export function TalentRow({
       </TableCell>
       <TableCell>
         <div className="flex flex-wrap items-center gap-1.5">
-          <StatePill status={item.status} />
+          {item.status !== 'new' && <StatePill status={item.status} />}
           {item.vetted_at && <VettedPill />}
           {item.work_profile_state === 'draft' && <ToReviewPill />}
           <DuplicatePill others={item.duplicate_possible_of} />

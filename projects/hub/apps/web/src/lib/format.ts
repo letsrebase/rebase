@@ -48,11 +48,20 @@ export function formatBytes(size: number): string {
 export const REMOTE_LABELS = { remote: 'Da remoto', hybrid: 'Ibrido', on_site: 'In sede' } as const
 /** Who filled a freelancer's card, as a diff of the audit trail reads it (`filled_by`). */
 export const FILLED_BY_LABELS: Record<string, string> = { person: 'la persona', admin: 'un admin' }
-export const FREELANCER_STATES = ['new', 'contacted', 'active', 'discarded'] as const
-/** The states the freelancer list filters by: the card's four, plus the pseudo-state of a
- *  signup with no card (ORB-163). */
-export const FREELANCER_LIST_STATES = [...FREELANCER_STATES, 'lead'] as const
+/** The states the talent list and a campaign's audience filter by: a card in play (`new`),
+ *  a card an admin discarded, and the pseudo-state of a signup with no card (ORB-163). The
+ *  card has no other state since REB-1164: the relationship is the CRM's and the notes'. */
+export const FREELANCER_LIST_STATES = ['new', 'discarded', 'lead'] as const
+/** Their words where only talents are listed: `STATE_LABELS`' «Nuovo» would say a card is
+ *  fresh when it only means nobody discarded it. */
+export const TALENT_STATE_LABELS: Record<string, string> = {
+  new: 'Con scheda',
+  discarded: 'Scartato',
+  lead: 'Lead',
+}
 export const COMPANY_STATES = ['new', 'contacted', 'in_progress', 'closed'] as const
+/** Also words a talent's `contacted` and `active`, which REB-1164 removed, as old entries of
+ *  the audit trail still name them. */
 export const STATE_LABELS: Record<string, string> = {
   new: 'Nuovo',
   lead: 'Lead',

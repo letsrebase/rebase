@@ -22,7 +22,8 @@ describe('the Talenti list (REB-282/283)', () => {
     mount('/admin/talent')
 
     const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
-    expect(within(cellUnder(ada, 'Stato')).getByText('Nuovo')).toBeInTheDocument()
+    // A card in play carries no state pill (REB-1164): only a discarded one or a lead does.
+    expect(cellUnder(ada, 'Stato')).not.toHaveTextContent('Nuovo')
     expect(cellUnder(ada, 'Provenienza')).toHaveTextContent('wizard')
     const adaLink = within(ada).getByRole('link', { name: 'Ada Lovelace' })
     expect(adaLink.getAttribute('href')).toMatch(/\/admin\/freelance\/f1$/)
@@ -102,12 +103,17 @@ describe('the Talenti list (REB-282/283)', () => {
     expect(cellUnder(ada, 'Modalità')).toHaveTextContent('—')
   })
 
-  it('filters by state through the same pills as before, «Lead» included', async () => {
+  it('filters by the card in play, the discarded one and the lead', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { total: 0, items: [], by_status: {} }))
     mount('/admin/talent')
     await screen.findByRole('heading', { name: 'Talenti' })
-    expect(screen.getByRole('button', { name: 'Nuovo' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Lead' })).toBeInTheDocument()
+    const states = screen.getByRole('group', { name: 'Filtra per stato' })
+    expect(within(states).getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Tutti',
+      'Con scheda',
+      'Scartato',
+      'Lead',
+    ])
   })
 })
 
@@ -185,7 +191,7 @@ describe('every filter and the search box live in the URL, both ways (REB-286)',
     const router = mount('/admin/talent')
     await screen.findByRole('heading', { name: 'Talenti' })
 
-    await userEvent.click(screen.getByRole('button', { name: 'Nuovo' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Con scheda' }))
     await userEvent.type(screen.getByLabelText('Posizione'), 'CTO')
 
     await waitFor(() =>
