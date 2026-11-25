@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
 
-const PAGES = ['/', '/pigrocrm', '/privacy', '/terms', '/pitch', '/company'] as const
+const PAGES = ['/', '/pigrocrm', '/privacy', '/terms', '/pitch', '/company', '/talks/technical-interviews'] as const
 const BUDGET_BYTES = 40 * 1024
 // The hosts these pages may ever talk to besides their own: the ChatGPT Ads measurement
 // SDK and PostHog. "May ever" is the whole subtlety -- `consent.js` injects both only
@@ -740,12 +740,13 @@ test.describe('Accedi finds a session already there', () => {
   })
 })
 
-// REB-553: the two decks share one script, deck.js, and their stylesheet hides every
+// REB-553: the decks share one script, deck.js, and their stylesheet hides every
 // slide until that script marks one `active`. The generic checks above pass on a deck
-// that stays blank, so this drives both: the first slide is the one shown, and the
+// that stays blank (REB-1172's talk deck did, once, when a `.role` that was not the
+// cover's made deck.js throw), so this drives every deck: the first slide is the one shown, and the
 // right arrow moves to the second, in the counter and in the hash alike.
 test.describe('the decks', () => {
-  for (const path of ['/pitch', '/company'] as const) {
+  for (const path of ['/pitch', '/company', '/talks/technical-interviews'] as const) {
     test(`${path} shows its first slide, and the right arrow moves to the second`, async ({ page }) => {
       await page.goto(path, { waitUntil: 'networkidle' })
       const slides = page.locator('.slide')

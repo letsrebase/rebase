@@ -44,7 +44,15 @@ import { PAGES, REDIRECTS, SITE_HOST, route } from './path-map-plugin'
  *   cannot, follow it further.
  */
 
-const PAGE_FILES = ['index.html', 'pigrocrm.html', 'privacy.html', 'terms.html', 'pitch.html', 'company.html'] as const
+const PAGE_FILES = [
+  'index.html',
+  'pigrocrm.html',
+  'privacy.html',
+  'terms.html',
+  'pitch.html',
+  'company.html',
+  'talks/technical-interviews.html',
+] as const
 type PageFile = (typeof PAGE_FILES)[number]
 
 const SRC_DIR = join(__dirname)

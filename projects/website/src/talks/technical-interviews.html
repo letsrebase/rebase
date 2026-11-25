@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Technical interviews are useless in the AI era — rebase</title>
+    <meta name="description" content="The talk Ivan Sala and Lorenzo Fiore gave at AI Socratic's AI Aperitivo, November 2026: why the classic technical interview stopped working, and an AI-native way to evaluate a candidate from how they actually work with AI." />
+    <meta name="robots" content="noindex" />
+    <link rel="canonical" href="https://letsrebase.com/talks/technical-interviews" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content="Technical interviews are useless in the AI era" />
+    <meta property="og:description" content="An AI-native approach to evaluating a candidate. A talk by Ivan Sala and Lorenzo Fiore, rebase." />
+    <meta property="og:url" content="https://letsrebase.com/talks/technical-interviews" />
+    <meta property="og:site_name" content="rebase" />
+    <meta property="og:image" content="https://letsrebase.com/assets/share-card-2.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Il marchio rebase, quattro tessere su fondo blu, con il claim «freelance, ma non da soli»" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image:alt" content="Il marchio rebase, quattro tessere su fondo blu, con il claim «freelance, ma non da soli»" />
+    <!-- The talk deck for AI Socratic's AI Aperitivo, Milan, 2026-11-25 (REB-1172): Ivan Sala
+      opens (slides 1-12), Lorenzo Fiore goes deep on rebase-verify and runs the demo
+      (13-19). In English, spoken in Italian. Second draft, after Ivan's review: bolder and
+      more energetic, with two full-colour slide styles for the loud beats (`.hot`,
+      watermelon; `.sun`, gold), no member count, Ivan's bio from his LinkedIn headline,
+      no client names. The stage, the stylesheet and the script are /company's and
+      /pitch's; the rules only this deck needs are in the style block below and use the
+      same tokens. Arrow keys, space, swipe and the wheel move between slides; F is full
+      screen; ?static=1 stacks them for export. Served at /talks/technical-interviews, two
+      segments deep, so every file it loads is named from the root (`/pitch.css`), not
+      relative to the page as /company does. The speakers' role line is `.title`, not
+      `.role`: deck.js used to take the first `.role` on a page for the cover's typewriter,
+      which blanked this deck once (it now reads only `h1 .role[data-roles]`). -->
+    <link rel="icon" type="image/svg+xml" href="/rebase-logo.svg" />
+    <link rel="stylesheet" href="/pitch.css" />
+    <style>
+      /* Full-colour slides for the loud beats. */
+      .slide.hot { background-color: var(--melon); color: #fff; background-image:
+        linear-gradient(to right, rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.1) 1px, transparent 1px); }
+      .slide.hot canvas { opacity: 0.16; }
+      .hot .kicker, .hot .accent { color: var(--ink); }
+      .hot .lead, .hot .label { color: rgba(255, 255, 255, 0.92); }
+      .hot .glyph { background: #fff; box-shadow: 14px 0 0 var(--gold), 0 14px 0 var(--ink), 14px 14px 0 #fff; }
+      .hot .foot { color: rgba(255, 255, 255, 0.9); } .hot .foot span { background: transparent; }
+      .slide.sun { background-color: var(--gold); color: var(--ink); background-image:
+        linear-gradient(to right, rgba(1, 25, 54, 0.08) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(1, 25, 54, 0.08) 1px, transparent 1px); }
+      .slide.sun canvas { opacity: 0.3; }
+      .sun .kicker { color: var(--ink); }
+      .sun .glyph { background: var(--ink); box-shadow: 14px 0 0 #fff, 0 14px 0 var(--melon), 14px 14px 0 var(--ink); }
+      .sun .lead { color: var(--ink); }
+      .sun .foot { color: var(--ink); } .sun .foot span { background: transparent; }
+      .hl { background: var(--ink); color: var(--gold); padding: 0 0.14em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+      .huge { font-size: 150px; font-weight: 600; line-height: 1; letter-spacing: -0.04em; }
+
+      /* A line of stages, left-aligned, every caption starting on the same line. */
+      .track { display: grid; grid-template-columns: repeat(var(--n, 3), 1fr); gap: 48px; }
+      .track > div { border-top: 10px solid var(--ink); padding-top: 26px; }
+      .dark .track > div { border-top-color: rgba(255, 255, 255, 0.3); }
+      .track > div.on { border-top-color: var(--melon); }
+      .dark .track > div.on { border-top-color: var(--gold); }
+      .track .when { font-size: 30px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--melon); }
+      .dark .track .when { color: var(--gold); }
+      .track .q { font-size: 58px; font-weight: 600; line-height: 1.06; letter-spacing: -0.02em; margin-top: 16px; }
+      .track p { font-size: 30px; line-height: 1.32; color: var(--quiet); font-weight: 400; margin-top: 18px; }
+      .dark .track p { color: rgba(255, 255, 255, 0.78); }
+
+      /* Yesterday's interview, struck out once the words are on screen. */
+      .struck { display: grid; grid-template-columns: 1fr 1fr; gap: 26px 80px; }
+      .struck span { position: relative; display: inline-block; font-size: 104px; font-weight: 600; letter-spacing: -0.035em; line-height: 1.05; }
+      .struck span::after { content: ''; position: absolute; left: -8px; right: -8px; top: 54%; height: 14px; background: var(--melon); transform: scaleX(0); transform-origin: left; transition: transform 0.45s var(--ease); transition-delay: var(--sd, 1s); }
+      .active .struck span::after { transform: scaleX(1); }
+      body.static .struck span::after { transform: none; transition: none; }
+
+      .term { display: inline-flex; align-items: center; gap: 0.6em; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 44px; font-weight: 500; letter-spacing: 0; padding: 26px 40px; background: var(--ink); color: #fff; border: 3px solid var(--ink); box-shadow: var(--step) var(--step) 0 var(--gold); }
+      .term .p { color: var(--gold); }
+      .dark .term { background: rgba(255, 255, 255, 0.06); border-color: #fff; }
+      .hot .term { background: var(--ink); border-color: var(--ink); box-shadow: var(--step) var(--step) 0 #fff; }
+      .mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; letter-spacing: 0; }
+      .lenses { display: grid; grid-template-columns: repeat(4, 1fr); gap: 30px 36px; }
+      .lenses > div { border-top: 3px solid var(--ink); padding-top: 18px; }
+      .lenses h3 { font-size: 40px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.05; margin-bottom: 12px; }
+      .lenses p { font-size: 27px; line-height: 1.32; color: var(--quiet); font-weight: 400; }
+      .lenses .n { font-size: 24px; font-weight: 600; color: var(--melon); margin-bottom: 8px; }
+      .lenses .plus { border-top-color: var(--melon); }
+      .prac { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; }
+      .prac h3 { font-size: 30px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); margin-bottom: 14px; }
+      .prac ul { padding: 0; }
+      .prac li { list-style: none; font-size: 34px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.1; padding: 10px 0; border-top: 2px solid rgba(255, 255, 255, 0.16); }
+      .chip { display: inline-block; font-size: 28px; padding: 12px 22px; border: 2px solid var(--gold); color: #fff; }
+      .chip b { color: var(--gold); font-weight: 600; }
+
+      /* The two speakers: same shape, so the two columns line up to the last line. */
+      .team.two .person { display: flex; flex-direction: column; }
+      .team.two .person p:not(.title) { flex: 1; }
+      /* `.title`, the look of pitch.css's `.person .role` (see the comment at the top). */
+      .person .title { font-size: 28px; font-weight: 600; color: var(--melon); margin: 12px 0 22px; }
+      .person .part { align-self: flex-start; font-size: 24px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; background: var(--ink); color: var(--gold); padding: 8px 14px; margin-top: 28px; }
+
+      .qrs { display: flex; gap: 56px; }
+      .qrs figure { text-align: center; }
+      .qrs figcaption { margin-top: 26px; font-size: 26px; font-weight: 600; color: var(--ink); }
+      .qrbox svg { display: block; }
+      /* No blank page after the last slide in the PDF. */
+      @media print { body.static .slide:last-child { page-break-after: auto; } }
+    </style>
+    <noscript>
+      <style>
+        html body { overflow: auto; }
+        html body .stage { position: static; transform: none; width: 1920px; height: auto; }
+        html body .slide { position: relative; opacity: 1; visibility: visible; margin-bottom: 40px; }
+        html body [data-reveal] { opacity: 1; transform: none; transition: none; }
+        html body .mark-in { animation: none; }
+        html body .nav, html body .progress, html body .counter, html body .hint { display: none; }
+        html body h1 .role::after { display: none; }
+        html body .struck span::after { transform: none; transition: none; }
+      </style>
+    </noscript>
+  </head>
+  <body>
+    <div class="stage">
+
+      <!-- 1 · Cover (approved by Ivan, 2026-11-25). -->
+      <section class="slide" data-seed="3" data-band="diagonal">
+        <canvas></canvas>
+        <div class="box" style="left: 120px; right: 120px; top: 96px; bottom: 130px; padding: 64px 84px;">
+          <div class="brand" style="position: static;"><span class="glyph"></span>rebase</div>
+          <div class="center" style="height: 100%; margin-top: -50px;">
+            <p class="kicker" data-reveal style="--d: 0.1s;">AI Socratic · AI Aperitivo · Milan, November 2026</p>
+            <h1 data-reveal style="--d: 0.25s; margin-top: 34px; font-size: 140px;">Technical interviews<br />are <span class="accent">useless</span><br />in the AI era.</h1>
+            <p class="lead" data-reveal style="--d: 0.5s; margin-top: 40px; font-size: 40px; max-width: none;">An AI-native approach to evaluating a candidate.</p>
+          </div>
+          <p class="label" style="position: absolute; left: 84px; bottom: 56px; font-size: 28px;"><b style="font-weight: 600; color: var(--ink);">Ivan Sala &amp; Lorenzo Fiore</b> · letsrebase.com</p>
+        </div>
+      </section>
+
+      <!-- 2 · Who we are, as rebase, with no member count (Ivan, 2026-11-25), and why the
+        talk is ours to give: vetting people is the job. -->
+      <section class="slide dark" data-seed="23" data-band="bottomleft">
+        <canvas></canvas>
+        <div class="brand"><span class="glyph"></span>rebase</div>
+        <div class="pad center">
+          <p class="kicker" data-reveal>Who we are · <span class="lower">rebase</span></p>
+          <h2 class="statement" data-reveal style="--d: 0.15s; margin-top: 24px; font-size: 100px; max-width: 16em;">We vet tech freelancers for a living. <span class="accent">So we had to rethink the interview.</span></h2>
+          <div class="cols" style="margin-top: 70px; gap: 60px;">
+            <div data-reveal style="--d: 0.5s;"><div class="sw" style="background: #fff;"></div><h3 style="font-size: 54px;">A community</h3><p>Developers, AI engineers and CTOs in Italy who work for themselves.</p></div>
+            <div data-reveal style="--d: 0.65s;"><div class="sw" style="background: var(--gold);"></div><h3 style="font-size: 54px;">The right match</h3><p>A company describes the project. We bring the right people, fast.</p></div>
+            <div data-reveal style="--d: 0.8s;"><div class="sw" style="background: var(--melon);"></div><h3 style="font-size: 54px;">Vetted, one by one</h3><p>Every profile goes past a CTO before a company sees it.</p></div>
+          </div>
+        </div>
+        <div class="foot"><span>letsrebase.com</span><span></span></div>
+      </section>
+
+      <!-- 3 · The two speakers. Ivan's line from his LinkedIn headline («Aiuto startup a
+        diventare AI native»); A2A named as his reference, the stealth AI startup on his
+        LinkedIn, and Owlise as an exit (Ivan, 2026-11-25); Lorenzo's as approved. The
+        bios fill their column, so the two «Part» labels sit on the same line. -->
+      <section class="slide" data-seed="15" data-band="bottomleft">
+        <canvas></canvas>
+        <div class="box" style="left: 120px; right: 120px; top: 72px; bottom: 116px; padding: 56px 84px;">
+          <div class="brand" style="position: static;"><span class="glyph"></span>rebase</div>
+          <p class="kicker" data-reveal style="margin-top: 44px;">Tonight</p>
+          <h2 class="statement small" data-reveal style="--d: 0.15s; margin-top: 12px; font-size: 80px; max-width: none;">Two CTOs, <span class="accent">two halves of the talk.</span></h2>
+          <div class="team two" style="margin-top: 44px; gap: 90px;">
+            <div class="person" data-reveal style="--d: 0.4s;">
+              <img class="photo" src="/pitch/ivan.webp" alt="Ivan Sala" />
+              <h3>Ivan Sala</h3>
+              <p class="title">Co-founder · fractional CTO</p>
+              <p>Fractional CTO and AI engineer: helps startups become AI native. CTO of a stealth AI startup with A2A. Exited Owlise, a private AI platform.</p>
+              <span class="part">Part 1 · the argument</span>
+            </div>
+            <div class="person" data-reveal style="--d: 0.55s;">
+              <img class="photo" src="/voices/lorenzo-fiore.webp" alt="Lorenzo Fiore" />
+              <h3>Lorenzo Fiore</h3>
+              <p class="title">Co-founder · fractional CTO</p>
+              <p>Fractional CTO and AI engineer: takes founders and early-stage teams from the idea to the product. CTO at Sencare.</p>
+              <span class="part">Part 2 · the tool, live</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4 · The show of hands: only who wrote code by hand (Ivan, 2026-11-25). -->
+      <section class="slide sun" data-seed="27" data-band="topright">
+        <canvas></canvas>
+        <div class="brand"><span class="glyph"></span>rebase</div>
+        <div class="pad center">
+          <p class="kicker" data-reveal>Hands up</p>
+          <h2 class="huge" data-reveal style="--d: 0.15s; margin-top: 28px; font-size: 156px; line-height: 1.16;">Who wrote code<br /><span class="hl">by hand</span> last week?</h2>
+          <p class="lead" data-reveal style="--d: 0.5s; margin-top: 54px; font-size: 44px; font-weight: 500;">Not a prompt. Not an autocomplete. Lines you typed.</p>
+        </div>
+        <div class="foot"><span>letsrebase.com</span><span></span></div>
+      </section>
+
+      <!-- 5 · The claim, redrawn: AI writes the code better than we do (Ivan, 2026-11-25). -->
+      <section class="slide hot" data-seed="31" data-band="topright">
+        <canvas></canvas>
+        <div class="brand"><span class="glyph"></span>rebase</div>
+        <div class="pad center">
+          <p class="kicker" data-reveal>The claim</p>
+          <h2 class="huge" data-reveal style="--d: 0.15s; margin-top: 28px;">AI writes code<br />better than us.</h2>
+          <h2 class="huge" data-reveal style="--d: 0.7s; margin-top: 40px; font-size: 112px; color: var(--ink);">So why do we still<br />interview for it?</h2>
+        </div>
+        <div class="foot"><span>letsrebase.com</span><span></span></div>
+      </section>
+
+      <!-- 6 · Three ages, the map of Ivan's half, every column on the same left edge. -->
+      <section class="slide dark" data-seed="12" data-band="topright">
+        <canvas></canvas>
+        <div class="brand"><span class="glyph"></span>rebase</div>
+        <div class="pad center">
+          <p class="kicker" data-reveal>Three ages of the tech interview</p>
+          <h2 class="statement" data-reveal style="--d: 0.15s; margin-top: 24px;">From typing code to <span class="accent">reading how you work.</span></h2>
+          <div class="track" style="margin-top: 90px;">
+            <div data-reveal style="--d: 0.5s;"><div class="when">1 · Yesterday</div><div class="q">Can you write the code?</div></div>
+            <div data-reveal style="--d: 0.7s;"><div class="when">2 · Today</div><div class="q">Can you design it, with AI beside you?</div></div>
+            <div class="on" data-reveal style="--d: 0.9s;"><div class="when">3 · Tomorrow</div><div class="q">Show us how you really work with AI.</div></div>
+          </div>
+        </div>
+        <div class="foot"><span>letsrebase.com</span><span></span></div>
+      </section>
+
+      <!-- 7 · Yesterday: the classic loop, struck out once it is on screen. -->
+      <section class="slide" data-seed="21" data-band="bottomleft">
+        <canvas></canvas>
+        <div class="box" style="left: 120px; right: 120px; top: 72px; bottom: 116px; padding: 56px 84px;">
+          <div class="brand" style="position: static;"><span class="glyph"></span>rebase</div>
+          <div class="center" style="height: calc(100% - 60px);">
+            <p class="kicker" data-reveal>1 · Yesterday</p>
+            <h2 class="statement small" data-reveal style="--d: 0.15s; margin-top: 20px;">We tested <span class="accent">how you type code.</span></h2>
+            <div class="struck" style="margin-top: 60px;">
+              <div data-reveal style="--d: 0.35s;"><span style="--sd: 1.2s;">LeetCode</span></div>
+              <div data-reveal style="--d: 0.45s;"><span style="--sd: 1.4s;">Kata</span></div>
+              <div data-reveal style="--d: 0.55s;"><span style="--sd: 1.6s;">Live coding</span></div>
+              <div data-reveal style="--d: 0.65s;"><span style="--sd: 1.8s;">Syntax trivia</span></div>
+            </div>
+            <p class="label" data-reveal style="--d: 2.1s; margin-top: 56px; font-size: 38px; font-weight: 600; color: var(--melon);">All of it assumes that a person types the code.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 8 · What changed. -->
+      <section class="slide dark" data-seed="4" data-band="topright">
+        <canvas></canvas>
+        <div class="brand"><span class="glyph"></span>rebase</div>
+        <div class="pad center">
+          <p class="kicker" data-reveal>What changed</p>
+          <h2 class="huge" data-reveal style="--d: 0.15s; margin-top: 24px;">The bottleneck <span class="accent">moved.</span></h2>
+          <div class="cols" style="margin-top: 80px; gap: 60px;">
+            <div data-reveal style="--d: 0.5s;"><div class="sw" style="background: #fff;"></div><h3 style="font-size: 56px;">Harnesses fill the gaps</h3><p>Claude Code, Codex, Cursor know the syntax you forgot.</p></div>
+            <div data-reveal style="--d: 0.65s;"><div class="sw" style="background: var(--gold);"></div><h3 style="font-size: 56px;">Weeks become days</h3><p>One person with agents ships what a team used to.</p></div>
+            <div data-reveal style="--d: 0.8s;"><div class="sw" style="background: var(--melon);"></div><h3 style="font-size: 56px;">Judgment is scarce</h3><p>A gap in the code is cheap now. A gap in the design is not.</p></div>
+          </div>
+        </div>
+        <div class="foot"><span>letsrebase.com</span><span></span></div>
+      </section>
+
+      <!-- 9 · Today: Wonderful's loop as Ivan described it (around May–June 2026). -->
+      <section class="slide" data-seed="9" data-band="topright">
+        <canvas></canvas>
+        <div class="box" style="left: 120px; right: 120px; top: 72px; bottom: 116px; padding: 56px 84px;">
+          <div class="brand" style="position: static;"><span class="glyph"></span>rebase</div>
+          <div class="center" style="height: calc(100% - 60px);">
+            <p class="kicker" data-reveal>2 · Today</p>
+            <h2 class="statement small" data-reveal style="--d: 0.15s; margin-top: 16px; font-size: 80px;">Better loops already exist.<br /><span class="accent">Take Wonderful's.</span></h2>
+            <p class="lead" data-reveal style="--d: 0.3s; margin-top: 14px; font-size: 32px;">Their engineering interviews, as they ran around May–June 2026.</p>
+            <div class="track" style="margin-top: 44px;">
+              <div data-reveal style="--d: 0.5s;"><div class="when">Step 1</div><div class="q" style="font-size: 52px;">Intro</div><p>Who you are and what you have built.</p></div>
+              <div class="on" data-reveal style="--d: 0.7s;"><div class="when">Step 2</div><div class="q" style="font-size: 52px;">System design with peers</div><p>A complex architecture, analysed together, then built together, AI-driven.</p></div>
+              <div data-reveal style="--d: 0.9s;"><div class="when">Step 3</div><div class="q" style="font-size: 52px;">Project management</div><p>What a forward deployed engineer needs next to the code.</p></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 10 · Today's limit: what a session in a room cannot see. -->
+      <section class="slide dark" data-seed="18" data-band="bottomleft">
+        <canvas></canvas>
+        <div class="brand"><span class="glyph"></span>rebase</div>
+        <div class="pad center">
+          <p class="kicker" data-reveal>2 · Today, and its limit</p>
+          <h2 class="statement" data-reveal style="--d: 0.15s; margin-top: 20px;">Explaining a system is not <span class="accent">shipping one with AI.</span></h2>
+          <div class="cols" style="margin-top: 70px; gap: 60px;">
+            <div data-reveal style="--d: 0.45s;"><div class="sw" style="background: #fff;"></div><h3 style="font-size: 60px;">Which harness?</h3><p>Claude Code, Codex, Cursor, your own agents and skills.</p></div>
+            <div data-reveal style="--d: 0.6s;"><div class="sw" style="background: var(--gold);"></div><h3 style="font-size: 60px;">Which model?</h3><p>When you plan, when you delegate, when you check.</p></div>
+            <div data-reveal style="--d: 0.75s;"><div class="sw" style="background: var(--melon);"></div><h3 style="font-size: 60px;">How does it land?</h3><p>Plans, tests, reviews, and what you do when the model gets it wrong.</p></div>
+          </div>
+          <p class="label" data-reveal style="--d: 1s; margin-top: 64px; font-size: 40px; font-weight: 600; color: var(--gold);">One hour in a meeting room can't see it. Your daily work can.</p>
+        </div>
+        <div class="foot"><span>letsrebase.com</span><span></span></div>
+      </section>
+
+      <!-- 11 · Tomorrow. -->
+      <section class="slide" data-seed="16" data-band="topright">
+        <canvas></canvas>
+        <div class="box" style="left: 120px; right: 120px; top: 72px; bottom: 116px; padding: 56px 84px;">
+          <div class="brand" style="position: static;"><span class="glyph"></span>rebase</div>
+          <div class="center" style="height: calc(100% - 60px);">
+            <p class="kicker" data-reveal>3 · Tomorrow</p>
+            <h2 class="statement" data-reveal style="--d: 0.15s; margin-top: 16px; font-size: 96px;">Judge the thinking. <span class="accent">Judge the AI practice.</span></h2>
+            <div class="cols" style="margin-top: 50px; gap: 60px;">
+              <div data-reveal style="--d: 0.45s;"><div class="sw" style="background: var(--ink);"></div><h3 style="font-size: 56px;">Architecture</h3><p>Systems at a high level and their trade-offs. Gaps in the details are fine.</p></div>
+              <div data-reveal style="--d: 0.6s;"><div class="sw" style="background: var(--gold);"></div><h3 style="font-size: 56px;">AI practice</h3><p>The harness, the models and the workflow you use every day.</p></div>
+              <div data-reveal style="--d: 0.75s;"><div class="sw" style="background: var(--melon);"></div><h3 style="font-size: 56px;">Real evidence</h3><p>Your own sessions, not a staged exercise. Then a conversation.</p></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 12 · The hand-over to Lorenzo. -->
+      <section class="slide hot" data-seed="6" data-band="bottomleft">
+        <canvas></canvas>
+        <div class="brand"><span class="glyph"></span>rebase</div>
+        <div class="pad center">
+          <p class="kicker" data-reveal>The evidence</p>
+          <h2 class="huge" data-reveal style="--d: 0.15s; margin-top: 28px; font-size: 168px;">It's already in<br /><span class="accent">your agent logs.</span></h2>
+          <p class="label" data-reveal style="--d: 0.6s; margin-top: 60px; font-size: 44px; font-weight: 600; color: #fff;">Lorenzo Fiore →</p>
+        </div>
+        <div class="foot"><span>letsrebase.com</span><span></span></div>
+      </section>
+
+      <!-- 13 · rebase-verify, from its README («A CV is … the wrong surface»). -->
+      <section class="slide dark" data-seed="7" data-band="topright">
+        <canvas></canvas>
+        <div class="brand"><span class="glyph"></span>rebase</div>
+        <div class="pad center">
+          <p class="kicker" data-reveal><span class="lower">rebase-verify</span></p>
+          <h2 class="statement" data-reveal style="--d: 0.15s; margin-top: 20px; font-size: 100px;">Your agent logs are <span class="accent">the new CV.</span></h2>
+          <div data-reveal style="--d: 0.35s; margin-top: 44px;"><span class="term"><span class="p">$</span>npx @letsrebase/verify</span></div>
+          <div class="cols" style="margin-top: 64px; gap: 60px;">
+            <div data-reveal style="--d: 0.55s;"><div class="sw" style="background: #fff;"></div><h3 style="font-size: 48px;">Reads your logs, locally</h3><p>Claude Code, Codex, opencode, Cursor CLI, pi and more, in one profile.</p></div>
+            <div data-reveal style="--d: 0.7s;"><div class="sw" style="background: var(--gold);"></div><h3 style="font-size: 48px;">Written by your model</h3><p>The agent you pick writes the story and classifies four practices.</p></div>
+            <div data-reveal style="--d: 0.85s;"><div class="sw" style="background: var(--melon);"></div><h3 style="font-size: 48px;">Sent only on a yes</h3><p>Redacted on your laptop. Your raw logs never reach us.</p></div>
+          </div>
+        </div>
+        <div class="foot"><span>Open source, MIT · a fork of Play New's apply-new · github.com/letsrebase/verify</span><span></span></div>
+      </section>
+
+      <!-- 14 · The seven lenses, from the README's «What we look at». -->
+      <section class="slide" data-seed="26" data-band="bottomleft">
+        <canvas></canvas>
+        <div class="box" style="left: 120px; right: 120px; top: 72px; bottom: 116px; padding: 56px 84px;">
+          <div class="brand" style="position: static;"><span class="glyph"></span>rebase</div>
+          <div class="center" style="height: calc(100% - 60px);">
+            <p class="kicker" data-reveal>What it reads</p>
+            <h2 class="statement small" data-reveal style="--d: 0.15s; margin-top: 16px; font-size: 80px;">Seven lenses, <span class="accent">from your logs.</span></h2>
+            <div class="lenses" style="margin-top: 50px;">
+              <div data-reveal style="--d: 0.35s;"><div class="n">1</div><h3>What you work on</h3><p>Three to five fields of work. Products counted, never named.</p></div>
+              <div data-reveal style="--d: 0.42s;"><div class="n">2</div><h3>How you reason</h3><p>Research-first, orchestrator, verification-heavy, risk-calibrated.</p></div>
+              <div data-reveal style="--d: 0.49s;"><div class="n">3</div><h3>How you use the model</h3><p>From directing it to thinking with it, and when you switch.</p></div>
+              <div data-reveal style="--d: 0.56s;"><div class="n">4</div><h3>How deep it goes</h3><p>Active days, sessions a day, session depth, streaks.</p></div>
+              <div data-reveal style="--d: 0.63s;"><div class="n">5</div><h3>How you spread it</h3><p>Steering many products, or building a few in depth.</p></div>
+              <div data-reveal style="--d: 0.7s;"><div class="n">6</div><h3>How long, per tech</h3><p>Occasional, recurring, continuous: a label for month counts.</p></div>
+              <div data-reveal style="--d: 0.77s;"><div class="n">7</div><h3>Agentic fluency</h3><p>What you use, what you build (skills, hooks, CLAUDE.md), how you organise.</p></div>
+              <div class="plus" data-reveal style="--d: 0.84s;"><div class="n">+</div><h3>And a check</h3><p>Three to five projects, your trajectory, and prose that must track the data.</p></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 15 · The eleven practices, «seen in N of M sessions». The chip is an example. -->
+      <section class="slide dark" data-seed="14" data-band="topright">
+        <canvas></canvas>
+        <div class="brand"><span class="glyph"></span>rebase</div>
+        <div class="pad center">
+          <p class="kicker" data-reveal>How the work is done</p>
+          <h2 class="statement small" data-reveal style="--d: 0.15s; margin-top: 16px; font-size: 80px;">Not what you say you do. <span class="accent">What you actually do.</span></h2>
+          <div class="prac" style="margin-top: 48px;">
+            <div data-reveal style="--d: 0.4s;">
+              <h3>Counted by code · 7</h3>
+              <ul>
+                <li>Checks run before a commit</li>
+                <li>Tests changed with the code</li>
+                <li>Failure reproduced before the fix</li>
+                <li>A plan before the first edit</li>
+                <li>The diff shown before commit</li>
+                <li>Design documents written</li>
+                <li>Security checks run</li>
+              </ul>
+            </div>
+            <div data-reveal style="--d: 0.6s;">
+              <h3>Classified by your model · 4</h3>
+              <ul>
+                <li>Asks for alternatives</li>
+                <li>Pushes back, with a reason</li>
+                <li>Says what done means</li>
+                <li>Limits the scope</li>
+              </ul>
+              <p class="label" style="margin-top: 30px; font-size: 26px;">Each published only above 90% agreement and 90% stability, measured on one model (Claude Opus 4.7). Two candidates didn't make it.</p>
+              <p style="margin-top: 30px;"><span class="chip mono">checks before commit · <b>38 of 52</b> sessions</span></p>
+              <p class="label" style="margin-top: 12px; font-size: 22px;">An example of how a count reads.</p>
+            </div>
+          </div>
+        </div>
+        <div class="foot"><span>Never a score, a percentage or a total.</span><span></span></div>
+      </section>
+
+      <!-- 16 · What it doesn't do: DECISIONS.md 2026-11-18 (no score about a person) and the
+        README's «What it isn't» and «Policy». -->
+      <section class="slide" data-seed="6" data-band="diagonal">
+        <canvas></canvas>
+        <div class="box" style="left: 120px; right: 120px; top: 72px; bottom: 116px; padding: 56px 84px;">
+          <div class="brand" style="position: static;"><span class="glyph"></span>rebase</div>
+          <div class="center" style="height: calc(100% - 60px);">
+            <p class="kicker" data-reveal>What it doesn't do</p>
+            <h2 class="statement small" data-reveal style="--d: 0.15s; margin-top: 16px; font-size: 80px;">No score. No robot recruiter. <span class="accent">A person decides.</span></h2>
+            <div class="cols" style="grid-template-columns: repeat(4, 1fr); gap: 44px; margin-top: 52px;">
+              <div data-reveal style="--d: 0.45s;"><div class="sw" style="background: var(--ink);"></div><h3 style="font-size: 48px;">No score</h3><p>No rating, no ranking of a person, no automated decision.</p></div>
+              <div data-reveal style="--d: 0.6s;"><div class="sw" style="background: var(--gold);"></div><h3 style="font-size: 48px;">Raw logs stay yours</h3><p>We get the profile you approved: counts, tags, a short story. Never your logs or your code.</p></div>
+              <div data-reveal style="--d: 0.75s;"><div class="sw" style="background: var(--melon);"></div><h3 style="font-size: 48px;">Checked, not trusted</h3><p>The counted numbers are re-derived from your logs at send; prose that doesn't track the data is blocked.</p></div>
+              <div data-reveal style="--d: 0.9s;"><div class="sw" style="background: var(--quiet);"></div><h3 style="font-size: 48px;">AI Act, high-risk</h3><p>Treated as Annex III §4(a): transparency, human oversight, disclosure, data governance.</p></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 17 · How the hub uses it (projects/hub/AGENTS.md, «Work profiles»). -->
+      <section class="slide dark" data-seed="12" data-band="bottomleft">
+        <canvas></canvas>
+        <div class="brand"><span class="glyph"></span>rebase</div>
+        <div class="pad center">
+          <p class="kicker" data-reveal>At <span class="lower">rebase</span></p>
+          <h2 class="statement" data-reveal style="--d: 0.15s; margin-top: 24px;">From your logs <span class="accent">to a real conversation.</span></h2>
+          <div class="track" style="--n: 4; margin-top: 90px; gap: 40px;">
+            <div data-reveal style="--d: 0.5s;"><div class="when">1</div><div class="q" style="font-size: 52px;">Run it</div><p>Read your profile first, then sign in from the browser and send it.</p></div>
+            <div data-reveal style="--d: 0.65s;"><div class="when">2</div><div class="q" style="font-size: 52px;">Human review</div><p>One of us reads it, with your GitHub as a second witness if you link it.</p></div>
+            <div data-reveal style="--d: 0.8s;"><div class="when">3</div><div class="q" style="font-size: 52px;">Verified</div><p>The badge companies see, first in the talent cloud.</p></div>
+            <div class="on" data-reveal style="--d: 0.95s;"><div class="when">4</div><div class="q" style="font-size: 52px;">The interview</div><p>A conversation about your real work.</p></div>
+          </div>
+        </div>
+        <div class="foot"><span>letsrebase.com</span><span></span></div>
+      </section>
+
+      <!-- 18 · Demo. -->
+      <section class="slide hot" data-seed="23" data-band="topright">
+        <canvas></canvas>
+        <div class="brand"><span class="glyph"></span>rebase</div>
+        <div class="pad center">
+          <p class="kicker" data-reveal>Live</p>
+          <h2 class="h1" data-reveal style="--d: 0.15s; margin-top: 20px; font-size: 320px;">Demo<span class="accent">.</span></h2>
+          <div data-reveal style="--d: 0.45s; margin-top: 60px;"><span class="term" style="font-size: 56px;"><span class="p">$</span>npx @letsrebase/verify</span></div>
+        </div>
+        <div class="foot"><span>Lorenzo Fiore · github.com/letsrebase/verify</span><span></span></div>
+      </section>
+
+      <!-- 19 · Close: two QR codes, the tool and the site, and the srl's company line in
+        the footer, as on every page of the site. -->
+      <section class="slide" data-seed="3" data-band="diagonal">
+        <canvas></canvas>
+        <div class="box" style="left: 120px; right: 120px; top: 72px; bottom: 116px; padding: 56px 84px; display: grid; grid-template-columns: 1fr auto; gap: 70px; align-items: center;">
+          <div>
+            <div class="brand" style="position: static;"><span class="glyph"></span>rebase</div>
+            <p class="kicker" data-reveal style="margin-top: 50px;">Try it tonight</p>
+            <h2 class="h1" data-reveal style="--d: 0.1s; margin-top: 20px; font-size: 124px;">Show us<br /><span class="accent">how you work.</span></h2>
+            <p class="lead" data-reveal style="--d: 0.4s; margin-top: 40px; font-size: 34px; max-width: 22em;">A person at <b style="font-weight: 600;">rebase</b> reads every profile, and the interview starts from it.</p>
+            <p class="label" data-reveal style="--d: 0.6s; margin-top: 44px; font-size: 26px;"><a href="https://github.com/letsrebase/verify">github.com/letsrebase/verify</a> · <a href="/">letsrebase.com</a> · <a href="mailto:ciao@letsrebase.com">ciao@letsrebase.com</a></p>
+          </div>
+          <div class="qrs" data-reveal style="--d: 0.3s;">
+            <figure><div class="qrbox"><svg width="260" height="260" shape-rendering="crispEdges" role="img" aria-label="QR code for github.com/letsrebase/verify" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 29 29" class="qr"><path class="qrline" stroke="#011936" stroke-width="1.02" d="M0 0.5h7m1 0h2m1 0h1m3 0h1m3 0h2m1 0h7m-29 1h1m5 0h1m1 0h5m1 0h1m1 0h1m3 0h1m1 0h1m5 0h1m-29 1h1m1 0h3m1 0h1m2 0h1m2 0h2m2 0h1m1 0h3m1 0h1m1 0h3m1 0h1m-29 1h1m1 0h3m1 0h1m1 0h1m3 0h1m3 0h2m2 0h1m1 0h1m1 0h3m1 0h1m-29 1h1m1 0h3m1 0h1m4 0h9m2 0h1m1 0h3m1 0h1m-29 1h1m5 0h1m3 0h1m1 0h1m1 0h1m1 0h2m1 0h2m1 0h1m5 0h1m-29 1h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7m-21 1h2m3 0h5m-18 1h1m1 0h2m1 0h3m2 0h2m1 0h2m1 0h4m2 0h1m2 0h1m1 0h2m-29 1h1m2 0h3m1 0h6m3 0h1m1 0h3m1 0h3m3 0h1m-29 1h2m1 0h1m2 0h1m2 0h2m1 0h1m1 0h1m1 0h3m1 0h2m1 0h1m2 0h2m-28 1h3m4 0h2m4 0h2m1 0h1m1 0h5m1 0h1m3 0h1m-28 1h1m2 0h1m1 0h2m2 0h1m1 0h1m4 0h1m1 0h1m5 0h2m-27 1h1m2 0h1m1 0h1m2 0h1m3 0h2m1 0h3m1 0h1m2 0h1m3 0h3m-29 1h3m3 0h1m1 0h1m2 0h2m1 0h1m1 0h2m1 0h2m1 0h1m3 0h3m-27 1h1m1 0h1m2 0h1m2 0h1m2 0h1m4 0h7m2 0h1m-28 1h1m5 0h1m1 0h1m1 0h2m4 0h1m1 0h3m3 0h2m1 0h1m-27 1h1m1 0h1m1 0h1m2 0h1m4 0h1m1 0h1m7 0h1m1 0h3m-28 1h1m1 0h8m1 0h2m2 0h2m1 0h1m1 0h1m1 0h3m1 0h1m-23 1h2m1 0h2m1 0h1m1 0h1m3 0h3m3 0h3m1 0h1m-26 1h2m3 0h2m1 0h1m1 0h1m1 0h1m2 0h3m1 0h7m-19 1h1m3 0h3m1 0h1m3 0h1m3 0h5m-29 1h7m1 0h2m2 0h2m5 0h2m1 0h1m1 0h2m1 0h1m-28 1h1m5 0h1m1 0h1m1 0h1m1 0h1m2 0h1m2 0h1m1 0h1m3 0h2m2 0h1m-29 1h1m1 0h3m1 0h1m2 0h2m1 0h1m1 0h4m2 0h5m1 0h1m-27 1h1m1 0h3m1 0h1m1 0h2m1 0h2m1 0h4m1 0h1m1 0h1m1 0h3m2 0h1m-29 1h1m1 0h3m1 0h1m1 0h1m9 0h1m1 0h1m2 0h1m2 0h1m1 0h1m-29 1h1m5 0h1m2 0h2m1 0h1m3 0h1m3 0h2m1 0h1m1 0h1m1 0h1m-28 1h7m1 0h1m1 0h1m1 0h1m1 0h2m3 0h4m4 0h1"/></svg></div><figcaption>the tool</figcaption></figure>
+            <figure><div class="qrbox"><svg width="260" height="260" shape-rendering="crispEdges" role="img" aria-label="QR code for letsrebase.com" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 25 25" class="qr"><path class="qrline" stroke="#011936" stroke-width="1.02" d="M0 0.5h7m1 0h1m1 0h1m2 0h2m3 0h7m-25 1h1m5 0h1m1 0h1m2 0h3m2 0h1m1 0h1m5 0h1m-25 1h1m1 0h3m1 0h1m1 0h1m4 0h2m1 0h1m1 0h1m1 0h3m1 0h1m-25 1h1m1 0h3m1 0h1m2 0h2m2 0h2m3 0h1m1 0h3m1 0h1m-25 1h1m1 0h3m1 0h1m1 0h2m1 0h1m1 0h2m1 0h1m1 0h1m1 0h3m1 0h1m-25 1h1m5 0h1m3 0h2m1 0h2m3 0h1m5 0h1m-25 1h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7m-16 1h2m1 0h3m-15 1h1m2 0h7m1 0h2m1 0h4m2 0h1m1 0h3m-25 1h2m2 0h2m3 0h1m1 0h1m2 0h2m3 0h5m-24 1h1m2 0h1m2 0h1m1 0h1m2 0h1m1 0h3m2 0h1m1 0h2m2 0h1m-25 1h2m1 0h1m1 0h1m3 0h1m1 0h1m2 0h3m1 0h7m-24 1h2m2 0h2m2 0h4m2 0h2m1 0h2m4 0h1m-25 1h1m3 0h1m3 0h1m5 0h4m2 0h1m2 0h1m-24 1h3m3 0h3m2 0h2m1 0h2m1 0h2m1 0h5m-25 1h1m1 0h2m1 0h1m2 0h2m1 0h1m6 0h2m1 0h2m1 0h1m-25 1h1m2 0h2m1 0h5m2 0h1m1 0h6m1 0h2m-16 1h6m2 0h1m3 0h1m1 0h2m-24 1h7m1 0h1m2 0h1m1 0h1m2 0h1m1 0h1m1 0h1m3 0h1m-25 1h1m5 0h1m1 0h3m1 0h2m1 0h2m3 0h1m-21 1h1m1 0h3m1 0h1m1 0h1m1 0h1m1 0h2m1 0h6m2 0h2m-25 1h1m1 0h3m1 0h1m1 0h1m1 0h1m3 0h1m2 0h2m4 0h2m-25 1h1m1 0h3m1 0h1m2 0h2m1 0h1m1 0h2m4 0h5m-25 1h1m5 0h1m3 0h1m4 0h1m1 0h4m1 0h3m-25 1h7m1 0h2m2 0h3m1 0h1m4 0h1m2 0h1"/></svg></div><figcaption>rebase</figcaption></figure>
+          </div>
+        </div>
+        <footer class="foot"><span>Rebase S.r.l. · Via Podgora 11, 20122 Milano · P.IVA e C.F. 14971460960 · REA MI-2819107 · Capitale sociale 10.000 € (versato 2.500 €)</span></footer>
+      </section>
+
+    </div>
+
+    <div class="nav"><button id="prev" aria-label="Previous">←</button><button id="next" aria-label="Next">→</button></div>
+    <div class="progress" id="progress"></div>
+    <div class="counter" id="counter"></div>
+    <div class="hint" id="hint">← → to move · F for full screen</div>
+
+    <script type="module" src="/deck.js"></script>
+  </body>
+</html>

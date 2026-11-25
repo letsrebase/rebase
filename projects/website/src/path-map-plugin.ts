@@ -31,6 +31,7 @@ export const PAGES: Readonly<Record<string, string>> = {
   '/pigrocrm': '/pigrocrm.html',
   '/pitch': '/pitch.html',
   '/company': '/company.html',
+  '/talks/technical-interviews': '/talks/technical-interviews.html',
   '/privacy': '/privacy.html',
   '/terms': '/terms.html',
 }
@@ -65,7 +66,7 @@ export const LOGO_PATH = '/assets/rebase-logo.svg'
  *  to index anyway.
  *  `path-map-plugin.test.ts` reads every page's own head and fails if this list ever
  *  disagrees with it. */
-export const NOINDEX = ['/pitch', '/company'] as const
+export const NOINDEX = ['/pitch', '/company', '/talks/technical-interviews'] as const
 
 /** No `Disallow` line: the two decks are the pages a visitor reaches that this site
  *  would rather a crawler skipped, and each already says so with its own

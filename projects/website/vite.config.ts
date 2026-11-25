@@ -41,6 +41,7 @@ export default defineConfig({
         terms: path.resolve(__dirname, 'src/terms.html'),
         pitch: path.resolve(__dirname, 'src/pitch.html'),
         company: path.resolve(__dirname, 'src/company.html'),
+        'talks/technical-interviews': path.resolve(__dirname, 'src/talks/technical-interviews.html'),
       },
     },
   },

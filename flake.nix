@@ -573,6 +573,7 @@
                 machine.succeed("curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' http://localhost/termini | grep -Fx '301 http://localhost/terms'")
                 machine.succeed("curl -fsS http://localhost/pitch >/dev/null")
                 machine.succeed("curl -fsS http://localhost/company >/dev/null")
+                machine.succeed("curl -fsS http://localhost/talks/technical-interviews >/dev/null")
                 # The community page's older name, dropped on 2026-10-20 (REB-670).
                 machine.succeed("curl -sS -o /dev/null -w '%{http_code}' http://localhost/orbiters | grep -Ex '404'")
                 # The three files the build generates from the same map.
@@ -1402,7 +1403,7 @@
               imports = [ self.nixosModules.nginx-headers ];
 
               options.services.rebase-website = {
-                enable = lib.mkEnableOption "the rebase website: the landing, the product and community pages, the policies, the pitch and the deck for companies";
+                enable = lib.mkEnableOption "the rebase website: the landing, the product and community pages, the policies, the pitch, the deck for companies and the talk decks";
                 package = lib.mkOption {
                   type = lib.types.package;
                   default = own.website;
@@ -1431,6 +1432,8 @@
                       # companies (REB-553), the same kind of page.
                       "= /pitch" = page "pitch.html";
                       "= /company" = page "company.html";
+                      # The deck of a talk (REB-1172), the same kind of page.
+                      "= /talks/technical-interviews" = page "talks/technical-interviews.html";
                       "= /privacy" = page "privacy.html";
                       "= /terms" = page "terms.html";
                       "= /termini" = {
