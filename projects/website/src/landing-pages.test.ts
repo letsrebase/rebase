@@ -706,16 +706,17 @@ describe('who to write to, and who stands behind the site (REB-704)', () => {
     expect(meta(html['privacy.html'], 'og:description')).toMatch(/^Titolare Rebase S\.r\.l\. /)
     expect(meta(html['terms.html'], 'description')).toContain('A quali condizioni Rebase S.r.l. offre')
     expect(html['terms.html']).toContain('Rebase S.r.l. non risponde di perdite di dati')
-    for (const name of [...PAGES, 'company.html', 'pitch.html'] as const) {
-      const page = name === 'company.html' || name === 'pitch.html' ? readFileSync(join(__dirname, name), 'utf-8') : html[name]
+    const decks = ['company.html', 'pitch.html', 'talks/technical-interviews.html'] as const
+    for (const name of [...PAGES, ...decks] as const) {
+      const page = (decks as readonly string[]).includes(name) ? readFileSync(join(__dirname, name), 'utf-8') : html[name as (typeof PAGES)[number]]
       expect(page, name).not.toMatch(/humancraft|14518240\d{3}/i)
     }
   })
 
-  it('shows the company line of the srl in the footer of every page, the two decks on their closing slide', () => {
+  it('shows the company line of the srl in the footer of every page, the decks on their closing slide', () => {
     const line =
       'Rebase S.r.l. · Via Podgora 11, 20122 Milano · P.IVA e C.F. 14971460960 · REA MI-2819107 · Capitale sociale 10.000 € (versato 2.500 €)'
-    for (const name of ['index.html', 'pigrocrm.html', 'privacy.html', 'terms.html', 'company.html', 'pitch.html'] as const) {
+    for (const name of ['index.html', 'pigrocrm.html', 'privacy.html', 'terms.html', 'company.html', 'pitch.html', 'talks/technical-interviews.html'] as const) {
       const page = readFileSync(join(__dirname, name), 'utf-8')
       const footers = [...page.matchAll(/<footer\b[\s\S]*?<\/footer>/g)].map((m) => m[0])
       expect(footers.length, name).toBeGreaterThan(0)

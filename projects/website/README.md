@@ -4,7 +4,7 @@ letsrebase.com: the public site. Today that is the rebase landing at `/` and the
 two policy pages (`/privacy`, `/terms`); it is called `website` rather than `landing`
 because it is expected to grow past those.
 
-Six HTML pages, eight scripts, four stylesheets. No React, no Tailwind, no router.
+Seven HTML pages, eight scripts, four stylesheets. No React, no Tailwind, no router.
 That absence is the requirement rather than an omission: this is the first page a
 visitor loads, and it does not drag an application bundle behind it. The build takes
 about 300 milliseconds. Anything added here should keep that true.
@@ -31,6 +31,7 @@ pnpm --filter website lint
 | `src/terms.html` | `/terms` | Terms |
 | `src/pitch.html` | `/pitch` | The pitch deck, nineteen slides with keyboard, swipe and wheel navigation; shared by link, `noindex`. Its own stylesheet, `pitch.css`; its pictures under `src/pitch/`; its script, `deck.js`, shared with the page below |
 | `src/company.html` | `/company` | The deck for companies hiring a freelancer (REB-553): fifteen slides on the same stage, `pitch.css` and `deck.js`, the numbers, the selection, the day rates, the three services with a price each, the team builder, the talent cloud; shared by link, `noindex`. Its own picture under `src/company/` |
+| `src/talks/technical-interviews.html` | `/talks/technical-interviews` | The deck of the talk *Technical interviews are useless in the AI era* (REB-1172), Ivan Sala and Lorenzo Fiore at AI Socratic, November 2026: nineteen slides in English on the same stage, `pitch.css` and `deck.js`, plus two full-colour slide styles of its own; shared by link, `noindex`. Two segments deep, so it names its files from the root (`/pitch.css`) |
 
 The community page (its own signup form, at `/community`) is gone (REB-72): the name
 301s to `/` now, a week after the landing had held the front door long enough that
