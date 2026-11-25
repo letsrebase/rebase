@@ -75,7 +75,10 @@ function runCounters(slide) {
 if (isStatic) document.querySelectorAll('[data-count]').forEach(function (el) { el.textContent = figure(+el.dataset.count, +(el.dataset.decimals || 0)) })
 
 /* --- Typewriter on the cover, the landing's own gesture. */
-var role = document.querySelector('.role')
+// Only the cover's own word list: a deck may use `.role` elsewhere (a speaker's title)
+// and have no typewriter at all, and reading the first `.role` blanked such a deck
+// (REB-1172).
+var role = document.querySelector('h1 .role[data-roles]')
 if (role && !isStatic) {
   var words = role.dataset.roles.split('|'), wi = 0, ci = words[0].length, deleting = false
   role.textContent = words[0]

@@ -8,6 +8,7 @@
     <meta name="robots" content="noindex" />
     <link rel="canonical" href="https://letsrebase.com/talks/technical-interviews" />
     <meta property="og:type" content="website" />
+    <meta property="og:locale" content="en_US" />
     <meta property="og:title" content="Technical interviews are useless in the AI era" />
     <meta property="og:description" content="An AI-native approach to evaluating a candidate. A talk by Ivan Sala and Lorenzo Fiore, rebase." />
     <meta property="og:url" content="https://letsrebase.com/talks/technical-interviews" />
@@ -29,8 +30,10 @@
       same tokens. Arrow keys, space, swipe and the wheel move between slides; F is full
       screen; ?static=1 stacks them for export. Served at /talks/technical-interviews, two
       segments deep, so every file it loads is named from the root (`/pitch.css`), not
-      relative to the page as /company does. Not `.role` on the speakers: deck.js takes the
-      first `.role` on the page for the cover's typewriter. -->
+      relative to the page as /company does. The speakers' role line is `.title`, not
+      `.role`: deck.js used to take the first `.role` on a page for the cover's typewriter,
+      which blanked this deck once (it now reads only `h1 .role[data-roles]`). -->
+    <link rel="icon" type="image/svg+xml" href="/rebase-logo.svg" />
     <link rel="stylesheet" href="/pitch.css" />
     <style>
       /* Full-colour slides for the loud beats. */
@@ -47,6 +50,7 @@
         linear-gradient(to bottom, rgba(1, 25, 54, 0.08) 1px, transparent 1px); }
       .slide.sun canvas { opacity: 0.3; }
       .sun .kicker { color: var(--ink); }
+      .sun .glyph { background: var(--ink); box-shadow: 14px 0 0 #fff, 0 14px 0 var(--melon), 14px 14px 0 var(--ink); }
       .sun .lead { color: var(--ink); }
       .sun .foot { color: var(--ink); } .sun .foot span { background: transparent; }
       .hl { background: var(--ink); color: var(--gold); padding: 0 0.14em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
@@ -92,7 +96,7 @@
       /* The two speakers: same shape, so the two columns line up to the last line. */
       .team.two .person { display: flex; flex-direction: column; }
       .team.two .person p:not(.title) { flex: 1; }
-      /* Not `.role`: deck.js takes the first `.role` on the page for the cover's typewriter. */
+      /* `.title`, the look of pitch.css's `.person .role` (see the comment at the top). */
       .person .title { font-size: 28px; font-weight: 600; color: var(--melon); margin: 12px 0 22px; }
       .person .part { align-self: flex-start; font-size: 24px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; background: var(--ink); color: var(--gold); padding: 8px 14px; margin-top: 28px; }
 
@@ -327,12 +331,12 @@
           <h2 class="statement" data-reveal style="--d: 0.15s; margin-top: 20px; font-size: 100px;">Your agent logs are <span class="accent">the new CV.</span></h2>
           <div data-reveal style="--d: 0.35s; margin-top: 44px;"><span class="term"><span class="p">$</span>npx @letsrebase/verify</span></div>
           <div class="cols" style="margin-top: 64px; gap: 60px;">
-            <div data-reveal style="--d: 0.55s;"><div class="sw" style="background: #fff;"></div><h3 style="font-size: 48px;">Reads your logs, locally</h3><p>Claude Code, Codex, opencode, Cursor, pi and more, in one profile.</p></div>
+            <div data-reveal style="--d: 0.55s;"><div class="sw" style="background: #fff;"></div><h3 style="font-size: 48px;">Reads your logs, locally</h3><p>Claude Code, Codex, opencode, Cursor CLI, pi and more, in one profile.</p></div>
             <div data-reveal style="--d: 0.7s;"><div class="sw" style="background: var(--gold);"></div><h3 style="font-size: 48px;">Written by your model</h3><p>The agent you pick writes the story and classifies four practices.</p></div>
             <div data-reveal style="--d: 0.85s;"><div class="sw" style="background: var(--melon);"></div><h3 style="font-size: 48px;">Sent only on a yes</h3><p>Redacted on your laptop. Your raw logs never reach us.</p></div>
           </div>
         </div>
-        <div class="foot"><span>Open source, MIT · a fork of Play New's apply-new</span><span>github.com/letsrebase/verify</span></div>
+        <div class="foot"><span>Open source, MIT · a fork of Play New's apply-new · github.com/letsrebase/verify</span><span></span></div>
       </section>
 
       <!-- 14 · The seven lenses, from the README's «What we look at». -->
@@ -344,11 +348,11 @@
             <p class="kicker" data-reveal>What it reads</p>
             <h2 class="statement small" data-reveal style="--d: 0.15s; margin-top: 16px; font-size: 80px;">Seven lenses, <span class="accent">from your logs.</span></h2>
             <div class="lenses" style="margin-top: 50px;">
-              <div data-reveal style="--d: 0.35s;"><div class="n">1</div><h3>What you work on</h3><p>Three to five fields of work, counted, never named.</p></div>
+              <div data-reveal style="--d: 0.35s;"><div class="n">1</div><h3>What you work on</h3><p>Three to five fields of work. Products counted, never named.</p></div>
               <div data-reveal style="--d: 0.42s;"><div class="n">2</div><h3>How you reason</h3><p>Research-first, orchestrator, verification-heavy, risk-calibrated.</p></div>
               <div data-reveal style="--d: 0.49s;"><div class="n">3</div><h3>How you use the model</h3><p>From directing it to thinking with it, and when you switch.</p></div>
               <div data-reveal style="--d: 0.56s;"><div class="n">4</div><h3>How deep it goes</h3><p>Active days, sessions a day, session depth, streaks.</p></div>
-              <div data-reveal style="--d: 0.63s;"><div class="n">5</div><h3>How you spread it</h3><p>Steering a portfolio, or building one thing for months.</p></div>
+              <div data-reveal style="--d: 0.63s;"><div class="n">5</div><h3>How you spread it</h3><p>Steering many products, or building a few in depth.</p></div>
               <div data-reveal style="--d: 0.7s;"><div class="n">6</div><h3>How long, per tech</h3><p>Occasional, recurring, continuous: a label for month counts.</p></div>
               <div data-reveal style="--d: 0.77s;"><div class="n">7</div><h3>Agentic fluency</h3><p>What you use, what you build (skills, hooks, CLAUDE.md), how you organise.</p></div>
               <div class="plus" data-reveal style="--d: 0.84s;"><div class="n">+</div><h3>And a check</h3><p>Three to five projects, your trajectory, and prose that must track the data.</p></div>
@@ -368,11 +372,11 @@
             <div data-reveal style="--d: 0.4s;">
               <h3>Counted by code · 7</h3>
               <ul>
-                <li>Checks before every commit</li>
+                <li>Checks run before a commit</li>
                 <li>Tests changed with the code</li>
                 <li>Failure reproduced before the fix</li>
                 <li>A plan before the first edit</li>
-                <li>The diff reviewed before commit</li>
+                <li>The diff shown before commit</li>
                 <li>Design documents written</li>
                 <li>Security checks run</li>
               </ul>
@@ -382,16 +386,16 @@
               <ul>
                 <li>Asks for alternatives</li>
                 <li>Pushes back, with a reason</li>
-                <li>States when it's done</li>
+                <li>Says what done means</li>
                 <li>Limits the scope</li>
               </ul>
-              <p class="label" style="margin-top: 30px; font-size: 26px;">Each published only above 90% agreement and 90% stability on a reference set. Two candidates didn't make it.</p>
+              <p class="label" style="margin-top: 30px; font-size: 26px;">Each published only above 90% agreement and 90% stability, measured on one model (Claude Opus 4.7). Two candidates didn't make it.</p>
               <p style="margin-top: 30px;"><span class="chip mono">checks before commit · <b>38 of 52</b> sessions</span></p>
               <p class="label" style="margin-top: 12px; font-size: 22px;">An example of how a count reads.</p>
             </div>
           </div>
         </div>
-        <div class="foot"><span>Never a score, a percentage or a total.</span><span>github.com/letsrebase/verify</span></div>
+        <div class="foot"><span>Never a score, a percentage or a total.</span><span></span></div>
       </section>
 
       <!-- 16 · What it doesn't do: DECISIONS.md 2026-11-18 (no score about a person) and the
@@ -404,10 +408,10 @@
             <p class="kicker" data-reveal>What it doesn't do</p>
             <h2 class="statement small" data-reveal style="--d: 0.15s; margin-top: 16px; font-size: 80px;">No score. No robot recruiter. <span class="accent">A person decides.</span></h2>
             <div class="cols" style="grid-template-columns: repeat(4, 1fr); gap: 44px; margin-top: 52px;">
-              <div data-reveal style="--d: 0.45s;"><div class="sw" style="background: var(--ink);"></div><h3 style="font-size: 48px;">No score</h3><p>No rating, no ranking of a person. Counts and bands, nothing finer.</p></div>
-              <div data-reveal style="--d: 0.6s;"><div class="sw" style="background: var(--gold);"></div><h3 style="font-size: 48px;">Logs stay home</h3><p>Only counts, fields of work and a short story leave your laptop.</p></div>
-              <div data-reveal style="--d: 0.75s;"><div class="sw" style="background: var(--melon);"></div><h3 style="font-size: 48px;">Checked, not trusted</h3><p>Numbers re-derived from your logs at send; prose that doesn't track the data is blocked.</p></div>
-              <div data-reveal style="--d: 0.9s;"><div class="sw" style="background: var(--quiet);"></div><h3 style="font-size: 48px;">AI Act, high-risk</h3><p>Treated as Annex III §4: consent, a human on every profile, 12 months at most.</p></div>
+              <div data-reveal style="--d: 0.45s;"><div class="sw" style="background: var(--ink);"></div><h3 style="font-size: 48px;">No score</h3><p>No rating, no ranking of a person, no automated decision.</p></div>
+              <div data-reveal style="--d: 0.6s;"><div class="sw" style="background: var(--gold);"></div><h3 style="font-size: 48px;">Raw logs stay yours</h3><p>We get the profile you approved: counts, tags, a short story. Never your logs or your code.</p></div>
+              <div data-reveal style="--d: 0.75s;"><div class="sw" style="background: var(--melon);"></div><h3 style="font-size: 48px;">Checked, not trusted</h3><p>The counted numbers are re-derived from your logs at send; prose that doesn't track the data is blocked.</p></div>
+              <div data-reveal style="--d: 0.9s;"><div class="sw" style="background: var(--quiet);"></div><h3 style="font-size: 48px;">AI Act, high-risk</h3><p>Treated as Annex III §4(a): transparency, human oversight, disclosure, data governance.</p></div>
             </div>
           </div>
         </div>
@@ -421,7 +425,7 @@
           <p class="kicker" data-reveal>At <span class="lower">rebase</span></p>
           <h2 class="statement" data-reveal style="--d: 0.15s; margin-top: 24px;">From your logs <span class="accent">to a real conversation.</span></h2>
           <div class="track" style="--n: 4; margin-top: 90px; gap: 40px;">
-            <div data-reveal style="--d: 0.5s;"><div class="when">1</div><div class="q" style="font-size: 52px;">Run it</div><p>Sign in from the browser, read your profile, send it.</p></div>
+            <div data-reveal style="--d: 0.5s;"><div class="when">1</div><div class="q" style="font-size: 52px;">Run it</div><p>Read your profile first, then sign in from the browser and send it.</p></div>
             <div data-reveal style="--d: 0.65s;"><div class="when">2</div><div class="q" style="font-size: 52px;">Human review</div><p>One of us reads it, with your GitHub as a second witness if you link it.</p></div>
             <div data-reveal style="--d: 0.8s;"><div class="when">3</div><div class="q" style="font-size: 52px;">Verified</div><p>The badge companies see, first in the talent cloud.</p></div>
             <div class="on" data-reveal style="--d: 0.95s;"><div class="when">4</div><div class="q" style="font-size: 52px;">The interview</div><p>A conversation about your real work.</p></div>
@@ -439,7 +443,7 @@
           <h2 class="h1" data-reveal style="--d: 0.15s; margin-top: 20px; font-size: 320px;">Demo<span class="accent">.</span></h2>
           <div data-reveal style="--d: 0.45s; margin-top: 60px;"><span class="term" style="font-size: 56px;"><span class="p">$</span>npx @letsrebase/verify</span></div>
         </div>
-        <div class="foot"><span>Lorenzo Fiore</span><span>github.com/letsrebase/verify</span></div>
+        <div class="foot"><span>Lorenzo Fiore · github.com/letsrebase/verify</span><span></span></div>
       </section>
 
       <!-- 19 · Close: two QR codes, the tool and the site, and the srl's company line in
